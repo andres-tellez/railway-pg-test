@@ -143,38 +143,44 @@ def init_db():
 
 @app.route("/download-splits/<int:athlete_id>/<int:activity_id>")
 def download_splits(athlete_id, activity_id):
-    token = get_valid_access_token(athlete_id)
+    try:
+        token = get_valid_access_token(athlete_id)
 
-    r = requests.get(
-        f"https://www.strava.com/api/v3/activities/{activity_id}/streams",
-        params={"keys": "distance,time,heartrate", "key_by_type": "true"},
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    r.raise_for_status()
-    streams = r.json()
+        # fetch the streams
+        r = requests.get(
+            f"https://www.strava.com/api/v3/activities/{activity_id}/streams",
+            params={"keys": "distance,time,heartrate", "key_by_type": "true"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        r.raise_for_status()
+        streams = r.json()
 
-    dists = streams["distance"]["data"]
-    times = streams["time"]["data"]
-    hrs   = streams.get("heartrate", {}).get("data", [])
+        dists = streams["distance"]["data"]
+        times = streams["time"]["data"]
+        hrs   = streams.get("heartrate", {}).get("data", [])
 
-    splits = []
-    mile_mark = 1609.34
-    segment   = 1
-    for i, dist in enumerate(dists):
-        if dist >= mile_mark * segment:
-            elapsed = times[i]
-            pace    = elapsed / (dist / mile_mark)
-            splits.append({
-                "segment_index":     segment,
-                "distance":          dist,
-                "elapsed_time":      elapsed,
-                "pace":              pace,
-                "average_heartrate": hrs[i] if i < len(hrs) else None
-            })
-            segment += 1
+        splits = []
+        mile_mark = 1609.34
+        segment   = 1
+        for i, dist in enumerate(dists):
+            if dist >= mile_mark * segment:
+                elapsed = times[i]
+                pace    = elapsed / (dist / mile_mark)
+                splits.append({
+                    "segment_index":     segment,
+                    "distance":          dist,
+                    "elapsed_time":      elapsed,
+                    "pace":              pace,
+                    "average_heartrate": hrs[i] if i < len(hrs) else None
+                })
+                segment += 1
 
-    save_run_splits(activity_id, splits)
-    return jsonify(activity_id=activity_id, splits=len(splits))
+        save_run_splits(activity_id, splits)
+        return jsonify(activity_id=activity_id, splits=len(splits))
+
+    except Exception as e:
+        logging.exception("❌ /download-splits failed")
+        return jsonify(error=str(e)), 500
 
 
 @app.route("/debug-env")
