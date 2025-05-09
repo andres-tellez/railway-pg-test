@@ -92,7 +92,7 @@ def insert_activities(activities, athlete_id):
 
 @app.route("/")
 def home():
-    return "🚂 Railway Strava‐sync sandbox is live!"
+    return "🚂 Smoke test v2!"
 
 
 @app.route("/init-db")
