@@ -15,3 +15,4 @@ jobs:
           curl -fsS \
             "https://railway-pg-test-production.up.railway.app/sync-strava-to-db/347085?key=${{ secrets.CRON_SECRET_KEY }}" \
             || echo "Sandbox sync failed!"
+            
