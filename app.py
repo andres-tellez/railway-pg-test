@@ -1,5 +1,6 @@
 import os
 import logging
+import requests
 from flask import Flask, jsonify
 from psycopg2.extras import RealDictCursor
 
@@ -87,6 +88,23 @@ def test_save_activity():
 def test_enrich_activity():
     enrich_activity_pg(999999, {"foo": "bar", "updated": True})
     return jsonify({"enriched": True})
+
+@app.route("/connect-strava")
+def connect_strava():
+    """
+    Redirects the user to Strava's OAuth page.
+    """
+    params = {
+        "client_id": os.getenv("STRAVA_CLIENT_ID"),
+        "redirect_uri": os.getenv("REDIRECT_URI"),
+        "response_type": "code",
+        "approval_prompt": "auto",
+        "scope": "activity:read_all,activity:write"
+    }
+    base = "https://www.strava.com/oauth/authorize"
+    url = f"{base}?{requests.compat.urlencode(params)}"
+    return jsonify({"url": url})
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
