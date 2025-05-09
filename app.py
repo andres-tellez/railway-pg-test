@@ -1,7 +1,7 @@
 import os
 import logging
 import requests
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from psycopg2.extras import RealDictCursor
 
 from db import (
@@ -15,9 +15,11 @@ from db import (
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
+
 @app.route("/")
 def home():
     return "🚂 Railway smoke test is live!"
+
 
 @app.route("/init-db")
 def init_db():
@@ -52,6 +54,7 @@ def init_db():
     conn.close()
     return jsonify({"initialized": True})
 
+
 @app.route("/test-db")
 def test_db():
     conn = get_conn()
@@ -61,15 +64,18 @@ def test_db():
     conn.close()
     return jsonify({"db": val})
 
+
 @app.route("/test-save-token")
 def test_save_token():
     save_token_pg(12345, "dummy-access-token", "dummy-refresh-token")
     return jsonify({"saved": True})
 
+
 @app.route("/test-get-tokens")
 def test_get_tokens():
     tokens = get_tokens_pg(12345)
     return jsonify(tokens or {})
+
 
 @app.route("/test-save-activity")
 def test_save_activity():
@@ -84,10 +90,12 @@ def test_save_activity():
     save_activity_pg(dummy_activity)
     return jsonify({"saved_activity": True})
 
+
 @app.route("/test-enrich-activity")
 def test_enrich_activity():
     enrich_activity_pg(999999, {"foo": "bar", "updated": True})
     return jsonify({"enriched": True})
+
 
 @app.route("/connect-strava")
 def connect_strava():
@@ -95,15 +103,48 @@ def connect_strava():
     Redirects the user to Strava's OAuth page.
     """
     params = {
-        "client_id": os.getenv("STRAVA_CLIENT_ID"),
-        "redirect_uri": os.getenv("REDIRECT_URI"),
+        "client_id":     os.getenv("STRAVA_CLIENT_ID"),
+        "redirect_uri":  os.getenv("REDIRECT_URI"),
         "response_type": "code",
         "approval_prompt": "auto",
-        "scope": "activity:read_all,activity:write"
+        "scope":         "activity:read_all,activity:write"
     }
     base = "https://www.strava.com/oauth/authorize"
     url = f"{base}?{requests.compat.urlencode(params)}"
     return jsonify({"url": url})
+
+
+@app.route("/oauth/callback")
+def oauth_callback():
+    """
+    Strava will redirect here with ?code=... after user authorizes.
+    Exchange the code for tokens, then save them.
+    """
+    code = request.args.get("code")
+    if not code:
+        return jsonify({"error": "Missing code parameter"}), 400
+
+    # Exchange code for tokens
+    token_resp = requests.post(
+        "https://www.strava.com/oauth/token",
+        data={
+            "client_id":     os.getenv("STRAVA_CLIENT_ID"),
+            "client_secret": os.getenv("STRAVA_CLIENT_SECRET"),
+            "code":          code,
+            "grant_type":    "authorization_code"
+        }
+    ).json()
+
+    # Persist tokens in Postgres
+    athlete_id    = token_resp["athlete"]["id"]
+    access_token  = token_resp["access_token"]
+    refresh_token = token_resp["refresh_token"]
+    save_token_pg(athlete_id, access_token, refresh_token)
+
+    return jsonify({
+        "athlete_id": athlete_id,
+        "message":    "Strava tokens saved to DB"
+    })
 
 
 if __name__ == "__main__":
