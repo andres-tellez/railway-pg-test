@@ -14,9 +14,8 @@ from db import (
     get_tokens_pg,
     save_activity_pg,
     enrich_activity_pg,
-    save_run_splits,      # ← add this helper to db.py
+    save_run_splits,
 )
-
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -37,17 +36,22 @@ def get_valid_access_token(athlete_id):
         raise Exception(f"No tokens for athlete {athlete_id}")
     access, refresh = tokens["access_token"], tokens["refresh_token"]
 
-    # test & refresh if needed
-    r = requests.get("https://www.strava.com/api/v3/athlete",
-                     headers={"Authorization": f"Bearer {access}"})
-    if r.status_code == 401:
-        logging.info("Refreshing token for %s", athlete_id)
-        rr = requests.post("https://www.strava.com/oauth/token", data={
-            "client_id":     CLIENT_ID,
-            "client_secret": CLIENT_SECRET,
-            "grant_type":    "refresh_token",
-            "refresh_token": refresh
-        })
+    # Test current token and refresh if expired
+    res = requests.get(
+        "https://www.strava.com/api/v3/athlete",
+        headers={"Authorization": f"Bearer {access}"}
+    )
+    if res.status_code == 401:
+        logging.info("🔁 Token expired; refreshing for athlete %s", athlete_id)
+        rr = requests.post(
+            "https://www.strava.com/oauth/token",
+            data={
+                "client_id":     CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "grant_type":    "refresh_token",
+                "refresh_token": refresh
+            }
+        )
         rr.raise_for_status()
         data = rr.json()
         access, refresh = data["access_token"], data["refresh_token"]
@@ -65,38 +69,41 @@ def insert_activities(activities, athlete_id):
             continue
         dist = a.get("distance", 0)
         mt   = a.get("moving_time", 0)
-        dmi  = round(dist/1609.34, 2) if dist else 0
-        mtm  = round(mt/60, 2)       if mt   else 0
-        pace = round(mtm/dmi, 2)     if (dmi and mtm) else 0
+        dmi  = round(dist / 1609.34, 2) if dist else 0
+        mtm  = round(mt   /   60,   2) if mt   else 0
+        pace = round(mtm / dmi, 2)   if (dmi and mtm) else 0
 
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO activities (
               activity_id, athlete_id, name, start_date,
               distance_mi, moving_time_min, pace_min_per_mile, data
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT DO NOTHING
-        """, (
-            a["id"], athlete_id, a["name"], start,
-            dmi, mtm, pace, json.dumps(a)
-        ))
+            ON CONFLICT (activity_id) DO NOTHING;
+            """,
+            (
+                a["id"], athlete_id, a["name"], start,
+                dmi, mtm, pace, json.dumps(a)
+            )
+        )
     conn.commit()
     conn.close()
 
 
 @app.route("/")
 def home():
-    return "🚂 Smoke test live"
+    return "🚂 Railway Strava‐sync sandbox is live!"
 
 
 @app.route("/init-db")
 def init_db():
-    sql = [
+    ddl = [
         """
         CREATE TABLE IF NOT EXISTS tokens (
           athlete_id BIGINT PRIMARY KEY,
-          access_token TEXT,
-          refresh_token TEXT,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          access_token TEXT NOT NULL,
+          refresh_token TEXT NOT NULL,
+          updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
         """,
         """
@@ -105,9 +112,9 @@ def init_db():
           athlete_id BIGINT NOT NULL,
           name TEXT NOT NULL,
           start_date TIMESTAMP NOT NULL,
-          distance_mi REAL,
-          moving_time_min REAL,
-          pace_min_per_mile REAL,
+          distance_mi REAL NOT NULL,
+          moving_time_min REAL NOT NULL,
+          pace_min_per_mile REAL NOT NULL,
           data JSONB NOT NULL
         );
         """,
@@ -126,7 +133,7 @@ def init_db():
     ]
     conn = get_db_connection()
     cur  = conn.cursor()
-    for q in sql:
+    for q in ddl:
         cur.execute(q)
     conn.commit()
     conn.close()
@@ -136,30 +143,36 @@ def init_db():
 @app.route("/download-splits/<int:athlete_id>/<int:activity_id>")
 def download_splits(athlete_id, activity_id):
     token = get_valid_access_token(athlete_id)
+
+    # Request distance, time, and heartrate streams
     r = requests.get(
         f"https://www.strava.com/api/v3/activities/{activity_id}/streams",
-        params={"keys":"distance,time,heartrate","key_by_type":"true"},
-        headers={"Authorization":f"Bearer {token}"}
+        params={"keys": "distance,time,heartrate", "key_by_type": "true"},
+        headers={"Authorization": f"Bearer {token}"}
     )
     r.raise_for_status()
-    s = r.json()
-    dists = s["distance"]["data"]
-    times = s["time"]["data"]
-    hrs   = s.get("heartrate",{}).get("data",[])
-    splits=[]
-    mile=1609.34; idx=1
-    for i,dist in enumerate(dists):
-        if dist>=mile*idx:
-            elapsed=times[i]
-            pace=elapsed/(dist/mile)
+    streams = r.json()
+
+    dists = streams["distance"]["data"]
+    times = streams["time"]["data"]
+    hrs   = streams.get("heartrate", {}).get("data", [])
+
+    splits = []
+    mile_mark = 1609.34
+    segment = 1
+    for i, dist in enumerate(dists):
+        if dist >= mile_mark * segment:
+            elapsed = times[i]
+            pace    = elapsed / (dist / mile_mark)
             splits.append({
-                "segment_index":idx,
-                "distance":dist,
-                "elapsed_time":elapsed,
-                "pace":pace,
-                "average_heartrate":hrs[i] if i<len(hrs) else None
+                "segment_index":      segment,
+                "distance":           dist,
+                "elapsed_time":       elapsed,
+                "pace":               pace,
+                "average_heartrate":  hrs[i] if i < len(hrs) else None
             })
-            idx+=1
+            segment += 1
+
     save_run_splits(activity_id, splits)
     return jsonify(activity_id=activity_id, splits=len(splits))
 
@@ -172,11 +185,11 @@ def debug_env():
 @app.route("/connect-strava")
 def connect_strava():
     params = {
-      "client_id":CLIENT_ID,
-      "redirect_uri":REDIRECT_URI,
-      "response_type":"code",
-      "approval_prompt":"force",
-      "scope":"activity:read,activity:write"
+        "client_id":       CLIENT_ID,
+        "redirect_uri":    REDIRECT_URI,
+        "response_type":   "code",
+        "approval_prompt": "force",
+        "scope":           "activity:read,activity:write"
     }
     url = f"https://www.strava.com/oauth/authorize?{requests.compat.urlencode(params)}"
     return redirect(url)
@@ -186,31 +199,36 @@ def connect_strava():
 def oauth_callback():
     code = request.args.get("code")
     if not code:
-        return jsonify(error="Missing code"),400
-    r = requests.post("https://www.strava.com/oauth/token", data={
-        "client_id":CLIENT_ID,
-        "client_secret":CLIENT_SECRET,
-        "code":code,
-        "grant_type":"authorization_code"
-    })
-    if r.status_code!=200:
-        return jsonify(error="Token exchange failed", details=r.text),400
+        return jsonify(error="Missing code parameter"), 400
 
-    t=r.json()
-    aid=t["athlete"]["id"]
-    save_token_pg(aid, t["access_token"], t["refresh_token"])
-    return jsonify(athlete_id=aid, message="Tokens saved")
+    r = requests.post(
+        "https://www.strava.com/oauth/token",
+        data={
+            "client_id":     CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "code":          code,
+            "grant_type":    "authorization_code"
+        }
+    )
+    if r.status_code != 200:
+        return jsonify(error="Token exchange failed", details=r.text), 400
+
+    data        = r.json()
+    athlete_id  = data["athlete"]["id"]
+    save_token_pg(athlete_id, data["access_token"], data["refresh_token"])
+    return jsonify(athlete_id=athlete_id, message="Strava tokens saved")
 
 
 @app.route("/sync-strava-to-db/<int:athlete_id>")
 def sync_strava_to_db(athlete_id):
-    key=request.args.get("key")
-    if CRON_SECRET_KEY and key!=CRON_SECRET_KEY:
-        return jsonify(error="Unauthorized"),401
-    token=get_valid_access_token(athlete_id)
-    r=requests.get(
-      "https://www.strava.com/api/v3/athlete/activities",
-      headers={"Authorization":f"Bearer {token}"}
+    key = request.args.get("key")
+    if CRON_SECRET_KEY and key != CRON_SECRET_KEY:
+        return jsonify(error="Unauthorized"), 401
+
+    token = get_valid_access_token(athlete_id)
+    r = requests.get(
+        "https://www.strava.com/api/v3/athlete/activities",
+        headers={"Authorization": f"Bearer {token}"}
     )
     r.raise_for_status()
     insert_activities(r.json(), athlete_id)
@@ -219,106 +237,127 @@ def sync_strava_to_db(athlete_id):
 
 @app.route("/activities/<int:athlete_id>")
 def get_activities(athlete_id):
-    conn=get_db_connection()
-    cur=conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
-      SELECT activity_id,name,start_date,distance_mi,pace_min_per_mile
-      FROM activities
-      WHERE athlete_id=%s
-      ORDER BY start_date DESC
-    """,(athlete_id,))
-    res=cur.fetchall()
+    conn = get_db_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        SELECT activity_id, name, start_date,
+               distance_mi, pace_min_per_mile
+        FROM activities
+        WHERE athlete_id = %s
+        ORDER BY start_date DESC
+        """,
+        (athlete_id,)
+    )
+    rows = cur.fetchall()
     conn.close()
-    return jsonify(res)
+    return jsonify(rows)
 
 
 @app.route("/enrich-activities/<int:athlete_id>")
 def enrich_activities(athlete_id):
-    token=get_valid_access_token(athlete_id)
-    conn=get_db_connection()
-    cur=conn.cursor()
-    cur.execute("SELECT activity_id FROM activities WHERE athlete_id=%s",(athlete_id,))
-    ids=[r[0] for r in cur.fetchall()]
+    token = get_valid_access_token(athlete_id)
+    conn = get_db_connection()
+    cur  = conn.cursor()
+    cur.execute("SELECT activity_id FROM activities WHERE athlete_id = %s", (athlete_id,))
+    ids = [r[0] for r in cur.fetchall()]
     conn.close()
-    count=0
+
+    count = 0
     for aid in ids:
-        rr=requests.get(
-          f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
-          headers={"Authorization":f"Bearer {token}"}
+        rr = requests.get(
+            f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
+            headers={"Authorization": f"Bearer {token}"}
         )
-        if rr.status_code==200:
+        if rr.status_code == 200:
             enrich_activity_pg(aid, rr.json())
-            count+=1
+            count += 1
+
     return jsonify(enriched=count)
 
 
 @app.route("/metrics/<int:athlete_id>")
 def get_metrics(athlete_id):
-    conn=get_db_connection()
-    cur=conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
-      SELECT activity_id,name,start_date,
-             distance_mi,pace_min_per_mile,
-             (data->>'average_heartrate')::float avg_hr,
-             (data->>'max_heartrate')::float     max_hr,
-             (data->>'average_cadence')::float    cadence,
-             (data->>'total_elevation_gain')::float elevation
-      FROM activities
-      WHERE athlete_id=%s
-      ORDER BY start_date DESC
-    """,(athlete_id,))
-    res=cur.fetchall()
+    conn = get_db_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        SELECT activity_id, name, start_date,
+               distance_mi, pace_min_per_mile,
+               (data->>'average_heartrate')::FLOAT AS avg_hr,
+               (data->>'max_heartrate')::FLOAT     AS max_hr,
+               (data->>'average_cadence')::FLOAT    AS cadence,
+               (data->>'total_elevation_gain')::FLOAT AS elevation
+        FROM activities
+        WHERE athlete_id = %s
+        ORDER BY start_date DESC
+        """,
+        (athlete_id,)
+    )
+    rows = cur.fetchall()
     conn.close()
-    return jsonify(res)
+    return jsonify(rows)
 
 
 @app.route("/export/<int:athlete_id>")
 def export_activities(athlete_id):
-    fmt=request.args.get("format","csv")
-    conn=get_db_connection()
-    cur=conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
-      SELECT activity_id,name,start_date,
-             distance_mi,pace_min_per_mile,
-             (data->>'average_heartrate')::float avg_hr,
-             (data->>'max_heartrate')::float     max_hr,
-             (data->>'average_cadence')::float    cadence,
-             (data->>'total_elevation_gain')::float elevation
-      FROM activities WHERE athlete_id=%s
-      ORDER BY start_date DESC
-    """,(athlete_id,))
-    df=pd.DataFrame(cur.fetchall())
+    fmt  = request.args.get("format", "csv")
+    conn = get_db_connection()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(
+        """
+        SELECT activity_id, name, start_date,
+               distance_mi, pace_min_per_mile,
+               (data->>'average_heartrate')::FLOAT AS avg_hr,
+               (data->>'max_heartrate')::FLOAT     AS max_hr,
+               (data->>'average_cadence')::FLOAT    AS cadence,
+               (data->>'total_elevation_gain')::FLOAT AS elevation
+        FROM activities
+        WHERE athlete_id = %s
+        ORDER BY start_date DESC
+        """,
+        (athlete_id,)
+    )
+    df = pd.DataFrame(cur.fetchall())
     conn.close()
 
-    buf=BytesIO()
-    if fmt=="xlsx":
-        with pd.ExcelWriter(buf,engine="openpyxl") as w: df.to_excel(w,index=False)
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        fn="activities.xlsx"
+    buf = BytesIO()
+    if fmt.lower() == "xlsx":
+        with pd.ExcelWriter(buf, engine="openpyxl") as w:
+            df.to_excel(w, index=False)
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        name     = "activities.xlsx"
     else:
-        df.to_csv(buf,index=False)
-        mime="text/csv"; fn="activities.csv"
+        df.to_csv(buf, index=False)
+        mimetype = "text/csv"
+        name     = "activities.csv"
+
     buf.seek(0)
-    return send_file(buf,as_attachment=True,download_name=fn,mimetype=mime)
+    return send_file(buf, as_attachment=True, download_name=name, mimetype=mimetype)
 
 
 @app.route("/cron-status/<int:athlete_id>")
 def cron_status(athlete_id):
-    conn=get_db_connection()
-    cur=conn.cursor()
-    cur.execute("SELECT MAX(start_date) FROM activities WHERE athlete_id=%s",(athlete_id,))
-    last_synced=cur.fetchone()[0]
-    cur.execute("""
-      SELECT MAX(start_date) FROM activities
-      WHERE athlete_id=%s AND (data->>'average_heartrate') IS NOT NULL
-    """,(athlete_id,))
-    last_enriched=cur.fetchone()[0]
+    conn = get_db_connection()
+    cur  = conn.cursor()
+    cur.execute("SELECT MAX(start_date) FROM activities WHERE athlete_id = %s", (athlete_id,))
+    last_synced   = cur.fetchone()[0]
+    cur.execute(
+        """
+        SELECT MAX(start_date) FROM activities
+        WHERE athlete_id = %s
+          AND (data->>'average_heartrate') IS NOT NULL
+        """,
+        (athlete_id,)
+    )
+    last_enriched = cur.fetchone()[0]
     conn.close()
+
     return jsonify(
-      last_synced=last_synced.isoformat() if last_synced else None,
-      last_enriched=last_enriched.isoformat() if last_enriched else None
+        last_synced   = last_synced.isoformat()   if last_synced   else None,
+        last_enriched = last_enriched.isoformat() if last_enriched else None
     )
 
 
-if __name__=="__main__":
-    app.run(host="0.0.0.0",port=int(os.getenv("PORT",5000)))
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
