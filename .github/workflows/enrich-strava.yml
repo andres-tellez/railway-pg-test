@@ -1,0 +1,16 @@
+name: Enrich Strava Activities Daily (Sandbox)
+
+on:
+  schedule:
+    - cron: '0 3 * * *'        # every day at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  enrich-strava:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sandbox enrich
+        run: |
+          curl -fsS \
+            "https://railway-pg-test-production.up.railway.app/enrich-activities/347085?key=${{ secrets.CRON_SECRET_KEY }}" \
+            || echo "Sandbox enrich failed!"
