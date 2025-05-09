@@ -1,14 +1,22 @@
 import os
-import psycopg2
+import logging
 from flask import Flask, jsonify
+from psycopg2.extras import RealDictCursor
+
+from db import (
+    get_conn,
+    save_token_pg,
+    get_tokens_pg,
+    save_activity_pg,
+    enrich_activity_pg,
+)
 
 app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
 
-def get_conn():
-    db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        raise RuntimeError("DATABASE_URL is not set!")
-    return psycopg2.connect(db_url, sslmode="require")
+@app.route("/")
+def home():
+    return "🚂 Railway smoke test is live!"
 
 @app.route("/test-db")
 def test_db():
@@ -19,5 +27,33 @@ def test_db():
     conn.close()
     return jsonify({"db": val})
 
+@app.route("/test-save-token")
+def test_save_token():
+    save_token_pg(12345, "dummy-access-token", "dummy-refresh-token")
+    return jsonify({"saved": True})
+
+@app.route("/test-get-tokens")
+def test_get_tokens():
+    tokens = get_tokens_pg(12345)
+    return jsonify(tokens or {})
+
+@app.route("/test-save-activity")
+def test_save_activity():
+    dummy_activity = {
+        "id": 999999,
+        "athlete": {"id": 12345},
+        "name": "Dummy Run",
+        "start_date_local": "2025-05-09T00:00:00Z",
+        "distance": 1609.34,
+        "moving_time": 600,
+    }
+    save_activity_pg(dummy_activity)
+    return jsonify({"saved_activity": True})
+
+@app.route("/test-enrich-activity")
+def test_enrich_activity():
+    enrich_activity_pg(999999, {"foo": "bar", "updated": True})
+    return jsonify({"enriched": True})
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
