@@ -22,9 +22,6 @@ def get_conn():
     return conn
 
 def save_token_pg(athlete_id: int, access_token: str, refresh_token: str) -> None:
-    """
-    Insert or update an athlete's Strava OAuth tokens.
-    """
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -38,10 +35,6 @@ def save_token_pg(athlete_id: int, access_token: str, refresh_token: str) -> Non
             """, (athlete_id, access_token, refresh_token))
 
 def get_tokens_pg(athlete_id: int) -> Optional[Dict[str, str]]:
-    """
-    Retrieve both access_token and refresh_token for an athlete.
-    Returns None if no record found.
-    """
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
@@ -52,9 +45,6 @@ def get_tokens_pg(athlete_id: int) -> Optional[Dict[str, str]]:
             return cur.fetchone()
 
 def save_activity_pg(activity: Dict) -> None:
-    """
-    Insert a new activity into the 'activities' table; skip if exists.
-    """
     try:
         activity_id     = activity["id"]
         athlete_id      = activity["athlete"]["id"]
@@ -65,7 +55,8 @@ def save_activity_pg(activity: Dict) -> None:
 
         distance_mi     = round(distance_m / 1609.34, 2) if distance_m else 0
         moving_time_min = round(moving_s   / 60,     2) if moving_s   else 0
-        pace            = round(moving_time_min / distance_mi, 2) if (distance_mi and moving_time_min) else 0
+        pace            = round(moving_time_min / distance_mi, 2) \
+                          if (distance_mi and moving_time_min) else 0
         full_json       = json.dumps(activity)
 
         with get_conn() as conn:
@@ -90,9 +81,6 @@ def save_activity_pg(activity: Dict) -> None:
         print(f"❌ Failed to save activity {activity.get('id', '?')}: {e}")
 
 def enrich_activity_pg(activity_id: int, detailed_data: Dict) -> None:
-    """
-    Update the JSON payload for an existing activity.
-    """
     try:
         full_json = json.dumps(detailed_data)
         with get_conn() as conn:
@@ -107,33 +95,28 @@ def enrich_activity_pg(activity_id: int, detailed_data: Dict) -> None:
 
 def save_run_splits(activity_id: int, splits: List[Dict]) -> None:
     """
-    Insert or update per‐mile splits for a given activity.
-    Each split dict should include:
-      - segment_index (int)
-      - distance (float, meters)
-      - elapsed_time (float, seconds)
-      - pace (float, seconds per mile)
-      - average_heartrate (float or None)
+    Insert or update per-mile splits for an activity.
     """
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            for s in splits:
-                cur.execute("""
-                    INSERT INTO run_splits (
-                      activity_id, segment_index,
-                      distance_m, elapsed_time, pace, average_heartrate
-                    ) VALUES (%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT (activity_id, segment_index)
-                      DO UPDATE SET
-                        elapsed_time      = EXCLUDED.elapsed_time,
-                        pace              = EXCLUDED.pace,
-                        average_heartrate = EXCLUDED.average_heartrate;
-                """, (
-                    activity_id,
-                    s["segment_index"],
-                    s["distance"],
-                    s["elapsed_time"],
-                    s["pace"],
-                    s.get("average_heartrate")
-                ))
-        conn.commit()
+    conn = get_conn()
+    with conn.cursor() as cur:
+        for s in splits:
+            cur.execute("""
+                INSERT INTO run_splits (
+                  activity_id, segment_index,
+                  distance_m, elapsed_time, pace, average_heartrate
+                ) VALUES (%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (activity_id, segment_index)
+                  DO UPDATE SET
+                    elapsed_time      = EXCLUDED.elapsed_time,
+                    pace              = EXCLUDED.pace,
+                    average_heartrate = EXCLUDED.average_heartrate;
+            """, (
+                activity_id,
+                s["segment_index"],
+                s["distance"],
+                s["elapsed_time"],
+                s["pace"],
+                s.get("average_heartrate")
+            ))
+    conn.commit()
+    conn.close()
