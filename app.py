@@ -36,7 +36,7 @@ def get_valid_access_token(athlete_id):
         raise Exception(f"No tokens for athlete {athlete_id}")
     access, refresh = tokens["access_token"], tokens["refresh_token"]
 
-    # Test current token and refresh if expired
+    # Test current token; refresh if expired
     res = requests.get(
         "https://www.strava.com/api/v3/athlete",
         headers={"Authorization": f"Bearer {access}"}
@@ -67,6 +67,7 @@ def insert_activities(activities, athlete_id):
         start = a.get("start_date_local") or a.get("start_date")
         if not start:
             continue
+
         dist = a.get("distance", 0)
         mt   = a.get("moving_time", 0)
         dmi  = round(dist / 1609.34, 2) if dist else 0
@@ -144,7 +145,6 @@ def init_db():
 def download_splits(athlete_id, activity_id):
     token = get_valid_access_token(athlete_id)
 
-    # Request distance, time, and heartrate streams
     r = requests.get(
         f"https://www.strava.com/api/v3/activities/{activity_id}/streams",
         params={"keys": "distance,time,heartrate", "key_by_type": "true"},
@@ -159,17 +159,17 @@ def download_splits(athlete_id, activity_id):
 
     splits = []
     mile_mark = 1609.34
-    segment = 1
+    segment   = 1
     for i, dist in enumerate(dists):
         if dist >= mile_mark * segment:
             elapsed = times[i]
             pace    = elapsed / (dist / mile_mark)
             splits.append({
-                "segment_index":      segment,
-                "distance":           dist,
-                "elapsed_time":       elapsed,
-                "pace":               pace,
-                "average_heartrate":  hrs[i] if i < len(hrs) else None
+                "segment_index":     segment,
+                "distance":          dist,
+                "elapsed_time":      elapsed,
+                "pace":              pace,
+                "average_heartrate": hrs[i] if i < len(hrs) else None
             })
             segment += 1
 
@@ -213,8 +213,8 @@ def oauth_callback():
     if r.status_code != 200:
         return jsonify(error="Token exchange failed", details=r.text), 400
 
-    data        = r.json()
-    athlete_id  = data["athlete"]["id"]
+    data       = r.json()
+    athlete_id = data["athlete"]["id"]
     save_token_pg(athlete_id, data["access_token"], data["refresh_token"])
     return jsonify(athlete_id=athlete_id, message="Strava tokens saved")
 
@@ -226,7 +226,7 @@ def sync_strava_to_db(athlete_id):
         return jsonify(error="Unauthorized"), 401
 
     token = get_valid_access_token(athlete_id)
-    r = requests.get(
+    r     = requests.get(
         "https://www.strava.com/api/v3/athlete/activities",
         headers={"Authorization": f"Bearer {token}"}
     )
@@ -257,8 +257,8 @@ def get_activities(athlete_id):
 @app.route("/enrich-activities/<int:athlete_id>")
 def enrich_activities(athlete_id):
     token = get_valid_access_token(athlete_id)
-    conn = get_db_connection()
-    cur  = conn.cursor()
+    conn  = get_db_connection()
+    cur   = conn.cursor()
     cur.execute("SELECT activity_id FROM activities WHERE athlete_id = %s", (athlete_id,))
     ids = [r[0] for r in cur.fetchall()]
     conn.close()
