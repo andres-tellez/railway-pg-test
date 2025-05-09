@@ -14,14 +14,13 @@ from db import (
     get_conn,
     save_token_pg,
     get_tokens_pg,
-    save_activity_pg,
     enrich_activity_pg,
 )
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Strava creds & redirect
+# Strava credentials and callback
 CLIENT_ID       = os.getenv("STRAVA_CLIENT_ID")
 CLIENT_SECRET   = os.getenv("STRAVA_CLIENT_SECRET")
 REDIRECT_URI    = os.getenv("REDIRECT_URI")
@@ -29,13 +28,13 @@ CRON_SECRET_KEY = os.getenv("CRON_SECRET_KEY")
 
 
 def get_db_connection():
-    """Alias to our existing get_conn for compatibility"""
+    """Alias to get_conn for compatibility."""
     return get_conn()
 
 
 def get_valid_access_token(athlete_id):
     """
-    Grab stored tokens, test the access token, and if expired, refresh it.
+    Retrieve stored tokens, refresh access token if expired, and return valid token.
     """
     tokens = get_tokens_pg(athlete_id)
     if not tokens:
@@ -71,11 +70,27 @@ def get_valid_access_token(athlete_id):
 
 def insert_activities(activities, athlete_id):
     """
-    Bulk-insert Strava activities into Postgres; skip duplicates.
+    Bulk-insert Strava activities into Postgres, skipping duplicates.
+    Handles both summary and detailed payloads gracefully.
     """
     conn = get_db_connection()
     with conn.cursor() as cur:
         for act in activities:
+            # pick the correct date field
+            start_date = act.get("start_date_local") or act.get("start_date")
+            if not start_date:
+                logging.warning(f"Skipping activity with no date: {act.get('id')}")
+                continue
+
+            distance_m = act.get("distance", 0)
+            moving_s   = act.get("moving_time", 0)
+
+            # compute metrics safely
+            distance_mi     = round(distance_m / 1609.34, 2) if distance_m else 0
+            moving_time_min = round(moving_s   / 60,     2) if moving_s   else 0
+            pace = (round(moving_time_min / distance_mi, 2)
+                    if moving_time_min and distance_mi else 0)
+
             cur.execute(
                 """
                 INSERT INTO activities (
@@ -85,16 +100,13 @@ def insert_activities(activities, athlete_id):
                 ON CONFLICT (activity_id) DO NOTHING;
                 """,
                 (
-                    act["id"],
+                    act.get("id"),
                     athlete_id,
-                    act["name"],
-                    act["start_date_local"],
-                    round(act["distance"] / 1609.34, 2),
-                    round(act["moving_time"] / 60, 2),
-                    round(
-                      round(act["moving_time"] / 60, 2)
-                      / round(act["distance"] / 1609.34, 2), 2
-                    ),
+                    act.get("name"),
+                    start_date,
+                    distance_mi,
+                    moving_time_min,
+                    pace,
                     json.dumps(act),
                 )
             )
@@ -107,6 +119,7 @@ def insert_activities(activities, athlete_id):
 @app.route("/")
 def home():
     return "🚂 Railway smoke test is live!"
+
 
 @app.route("/init-db")
 def init_db():
@@ -141,29 +154,32 @@ def init_db():
     conn.close()
     return jsonify({"initialized": True})
 
+
 @app.route("/debug-env")
 def debug_env():
     return jsonify({"DATABASE_URL": os.getenv("DATABASE_URL")})
 
+
 @app.route("/connect-strava")
 def connect_strava():
     """
-    Redirects the user to Strava’s OAuth page.
+    Redirect the user to Strava's OAuth consent page.
     """
     params = {
-        "client_id":     CLIENT_ID,
-        "redirect_uri":  REDIRECT_URI,
-        "response_type": "code",
+        "client_id":       CLIENT_ID,
+        "redirect_uri":    REDIRECT_URI,
+        "response_type":   "code",
         "approval_prompt": "force",
-        "scope":         "activity:read,activity:write"
+        "scope":           "activity:read,activity:write"
     }
     url = f"https://www.strava.com/oauth/authorize?{requests.compat.urlencode(params)}"
     return redirect(url)
 
+
 @app.route("/oauth/callback")
 def oauth_callback():
     """
-    Handles the redirect back from Strava, exchanges code for tokens, saves them.
+    Handle Strava redirect, exchange code for tokens, then save.
     """
     code = request.args.get("code")
     if not code:
@@ -214,9 +230,10 @@ def get_latest_run(athlete_id):
 
 @app.route("/sync-strava-to-db/<int:athlete_id>")
 def sync_strava_to_db(athlete_id):
-    # optional auth via ?key=… for cron runs
-    if request.args.get("key") and request.args.get("key") != CRON_SECRET_KEY:
-        return "Unauthorized", 401
+    # Optionally require a cron key
+    key = request.args.get("key")
+    if CRON_SECRET_KEY and key != CRON_SECRET_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
 
     token = get_valid_access_token(athlete_id)
     r = requests.get(
@@ -249,10 +266,7 @@ def enrich_activities(athlete_id):
     token = get_valid_access_token(athlete_id)
     conn = get_db_connection()
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT activity_id FROM activities WHERE athlete_id=%s",
-            (athlete_id,)
-        )
+        cur.execute("SELECT activity_id FROM activities WHERE athlete_id=%s", (athlete_id,))
         ids = [r[0] for r in cur.fetchall()]
     conn.close()
 
@@ -312,33 +326,29 @@ def export_activities(athlete_id):
 
     buf = BytesIO()
     if fmt == "xlsx":
-        with pd.ExcelWriter(buf, engine="openpyxl") as w:
-            df.to_excel(w, index=False)
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False)
         mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        download_name = "activities.xlsx"
+        filename = "activities.xlsx"
     else:
         df.to_csv(buf, index=False)
         mimetype = "text/csv"
-        download_name = "activities.csv"
+        filename = "activities.csv"
 
     buf.seek(0)
-    return send_file(buf, as_attachment=True, download_name=download_name, mimetype=mimetype)
+    return send_file(buf, as_attachment=True, download_name=filename, mimetype=mimetype)
 
 
 @app.route("/cron-status/<int:athlete_id>")
 def cron_status(athlete_id):
     conn = get_db_connection()
     with conn.cursor() as cur:
-        cur.execute("""
-            SELECT MAX(start_date) FROM activities WHERE athlete_id = %s
-        """, (athlete_id,))
+        cur.execute("SELECT MAX(start_date) FROM activities WHERE athlete_id = %s", (athlete_id,))
         last_synced = cur.fetchone()[0]
-
         cur.execute("""
             SELECT MAX(start_date)
             FROM activities
-            WHERE athlete_id = %s
-              AND (data->>'average_heartrate') IS NOT NULL
+            WHERE athlete_id = %s AND (data->>'average_heartrate') IS NOT NULL
         """, (athlete_id,))
         last_enriched = cur.fetchone()[0]
     conn.close()
