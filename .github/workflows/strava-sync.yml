@@ -2,7 +2,7 @@ name: Sync Strava Every 6 Hours (Sandbox)
 
 on:
   schedule:
-    - cron: '0 */6 * * *'      # every 6 hours UTC
+    - cron: '*/5 * * * *'    #- cron: '0 */6 * * *'      # every 6 hours UTC
   workflow_dispatch:          # manual trigger
 
 jobs:
