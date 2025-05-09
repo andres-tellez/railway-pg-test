@@ -18,6 +18,39 @@ logging.basicConfig(level=logging.INFO)
 def home():
     return "🚂 Railway smoke test is live!"
 
+@app.route("/init-db")
+def init_db():
+    """
+    Create the tokens and activities tables if they don't exist.
+    """
+    ddl_tokens = """
+    CREATE TABLE IF NOT EXISTS tokens (
+      athlete_id   BIGINT PRIMARY KEY,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      updated_at   TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+    ddl_activities = """
+    CREATE TABLE IF NOT EXISTS activities (
+      activity_id        BIGINT      PRIMARY KEY,
+      athlete_id         BIGINT      NOT NULL,
+      name               TEXT        NOT NULL,
+      start_date         TIMESTAMP   NOT NULL,
+      distance_mi        REAL        NOT NULL,
+      moving_time_min    REAL        NOT NULL,
+      pace_min_per_mile  REAL        NOT NULL,
+      data               JSONB       NOT NULL
+    );
+    """
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute(ddl_tokens)
+        cur.execute(ddl_activities)
+    conn.commit()
+    conn.close()
+    return jsonify({"initialized": True})
+
 @app.route("/test-db")
 def test_db():
     conn = get_conn()
