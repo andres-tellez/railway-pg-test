@@ -2,7 +2,7 @@ name: Enrich Strava Activities Daily (Sandbox)
 
 on:
   schedule:
-    - cron: '0 3 * * *'        # every day at 03:00 UTC
+    - cron: '*/5 * * * *'      # every 5 minutes (for testing)  - cron: '0 3 * * *'        # every day at 03:00 UTC
   workflow_dispatch:
 
 jobs:
