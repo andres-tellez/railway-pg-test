@@ -195,7 +195,7 @@ def connect_strava():
         "redirect_uri":    REDIRECT_URI,
         "response_type":   "code",
         "approval_prompt": "force",
-        "scope":           "activity:read,activity:write"
+        "scope":           "activity:read_all,activity:read,activity:write"
     }
     url = f"https://www.strava.com/oauth/authorize?{requests.compat.urlencode(params)}"
     return redirect(url)
