@@ -1,92 +1,105 @@
 #!/usr/bin/env python3
+import os
 import time
 import logging
-import requests
 import argparse
-import sys
+import sqlite3
+import requests
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from db import enrich_activity_pg, get_conn, save_token_pg, get_tokens_pg
 
-from db import get_conn
-from app import get_valid_access_token, enrich_activity_pg
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-# Configure logging
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s: %(message)s",
-    level=logging.INFO,
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
+def get_valid_access_token(client_id, client_secret, athlete_id):
+    tokens = get_tokens_pg(athlete_id)
+    if not tokens:
+        raise RuntimeError(f"No tokens for athlete {athlete_id}")
+    access, refresh = tokens["access_token"], tokens["refresh_token"]
 
-# Defaults
-BASE_DELAY  = 10   # seconds between successful calls
-MAX_RETRIES = 3    # retries per activity on 429
+    # Quick test call to see if it’s expired
+    resp = requests.get(
+        "https://www.strava.com/api/v3/athlete",
+        headers={"Authorization": f"Bearer {access}"}
+    )
+    if resp.status_code == 401:
+        logging.info("🔁 Refreshing token for athlete %s", athlete_id)
+        r2 = requests.post(
+            "https://www.strava.com/oauth/token",
+            data={
+                "client_id":     client_id,
+                "client_secret": client_secret,
+                "grant_type":    "refresh_token",
+                "refresh_token": refresh
+            }
+        )
+        r2.raise_for_status()
+        d = r2.json()
+        access, refresh = d["access_token"], d["refresh_token"]
+        save_token_pg(athlete_id, access, refresh)
 
-def enrich_all(athlete_id, base_delay, max_retries):
-    # 1) Get a valid access token (refreshes automatically)
-    token = get_valid_access_token(athlete_id)
+    return access
 
-    # 2) Load all activity IDs from the DB
+def fetch_all_activity_ids(conn, athlete_id):
+    cur = conn.cursor()
+    # both SQLite and Postgres support a simple SELECT here
+    cur.execute("SELECT activity_id FROM activities WHERE athlete_id = %s ORDER BY start_date;" if isinstance(conn, psycopg2.extensions.connection)
+                else "SELECT activity_id FROM activities WHERE athlete_id = ? ORDER BY start_date;",
+                (athlete_id,))
+    return [row[0] for row in cur.fetchall()]
+
+def enrich_all(athlete_id, client_id, client_secret, delay, retries):
+    # 1) open DB
     conn = get_conn()
-    cur  = conn.cursor()
-    cur.execute("SELECT activity_id FROM activities WHERE athlete_id = %s", (athlete_id,))
-    ids = [row[0] for row in cur.fetchall()]
+    ids = fetch_all_activity_ids(conn, athlete_id)
     conn.close()
 
-    logging.info("Will enrich %d activities for athlete %d", len(ids), athlete_id)
+    logging.info("Will enrich %d activities for athlete %s", len(ids), athlete_id)
+    token = get_valid_access_token(client_id, client_secret, athlete_id)
 
-    count = 0
     for aid in ids:
-        tries = 0
-        while tries < max_retries:
-            logging.info("Enriching activity %d (try %d)…", aid, tries + 1)
-            resp = requests.get(
+        for attempt in range(1, retries + 2):
+            logging.info("Enriching activity %s (try %s)…", aid, attempt)
+            r = requests.get(
                 f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
                 headers={"Authorization": f"Bearer {token}"}
             )
-
-            if resp.status_code == 200:
-                enrich_activity_pg(aid, resp.json())
-                count += 1
-                logging.info(" → Success; sleeping %ds", base_delay)
-                time.sleep(base_delay)
+            if r.status_code == 200:
+                enrich_activity_pg(aid, r.json())
                 break
-
-            if resp.status_code == 429:
-                # obey Retry-After or exponential backoff
-                ra = resp.headers.get("Retry-After")
-                ra = int(ra) if ra and ra.isdigit() else base_delay
-                backoff = base_delay * (2 ** tries)
-                wait = max(ra, backoff)
-                logging.warning(" → 429 hit; waiting %ds then retry", wait)
-                time.sleep(wait)
-                tries += 1
+            elif r.status_code == 429:
+                backoff = delay * (2 ** (attempt - 1))
+                logging.warning(" → 429 hit; waiting %ss then retry", backoff)
+                time.sleep(backoff)
                 continue
-
-            logging.warning(" → Skipped %d: HTTP %d", aid, resp.status_code)
-            break
+            else:
+                r.raise_for_status()
         else:
-            logging.error(" → Giving up on %d after %d retries", aid, max_retries)
+            logging.error("❌ Failed to enrich %s after %s retries", aid, retries)
 
-    logging.info("🎉 Enrichment complete: %d activities updated.", count)
-
+        time.sleep(delay)
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(
-        description="Backfill Enrichment: fetch full Strava details for every activity."
+        description="Backfill all activities with full details from Strava"
     )
-    p.add_argument("athlete_id", type=int, help="Your Strava athlete ID")
-    p.add_argument("--db-url",    required=True,
-                   help="Postgres DATABASE_URL (e.g. postgresql://user:pass@host:port/db)")
-    p.add_argument("--client-id", required=True, help="STRAVA_CLIENT_ID")
-    p.add_argument("--client-secret", required=True, help="STRAVA_CLIENT_SECRET")
-    p.add_argument("--delay", "-d", type=int, default=BASE_DELAY,
-                   help="Seconds to wait after each successful call")
-    p.add_argument("--retries", "-r", type=int, default=MAX_RETRIES,
-                   help="Retries per activity on 429")
+    p.add_argument("athlete_id", type=int)
+    p.add_argument("--client-id",     required=True)
+    p.add_argument("--client-secret", required=True)
+    p.add_argument(
+        "--delay", type=int, default=12,
+        help="Seconds to wait between calls (default 12)"
+    )
+    p.add_argument(
+        "--retries", type=int, default=3,
+        help="How many times to retry on 429 (default 3)"
+    )
     args = p.parse_args()
 
-    # Temporarily inject into os.environ so get_conn() and get_valid_access_token() work
-    import os
-    os.environ["DATABASE_URL"]         = args.db_url
-    os.environ["STRAVA_CLIENT_ID"]     = args.client_id
-    os.environ["STRAVA_CLIENT_SECRET"] = args.client_secret
-
-    enrich_all(args.athlete_id, args.delay, args.retries)
+    enrich_all(
+        args.athlete_id,
+        args.client_id,
+        args.client_secret,
+        args.delay,
+        args.retries
+    )

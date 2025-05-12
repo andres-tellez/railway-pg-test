@@ -10,35 +10,26 @@ from typing import Dict, Optional, List
 if os.getenv("FLASK_ENV") == "development":
     load_dotenv()
 
+import os
+import sqlite3
+import psycopg2
+
 def get_conn():
-    """
-    Try DATABASE_URL first; otherwise fall back to the individual host/user/password vars
-    (handling both PG* and POSTGRES_* naming conventions).
-    """
+    # LOCAL DEV: use SQLite
+    if os.getenv("FLASK_ENV") == "development":
+        conn = sqlite3.connect("dev.sqlite3")
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    # PRODUCTION: use the DATABASE_URL Railway injects
     db_url = os.getenv("DATABASE_URL")
-    if db_url:
-        return psycopg2.connect(db_url, sslmode="require")
+    if not db_url:
+        raise RuntimeError("DATABASE_URL is not set in production!")
+    conn = psycopg2.connect(db_url, sslmode="require")
+    with conn.cursor() as cur:
+        cur.execute("SET search_path TO public;")
+    return conn
 
-    # support both PG* and POSTGRES_* env var names
-    host     = os.getenv("PGHOST")      or os.getenv("POSTGRES_HOST")
-    port     = os.getenv("PGPORT")      or os.getenv("POSTGRES_PORT")
-    dbname   = os.getenv("PGDATABASE")  or os.getenv("POSTGRES_DB")
-    user     = os.getenv("PGUSER")      or os.getenv("POSTGRES_USER")
-    password = os.getenv("PGPASSWORD")  or os.getenv("POSTGRES_PASSWORD")
-
-    if not all([host, port, dbname, user, password]):
-        raise RuntimeError(
-            "No DATABASE_URL and missing one of PGHOST/POSTGRES_HOST etc!"
-        )
-
-    return psycopg2.connect(
-        host     = host,
-        port     = port,
-        dbname   = dbname,
-        user     = user,
-        password = password,
-        sslmode  = "require",
-    )
 
 
 def save_token_pg(athlete_id: int, access_token: str, refresh_token: str) -> None:
