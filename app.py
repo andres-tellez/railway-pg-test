@@ -439,3 +439,13 @@ def export_activities(athlete_id):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+
+
+@app.route("/admin/drop-mile-splits", methods=["POST"])
+def drop_mile_splits():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DROP TABLE IF EXISTS public.mile_splits;")
+    conn.commit()
+    conn.close()
+    return jsonify(dropped=True)
