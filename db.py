@@ -12,25 +12,33 @@ if os.getenv("FLASK_ENV") == "development":
 
 def get_conn():
     """
-    Establish a connection to Postgres via DATABASE_URL if present,
-    otherwise via the individual PGHOST/PGUSER/PGPASSWORD/PGDATABASE/PGPORT vars.
+    Try DATABASE_URL first; otherwise fall back to the individual host/user/password vars
+    (handling both PG* and POSTGRES_* naming conventions).
     """
     db_url = os.getenv("DATABASE_URL")
     if db_url:
         return psycopg2.connect(db_url, sslmode="require")
 
-    # fallback to separate Railway-provided vars
+    # support both PG* and POSTGRES_* env var names
+    host     = os.getenv("PGHOST")      or os.getenv("POSTGRES_HOST")
+    port     = os.getenv("PGPORT")      or os.getenv("POSTGRES_PORT")
+    dbname   = os.getenv("PGDATABASE")  or os.getenv("POSTGRES_DB")
+    user     = os.getenv("PGUSER")      or os.getenv("POSTGRES_USER")
+    password = os.getenv("PGPASSWORD")  or os.getenv("POSTGRES_PASSWORD")
+
+    if not all([host, port, dbname, user, password]):
+        raise RuntimeError(
+            "No DATABASE_URL and missing one of PGHOST/POSTGRES_HOST etc!"
+        )
+
     return psycopg2.connect(
-        host     = os.getenv("PGHOST"),
-        port     = os.getenv("PGPORT"),
-        dbname   = os.getenv("PGDATABASE"),
-        user     = os.getenv("PGUSER"),
-        password = os.getenv("PGPASSWORD"),
+        host     = host,
+        port     = port,
+        dbname   = dbname,
+        user     = user,
+        password = password,
         sslmode  = "require",
     )
-
-
-
 
 
 def save_token_pg(athlete_id: int, access_token: str, refresh_token: str) -> None:
