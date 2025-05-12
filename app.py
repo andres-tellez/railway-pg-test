@@ -443,8 +443,15 @@ if __name__ == "__main__":
 
 @app.route("/admin/drop-mile-splits", methods=["POST"])
 def drop_mile_splits():
+    # simple key check, same as sync endpoint
+    key = request.args.get("key")
+    if CRON_SECRET_KEY and key != CRON_SECRET_KEY:
+        return jsonify(error="Unauthorized"), 401
+
     conn = get_db_connection()
     cur = conn.cursor()
+    # Drop the unwanted table
+    # For Postgres:
     cur.execute("DROP TABLE IF EXISTS public.mile_splits;")
     conn.commit()
     conn.close()
