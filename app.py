@@ -2,9 +2,14 @@ import os
 import json
 import logging
 import requests
+import sqlite3
 from io import BytesIO
 
+import csv
+
 import pandas as pd
+
+
 from flask import Flask, redirect, request, jsonify, send_file
 from psycopg2.extras import RealDictCursor
 
@@ -62,31 +67,56 @@ def get_valid_access_token(athlete_id):
 
 def insert_activities(activities, athlete_id):
     conn = get_db_connection()
-    cur  = conn.cursor()
+    cur = conn.cursor()
+    is_sqlite = isinstance(conn, sqlite3.Connection)
+
+    # If SQLite, ensure the table exists
+    if is_sqlite:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS activities (
+              activity_id INTEGER PRIMARY KEY,
+              athlete_id INTEGER NOT NULL,
+              name TEXT NOT NULL,
+              start_date TEXT NOT NULL,
+              distance_mi REAL NOT NULL,
+              moving_time_min REAL NOT NULL,
+              pace_min_per_mile REAL NOT NULL,
+              data TEXT NOT NULL
+            );
+        """)
+
     for a in activities:
         start = a.get("start_date_local") or a.get("start_date")
         if not start:
             continue
-
         dist = a.get("distance", 0)
-        mt   = a.get("moving_time", 0)
-        dmi  = round(dist / 1609.34, 2) if dist else 0
-        mtm  = round(mt   /   60,   2) if mt   else 0
-        pace = round(mtm / dmi, 2)   if (dmi and mtm) else 0
-
-        cur.execute(
-            """
-            INSERT INTO activities (
-              activity_id, athlete_id, name, start_date,
-              distance_mi, moving_time_min, pace_min_per_mile, data
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (activity_id) DO NOTHING;
-            """,
-            (
-                a["id"], athlete_id, a["name"], start,
-                dmi, mtm, pace, json.dumps(a)
-            )
+        mt = a.get("moving_time", 0)
+        dmi = round(dist / 1609.34, 2) if dist else 0
+        mtm = round(mt / 60, 2) if mt else 0
+        pace = round(mtm / dmi, 2) if (dmi and mtm) else 0
+        payload = (
+            a["id"], athlete_id, a.get("name"), start,
+            dmi, mtm, pace, json.dumps(a)
         )
+
+        if is_sqlite:
+            # SQLite uses ? placeholders and INSERT OR IGNORE
+            cur.execute("""
+                INSERT OR IGNORE INTO activities (
+                  activity_id, athlete_id, name, start_date,
+                  distance_mi, moving_time_min, pace_min_per_mile, data
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+            """, payload)
+        else:
+            # Postgres/psycopg2 uses %s placeholders
+            cur.execute("""
+                INSERT INTO activities (
+                  activity_id, athlete_id, name, start_date,
+                  distance_mi, moving_time_min, pace_min_per_mile, data
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (activity_id) DO NOTHING;
+            """, payload)
+
     conn.commit()
     conn.close()
 
@@ -262,14 +292,28 @@ def get_activities(athlete_id):
 
 @app.route("/enrich-activities/<int:athlete_id>")
 def enrich_activities(athlete_id):
-    token = get_valid_access_token(athlete_id)
-    conn  = get_db_connection()
-    cur   = conn.cursor()
-    cur.execute("SELECT activity_id FROM activities WHERE athlete_id = %s", (athlete_id,))
-    ids = [r[0] for r in cur.fetchall()]
+    # Determine if we’re on SQLite (dev) or Postgres (prod)
+    conn = get_db_connection()
+    is_sqlite = isinstance(conn, sqlite3.Connection)
+    cur = conn.cursor()
+
+    # Fetch all activity IDs for this athlete
+    if is_sqlite:
+        cur.execute(
+            "SELECT activity_id FROM activities WHERE athlete_id = ?",
+            (athlete_id,)
+        )
+    else:
+        cur.execute(
+            "SELECT activity_id FROM activities WHERE athlete_id = %s",
+            (athlete_id,)
+        )
+
+    ids = [row[0] for row in cur.fetchall()]
     conn.close()
 
     count = 0
+    token = get_valid_access_token(athlete_id)
     for aid in ids:
         rr = requests.get(
             f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
@@ -285,84 +329,112 @@ def enrich_activities(athlete_id):
 @app.route("/metrics/<int:athlete_id>")
 def get_metrics(athlete_id):
     conn = get_db_connection()
-    cur  = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute(
-        """
-        SELECT activity_id, name, start_date,
-               distance_mi, pace_min_per_mile,
-               (data->>'average_heartrate')::FLOAT AS avg_hr,
-               (data->>'max_heartrate')::FLOAT     AS max_hr,
-               (data->>'average_cadence')::FLOAT    AS cadence,
-               (data->>'total_elevation_gain')::FLOAT AS elevation
-        FROM activities
-        WHERE athlete_id = %s
-        ORDER BY start_date DESC
-        """,
-        (athlete_id,)
-    )
-    rows = cur.fetchall()
+    is_sqlite = isinstance(conn, sqlite3.Connection)
+    if is_sqlite:
+        cur = conn.cursor()
+        # Run SQLite-compatible query (store JSON as TEXT)
+        cur.execute(
+            """
+            SELECT activity_id, name, start_date,
+                   distance_mi, pace_min_per_mile,
+                   json_extract(data, '$.average_heartrate') AS avg_hr,
+                   json_extract(data, '$.max_heartrate')     AS max_hr,
+                   json_extract(data, '$.average_cadence')    AS cadence,
+                   json_extract(data, '$.total_elevation_gain') AS elevation
+            FROM activities
+            WHERE athlete_id = ?
+            ORDER BY start_date DESC
+            """, (athlete_id,)
+        )
+        rows = [dict(zip([c[0] for c in cur.description], r)) for r in cur.fetchall()]
+    else:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """
+            SELECT activity_id, name, start_date,
+                   distance_mi, pace_min_per_mile,
+                   (data->>'average_heartrate')::FLOAT AS avg_hr,
+                   (data->>'max_heartrate')::FLOAT     AS max_hr,
+                   (data->>'average_cadence')::FLOAT    AS cadence,
+                   (data->>'total_elevation_gain')::FLOAT AS elevation
+            FROM activities
+            WHERE athlete_id = %s
+            ORDER BY start_date DESC
+            """, (athlete_id,)
+        )
+        rows = cur.fetchall()
     conn.close()
     return jsonify(rows)
 
 
+
 @app.route("/export/<int:athlete_id>")
 def export_activities(athlete_id):
-    fmt  = request.args.get("format", "csv")
+    fmt = request.args.get("format", "csv").lower()
     conn = get_db_connection()
-    cur  = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute(
-        """
-        SELECT activity_id, name, start_date,
-               distance_mi, pace_min_per_mile,
-               (data->>'average_heartrate')::FLOAT AS avg_hr,
-               (data->>'max_heartrate')::FLOAT     AS max_hr,
-               (data->>'average_cadence')::FLOAT    AS cadence,
-               (data->>'total_elevation_gain')::FLOAT AS elevation
-        FROM activities
-        WHERE athlete_id = %s
-        ORDER BY start_date DESC
-        """,
-        (athlete_id,)
-    )
-    df = pd.DataFrame(cur.fetchall())
+    is_sqlite = isinstance(conn, sqlite3.Connection)
+
+    # Retrieve data
+    if is_sqlite:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT activity_id, name, start_date,
+                   distance_mi,
+                   pace_min_per_mile,
+                   json_extract(data, '$.average_heartrate') AS avg_hr,
+                   json_extract(data, '$.max_heartrate')     AS max_hr,
+                   json_extract(data, '$.average_cadence')    AS cadence,
+                   json_extract(data, '$.total_elevation_gain') AS elevation
+            FROM activities
+            WHERE athlete_id = ?
+            ORDER BY start_date DESC
+            """, (athlete_id,)
+        )
+        columns = [c[0] for c in cur.description]
+        rows = [dict(zip(columns, row)) for row in cur.fetchall()]
+    else:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """
+            SELECT activity_id, name, start_date,
+                   distance_mi,
+                   pace_min_per_mile,
+                   (data->>'average_heartrate')::FLOAT AS avg_hr,
+                   (data->>'max_heartrate')::FLOAT     AS max_hr,
+                   (data->>'average_cadence')::FLOAT    AS cadence,
+                   (data->>'total_elevation_gain')::FLOAT AS elevation
+            FROM activities
+            WHERE athlete_id = %s
+            ORDER BY start_date DESC
+            """, (athlete_id,)
+        )
+        columns = [desc[0] for desc in cur.description]
+        rows = cur.fetchall()
     conn.close()
 
-    buf = BytesIO()
-    if fmt.lower() == "xlsx":
-        with pd.ExcelWriter(buf, engine="openpyxl") as w:
-            df.to_excel(w, index=False)
+    # Prepare buffer
+    if fmt == "xlsx":
+        df = pd.DataFrame(rows)
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False)
+        buf.seek(0)
         mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        name     = "activities.xlsx"
+        name = "activities.xlsx"
     else:
-        df.to_csv(buf, index=False)
+        import io
+        text_buf = io.StringIO()
+        writer = csv.DictWriter(text_buf, fieldnames=columns)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        buf = BytesIO(text_buf.getvalue().encode('utf-8'))
         mimetype = "text/csv"
-        name     = "activities.csv"
+        name = "activities.csv"
 
-    buf.seek(0)
     return send_file(buf, as_attachment=True, download_name=name, mimetype=mimetype)
 
-
-@app.route("/cron-status/<int:athlete_id>")
-def cron_status(athlete_id):
-    conn = get_db_connection()
-    cur  = conn.cursor()
-    cur.execute("SELECT MAX(start_date) FROM activities WHERE athlete_id = %s", (athlete_id,))
-    last_synced   = cur.fetchone()[0]
-    cur.execute(
-        """
-        SELECT MAX(start_date) FROM activities
-        WHERE athlete_id = %s
-          AND (data->>'average_heartrate') IS NOT NULL
-        """,
-        (athlete_id,)
-    )
-    last_enriched = cur.fetchone()[0]
-    conn.close()
-
-    return jsonify(
-        last_synced   = last_synced.isoformat()   if last_synced   else None,
-        last_enriched = last_enriched.isoformat() if last_enriched else None
-    )
 
 
 if __name__ == "__main__":
