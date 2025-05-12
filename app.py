@@ -263,14 +263,20 @@ def sync_strava_to_db(athlete_id):
     if CRON_SECRET_KEY and key != CRON_SECRET_KEY:
         return jsonify(error="Unauthorized"), 401
 
+    # pagination
+    page     = int(request.args.get("page", 1))
+    per_page = int(request.args.get("per_page", 100))
+
     token = get_valid_access_token(athlete_id)
-    r     = requests.get(
+    r = requests.get(
         "https://www.strava.com/api/v3/athlete/activities",
+        params={"page": page, "per_page": per_page},
         headers={"Authorization": f"Bearer {token}"}
     )
     r.raise_for_status()
     insert_activities(r.json(), athlete_id)
-    return jsonify(synced=len(r.json()))
+    return jsonify(synced=len(r.json()), page=page, per_page=per_page)
+
 
 
 
