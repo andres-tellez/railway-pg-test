@@ -313,60 +313,6 @@ def get_activities(athlete_id):
 
 
 
-@app.route("/enrich-activities/<int:athlete_id>")
-def enrich_activities(athlete_id):
-    try:
-        # Determine if we’re on SQLite (dev) or Postgres (prod)
-        conn = get_db_connection()
-        is_sqlite = isinstance(conn, sqlite3.Connection)
-        cur = conn.cursor()
-
-        # Fetch all activity IDs for this athlete
-        if is_sqlite:
-            cur.execute(
-                "SELECT activity_id FROM activities WHERE athlete_id = ?",
-                (athlete_id,)
-            )
-        else:
-            cur.execute(
-                "SELECT activity_id FROM activities WHERE athlete_id = %s",
-                (athlete_id,)
-            )
-        ids = [row[0] for row in cur.fetchall()]
-        conn.close()
-
-        count = 0
-        token = get_valid_access_token(athlete_id)
-
-        MAX_RETRIES = 5
-        RETRY_DELAY = 10  # seconds
-
-        for aid in ids:
-            for attempt in range(1, MAX_RETRIES + 1):
-                rr = requests.get(
-                    f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
-                    headers={"Authorization": f"Bearer {token}"}
-                )
-                if rr.status_code == 200:
-                    enrich_activity_pg(aid, rr.json())
-                    count += 1
-                    break
-                elif rr.status_code == 429:
-                    wait = int(rr.headers.get("Retry-After", RETRY_DELAY))
-                    app.logger.warning(
-                        "Rate limit hit for %s (attempt %s/%s), sleeping %ss…",
-                        aid, attempt, MAX_RETRIES, wait
-                    )
-                    time.sleep(wait)
-                else:
-                    rr.raise_for_status()
-            else:
-                app.logger.error(
-                    "Failed to enrich %s after %s retries; skipping",
-                    aid, MAX_RETRIES
-                )
-
-        return jsonify(enriched=count)
 
     except Exception as e:
         logging.exception("❌ /enrich-activities failed")
@@ -374,6 +320,45 @@ def enrich_activities(athlete_id):
         return jsonify(error=str(e), traceback=tb), 500
 
 
+@app.route("/enrich-activities/<int:athlete_id>")
+def enrich_activities(athlete_id):
+    # parse pagination params
+    limit  = int(request.args.get("limit", 50))
+    offset = int(request.args.get("offset", 0))
+
+    conn    = get_db_connection()
+    cur     = conn.cursor()
+    is_sqlite = isinstance(conn, sqlite3.Connection)
+
+    # fetch only `limit` IDs starting at `offset`
+    if is_sqlite:
+        cur.execute(
+            "SELECT activity_id FROM activities WHERE athlete_id = ? ORDER BY activity_id LIMIT ? OFFSET ?",
+            (athlete_id, limit, offset)
+        )
+    else:
+        cur.execute(
+            "SELECT activity_id FROM activities WHERE athlete_id = %s ORDER BY activity_id LIMIT %s OFFSET %s",
+            (athlete_id, limit, offset)
+        )
+    ids = [r[0] for r in cur.fetchall()]
+    conn.close()
+
+    count = 0
+    token = get_valid_access_token(athlete_id)
+
+    for aid in ids:
+        # throttle 1s between calls so you don’t hit the short‐term limit
+        time.sleep(1)
+        rr = requests.get(
+            f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        rr.raise_for_status()
+        enrich_activity_pg(aid, rr.json())
+        count += 1
+
+    return jsonify(enriched=count, limit=limit, offset=offset)
 
 
 

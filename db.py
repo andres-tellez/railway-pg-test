@@ -5,6 +5,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from typing import Dict, Optional, List
+from urllib.parse import urlparse
 
 # Load .env when in development
 if os.getenv("FLASK_ENV") == "development":
@@ -14,18 +15,18 @@ import os
 import sqlite3
 import psycopg2
 
-def get_conn():
-    # LOCAL DEV: use SQLite
-    if os.getenv("FLASK_ENV") == "development":
-        conn = sqlite3.connect("dev.sqlite3")
-        conn.row_factory = sqlite3.Row
-        return conn
 
-    # PRODUCTION: use the DATABASE_URL Railway injects
+def get_conn():
+    if os.getenv("FLASK_ENV") == "development":
+        conn = sqlite3.connect("dev.sqlite3"); conn.row_factory = sqlite3.Row; return conn
+
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
-        raise RuntimeError("DATABASE_URL is not set in production!")
-    conn = psycopg2.connect(db_url, sslmode="require")
+        raise RuntimeError("DATABASE_URL is not set!")
+
+    parsed = urlparse(db_url)
+    ssl_mode = "disable" if parsed.hostname in ("localhost", "127.0.0.1") else "require"
+    conn = psycopg2.connect(db_url, sslmode=ssl_mode)
     with conn.cursor() as cur:
         cur.execute("SET search_path TO public;")
     return conn
