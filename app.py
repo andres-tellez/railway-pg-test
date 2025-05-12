@@ -9,6 +9,7 @@ from psycopg2.extras import RealDictCursor
 import csv
 import traceback
 import pandas as pd
+import time
 
 
 from flask import Flask, redirect, request, jsonify, send_file
