@@ -12,21 +12,26 @@ if os.getenv("FLASK_ENV") == "development":
 
 def get_conn():
     """
-    If DATABASE_URL is set, connect to Postgres; otherwise fall back to local SQLite.
+    Establish a connection to Postgres via DATABASE_URL if present,
+    otherwise via the individual PGHOST/PGUSER/PGPASSWORD/PGDATABASE/PGPORT vars.
     """
     db_url = os.getenv("DATABASE_URL")
-    if not db_url:
-        # Development‐mode: use SQLite
-        db_path = os.path.join(os.path.dirname(__file__), "dev.sqlite3")
-        conn = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
-        conn.row_factory = sqlite3.Row
-        return conn
+    if db_url:
+        return psycopg2.connect(db_url, sslmode="require")
 
-    # Production‐mode: Postgres
-    conn = psycopg2.connect(db_url, sslmode="require")
-    with conn.cursor() as cur:
-        cur.execute("SET search_path TO public;")
-    return conn
+    # fallback to separate Railway-provided vars
+    return psycopg2.connect(
+        host     = os.getenv("PGHOST"),
+        port     = os.getenv("PGPORT"),
+        dbname   = os.getenv("PGDATABASE"),
+        user     = os.getenv("PGUSER"),
+        password = os.getenv("PGPASSWORD"),
+        sslmode  = "require",
+    )
+
+
+
+
 
 def save_token_pg(athlete_id: int, access_token: str, refresh_token: str) -> None:
     conn = get_conn()

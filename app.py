@@ -4,6 +4,7 @@ import logging
 import requests
 import sqlite3
 from io import BytesIO
+from psycopg2.extras import RealDictCursor
 
 import csv
 
@@ -271,23 +272,44 @@ def sync_strava_to_db(athlete_id):
     return jsonify(synced=len(r.json()))
 
 
+
 @app.route("/activities/<int:athlete_id>")
 def get_activities(athlete_id):
     conn = get_db_connection()
-    cur  = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute(
-        """
-        SELECT activity_id, name, start_date,
-               distance_mi, pace_min_per_mile
-        FROM activities
-        WHERE athlete_id = %s
-        ORDER BY start_date DESC
-        """,
-        (athlete_id,)
-    )
-    rows = cur.fetchall()
+    is_sqlite = isinstance(conn, sqlite3.Connection)
+
+    if is_sqlite:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT activity_id, name, start_date,
+                   distance_mi, pace_min_per_mile
+            FROM activities
+            WHERE athlete_id = ?
+            ORDER BY start_date DESC
+            """,
+            (athlete_id,)
+        )
+        # build list of dicts
+        cols = [col[0] for col in cur.description]
+        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+    else:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """
+            SELECT activity_id, name, start_date,
+                   distance_mi, pace_min_per_mile
+            FROM activities
+            WHERE athlete_id = %s
+            ORDER BY start_date DESC
+            """,
+            (athlete_id,)
+        )
+        rows = cur.fetchall()
+
     conn.close()
     return jsonify(rows)
+
 
 
 @app.route("/enrich-activities/<int:athlete_id>")
