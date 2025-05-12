@@ -336,23 +336,42 @@ def enrich_activities(athlete_id):
 
         count = 0
         token = get_valid_access_token(athlete_id)
+
+        MAX_RETRIES = 5
+        RETRY_DELAY = 10  # seconds
+
         for aid in ids:
-            rr = requests.get(
-                f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
-                headers={"Authorization": f"Bearer {token}"}
-            )
-            rr.raise_for_status()
-            enrich_activity_pg(aid, rr.json())
-            count += 1
+            for attempt in range(1, MAX_RETRIES + 1):
+                rr = requests.get(
+                    f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+                if rr.status_code == 200:
+                    enrich_activity_pg(aid, rr.json())
+                    count += 1
+                    break
+                elif rr.status_code == 429:
+                    wait = int(rr.headers.get("Retry-After", RETRY_DELAY))
+                    app.logger.warning(
+                        "Rate limit hit for %s (attempt %s/%s), sleeping %ss…",
+                        aid, attempt, MAX_RETRIES, wait
+                    )
+                    time.sleep(wait)
+                else:
+                    rr.raise_for_status()
+            else:
+                app.logger.error(
+                    "Failed to enrich %s after %s retries; skipping",
+                    aid, MAX_RETRIES
+                )
 
         return jsonify(enriched=count)
 
     except Exception as e:
-        # Log it server-side
         logging.exception("❌ /enrich-activities failed")
-        # Return the error and full traceback to the client
         tb = traceback.format_exc()
         return jsonify(error=str(e), traceback=tb), 500
+
 
 
 
