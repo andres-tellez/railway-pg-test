@@ -435,12 +435,6 @@ def export_activities(athlete_id):
 
     return send_file(buf, as_attachment=True, download_name=name, mimetype=mimetype)
 
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
-
-
 @app.route("/admin/drop-mile-splits", methods=["POST"])
 def drop_mile_splits():
     # simple key check, same as sync endpoint
@@ -456,3 +450,9 @@ def drop_mile_splits():
     conn.commit()
     conn.close()
     return jsonify(dropped=True)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+
+
+
