@@ -7,7 +7,7 @@ from io import BytesIO
 from psycopg2.extras import RealDictCursor
 
 import csv
-
+import traceback
 import pandas as pd
 
 
@@ -314,38 +314,47 @@ def get_activities(athlete_id):
 
 @app.route("/enrich-activities/<int:athlete_id>")
 def enrich_activities(athlete_id):
-    # Determine if we’re on SQLite (dev) or Postgres (prod)
-    conn = get_db_connection()
-    is_sqlite = isinstance(conn, sqlite3.Connection)
-    cur = conn.cursor()
+    try:
+        # Determine if we’re on SQLite (dev) or Postgres (prod)
+        conn = get_db_connection()
+        is_sqlite = isinstance(conn, sqlite3.Connection)
+        cur = conn.cursor()
 
-    # Fetch all activity IDs for this athlete
-    if is_sqlite:
-        cur.execute(
-            "SELECT activity_id FROM activities WHERE athlete_id = ?",
-            (athlete_id,)
-        )
-    else:
-        cur.execute(
-            "SELECT activity_id FROM activities WHERE athlete_id = %s",
-            (athlete_id,)
-        )
+        # Fetch all activity IDs for this athlete
+        if is_sqlite:
+            cur.execute(
+                "SELECT activity_id FROM activities WHERE athlete_id = ?",
+                (athlete_id,)
+            )
+        else:
+            cur.execute(
+                "SELECT activity_id FROM activities WHERE athlete_id = %s",
+                (athlete_id,)
+            )
+        ids = [row[0] for row in cur.fetchall()]
+        conn.close()
 
-    ids = [row[0] for row in cur.fetchall()]
-    conn.close()
-
-    count = 0
-    token = get_valid_access_token(athlete_id)
-    for aid in ids:
-        rr = requests.get(
-            f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-        if rr.status_code == 200:
+        count = 0
+        token = get_valid_access_token(athlete_id)
+        for aid in ids:
+            rr = requests.get(
+                f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            rr.raise_for_status()
             enrich_activity_pg(aid, rr.json())
             count += 1
 
-    return jsonify(enriched=count)
+        return jsonify(enriched=count)
+
+    except Exception as e:
+        # Log it server-side
+        logging.exception("❌ /enrich-activities failed")
+        # Return the error and full traceback to the client
+        tb = traceback.format_exc()
+        return jsonify(error=str(e), traceback=tb), 500
+
+
 
 
 @app.route("/metrics/<int:athlete_id>")
