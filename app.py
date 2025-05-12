@@ -473,6 +473,23 @@ def drop_mile_splits():
     conn.close()
     return jsonify(dropped=True)
 
+
+@app.route("/test-db")
+def test_db():
+    from flask import current_app
+    try:
+        conn = get_db_connection()       # calls your get_conn() under the hood
+        cur = conn.cursor()
+        cur.execute("SELECT 1;")
+        val = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        return jsonify(db=val), 200
+    except Exception as e:
+        current_app.logger.exception("DB connectivity test failed")
+        return jsonify(error=str(e)), 500
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
 
