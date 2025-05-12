@@ -201,12 +201,159 @@ def debug_env():
     return jsonify(DATABASE_URL=os.getenv("DATABASE_URL"))
 
 
-@app.route("/connect-strava")
-def connect_strava():
-    params = {
-        "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
-        "response_type": "code",
-        "approval_prompt": "force",
-        "scope": "activity:read_all,activity:read,activity:write"
-    }```}]}
+@app.route("/enrich-activities/<int:athlete_id>")
+def enrich_activities(athlete_id):
+    # pagination parameters
+    limit  = int(request.args.get("limit", 50))
+    offset = int(request.args.get("offset", 0))
+
+    # fetch the slice of activity IDs
+    conn = get_db_connection()
+    cur  = conn.cursor()
+    is_sqlite = isinstance(conn, sqlite3.Connection)
+    if is_sqlite:
+        cur.execute(
+            "SELECT activity_id FROM activities WHERE athlete_id = ? ORDER BY activity_id LIMIT ? OFFSET ?",
+            (athlete_id, limit, offset)
+        )
+    else:
+        cur.execute(
+            "SELECT activity_id FROM activities WHERE athlete_id = %s ORDER BY activity_id LIMIT %s OFFSET %s",
+            (athlete_id, limit, offset)
+        )
+    ids = [r[0] for r in cur.fetchall()]
+    conn.close()
+
+    # enrich each one
+    token = get_valid_access_token(athlete_id)
+    count = 0
+    for aid in ids:
+        time.sleep(1.5)  # throttle to avoid Strava rate‐limit
+        resp = requests.get(
+            f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        resp.raise_for_status()
+        enrich_activity_pg(aid, resp.json())
+        count += 1
+
+    return jsonify(enriched=count, limit=limit, offset=offset)
+
+
+@app.route("/metrics/<int:athlete_id>")
+def get_metrics(athlete_id):
+    conn = get_db_connection()
+    is_sqlite = isinstance(conn, sqlite3.Connection)
+
+    if is_sqlite:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+              activity_id, name, start_date,
+              distance_mi, pace_min_per_mile,
+              json_extract(data, '$.average_heartrate') AS avg_hr,
+              json_extract(data, '$.max_heartrate')     AS max_hr,
+              json_extract(data, '$.average_cadence')    AS cadence,
+              json_extract(data, '$.total_elevation_gain') AS elevation
+            FROM activities
+            WHERE athlete_id = ?
+            ORDER BY start_date DESC
+            """,
+            (athlete_id,)
+        )
+        rows = [
+            dict(zip([c[0] for c in cur.description], r))
+            for r in cur.fetchall()
+        ]
+    else:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """
+            SELECT
+              activity_id, name, start_date,
+              distance_mi, pace_min_per_mile,
+              (data->>'average_heartrate')::FLOAT AS avg_hr,
+              (data->>'max_heartrate')::FLOAT     AS max_hr,
+              (data->>'average_cadence')::FLOAT    AS cadence,
+              (data->>'total_elevation_gain')::FLOAT AS elevation
+            FROM activities
+            WHERE athlete_id = %s
+            ORDER BY start_date DESC
+            """,
+            (athlete_id,)
+        )
+        rows = cur.fetchall()
+
+    conn.close()
+    return jsonify(rows)
+
+
+@app.route("/export/<int:athlete_id>")
+def export_activities(athlete_id):
+    fmt = request.args.get("format", "csv").lower()
+    conn = get_db_connection()
+    is_sqlite = isinstance(conn, sqlite3.Connection)
+
+    # Load the same metrics query
+    if is_sqlite:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+              activity_id, name, start_date,
+              distance_mi, pace_min_per_mile,
+              json_extract(data, '$.average_heartrate') AS avg_hr,
+              json_extract(data, '$.max_heartrate')     AS max_hr,
+              json_extract(data, '$.average_cadence')    AS cadence,
+              json_extract(data, '$.total_elevation_gain') AS elevation
+            FROM activities
+            WHERE athlete_id = ?
+            ORDER BY start_date DESC
+            """,
+            (athlete_id,)
+        )
+        columns = [c[0] for c in cur.description]
+        rows    = [dict(zip(columns, row)) for row in cur.fetchall()]
+    else:
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            """
+            SELECT
+              activity_id, name, start_date,
+              distance_mi, pace_min_per_mile,
+              (data->>'average_heartrate')::FLOAT AS avg_hr,
+              (data->>'max_heartrate')::FLOAT     AS max_hr,
+              (data->>'average_cadence')::FLOAT    AS cadence,
+              (data->>'total_elevation_gain')::FLOAT AS elevation
+            FROM activities
+            WHERE athlete_id = %s
+            ORDER BY start_date DESC
+            """,
+            (athlete_id,)
+        )
+        columns = [desc[0] for desc in cur.description]
+        rows    = cur.fetchall()
+
+    conn.close()
+
+    buf, name, mimetype = None, None, None
+    if fmt == "xlsx":
+        df = pd.DataFrame(rows)
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as w:
+            df.to_excel(w, index=False)
+        buf.seek(0)
+        name     = "activities.xlsx"
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        text_buf = io.StringIO()
+        writer   = csv.DictWriter(text_buf, fieldnames=columns)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+        buf      = BytesIO(text_buf.getvalue().encode("utf-8"))
+        name     = "activities.csv"
+        mimetype = "text/csv"
+
+    return send_file(buf, as_attachment=True, download_name=name, mimetype=mimetype)
