@@ -201,15 +201,14 @@ def debug_env():
     return jsonify(DATABASE_URL=os.getenv("DATABASE_URL"))
 
 
+
 @app.route("/enrich-activities/<int:athlete_id>")
 def enrich_activities(athlete_id):
-    # pagination parameters
     limit  = int(request.args.get("limit", 50))
     offset = int(request.args.get("offset", 0))
 
-    # fetch the slice of activity IDs
-    conn = get_db_connection()
-    cur  = conn.cursor()
+    conn      = get_db_connection()
+    cur       = conn.cursor()
     is_sqlite = isinstance(conn, sqlite3.Connection)
     if is_sqlite:
         cur.execute(
@@ -224,20 +223,37 @@ def enrich_activities(athlete_id):
     ids = [r[0] for r in cur.fetchall()]
     conn.close()
 
-    # enrich each one
     token = get_valid_access_token(athlete_id)
     count = 0
+
     for aid in ids:
-        time.sleep(1.5)  # throttle to avoid Strava rate‐limit
-        resp = requests.get(
-            f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-        resp.raise_for_status()
-        enrich_activity_pg(aid, resp.json())
-        count += 1
+        # throttle to avoid spiky bursts
+        time.sleep(1.5)
+
+        # attempt up to 3 times on 429
+        for attempt in range(1, 4):
+            resp = requests.get(
+                f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            if resp.status_code == 429:
+                wait = 10 * attempt  # exponential-ish backoff
+                logging.warning(
+                    "⚠️ Hit 429 on %s (attempt %d). Sleeping %ds",
+                    aid, attempt, wait
+                )
+                time.sleep(wait)
+                continue
+            resp.raise_for_status()
+            enrich_activity_pg(aid, resp.json())
+            count += 1
+            break
+        else:
+            logging.error("❌ Skipping %s after 3 failed attempts (429)", aid)
 
     return jsonify(enriched=count, limit=limit, offset=offset)
+
+
 
 
 @app.route("/metrics/<int:athlete_id>")
@@ -357,3 +373,8 @@ def export_activities(athlete_id):
         mimetype = "text/csv"
 
     return send_file(buf, as_attachment=True, download_name=name, mimetype=mimetype)
+
+
+if __name__ == "__main__":
+    # debug=True will auto-reload on changes
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=True)
