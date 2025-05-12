@@ -355,7 +355,7 @@ def enrich_activities(athlete_id):
 
     for aid in ids:
         # throttle 1s between calls so you don’t hit the short‐term limit
-        time.sleep(1)
+        time.sleep(1.5)  # throttle to 600 calls per 15 min
         rr = requests.get(
             f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
             headers={"Authorization": f"Bearer {token}"}
