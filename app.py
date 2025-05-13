@@ -1,4 +1,10 @@
-import os
+import os, sys
+print(f"\n▶️ Loading app.py from: {__file__!r}")
+print(f"▶️ Current working dir: {os.getcwd()!r}\n", file=sys.stdout)
+
+
+
+
 import json
 import logging
 import requests
@@ -168,17 +174,6 @@ def debug_env():
     return jsonify(DATABASE_URL=os.getenv("DATABASE_URL"))
 
 
-@app.route("/connect-strava")
-def connect_strava():
-    params = {
-      "client_id":CLIENT_ID,
-      "redirect_uri":REDIRECT_URI,
-      "response_type":"code",
-      "approval_prompt":"force",
-      "scope":"activity:read,activity:write"
-    }
-    url = f"https://www.strava.com/oauth/authorize?{requests.compat.urlencode(params)}"
-    return redirect(url)
 
 
 @app.route("/oauth/callback")
@@ -317,6 +312,35 @@ def cron_status(athlete_id):
       last_synced=last_synced.isoformat() if last_synced else None,
       last_enriched=last_enriched.isoformat() if last_enriched else None
     )
+
+
+@app.route("/connect-strava")
+def connect_strava():
+    print("🔥 connect_strava() ENTERED")      # ← add this
+    app.logger.info("▶️  connect_strava() invoked")
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "approval_prompt": "force",
+        "scope": "activity:read,activity:write"
+    }
+    url = f"https://www.strava.com/oauth/authorize?{requests.compat.urlencode(params)}"
+    return redirect(url)
+
+
+@app.route("/test-connect")
+def test_connect():
+    print("🧪 test_connect() invoked")
+    return "Test endpoint OK", 200
+
+# ─── DEBUG: list all registered routes ───
+import sys
+print("\nRegistered routes:")
+for rule in app.url_map.iter_rules():
+    print(f" • {rule.rule}")
+print("────────────────────\n", file=sys.stdout)
+
 
 
 if __name__=="__main__":
