@@ -4,10 +4,6 @@ name: Create Roadmap Issues
 on:
   workflow_dispatch:
 
-# Explicitly require issue‐write permission
-permissions:
-  issues: write
-
 jobs:
   create_issues:
     runs-on: ubuntu-latest
