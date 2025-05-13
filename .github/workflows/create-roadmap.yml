@@ -17,7 +17,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           # Use the PAT you stored as an Actions secret
-          github-token: ${{ secrets.REPOSECRET }}
+          github-token: ${{ secrets.GITHUB_TOKEN  }}
           script: |
             // Define your 15 roadmap titles and bodies
             const items = [
