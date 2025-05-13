@@ -28,7 +28,7 @@ def save_token_pg(athlete_id: int, access_token: str, refresh_token: str) -> Non
                 INSERT INTO tokens (athlete_id, access_token, refresh_token)
                 VALUES (%s, %s, %s)
                 ON CONFLICT (athlete_id)
-                  DO UPDATE SET
+                DO UPDATE SET
                     access_token = EXCLUDED.access_token,
                     refresh_token = EXCLUDED.refresh_token,
                     updated_at = CURRENT_TIMESTAMP;
@@ -55,18 +55,17 @@ def save_activity_pg(activity: Dict) -> None:
 
         distance_mi     = round(distance_m / 1609.34, 2) if distance_m else 0
         moving_time_min = round(moving_s   / 60,     2) if moving_s   else 0
-        pace            = round(moving_time_min / distance_mi, 2) \
-                          if (distance_mi and moving_time_min) else 0
+        pace            = round(moving_time_min / distance_mi, 2) if distance_mi and moving_time_min else None
         full_json       = json.dumps(activity)
 
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO activities (
-                      activity_id, athlete_id, name, start_date,
-                      distance_mi, moving_time_min, pace_min_per_mile, data
+                        activity_id, athlete_id, name, start_date,
+                        distance_mi, moving_time_min, average_speed_min_per_mile, data
                     ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-                    ON CONFLICT (activity_id) DO NOTHING;
+                    ON CONFLICT DO NOTHING;
                 """, (
                     activity_id,
                     athlete_id,
@@ -80,19 +79,6 @@ def save_activity_pg(activity: Dict) -> None:
     except Exception as e:
         print(f"❌ Failed to save activity {activity.get('id', '?')}: {e}")
 
-def enrich_activity_pg(activity_id: int, detailed_data: Dict) -> None:
-    try:
-        full_json = json.dumps(detailed_data)
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    UPDATE activities
-                    SET data = %s
-                    WHERE activity_id = %s;
-                """, (full_json, activity_id))
-    except Exception as e:
-        print(f"❌ Failed to enrich activity {activity_id}: {e}")
-
 def save_run_splits(activity_id: int, splits: List[Dict]) -> None:
     """
     Insert or update per-mile splits for an activity.
@@ -102,13 +88,13 @@ def save_run_splits(activity_id: int, splits: List[Dict]) -> None:
         for s in splits:
             cur.execute("""
                 INSERT INTO run_splits (
-                  activity_id, segment_index,
-                  distance_m, elapsed_time, pace, average_heartrate
+                    activity_id, segment_index,
+                    distance_m, elapsed_time, pace, average_heartrate
                 ) VALUES (%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (activity_id, segment_index)
-                  DO UPDATE SET
-                    elapsed_time      = EXCLUDED.elapsed_time,
-                    pace              = EXCLUDED.pace,
+                DO UPDATE SET
+                    elapsed_time = EXCLUDED.elapsed_time,
+                    pace = EXCLUDED.pace,
                     average_heartrate = EXCLUDED.average_heartrate;
             """, (
                 activity_id,
