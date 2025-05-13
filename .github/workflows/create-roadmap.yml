@@ -1,0 +1,73 @@
+name: Create Roadmap Issues
+on:
+  workflow_dispatch:    # lets you run it manually from the Actions tab
+
+jobs:
+  create_issues:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create roadmap issues
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const items = [
+              { title: "Phase 1.1: Add /init-db endpoint",
+                body: "Copy the three DDL statements from app.py’s /init-db into your db module and expose an /init-db route in sync_routes"
+              },
+              { title: "Phase 1.2: Port insert_activities() and sync-strava-to-db",
+                body: "Port insert_activities() from app.py into services/activity_sync.py and hook it up to a Blueprint at /sync-strava-to-db"
+              },
+              { title: "Phase 1.3: Wire up get_valid_access_token() in sync flow",
+                body: "Import or re-implement get_valid_access_token() in services/token_manager.py and use it in your sync Blueprint"
+              },
+              { title: "Phase 2.1: Port download-splits endpoint & save_run_splits",
+                body: "Move the download-splits logic into routes/split_routes.py and a helper in services/run_splits.py"
+              },
+              { title: "Phase 2.2: Verify run_splits table and db helper",
+                body: "Confirm your db.py defines save_run_splits() and that the run_splits table exists with the right schema"
+              },
+              { title: "Phase 3.1: Port /activities listing endpoint",
+                body: "Port the /activities endpoint (RealDictCursor select) into routes/read_routes.py"
+              },
+              { title: "Phase 3.2: Port /metrics endpoint",
+                body: "Port the /metrics endpoint into routes/read_routes.py, selecting from JSONB fields"
+              },
+              { title: "Phase 3.3: Port /export CSV/XLSX endpoint",
+                body: "Port the /export endpoint into routes/read_routes.py (Pandas → BytesIO → send_file)"
+              },
+              { title: "Phase 4.1: Port /cron-status endpoint",
+                body: "Port the /cron-status endpoint into routes/status_routes.py"
+              },
+              { title: "Phase 4.2: Port /debug-env & /test-connect endpoints",
+                body: "Port /debug-env and /test-connect into routes/status_routes.py"
+              },
+              { title: "Phase 5.1: Introduce structured logging (app.logger)",
+                body: "Replace print()s with app.logger.info/error and re-enable route-dump if desired"
+              },
+              { title: "Phase 5.2: Add rate-limit/backoff to sync endpoint",
+                body: "Add 429 sleep/backoff to your sync Blueprint, similar to enrichment"
+              },
+              { title: "Phase 5.3: DRY token-refresh into shared helper",
+                body: "Refactor the refresh logic into services/token_manager.refresh_access_token() and call it from both flows"
+              },
+              { title: "Phase 6.1: Update requirements.txt",
+                body: "Ensure requirements.txt lists: Flask, requests, psycopg2-binary, python-dotenv, pandas, openpyxl"
+              },
+              { title: "Phase 6.2: Add startup-time env-var validation",
+                body: "At startup, check for all required env vars (STRAVA_CLIENT_ID, CRON_SECRET_KEY, DATABASE_URL...) and error out if missing"
+              }
+            ];
+
+            for (const item of items) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: item.title,
+                body: item.body,
+                labels: ["roadmap"]
+              });
+              console.log(`Created: ${item.title}`);
+            }
