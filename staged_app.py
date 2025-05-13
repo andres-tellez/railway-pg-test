@@ -1,10 +1,9 @@
 from flask import Flask, jsonify, redirect, request
-import os, sys, json, requests
+import os, sys, json, requests, time
 from db import get_conn, get_tokens_pg, save_token_pg
 from app import get_valid_access_token
 from dotenv import load_dotenv
 load_dotenv()
-
 
 app = Flask(__name__)
 
@@ -94,10 +93,10 @@ def enrich_activities(athlete_id):
     cur.execute("""
         SELECT activity_id FROM activities
         WHERE enriched_failed = FALSE
-            AND (enriched_successful IS NULL OR enriched_successful = FALSE)
+          AND (enriched_successful IS NULL OR enriched_successful = FALSE)
         ORDER BY start_date DESC
-        LIMIT %s;
-    """, (limit,))
+        OFFSET %s LIMIT %s;
+    """, (offset, limit))
     rows = cur.fetchall()
 
     enriched = 0
@@ -106,6 +105,11 @@ def enrich_activities(athlete_id):
             f"https://www.strava.com/api/v3/activities/{activity_id}",
             headers={"Authorization": f"Bearer {token}"}
         )
+
+        if resp.status_code == 429:
+            print("⏳ Rate limit hit. Sleeping for 10 minutes...")
+            time.sleep(600)
+            continue
 
         if resp.status_code == 401:
             print(f"🔁 Token expired for athlete {athlete_id}. Refreshing token...")
@@ -140,6 +144,7 @@ def enrich_activities(athlete_id):
                     seconds = z.get("time")
                     if zone_num and seconds is not None:
                         zone_times[zone_num] = round(seconds / 60, 2)
+
         print(f"🔧 About to enrich and update activity {activity_id}")
 
         cur.execute("""
@@ -173,6 +178,7 @@ def enrich_activities(athlete_id):
         enriched += 1
         print(f"✅ Enriched and marked successful: {activity_id}")
 
+        time.sleep(1.5)  # 🔁 pacing for safety
 
     conn.commit()
     conn.close()
