@@ -1,11 +1,10 @@
-
-
-
 from flask import Flask, jsonify, redirect, request
-import os, sys, json, requests, time
+import os, sys, json, requests
 from db import get_conn, get_tokens_pg, save_token_pg
 from app import get_valid_access_token
 from dotenv import load_dotenv
+load_dotenv()
+
 
 app = Flask(__name__)
 
@@ -13,8 +12,22 @@ CLIENT_ID     = os.getenv("STRAVA_CLIENT_ID")
 CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 REDIRECT_URI  = os.getenv("REDIRECT_URI") or "http://127.0.0.1:5000/oauth/callback"
 
-
-
+# 🔁 New: Token refresh logic
+def refresh_access_token(athlete_id, refresh_token):
+    response = requests.post("https://www.strava.com/api/v3/oauth/token", data={
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+    })
+    if response.status_code == 200:
+        tokens = response.json()
+        save_token_pg(athlete_id, tokens["access_token"], tokens["refresh_token"])
+        print(f"✅ Token refreshed successfully for athlete {athlete_id}")
+        return tokens["access_token"]
+    else:
+        print(f"❌ Refresh token failed for athlete {athlete_id}: {response.status_code} — {response.text}")
+        return None
 
 @app.route("/")
 def home():
@@ -60,46 +73,6 @@ def oauth_callback():
         refresh_token = refresh_token
     ), 200
 
-@app.route("/sync-strava-to-db/<int:athlete_id>")
-def sync_strava_to_db(athlete_id):
-    key = request.args.get("key")
-    if os.getenv("CRON_SECRET_KEY") and key != os.getenv("CRON_SECRET_KEY"):
-        return jsonify(error="Unauthorized"), 401
-
-    tokens = get_tokens_pg(athlete_id)
-    if not tokens:
-        return jsonify(error="No tokens for that athlete"), 404
-    token = tokens["access_token"]
-
-    resp = requests.get(
-        "https://www.strava.com/api/v3/athlete/activities",
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    resp.raise_for_status()
-    activities = resp.json()
-
-    conn = get_conn()
-    cur  = conn.cursor()
-    for a in activities:
-        cur.execute("""
-          INSERT INTO activities (
-            activity_id, athlete_id, name, start_date,
-            distance_mi, moving_time_min, average_speed_min_per_mile, data
-          ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-          ON CONFLICT DO NOTHING
-        """, (
-          a["id"], athlete_id, a["name"], a.get("start_date_local") or a.get("start_date"),
-          round(a.get("distance", 0)/1609.34, 2),
-          round(a.get("moving_time", 0)/60, 2),
-          round((a.get("moving_time", 0)/60)/(a.get("distance", 1)/1609.34), 2) if a.get("distance") else None,
-          json.dumps(a)
-        ))
-    conn.commit()
-    conn.close()
-
-    return jsonify(synced=len(activities)), 200
-
-
 @app.route("/enrich-activities/<int:athlete_id>")
 def enrich_activities(athlete_id):
     key = request.args.get("key")
@@ -113,6 +86,7 @@ def enrich_activities(athlete_id):
     if not tokens:
         return jsonify(error="No tokens for that athlete"), 404
     token = tokens["access_token"]
+    refresh_token = tokens["refresh_token"]
 
     conn = get_conn()
     cur = conn.cursor()
@@ -120,9 +94,10 @@ def enrich_activities(athlete_id):
     cur.execute("""
         SELECT activity_id FROM activities
         WHERE enriched_failed = FALSE
+            AND (enriched_successful IS NULL OR enriched_successful = FALSE)
         ORDER BY start_date DESC
-        OFFSET %s LIMIT %s;
-    """, (offset, limit))
+        LIMIT %s;
+    """, (limit,))
     rows = cur.fetchall()
 
     enriched = 0
@@ -131,6 +106,19 @@ def enrich_activities(athlete_id):
             f"https://www.strava.com/api/v3/activities/{activity_id}",
             headers={"Authorization": f"Bearer {token}"}
         )
+
+        if resp.status_code == 401:
+            print(f"🔁 Token expired for athlete {athlete_id}. Refreshing token...")
+            token = refresh_access_token(athlete_id, refresh_token)
+            if not token:
+                print(f"❌ Failed to refresh token for {athlete_id}. Skipping...")
+                cur.execute("UPDATE activities SET enriched_failed = TRUE WHERE activity_id = %s;", (activity_id,))
+                continue
+            resp = requests.get(
+                f"https://www.strava.com/api/v3/activities/{activity_id}",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+
         if resp.status_code != 200:
             print(f"⚠️ Failed to fetch details for {activity_id} — HTTP {resp.status_code}")
             cur.execute("UPDATE activities SET enriched_failed = TRUE WHERE activity_id = %s;", (activity_id,))
@@ -152,6 +140,7 @@ def enrich_activities(athlete_id):
                     seconds = z.get("time")
                     if zone_num and seconds is not None:
                         zone_times[zone_num] = round(seconds / 60, 2)
+        print(f"🔧 About to enrich and update activity {activity_id}")
 
         cur.execute("""
             UPDATE activities SET
@@ -165,7 +154,8 @@ def enrich_activities(athlete_id):
                 suffer_score = %s,
                 data = %s,
                 type = %s,
-                enriched_failed = FALSE
+                enriched_failed = FALSE,
+                enriched_successful = TRUE
             WHERE activity_id = %s;
         """, (
             a.get("average_heartrate"),
@@ -181,101 +171,13 @@ def enrich_activities(athlete_id):
             activity_id
         ))
         enriched += 1
+        print(f"✅ Enriched and marked successful: {activity_id}")
+
 
     conn.commit()
     conn.close()
 
     return jsonify(enriched=enriched, processed=len(rows), offset=offset), 200
-
-
-
-
-@app.route("/enrich-latest-runs/<int:athlete_id>")
-def enrich_latest_runs(athlete_id):
-    key = request.args.get("key")
-    if os.getenv("CRON_SECRET_KEY") and key != os.getenv("CRON_SECRET_KEY"):
-        return jsonify(error="Unauthorized"), 401
-
-    tokens = get_tokens_pg(athlete_id)
-    if not tokens:
-        return jsonify(error="No tokens for that athlete"), 404
-    token = tokens["access_token"]
-
-    resp = requests.get(
-        "https://www.strava.com/api/v3/athlete/activities?per_page=50",
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    if resp.status_code != 200:
-        return jsonify(error="Failed to fetch activities", status=resp.status_code), resp.status_code
-
-    runs = [a for a in resp.json() if a.get("type") == "Run"][:10]
-
-    conn = get_conn()
-    cur = conn.cursor()
-    synced = enriched = 0
-
-    for a in runs:
-        activity_id = a["id"]
-
-        cur.execute("""
-            INSERT INTO activities (
-              activity_id, athlete_id, name, start_date,
-              distance_mi, moving_time_min, average_speed_min_per_mile, data
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT DO NOTHING
-        """, (
-            activity_id, athlete_id, a["name"], a.get("start_date_local"),
-            round(a.get("distance", 0) / 1609.34, 2),
-            round(a.get("moving_time", 0) / 60, 2),
-            round((a.get("moving_time", 0) / 60) / (a.get("distance", 1) / 1609.34), 2)
-                if a.get("distance") else None,
-            json.dumps(a)
-        ))
-        synced += 1
-
-        detail_resp = requests.get(f"https://www.strava.com/api/v3/activities/{activity_id}", headers={"Authorization": f"Bearer {token}"})
-        if detail_resp.status_code != 200:
-            continue
-        detailed = detail_resp.json()
-
-        cur.execute("""
-            UPDATE activities SET
-                average_heartrate = %s,
-                max_heartrate = %s,
-                average_speed_mph = %s,
-                max_speed_mph = %s,
-                total_elevation_gain = %s,
-                calories = %s,
-                avg_cadence = %s,
-                suffer_score = %s,
-                data = %s,
-                type = %s
-            WHERE activity_id = %s;
-        """, (
-            detailed.get("average_heartrate"),
-            detailed.get("max_heartrate"),
-            round(detailed.get("average_speed", 0) * 2.23694, 2) if detailed.get("average_speed") else None,
-            round(detailed.get("max_speed", 0) * 2.23694, 2) if detailed.get("max_speed") else None,
-            detailed.get("total_elevation_gain"),
-            detailed.get("calories"),
-            detailed.get("average_cadence"),
-            detailed.get("suffer_score"),
-            json.dumps(detailed),
-            detailed.get("type"),
-            activity_id
-        ))
-        enriched += 1
-
-    conn.commit()
-    conn.close()
-
-    return jsonify(synced=synced, enriched=enriched), 200
-
-# ─── DEBUG ───
-print("\nRegistered routes:")
-for rule in app.url_map.iter_rules():
-    print(f" • {rule.rule}")
-print("---------------------\n", file=sys.stdout)
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=True)
