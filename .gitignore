@@ -1,0 +1,26 @@
+# 1. Environment files (never commit your secrets)
+.env
+.env.local
+
+# 2. Python cache and bytecode
+__pycache__/
+*.py[cod]
+
+# 3. Local OS or editor files
+.DS_Store
+*.swp
+*~
+
+# 4. IDE or editor project files
+.vscode/
+.idea/
+
+# 5. Build or state files
+offset.txt
+
+# 6. Logs
+*.log
+
+# 7. Virtual environment directories
+venv/
+env/
