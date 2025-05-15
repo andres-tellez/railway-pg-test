@@ -1,24 +1,28 @@
-name: Scheduled Strava Sync
+name: Sync Workflow Skeleton
 
 on:
-  # Allow both scheduled runs _and_ manual dispatch
   schedule:
-    - cron: '0 */6 * * *'
-  workflow_dispatch: {}
+    - cron: '0 */6 * * *'  # Runs every 6 hours
+  workflow_dispatch:        # Allows manual triggering via GitHub UI
 
 jobs:
-  sync:
+  cron-skeleton:
+    name: Verify GitHub Actions setup
     runs-on: ubuntu-latest
+
     steps:
-      - name: Trigger Strava Sync
-        env:
-          SYNC_URL: ${{ secrets.SYNC_URL }}
-          CRON_KEY: ${{ secrets.CRON_SECRET_KEY }}
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
         run: |
-          echo "→ Hitting $SYNC_URL?key=$CRON_KEY"
-          status=$(curl -s -o /dev/null -w "%{http_code}" "$SYNC_URL?key=$CRON_KEY")
-          if [ "$status" != "200" ]; then
-            echo "❌ Sync failed with HTTP $status"
-            exit 1
-          fi
-          echo "✅ Sync succeeded (HTTP $status)"
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run placeholder command
+        run: echo "✅ GitHub Actions workflow wired and ready"
