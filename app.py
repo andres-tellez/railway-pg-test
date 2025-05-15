@@ -1,21 +1,16 @@
 # app.py
 
 import os
-import sys
 import io
 import json
 import logging
+import time
 import requests
 import sqlite3
-import time
 
 from io import BytesIO
-from psycopg2.extras import RealDictCursor
-
-import csv
-import pandas as pd
-
 from flask import Flask, redirect, request, jsonify, send_file
+from psycopg2.extras import RealDictCursor
 
 from db import (
     get_conn,
@@ -35,23 +30,20 @@ REDIRECT_URI    = os.getenv("REDIRECT_URI")
 CRON_SECRET_KEY = os.getenv("CRON_SECRET_KEY")
 
 
-def get_db_connection():
-    return get_conn()
-
-
-def get_valid_access_token(athlete_id):
+def get_valid_access_token(athlete_id: int) -> str:
     tokens = get_tokens_pg(athlete_id)
     if not tokens:
-        raise Exception(f"No tokens for athlete {athlete_id}")
-    access, refresh = tokens["access_token"], tokens["refresh_token"]
+        raise RuntimeError(f"No tokens for athlete {athlete_id}")
 
-    res = requests.get(
+    access, refresh = tokens["access_token"], tokens["refresh_token"]
+    resp = requests.get(
         "https://www.strava.com/api/v3/athlete",
         headers={"Authorization": f"Bearer {access}"}
     )
-    if res.status_code == 401:
-        logging.info("🔁 Token expired; refreshing for athlete %s", athlete_id)
-        rr = requests.post(
+
+    if resp.status_code == 401:
+        logging.info("🔁 Refreshing token for athlete %s", athlete_id)
+        refresh_resp = requests.post(
             "https://www.strava.com/oauth/token",
             data={
                 "client_id":     CLIENT_ID,
@@ -60,64 +52,12 @@ def get_valid_access_token(athlete_id):
                 "refresh_token": refresh
             }
         )
-        rr.raise_for_status()
-        data = rr.json()
+        refresh_resp.raise_for_status()
+        data = refresh_resp.json()
         access, refresh = data["access_token"], data["refresh_token"]
         save_token_pg(athlete_id, access, refresh)
 
     return access
-
-
-def insert_activities(activities, athlete_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    is_sqlite = isinstance(conn, sqlite3.Connection)
-
-    if is_sqlite:
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS activities (
-                activity_id INTEGER PRIMARY KEY,
-                athlete_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                start_date TEXT NOT NULL,
-                distance_mi REAL NOT NULL,
-                moving_time_min REAL NOT NULL,
-                pace_min_per_mile REAL NOT NULL,
-                data TEXT NOT NULL
-            );
-        """)
-
-    for a in activities:
-        start = a.get("start_date_local") or a.get("start_date")
-        if not start:
-            continue
-
-        dist = a.get("distance", 0)
-        mt   = a.get("moving_time", 0)
-        dmi  = round(dist / 1609.34, 2) if dist else 0
-        mtm  = round(mt   /   60,    2) if mt   else 0
-        pace = round(mtm  /   dmi,   2) if dmi and mtm else 0
-
-        payload = (a["id"], athlete_id, a.get("name"), start, dmi, mtm, pace, json.dumps(a))
-
-        if is_sqlite:
-            cur.execute("""
-                INSERT OR IGNORE INTO activities (
-                    activity_id, athlete_id, name, start_date,
-                    distance_mi, moving_time_min, pace_min_per_mile, data
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-            """, payload)
-        else:
-            cur.execute("""
-                INSERT INTO activities (
-                    activity_id, athlete_id, name, start_date,
-                    distance_mi, moving_time_min, pace_min_per_mile, data
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (activity_id) DO NOTHING;
-            """, payload)
-
-    conn.commit()
-    conn.close()
 
 
 @app.route("/")
@@ -127,43 +67,51 @@ def home():
 
 @app.route("/init-db")
 def init_db():
-    ddl_tokens = """
-    CREATE TABLE IF NOT EXISTS tokens (
-      athlete_id   BIGINT PRIMARY KEY,
-      access_token TEXT NOT NULL,
-      refresh_token TEXT NOT NULL,
-      updated_at   TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-    """
-    ddl_activities = """
-    CREATE TABLE IF NOT EXISTS activities (
-      activity_id        BIGINT      PRIMARY KEY,
-      athlete_id         BIGINT      NOT NULL,
-      name               TEXT        NOT NULL,
-      start_date         TIMESTAMP   NOT NULL,
-      distance_mi        REAL        NOT NULL,
-      moving_time_min    REAL        NOT NULL,
-      pace_min_per_mile  REAL        NOT NULL,
-      data               JSONB       NOT NULL
-    );
-    """
+    """Create tokens, activities & run_splits tables in Postgres (no-ops if they exist)."""
+    ddl = [
+        """
+        CREATE TABLE IF NOT EXISTS tokens (
+          athlete_id   BIGINT PRIMARY KEY,
+          access_token TEXT NOT NULL,
+          refresh_token TEXT NOT NULL,
+          updated_at   TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );""",
+        """
+        CREATE TABLE IF NOT EXISTS activities (
+          activity_id        BIGINT PRIMARY KEY,
+          athlete_id         BIGINT NOT NULL,
+          name               TEXT        NOT NULL,
+          start_date         TIMESTAMP   NOT NULL,
+          distance_mi        REAL        NOT NULL,
+          moving_time_min    REAL        NOT NULL,
+          pace_min_per_mile  REAL        NOT NULL,
+          data               JSONB       NOT NULL
+        );""",
+        """
+        CREATE TABLE IF NOT EXISTS run_splits (
+          activity_id       BIGINT,
+          segment_index     INTEGER,
+          distance_m        REAL,
+          elapsed_time      REAL,
+          pace              REAL,
+          average_heartrate REAL,
+          PRIMARY KEY(activity_id, segment_index)
+        );"""
+    ]
+
     conn = get_conn()
     with conn.cursor() as cur:
-        cur.execute(ddl_tokens)
-        cur.execute(ddl_activities)
+        for sql in ddl:
+            cur.execute(sql)
     conn.commit()
     conn.close()
+
     return jsonify(initialized=True)
 
 
-@app.route("/test-db")
-def test_db():
-    conn = get_conn()
-    with conn.cursor() as cur:
-        cur.execute("SELECT 1;")
-        _ = cur.fetchone()[0]
-    conn.close()
-    return jsonify(initialized=True)
+@app.route("/test-connect")
+def test_connect():
+    return "Test endpoint OK", 200
 
 
 @app.route("/connect-strava")
@@ -175,7 +123,7 @@ def connect_strava():
         "approval_prompt": "force",
         "scope":           "activity:read,activity:write"
     }
-    url = f"https://www.strava.com/oauth/authorize?{requests.compat.urlencode(params)}"
+    url = "https://www.strava.com/oauth/authorize?" + requests.compat.urlencode(params)
     return redirect(url)
 
 
@@ -185,7 +133,7 @@ def oauth_callback():
     if not code:
         return jsonify(error="Missing code"), 400
 
-    r = requests.post(
+    token_resp = requests.post(
         "https://www.strava.com/oauth/token",
         data={
             "client_id":     CLIENT_ID,
@@ -194,10 +142,10 @@ def oauth_callback():
             "grant_type":    "authorization_code"
         }
     )
-    if r.status_code != 200:
-        return jsonify(error="Token exchange failed", details=r.text), 400
+    if token_resp.status_code != 200:
+        return jsonify(error="Token exchange failed", details=token_resp.text), 400
 
-    t   = r.json()
+    t   = token_resp.json()
     aid = t["athlete"]["id"]
     save_token_pg(aid, t["access_token"], t["refresh_token"])
     return jsonify(athlete_id=aid, message="Tokens saved")
@@ -210,33 +158,29 @@ def sync_strava_to_db(athlete_id):
         return jsonify(error="Unauthorized"), 401
 
     token = get_valid_access_token(athlete_id)
-    r     = requests.get(
+    act_resp = requests.get(
         "https://www.strava.com/api/v3/athlete/activities",
         headers={"Authorization": f"Bearer {token}"}
     )
-    r.raise_for_status()
-    insert_activities(r.json(), athlete_id)
-    return jsonify(synced=len(r.json()))
+    act_resp.raise_for_status()
+
+    # reuse common saver
+    for activity in act_resp.json():
+        save_activity_pg(activity)
+
+    return jsonify(synced=len(act_resp.json()))
 
 
 @app.route("/activities/<int:athlete_id>")
-def get_activities(athlete_id):
-    conn = get_db_connection()
+def list_activities(athlete_id):
+    conn = get_conn()
     cur  = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute(
-        """
-        SELECT
-          activity_id,
-          name,
-          start_date,
-          distance_mi,
-          pace_min_per_mile
-        FROM activities
-        WHERE athlete_id = %s
-        ORDER BY start_date DESC
-        """,
-        (athlete_id,)
-    )
+    cur.execute("""
+        SELECT activity_id, name, start_date, distance_mi, pace_min_per_mile
+          FROM activities
+         WHERE athlete_id = %s
+         ORDER BY start_date DESC
+    """, (athlete_id,))
     rows = cur.fetchall()
     conn.close()
     return jsonify(rows)
@@ -246,37 +190,36 @@ def get_activities(athlete_id):
 def download_splits(athlete_id, activity_id):
     try:
         token = get_valid_access_token(athlete_id)
-        r = requests.get(
+        streams = requests.get(
             f"https://www.strava.com/api/v3/activities/{activity_id}/streams",
-            params={"keys": "distance,time,heartrate", "key_by_type": "true"},
+            params={"keys":"distance,time,heartrate","key_by_type":"true"},
             headers={"Authorization": f"Bearer {token}"}
-        )
-        r.raise_for_status()
-        streams = r.json()
-        dists   = streams["distance"]["data"]
-        times   = streams["time"]["data"]
-        hrs     = streams.get("heartrate", {}).get("data", [])
-        splits  = []
-        mile_mark = 1609.34
-        segment   = 1
+        ).json()
+
+        dists  = streams["distance"]["data"]
+        times  = streams["time"]["data"]
+        hrs    = streams.get("heartrate",{}).get("data",[])
+        splits = []
+        mile   = 1609.34
+        segment = 1
 
         for i, dist in enumerate(dists):
-            if dist >= mile_mark * segment:
+            if dist >= mile * segment:
                 elapsed = times[i]
-                pace    = elapsed / (dist / mile_mark)
                 splits.append({
-                    "segment_index":      segment,
-                    "distance":           dist,
-                    "elapsed_time":       elapsed,
-                    "pace":               pace,
-                    "average_heartrate":  hrs[i] if i < len(hrs) else None
+                    "segment_index":     segment,
+                    "distance":          dist,
+                    "elapsed_time":      elapsed,
+                    "pace":              elapsed / (dist / mile),
+                    "average_heartrate": hrs[i] if i < len(hrs) else None
                 })
                 segment += 1
 
         save_run_splits(activity_id, splits)
         return jsonify(activity_id=activity_id, splits=len(splits))
+
     except Exception as e:
-        logging.exception("❌ /download-splits failed")
+        logging.exception("❌ download-splits error")
         return jsonify(error=str(e)), 500
 
 
@@ -285,34 +228,17 @@ def enrich_activities(athlete_id):
     limit  = int(request.args.get("limit", 50))
     offset = int(request.args.get("offset", 0))
 
-    conn      = get_db_connection()
-    cur       = conn.cursor()
-    is_sqlite = isinstance(conn, sqlite3.Connection)
+    conn = get_conn()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT activity_id
+          FROM activities
+         WHERE athlete_id = %s
+         ORDER BY activity_id
+         LIMIT %s OFFSET %s
+    """, (athlete_id, limit, offset))
 
-    if is_sqlite:
-        cur.execute(
-            """
-            SELECT activity_id
-            FROM activities
-            WHERE athlete_id = ?
-            ORDER BY activity_id
-            LIMIT ? OFFSET ?
-            """,
-            (athlete_id, limit, offset)
-        )
-    else:
-        cur.execute(
-            """
-            SELECT activity_id
-            FROM activities
-            WHERE athlete_id = %s
-            ORDER BY activity_id
-            LIMIT %s OFFSET %s
-            """,
-            (athlete_id, limit, offset)
-        )
-
-    ids = [r[0] for r in cur.fetchall()]
+    ids = [row[0] for row in cur.fetchall()]
     conn.close()
 
     token = get_valid_access_token(athlete_id)
@@ -320,13 +246,13 @@ def enrich_activities(athlete_id):
 
     for aid in ids:
         time.sleep(1.5)
-        for attempt in range(1, 4):
+        for retry in range(3):
             resp = requests.get(
                 f"https://www.strava.com/api/v3/activities/{aid}?include_all_efforts=true",
                 headers={"Authorization": f"Bearer {token}"}
             )
             if resp.status_code == 429:
-                time.sleep(10 * attempt)
+                time.sleep(5 * (retry + 1))
                 continue
             resp.raise_for_status()
             enrich_activity_pg(aid, resp.json())
@@ -338,50 +264,37 @@ def enrich_activities(athlete_id):
 
 @app.route("/metrics/<int:athlete_id>")
 def get_metrics(athlete_id):
-    conn      = get_db_connection()
+    conn      = get_conn()
     is_sqlite = isinstance(conn, sqlite3.Connection)
 
     if is_sqlite:
         cur = conn.cursor()
-        cur.execute(
-            """
+        cur.execute("""
             SELECT
-              activity_id,
-              name,
-              start_date,
-              distance_mi,
-              pace_min_per_mile,
+              activity_id, name, start_date, distance_mi, pace_min_per_mile,
               json_extract(data, '$.average_heartrate') AS avg_hr,
               json_extract(data, '$.max_heartrate')     AS max_hr,
               json_extract(data, '$.average_cadence')    AS cadence,
               json_extract(data, '$.total_elevation_gain') AS elevation
             FROM activities
-            WHERE athlete_id = ?
-            ORDER BY start_date DESC
-            """,
-            (athlete_id,)
-        )
+           WHERE athlete_id = ?
+           ORDER BY start_date DESC
+        """, (athlete_id,))
         rows = [dict(zip([c[0] for c in cur.description], r)) for r in cur.fetchall()]
+
     else:
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(
-            """
+        cur.execute("""
             SELECT
-              activity_id,
-              name,
-              start_date,
-              distance_mi,
-              pace_min_per_mile,
+              activity_id, name, start_date, distance_mi, pace_min_per_mile,
               (data->>'average_heartrate')::FLOAT AS avg_hr,
               (data->>'max_heartrate')::FLOAT     AS max_hr,
               (data->>'average_cadence')::FLOAT    AS cadence,
               (data->>'total_elevation_gain')::FLOAT AS elevation
             FROM activities
-            WHERE athlete_id = %s
-            ORDER BY start_date DESC
-            """,
-            (athlete_id,)
-        )
+           WHERE athlete_id = %s
+           ORDER BY start_date DESC
+        """, (athlete_id,))
         rows = cur.fetchall()
 
     conn.close()
@@ -390,82 +303,42 @@ def get_metrics(athlete_id):
 
 @app.route("/export/<int:athlete_id>")
 def export_activities(athlete_id):
-    fmt       = request.args.get("format", "csv").lower()
-    conn      = get_db_connection()
-    is_sqlite = isinstance(conn, sqlite3.Connection)
-
-    if is_sqlite:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT
-              activity_id,
-              name,
-              start_date,
-              distance_mi,
-              pace_min_per_mile,
-              json_extract(data, '$.average_heartrate') AS avg_hr,
-              json_extract(data, '$.max_heartrate')     AS max_hr,
-              json_extract(data, '$.average_cadence')    AS cadence,
-              json_extract(data, '$.total_elevation_gain') AS elevation
-            FROM activities
-            WHERE athlete_id = ?
-            ORDER BY start_date DESC
-            """,
-            (athlete_id,)
-        )
-        columns = [c[0] for c in cur.description]
-        rows    = [dict(zip(columns, r)) for r in cur.fetchall()]
-    else:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(
-            """
-            SELECT
-              activity_id,
-              name,
-              start_date,
-              distance_mi,
-              pace_min_per_mile,
-              (data->>'average_heartrate')::FLOAT AS avg_hr,
-              (data->>'max_heartrate')::FLOAT     AS max_hr,
-              (data->>'average_cadence')::FLOAT    AS cadence,
-              (data->>'total_elevation_gain')::FLOAT AS elevation
-            FROM activities
-            WHERE athlete_id = %s
-            ORDER BY start_date DESC
-            """,
-            (athlete_id,)
-        )
-        columns = [desc[0] for desc in cur.description]
-        rows    = cur.fetchall()
-
+    fmt  = request.args.get("format", "csv").lower()
+    conn = get_conn()
+    cur  = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT
+          activity_id, name, start_date, distance_mi, pace_min_per_mile,
+          (data->>'average_heartrate')::FLOAT AS avg_hr,
+          (data->>'max_heartrate')::FLOAT     AS max_hr,
+          (data->>'average_cadence')::FLOAT    AS cadence,
+          (data->>'total_elevation_gain')::FLOAT AS elevation
+        FROM activities
+       WHERE athlete_id = %s
+       ORDER BY start_date DESC
+    """, (athlete_id,))
+    rows = cur.fetchall()
     conn.close()
 
-    buf, name, mimetype = None, None, None
     if fmt == "xlsx":
         df = pd.DataFrame(rows)
         buf = BytesIO()
-        with pd.ExcelWriter(buf, engine="openpyxl") as w:
-            df.to_excel(w, index=False)
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False)
         buf.seek(0)
-        name     = "activities.xlsx"
-        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    else:
-        text_buf = io.StringIO()
-        writer   = csv.DictWriter(text_buf, fieldnames=columns)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(row)
-        buf      = BytesIO(text_buf.getvalue().encode("utf-8"))
-        name     = "activities.csv"
-        mimetype = "text/csv"
+        return send_file(buf,
+                         as_attachment=True,
+                         download_name="activities.xlsx",
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    return send_file(buf, as_attachment=True, download_name=name, mimetype=mimetype)
+    # default to CSV
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=rows[0].keys() if rows else [])
+    writer.writeheader()
+    writer.writerows(rows)
+    buf = BytesIO(output.getvalue().encode("utf-8"))
 
-
-@app.route("/test-connect")
-def test_connect():
-    return "Test endpoint OK", 200
+    return send_file(buf, as_attachment=True, download_name="activities.csv", mimetype="text/csv")
 
 
 if __name__ == "__main__":
