@@ -1,0 +1,24 @@
+name: Scheduled Strava Sync
+
+on:
+  # Allow both scheduled runs _and_ manual dispatch
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Strava Sync
+        env:
+          SYNC_URL: ${{ secrets.SYNC_URL }}
+          CRON_KEY: ${{ secrets.CRON_SECRET_KEY }}
+        run: |
+          echo "→ Hitting $SYNC_URL?key=$CRON_KEY"
+          status=$(curl -s -o /dev/null -w "%{http_code}" "$SYNC_URL?key=$CRON_KEY")
+          if [ "$status" != "200" ]; then
+            echo "❌ Sync failed with HTTP $status"
+            exit 1
+          fi
+          echo "✅ Sync succeeded (HTTP $status)"
