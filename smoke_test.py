@@ -1,16 +1,19 @@
+# smoke_test.py
+
 import os
 from flask import Flask
 
-app = Flask(__name__)
+# this must match what you point Gunicorn at in Procfile:
+smoke = Flask(__name__)
 
-@app.route("/")
+@smoke.route("/")
 def home():
     return "🚂 Smoke test v3!"
 
-@app.route("/test-connect")
+@smoke.route("/test-connect")
 def test_connect():
     return "Test endpoint v3 OK", 200
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    smoke.run(host="0.0.0.0", port=port)
