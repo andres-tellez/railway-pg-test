@@ -39,6 +39,15 @@ def save_token_pg(athlete_id: int, access_token: str, refresh_token: str) -> Non
         if isinstance(conn, sqlite3.Connection):
             cur = conn.cursor()
             cur.execute("""
+<<<<<<< HEAD
+                INSERT INTO tokens (athlete_id, access_token, refresh_token)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (athlete_id)
+                DO UPDATE SET
+                    access_token = EXCLUDED.access_token,
+                    refresh_token = EXCLUDED.refresh_token,
+                    updated_at = CURRENT_TIMESTAMP;
+=======
                 CREATE TABLE IF NOT EXISTS tokens (
                   athlete_id INTEGER PRIMARY KEY,
                   access_token TEXT NOT NULL,
@@ -49,6 +58,7 @@ def save_token_pg(athlete_id: int, access_token: str, refresh_token: str) -> Non
             cur.execute("""
                 INSERT OR REPLACE INTO tokens (athlete_id, access_token, refresh_token)
                 VALUES (?, ?, ?);
+>>>>>>> origin/main
             """, (athlete_id, access_token, refresh_token))
         else:
             with conn.cursor() as cur:
@@ -98,8 +108,7 @@ def save_activity_pg(activity: Dict) -> None:
 
         distance_mi     = round(distance_m / 1609.34, 2) if distance_m else 0
         moving_time_min = round(moving_s   / 60,     2) if moving_s   else 0
-        pace            = round(moving_time_min / distance_mi, 2) \
-                          if (distance_mi and moving_time_min) else 0
+        pace            = round(moving_time_min / distance_mi, 2) if distance_mi and moving_time_min else None
         full_json       = json.dumps(activity)
 
         conn = get_conn()
@@ -107,6 +116,13 @@ def save_activity_pg(activity: Dict) -> None:
             if isinstance(conn, sqlite3.Connection):
                 cur = conn.cursor()
                 cur.execute("""
+<<<<<<< HEAD
+                    INSERT INTO activities (
+                        activity_id, athlete_id, name, start_date,
+                        distance_mi, moving_time_min, average_speed_min_per_mile, data
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT DO NOTHING;
+=======
                     CREATE TABLE IF NOT EXISTS activities (
                       activity_id INTEGER PRIMARY KEY,
                       athlete_id INTEGER,
@@ -123,6 +139,7 @@ def save_activity_pg(activity: Dict) -> None:
                       activity_id, athlete_id, name, start_date,
                       distance_mi, moving_time_min, pace_min_per_mile, data
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+>>>>>>> origin/main
                 """, (
                     activity_id,
                     athlete_id,
@@ -157,6 +174,8 @@ def save_activity_pg(activity: Dict) -> None:
     except Exception as e:
         print(f"❌ Failed to save activity {activity.get('id', '?')}: {e}")
 
+<<<<<<< HEAD
+=======
 def enrich_activity_pg(activity_id: int, detailed_data: Dict) -> None:
     full_json = json.dumps(detailed_data)
     conn = get_conn()
@@ -176,12 +195,34 @@ def enrich_activity_pg(activity_id: int, detailed_data: Dict) -> None:
     finally:
         conn.close()
 
+>>>>>>> origin/main
 def save_run_splits(activity_id: int, splits: List[Dict]) -> None:
     conn = get_conn()
     try:
         if isinstance(conn, sqlite3.Connection):
             cur = conn.cursor()
             cur.execute("""
+<<<<<<< HEAD
+                INSERT INTO run_splits (
+                    activity_id, segment_index,
+                    distance_m, elapsed_time, pace, average_heartrate
+                ) VALUES (%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (activity_id, segment_index)
+                DO UPDATE SET
+                    elapsed_time = EXCLUDED.elapsed_time,
+                    pace = EXCLUDED.pace,
+                    average_heartrate = EXCLUDED.average_heartrate;
+            """, (
+                activity_id,
+                s["segment_index"],
+                s["distance"],
+                s["elapsed_time"],
+                s["pace"],
+                s.get("average_heartrate")
+            ))
+    conn.commit()
+    conn.close()
+=======
                 CREATE TABLE IF NOT EXISTS run_splits (
                   activity_id INTEGER,
                   segment_index INTEGER,
@@ -229,3 +270,4 @@ def save_run_splits(activity_id: int, splits: List[Dict]) -> None:
             conn.commit()
     finally:
         conn.close()
+>>>>>>> origin/main
