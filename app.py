@@ -1,3 +1,5 @@
+# app.py
+
 import os
 import sys
 import io
@@ -43,7 +45,6 @@ def get_valid_access_token(athlete_id):
         raise Exception(f"No tokens for athlete {athlete_id}")
     access, refresh = tokens["access_token"], tokens["refresh_token"]
 
-    # check validity
     res = requests.get(
         "https://www.strava.com/api/v3/athlete",
         headers={"Authorization": f"Bearer {access}"}
@@ -440,31 +441,26 @@ def export_activities(athlete_id):
 
     conn.close()
 
+    buf, name, mimetype = None, None, None
     if fmt == "xlsx":
         df = pd.DataFrame(rows)
         buf = BytesIO()
         with pd.ExcelWriter(buf, engine="openpyxl") as w:
             df.to_excel(w, index=False)
         buf.seek(0)
-        return send_file(
-            buf,
-            as_attachment=True,
-            download_name="activities.xlsx",
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        name     = "activities.xlsx"
+        mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
         text_buf = io.StringIO()
         writer   = csv.DictWriter(text_buf, fieldnames=columns)
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
-        buf = BytesIO(text_buf.getvalue().encode("utf-8"))
-        return send_file(
-            buf,
-            as_attachment=True,
-            download_name="activities.csv",
-            mimetype="text/csv"
-        )
+        buf      = BytesIO(text_buf.getvalue().encode("utf-8"))
+        name     = "activities.csv"
+        mimetype = "text/csv"
+
+    return send_file(buf, as_attachment=True, download_name=name, mimetype=mimetype)
 
 
 @app.route("/test-connect")
