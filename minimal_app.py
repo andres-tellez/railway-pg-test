@@ -1,17 +1,18 @@
-# minimal_app.py
+# smoke_test.py
+
 import os
 from flask import Flask
 
-app = Flask(__name__)
+smoke = Flask(__name__)
 
-@app.route("/")
+@smoke.route("/")
 def home():
     return "🚂 Smoke test v3!"
 
-@app.route("/test-connect")
+@smoke.route("/test-connect")
 def test_connect():
     return "Test endpoint v3 OK", 200
 
 if __name__ == "__main__":
-    # local dev fallback
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    port = int(os.getenv("PORT", 5000))
+    smoke.run(host="0.0.0.0", port=port)
