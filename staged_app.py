@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, redirect, request
 import os, sys, json, requests, time
 from db import get_conn, get_tokens_pg, save_token_pg
-from app import get_valid_access_token
+from src.app import get_valid_access_token
 from dotenv import load_dotenv
 load_dotenv()
 

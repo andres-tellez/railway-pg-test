@@ -6,7 +6,7 @@ import requests
 import argparse
 
 from db import get_conn
-from app import get_valid_access_token, insert_activities
+from src.app import get_valid_access_token, insert_activities
 
 logging.basicConfig(level=logging.INFO)
 
