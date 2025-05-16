@@ -12,7 +12,7 @@ app = create_app()
 
 if __name__ == "__main__":
     # Pull the port from the PORT env var (Railway sets this), default to 5000 locally
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))
     print(
         f"🚀 Starting app on 127.0.0.1:{port} with DATABASE_URL = {app.config.get('DATABASE_URL')}",
         flush=True,
