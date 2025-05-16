@@ -8,10 +8,6 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from src.app import create_app
 
-# If you're in development mode and want SQLite, you can export:
-#   $env:FLASK_ENV="development"
-#   $env:DATABASE_URL="sqlite:///dev.sqlite3"
-# But by default, this just respects your shell or Railway’s injected vars.
 app = create_app()
 
 if __name__ == "__main__":
@@ -21,4 +17,21 @@ if __name__ == "__main__":
         f"🚀 Starting app on 0.0.0.0:{port} with DATABASE_URL = {app.config.get('DATABASE_URL')}",
         flush=True,
     )
+
+    # ==== DB CONNECTION TEST ====
+    from psycopg2 import connect, OperationalError
+
+    try:
+        conn = connect(app.config["DATABASE_URL"], sslmode="require")
+        cur = conn.cursor()
+        cur.execute("SELECT 1;")
+        cur.fetchone()
+        print("✅ DB test query succeeded!", flush=True)
+        cur.close()
+        conn.close()
+    except OperationalError as e:
+        print("⚠️ DB test query failed (connectivity issue):", e, flush=True)
+        # don’t exit—allow the HTTP server to start so we can test connectivity
+
+    # Start the Flask development server
     app.run(host="0.0.0.0", port=port, debug=True)
