@@ -11,10 +11,10 @@ from src.app import create_app
 app = create_app()
 
 if __name__ == "__main__":
-    # Pull the port from the PORT env var (Railway sets this), default to 5000 locally
+    # Railway provides PORT=8080 in production
     port = int(os.environ.get("PORT", 8080))
     print(
-        f"🚀 Starting app on 127.0.0.1:{port} with DATABASE_URL = {app.config.get('DATABASE_URL')}",
+        f"🚀 Starting app on 0.0.0.0:{port} with DATABASE_URL = {app.config.get('DATABASE_URL')}",
         flush=True,
     )
 
@@ -31,7 +31,7 @@ if __name__ == "__main__":
         conn.close()
     except OperationalError as e:
         print("⚠️ DB test query failed (connectivity issue):", e, flush=True)
-        # don’t exit—allow the HTTP server to start so we can test connectivity
+        # Don't exit—allow HTTP server to run so we can ping/debug via routes
 
-    # Start the Flask development server for local use
+    # ✅ Bind to 0.0.0.0 so Railway can access it
     app.run(host="0.0.0.0", port=port, debug=True)
