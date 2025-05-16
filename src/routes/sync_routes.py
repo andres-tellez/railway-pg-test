@@ -7,13 +7,10 @@ from flask import Blueprint, request, jsonify
 from src.services.activity_sync import sync_recent_activities
 
 SYNC = Blueprint("sync", __name__)
-CRON_KEY = os.getenv("CRON_SECRET_KEY")
-CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
-CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 
 
 def get_valid_access_token(athlete_id):
-    # Defer imports here to avoid circular dependency
+    # Defer DB imports to avoid circular dependency
     from src.db import get_tokens_pg, save_tokens_pg
 
     tokens = get_tokens_pg(athlete_id)
@@ -31,8 +28,8 @@ def get_valid_access_token(athlete_id):
         rr = requests.post(
             "https://www.strava.com/api/v3/oauth/token",
             data={
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
+                "client_id": os.getenv("STRAVA_CLIENT_ID"),
+                "client_secret": os.getenv("STRAVA_CLIENT_SECRET"),
                 "grant_type": "refresh_token",
                 "refresh_token": refresh,
             },
@@ -48,8 +45,9 @@ def get_valid_access_token(athlete_id):
 
 @SYNC.route("/sync-strava-to-db/<int:athlete_id>")
 def sync_to_db(athlete_id):
+    cron_key = os.getenv("CRON_SECRET_KEY")
     key = request.args.get("key")
-    if CRON_KEY and key != CRON_KEY:
+    if cron_key and key != cron_key:
         return jsonify(error="Unauthorized"), 401
 
     try:
