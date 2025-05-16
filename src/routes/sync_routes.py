@@ -2,7 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 from src.services.activity_sync import sync_recent_activities
-from db import get_tokens_pg
+from src.db import get_tokens_pg
 import os
 import requests
 
