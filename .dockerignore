@@ -1,0 +1,4 @@
+git add .dockerignore
+git rm --cached .env
+git commit -m "Prevent .env from being baked into production image"
+git push origin main
