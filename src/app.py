@@ -11,6 +11,9 @@ from flask import Flask
 from src.startup_checks import perform_startup_checks
 from dotenv import load_dotenv
 from pathlib import Path
+from src.routes.sync_routes import SYNC
+
+
 import os
 
 # Blueprint imports
@@ -35,7 +38,10 @@ def create_app(test_config=None):
     # Load environment variables from .env file into os.environ
     env_path = Path(__file__).resolve().parent.parent / ".env"
     print(f"📄 Looking for .env at: {env_path}", flush=True)
-    load_dotenv(dotenv_path=env_path)
+    load_dotenv(dotenv_path=env_path, override=True)
+
+    print("🧪 cwd:", os.getcwd())
+    print("🧪 files in cwd:", list(Path(".").glob("*")))
 
     print("💾 DATABASE_URL in app:", os.getenv("DATABASE_URL"))
 
@@ -73,6 +79,7 @@ def create_app(test_config=None):
     # ----------------------------------------------------------------------
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(enrich_bp, url_prefix="/enrich")
+    app.register_blueprint(SYNC)
 
     # ----------------------------------------------------------------------
     # Health check endpoint

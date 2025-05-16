@@ -15,6 +15,26 @@ from urllib.parse import urlparse
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+import time
+
+
+def get_conn(retries=5, delay=3):
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        raise RuntimeError("DATABASE_URL is not set!")
+
+    for attempt in range(retries):
+        try:
+            conn = psycopg2.connect(db_url, sslmode="require")
+            with conn.cursor() as cur:
+                cur.execute("SET search_path TO public;")
+            return conn
+        except Exception as e:
+            print(f"⏳ DB connection failed (attempt {attempt+1}/{retries}): {e}")
+            time.sleep(delay)
+
+    raise RuntimeError("❌ Could not connect to DB after retries.")
+
 
 def get_conn(database_url=None):
     """
