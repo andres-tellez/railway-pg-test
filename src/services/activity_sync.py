@@ -1,7 +1,8 @@
 # services/activity_sync.py
 
 import requests
-from db import save_activity_pg
+from src.db import save_activity_pg
+
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
