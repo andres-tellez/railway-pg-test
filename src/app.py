@@ -11,7 +11,8 @@ import os
 from pathlib import Path
 from flask import Flask
 from dotenv import load_dotenv
-from src.startup_checks import perform_startup_checks
+
+# from src.startup_checks import perform_startup_checks  # Temporarily disabled
 from src.routes.sync_routes import SYNC
 from src.routes.auth import auth_bp
 from src.routes.enrich import enrich_bp
@@ -48,8 +49,8 @@ def create_app(test_config=None):
     print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
     print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
 
-    # Perform startup sanity checks (env vars, DB connectivity, workflows)
-    perform_startup_checks()
+    # --- Startup checks disabled to prevent circular imports ---
+    # perform_startup_checks()
 
     # Instantiate the Flask app
     app = Flask(__name__, instance_relative_config=False)
