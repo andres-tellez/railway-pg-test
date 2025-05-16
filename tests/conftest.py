@@ -4,6 +4,7 @@ import os
 import pytest
 from pathlib import Path
 from src.app import create_app
+from src.services.db_bootstrap import init_db  # ✅ NEW location
 
 
 @pytest.fixture
@@ -12,7 +13,6 @@ def app(tmp_path, monkeypatch):
     db_file = tmp_path / "test.db"
     db_url = f"sqlite:///{db_file}"
 
-    # Ensure environment variables are available for both Flask and src.db
     monkeypatch.setenv("DATABASE_URL", db_url)
     monkeypatch.setenv("ADMIN_USER", "admin")
     monkeypatch.setenv("ADMIN_PASS", "secret")
@@ -25,9 +25,7 @@ def app(tmp_path, monkeypatch):
     }
     app = create_app(test_config)
 
-    # Initialize schema in the file-based SQLite DB
-    from src.db import init_db
-
+    # ✅ Re-initialize schema
     init_db(app.config["DATABASE_URL"])
 
     yield app

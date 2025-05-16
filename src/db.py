@@ -1,21 +1,18 @@
 """
 Module: src/db.py
-Database connection and initialization helpers for Smart Marathon Coach.
+Database connection and token access helpers for Smart Marathon Coach.
 
 Provides:
-- `get_conn(database_url)`: Acquire a DB connection (SQLite or Postgres) based on environment.
-- `init_db(database_url)`: Initialize or reset the database schema from `schema.sql`.
-- Token persistence & retrieval functions.
+- `get_conn()`: Acquire a DB connection (SQLite or Postgres) based on environment.
+- `get_tokens_pg()`: Fetch stored tokens for an athlete.
+- `save_tokens_pg()`: Store or update tokens in the DB.
 """
 
 import os
 import sqlite3
 from urllib.parse import urlparse
-
 import psycopg2
 from psycopg2.extras import RealDictCursor
-
-import time
 
 
 def get_conn(retries=5, delay=3):
@@ -45,35 +42,6 @@ def get_conn(retries=5, delay=3):
     with conn.cursor() as cur:
         cur.execute("SET search_path TO public;")
     return conn
-
-
-def init_db(database_url=None):
-    """
-    Initialize or reset the application's database schema.
-
-    Reads SQL from `schema.sql` at the project root and executes it.
-    """
-    conn = get_conn()
-    try:
-        schema_path = os.path.join(os.path.dirname(__file__), "..", "schema.sql")
-        print("🔍 Attempting to open schema at:", schema_path, flush=True)
-        with open(schema_path, "r") as f:
-            ddl = f.read()
-
-        if isinstance(conn, sqlite3.Connection):
-            cur = conn.cursor()
-            cur.executescript(ddl)
-        else:
-            with conn.cursor() as cur:
-                cur.execute(ddl)
-
-        conn.commit()
-        print("✅ init_db() completed successfully", flush=True)
-    except Exception as e:
-        print(f"❌ init_db error: {e}", flush=True)
-        raise
-    finally:
-        conn.close()
 
 
 def get_tokens_pg(athlete_id: int):
