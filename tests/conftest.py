@@ -7,7 +7,7 @@ from src.app import create_app
 
 @pytest.fixture
 def app(monkeypatch):
-    # Ensure all ENV VARS are in os.environ for both config *and* get_conn()
+    # Ensure environment variables are available to both Flask and src.db
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
     monkeypatch.setenv("ADMIN_USER", "admin")
     monkeypatch.setenv("ADMIN_PASS", "secret")
@@ -16,10 +16,15 @@ def app(monkeypatch):
 
     test_config = {
         "TESTING": True,
-        # DATABASE_URL isn’t strictly needed here now, but harmless:
         "DATABASE_URL": "sqlite:///:memory:",
     }
     app = create_app(test_config)
+
+    # Bootstrap the schema in the in-memory SQLite database
+    from src.db import init_db
+
+    init_db(app.config["DATABASE_URL"])
+
     yield app
 
 
