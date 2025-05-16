@@ -72,6 +72,7 @@ def create_app(test_config=None):
     app.register_blueprint(SYNC)
 
     # Health check endpoint
+    @app.route("/ping")
     def ping():
         """A simple endpoint to verify the app is running."""
         return "pong", 200
