@@ -62,10 +62,13 @@ def sync_to_db(athlete_id):
 
 @SYNC.route("/init-db")
 def init_db_route():
-    from src.services.db_bootstrap import init_db  # ✅ FIX THIS IMPORT
+    from src.services.db_bootstrap import init_db
+    import traceback
 
     try:
         init_db()
         return "✅ init_db() completed successfully", 200
     except Exception as e:
+        print("❌ Error in init_db:", e, flush=True)
+        traceback.print_exc()
         return f"❌ Error initializing DB: {e}", 500
