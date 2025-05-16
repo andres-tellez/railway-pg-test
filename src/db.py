@@ -98,3 +98,43 @@ def save_tokens_pg(athlete_id: int, access_token: str, refresh_token: str) -> No
         conn.commit()
     finally:
         conn.close()
+
+
+def save_activity_pg(activity: dict) -> None:
+    """
+    Insert a single Strava activity into the database.
+    Skips duplicates (based on primary key).
+    """
+    conn = get_conn()
+    try:
+        fields = {
+            "activity_id": activity["id"],
+            "athlete_id": activity["athlete"]["id"],
+            "name": activity.get("name"),
+            "start_date": activity.get("start_date"),
+            "distance_mi": activity.get("distance", 0) / 1609.34,
+            "moving_time_min": activity.get("moving_time", 0) / 60.0,
+            "pace_min_per_mile": None,  # Optional calc below
+            "data": activity,
+        }
+
+        if fields["distance_mi"] > 0:
+            fields["pace_min_per_mile"] = (
+                fields["moving_time_min"] / fields["distance_mi"]
+            )
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO activities (
+                    activity_id, athlete_id, name, start_date,
+                    distance_mi, moving_time_min, pace_min_per_mile, data
+                ) VALUES (%(activity_id)s, %(athlete_id)s, %(name)s, %(start_date)s,
+                          %(distance_mi)s, %(moving_time_min)s, %(pace_min_per_mile)s, %(data)s)
+                ON CONFLICT (activity_id) DO NOTHING
+                """,
+                fields,
+            )
+        conn.commit()
+    finally:
+        conn.close()

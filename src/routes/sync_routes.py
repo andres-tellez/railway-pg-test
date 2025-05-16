@@ -58,3 +58,14 @@ def sync_to_db(athlete_id):
     except Exception as e:
         traceback.print_exc()
         return jsonify(error="Sync failed", details=str(e)), 500
+
+
+@SYNC.route("/init-db")
+def init_db_route():
+    from src.services.db_bootstrap import init_db  # ✅ FIX THIS IMPORT
+
+    try:
+        init_db()
+        return "✅ init_db() completed successfully", 200
+    except Exception as e:
+        return f"❌ Error initializing DB: {e}", 500

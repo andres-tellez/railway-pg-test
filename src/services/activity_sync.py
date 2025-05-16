@@ -6,8 +6,8 @@ log = get_logger(__name__)
 
 def sync_recent_activities(athlete_id, access_token, per_page=30) -> int:
     """
-    Download recent activities from Strava. Returns the number of activities fetched.
-    (DB persistence is stubbed out here to avoid import cycles.)
+    Download recent activities from Strava and persist them.
+    Returns the number of activities successfully inserted.
     """
     url = "https://www.strava.com/api/v3/athlete/activities"
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -24,11 +24,12 @@ def sync_recent_activities(athlete_id, access_token, per_page=30) -> int:
 
     for activity in activities:
         try:
-            # If you need to persist here later, do a local import:
-            # from src.db import save_tokens_pg  # or your activity‐save fn
-            # save_tokens_pg(...)
-            inserted += 1
+            from src.db import (
+                save_activity_pg,
+            )  # local import to avoid circular dependency
 
+            save_activity_pg(activity)
+            inserted += 1
         except Exception as e:
             log.warning(f"Skipping activity {activity.get('id')} due to error: {e}")
             continue
