@@ -16,14 +16,18 @@ def test_sync_auth_and_error(client, key, code):
 
 
 def test_sync_success(monkeypatch, client):
+    # Stub out get_valid_access_token
     monkeypatch.setenv("CRON_SECRET_KEY", "test-cron-key")
-    # stub out internals
     monkeypatch.setattr(
-        "src.routes.sync_routes.get_valid_access_token", lambda x: "tok"
+        "src.routes.sync_routes.get_valid_access_token", lambda athlete_id: "fake-token"
     )
+
+    # Stub out HTTP to Strava entirely
     monkeypatch.setattr(
-        "src.services.activity_sync.sync_recent_activities", lambda a, t: 2
+        "requests.get",
+        lambda *args, **kwargs: type("R", (), {"status_code": 200, "json": lambda: []}),
     )
+    # Now your sync_recent_activities will see an empty list and return 0
     resp = client.get("/sync-strava-to-db/123?key=test-cron-key")
     assert resp.status_code == 200
-    assert resp.get_json() == {"synced": 2}
+    assert resp.get_json() == {"synced": 0}

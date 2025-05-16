@@ -1,18 +1,20 @@
-# tests/conftest.py
-import pytest
 import os
+import pytest
 from src.app import create_app
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
+    # force these so login & sync auth pass
+    monkeypatch.setenv("ADMIN_USER", "admin")
+    monkeypatch.setenv("ADMIN_PASS", "secret")
+    monkeypatch.setenv("CRON_SECRET_KEY", "test-cron-key")
+    monkeypatch.setenv("SECRET_KEY", "test-secret")  # for JWT
+
     test_config = {
         "TESTING": True,
         "DATABASE_URL": "sqlite:///:memory:",
-        "CRON_SECRET_KEY": "test-cron-key",
-        "ADMIN_USER": "admin",
-        "ADMIN_PASS": "secret",
-        "SECRET_KEY": "test-secret",
+        # we no longer need to set ADMIN_USER etc here
     }
     app = create_app(test_config)
     yield app
