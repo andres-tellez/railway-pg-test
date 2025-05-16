@@ -7,19 +7,17 @@ from src.app import create_app
 # Ensure the project root is on PYTHONPATH
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-# Initialize the Flask app
+# Only create app once (used by both local and gunicorn)
 app = create_app()
 
-# Pull the port from the PORT env var (Railway sets this), default to 8080 for deployment
-port = int(os.environ.get("PORT", 8080))
-
 if __name__ == "__main__":
+    # Local dev only — PORT defaults to 5000
+    port = int(os.environ.get("PORT", 5000))
     print(
-        f"🚀 Starting app on 0.0.0.0:{port} with DATABASE_URL = {app.config.get('DATABASE_URL')}",
+        f"🚀 Starting app locally on 0.0.0.0:{port} with DATABASE_URL = {app.config.get('DATABASE_URL')}",
         flush=True,
     )
 
-    # Optional DB connection test
     try:
         from psycopg2 import connect
 
@@ -31,5 +29,4 @@ if __name__ == "__main__":
     except Exception as e:
         print("⚠️ DB test query failed:", e, flush=True)
 
-    # Start the server (local or hosted)
     app.run(host="0.0.0.0", port=port, debug=True)
