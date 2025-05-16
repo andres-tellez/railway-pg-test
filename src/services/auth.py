@@ -4,13 +4,9 @@ import os
 import jwt
 import datetime
 
-# Remove top‐level db imports to avoid circular
-# from src.db import save_tokens_pg, get_tokens_pg
-
 # Token expiration durations (in seconds)
-ACCESS_TOKEN_EXP = int(os.getenv("ACCESS_TOKEN_EXP", 900))  # 15 minutes
-REFRESH_TOKEN_EXP = int(os.getenv("REFRESH_TOKEN_EXP", 604800))  # 7 days
-JWT_SECRET = os.getenv("SECRET_KEY", "dev")  # fallback secret
+ACCESS_TOKEN_EXP = lambda: int(os.getenv("ACCESS_TOKEN_EXP", 900))  # 15 minutes
+REFRESH_TOKEN_EXP = lambda: int(os.getenv("REFRESH_TOKEN_EXP", 604800))  # 7 days
 
 
 def login_user(data: dict) -> tuple[str, str]:
@@ -33,15 +29,17 @@ def login_user(data: dict) -> tuple[str, str]:
     now = datetime.datetime.utcnow()
     access_payload = {
         "sub": username,
-        "exp": now + datetime.timedelta(seconds=ACCESS_TOKEN_EXP),
+        "exp": now + datetime.timedelta(seconds=ACCESS_TOKEN_EXP()),
     }
     refresh_payload = {
         "sub": username,
-        "exp": now + datetime.timedelta(seconds=REFRESH_TOKEN_EXP),
+        "exp": now + datetime.timedelta(seconds=REFRESH_TOKEN_EXP()),
     }
 
-    access_token = jwt.encode(access_payload, JWT_SECRET, algorithm="HS256")
-    refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm="HS256")
+    # Dynamic secret read at call time
+    secret = os.getenv("SECRET_KEY", "dev")
+    access_token = jwt.encode(access_payload, secret, algorithm="HS256")
+    refresh_token = jwt.encode(refresh_payload, secret, algorithm="HS256")
 
     # Persist tokens—defer import
     from src.db import save_tokens_pg
@@ -61,8 +59,9 @@ def refresh_token(refresh_token_str: str) -> str:
     Returns:
         access_token (str)
     """
+    secret = os.getenv("SECRET_KEY", "dev")
     try:
-        payload = jwt.decode(refresh_token_str, JWT_SECRET, algorithms=["HS256"])
+        payload = jwt.decode(refresh_token_str, secret, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
         raise PermissionError("Refresh token expired")
     except jwt.InvalidTokenError:
@@ -80,10 +79,10 @@ def refresh_token(refresh_token_str: str) -> str:
     now = datetime.datetime.utcnow()
     new_payload = {
         "sub": username,
-        "exp": now + datetime.timedelta(seconds=ACCESS_TOKEN_EXP),
+        "exp": now + datetime.timedelta(seconds=ACCESS_TOKEN_EXP()),
     }
 
-    return jwt.encode(new_payload, JWT_SECRET, algorithm="HS256")
+    return jwt.encode(new_payload, secret, algorithm="HS256")
 
 
 def logout_user(refresh_token_str: str) -> None:
