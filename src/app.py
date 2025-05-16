@@ -77,31 +77,6 @@ def create_app(test_config=None):
         """A simple endpoint to verify the app is running."""
         return "pong", 200
 
-    # Database initialization endpoint (defer import of init_db)
-    @app.route("/init-db")
-    def init_db_route():
-        """Initialize or reset the application's database schema."""
-        print(
-            "🔄 init-db called with DATABASE_URL:",
-            app.config["DATABASE_URL"],
-            flush=True,
-        )
-        try:
-            from src.db import init_db  # deferred import to avoid circular
-
-            init_db(app.config["DATABASE_URL"])
-            print("✅ init_db() completed successfully", flush=True)
-            return "Database initialized", 200
-        except Exception as e:
-            print(f"❌ init_db error: {e}", flush=True)
-            return f"Error initializing DB: {e}", 500
-
-    # Debug: list all registered routes for verification
-    for rule in app.url_map.iter_rules():
-        print(f"🔍 Registered route: {rule.endpoint} -> {rule.rule}", flush=True)
-
-    return app
-
 
 # Entry point for local development
 if __name__ == "__main__":
