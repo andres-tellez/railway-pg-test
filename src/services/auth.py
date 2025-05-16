@@ -1,22 +1,17 @@
-"""
-Module: src/services/auth.py
-Authentication service for Smart Marathon Coach.
-
-Provides:
-- login_user(): validate credentials and issue tokens.
-- refresh_token(): exchange a refresh token for a new access token.
-- logout_user(): revoke a refresh token.
-"""
+# src/services/auth.py
 
 import os
 import jwt
 import datetime
-from src.db import save_tokens_pg, get_tokens_pg
+
+# Remove top‐level db imports to avoid circular
+# from src.db import save_tokens_pg, get_tokens_pg
 
 # Token expiration durations (in seconds)
-ACCESS_TOKEN_EXP = int(os.getenv("ACCESS_TOKEN_EXP", 900))       # 15 minutes
+ACCESS_TOKEN_EXP = int(os.getenv("ACCESS_TOKEN_EXP", 900))  # 15 minutes
 REFRESH_TOKEN_EXP = int(os.getenv("REFRESH_TOKEN_EXP", 604800))  # 7 days
 JWT_SECRET = os.getenv("SECRET_KEY", "dev")  # fallback secret
+
 
 def login_user(data: dict) -> tuple[str, str]:
     """
@@ -31,7 +26,7 @@ def login_user(data: dict) -> tuple[str, str]:
     username = data.get("username")
     password = data.get("password")
 
-    # Validate against admin credentials from .env
+    # Validate against admin credentials from env
     if username != os.getenv("ADMIN_USER") or password != os.getenv("ADMIN_PASS"):
         raise PermissionError("Invalid credentials")
 
@@ -48,10 +43,13 @@ def login_user(data: dict) -> tuple[str, str]:
     access_token = jwt.encode(access_payload, JWT_SECRET, algorithm="HS256")
     refresh_token = jwt.encode(refresh_payload, JWT_SECRET, algorithm="HS256")
 
-    # Save tokens to DB (hardcoding athlete_id=0 for now)
+    # Persist tokens—defer import
+    from src.db import save_tokens_pg
+
     save_tokens_pg(athlete_id=0, access_token=access_token, refresh_token=refresh_token)
 
     return access_token, refresh_token
+
 
 def refresh_token(refresh_token_str: str) -> str:
     """
@@ -72,7 +70,9 @@ def refresh_token(refresh_token_str: str) -> str:
 
     username = payload.get("sub")
 
-    # Optionally verify token in DB
+    # Verify token in DB—defer import
+    from src.db import get_tokens_pg
+
     tokens = get_tokens_pg(athlete_id=0)
     if not tokens or tokens.get("refresh_token") != refresh_token_str:
         raise PermissionError("Refresh token not recognized")
@@ -85,14 +85,13 @@ def refresh_token(refresh_token_str: str) -> str:
 
     return jwt.encode(new_payload, JWT_SECRET, algorithm="HS256")
 
+
 def logout_user(refresh_token_str: str) -> None:
     """
     Revoke refresh token.
 
     Args:
         refresh_token_str (str): token to revoke
-
-    Note:
-        Not implemented — you'd update DB to invalidate or delete the token.
     """
-    pass  # For now, no-op
+    # Currently a no-op; implement revocation logic later
+    pass
