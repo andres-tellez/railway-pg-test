@@ -1,1 +1,1 @@
-web: gunicorn smoke_test:app --bind 0.0.0.0:$PORT
+web: gunicorn app_full:app --bind 0.0.0.0:$PORT
