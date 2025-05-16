@@ -81,8 +81,8 @@ def create_app(test_config=None):
 
 
 # Entry point for local development
-if __name__ == "__main__":
-    app = create_app()
-    port = int(os.environ.get("PORT", 5000))
-    print(f"🚀 Starting app on 0.0.0.0:{port}", flush=True)
-    app.run(host="0.0.0.0", port=port, debug=True)
+# if __name__ == "__main__":
+#    app = create_app()
+#    port = int(os.environ.get("PORT", 5000))
+#    print(f"🚀 Starting app on 0.0.0.0:{port}", flush=True)
+#   app.run(host="0.0.0.0", port=port, debug=True)
