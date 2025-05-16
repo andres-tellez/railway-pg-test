@@ -1,3 +1,5 @@
+# src/routes/sync_routes.py
+
 import os
 import traceback
 import requests
@@ -11,7 +13,7 @@ CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
 
 
 def get_valid_access_token(athlete_id):
-    # local import avoids cycle
+    # Defer imports here to avoid circular dependency
     from src.db import get_tokens_pg, save_tokens_pg
 
     tokens = get_tokens_pg(athlete_id)
@@ -19,12 +21,13 @@ def get_valid_access_token(athlete_id):
         raise Exception(f"No tokens for athlete {athlete_id}")
     access, refresh = tokens["access_token"], tokens["refresh_token"]
 
-    # test token
+    # Test current token
     r = requests.get(
         "https://www.strava.com/api/v3/athlete",
         headers={"Authorization": f"Bearer {access}"},
     )
     if r.status_code == 401:
+        # Refresh token flow
         rr = requests.post(
             "https://www.strava.com/api/v3/oauth/token",
             data={
@@ -37,7 +40,7 @@ def get_valid_access_token(athlete_id):
         rr.raise_for_status()
         data = rr.json()
         access = data["access_token"]
-        # persist refreshed tokens
+        # Persist refreshed tokens
         save_tokens_pg(athlete_id, access, data["refresh_token"])
 
     return access
