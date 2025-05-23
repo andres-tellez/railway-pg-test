@@ -1,36 +1,25 @@
-# tests/conftest.py
-
 import os
+import tempfile
 import pytest
-from pathlib import Path
+
 from src.app import create_app
-from src.services.db_bootstrap import init_db  # ✅ NEW location
+from src.db import init_db
 
+@pytest.fixture(scope="function")
+def db_path():
+    db_fd, db_path = tempfile.mkstemp(suffix=".sqlite3")
+    os.close(db_fd)
+    yield db_path
+    os.remove(db_path)
 
-@pytest.fixture
-def app(tmp_path, monkeypatch):
-    # Use a file-based SQLite DB so schema persists across connections
-    db_file = tmp_path / "test.db"
-    db_url = f"sqlite:///{db_file}"
-
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    monkeypatch.setenv("ADMIN_USER", "admin")
-    monkeypatch.setenv("ADMIN_PASS", "secret")
-    monkeypatch.setenv("CRON_SECRET_KEY", "test-cron-key")
-    monkeypatch.setenv("SECRET_KEY", "test-secret")
-
-    test_config = {
-        "TESTING": True,
-        "DATABASE_URL": db_url,
-    }
-    app = create_app(test_config)
-
-    # ✅ Re-initialize schema
-    init_db(app.config["DATABASE_URL"])
-
+@pytest.fixture(scope="function")  # <-- make sure this is function-scoped
+def app(db_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
+    app = create_app({"TESTING": True})
+    with app.app_context():
+        init_db()
     yield app
 
-
-@pytest.fixture
+@pytest.fixture(scope="function")  # <-- this too
 def client(app):
     return app.test_client()

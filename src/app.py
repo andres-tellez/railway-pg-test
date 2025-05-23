@@ -12,10 +12,10 @@ from pathlib import Path
 from flask import Flask
 from dotenv import load_dotenv
 
-# from src.startup_checks import perform_startup_checks  # Temporarily disabled
 from src.routes.sync_routes import SYNC
 from src.routes.auth import auth_bp
 from src.routes.enrich import enrich_bp
+from src.routes.tasktracker_routes import tasktracker_bp  # Task tracker blueprint
 
 
 def create_app(test_config=None):
@@ -29,28 +29,25 @@ def create_app(test_config=None):
         Flask app: A configured Flask application.
     """
 
-    # Load environment variables from .env file into os.environ
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    print(f"📄 Looking for .env at: {env_path}", flush=True)
-    load_dotenv(dotenv_path=env_path, override=True)
+    # Load environment variables unless in testing mode
+    if os.getenv("FLASK_ENV") != "testing":
+        env_path = Path(__file__).resolve().parent.parent / ".env"
+        print(f"📄 Looking for .env at: {env_path}", flush=True)
+        load_dotenv(dotenv_path=env_path, override=True)
 
-    print("🧪 cwd:", os.getcwd())
-    print("🧪 files in cwd:", [p.name for p in Path(".").iterdir()])
+        print("🧪 cwd:", os.getcwd())
+        print("🧪 files in cwd:", [p.name for p in Path(".").iterdir()])
+        print("💾 DATABASE_URL in app:", os.getenv("DATABASE_URL"))
 
-    print("💾 DATABASE_URL in app:", os.getenv("DATABASE_URL"))
+        if not env_path.exists():
+            print("❌ .env file not found!")
+        else:
+            with open(env_path, encoding="utf-8") as f:
+                print("📄 .env contents:")
+                print(f.read())
 
-    if not env_path.exists():
-        print("❌ .env file not found!")
-    else:
-        with open(env_path, encoding="utf-8") as f:
-            print("📄 .env contents:")
-            print(f.read())
-
-    print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
-    print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
-
-    # --- Startup checks disabled to prevent circular imports ---
-    # perform_startup_checks()
+        print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
+        print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
 
     # Instantiate the Flask app
     app = Flask(__name__, instance_relative_config=False)
@@ -66,10 +63,11 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
-    # Blueprint registration: auth, enrich, and sync modules
+    # Blueprint registration
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(enrich_bp, url_prefix="/enrich")
     app.register_blueprint(SYNC)
+    app.register_blueprint(tasktracker_bp)  # FIXED: Use internal blueprint prefix
 
     # Health check endpoint
     @app.route("/ping")
@@ -78,11 +76,3 @@ def create_app(test_config=None):
         return "pong", 200
 
     return app
-
-
-# Entry point for local development
-# if __name__ == "__main__":
-#    app = create_app()
-#    port = int(os.environ.get("PORT", 5000))
-#    print(f"🚀 Starting app on 0.0.0.0:{port}", flush=True)
-#   app.run(host="0.0.0.0", port=port, debug=True)

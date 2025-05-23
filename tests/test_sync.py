@@ -1,33 +1,35 @@
 # tests/test_sync.py
 import pytest
-from unittest.mock import patch
-
 
 @pytest.mark.parametrize(
     "key,code",
     [
         ("wrong", 401),
-        ("test-cron-key", 500),  # no schema yet triggers JSON error, not crash
+        ("devkey123", 500),  # schema exists, but we'll simulate empty sync
     ],
 )
 def test_sync_auth_and_error(client, key, code):
     resp = client.get(f"/sync-strava-to-db/123?key={key}")
     assert resp.status_code == code
 
-
 def test_sync_success(monkeypatch, client):
-    # Stub out get_valid_access_token
-    monkeypatch.setenv("CRON_SECRET_KEY", "test-cron-key")
+    # Match the CRON_SECRET_KEY expected by route
+    monkeypatch.setenv("CRON_SECRET_KEY", "devkey123")
+
+    # Mock token retrieval
     monkeypatch.setattr(
         "src.routes.sync_routes.get_valid_access_token", lambda athlete_id: "fake-token"
     )
 
-    # Stub out HTTP to Strava entirely
+    # Mock Strava API call to return empty activity list
     monkeypatch.setattr(
         "requests.get",
-        lambda *args, **kwargs: type("R", (), {"status_code": 200, "json": lambda: []}),
+        lambda *args, **kwargs: type("R", (), {
+            "status_code": 200,
+            "json": staticmethod(lambda: [])
+        })(),
     )
-    # Now your sync_recent_activities will see an empty list and return 0
-    resp = client.get("/sync-strava-to-db/123?key=test-cron-key")
+
+    resp = client.get("/sync-strava-to-db/123?key=devkey123")
     assert resp.status_code == 200
     assert resp.get_json() == {"synced": 0}
