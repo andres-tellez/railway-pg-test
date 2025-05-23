@@ -1,4 +1,6 @@
-﻿services:
+﻿version: "3.9"
+
+services:
   db:
     image: postgres:15
     environment:
@@ -10,15 +12,22 @@
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "smartcoach"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   web:
     build: .
     ports:
       - "5050:5050"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       FLASK_ENV: development
+      PYTHONPATH: /app
     volumes:
       - .:/app
     command: python run.py

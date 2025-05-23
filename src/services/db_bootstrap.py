@@ -9,6 +9,7 @@ def init_db(database_url=None):
     Initialize or reset the application's database schema.
 
     Reads SQL from `schema.sql` at the project root and executes it.
+    Supports both PostgreSQL and SQLite.
     """
     database_url = database_url or os.environ["DATABASE_URL"]
     parsed = urlparse(database_url)
@@ -20,8 +21,9 @@ def init_db(database_url=None):
         ddl = f.read()
 
     if database_url.startswith("sqlite"):
-        print(f"🔍 Connecting to SQLite at {parsed.path}", flush=True)
-        conn = sqlite3.connect(parsed.path)
+        sqlite_path = parsed.path.lstrip("/") if os.name == "nt" else parsed.path
+        print(f"🔍 Connecting to SQLite at {sqlite_path}", flush=True)
+        conn = sqlite3.connect(sqlite_path)
         try:
             conn.executescript(ddl)
             conn.commit()
@@ -29,8 +31,10 @@ def init_db(database_url=None):
         finally:
             conn.close()
     else:
-        print(f"🔍 Connecting to Postgres at {parsed.hostname}", flush=True)
-        conn = psycopg2.connect(database_url, sslmode="require")
+        # Smart SSL logic: disable for local containers, require for real deployments
+        ssl_mode = "disable" if parsed.hostname in ("localhost", "127.0.0.1", "db") else "require"
+        print(f"🔍 Connecting to Postgres at {parsed.hostname} with sslmode={ssl_mode}", flush=True)
+        conn = psycopg2.connect(database_url, sslmode=ssl_mode)
         try:
             with conn.cursor() as cur:
                 cur.execute(ddl)

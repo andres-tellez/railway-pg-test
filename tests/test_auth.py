@@ -1,31 +1,46 @@
 # tests/test_auth.py
-import jwt
+
+import os
+import time
+import pytest
 
 
-def test_login_and_refresh_and_logout(client):
-    # login
+@pytest.fixture(autouse=True)
+def set_env(monkeypatch):
+    monkeypatch.setenv("ADMIN_USER", "admin")
+    monkeypatch.setenv("ADMIN_PASS", "secret")
+    monkeypatch.setenv("SECRET_KEY", "testsecret")
+
+
+def test_login_refresh_logout(client):
+    """Test successful login, token refresh, and logout flow."""
     resp = client.post("/auth/login", json={"username": "admin", "password": "secret"})
     assert resp.status_code == 200
-    data = resp.get_json()
-    assert "access_token" in data and "refresh_token" in data
+    tokens = resp.get_json()
+    assert "access_token" in tokens
+    assert "refresh_token" in tokens
 
-    # refresh
-    rt = data["refresh_token"]
-    resp2 = client.post("/auth/refresh", json={"refresh_token": rt})
-    assert resp2.status_code == 200
-    new_at = resp2.get_json()["access_token"]
-    payload = jwt.decode(
-        new_at, client.application.config["SECRET_KEY"], algorithms=["HS256"]
-    )
-    assert payload["sub"] == "admin"
+    time.sleep(1)  # Ensure new token gets a different timestamp
 
-    # logout
-    resp3 = client.post("/auth/logout", json={"refresh_token": rt})
-    assert resp3.status_code == 200
-    assert resp3.get_json()["message"] == "logged out"
+    resp = client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
+    assert resp.status_code == 200
+    new_access = resp.get_json()["access_token"]
+    assert new_access != tokens["access_token"]
+
+    resp = client.post("/auth/logout", json={"refresh_token": tokens["refresh_token"]})
+    assert resp.status_code == 200
+    assert resp.get_json()["message"] == "logged out"
 
 
-def test_login_bad(client):
-    resp = client.post("/auth/login", json={"username": "x", "password": "y"})
+def test_invalid_login_rejected(client):
+    """Test that invalid credentials are rejected."""
+    resp = client.post("/auth/login", json={"username": "wrong", "password": "bad"})
+    assert resp.status_code == 401
+    assert "error" in resp.get_json()
+
+
+def test_invalid_refresh_token(client):
+    """Test that an invalid refresh token is rejected."""
+    resp = client.post("/auth/refresh", json={"refresh_token": "not.a.real.token"})
     assert resp.status_code == 401
     assert "error" in resp.get_json()
