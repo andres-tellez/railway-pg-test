@@ -89,4 +89,16 @@ def create_app(test_config=None):
         except Exception as e:
             return {"status": "fail", "error": str(e)}, 500
 
+    # Startup diagnostics endpoint
+    @app.route("/startup")
+    def startup():
+        return {
+            "status": "started",
+            "env_PORT": os.environ.get("PORT"),
+            "env_DATABASE_URL": os.environ.get("DATABASE_URL"),
+            "config_DATABASE_URL": app.config.get("DATABASE_URL"),
+            "cwd": os.getcwd(),
+            "files": [p.name for p in Path(".").iterdir()],
+        }
+
     return app
