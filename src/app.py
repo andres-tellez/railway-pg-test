@@ -10,7 +10,7 @@ and initialization endpoints.
 import os
 from pathlib import Path
 from flask import Flask
-from dotenv import load_dotenv
+# from dotenv import load_dotenv  # TEMP: Commented out dotenv loading
 
 from src.routes.sync_routes import SYNC
 from src.routes.auth import auth_bp
@@ -28,26 +28,27 @@ def create_app(test_config=None):
     Returns:
         Flask app: A configured Flask application.
     """
+    print("✅ ENTERED create_app()", flush=True)
 
-    # Load environment variables unless in testing mode
-    if os.getenv("FLASK_ENV") != "testing":
-        env_path = Path(__file__).resolve().parent.parent / ".env"
-        print(f"📄 Looking for .env at: {env_path}", flush=True)
-        load_dotenv(dotenv_path=env_path, override=True)
+    # TEMP: Disabled .env loading for clean Railway behavior
+    # if os.getenv("FLASK_ENV") != "testing":
+    #     env_path = Path(__file__).resolve().parent.parent / ".env"
+    #     print(f"📄 Looking for .env at: {env_path}", flush=True)
+    #     load_dotenv(dotenv_path=env_path, override=True)
 
-        print("🧪 cwd:", os.getcwd())
-        print("🧪 files in cwd:", [p.name for p in Path(".").iterdir()])
-        print("💾 DATABASE_URL in app:", os.getenv("DATABASE_URL"))
+    #     print("🧪 cwd:", os.getcwd())
+    #     print("🧪 files in cwd:", [p.name for p in Path(".").iterdir()])
+    #     print("💾 DATABASE_URL in app:", os.getenv("DATABASE_URL"))
 
-        if not env_path.exists():
-            print("❌ .env file not found!")
-        else:
-            with open(env_path, encoding="utf-8") as f:
-                print("📄 .env contents:")
-                print(f.read())
+    #     if not env_path.exists():
+    #         print("❌ .env file not found!")
+    #     else:
+    #         with open(env_path, encoding="utf-8") as f:
+    #             print("📄 .env contents:")
+    #             print(f.read())
 
-        print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
-        print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
+    #     print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
+    #     print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
 
     # Instantiate the Flask app
     app = Flask(__name__, instance_relative_config=False)
@@ -67,18 +68,16 @@ def create_app(test_config=None):
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(enrich_bp, url_prefix="/enrich")
     app.register_blueprint(SYNC)
-    app.register_blueprint(tasktracker_bp)  # FIXED: Use internal blueprint prefix
+    app.register_blueprint(tasktracker_bp)
 
     # Health check endpoint
     @app.route("/ping")
     def ping():
-        """A simple endpoint to verify the app is running."""
         return "pong", 200
 
     # DB check endpoint
     @app.route("/db-check")
     def db_check():
-        """Verify DB connection by running a SELECT 1 query."""
         try:
             from psycopg2 import connect
             conn = connect(app.config["DATABASE_URL"], sslmode="disable")
