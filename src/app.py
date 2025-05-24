@@ -12,10 +12,11 @@ from pathlib import Path
 from flask import Flask
 # from dotenv import load_dotenv  # TEMP: Commented out dotenv loading
 
-from src.routes.sync_routes import SYNC
-from src.routes.auth import auth_bp
-from src.routes.enrich import enrich_bp
-from src.routes.tasktracker_routes import tasktracker_bp  # Task tracker blueprint
+# ⚠️ TEMPORARILY DISABLED for minimal debug boot
+# from src.routes.sync_routes import SYNC
+# from src.routes.auth import auth_bp
+# from src.routes.enrich import enrich_bp
+# from src.routes.tasktracker_routes import tasktracker_bp  # Task tracker blueprint
 
 
 def create_app(test_config=None):
@@ -53,22 +54,21 @@ def create_app(test_config=None):
     # Instantiate the Flask app
     app = Flask(__name__, instance_relative_config=False)
 
-    # Configuration: default settings
-    app.config.from_mapping(
-        SECRET_KEY=os.environ.get("SECRET_KEY", "dev"),
-        DATABASE_URL=os.environ.get("DATABASE_URL"),
-        CRON_SECRET_KEY=os.environ.get("CRON_SECRET_KEY"),
-    )
+    # TEMP: Skip config mapping and test_config merge
+    # app.config.from_mapping(
+    #     SECRET_KEY=os.environ.get("SECRET_KEY", "dev"),
+    #     DATABASE_URL=os.environ.get("DATABASE_URL"),
+    #     CRON_SECRET_KEY=os.environ.get("CRON_SECRET_KEY"),
+    # )
 
-    # Apply any test-specific configuration on top
-    if test_config:
-        app.config.update(test_config)
+    # if test_config:
+    #     app.config.update(test_config)
 
-    # Blueprint registration
-    app.register_blueprint(auth_bp, url_prefix="/auth")
-    app.register_blueprint(enrich_bp, url_prefix="/enrich")
-    app.register_blueprint(SYNC)
-    app.register_blueprint(tasktracker_bp)
+    # TEMP: Skip all blueprint registration
+    # app.register_blueprint(auth_bp, url_prefix="/auth")
+    # app.register_blueprint(enrich_bp, url_prefix="/enrich")
+    # app.register_blueprint(SYNC)
+    # app.register_blueprint(tasktracker_bp)
 
     # Health check endpoint
     @app.route("/ping")
@@ -76,17 +76,18 @@ def create_app(test_config=None):
         return "pong", 200
 
     # DB check endpoint
-    @app.route("/db-check")
-    def db_check():
-        try:
-            from psycopg2 import connect
-            conn = connect(app.config["DATABASE_URL"], sslmode="disable")
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1;")
-                cur.fetchone()
-            return {"status": "ok", "db": True}
-        except Exception as e:
-            return {"status": "fail", "error": str(e)}, 500
+    # TEMPORARILY DISABLED for crash isolation
+    # @app.route("/db-check")
+    # def db_check():
+    #     try:
+    #         from psycopg2 import connect
+    #         conn = connect(app.config["DATABASE_URL"], sslmode="disable")
+    #         with conn.cursor() as cur:
+    #             cur.execute("SELECT 1;")
+    #             cur.fetchone()
+    #         return {"status": "ok", "db": True}
+    #     except Exception as e:
+    #         return {"status": "fail", "error": str(e)}, 500
 
     # Startup diagnostics endpoint
     @app.route("/startup")
@@ -95,7 +96,6 @@ def create_app(test_config=None):
             "status": "started",
             "env_PORT": os.environ.get("PORT"),
             "env_DATABASE_URL": os.environ.get("DATABASE_URL"),
-            "config_DATABASE_URL": app.config.get("DATABASE_URL"),
             "cwd": os.getcwd(),
             "files": [p.name for p in Path(".").iterdir()],
         }
