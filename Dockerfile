@@ -7,16 +7,14 @@ WORKDIR /app
 # Set PYTHONPATH to make `src` importable
 ENV PYTHONPATH=/app
 
-# Explicit copy (avoid COPY . . which can silently fail in CI/CD)
-COPY src/ ./src/
-COPY requirements.txt .
-COPY run.py .
+# Copy project files
+COPY . .
 
 # Install dependencies
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Debug: list directory contents at build time
-RUN echo "📁 Docker build: listing /app contents:" && ls -R /app
+# Expose port for Flask
+EXPOSE 5000
 
-# TEMP: Debug import and call to create_app()
-CMD ["python", "-c", "print('📦 PYTHONPATH =', __import__('os').environ.get('PYTHONPATH')); from src import app; app.create_app()"]
+# Debug test: run app with python directly to confirm it bootstraps
+CMD ["python", "run.py"]
