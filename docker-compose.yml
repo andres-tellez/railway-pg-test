@@ -1,6 +1,4 @@
-﻿version: "3.9"
-
-services:
+﻿services:
   db:
     image: postgres:15
     environment:
@@ -9,7 +7,6 @@ services:
       POSTGRES_DB: smartcoach_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
     healthcheck:
@@ -27,7 +24,7 @@ services:
         condition: service_healthy
     environment:
       FLASK_ENV: development
-      PYTHONPATH: /app
+      PYTHONPATH: /app  # Ensure src/ is importable
     volumes:
       - .:/app
     command: python run.py

@@ -2,8 +2,18 @@
 
 from flask import Blueprint, request, jsonify, current_app
 from src.utils.jwt_utils import require_auth
-from src.db import get_conn
-from src.dao.task_dao import create_task, get_task, update_task_status, delete_task
+from src.db.legacy_sql import get_conn
+
+from src.db.dao.task_dao import (
+    get_tasks,
+    get_task,
+    create_task,
+    update_task_status,
+    delete_task
+)
+
+
+
 
 tasktracker_bp = Blueprint("tasktracker", __name__, url_prefix="/tasks")
 
