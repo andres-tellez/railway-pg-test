@@ -30,6 +30,8 @@ def create_app(test_config=None):
         Flask app: A configured Flask application.
     """
     print("✅ ENTERED create_app()", flush=True)
+    print("📁 CWD:", os.getcwd(), flush=True)
+    print("📁 Contents of /app:", os.listdir("/app"), flush=True)
 
     # TEMP: Disabled .env loading for clean Railway behavior
     # if os.getenv("FLASK_ENV") != "testing":
