@@ -1,10 +1,6 @@
 """
 Module: src/app.py
 Application factory and core route registration for the Smart Marathon Coach API.
-
-This module defines the create_app() factory that configures the Flask app,
-loads environment settings, registers blueprints, and provides basic health
-and initialization endpoints.
 """
 
 import os
@@ -15,18 +11,12 @@ from dotenv import load_dotenv
 from src.routes.sync_routes import SYNC
 from src.routes.auth import auth_bp
 from src.routes.enrich import enrich_bp
-from src.routes.tasktracker_routes import tasktracker_bp  # Task tracker blueprint
+from src.routes.tasktracker_routes import tasktracker_bp
 
 
 def create_app(test_config=None):
     """
     Create and configure a Flask application instance.
-
-    Args:
-        test_config (dict, optional): Overrides to apply for testing, e.g.,
-            {'TESTING': True, 'DATABASE_URL': 'sqlite:///:memory:'}.
-    Returns:
-        Flask app: A configured Flask application.
     """
     print("✅ ENTERED create_app()", flush=True)
     print("📁 CWD:", os.getcwd(), flush=True)
@@ -55,7 +45,7 @@ def create_app(test_config=None):
     # Instantiate the Flask app
     app = Flask(__name__, instance_relative_config=False)
 
-    # Configuration
+    # Config setup
     app.config.from_mapping(
         SECRET_KEY=os.environ.get("SECRET_KEY", "dev"),
         DATABASE_URL=os.environ.get("DATABASE_URL"),
@@ -71,12 +61,11 @@ def create_app(test_config=None):
     app.register_blueprint(SYNC)
     app.register_blueprint(tasktracker_bp)
 
-    # Health check
+    # Routes
     @app.route("/ping")
     def ping():
         return "pong", 200
 
-    # DB check
     @app.route("/db-check")
     def db_check():
         try:
@@ -89,7 +78,6 @@ def create_app(test_config=None):
         except Exception as e:
             return {"status": "fail", "error": str(e)}, 500
 
-    # Startup diagnostics
     @app.route("/startup")
     def startup():
         return {
