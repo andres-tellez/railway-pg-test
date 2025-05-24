@@ -1,11 +1,12 @@
-# src/dao/task_dao.py
+# src/db/dao/task_dao.py
 
-from typing import Optional
+from typing import Optional, List, Union
 from psycopg2.extensions import connection as PGConn
 from sqlite3 import Connection as SQLiteConn
 
+DBConn = Union[PGConn, SQLiteConn]
 
-def create_task(conn, user_id: int, title: str, status: str = "pending") -> int:
+def create_task(conn: DBConn, user_id: int, title: str, status: str = "pending") -> int:
     cur = conn.cursor()
     if isinstance(conn, SQLiteConn):
         cur.execute(
@@ -22,19 +23,12 @@ def create_task(conn, user_id: int, title: str, status: str = "pending") -> int:
     conn.commit()
     return task_id
 
-
-def get_task(conn, task_id: int) -> Optional[dict]:
+def get_task(conn: DBConn, task_id: int) -> Optional[dict]:
     cur = conn.cursor()
     if isinstance(conn, SQLiteConn):
-        cur.execute(
-            "SELECT id, user_id, title, status FROM tasks WHERE id = ?",
-            (task_id,),
-        )
+        cur.execute("SELECT id, user_id, title, status FROM tasks WHERE id = ?", (task_id,))
     else:
-        cur.execute(
-            "SELECT id, user_id, title, status FROM tasks WHERE id = %s",
-            (task_id,),
-        )
+        cur.execute("SELECT id, user_id, title, status FROM tasks WHERE id = %s", (task_id,))
     row = cur.fetchone()
     if not row:
         return None
@@ -45,8 +39,16 @@ def get_task(conn, task_id: int) -> Optional[dict]:
         "status": row[3],
     }
 
+def get_tasks(conn: DBConn) -> List[dict]:
+    cur = conn.cursor()
+    cur.execute("SELECT id, user_id, title, status FROM tasks")
+    rows = cur.fetchall()
+    return [
+        {"id": row[0], "user_id": row[1], "title": row[2], "status": row[3]}
+        for row in rows
+    ]
 
-def update_task_status(conn, task_id: int, status: str) -> None:
+def update_task_status(conn: DBConn, task_id: int, status: str) -> None:
     cur = conn.cursor()
     if isinstance(conn, SQLiteConn):
         cur.execute("UPDATE tasks SET status = ? WHERE id = ?", (status, task_id))
@@ -54,8 +56,7 @@ def update_task_status(conn, task_id: int, status: str) -> None:
         cur.execute("UPDATE tasks SET status = %s WHERE id = %s", (status, task_id))
     conn.commit()
 
-
-def delete_task(conn, task_id: int) -> None:
+def delete_task(conn: DBConn, task_id: int) -> None:
     cur = conn.cursor()
     if isinstance(conn, SQLiteConn):
         cur.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
