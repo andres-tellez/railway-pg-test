@@ -32,7 +32,7 @@ def create_app(test_config=None):
     print("📁 CWD:", os.getcwd(), flush=True)
     print("📁 Contents of current working dir:", os.listdir(os.getcwd()), flush=True)
 
-    # Load environment variables unless running in test
+    # Load environment variables unless in testing
     if os.getenv("FLASK_ENV") != "testing":
         env_path = Path(__file__).resolve().parent.parent / ".env"
         print(f"📄 Looking for .env at: {env_path}", flush=True)
@@ -55,7 +55,7 @@ def create_app(test_config=None):
     # Instantiate the Flask app
     app = Flask(__name__, instance_relative_config=False)
 
-    # Configuration: default settings
+    # Configuration
     app.config.from_mapping(
         SECRET_KEY=os.environ.get("SECRET_KEY", "dev"),
         DATABASE_URL=os.environ.get("DATABASE_URL"),
@@ -71,17 +71,17 @@ def create_app(test_config=None):
     app.register_blueprint(SYNC)
     app.register_blueprint(tasktracker_bp)
 
-    # Health check endpoint
+    # Health check
     @app.route("/ping")
     def ping():
         return "pong", 200
 
-    # DB check endpoint
+    # DB check
     @app.route("/db-check")
     def db_check():
         try:
             from psycopg2 import connect
-            conn = connect(app.config["DATABASE_URL"], sslmode="disable")
+            conn = connect(app.config["DATABASE_URL"])
             with conn.cursor() as cur:
                 cur.execute("SELECT 1;")
                 cur.fetchone()
@@ -89,7 +89,7 @@ def create_app(test_config=None):
         except Exception as e:
             return {"status": "fail", "error": str(e)}, 500
 
-    # Startup diagnostics endpoint
+    # Startup diagnostics
     @app.route("/startup")
     def startup():
         return {

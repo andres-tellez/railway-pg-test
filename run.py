@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
     try:
         from psycopg2 import connect
-        conn = connect(app.config["DATABASE_URL"], sslmode="disable")
+        conn = connect(app.config["DATABASE_URL"])
         with conn.cursor() as cur:
             cur.execute("SELECT 1;")
             cur.fetchone()
