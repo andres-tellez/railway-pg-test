@@ -17,4 +17,5 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 EXPOSE 5000
 
 # Run the app
-CMD ["python", "run.py"]
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "src.app:create_app"]
+
