@@ -3,7 +3,8 @@ import tempfile
 import pytest
 
 from src.app import create_app
-from src.db import init_db
+from src.db.init_db import init_db
+
 
 @pytest.fixture(scope="function")
 def db_path():

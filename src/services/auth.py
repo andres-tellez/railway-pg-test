@@ -6,7 +6,7 @@ import datetime
 from flask import current_app, has_app_context
 
 from src.db_core import get_engine, get_session
-from src.dao.token_dao import get_tokens_sa, save_tokens_sa
+from src.db.dao.token_dao import get_tokens_sa, save_tokens_sa
 
 ACCESS_TOKEN_EXP = lambda: int(os.getenv("ACCESS_TOKEN_EXP", 900))        # 15 minutes
 REFRESH_TOKEN_EXP = lambda: int(os.getenv("REFRESH_TOKEN_EXP", 604800))   # 7 days

@@ -28,3 +28,10 @@ def require_auth(f):
 
         return f(*args, **kwargs)
     return decorated
+
+def decode_token(token: str, secret: str) -> dict:
+    """Decode JWT and return payload without verifying expiration (for internal inspection)."""
+    try:
+        return jwt.decode(token, secret, algorithms=["HS256"], options={"verify_exp": False})
+    except jwt.DecodeError:
+        raise ValueError("Invalid token format")

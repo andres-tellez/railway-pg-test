@@ -5,6 +5,8 @@ import traceback
 import requests
 from flask import Blueprint, request, jsonify
 from src.services.activity_sync import sync_recent_activities
+#from src.platform.sync import sync_strava_to_db
+
 
 SYNC = Blueprint("sync", __name__)
 

@@ -40,5 +40,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     id SERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL,
     title TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending'
+    status TEXT NOT NULL DEFAULT 'pending',
+    milestone TEXT,
+    labels TEXT,
+    is_icebox BOOLEAN DEFAULT FALSE
 );

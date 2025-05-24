@@ -1,10 +1,8 @@
 # src/routes/enrich.py
 
 from flask import Blueprint, jsonify, current_app
-from src.services.strava import (
-    enrich_activity,
-    backfill_activities,
-)
+from src.platform.strava import enrich_activity, backfill_activities
+
 
 enrich_bp = Blueprint("enrich", __name__)
 
