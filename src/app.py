@@ -75,4 +75,18 @@ def create_app(test_config=None):
         """A simple endpoint to verify the app is running."""
         return "pong", 200
 
+    # DB check endpoint
+    @app.route("/db-check")
+    def db_check():
+        """Verify DB connection by running a SELECT 1 query."""
+        try:
+            from psycopg2 import connect
+            conn = connect(app.config["DATABASE_URL"], sslmode="disable")
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1;")
+                cur.fetchone()
+            return {"status": "ok", "db": True}
+        except Exception as e:
+            return {"status": "fail", "error": str(e)}, 500
+
     return app
