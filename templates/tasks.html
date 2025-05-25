@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <h1>📋 Task Dashboard</h1>
+
+  <form method="get" class="filters">
+    <label>Status: <input type="text" name="status" value="{{ filters.status or '' }}"></label>
+    <label>Milestone: <input type="text" name="milestone" value="{{ filters.milestone or '' }}"></label>
+    <label>Label: <input type="text" name="label" value="{{ filters.label or '' }}"></label>
+    <label>Icebox:
+      <select name="icebox">
+        <option value="">--</option>
+        <option value="true" {% if filters.icebox == 'true' %}selected{% endif %}>Yes</option>
+        <option value="false" {% if filters.icebox == 'false' %}selected{% endif %}>No</option>
+      </select>
+    </label>
+    <button type="submit">Apply</button>
+  </form>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>User ID</th>
+        <th>Title</th>
+        <th>Status</th>
+        <th>Milestone</th>
+        <th>Labels</th>
+        <th>Icebox</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for task in tasks %}
+        <tr>
+          <td>{{ task.id }}</td>
+          <td>{{ task.user_id }}</td>
+          <td>{{ task.title }}</td>
+          <td>{{ task.status }}</td>
+          <td>{{ task.milestone }}</td>
+          <td>{{ task.labels|join(', ') }}</td>
+          <td>{{ '✅' if task.is_icebox else '❌' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if tasks|length == 0 %}
+    <p>No tasks match the current filters.</p>
+  {% endif %}
+
+{% endblock %}

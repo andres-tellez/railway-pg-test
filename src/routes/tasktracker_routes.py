@@ -1,6 +1,6 @@
 # src/routes/tasktracker_routes.py
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, render_template
 from src.utils.jwt_utils import require_auth
 from src.db.legacy_sql import get_conn
 from src.db.dao.task_dao import (
@@ -43,6 +43,7 @@ def create_task_route():
 def list_tasks_route():
     status = request.args.get("status")
     milestone = request.args.get("milestone")
+    label = request.args.get("label")
     is_icebox = request.args.get("is_icebox")
     if is_icebox is not None:
         is_icebox = is_icebox.lower() in ("true", "1", "yes")
@@ -50,8 +51,31 @@ def list_tasks_route():
     db_url = current_app.config.get("DATABASE_URL")
     conn = get_conn(db_url)
     try:
-        tasks = get_tasks(conn, status=status, milestone=milestone, is_icebox=is_icebox)
+        tasks = get_tasks(conn, status=status, milestone=milestone, label=label, is_icebox=is_icebox)
         return jsonify(tasks), 200
+    finally:
+        conn.close()
+
+
+@tasktracker_bp.route("/dashboard", methods=["GET"])
+@require_auth
+def task_dashboard():
+    status = request.args.get("status")
+    milestone = request.args.get("milestone")
+    label = request.args.get("label")
+    icebox = request.args.get("icebox")
+    is_icebox = icebox.lower() == "true" if icebox else None
+
+    db_url = current_app.config.get("DATABASE_URL")
+    conn = get_conn(db_url)
+    try:
+        tasks = get_tasks(conn, status=status, milestone=milestone, label=label, is_icebox=is_icebox)
+        return render_template("tasks.html", tasks=tasks, filters={
+            "status": status,
+            "milestone": milestone,
+            "label": label,
+            "icebox": icebox,
+        })
     finally:
         conn.close()
 
@@ -96,3 +120,41 @@ def delete_task_route(task_id):
         return "", 204
     finally:
         conn.close()
+
+
+from flask import render_template
+
+@tasktracker_bp.route("/dashboard", methods=["GET"])
+@require_auth
+def task_dashboard_route():
+    status = request.args.get("status")
+    milestone = request.args.get("milestone")
+    label = request.args.get("label")
+    is_icebox = request.args.get("is_icebox")
+    if is_icebox is not None:
+        is_icebox = is_icebox.lower() in ("true", "1", "yes")
+
+    db_url = current_app.config.get("DATABASE_URL")
+    conn = get_conn(db_url)
+    try:
+        all_tasks = get_tasks(conn)
+    finally:
+        conn.close()
+
+    # Filter in-memory
+    filtered_tasks = [
+        t for t in all_tasks
+        if (status is None or t["status"] == status)
+        and (milestone is None or t["milestone"] == milestone)
+        and (label is None or label in t["labels"])
+        and (is_icebox is None or t["is_icebox"] == is_icebox)
+    ]
+
+    filters = {
+        "status": status,
+        "milestone": milestone,
+        "label": label,
+        "is_icebox": is_icebox,
+    }
+
+    return render_template("tasks_dashboard.html", tasks=filtered_tasks, filters=filters)
