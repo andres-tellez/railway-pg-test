@@ -1,4 +1,3 @@
-import os
 import jwt
 from functools import wraps
 from flask import request, jsonify, current_app
@@ -6,20 +5,20 @@ from flask import request, jsonify, current_app
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", None)
+        auth_header = request.headers.get("Authorization")
         if not auth_header:
             return jsonify({"error": "Authorization header missing"}), 401
 
         parts = auth_header.split()
-
-        if parts[0].lower() != "bearer" or len(parts) != 2:
+        if len(parts) != 2 or parts[0].lower() != "bearer":
             return jsonify({"error": "Invalid Authorization header format"}), 401
 
         token = parts[1]
         try:
-            payload = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
+            # ✅ Use SECRET_KEY from Flask config to match app environment
+            secret = current_app.config["SECRET_KEY"]
+            payload = jwt.decode(token, secret, algorithms=["HS256"])
 
-            # Map "sub" to "user_id" for compatibility with route expectations
             user_id = payload.get("sub")
             if not user_id:
                 return jsonify({"error": "Token missing subject (sub)"}), 401
@@ -34,7 +33,7 @@ def require_auth(f):
     return decorated
 
 def decode_token(token: str, secret: str) -> dict:
-    """Decode JWT and return payload without verifying expiration (for internal inspection)."""
+    """Decode JWT without expiration check (for internal inspection)."""
     try:
         return jwt.decode(token, secret, algorithms=["HS256"], options={"verify_exp": False})
     except jwt.DecodeError:
