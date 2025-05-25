@@ -19,6 +19,9 @@ def require_auth(f):
 
         token = parts[1]
         try:
+            print(f"🔐 Decoding token with SECRET_KEY = {current_app.config['SECRET_KEY']}", flush=True)
+            print(f"🔐 Token received: {token}", flush=True)
+
             payload = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
 
             # 🛠 Fix: map "sub" to "user_id" for compatibility with route expectations
@@ -29,7 +32,8 @@ def require_auth(f):
             request.user = {"user_id": user_id}
         except jwt.ExpiredSignatureError:
             return jsonify({"error": "Token expired"}), 401
-        except jwt.InvalidTokenError:
+        except jwt.InvalidTokenError as e:
+            print(f"❌ JWT decode failed: {e}", flush=True)
             return jsonify({"error": "Invalid token"}), 401
 
         return f(*args, **kwargs)
