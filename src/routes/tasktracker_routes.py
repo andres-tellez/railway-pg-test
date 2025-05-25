@@ -1,3 +1,5 @@
+# src/routes/tasktracker_routes.py
+
 from flask import Blueprint, request, jsonify, current_app, render_template
 from src.utils.jwt_utils import require_auth
 from src.db.legacy_sql import get_conn
@@ -56,7 +58,9 @@ def list_tasks_route():
 
 
 @tasktracker_bp.route("/dashboard", methods=["GET"])
+@require_auth
 def task_dashboard():
+    # Optional filters
     status = request.args.get("status")
     milestone = request.args.get("milestone")
     label = request.args.get("label")
