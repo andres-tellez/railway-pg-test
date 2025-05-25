@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # CLI mode: run init-db early and exit
 if len(sys.argv) > 1 and sys.argv[1] == "init-db":
-    from src.db import init_db
+    from src.db.init_db import init_db  # ✅ Correct function import
     print("🔧 Running init-db...", flush=True)
     init_db()
     sys.exit(0)

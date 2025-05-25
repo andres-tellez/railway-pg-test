@@ -1,6 +1,11 @@
 import os
+import sys
 import tempfile
 import pytest
+from pathlib import Path
+
+# ✅ Add project root to Python path so 'src' can be imported
+sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from src.app import create_app
 from src.db.init_db import init_db
@@ -13,7 +18,7 @@ def db_path():
     yield db_path
     os.remove(db_path)
 
-@pytest.fixture(scope="function")  # <-- make sure this is function-scoped
+@pytest.fixture(scope="function")
 def app(db_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db_path}")
     app = create_app({"TESTING": True})
@@ -21,6 +26,6 @@ def app(db_path, monkeypatch):
         init_db()
     yield app
 
-@pytest.fixture(scope="function")  # <-- this too
+@pytest.fixture(scope="function")
 def client(app):
     return app.test_client()

@@ -1,4 +1,4 @@
-# src/db/dao/task_dao.py
+# src/dao/task_dao.py
 
 from typing import Optional, List, Union
 from psycopg2.extensions import connection as PGConn
@@ -47,9 +47,26 @@ def get_task(conn: DBConn, task_id: int) -> Optional[dict]:
         "is_icebox": bool(row[6]),
     }
 
-def get_tasks(conn: DBConn) -> List[dict]:
+def get_tasks(conn: DBConn, status: Optional[str] = None, milestone: Optional[str] = None, is_icebox: Optional[bool] = None) -> List[dict]:
     cur = conn.cursor()
-    cur.execute("SELECT id, user_id, title, status, milestone, labels, is_icebox FROM tasks")
+    base_query = "SELECT id, user_id, title, status, milestone, labels, is_icebox FROM tasks"
+    conditions = []
+    params = []
+
+    if status:
+        conditions.append("status = ?" if isinstance(conn, SQLiteConn) else "status = %s")
+        params.append(status)
+    if milestone:
+        conditions.append("milestone = ?" if isinstance(conn, SQLiteConn) else "milestone = %s")
+        params.append(milestone)
+    if is_icebox is not None:
+        conditions.append("is_icebox = ?" if isinstance(conn, SQLiteConn) else "is_icebox = %s")
+        params.append(is_icebox)
+
+    if conditions:
+        base_query += " WHERE " + " AND ".join(conditions)
+
+    cur.execute(base_query, tuple(params))
     rows = cur.fetchall()
     return [
         {
