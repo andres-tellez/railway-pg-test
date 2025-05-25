@@ -1,35 +1,69 @@
-<!-- templates/tasks.html -->
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>SmartCoach Task Dashboard</title>
-  <style>
-    body { font-family: sans-serif; padding: 2em; background: #f4f4f4; }
-    h1 { color: #333; }
-    .task { background: white; margin: 1em 0; padding: 1em; border-radius: 8px; }
-    .labels { color: #777; font-size: 0.9em; }
-    .icebox { opacity: 0.6; }
-  </style>
-</head>
-<body>
-  <h1>📋 SmartCoach Task Dashboard</h1>
+{% extends "base.html" %}
+{% block content %}
 
-  <p>Filters:</p>
-  <ul>
-    {% for key, val in filters.items() if val %}
-    <li><b>{{ key }}</b>: {{ val }}</li>
-    {% endfor %}
-  </ul>
+<style>
+  .badge {
+    padding: 0.25em 0.6em;
+    border-radius: 0.4em;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: white;
+    margin-left: 0.5em;
+    text-transform: capitalize;
+  }
+  .badge.pending { background-color: #f0ad4e; }
+  .badge.in_progress { background-color: #5bc0de; }
+  .badge.done { background-color: #5cb85c; }
+</style>
 
-  {% for task in tasks %}
-    <div class="task {% if task.is_icebox %}icebox{% endif %}">
-      <strong>{{ task.title }}</strong> — {{ task.status }}<br>
-      Milestone: {{ task.milestone or "N/A" }}<br>
-      <span class="labels">Labels: {{ task.labels | join(', ') }}</span>
-    </div>
-  {% else %}
-    <p>No tasks found.</p>
-  {% endfor %}
-</body>
-</html>
+<h1>📋 SmartCoach Task Dashboard</h1>
+<form method="get">
+  <label for="status">Status</label>
+  <select name="status" id="status">
+    <option value="">All</option>
+    <option value="pending" {% if filters.status == 'pending' %}selected{% endif %}>Pending</option>
+    <option value="in_progress" {% if filters.status == 'in_progress' %}selected{% endif %}>In Progress</option>
+    <option value="done" {% if filters.status == 'done' %}selected{% endif %}>Done</option>
+  </select>
+
+  <label for="milestone">Milestone</label>
+  <input type="text" name="milestone" id="milestone" value="{{ filters.milestone or '' }}">
+
+  <label for="label">Label</label>
+  <input type="text" name="label" id="label" value="{{ filters.label or '' }}">
+
+  <label for="icebox">Icebox</label>
+  <select name="icebox" id="icebox">
+    <option value="">Any</option>
+    <option value="true" {% if filters.icebox == 'true' %}selected{% endif %}>Yes</option>
+    <option value="false" {% if filters.icebox == 'false' %}selected{% endif %}>No</option>
+  </select>
+
+  <label for="sort">Sort By</label>
+  <select name="sort" id="sort">
+    <option value="">None</option>
+    <option value="status" {% if filters.sort == 'status' %}selected{% endif %}>Status</option>
+    <option value="milestone" {% if filters.sort == 'milestone' %}selected{% endif %}>Milestone</option>
+  </select>
+
+  <button type="submit">Filter</button>
+</form>
+
+{% for task in tasks %}
+  <div style="border: 1px solid #ccc; padding: 1em; margin: 1em 0; border-radius: 8px;">
+    <strong>{{ task.title }}</strong>
+    <span class="badge {{ task.status }}">{{ task.status }}</span><br>
+    <strong>Milestone:</strong> {{ task.milestone or 'N/A' }}<br>
+    <strong>Labels:</strong> {{ task.labels | join(', ') if task.labels else 'N/A' }}<br>
+    <strong>Icebox:</strong>
+    {% if task.is_icebox %}
+      <span style="color: green;">✅</span>
+    {% else %}
+      <span style="color: red;">❌</span>
+    {% endif %}
+  </div>
+{% else %}
+  <p>No tasks found matching your filters.</p>
+{% endfor %}
+
+{% endblock %}
