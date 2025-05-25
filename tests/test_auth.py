@@ -1,5 +1,3 @@
-# tests/test_auth.py
-
 import os
 import time
 import pytest
@@ -14,20 +12,26 @@ def set_env(monkeypatch):
 
 def test_login_refresh_logout(client):
     """Test successful login, token refresh, and logout flow."""
+    # Step 1: Login
     resp = client.post("/auth/login", json={"username": "admin", "password": "secret"})
     assert resp.status_code == 200
     tokens = resp.get_json()
+    print(f"🔑 Tokens after login: {tokens}")
     assert "access_token" in tokens
     assert "refresh_token" in tokens
 
-    time.sleep(1)  # Ensure new token gets a different timestamp
+    # Step 2: Refresh token
+    time.sleep(1)  # Ensure a new token gets a different timestamp
+    refresh_token = tokens["refresh_token"]
+    resp = client.post("/auth/refresh", headers={"Authorization": f"Bearer {refresh_token}"})
+    print(f"🔁 Refresh status: {resp.status_code}, Body: {resp.data.decode()}")
 
-    resp = client.post("/auth/refresh", json={"refresh_token": tokens["refresh_token"]})
     assert resp.status_code == 200
     new_access = resp.get_json()["access_token"]
     assert new_access != tokens["access_token"]
 
-    resp = client.post("/auth/logout", json={"refresh_token": tokens["refresh_token"]})
+    # Step 3: Logout
+    resp = client.post("/auth/logout", json={"refresh_token": refresh_token})
     assert resp.status_code == 200
     assert resp.get_json()["message"] == "logged out"
 

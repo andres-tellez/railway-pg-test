@@ -43,5 +43,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     status TEXT NOT NULL DEFAULT 'pending',
     milestone TEXT,
     labels JSONB DEFAULT '[]',
-    is_icebox BOOLEAN DEFAULT FALSE
+    is_icebox BOOLEAN DEFAULT FALSE,
+    details TEXT
 );

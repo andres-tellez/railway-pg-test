@@ -125,7 +125,6 @@ def init_db(db_url=None):
     db_url = db_url or (current_app.config.get("DATABASE_URL") if current_app else None) or os.getenv("DATABASE_URL")
     conn = get_conn(db_url)
     try:
-        # Adjusted path to point to /app/schema.sql correctly in Docker
         schema_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "schema.sql")
         print("📄 Loading schema from:", schema_path, flush=True)
         with open(schema_path, "r", encoding="utf-8") as f:

@@ -1,103 +1,141 @@
-# src/dao/task_dao.py
+# src/db/dao/task_dao.py
 
-from typing import Optional, List, Union
-from psycopg2.extensions import connection as PGConn
-from sqlite3 import Connection as SQLiteConn
+from typing import Optional, List
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
-DBConn = Union[PGConn, SQLiteConn]
 
-def create_task(conn: DBConn, user_id: int, title: str, status: str = "pending", milestone: Optional[str] = None, labels: Optional[List[str]] = None, is_icebox: bool = False) -> int:
-    cur = conn.cursor()
+def create_task(session: Session, user_id: int, title: str, status: str = "pending",
+                milestone: Optional[str] = None, labels: Optional[List[str]] = None,
+                is_icebox: bool = False, details: Optional[str] = None) -> int:
     labels_str = ",".join(labels) if labels else None
-    if isinstance(conn, SQLiteConn):
-        cur.execute(
-            """
-            INSERT INTO tasks (user_id, title, status, milestone, labels, is_icebox)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (user_id, title, status, milestone, labels_str, is_icebox),
-        )
-        task_id = cur.lastrowid
+
+    # Workaround for SQLite (no RETURNING id)
+    if session.bind.dialect.name == "sqlite":
+        session.execute(text("""
+            INSERT INTO tasks (user_id, title, status, milestone, labels, is_icebox, details)
+            VALUES (:user_id, :title, :status, :milestone, :labels, :is_icebox, :details)
+        """), {
+            "user_id": user_id,
+            "title": title,
+            "status": status,
+            "milestone": milestone,
+            "labels": labels_str,
+            "is_icebox": is_icebox,
+            "details": details
+        })
+        task_id = session.execute(text("SELECT last_insert_rowid()")).scalar()
     else:
-        cur.execute(
-            """
-            INSERT INTO tasks (user_id, title, status, milestone, labels, is_icebox)
-            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
-            """,
-            (user_id, title, status, milestone, labels_str, is_icebox),
-        )
-        task_id = cur.fetchone()[0]
-    conn.commit()
+        result = session.execute(text("""
+            INSERT INTO tasks (user_id, title, status, milestone, labels, is_icebox, details)
+            VALUES (:user_id, :title, :status, :milestone, :labels, :is_icebox, :details)
+            RETURNING id
+        """), {
+            "user_id": user_id,
+            "title": title,
+            "status": status,
+            "milestone": milestone,
+            "labels": labels_str,
+            "is_icebox": is_icebox,
+            "details": details
+        })
+        task_id = result.scalar()
+
+    session.commit()
     return task_id
 
-def get_task(conn: DBConn, task_id: int) -> Optional[dict]:
-    cur = conn.cursor()
-    query = "SELECT id, user_id, title, status, milestone, labels, is_icebox FROM tasks WHERE id = ?" if isinstance(conn, SQLiteConn) else "SELECT id, user_id, title, status, milestone, labels, is_icebox FROM tasks WHERE id = %s"
-    cur.execute(query, (task_id,))
-    row = cur.fetchone()
-    if not row:
+
+def get_task(session: Session, task_id: int) -> Optional[dict]:
+    result = session.execute(text("""
+        SELECT id, user_id, title, status, milestone, labels, is_icebox, details
+        FROM tasks
+        WHERE id = :task_id
+    """), {"task_id": task_id}).fetchone()
+
+    if not result:
         return None
+
     return {
-        "id": row[0],
-        "user_id": row[1],
-        "title": row[2],
-        "status": row[3],
-        "milestone": row[4],
-        "labels": row[5].split(",") if row[5] else [],
-        "is_icebox": bool(row[6]),
+        "id": result.id,
+        "user_id": result.user_id,
+        "title": result.title,
+        "status": result.status,
+        "milestone": result.milestone,
+        "labels": result.labels.split(",") if result.labels else [],
+        "is_icebox": bool(result.is_icebox),
+        "details": result.details,
     }
 
-def get_tasks(conn: DBConn, status: Optional[str] = None, milestone: Optional[str] = None, label: Optional[str] = None, is_icebox: Optional[bool] = None) -> List[dict]:
-    cur = conn.cursor()
-    base_query = "SELECT id, user_id, title, status, milestone, labels, is_icebox FROM tasks"
-    conditions = []
-    params = []
 
-    def clause(col): return f"{col} = ?" if isinstance(conn, SQLiteConn) else f"{col} = %s"
+def get_tasks(session: Session, status: Optional[str] = None, milestone: Optional[str] = None,
+              label: Optional[str] = None, is_icebox: Optional[bool] = None) -> List[dict]:
+    base_query = """
+        SELECT id, user_id, title, status, milestone, labels, is_icebox, details
+        FROM tasks
+    """
+    conditions = []
+    params = {}
 
     if status:
-        conditions.append(clause("status"))
-        params.append(status)
+        conditions.append("status = :status")
+        params["status"] = status
     if milestone:
-        conditions.append(clause("milestone"))
-        params.append(milestone)
+        conditions.append("milestone = :milestone")
+        params["milestone"] = milestone
     if label:
-        if isinstance(conn, SQLiteConn):
-            conditions.append("labels LIKE ?")
-            params.append(f"%{label}%")
-        else:
-            conditions.append("labels ILIKE %s")
-            params.append(f"%{label}%")
+        conditions.append("labels LIKE :label")
+        params["label"] = f"%{label}%"
     if is_icebox is not None:
-        conditions.append(clause("is_icebox"))
-        params.append(is_icebox)
+        conditions.append("is_icebox = :is_icebox")
+        params["is_icebox"] = is_icebox
 
     if conditions:
         base_query += " WHERE " + " AND ".join(conditions)
 
-    cur.execute(base_query, tuple(params))
-    rows = cur.fetchall()
+    result = session.execute(text(base_query), params).fetchall()
     return [
         {
-            "id": row[0],
-            "user_id": row[1],
-            "title": row[2],
-            "status": row[3],
-            "milestone": row[4],
-            "labels": row[5].split(",") if row[5] else [],
-            "is_icebox": bool(row[6]),
+            "id": row.id,
+            "user_id": row.user_id,
+            "title": row.title,
+            "status": row.status,
+            "milestone": row.milestone,
+            "labels": row.labels.split(",") if row.labels else [],
+            "is_icebox": bool(row.is_icebox),
+            "details": row.details,
         }
-        for row in rows
+        for row in result
     ]
 
-def update_task_status(conn: DBConn, task_id: int, status: str) -> None:
-    cur = conn.cursor()
-    query = "UPDATE tasks SET status = ? WHERE id = ?" if isinstance(conn, SQLiteConn) else "UPDATE tasks SET status = %s WHERE id = %s"
-    cur.execute(query, (status, task_id))
-    conn.commit()
 
-def delete_task(conn: DBConn, task_id: int) -> None:
-    cur = conn.cursor()
-    query = "DELETE FROM tasks WHERE id = ?" if isinstance(conn, SQLiteConn) else "DELETE FROM tasks WHERE id = %s"
-    cur.execute(query, (task_id,))
-    conn.commit()
+def update_task_status(session: Session, task_id: int, status: Optional[str] = None,
+                       labels: Optional[List[str]] = None, is_icebox: Optional[bool] = None,
+                       details: Optional[str] = None) -> None:
+    updates = []
+    params = {"task_id": task_id}
+
+    if status is not None:
+        updates.append("status = :status")
+        params["status"] = status
+    if labels is not None:
+        updates.append("labels = :labels")
+        params["labels"] = ",".join(labels)
+    if is_icebox is not None:
+        updates.append("is_icebox = :is_icebox")
+        params["is_icebox"] = is_icebox
+    if details is not None:
+        updates.append("details = :details")
+        params["details"] = details
+
+    if not updates:
+        return
+
+    query = f"UPDATE tasks SET {', '.join(updates)} WHERE id = :task_id"
+    session.execute(text(query), params)
+    session.commit()
+
+
+def delete_task(session: Session, task_id: int) -> None:
+    session.execute(text("DELETE FROM tasks WHERE id = :task_id"), {"task_id": task_id})
+    session.commit()
