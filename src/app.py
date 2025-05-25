@@ -26,27 +26,23 @@ def create_app(test_config=None):
     if os.getenv("FLASK_ENV") != "testing":
         env_path = Path(__file__).resolve().parent.parent / ".env"
         print(f"📄 Looking for .env at: {env_path}", flush=True)
-        load_dotenv(dotenv_path=env_path, override=True)
-
-        print("🧪 cwd:", os.getcwd())
-        print("🧪 files in cwd:", [p.name for p in Path(".").iterdir()])
-        print("💾 DATABASE_URL in app:", os.getenv("DATABASE_URL"))
-
-        if not env_path.exists():
-            print("❌ .env file not found!")
-        else:
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path, override=True)
             with open(env_path, encoding="utf-8") as f:
                 print("📄 .env contents:")
                 print(f.read())
+        else:
+            print("❌ .env file not found!")
 
-        print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
-        print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
+    print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
+    print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
+    print("💾 DATABASE_URL in app:", os.getenv("DATABASE_URL"))
 
-    # ✅ Explicitly tell Flask where to find the templates folder
+    # ✅ Set template folder robustly for all environments
     app = Flask(
         __name__,
         instance_relative_config=False,
-        template_folder="../templates"
+        template_folder=str(Path(__file__).parent.parent / "templates")
     )
 
     # Config setup
@@ -92,5 +88,10 @@ def create_app(test_config=None):
             "cwd": os.getcwd(),
             "files": [p.name for p in Path(".").iterdir()],
         }
+
+    # Debug: List all routes
+    print("✅ Registered routes:")
+    for rule in app.url_map.iter_rules():
+        print(f"  {rule.rule} -> {rule.endpoint}", flush=True)
 
     return app
