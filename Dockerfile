@@ -1,20 +1,15 @@
-# Use official Python image
+# Dockerfile
+
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
 
-# Set PYTHONPATH to make `src` importable
-ENV PYTHONPATH=/app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
-# Copy project files
 COPY . .
 
-# Install dependencies
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# ✅ This is crucial!
+COPY templates/ templates/
 
-# Expose port for Flask
-EXPOSE 5000
-
-# Debug test: run app with python directly to confirm it bootstraps
-CMD ["python", "run.py"]
+CMD ["gunicorn", "run:app", "-b", "0.0.0.0:5050"]
