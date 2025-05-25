@@ -47,20 +47,29 @@ def get_task(conn: DBConn, task_id: int) -> Optional[dict]:
         "is_icebox": bool(row[6]),
     }
 
-def get_tasks(conn: DBConn, status: Optional[str] = None, milestone: Optional[str] = None, is_icebox: Optional[bool] = None) -> List[dict]:
+def get_tasks(conn: DBConn, status: Optional[str] = None, milestone: Optional[str] = None, label: Optional[str] = None, is_icebox: Optional[bool] = None) -> List[dict]:
     cur = conn.cursor()
     base_query = "SELECT id, user_id, title, status, milestone, labels, is_icebox FROM tasks"
     conditions = []
     params = []
 
+    def clause(col): return f"{col} = ?" if isinstance(conn, SQLiteConn) else f"{col} = %s"
+
     if status:
-        conditions.append("status = ?" if isinstance(conn, SQLiteConn) else "status = %s")
+        conditions.append(clause("status"))
         params.append(status)
     if milestone:
-        conditions.append("milestone = ?" if isinstance(conn, SQLiteConn) else "milestone = %s")
+        conditions.append(clause("milestone"))
         params.append(milestone)
+    if label:
+        if isinstance(conn, SQLiteConn):
+            conditions.append("labels LIKE ?")
+            params.append(f"%{label}%")
+        else:
+            conditions.append("labels ILIKE %s")
+            params.append(f"%{label}%")
     if is_icebox is not None:
-        conditions.append("is_icebox = ?" if isinstance(conn, SQLiteConn) else "is_icebox = %s")
+        conditions.append(clause("is_icebox"))
         params.append(is_icebox)
 
     if conditions:
