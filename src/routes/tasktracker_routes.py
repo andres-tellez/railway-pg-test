@@ -59,7 +59,6 @@ def list_tasks_route():
 
 @tasktracker_bp.route("/dashboard", methods=["GET"])
 def task_dashboard():
-    # Filters for HTML dashboard
     status = request.args.get("status")
     milestone = request.args.get("milestone")
     label = request.args.get("label")
