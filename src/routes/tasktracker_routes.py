@@ -1,5 +1,3 @@
-# src/routes/tasktracker_routes.py
-
 from flask import Blueprint, request, jsonify, current_app, render_template
 from src.utils.jwt_utils import require_auth
 from src.db.legacy_sql import get_conn
@@ -58,7 +56,6 @@ def list_tasks_route():
 
 
 @tasktracker_bp.route("/dashboard", methods=["GET"])
-#@require_auth
 def task_dashboard():
     status = request.args.get("status")
     milestone = request.args.get("milestone")
@@ -120,41 +117,3 @@ def delete_task_route(task_id):
         return "", 204
     finally:
         conn.close()
-
-
-from flask import render_template
-
-@tasktracker_bp.route("/dashboard", methods=["GET"])
-@require_auth
-def task_dashboard_route():
-    status = request.args.get("status")
-    milestone = request.args.get("milestone")
-    label = request.args.get("label")
-    is_icebox = request.args.get("is_icebox")
-    if is_icebox is not None:
-        is_icebox = is_icebox.lower() in ("true", "1", "yes")
-
-    db_url = current_app.config.get("DATABASE_URL")
-    conn = get_conn(db_url)
-    try:
-        all_tasks = get_tasks(conn)
-    finally:
-        conn.close()
-
-    # Filter in-memory
-    filtered_tasks = [
-        t for t in all_tasks
-        if (status is None or t["status"] == status)
-        and (milestone is None or t["milestone"] == milestone)
-        and (label is None or label in t["labels"])
-        and (is_icebox is None or t["is_icebox"] == is_icebox)
-    ]
-
-    filters = {
-        "status": status,
-        "milestone": milestone,
-        "label": label,
-        "is_icebox": is_icebox,
-    }
-
-    return render_template("tasks_dashboard.html", tasks=filtered_tasks, filters=filters)
