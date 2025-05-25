@@ -42,8 +42,12 @@ def create_app(test_config=None):
         print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
         print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
 
-    # Instantiate the Flask app
-    app = Flask(__name__, instance_relative_config=False)
+    # ✅ Explicitly tell Flask where to find the templates folder
+    app = Flask(
+        __name__,
+        instance_relative_config=False,
+        template_folder="../templates"
+    )
 
     # Config setup
     app.config.from_mapping(

@@ -1,51 +1,35 @@
-{% extends "base.html" %}
+<!-- templates/tasks.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SmartCoach Task Dashboard</title>
+  <style>
+    body { font-family: sans-serif; padding: 2em; background: #f4f4f4; }
+    h1 { color: #333; }
+    .task { background: white; margin: 1em 0; padding: 1em; border-radius: 8px; }
+    .labels { color: #777; font-size: 0.9em; }
+    .icebox { opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <h1>📋 SmartCoach Task Dashboard</h1>
 
-{% block content %}
-  <h1>📋 Task Dashboard</h1>
+  <p>Filters:</p>
+  <ul>
+    {% for key, val in filters.items() if val %}
+    <li><b>{{ key }}</b>: {{ val }}</li>
+    {% endfor %}
+  </ul>
 
-  <form method="get" class="filters">
-    <label>Status: <input type="text" name="status" value="{{ filters.status or '' }}"></label>
-    <label>Milestone: <input type="text" name="milestone" value="{{ filters.milestone or '' }}"></label>
-    <label>Label: <input type="text" name="label" value="{{ filters.label or '' }}"></label>
-    <label>Icebox:
-      <select name="icebox">
-        <option value="">--</option>
-        <option value="true" {% if filters.icebox == 'true' %}selected{% endif %}>Yes</option>
-        <option value="false" {% if filters.icebox == 'false' %}selected{% endif %}>No</option>
-      </select>
-    </label>
-    <button type="submit">Apply</button>
-  </form>
-
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>User ID</th>
-        <th>Title</th>
-        <th>Status</th>
-        <th>Milestone</th>
-        <th>Labels</th>
-        <th>Icebox</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for task in tasks %}
-        <tr>
-          <td>{{ task.id }}</td>
-          <td>{{ task.user_id }}</td>
-          <td>{{ task.title }}</td>
-          <td>{{ task.status }}</td>
-          <td>{{ task.milestone }}</td>
-          <td>{{ task.labels|join(', ') }}</td>
-          <td>{{ '✅' if task.is_icebox else '❌' }}</td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  {% if tasks|length == 0 %}
-    <p>No tasks match the current filters.</p>
-  {% endif %}
-
-{% endblock %}
+  {% for task in tasks %}
+    <div class="task {% if task.is_icebox %}icebox{% endif %}">
+      <strong>{{ task.title }}</strong> — {{ task.status }}<br>
+      Milestone: {{ task.milestone or "N/A" }}<br>
+      <span class="labels">Labels: {{ task.labels | join(', ') }}</span>
+    </div>
+  {% else %}
+    <p>No tasks found.</p>
+  {% endfor %}
+</body>
+</html>

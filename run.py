@@ -2,16 +2,24 @@
 
 import os
 import sys
+from pathlib import Path
 
 # Ensure the project root is on PYTHONPATH
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # CLI mode: run init-db early and exit
 if len(sys.argv) > 1 and sys.argv[1] == "init-db":
-    from src.db.init_db import init_db  # ✅ Correct function import
+    from src.db.init_db import init_db
     print("🔧 Running init-db...", flush=True)
     init_db()
     sys.exit(0)
+
+# Check that templates folder is visible to Flask
+template_dir = Path(__file__).parent / "templates"
+if not template_dir.exists():
+    print(f"❌ Template folder not found: {template_dir}")
+else:
+    print(f"📂 Template folder contents: {[f.name for f in template_dir.glob('*')]}")
 
 # Default path: start Flask app
 from src.app import create_app
