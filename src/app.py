@@ -38,11 +38,13 @@ def create_app(test_config=None):
     print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
     print("💾 DATABASE_URL in app:", os.getenv("DATABASE_URL"))
 
-    # ✅ Set template folder robustly for all environments
+    # ✅ Set absolute path to templates to ensure it resolves in production
+    templates_path = Path(__file__).resolve().parent.parent / "templates"
+
     app = Flask(
         __name__,
         instance_relative_config=False,
-        template_folder=str(Path(__file__).parent.parent / "templates")
+        template_folder=str(templates_path)
     )
 
     # Config setup
@@ -61,7 +63,7 @@ def create_app(test_config=None):
     app.register_blueprint(SYNC)
     app.register_blueprint(tasktracker_bp)
 
-    # Routes
+    # Simple diagnostic endpoints
     @app.route("/ping")
     def ping():
         return "pong", 200
@@ -89,7 +91,7 @@ def create_app(test_config=None):
             "files": [p.name for p in Path(".").iterdir()],
         }
 
-    # Debug: List all routes
+    # Debug: List all registered routes
     print("✅ Registered routes:")
     for rule in app.url_map.iter_rules():
         print(f"  {rule.rule} -> {rule.endpoint}", flush=True)
