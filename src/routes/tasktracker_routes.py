@@ -58,9 +58,8 @@ def list_tasks_route():
 
 
 @tasktracker_bp.route("/dashboard", methods=["GET"])
-@require_auth
 def task_dashboard():
-    # Optional filters
+    # Filters for HTML dashboard
     status = request.args.get("status")
     milestone = request.args.get("milestone")
     label = request.args.get("label")
@@ -71,14 +70,15 @@ def task_dashboard():
     conn = get_conn(db_url)
     try:
         tasks = get_tasks(conn, status=status, milestone=milestone, label=label, is_icebox=is_icebox)
-        return render_template("tasks.html", tasks=tasks, filters={
-            "status": status,
-            "milestone": milestone,
-            "label": label,
-            "icebox": icebox,
-        })
     finally:
         conn.close()
+
+    return render_template("tasks.html", tasks=tasks, filters={
+        "status": status,
+        "milestone": milestone,
+        "label": label,
+        "icebox": icebox,
+    })
 
 
 @tasktracker_bp.route("/<int:task_id>", methods=["GET"])
