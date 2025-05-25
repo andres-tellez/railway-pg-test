@@ -20,7 +20,13 @@ def require_auth(f):
         token = parts[1]
         try:
             payload = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
-            request.user = payload  # Attach user info to request
+
+            # 🛠 Fix: map "sub" to "user_id" for compatibility with route expectations
+            user_id = payload.get("sub")
+            if not user_id:
+                return jsonify({"error": "Token missing subject (sub)"}), 401
+
+            request.user = {"user_id": user_id}
         except jwt.ExpiredSignatureError:
             return jsonify({"error": "Token expired"}), 401
         except jwt.InvalidTokenError:
