@@ -12,4 +12,5 @@ COPY . .
 # ✅ This is crucial!
 COPY templates/ templates/
 
-CMD ["gunicorn", "run:app", "-b", "0.0.0.0:5050"]
+CMD ["gunicorn", "-b", "0.0.0.0:5050", "run:app"]
+

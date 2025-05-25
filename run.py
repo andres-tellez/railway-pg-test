@@ -7,6 +7,10 @@ from pathlib import Path
 # Ensure the project root is on PYTHONPATH
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
+# Load and expose the app for Gunicorn
+from src.app import create_app
+app = create_app()  # 🔑 Gunicorn will reference this: "run:app"
+
 # CLI mode: run init-db early and exit
 if len(sys.argv) > 1 and sys.argv[1] == "init-db":
     from src.db.init_db import init_db
@@ -21,13 +25,9 @@ if not template_dir.exists():
 else:
     print(f"📂 Template folder contents: {[f.name for f in template_dir.glob('*')]}")
 
-# Default path: start Flask app
-from src.app import create_app
-app = create_app()
-
+# If run directly, use Flask dev server
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
-
     print(
         f"🚀 Starting app locally on 0.0.0.0:{port} with DATABASE_URL = {app.config.get('DATABASE_URL')}",
         flush=True,
