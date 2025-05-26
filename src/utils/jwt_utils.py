@@ -14,10 +14,6 @@ def require_auth(f):
                 "user_id": "internal",
                 "is_internal": True  # ✅ FIX: enable admin privileges
             }
-
-            
-            
-            
             return f(*args, **kwargs)
 
         # 🔐 Fallback to regular Bearer token auth
@@ -34,7 +30,10 @@ def require_auth(f):
             if not user_id:
                 return jsonify({"error": "Token missing subject (sub)"}), 401
 
-            request.user = {"user_id": user_id}
+            request.user = {
+                "user_id": user_id,
+                "is_internal": user_id == "internal"  # ✅ Extend to support test tokens
+            }
         except jwt.ExpiredSignatureError:
             return jsonify({"error": "Token expired"}), 401
         except jwt.InvalidTokenError:
