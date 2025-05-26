@@ -7,7 +7,6 @@ from flask import current_app, has_app_context
 
 Base = declarative_base()
 
-# Singleton pattern for engine/session reuse
 _engine = None
 _SessionLocal = None
 
@@ -23,8 +22,7 @@ def get_engine():
     if _engine is None:
         db_url = resolve_db_url()
         if not db_url:
-            raise RuntimeError("❌ DATABASE_URL not set in environment or app config.")
-        print(f"🔗 Creating new engine for DB: {db_url}", flush=True)
+            raise RuntimeError("DATABASE_URL not set.")
         _engine = create_engine(db_url, echo=False, future=True)
     return _engine
 
