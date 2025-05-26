@@ -43,7 +43,11 @@ def load_tasks():
                 details=task.get("details"),
             )
             inserted.append(task_id)
+        session.commit()  # ✅ commit the batch insert
         return jsonify({"inserted_ids": inserted}), 201
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 500
     finally:
         session.close()
 
@@ -63,13 +67,21 @@ def proxy_command():
         if action == "get_tasks":
             return jsonify(get_tasks(session, **args))
         elif action == "create_task":
-            return jsonify({"id": create_task(session, **args)})
+            task_id = create_task(session, **args)
+            session.commit()
+            return jsonify({"id": task_id})
         elif action == "update_task":
             update_task_status(session, **args)
+            session.commit()
             return jsonify({"updated": True})
         elif action == "delete_task":
             delete_task(session, **args)
+            session.commit()
             return jsonify({"deleted": True})
+        elif action == "truncate_tasks":
+            session.execute("TRUNCATE TABLE tasks RESTART IDENTITY CASCADE;")
+            session.commit()
+            return jsonify({"status": "tasks table truncated"})
         else:
             return jsonify({"error": f"Unknown action: {action}"}), 400
     except Exception as e:
