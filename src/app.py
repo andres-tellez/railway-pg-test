@@ -12,6 +12,7 @@ from src.routes.sync_routes import SYNC
 from src.routes.auth import auth_bp
 from src.routes.enrich import enrich_bp
 from src.routes.tasktracker_routes import tasktracker_bp
+from src.routes.admin_routes import admin_bp  # ✅ NEW IMPORT
 
 
 def create_app(test_config=None):
@@ -47,23 +48,25 @@ def create_app(test_config=None):
         template_folder=str(templates_path)
     )
 
-    # Config setup
+    # ✅ Config setup (now includes INTERNAL_API_KEY)
     app.config.from_mapping(
         SECRET_KEY=os.environ.get("SECRET_KEY", "dev"),
         DATABASE_URL=os.environ.get("DATABASE_URL"),
         CRON_SECRET_KEY=os.environ.get("CRON_SECRET_KEY"),
+        INTERNAL_API_KEY=os.environ.get("INTERNAL_API_KEY"),  # 👈 INCLUDED
     )
 
     if test_config:
         app.config.update(test_config)
 
-    # Register Blueprints
+    # ✅ Register Blueprints
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(enrich_bp, url_prefix="/enrich")
     app.register_blueprint(SYNC)
     app.register_blueprint(tasktracker_bp)
+    app.register_blueprint(admin_bp, url_prefix="/admin")  # ✅ NEW LINE
 
-    # Simple diagnostic endpoints
+    # ✅ Diagnostic endpoints
     @app.route("/ping")
     def ping():
         return "pong", 200
@@ -91,7 +94,7 @@ def create_app(test_config=None):
             "files": [p.name for p in Path(".").iterdir()],
         }
 
-    # Debug: List all registered routes
+    # ✅ Debug: List all registered routes
     print("✅ Registered routes:")
     for rule in app.url_map.iter_rules():
         print(f"  {rule.rule} -> {rule.endpoint}", flush=True)

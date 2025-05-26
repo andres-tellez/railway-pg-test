@@ -1,3 +1,5 @@
+# tests/test_auth.py
+
 import os
 import time
 import pytest
@@ -11,7 +13,7 @@ def set_env(monkeypatch):
 
 
 def test_login_refresh_logout(client):
-    """Test successful login, token refresh, and logout flow."""
+    """Test successful login, token refresh using Authorization header, and logout."""
     # Step 1: Login
     resp = client.post("/auth/login", json={"username": "admin", "password": "secret"})
     assert resp.status_code == 200
@@ -21,9 +23,10 @@ def test_login_refresh_logout(client):
     assert "refresh_token" in tokens
 
     # Step 2: Refresh token
-    time.sleep(1)  # Ensure a new token gets a different timestamp
+    time.sleep(1)  # Ensure new token has different exp
     refresh_token = tokens["refresh_token"]
-    resp = client.post("/auth/refresh", headers={"Authorization": f"Bearer {refresh_token}"})
+    headers = {"Authorization": f"Bearer {refresh_token}"}
+    resp = client.post("/auth/refresh", headers=headers)
     print(f"🔁 Refresh status: {resp.status_code}, Body: {resp.data.decode()}")
 
     assert resp.status_code == 200
@@ -45,6 +48,30 @@ def test_invalid_login_rejected(client):
 
 def test_invalid_refresh_token(client):
     """Test that an invalid refresh token is rejected."""
-    resp = client.post("/auth/refresh", json={"refresh_token": "not.a.real.token"})
+    headers = {"Authorization": "Bearer not.a.real.token"}
+    resp = client.post("/auth/refresh", headers=headers)
+    assert resp.status_code == 401
+    assert "error" in resp.get_json()
+
+
+import jwt
+from datetime import datetime, timedelta
+
+def test_expired_refresh_token(client):
+    """Test refresh fails with an expired token."""
+    secret = os.environ.get("SECRET_KEY", "testsecret")
+
+    expired_token = jwt.encode(
+        {
+            "sub": "admin",
+            "exp": datetime.utcnow() - timedelta(seconds=1)
+        },
+        secret,
+        algorithm="HS256"
+    )
+
+    resp = client.post("/auth/refresh", headers={"Authorization": f"Bearer {expired_token}"})
+    print(f"⏰ Expired refresh status: {resp.status_code}, Body: {resp.data.decode()}")
+
     assert resp.status_code == 401
     assert "error" in resp.get_json()

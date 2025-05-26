@@ -5,17 +5,18 @@ import traceback
 import requests
 from flask import Blueprint, request, jsonify
 from src.services.activity_sync import sync_recent_activities
-#from src.platform.sync import sync_strava_to_db
 
+from src.db_core import get_engine, get_session
+from src.db.dao.token_dao import get_tokens_sa, save_tokens_sa
+from src.db.init_db import get_tokens_pg, save_tokens_pg
 
 SYNC = Blueprint("sync", __name__)
 
-
 def get_valid_access_token(athlete_id):
-    from src.db import get_tokens_pg
-    from src.db_core import get_engine, get_session
-    from src.dao.token_dao import get_tokens_sa, save_tokens_sa
-
+    """
+    Retrieve a valid Strava access token, refreshing it if necessary.
+    Supports SQLAlchemy and psycopg2 backends.
+    """
     db_url = os.getenv("DATABASE_URL")
     use_sqlalchemy = db_url and not db_url.startswith("sqlite")
 
@@ -26,14 +27,19 @@ def get_valid_access_token(athlete_id):
         tokens = get_tokens_pg(athlete_id)
 
     if not tokens:
-        raise Exception(f"No tokens for athlete {athlete_id}")
-    access, refresh = tokens["access_token"], tokens["refresh_token"]
+        raise Exception(f"No tokens found for athlete {athlete_id}")
 
+    access = tokens["access_token"]
+    refresh = tokens["refresh_token"]
+
+    # Validate the access token
     r = requests.get(
         "https://www.strava.com/api/v3/athlete",
         headers={"Authorization": f"Bearer {access}"},
     )
+
     if r.status_code == 401:
+        # Refresh the token
         rr = requests.post(
             "https://www.strava.com/api/v3/oauth/token",
             data={
@@ -46,18 +52,19 @@ def get_valid_access_token(athlete_id):
         rr.raise_for_status()
         data = rr.json()
         access = data["access_token"]
+        new_refresh = data["refresh_token"]
 
+        # Save refreshed tokens
         if use_sqlalchemy:
-            save_tokens_sa(session, athlete_id, access, data["refresh_token"])
+            save_tokens_sa(session, athlete_id, access, new_refresh)
         else:
-            from src.db import save_tokens_pg
-            save_tokens_pg(athlete_id, access, data["refresh_token"])
+            save_tokens_pg(athlete_id, access, new_refresh)
 
     return access
 
-
 @SYNC.route("/sync-strava-to-db/<int:athlete_id>")
 def sync_to_db(athlete_id):
+    """Endpoint for CRON-based syncs using a secret key."""
     cron_key = os.getenv("CRON_SECRET_KEY")
     key = request.args.get("key")
     if cron_key and key != cron_key:
@@ -67,7 +74,6 @@ def sync_to_db(athlete_id):
         token = get_valid_access_token(athlete_id)
         inserted = sync_recent_activities(athlete_id, token)
         return jsonify(synced=inserted), 200
-
     except Exception as e:
         traceback.print_exc()
         return jsonify(error="Sync failed", details=str(e)), 500
@@ -75,13 +81,11 @@ def sync_to_db(athlete_id):
 
 @SYNC.route("/init-db")
 def init_db_route():
+    """Manual DB initializer (same as /run.py -- init-db)."""
     from src.services.db_bootstrap import init_db
-    import traceback
-
     try:
         init_db()
         return "✅ init_db() completed successfully", 200
     except Exception as e:
-        print("❌ Error in init_db:", e, flush=True)
         traceback.print_exc()
         return f"❌ Error initializing DB: {e}", 500

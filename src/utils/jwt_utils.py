@@ -5,17 +5,21 @@ from flask import request, jsonify, current_app
 def require_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        # ✅ Internal service key override
+        internal_key = request.headers.get("X-Internal-Key")
+        expected_key = current_app.config.get("INTERNAL_API_KEY")
+
+        if internal_key and expected_key and internal_key == expected_key:
+            request.user = {"user_id": "internal"}
+            return f(*args, **kwargs)
+
+        # 🔐 Fallback to regular Bearer token auth
         auth_header = request.headers.get("Authorization")
-        if not auth_header:
+        if not auth_header or not auth_header.lower().startswith("bearer "):
             return jsonify({"error": "Authorization header missing"}), 401
 
-        parts = auth_header.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            return jsonify({"error": "Invalid Authorization header format"}), 401
-
-        token = parts[1]
+        token = auth_header.split(" ")[1]
         try:
-            # ✅ Use SECRET_KEY from Flask config to match app environment
             secret = current_app.config["SECRET_KEY"]
             payload = jwt.decode(token, secret, algorithms=["HS256"])
 
@@ -31,6 +35,7 @@ def require_auth(f):
 
         return f(*args, **kwargs)
     return decorated
+
 
 def decode_token(token: str, secret: str) -> dict:
     """Decode JWT without expiration check (for internal inspection)."""

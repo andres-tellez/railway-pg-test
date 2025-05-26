@@ -1,4 +1,6 @@
-from flask import Blueprint, request, jsonify, current_app, render_template
+from flask import Blueprint, request, jsonify, current_app, render_template, abort
+import os
+
 from src.utils.jwt_utils import require_auth
 from src.db.core import get_session
 from src.db.dao.task_dao import (
@@ -127,5 +129,19 @@ def delete_task_route(task_id):
     try:
         delete_task(session, task_id)
         return "", 204
+    finally:
+        session.close()
+
+
+# ✅ NEW: Debug route for task inspection via secure header
+@tasktracker_bp.route("/debug-dump", methods=["GET"])
+def debug_dump():
+    if request.headers.get("X-Debug-Key") != os.getenv("DEBUG_KEY"):
+        abort(403)
+
+    session = get_session()
+    try:
+        tasks = get_tasks(session)
+        return jsonify(tasks), 200
     finally:
         session.close()
