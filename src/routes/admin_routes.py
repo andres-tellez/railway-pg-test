@@ -115,10 +115,14 @@ def truncate_tasks():
 
     session = get_session()
     try:
+        print("⚠️ Truncating tasks table...", flush=True)
         session.execute("TRUNCATE TABLE tasks RESTART IDENTITY CASCADE;")
         session.commit()
+        print("✅ Truncate successful", flush=True)
         return jsonify({"message": "Tasks table truncated"}), 200
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         session.rollback()
         return jsonify({"error": str(e)}), 500
     finally:
