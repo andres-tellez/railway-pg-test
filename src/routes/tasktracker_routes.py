@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, current_app, render_template, abo
 import os
 
 from src.utils.jwt_utils import require_auth
-from src.db.core import get_session
+from src.db.core import get_engine, get_session
 from src.db.dao.task_dao import (
     get_tasks,
     get_task,
@@ -67,26 +67,20 @@ def list_tasks_route():
 
 @tasktracker_bp.route("/dashboard", methods=["GET"])
 def task_dashboard():
-    print("🚨 DASHBOARD DB:", current_app.config.get("DATABASE_URL"), flush=True)
-
-    status = request.args.get("status")
-    milestone = request.args.get("milestone")
-    label = request.args.get("label")
-    icebox = request.args.get("icebox")
-    is_icebox = icebox.lower() == "true" if icebox else None
-
+    print("🚨 DASHBOARD DB_URL:", current_app.config.get("DATABASE_URL"), flush=True)
+    engine = get_engine()
     session = get_session()
+
     try:
-        tasks = get_tasks(session, status=status, milestone=milestone, label=label, is_icebox=is_icebox)
+        tasks = get_tasks(session)
+        print(f"🟢 Dashboard sees {len(tasks)} tasks", flush=True)
+    except Exception as e:
+        print("🔥 Dashboard error:", e, flush=True)
+        tasks = []
     finally:
         session.close()
 
-    return render_template("tasks.html", tasks=tasks, filters={
-        "status": status,
-        "milestone": milestone,
-        "label": label,
-        "icebox": icebox,
-    })
+    return render_template("tasks.html", tasks=tasks, filters={})
 
 
 @tasktracker_bp.route("/<int:task_id>", methods=["GET"])
@@ -135,7 +129,6 @@ def delete_task_route(task_id):
         session.close()
 
 
-# ✅ NEW: Debug route for task inspection via secure header
 @tasktracker_bp.route("/debug-dump", methods=["GET"])
 def debug_dump():
     if request.headers.get("X-Debug-Key") != os.getenv("DEBUG_KEY"):
