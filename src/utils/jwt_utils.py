@@ -10,7 +10,14 @@ def require_auth(f):
         expected_key = current_app.config.get("INTERNAL_API_KEY")
 
         if internal_key and expected_key and internal_key == expected_key:
-            request.user = {"user_id": "internal"}
+            request.user = {
+                "user_id": "internal",
+                "is_internal": True  # ✅ FIX: enable admin privileges
+            }
+
+            
+            
+            
             return f(*args, **kwargs)
 
         # 🔐 Fallback to regular Bearer token auth
