@@ -93,3 +93,21 @@ def wipe_tasks():
         return jsonify({"message": "All tasks deleted"}), 200
     finally:
         session.close()
+
+
+@admin_bp.route("/debug-truncate", methods=["POST"])
+@require_auth
+def truncate_tasks():
+    if request.user.get("user_id") != "internal":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    session = get_session()
+    try:
+        session.execute("TRUNCATE TABLE tasks RESTART IDENTITY CASCADE;")
+        session.commit()
+        return jsonify({"message": "Tasks table truncated"}), 200
+    except Exception as e:
+        session.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
