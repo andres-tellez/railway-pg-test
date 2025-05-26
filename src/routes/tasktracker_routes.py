@@ -67,6 +67,8 @@ def list_tasks_route():
 
 @tasktracker_bp.route("/dashboard", methods=["GET"])
 def task_dashboard():
+    print("🚨 DASHBOARD DB:", current_app.config.get("DATABASE_URL"), flush=True)
+
     status = request.args.get("status")
     milestone = request.args.get("milestone")
     label = request.args.get("label")
