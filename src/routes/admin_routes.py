@@ -43,7 +43,7 @@ def load_tasks():
                 details=task.get("details"),
             )
             inserted.append(task_id)
-        session.commit()  # ✅ commit the batch insert
+        session.commit()
         return jsonify({"inserted_ids": inserted}), 201
     except Exception as e:
         session.rollback()
@@ -108,9 +108,10 @@ def wipe_tasks():
 
 
 @admin_bp.route("/debug-truncate", methods=["POST"])
-@require_auth
 def truncate_tasks():
-    if not request.user.get("is_internal"):
+    internal_key = request.headers.get("X-Internal-Key")
+    expected = current_app.config.get("INTERNAL_API_KEY")
+    if internal_key != expected:
         return jsonify({"error": "Unauthorized"}), 403
 
     session = get_session()
@@ -123,4 +124,3 @@ def truncate_tasks():
         return jsonify({"error": str(e)}), 500
     finally:
         session.close()
-
