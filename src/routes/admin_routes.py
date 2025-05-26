@@ -1,6 +1,7 @@
 # src/routes/admin_routes.py
 
 from flask import Blueprint, jsonify, request, current_app
+from sqlalchemy import text  # ✅ Required for raw SQL execution
 from src.db.core import get_session
 from src.db.dao.task_dao import (
     get_tasks, get_task, create_task, update_task_status, delete_task
@@ -79,7 +80,7 @@ def proxy_command():
             session.commit()
             return jsonify({"deleted": True})
         elif action == "truncate_tasks":
-            session.execute("TRUNCATE TABLE tasks RESTART IDENTITY CASCADE;")
+            session.execute(text("TRUNCATE TABLE tasks RESTART IDENTITY CASCADE;"))  # ✅ FIXED
             session.commit()
             return jsonify({"status": "tasks table truncated"})
         else:
@@ -100,7 +101,7 @@ def wipe_tasks():
 
     session = get_session()
     try:
-        session.execute("DELETE FROM tasks;")
+        session.execute(text("DELETE FROM tasks;"))  # ✅ Optional: wrap this too for consistency
         session.commit()
         return jsonify({"message": "All tasks deleted"}), 200
     finally:
@@ -116,7 +117,7 @@ def truncate_tasks():
 
     session = get_session()
     try:
-        session.execute("TRUNCATE TABLE tasks RESTART IDENTITY CASCADE;")
+        session.execute(text("TRUNCATE TABLE tasks RESTART IDENTITY CASCADE;"))  # ✅ FIXED
         session.commit()
         return jsonify({"message": "Tasks table truncated"}), 200
     except Exception as e:
