@@ -1,33 +1,39 @@
-﻿services:
+﻿version: "3.8"
+
+services:
   db:
     image: postgres:15
+    restart: always
     environment:
       POSTGRES_USER: smartcoach
       POSTGRES_PASSWORD: devpass
-      POSTGRES_DB: smartcoach_db
+      POSTGRES_DB: smartcoach_db  # ✅ Must match DATABASE_URL
+    ports:
+      - "15432:5432"  # ✅ Use non-conflicting host port for local dev
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql  # ✅ Run schema at init
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "smartcoach"]
+      test: ["CMD-SHELL", "pg_isready -U smartcoach"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   web:
     build: .
+    command: flask run --host=0.0.0.0 --port=8080  # ✅ Match .env's PORT=8080
     ports:
-      - "5050:5050"
+      - "18081:8080"  # change from 18080 to 18081 or any free port
+    environment:
+      - FLASK_APP=src.app
+      - FLASK_ENV=development
+    env_file:
+      - .env  # ✅ Ensures DATABASE_URL, secrets, etc are injected
     depends_on:
       db:
         condition: service_healthy
-    environment:
-      FLASK_ENV: development
-      PYTHONPATH: /app  # Ensure src/ is importable
     volumes:
-      - .:/app
-    command: python run.py
+      - .:/app  # ✅ Maps full project so hot reload works in container
 
 volumes:
   postgres_data:

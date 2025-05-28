@@ -28,14 +28,17 @@ else:
 # If run directly, use Flask dev server
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
-    print(
-        f"🚀 Starting app locally on 0.0.0.0:{port} with DATABASE_URL = {app.config.get('DATABASE_URL')}",
-        flush=True,
-    )
+
+    # 🔍 Full environment debug
+    env_db_url = os.environ.get("DATABASE_URL")
+    config_db_url = app.config.get("DATABASE_URL")
+    print("🔍 ENV DATABASE_URL =", env_db_url, flush=True)
+    print("🔍 CONFIG DATABASE_URL =", config_db_url, flush=True)
 
     try:
         from psycopg2 import connect
-        conn = connect(app.config["DATABASE_URL"])
+        print(f"🔌 Attempting psycopg2.connect() to: {config_db_url}", flush=True)
+        conn = connect(config_db_url)
         with conn.cursor() as cur:
             cur.execute("SELECT 1;")
             cur.fetchone()
@@ -43,4 +46,5 @@ if __name__ == "__main__":
     except Exception as e:
         print("⚠️ DB test query failed:", e, flush=True)
 
+    print(f"🚀 Starting app locally on 0.0.0.0:{port}", flush=True)
     app.run(host="0.0.0.0", port=port, debug=True)

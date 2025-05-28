@@ -7,7 +7,12 @@ from flask import current_app, g
 
 
 def get_conn(db_url=None):
+    # 🔍 Show source of DATABASE_URL
+    print("🧪 DEBUG: current_app exists:", bool(current_app))
+    print("🧪 DEBUG: current_app.config.get('DATABASE_URL'):", current_app.config.get("DATABASE_URL") if current_app else None)
+    print("🧪 DEBUG: os.environ.get('DATABASE_URL'):", os.environ.get("DATABASE_URL"))
     db_url = db_url or os.getenv("DATABASE_URL") or (current_app.config.get("DATABASE_URL") if current_app else None)
+    print(f"🧪 DEBUG: get_conn using DATABASE_URL = {db_url}", flush=True)
 
     if not db_url:
         raise RuntimeError("DATABASE_URL is not set!")
@@ -27,7 +32,7 @@ def get_conn(db_url=None):
         return conn
 
     if "sslmode=" not in db_url:
-        ssl_mode = "disable" if parsed.hostname in ("localhost", "127.0.0.1") else "require"
+        ssl_mode = "disable" if parsed.hostname in ("localhost", "127.0.0.1", "db") else "require"
         db_url += ("&" if "?" in db_url else "?") + f"sslmode={ssl_mode}"
 
     print(f"🔍 Connecting to Postgres at {parsed.hostname}:{parsed.port}", flush=True)
@@ -123,6 +128,7 @@ def save_activity_pg(activity: dict, db_url=None) -> None:
 
 def init_db(db_url=None):
     db_url = db_url or (current_app.config.get("DATABASE_URL") if current_app else None) or os.getenv("DATABASE_URL")
+    print(f"🧪 DEBUG: init_db using DATABASE_URL = {db_url}", flush=True)
     conn = get_conn(db_url)
     try:
         schema_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "schema.sql")

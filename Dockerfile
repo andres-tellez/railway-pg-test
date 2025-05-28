@@ -1,11 +1,26 @@
+# Use official Python image
 FROM python:3.11-slim
 
+# Set working directory
 WORKDIR /app
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Ensure src is importable by gunicorn
+ENV PYTHONPATH=/app
 
-COPY . .
+# Copy app source and dependencies
+COPY src/ ./src/
+COPY requirements.txt .
+COPY run.py .
+COPY schema.sql /app/
 
-# Use shell form to expand $PORT from Railway
-CMD gunicorn -b 0.0.0.0:${PORT} wsgi:app
+# Install Python dependencies
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+# Debug: confirm contents
+RUN echo "📁 Docker build: listing /app contents:" && ls -R /app
+
+# Expose internal container port (Gunicorn listens here)
+EXPOSE 8080
+
+# Start Gunicorn with app factory
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "src.app:create_app"]

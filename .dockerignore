@@ -1,25 +1,15 @@
-# Use official Python image
-FROM python:3.11-slim
-
-# Set working directory
-WORKDIR /app
-
-# Ensure src is importable by gunicorn
-ENV PYTHONPATH=/app
-
-# Copy required files explicitly
-COPY src/ ./src/
-COPY requirements.txt .
-COPY run.py .
-
-# Install Python dependencies
-RUN pip install --upgrade pip && pip install -r requirements.txt
-
-# Debug: print contents of the /app directory to verify copy success
-RUN echo "📁 Docker build: listing /app contents:" && ls -R /app
-
-# Expose the port your Flask app will listen on
-EXPOSE 5000
-
-# Start Gunicorn with Flask app factory pattern
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "src.app:create_app"]
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+.vscode/
+.git/
+.gitignore
+.DS_Store
+*.db
+*.sqlite3
+*.log
+*.md
+tests/

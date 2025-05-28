@@ -7,29 +7,24 @@ from flask import current_app, has_app_context
 
 Base = declarative_base()
 
-_engine = None
-_SessionLocal = None
-
 
 def resolve_db_url():
+    """Resolve the database URL from Flask config or environment."""
     if has_app_context():
         return current_app.config.get("DATABASE_URL") or os.getenv("DATABASE_URL")
     return os.getenv("DATABASE_URL")
 
 
 def get_engine():
-    global _engine
-    if _engine is None:
-        db_url = resolve_db_url()
-        if not db_url:
-            raise RuntimeError("DATABASE_URL not set.")
-        _engine = create_engine(db_url, echo=False, future=True)
-    return _engine
+    """Create a new SQLAlchemy engine per process (lazy singleton)."""
+    db_url = resolve_db_url()
+    if not db_url:
+        raise RuntimeError("DATABASE_URL not set in environment or app config.")
+    return create_engine(db_url, echo=False, future=True)
 
 
 def get_session():
-    global _SessionLocal
-    if _SessionLocal is None:
-        engine = get_engine()
-        _SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-    return _SessionLocal()
+    """Create a new sessionmaker on each call (no global shared session)."""
+    engine = get_engine()
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    return SessionLocal()
