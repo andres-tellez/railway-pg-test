@@ -12,7 +12,8 @@ from src.routes.sync_routes import SYNC
 from src.routes.auth import auth_bp
 from src.routes.enrich import enrich_bp
 from src.routes.tasktracker_routes import tasktracker_bp
-from src.routes.admin_routes import admin_bp  # ✅ NEW IMPORT
+from src.routes.admin_routes import admin_bp
+from src.routes.oauth import oauth_bp  # ✅ NEW IMPORT
 
 
 def create_app(test_config=None):
@@ -48,12 +49,12 @@ def create_app(test_config=None):
         template_folder=str(templates_path)
     )
 
-    # ✅ Config setup (now includes INTERNAL_API_KEY)
+    # ✅ Config setup
     app.config.from_mapping(
         SECRET_KEY=os.environ.get("SECRET_KEY", "dev"),
         DATABASE_URL=os.environ.get("DATABASE_URL"),
         CRON_SECRET_KEY=os.environ.get("CRON_SECRET_KEY"),
-        INTERNAL_API_KEY=os.environ.get("INTERNAL_API_KEY"),  # 👈 INCLUDED
+        INTERNAL_API_KEY=os.environ.get("INTERNAL_API_KEY"),
     )
 
     if test_config:
@@ -64,7 +65,8 @@ def create_app(test_config=None):
     app.register_blueprint(enrich_bp, url_prefix="/enrich")
     app.register_blueprint(SYNC)
     app.register_blueprint(tasktracker_bp)
-    app.register_blueprint(admin_bp, url_prefix="/admin")  # ✅ NEW LINE
+    app.register_blueprint(admin_bp, url_prefix="/admin")
+    app.register_blueprint(oauth_bp)  # ✅ REGISTERS /oauth/callback
 
     # ✅ Diagnostic endpoints
     @app.route("/ping")
