@@ -24,17 +24,17 @@ def create_app(test_config=None):
     print("📁 CWD:", os.getcwd(), flush=True)
     print("📁 Contents of current working dir:", os.listdir(os.getcwd()), flush=True)
 
-    # Load environment variables unless in testing
-    if os.getenv("FLASK_ENV") != "testing":
-        env_path = Path(__file__).resolve().parent.parent / ".env"
-        print(f"📄 Looking for .env at: {env_path}", flush=True)
-        if env_path.exists():
-            load_dotenv(dotenv_path=env_path, override=True)
-            with open(env_path, encoding="utf-8") as f:
-                print("📄 .env contents:")
-                print(f.read())
-        else:
-            print("❌ .env file not found!")
+    # ✅ Load environment variables (local vs production)
+    env_mode = os.getenv("FLASK_ENV", "production")
+    is_local = os.getenv("IS_LOCAL", "false").lower() == "true"
+    print(f"🌍 FLASK_ENV={env_mode} | IS_LOCAL={is_local}", flush=True)
+
+    env_path = Path(__file__).resolve().parent.parent / (".env.local" if is_local else ".env")
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
+        print(f"📄 Loaded environment from: {env_path}", flush=True)
+    else:
+        print(f"❌ Could not find .env file at: {env_path}", flush=True)
 
     print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
     print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
