@@ -67,6 +67,9 @@ def sync_to_db(athlete_id):
     """Endpoint for CRON-based syncs using a secret key."""
     cron_key = os.getenv("CRON_SECRET_KEY")
     key = request.args.get("key")
+    print(f"🔐 Incoming key: {key}")
+    print(f"🔐 Expected key from env: {cron_key}")
+
     if cron_key and key != cron_key:
         return jsonify(error="Unauthorized"), 401
 
@@ -77,7 +80,6 @@ def sync_to_db(athlete_id):
     except Exception as e:
         traceback.print_exc()
         return jsonify(error="Sync failed", details=str(e)), 500
-
 
 @SYNC.route("/init-db")
 def init_db_route():
