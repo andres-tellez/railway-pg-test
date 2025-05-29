@@ -4,12 +4,21 @@ import os
 import sys
 from pathlib import Path
 
+print("📦 Starting run.py...", flush=True)
+
 # Ensure the project root is on PYTHONPATH
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-# Load and expose the app for Gunicorn
-from src.app import create_app
-app = create_app()  # 🔑 Gunicorn will reference this: "run:app"
+# Attempt to create the app and log failure explicitly
+try:
+    from src.app import create_app
+    app = create_app()  # 🔑 Gunicorn will reference this: "run:app"
+    print("✅ App created via create_app()", flush=True)
+except Exception as e:
+    print("🔥 App creation failed:", e, flush=True)
+    import traceback
+    traceback.print_exc()
+    raise  # Re-raise so Railway crash logs capture the stack
 
 # CLI mode: run init-db early and exit
 if len(sys.argv) > 1 and sys.argv[1] == "init-db":
@@ -45,6 +54,8 @@ if __name__ == "__main__":
         print("✅ DB test query succeeded!", flush=True)
     except Exception as e:
         print("⚠️ DB test query failed:", e, flush=True)
+        import traceback
+        traceback.print_exc()
 
     print(f"🚀 Starting app locally on 0.0.0.0:{port}", flush=True)
     app.run(host="0.0.0.0", port=port, debug=True)
