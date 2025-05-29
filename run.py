@@ -24,7 +24,14 @@ except Exception as e:
 if len(sys.argv) > 1 and sys.argv[1] == "init-db":
     from src.db.init_db import init_db
     print("🔧 Running init-db...", flush=True)
-    init_db()
+    try:
+        init_db()
+        print("✅ init-db completed successfully", flush=True)
+    except Exception as e:
+        print("❌ init-db failed:", e, flush=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
     sys.exit(0)
 
 # Check that templates folder is visible to Flask
@@ -40,9 +47,13 @@ if __name__ == "__main__":
 
     # 🔍 Full environment debug
     env_db_url = os.environ.get("DATABASE_URL")
-    config_db_url = app.config.get("DATABASE_URL")
+    config_db_url = app.config.get("DATABASE_URL") or env_db_url
     print("🔍 ENV DATABASE_URL =", env_db_url, flush=True)
     print("🔍 CONFIG DATABASE_URL =", config_db_url, flush=True)
+
+    if not config_db_url:
+        print("❗ DATABASE_URL not set — exiting", flush=True)
+        sys.exit(1)
 
     try:
         from psycopg2 import connect
