@@ -3,9 +3,9 @@ from sqlalchemy.exc import NoResultFound, IntegrityError
 from flask import current_app
 import os
 
-from db.core import get_session
-from db.models.tokens import Token
-from utils.jwt_utils import decode_token
+from src.db.core import get_session
+from src.db.models.tokens import Token
+from src.utils.jwt_utils import decode_token
 
 
 def get_tokens_sa(session, athlete_id):
