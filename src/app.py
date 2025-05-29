@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 from src.routes.sync_routes import SYNC
 from src.routes.auth import auth_bp
 from src.routes.enrich import enrich_bp
-#from src.routes.tasktracker_routes import tasktracker_bp
 from src.routes.admin_routes import admin_bp
 from src.routes.oauth import oauth_bp  # ✅ NEW IMPORT
 
@@ -66,7 +65,6 @@ def create_app(test_config=None):
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(enrich_bp, url_prefix="/enrich")
     app.register_blueprint(SYNC)
-    #app.register_blueprint(tasktracker_bp)
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(oauth_bp)  # ✅ REGISTERS /oauth/callback
 
