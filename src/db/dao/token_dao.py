@@ -3,7 +3,7 @@ from sqlalchemy.exc import NoResultFound, IntegrityError
 from flask import current_app
 import os
 
-from src.db.core import get_session
+from src.db.base_model import get_session
 from src.db.models.tokens import Token
 from src.utils.jwt_utils import decode_token
 

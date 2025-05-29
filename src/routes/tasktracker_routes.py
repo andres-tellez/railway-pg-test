@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify, current_app, render_template, abo
 import os
 
 from src.utils.jwt_utils import require_auth
-from src.db.core import get_engine, get_session
+from src.db.base_model import get_engine, get_session
 from src.db.dao.task_dao import (
     get_tasks,
     get_task,

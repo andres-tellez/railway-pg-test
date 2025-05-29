@@ -2,7 +2,7 @@
 
 import time
 import jwt
-from src.db.core import get_session
+from src.db.base_model import get_session
 from src.db.models.tokens import Token
 
 

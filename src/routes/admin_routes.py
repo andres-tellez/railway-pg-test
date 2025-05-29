@@ -2,7 +2,7 @@
 
 from flask import Blueprint, jsonify, request, current_app
 from sqlalchemy import text  # ✅ Required for raw SQL execution
-from src.db.core import get_session
+from src.db.base_model import get_session
 from src.db.dao.task_dao import (
     get_tasks, get_task, create_task, update_task_status, delete_task
 )

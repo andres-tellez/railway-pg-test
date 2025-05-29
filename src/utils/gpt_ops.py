@@ -2,7 +2,7 @@
 
 import os
 from flask import Flask
-from src.db.core import get_session
+from src.db.base_model import get_session
 from src.db.dao.task_dao import create_task, update_task_status, delete_task
 
 # Optional: load app context if needed

@@ -1,7 +1,7 @@
 # src/models/tokens.py
 
 from sqlalchemy import Column, BigInteger, Text
-from db_core import Base
+from src.core import Base
 
 
 class Token(Base):

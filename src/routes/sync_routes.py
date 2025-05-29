@@ -6,7 +6,7 @@ import requests
 from flask import Blueprint, request, jsonify
 from src.services.activity_sync import sync_recent_activities
 
-from src.db_core import get_engine, get_session
+from src.core import get_engine, get_session
 from src.db.dao.token_dao import get_tokens_sa, save_tokens_sa
 from src.db.init_db import get_tokens_pg, save_tokens_pg
 

@@ -3,7 +3,7 @@ import os
 import time
 import logging
 import requests
-from src.db.core import get_conn
+from src.db.base_model import get_conn
 from src.services.strava import get_valid_access_token
 from src.db.dao.activity_dao import insert_activities
 
@@ -39,7 +39,7 @@ import time
 import logging
 import requests
 import argparse
-from db.core import get_conn
+from src.db.base_model import get_conn
 from services.strava import get_valid_access_token
 from routes.enrich import enrich_activity_pg
 
