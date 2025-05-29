@@ -12,8 +12,8 @@ SYNC = Blueprint("sync", __name__)
 
 def get_valid_access_token(athlete_id):
     """
-    Retrieve a valid Strava access token, refreshing it if necessary.
-    Supports SQLAlchemy and psycopg2 backends.
+    Retrieve a valid Strava access token, refreshing if needed.
+    Includes hardened error handling to prevent server crashes.
     """
     db_url = os.getenv("DATABASE_URL")
     use_sqlalchemy = db_url and not db_url.startswith("sqlite")
@@ -25,19 +25,24 @@ def get_valid_access_token(athlete_id):
         tokens = get_tokens_pg(athlete_id)
 
     if not tokens:
-        raise Exception(f"No tokens found for athlete {athlete_id}")
+        raise ValueError(f"No tokens found for athlete {athlete_id}")
 
     access = tokens["access_token"]
     refresh = tokens["refresh_token"]
 
-    # Validate the access token
-    r = requests.get(
-        "https://www.strava.com/api/v3/athlete",
-        headers={"Authorization": f"Bearer {access}"},
-    )
+    try:
+        r = requests.get(
+            "https://www.strava.com/api/v3/athlete",
+            headers={"Authorization": f"Bearer {access}"},
+            timeout=5,
+        )
+        if r.status_code == 200:
+            return access
+    except requests.RequestException as net_err:
+        print(f"⚠️ Network error during token check: {net_err}", flush=True)
 
-    if r.status_code == 401:
-        # Refresh the token
+    # If token invalid or call failed, try refreshing
+    try:
         rr = requests.post(
             "https://www.strava.com/api/v3/oauth/token",
             data={
@@ -46,22 +51,26 @@ def get_valid_access_token(athlete_id):
                 "grant_type": "refresh_token",
                 "refresh_token": refresh,
             },
+            timeout=5,
         )
         if rr.status_code != 200:
-            print("❌ Strava token refresh failed:", rr.text, flush=True)
             raise RuntimeError(f"Strava token refresh failed: {rr.text}")
 
         data = rr.json()
         access = data["access_token"]
         new_refresh = data["refresh_token"]
 
-        # Save refreshed tokens
         if use_sqlalchemy:
             save_tokens_sa(session, athlete_id, access, new_refresh)
         else:
             save_tokens_pg(athlete_id, access, new_refresh)
 
-    return access
+        return access
+
+    except requests.RequestException as e:
+        raise RuntimeError(f"Request error during token refresh: {e}")
+    except Exception as e:
+        raise RuntimeError(f"Unexpected error during token refresh: {e}")
 
 @SYNC.route("/sync-strava-to-db/<int:athlete_id>")
 def sync_to_db(athlete_id):
