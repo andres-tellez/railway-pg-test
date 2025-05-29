@@ -1,5 +1,3 @@
-# src/routes/sync_routes.py
-
 import os
 import traceback
 import requests
@@ -49,7 +47,10 @@ def get_valid_access_token(athlete_id):
                 "refresh_token": refresh,
             },
         )
-        rr.raise_for_status()
+        if rr.status_code != 200:
+            print("❌ Strava token refresh failed:", rr.text, flush=True)
+            raise RuntimeError(f"Strava token refresh failed: {rr.text}")
+
         data = rr.json()
         access = data["access_token"]
         new_refresh = data["refresh_token"]
