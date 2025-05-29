@@ -85,7 +85,10 @@ def sync_to_db(athlete_id):
 
     try:
         token = get_valid_access_token(athlete_id)
-        inserted = sync_recent_activities(athlete_id, token)
+        try:
+            inserted = sync_recent_activities(athlete_id, token)
+        except Exception as sync_err:
+            raise RuntimeError(f"Activity sync failed: {sync_err}")
         return jsonify(synced=inserted), 200
     except Exception as e:
         traceback.print_exc()
