@@ -38,7 +38,7 @@ def create_app(test_config=None):
 
     print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
     print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
-    print("💾 DATABASE_URL in app:", os.getenv("DATABASE_URL"))
+    print("💾 ENV DATABASE_URL:", os.getenv("DATABASE_URL"))
 
     # ✅ Set absolute path to templates to ensure it resolves in production
     templates_path = Path(__file__).resolve().parent.parent / "templates"
@@ -60,6 +60,8 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
+    print("💾 CONFIG DATABASE_URL:", app.config.get("DATABASE_URL"))
+
     # ✅ Register Blueprints
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(enrich_bp, url_prefix="/enrich")
@@ -68,23 +70,30 @@ def create_app(test_config=None):
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(oauth_bp)  # ✅ REGISTERS /oauth/callback
 
-    # ✅ Diagnostic endpoints
+    # ✅ Diagnostic: Health check
     @app.route("/ping")
     def ping():
         return "pong", 200
 
+    # ✅ Diagnostic: DB test
     @app.route("/db-check")
     def db_check():
         try:
             from psycopg2 import connect
-            conn = connect(app.config["DATABASE_URL"])
+            db_url = app.config.get("DATABASE_URL")
+            print("🧪 /db-check using DB URL:", db_url, flush=True)
+            conn = connect(db_url)
             with conn.cursor() as cur:
                 cur.execute("SELECT 1;")
                 cur.fetchone()
             return {"status": "ok", "db": True}
         except Exception as e:
+            import traceback
+            print("🔥 DB-CHECK EXCEPTION:", flush=True)
+            traceback.print_exc()
             return {"status": "fail", "error": str(e)}, 500
 
+    # ✅ Diagnostic: Environment snapshot
     @app.route("/startup")
     def startup():
         return {
