@@ -1,37 +1,77 @@
-import requests
+from datetime import datetime
 from src.utils.logger import get_logger
+from src.services.strava import fetch_activities_between
+from src.db.dao.activity_dao import upsert_activities
 
 log = get_logger(__name__)
 
 
-def sync_recent_activities(athlete_id, access_token, per_page=30) -> int:
+def sync_recent_activities(conn, athlete_id, access_token, per_page=30) -> int:
     """
     Download recent activities from Strava and persist them.
     Returns the number of activities successfully inserted.
     """
-    url = "https://www.strava.com/api/v3/athlete/activities"
-    headers = {"Authorization": f"Bearer {access_token}"}
-    params = {"per_page": per_page}
+    try:
+        from datetime import timedelta
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=30)
+        activities = fetch_activities_between(access_token, start_date, end_date, per_page)
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch recent activities: {e}")
 
-    resp = requests.get(url, headers=headers, params=params)
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Failed to fetch activities: {resp.status_code} {resp.text}"
-        )
+    if not activities:
+        log.info(f"No recent activities for athlete {athlete_id}")
+        return 0
 
-    activities = resp.json()
-    inserted = 0
+    try:
+        count = upsert_activities(conn, athlete_id, activities)
+        log.info(f"Inserted {count} recent activities for athlete {athlete_id}")
+        return count
+    except Exception as e:
+        raise RuntimeError(f"Failed to persist activities: {e}")
 
-    for activity in activities:
-        try:
-            from src.db import (
-                save_activity_pg,
-            )  # local import to avoid circular dependency
 
-            save_activity_pg(activity)
-            inserted += 1
-        except Exception as e:
-            log.warning(f"Skipping activity {activity.get('id')} due to error: {e}")
-            continue
+def sync_activities_between(conn, athlete_id: int, access_token: str, start_date: datetime, end_date: datetime) -> int:
+    """
+    Fetch and store activities for a given athlete between the specified dates.
+    Returns the number of activities inserted or updated.
+    """
+    activities = fetch_activities_between(access_token, start_date, end_date)
+    if not activities:
+        print(f"ℹ️ No activities found for athlete {athlete_id} between {start_date.date()} and {end_date.date()}")
+        return 0
 
-    return inserted
+    count = upsert_activities(conn, athlete_id, activities)
+    print(f"✅ Synced {count} activities for athlete {athlete_id}")
+    return count
+
+
+
+def enrich_missing_activities(conn, athlete_id):
+    """
+    Enriches activities for the specified athlete that are missing detailed information.
+    """
+    with conn.cursor() as cur:
+        # Fetch activity IDs that lack detailed information
+        cur.execute("""
+            SELECT id FROM activities
+            WHERE athlete_id = %s AND detailed IS FALSE
+        """, (athlete_id,))
+        activity_ids = [row[0] for row in cur.fetchall()]
+
+        enriched_count = 0
+        for activity_id in activity_ids:
+            # Fetch detailed activity data from Strava API
+            # This assumes you have a function fetch_activity_detail defined elsewhere
+            detail = fetch_activity_detail(activity_id)
+            if detail:
+                # Update the activity record with detailed information
+                cur.execute("""
+                    UPDATE activities
+                    SET detailed = TRUE, detail_data = %s
+                    WHERE id = %s
+                """, (json.dumps(detail), activity_id))
+                enriched_count += 1
+
+        conn.commit()
+    return enriched_count

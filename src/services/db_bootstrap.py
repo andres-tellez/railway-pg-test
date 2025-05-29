@@ -42,3 +42,13 @@ def init_db(database_url=None):
             print("✅ init_db() completed successfully", flush=True)
         finally:
             conn.close()
+
+
+def get_conn():
+    """
+    Return a live DB connection using DATABASE_URL.
+    """
+    database_url = os.environ["DATABASE_URL"]
+    parsed = urlparse(database_url)
+    ssl_mode = "disable" if parsed.hostname in ("localhost", "127.0.0.1", "db") else "require"
+    return psycopg2.connect(database_url, sslmode=ssl_mode)

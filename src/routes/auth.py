@@ -35,9 +35,4 @@ def refresh():
         return jsonify({"error": str(e)}), 401
 
 
-@auth_bp.route("/logout", methods=["POST"])
-def logout():
-    """Revoke refresh token. Currently a no-op."""
-    data = request.get_json() or {}
-    logout_user(data.get("refresh_token"))
-    return jsonify({"message": "logged out"}), 200
+@auth_bp.route("/logout", methods=["POST"])_

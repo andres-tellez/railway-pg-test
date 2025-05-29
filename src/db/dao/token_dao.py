@@ -1,9 +1,8 @@
-# src/db/dao/token_dao.py
-
 from sqlalchemy.exc import NoResultFound, IntegrityError
 from flask import current_app
 from src.db.models.tokens import Token
 from src.utils.jwt_utils import decode_token  # Required to extract 'exp' from JWT
+from datetime import datetime
 
 
 def get_tokens_sa(session, athlete_id):
@@ -46,3 +45,30 @@ def save_tokens_sa(session, athlete_id, access_token, refresh_token):
     except Exception as e:
         session.rollback()
         raise RuntimeError(f"Token decoding or saving failed: {e}")
+
+
+def get_valid_token(conn, athlete_id: int):
+    """
+    Raw SQL helper to fetch a valid (non-expired) access token for a given athlete_id.
+    Designed for scripts using psycopg2 connection.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT access_token, expires_at
+                FROM tokens
+                WHERE athlete_id = %s
+            """, (athlete_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            access_token, expires_at = row
+            now_ts = int(datetime.utcnow().timestamp())
+            if expires_at > now_ts:
+                return {"access_token": access_token, "expires_at": expires_at}
+            else:
+                print(f"⚠️ Token expired for athlete {athlete_id}")
+                return None
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch valid token: {e}")
