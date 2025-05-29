@@ -23,4 +23,5 @@ RUN echo "📁 Docker build: listing /app contents:" && ls -R /app
 EXPOSE 8080
 
 # Start Gunicorn with app factory
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "src.app:create_app"]
+CMD ["gunicorn", "--preload", "wsgi:app", "--bind", "0.0.0.0:8080"]
+
