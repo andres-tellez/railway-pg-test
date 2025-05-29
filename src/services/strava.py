@@ -1,7 +1,8 @@
-# src/services/strava.py
-
+import os
+import time
 import requests
 from datetime import datetime
+from db.dao.token_dao import get_token_pg, save_tokens_pg
 
 def enrich_activity(activity_id, key=None):
     """
@@ -56,3 +57,29 @@ def fetch_activities_between(access_token, start_date, end_date, per_page=200):
         page += 1
 
     return all_activities
+
+def get_valid_access_token(athlete_id):
+    """
+    Retrieve a valid access token for the athlete.
+    If expired, refresh it using the refresh token and update the DB.
+    """
+    tokens = get_token_pg(athlete_id)
+    if not tokens:
+        raise Exception(f"No tokens found for athlete {athlete_id}")
+
+    if tokens["expires_at"] < time.time():
+        resp = requests.post(
+            "https://www.strava.com/api/v3/oauth/token",
+            data={
+                "client_id": os.getenv("STRAVA_CLIENT_ID"),
+                "client_secret": os.getenv("STRAVA_CLIENT_SECRET"),
+                "grant_type": "refresh_token",
+                "refresh_token": tokens["refresh_token"],
+            },
+        )
+        resp.raise_for_status()
+        new_tokens = resp.json()
+        save_tokens_pg(athlete_id, new_tokens)
+        return new_tokens["access_token"]
+
+    return tokens["access_token"]

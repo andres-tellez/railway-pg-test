@@ -1,8 +1,8 @@
 # src/routes/enrich.py
 
 from flask import Blueprint, jsonify, current_app
-from src.platform.strava import enrich_activity, backfill_activities
-
+from strava_platform.strava import enrich_activity, backfill_activities
+from db.core import get_session
 
 enrich_bp = Blueprint("enrich", __name__)
 
@@ -23,3 +23,40 @@ def backfill():
     params = {}  # pull args like 'since' from request.args if you want
     count = backfill_activities(**params)
     return jsonify({"backfilled": count}), 200
+
+def enrich_activity_pg(activity_id, activity_json):
+    """
+    Update the activity record in the database with enriched Strava fields.
+    """
+    session = get_session()
+
+    session.execute(
+        """
+        UPDATE activities
+        SET name = :name,
+            distance = :distance,
+            moving_time = :moving_time,
+            elapsed_time = :elapsed_time,
+            total_elevation_gain = :elevation,
+            type = :type,
+            workout_type = :workout_type,
+            average_speed = :avg_speed,
+            max_speed = :max_speed,
+            suffer_score = :suffer_score
+        WHERE activity_id = :activity_id
+        """,
+        {
+            "activity_id": activity_id,
+            "name": activity_json.get("name"),
+            "distance": activity_json.get("distance"),
+            "moving_time": activity_json.get("moving_time"),
+            "elapsed_time": activity_json.get("elapsed_time"),
+            "elevation": activity_json.get("total_elevation_gain"),
+            "type": activity_json.get("type"),
+            "workout_type": activity_json.get("workout_type"),
+            "avg_speed": activity_json.get("average_speed"),
+            "max_speed": activity_json.get("max_speed"),
+            "suffer_score": activity_json.get("suffer_score"),
+        }
+    )
+    session.commit()
