@@ -2,7 +2,8 @@ import os
 import time
 import requests
 from datetime import datetime
-from db.dao.token_dao import get_token_pg, save_tokens_pg
+from src.db.dao.token_dao import get_token_pg, save_tokens_pg
+
 
 def enrich_activity(activity_id, key=None):
     """

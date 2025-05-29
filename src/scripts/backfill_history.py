@@ -3,9 +3,10 @@ import os
 import time
 import logging
 import requests
-from db.core import get_conn
-from services.strava import get_valid_access_token
-from db.dao.activity_dao import insert_activities
+from src.db.core import get_conn
+from src.services.strava import get_valid_access_token
+from src.db.dao.activity_dao import insert_activities
+
 
 def backfill_history(athlete_id, delay=10):
     token = get_valid_access_token(athlete_id)

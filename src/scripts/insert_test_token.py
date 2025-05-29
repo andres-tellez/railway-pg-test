@@ -2,8 +2,9 @@
 
 import time
 import jwt
-from db.core import get_session
-from db.models.tokens import Token
+from src.db.core import get_session
+from src.db.models.tokens import Token
+
 
 def insert_dummy_token(athlete_id=347085):
     session = get_session()

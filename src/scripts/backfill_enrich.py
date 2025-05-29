@@ -5,9 +5,9 @@ import requests
 import argparse
 from sqlalchemy import text
 
-from db.core import get_session
-from services.strava import get_valid_access_token
-from routes.enrich import enrich_activity_pg
+from src.db.core import get_session
+from src.services.strava import get_valid_access_token
+from src.routes.enrich import enrich_activity_pg
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s: %(message)s",
