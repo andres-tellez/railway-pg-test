@@ -3,6 +3,7 @@ import traceback
 import requests
 from flask import Blueprint, request, jsonify
 from src.services.activity_sync import sync_recent_activities
+from src.services.strava import generate_strava_auth_url  # ✅ Helper to build auth URL
 
 from src.core import get_engine, get_session
 from src.db.dao.token_dao import get_tokens_sa, save_tokens_sa
@@ -13,7 +14,7 @@ SYNC = Blueprint("sync", __name__)
 def get_valid_access_token(athlete_id):
     """
     Retrieve a valid Strava access token, refreshing if needed.
-    Includes hardened error handling to prevent server crashes.
+    Returns None if no token exists yet.
     """
     db_url = os.getenv("DATABASE_URL")
     use_sqlalchemy = db_url and not db_url.startswith("sqlite")
@@ -25,7 +26,7 @@ def get_valid_access_token(athlete_id):
         tokens = get_tokens_pg(athlete_id)
 
     if not tokens:
-        raise ValueError(f"No tokens found for athlete {athlete_id}")
+        return None
 
     access = tokens["access_token"]
     refresh = tokens["refresh_token"]
@@ -41,7 +42,7 @@ def get_valid_access_token(athlete_id):
     except requests.RequestException as net_err:
         print(f"⚠️ Network error during token check: {net_err}", flush=True)
 
-    # If token invalid or call failed, try refreshing
+    # Refresh if invalid or expired
     try:
         rr = requests.post(
             "https://www.strava.com/api/v3/oauth/token",
@@ -85,11 +86,16 @@ def sync_to_db(athlete_id):
 
     try:
         token = get_valid_access_token(athlete_id)
-        try:
-            inserted = sync_recent_activities(athlete_id, token)
-        except Exception as sync_err:
-            raise RuntimeError(f"Activity sync failed: {sync_err}")
+        if not token:
+            auth_url = generate_strava_auth_url(athlete_id)
+            return jsonify(
+                error="No tokens found for athlete",
+                auth_url=auth_url
+            ), 401
+
+        inserted = sync_recent_activities(athlete_id, token)
         return jsonify(synced=inserted), 200
+
     except Exception as e:
         traceback.print_exc()
         return jsonify(error="Sync failed", details=str(e)), 500

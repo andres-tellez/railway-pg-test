@@ -2,6 +2,7 @@ import os
 import time
 import requests
 from datetime import datetime
+from urllib.parse import urlencode
 from src.db.dao.token_dao import get_token_pg, save_tokens_pg
 
 
@@ -12,12 +13,14 @@ def enrich_activity(activity_id, key=None):
     """
     raise NotImplementedError("enrich_activity not implemented")
 
+
 def backfill_activities(since=None):
     """
     Stub for backfilling multiple activities since a given date.
     Returns count of activities processed.
     """
     raise NotImplementedError("backfill_activities not implemented")
+
 
 def fetch_activities_between(access_token, start_date, end_date, per_page=200):
     """
@@ -59,6 +62,7 @@ def fetch_activities_between(access_token, start_date, end_date, per_page=200):
 
     return all_activities
 
+
 def get_valid_access_token(athlete_id):
     """
     Retrieve a valid access token for the athlete.
@@ -84,3 +88,26 @@ def get_valid_access_token(athlete_id):
         return new_tokens["access_token"]
 
     return tokens["access_token"]
+
+
+def generate_strava_auth_url(athlete_id=None):
+    """
+    Generate an authorization URL for Strava OAuth with optional state.
+    """
+    client_id = os.getenv("STRAVA_CLIENT_ID")
+    redirect_uri = os.getenv("REDIRECT_URI")  # ✅ Fixed env var name to match .env
+    if not redirect_uri:
+        raise RuntimeError("Missing REDIRECT_URI in environment.")
+
+    scope = "read,activity:read_all"
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "approval_prompt": "force",
+        "scope": scope,
+    }
+    if athlete_id:
+        params["state"] = str(athlete_id)
+
+    return f"https://www.strava.com/oauth/authorize?{urlencode(params)}"

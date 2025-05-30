@@ -5,13 +5,11 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from flask import current_app, g
 
-
 def get_conn(db_url=None):
-    # 🔍 Show source of DATABASE_URL
-    print("🧪 DEBUG: current_app exists:", bool(current_app))
-    print("🧪 DEBUG: current_app.config.get('DATABASE_URL'):", current_app.config.get("DATABASE_URL") if current_app else None)
-    print("🧪 DEBUG: os.environ.get('DATABASE_URL'):", os.environ.get("DATABASE_URL"))
     db_url = db_url or os.getenv("DATABASE_URL") or (current_app.config.get("DATABASE_URL") if current_app else None)
+
+    # Fallback default for CLI init use
+    db_url = db_url or "postgresql://smartcoach:devpass@db:5432/smartcoach_db"
     print(f"🧪 DEBUG: get_conn using DATABASE_URL = {db_url}", flush=True)
 
     if not db_url:
@@ -31,18 +29,20 @@ def get_conn(db_url=None):
         print("✅ SQLite connection established", flush=True)
         return conn
 
-    if "sslmode=" not in db_url:
-        ssl_mode = "disable" if parsed.hostname in ("localhost", "127.0.0.1", "db") else "require"
-        db_url += ("&" if "?" in db_url else "?") + f"sslmode={ssl_mode}"
-
-    print(f"🔍 Connecting to Postgres at {parsed.hostname}:{parsed.port}", flush=True)
-    conn = psycopg2.connect(dsn=db_url, connect_timeout=5)
-    print("✅ Postgres connection established", flush=True)
-
+    ssl_mode = "disable" if parsed.hostname in ("localhost", "127.0.0.1", "db") else "require"
+    print(f"🔌 Connecting to Postgres @ {parsed.hostname}:{parsed.port}, sslmode={ssl_mode}", flush=True)
+    conn = psycopg2.connect(
+        dbname=parsed.path.lstrip("/"),
+        user=parsed.username,
+        password=parsed.password,
+        host=parsed.hostname,
+        port=parsed.port,
+        sslmode=ssl_mode
+    )
     with conn.cursor() as cur:
         cur.execute("SET search_path TO public;")
+    print("✅ Postgres connection established", flush=True)
     return conn
-
 
 def get_tokens_pg(athlete_id: int, db_url=None):
     conn = get_conn(db_url)
@@ -59,7 +59,6 @@ def get_tokens_pg(athlete_id: int, db_url=None):
     finally:
         if not isinstance(conn, sqlite3.Connection):
             conn.close()
-
 
 def save_tokens_pg(athlete_id: int, access_token: str, refresh_token: str, db_url=None) -> None:
     conn = get_conn(db_url)
@@ -89,7 +88,6 @@ def save_tokens_pg(athlete_id: int, access_token: str, refresh_token: str, db_ur
     finally:
         if not isinstance(conn, sqlite3.Connection):
             conn.close()
-
 
 def save_activity_pg(activity: dict, db_url=None) -> None:
     conn = get_conn(db_url)
@@ -125,13 +123,12 @@ def save_activity_pg(activity: dict, db_url=None) -> None:
         if not isinstance(conn, sqlite3.Connection):
             conn.close()
 
-
 def init_db(db_url=None):
-    db_url = db_url or (current_app.config.get("DATABASE_URL") if current_app else None) or os.getenv("DATABASE_URL")
+    db_url = db_url or (current_app.config.get("DATABASE_URL") if current_app else None) or os.getenv("DATABASE_URL") or "postgresql://smartcoach:devpass@db:5432/smartcoach_db"
     print(f"🧪 DEBUG: init_db using DATABASE_URL = {db_url}", flush=True)
     conn = get_conn(db_url)
     try:
-        schema_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "schema.sql")
+        schema_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "schema.sql"))
         print("📄 Loading schema from:", schema_path, flush=True)
         with open(schema_path, "r", encoding="utf-8") as f:
             sql_script = f.read()

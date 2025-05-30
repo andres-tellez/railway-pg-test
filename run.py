@@ -3,8 +3,12 @@
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
 print("📦 Starting run.py...", flush=True)
+
+# 🔐 Load .env explicitly (important in Docker or if run manually)
+load_dotenv()
 
 # Ensure the project root is on PYTHONPATH
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))

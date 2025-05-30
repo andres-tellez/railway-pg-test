@@ -1,5 +1,8 @@
 #!/bin/bash
 
+set -e  # Exit on error
+set -o pipefail
+
 echo "🔁 Stopping and removing containers and volumes..."
 docker-compose down --volumes
 
@@ -9,8 +12,11 @@ docker-compose up --build -d
 echo "⏳ Waiting for PostgreSQL to accept connections..."
 sleep 10
 
-echo "📂 Verifying DB container and creating schema..."
-docker-compose exec db psql -U smartcoach -d smartcoach_db -f /docker-entrypoint-initdb.d/schema.sql
+echo "📂 Copying schema.sql into the DB container..."
+docker cp schema.sql railway-pg-test-db-1:/tmp/schema.sql
 
-echo "✅ DB schema applied. Verifying connection from app..."
+echo "🛠 Applying schema.sql to smartcoach_db..."
+docker-compose exec db psql -U smartcoach -d smartcoach_db -f /tmp/schema.sql
+
+echo "✅ Schema applied. Tailing logs from web container..."
 docker-compose logs web | tail -n 50
