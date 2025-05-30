@@ -1,8 +1,7 @@
-# src/models/tokens.py
+# src/db/models/tokens.py
 
 from sqlalchemy import Column, BigInteger, Text
-from src.core import Base
-
+from src.db.db_session import Base
 
 class Token(Base):
     __tablename__ = "tokens"

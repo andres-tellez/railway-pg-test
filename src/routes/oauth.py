@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 import os
 import requests
-from src.db.init_db import save_tokens_pg
+from src.db.dao.token_dao import save_tokens_pg  # Updated import
 
 oauth_bp = Blueprint("oauth", __name__)
 

@@ -4,26 +4,40 @@ import os
 import sys
 import pytest
 from pathlib import Path
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-# ✅ Add project root to Python path so 'src' can be imported
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from src.app import create_app
+from src.core import get_engine, set_engine_for_testing
 from src.db.init_db import init_db
 
-# 🧪 DAO Tests: in-memory SQLite for fast isolation
+# DATABASE_URL for test Postgres instance
+TEST_DATABASE_URL = "postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach"
+
 @pytest.fixture(scope="session")
-def sqlalchemy_engine():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+def shared_engine():
+    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+
+    engine = get_engine(TEST_DATABASE_URL)
+    set_engine_for_testing(engine)
+    init_db(TEST_DATABASE_URL)
     return engine
 
 @pytest.fixture(scope="function")
-def sqlalchemy_session(sqlalchemy_engine):
-    connection = sqlalchemy_engine.connect()
+def app(shared_engine):
+    app = create_app({"TESTING": True, "DATABASE_URL": TEST_DATABASE_URL})
+    yield app
+
+@pytest.fixture(scope="function")
+def client(app):
+    return app.test_client()
+
+@pytest.fixture(scope="function")
+def sqlalchemy_session(shared_engine):
+    connection = shared_engine.connect()
     transaction = connection.begin()
-    Session = sessionmaker(bind=connection)
+    Session = sessionmaker(bind=connection, future=True)
     session = Session()
 
     yield session
@@ -31,16 +45,3 @@ def sqlalchemy_session(sqlalchemy_engine):
     session.close()
     transaction.rollback()
     connection.close()
-
-# ✅ App for route tests (tasktracker, auth, sync, etc)
-@pytest.fixture(scope="function")
-def app(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
-    app = create_app({"TESTING": True})
-    with app.app_context():
-        init_db()
-    yield app
-
-@pytest.fixture(scope="function")
-def client(app):
-    return app.test_client()

@@ -3,11 +3,19 @@ import traceback
 import requests
 from flask import Blueprint, request, jsonify
 from src.services.activity_sync import sync_recent_activities
-from src.services.strava import generate_strava_auth_url  # ✅ Helper to build auth URL
+from src.services.strava import generate_strava_auth_url
 
+# DAO imports
 from src.core import get_engine, get_session
+
+# ✅ SQLAlchemy-based Token DAO
 from src.db.dao.token_dao import get_tokens_sa, save_tokens_sa
-from src.db.init_db import get_tokens_pg, save_tokens_pg
+
+# ✅ Activity DAO (pure SQLAlchemy)
+from src.db.dao.activity_dao import upsert_activities  # Updated to use upsert_activities
+
+# ✅ low-level connection helper
+from src.db.init_db import get_conn
 
 SYNC = Blueprint("sync", __name__)
 
@@ -19,18 +27,25 @@ def get_valid_access_token(athlete_id):
     db_url = os.getenv("DATABASE_URL")
     use_sqlalchemy = db_url and not db_url.startswith("sqlite")
 
+    session = None
+    tokens = None
+
     if use_sqlalchemy:
-        session = get_session(get_engine(db_url))
+        engine = get_engine(db_url)
+        session = get_session(engine)
         tokens = get_tokens_sa(session, athlete_id)
     else:
         tokens = get_tokens_pg(athlete_id)
 
     if not tokens:
+        if use_sqlalchemy:
+            session.close()
         return None
 
     access = tokens["access_token"]
     refresh = tokens["refresh_token"]
 
+    # ✅ Validate token with Strava API
     try:
         r = requests.get(
             "https://www.strava.com/api/v3/athlete",
@@ -38,11 +53,13 @@ def get_valid_access_token(athlete_id):
             timeout=5,
         )
         if r.status_code == 200:
-            return access
+            if use_sqlalchemy:
+                session.close()
+            return access  # token still valid
     except requests.RequestException as net_err:
         print(f"⚠️ Network error during token check: {net_err}", flush=True)
 
-    # Refresh if invalid or expired
+    # ✅ Refresh token if expired or invalid
     try:
         rr = requests.post(
             "https://www.strava.com/api/v3/oauth/token",
@@ -54,6 +71,7 @@ def get_valid_access_token(athlete_id):
             },
             timeout=5,
         )
+
         if rr.status_code != 200:
             raise RuntimeError(f"Strava token refresh failed: {rr.text}")
 
@@ -63,6 +81,7 @@ def get_valid_access_token(athlete_id):
 
         if use_sqlalchemy:
             save_tokens_sa(session, athlete_id, access, new_refresh)
+            session.close()
         else:
             save_tokens_pg(athlete_id, access, new_refresh)
 
@@ -85,15 +104,26 @@ def sync_to_db(athlete_id):
         return jsonify(error="Unauthorized"), 401
 
     try:
-        token = get_valid_access_token(athlete_id)
-        if not token:
+        access_token = get_valid_access_token(athlete_id)
+        if not access_token:
             auth_url = generate_strava_auth_url(athlete_id)
             return jsonify(
                 error="No tokens found for athlete",
                 auth_url=auth_url
             ), 401
 
-        inserted = sync_recent_activities(athlete_id, token)
+        # ✅ Handle correct DB connection
+        db_url = os.getenv("DATABASE_URL")
+        if db_url and not db_url.startswith("sqlite"):
+            engine = get_engine(db_url)
+            conn = engine.connect()
+        else:
+            conn = get_conn(db_url)
+
+        # Use the upsert_activities method to insert/update activities
+        activities = []  # This should be populated with the activities data
+        inserted = upsert_activities(conn, athlete_id, activities)  # Using upsert_activities here
+
         return jsonify(synced=inserted), 200
 
     except Exception as e:

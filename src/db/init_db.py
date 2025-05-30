@@ -1,153 +1,62 @@
 import os
-import sqlite3
-from urllib.parse import urlparse
 import psycopg2
-from psycopg2.extras import RealDictCursor
-from flask import current_app, g
+from sqlalchemy import create_engine, text
+from src.core import get_engine
+from src.db.models.tokens import Base as TokensBase
+from src.db.models.activities import Base as ActivitiesBase
 
 def get_conn(db_url=None):
+    """
+    Return a low-level database connection.
+    Uses PostgreSQL if the URL is set.
+    """
     db_url = db_url or os.getenv("DATABASE_URL") or (current_app.config.get("DATABASE_URL") if current_app else None)
-
-    # Fallback default for CLI init use
-    db_url = db_url or "postgresql://smartcoach:devpass@db:5432/smartcoach_db"
-    print(f"🧪 DEBUG: get_conn using DATABASE_URL = {db_url}", flush=True)
-
-    if not db_url:
+    
+    if db_url is None:
         raise RuntimeError("DATABASE_URL is not set!")
 
     parsed = urlparse(db_url)
 
     if db_url.startswith("sqlite"):
         path = parsed.path.lstrip("/") if os.name == "nt" else parsed.path
-        print(f"🔍 Connecting to SQLite at {path}", flush=True)
         conn = sqlite3.connect(path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         if current_app and not current_app.config.get("TESTING") and hasattr(g, "db_conn"):
             return g.db_conn
         if current_app:
             g.db_conn = conn
-        print("✅ SQLite connection established", flush=True)
+        return conn
+    else:
+        ssl_mode = "disable" if parsed.hostname in ("localhost", "127.0.0.1", "db") else "require"
+        conn = psycopg2.connect(
+            dbname=parsed.path.lstrip("/"),
+            user=parsed.username,
+            password=parsed.password,
+            host=parsed.hostname,
+            port=parsed.port,
+            sslmode=ssl_mode
+        )
         return conn
 
-    ssl_mode = "disable" if parsed.hostname in ("localhost", "127.0.0.1", "db") else "require"
-    print(f"🔌 Connecting to Postgres @ {parsed.hostname}:{parsed.port}, sslmode={ssl_mode}", flush=True)
-    conn = psycopg2.connect(
-        dbname=parsed.path.lstrip("/"),
-        user=parsed.username,
-        password=parsed.password,
-        host=parsed.hostname,
-        port=parsed.port,
-        sslmode=ssl_mode
-    )
-    with conn.cursor() as cur:
-        cur.execute("SET search_path TO public;")
-    print("✅ Postgres connection established", flush=True)
-    return conn
-
-def get_tokens_pg(athlete_id: int, db_url=None):
-    conn = get_conn(db_url)
-    try:
-        if isinstance(conn, sqlite3.Connection):
-            cur = conn.cursor()
-            cur.execute("SELECT access_token, refresh_token FROM tokens WHERE athlete_id = ?", (athlete_id,))
-            row = cur.fetchone()
-            return {"access_token": row[0], "refresh_token": row[1]} if row else None
-
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT access_token, refresh_token FROM tokens WHERE athlete_id = %s", (athlete_id,))
-            return cur.fetchone()
-    finally:
-        if not isinstance(conn, sqlite3.Connection):
-            conn.close()
-
-def save_tokens_pg(athlete_id: int, access_token: str, refresh_token: str, db_url=None) -> None:
-    conn = get_conn(db_url)
-    try:
-        if isinstance(conn, sqlite3.Connection):
-            cur = conn.cursor()
-            cur.execute(
-                """
-                INSERT OR REPLACE INTO tokens (athlete_id, access_token, refresh_token)
-                VALUES (?, ?, ?)
-                """,
-                (athlete_id, access_token, refresh_token),
-            )
-        else:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO tokens (athlete_id, access_token, refresh_token)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (athlete_id) DO UPDATE SET
-                      access_token = EXCLUDED.access_token,
-                      refresh_token = EXCLUDED.refresh_token;
-                    """,
-                    (athlete_id, access_token, refresh_token),
-                )
-        conn.commit()
-    finally:
-        if not isinstance(conn, sqlite3.Connection):
-            conn.close()
-
-def save_activity_pg(activity: dict, db_url=None) -> None:
-    conn = get_conn(db_url)
-    try:
-        fields = {
-            "activity_id": activity["id"],
-            "athlete_id": activity["athlete"]["id"],
-            "name": activity.get("name"),
-            "start_date": activity.get("start_date"),
-            "distance_mi": activity.get("distance", 0) / 1609.34,
-            "moving_time_min": activity.get("moving_time", 0) / 60.0,
-            "pace_min_per_mile": None,
-            "data": activity,
-        }
-
-        if fields["distance_mi"] > 0:
-            fields["pace_min_per_mile"] = fields["moving_time_min"] / fields["distance_mi"]
-
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO activities (
-                    activity_id, athlete_id, name, start_date,
-                    distance_mi, moving_time_min, pace_min_per_mile, data
-                ) VALUES (%(activity_id)s, %(athlete_id)s, %(name)s, %(start_date)s,
-                          %(distance_mi)s, %(moving_time_min)s, %(pace_min_per_mile)s, %(data)s)
-                ON CONFLICT (activity_id) DO NOTHING
-                """,
-                fields,
-            )
-        conn.commit()
-    finally:
-        if not isinstance(conn, sqlite3.Connection):
-            conn.close()
-
 def init_db(db_url=None):
-    db_url = db_url or (current_app.config.get("DATABASE_URL") if current_app else None) or os.getenv("DATABASE_URL") or "postgresql://smartcoach:devpass@db:5432/smartcoach_db"
-    print(f"🧪 DEBUG: init_db using DATABASE_URL = {db_url}", flush=True)
-    conn = get_conn(db_url)
-    try:
-        schema_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "schema.sql"))
-        print("📄 Loading schema from:", schema_path, flush=True)
+    engine = get_engine(db_url)
+
+    # ✅ Load raw schema.sql
+    schema_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "schema.sql"))
+    print("📄 Loading schema from:", schema_path, flush=True)
+    with engine.connect() as conn:
         with open(schema_path, "r", encoding="utf-8") as f:
             sql_script = f.read()
-
         statements = [stmt.strip() for stmt in sql_script.strip().split(";") if stmt.strip()]
-
-        if isinstance(conn, sqlite3.Connection):
-            cur = conn.cursor()
-            for stmt in statements:
-                print(f"📄 Executing:\n{stmt[:80]}...", flush=True)
-                cur.execute(stmt + ";")
-        else:
-            with conn.cursor() as cur:
-                for stmt in statements:
-                    print(f"📄 Executing:\n{stmt[:80]}...", flush=True)
-                    cur.execute(stmt + ";")
-
+        for stmt in statements:
+            print(f"📄 Executing:\n{stmt[:80]}...", flush=True)
+            conn.execute(text(stmt))
         conn.commit()
-        print("✅ Database schema created successfully", flush=True)
-    finally:
-        if not isinstance(conn, sqlite3.Connection):
-            conn.close()
+
+    print("✅ Raw schema loaded", flush=True)
+
+    # ✅ ORM tables
+    TokensBase.metadata.create_all(bind=engine)
+    ActivitiesBase.metadata.create_all(bind=engine)
+    # Removed reference to RunSplitsBase as the table is deleted
+    print("✅ ORM models initialized successfully", flush=True)

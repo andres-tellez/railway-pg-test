@@ -1,9 +1,7 @@
 # src/db/models/activities.py
 
 from sqlalchemy import Column, Integer, String, Float, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from src.db.db_session import Base  # <-- Centralized Base import
 
 class Activity(Base):
     __tablename__ = "activities"

@@ -1,15 +1,15 @@
-﻿version: "3.8"
+﻿version: "3.9"
 
 services:
-  db:
+  postgres:
     image: postgres:15
     restart: always
     environment:
       POSTGRES_USER: smartcoach
       POSTGRES_PASSWORD: devpass
-      POSTGRES_DB: smartcoach  # ✅ MATCHES DATABASE_URL now
+      POSTGRES_DB: smartcoach
     ports:
-      - "15432:5432"  # ✅ safe host port for local dev
+      - "15432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
@@ -23,17 +23,17 @@ services:
     build: .
     command: flask run --host=0.0.0.0 --port=8080
     ports:
-      - "18081:8080"  # ✅ access via http://localhost:18081
+      - "18081:8080"
     environment:
       - FLASK_APP=src.app
       - FLASK_ENV=development
     env_file:
-      - .env  # ✅ injects DATABASE_URL, secrets, etc
+      - .env
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
     volumes:
-      - .:/app  # ✅ hot reload support
+      - .:/app
 
 volumes:
   postgres_data:
