@@ -5,7 +5,7 @@ import traceback
 from flask import Blueprint, jsonify
 from src.core import get_engine, get_session
 from src.db.dao.token_dao import get_tokens_sa
-from src.routes.sync_routes import get_valid_access_token
+
 
 monitor_bp = Blueprint("monitor", __name__)
 
@@ -26,7 +26,7 @@ def monitor_tokens():
         for t in all_tokens:
             athlete_id = t.athlete_id
             try:
-                token = get_valid_access_token(athlete_id)
+                token = get_valid_access_token_sa(session, athlete_id)
                 results.append({"athlete_id": athlete_id, "status": "ok"})
             except Exception as e:
                 results.append({

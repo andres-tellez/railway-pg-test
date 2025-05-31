@@ -4,7 +4,6 @@ import time
 import logging
 import requests
 from src.db.base_model import get_conn
-from src.services.strava import get_valid_access_token
 from src.db.dao.activity_dao import insert_activities
 
 

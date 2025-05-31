@@ -6,7 +6,6 @@ import argparse
 from sqlalchemy import text
 
 from src.db.base_model import get_session
-from src.services.strava import get_valid_access_token
 from src.routes.enrich import enrich_activity_pg
 
 logging.basicConfig(

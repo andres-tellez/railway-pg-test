@@ -103,3 +103,21 @@ def get_valid_token(conn, athlete_id: int):
                 return None
     except Exception as e:
         raise RuntimeError(f"Failed to fetch valid token: {e}")
+
+def get_valid_access_token_sa(session, athlete_id):
+    """
+    Fetch a valid (non-expired) access token for a given athlete_id using SQLAlchemy session.
+    """
+    try:
+        token = session.query(Token).filter_by(athlete_id=athlete_id).one_or_none()
+        if not token:
+            return None
+
+        now_ts = int(datetime.utcnow().timestamp())
+        if token.expires_at > now_ts:
+            return token.access_token
+        else:
+            print(f"⚠️ Token expired for athlete {athlete_id}")
+            return None
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch valid access token: {e}")
