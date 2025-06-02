@@ -24,20 +24,27 @@ def create_app(test_config=None):
     print("📁 CWD:", os.getcwd(), flush=True)
     print("📁 Contents of current working dir:", os.listdir(os.getcwd()), flush=True)
 
-    # ✅ Load environment variables (local vs production)
+    # ✅ Load environment variables (local vs docker-compose)
     env_mode = os.getenv("FLASK_ENV", "production")
     is_local = os.getenv("IS_LOCAL", "false").lower() == "true"
     print(f"🌍 FLASK_ENV={env_mode} | IS_LOCAL={is_local}", flush=True)
 
-    env_path = Path(__file__).resolve().parent.parent / (".env.local" if is_local else ".env")
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=True)
-        print(f"📄 Loaded environment from: {env_path}", flush=True)
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if is_local:
+        if env_path.exists():
+            load_dotenv(dotenv_path=env_path, override=True)
+            print(f"📄 Loaded environment from: {env_path}", flush=True)
+        else:
+            print(f"❌ .env not found at: {env_path}", flush=True)
     else:
-        print(f"❌ Could not find .env file at: {env_path}", flush=True)
+        print("📄 Docker mode - relying on injected env vars", flush=True)
 
+    # ✅ Dump critical env vars (for debugging)
     print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))
     print("🔐 ADMIN_PASS:", os.getenv("ADMIN_PASS"))
+    print("🔐 STRAVA_CLIENT_ID:", os.getenv("STRAVA_CLIENT_ID"))
+    print("🔐 STRAVA_CLIENT_SECRET:", os.getenv("STRAVA_CLIENT_SECRET"))
+    print("🔐 REDIRECT_URI:", os.getenv("REDIRECT_URI"))
     print("💾 ENV DATABASE_URL:", os.getenv("DATABASE_URL"))
 
     # ✅ Set absolute path to templates to ensure it resolves in production
@@ -68,7 +75,7 @@ def create_app(test_config=None):
     app.register_blueprint(SYNC)
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(oauth_bp)
-    app.register_blueprint(monitor_bp)  # ✅ REGISTERS /monitor-tokens
+    app.register_blueprint(monitor_bp)
 
     # ✅ Diagnostic: Health check
     @app.route("/ping")

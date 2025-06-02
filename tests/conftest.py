@@ -6,10 +6,11 @@ import pytest
 from pathlib import Path
 from sqlalchemy.orm import sessionmaker
 
+# Ensure project root is on sys.path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from src.app import create_app
-from src.core import get_engine, set_engine_for_testing
+from src.db.db_session import get_engine  # ✅ use db_session directly
 from src.db.init_db import init_db
 
 # DATABASE_URL for test Postgres instance
@@ -17,10 +18,10 @@ TEST_DATABASE_URL = "postgresql+psycopg2://smartcoach:devpass@localhost:15432/sm
 
 @pytest.fixture(scope="session")
 def shared_engine():
+    # Set DATABASE_URL for the test session
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
     engine = get_engine(TEST_DATABASE_URL)
-    set_engine_for_testing(engine)
     init_db(TEST_DATABASE_URL)
     return engine
 

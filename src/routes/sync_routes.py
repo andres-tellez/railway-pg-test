@@ -1,3 +1,5 @@
+# src/routes/sync_routes.py
+
 import os
 import traceback
 import requests
@@ -8,11 +10,10 @@ from src.services.activity_sync import sync_recent_activities
 from src.services.strava import generate_strava_auth_url
 
 # DAO imports (SQLAlchemy-only)
-from src.db.base_model import get_session
+from src.db.db_session import get_session
 from src.db.dao.token_dao import get_valid_access_token_sa
 
 SYNC = Blueprint("sync", __name__)
-
 
 @SYNC.route("/sync-strava-to-db/<int:athlete_id>")
 def sync_to_db(athlete_id):
@@ -49,7 +50,6 @@ def sync_to_db(athlete_id):
     except Exception as e:
         traceback.print_exc()
         return jsonify(error="Sync failed", details=str(e)), 500
-
 
 @SYNC.route("/init-db")
 def init_db_route():

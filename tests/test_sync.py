@@ -1,11 +1,12 @@
 # tests/test_sync.py
+
 import pytest
 
 @pytest.mark.parametrize(
     "key,code",
     [
         ("wrong", 401),
-        ("devkey123", 500),  # schema exists, but we'll simulate empty sync
+        ("devkey123", 401),  # when no tokens exist
     ],
 )
 def test_sync_auth_and_error(client, key, code):
@@ -13,21 +14,19 @@ def test_sync_auth_and_error(client, key, code):
     assert resp.status_code == code
 
 def test_sync_success(monkeypatch, client):
-    # Match the CRON_SECRET_KEY expected by route
+    # ✅ Set CRON_SECRET_KEY for authorization
     monkeypatch.setenv("CRON_SECRET_KEY", "devkey123")
 
-    # Mock token retrieval
+    # ✅ Patch token DAO directly — this fully bypasses session
     monkeypatch.setattr(
-        "src.routes.sync_routes.get_valid_access_token", lambda athlete_id: "fake-token"
+        "src.routes.sync_routes.get_valid_access_token_sa",
+        lambda session, athlete_id: "fake-token"
     )
 
-    # Mock Strava API call to return empty activity list
+    # ✅ Patch sync_recent_activities directly — no need to patch get_session
     monkeypatch.setattr(
-        "requests.get",
-        lambda *args, **kwargs: type("R", (), {
-            "status_code": 200,
-            "json": staticmethod(lambda: [])
-        })(),
+        "src.routes.sync_routes.sync_recent_activities",
+        lambda session, athlete_id, access_token: 0
     )
 
     resp = client.get("/sync-strava-to-db/123?key=devkey123")

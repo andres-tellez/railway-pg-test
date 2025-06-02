@@ -3,7 +3,7 @@
 from flask import Blueprint, jsonify, current_app
 from src.services.strava import enrich_activity, backfill_activities
 
-from src.db.base_model import get_session
+from src.db.db_session import get_session  # ✅ fixed import: now using db_session.py
 
 enrich_bp = Blueprint("enrich", __name__)
 
@@ -21,7 +21,7 @@ def enrich_single(activity_id):
 @enrich_bp.route("/backfill", methods=["POST"])
 def backfill():
     """Enrich all past activities since a given date."""
-    params = {}  # pull args like 'since' from request.args if you want
+    params = {}  # You can parse request.args for 'since' if needed
     count = backfill_activities(**params)
     return jsonify({"backfilled": count}), 200
 

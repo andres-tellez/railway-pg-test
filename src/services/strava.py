@@ -3,7 +3,7 @@ import time
 import requests
 from datetime import datetime
 from urllib.parse import urlencode
-from src.db.dao.token_dao import get_token_pg, save_tokens_pg
+from src.db.dao.token_dao import get_tokens_sa, save_tokens_sa
 
 
 def enrich_activity(activity_id, key=None):
@@ -63,13 +63,12 @@ def fetch_activities_between(access_token, start_date, end_date, per_page=200):
     return all_activities
 
 
-
 def generate_strava_auth_url(athlete_id=None):
     """
     Generate an authorization URL for Strava OAuth with optional state.
     """
     client_id = os.getenv("STRAVA_CLIENT_ID")
-    redirect_uri = os.getenv("REDIRECT_URI")  # ✅ Fixed env var name to match .env
+    redirect_uri = os.getenv("REDIRECT_URI")  # ✅ fixed env var name to match .env
     if not redirect_uri:
         raise RuntimeError("Missing REDIRECT_URI in environment.")
 

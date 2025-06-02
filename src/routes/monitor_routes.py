@@ -3,31 +3,28 @@
 import os
 import traceback
 from flask import Blueprint, jsonify
-from src.core import get_engine, get_session
-from src.db.dao.token_dao import get_tokens_sa
 
+from src.db.db_session import get_engine, get_session  # ✅ Correct imports
+from src.db.dao.token_dao import get_tokens_sa, get_valid_access_token_sa  # ✅ Correct DAO imports
 
 monitor_bp = Blueprint("monitor", __name__)
 
 @monitor_bp.route("/monitor-tokens")
 def monitor_tokens():
     try:
-        engine = get_engine(os.getenv("DATABASE_URL"))
+        db_url = os.getenv("DATABASE_URL")
+        engine = get_engine(db_url)
         session = get_session(engine)
         results = []
 
-        # Fetch all token entries
-        token_model = get_tokens_sa.__self__.model if hasattr(get_tokens_sa, '__self__') else None
-        if token_model is None:
-            raise RuntimeError("get_tokens_sa does not expose model attribute")
+        # Fetch all token entries using SQLAlchemy
+        tokens = session.query(get_tokens_sa.__annotations__.get('return')).all()
 
-        all_tokens = session.query(token_model).all()
-
-        for t in all_tokens:
-            athlete_id = t.athlete_id
+        for token in tokens:
+            athlete_id = token.athlete_id
             try:
-                token = get_valid_access_token_sa(session, athlete_id)
-                results.append({"athlete_id": athlete_id, "status": "ok"})
+                access_token = get_valid_access_token_sa(session, athlete_id)
+                results.append({"athlete_id": athlete_id, "status": "ok" if access_token else "expired"})
             except Exception as e:
                 results.append({
                     "athlete_id": athlete_id,
@@ -36,6 +33,7 @@ def monitor_tokens():
                 })
 
         return jsonify(results=results), 200
+
     except Exception as e:
         traceback.print_exc()
         return jsonify(error="Monitor failed", details=str(e)), 500

@@ -17,19 +17,21 @@ def resolve_db_url():
         return current_app.config.get("DATABASE_URL") or os.getenv("DATABASE_URL")
     return os.getenv("DATABASE_URL")
 
-def get_engine():
+def get_engine(db_url=None):
     """
-    Create a SQLAlchemy engine. Should be called once per process.
+    Create a SQLAlchemy engine.
+    Allows optional db_url override for tests or special cases.
     """
-    db_url = resolve_db_url()
+    db_url = db_url or resolve_db_url()
     if not db_url:
         raise RuntimeError("DATABASE_URL is not set in environment or app config.")
     return create_engine(db_url, echo=False, future=True)
 
-def get_session():
+def get_session(engine=None):
     """
     Create a new SQLAlchemy sessionmaker (not a global session).
+    Allows optional engine injection for test harnesses.
     """
-    engine = get_engine()
+    engine = engine or get_engine()
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     return SessionLocal()

@@ -5,7 +5,7 @@ import jwt
 import datetime
 from flask import current_app, has_app_context
 
-from src.core import get_engine, get_session
+from src.db.db_session import get_engine, get_session
 from src.db.dao.token_dao import get_tokens_sa, save_tokens_sa
 
 ACCESS_TOKEN_EXP = lambda: int(os.getenv("ACCESS_TOKEN_EXP", 900))        # 15 minutes
@@ -39,7 +39,8 @@ def login_user(data: dict) -> tuple[str, str]:
     refresh_token = jwt.encode(refresh_payload, secret, algorithm="HS256")
 
     db_url = resolve_db_url()
-    session = get_session(get_engine(db_url))
+    engine = get_engine()  # ✅ simplified: get_engine() resolves internally
+    session = get_session()
     save_tokens_sa(session, athlete_id=0, access_token=access_token, refresh_token=refresh_token)
 
     return access_token, refresh_token
@@ -54,8 +55,8 @@ def refresh_token(refresh_token_str: str) -> str:
         raise PermissionError("Invalid refresh token")
 
     username = payload.get("sub")
-    db_url = resolve_db_url()
-    session = get_session(get_engine(db_url))
+    engine = get_engine()
+    session = get_session()
     tokens = get_tokens_sa(session, athlete_id=0)
 
     if not tokens or tokens.get("refresh_token") != refresh_token_str:

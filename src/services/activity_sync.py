@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
 from src.utils.logger import get_logger
 from src.services.strava import fetch_activities_between
 from src.db.dao.activity_dao import upsert_activities
@@ -6,15 +7,14 @@ from src.db.dao.activity_dao import upsert_activities
 log = get_logger(__name__)
 
 
-def sync_recent_activities(conn, athlete_id, access_token, per_page=30) -> int:
+def sync_recent_activities(session, athlete_id, access_token, per_page=20) -> int:
     """
     Download recent activities from Strava and persist them.
-    Returns the number of activities successfully inserted.
+    Limited to the past 7 days for initial sync validation.
     """
     try:
-        from datetime import timedelta
         end_date = datetime.utcnow()
-        start_date = end_date - timedelta(days=30)
+        start_date = end_date - timedelta(days=7)  # Narrow window for MVP validation
         activities = fetch_activities_between(access_token, start_date, end_date, per_page)
     except Exception as e:
         raise RuntimeError(f"Failed to fetch recent activities: {e}")
@@ -24,54 +24,39 @@ def sync_recent_activities(conn, athlete_id, access_token, per_page=30) -> int:
         return 0
 
     try:
-        count = upsert_activities(conn, athlete_id, activities)
+        count = upsert_activities(session, athlete_id, activities)
         log.info(f"Inserted {count} recent activities for athlete {athlete_id}")
         return count
     except Exception as e:
         raise RuntimeError(f"Failed to persist activities: {e}")
 
 
-def sync_activities_between(conn, athlete_id: int, access_token: str, start_date: datetime, end_date: datetime) -> int:
+def sync_activities_between(session, athlete_id: int, access_token: str, start_date: datetime, end_date: datetime, per_page=20) -> int:
     """
     Fetch and store activities for a given athlete between the specified dates.
-    Returns the number of activities inserted or updated.
+    This remains available for future enrichment and backfill use cases.
     """
-    activities = fetch_activities_between(access_token, start_date, end_date)
+    try:
+        activities = fetch_activities_between(access_token, start_date, end_date, per_page)
+    except Exception as e:
+        raise RuntimeError(f"Failed to fetch activities between dates: {e}")
+
     if not activities:
-        print(f"ℹ️ No activities found for athlete {athlete_id} between {start_date.date()} and {end_date.date()}")
+        log.info(f"No activities found for athlete {athlete_id} between {start_date.date()} and {end_date.date()}")
         return 0
 
-    count = upsert_activities(conn, athlete_id, activities)
-    print(f"✅ Synced {count} activities for athlete {athlete_id}")
-    return count
+    try:
+        count = upsert_activities(session, athlete_id, activities)
+        log.info(f"Synced {count} activities for athlete {athlete_id}")
+        return count
+    except Exception as e:
+        raise RuntimeError(f"Failed to persist activities: {e}")
 
 
-
-def enrich_missing_activities(conn, athlete_id):
+def enrich_missing_activities(session, athlete_id):
     """
-    Enriches activities for the specified athlete that are missing detailed information.
+    Placeholder enrichment function.
+    Will be implemented fully during enrichment pipeline phase.
     """
-    with conn.cursor() as cur:
-        # Fetch activity IDs that lack detailed information
-        cur.execute("""
-            SELECT id FROM activities
-            WHERE athlete_id = %s AND detailed IS FALSE
-        """, (athlete_id,))
-        activity_ids = [row[0] for row in cur.fetchall()]
-
-        enriched_count = 0
-        for activity_id in activity_ids:
-            # Fetch detailed activity data from Strava API
-            # This assumes you have a function fetch_activity_detail defined elsewhere
-            detail = fetch_activity_detail(activity_id)
-            if detail:
-                # Update the activity record with detailed information
-                cur.execute("""
-                    UPDATE activities
-                    SET detailed = TRUE, detail_data = %s
-                    WHERE id = %s
-                """, (json.dumps(detail), activity_id))
-                enriched_count += 1
-
-        conn.commit()
-    return enriched_count
+    log.info("Enriching activities is not yet implemented in MVP.")
+    return 0
