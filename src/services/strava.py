@@ -68,7 +68,7 @@ def generate_strava_auth_url(athlete_id=None):
     Generate an authorization URL for Strava OAuth with optional state.
     """
     client_id = os.getenv("STRAVA_CLIENT_ID")
-    redirect_uri = os.getenv("REDIRECT_URI")  # ✅ fixed env var name to match .env
+    redirect_uri = os.getenv("REDIRECT_URI")
     if not redirect_uri:
         raise RuntimeError("Missing REDIRECT_URI in environment.")
 
@@ -84,3 +84,32 @@ def generate_strava_auth_url(athlete_id=None):
         params["state"] = str(athlete_id)
 
     return f"https://www.strava.com/oauth/authorize?{urlencode(params)}"
+
+
+def refresh_strava_token(refresh_token):
+    """
+    Refresh Strava access token using refresh_token.
+    """
+    client_id = os.getenv("STRAVA_CLIENT_ID")
+    client_secret = os.getenv("STRAVA_CLIENT_SECRET")
+
+    response = requests.post(
+        "https://www.strava.com/oauth/token",
+        data={
+            "client_id": int(client_id),
+            "client_secret": client_secret,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token
+        },
+        timeout=10
+    )
+
+    response.raise_for_status()
+    tokens = response.json()
+
+    return {
+        "access_token": tokens["access_token"],
+        "refresh_token": tokens["refresh_token"],
+        "expires_at": tokens["expires_at"],
+        "athlete_id": tokens["athlete"]["id"]
+    }

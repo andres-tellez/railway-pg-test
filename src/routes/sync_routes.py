@@ -2,16 +2,14 @@
 
 import os
 import traceback
-import requests
 from flask import Blueprint, request, jsonify
 
-# Service for syncing activities
-from src.services.activity_sync import sync_recent_activities
+# Services
+from src.services.activity_sync import sync_recent, ensure_fresh_token
 from src.services.strava import generate_strava_auth_url
 
 # DAO imports (SQLAlchemy-only)
 from src.db.db_session import get_session
-from src.db.dao.token_dao import get_valid_access_token_sa
 
 SYNC = Blueprint("sync", __name__)
 
@@ -23,23 +21,26 @@ def sync_to_db(athlete_id):
     print(f"🔐 Incoming key: {key}")
     print(f"🔐 Expected key from env: {cron_key}")
 
-    if cron_key and key != cron_key:
+    if not cron_key or key != cron_key:
         return jsonify(error="Unauthorized"), 401
 
+    session = None
     try:
         session = get_session()
 
-        # Use SQLAlchemy DAO helper
-        access_token = get_valid_access_token_sa(session, athlete_id)
-
-        if not access_token:
+        # Fully handle token lookup + refresh
+        try:
+            access_token = ensure_fresh_token(session, athlete_id)
+        except Exception as token_err:
+            print("❌ Token retrieval or refresh failed:", token_err)
             auth_url = generate_strava_auth_url(athlete_id)
             return jsonify(
-                error="No tokens found for athlete",
-                auth_url=auth_url
+                error="Unable to obtain valid tokens.",
+                auth_url=auth_url,
+                details=str(token_err)
             ), 401
 
-        inserted = sync_recent_activities(
+        inserted = sync_recent(
             session=session,
             athlete_id=athlete_id,
             access_token=access_token
@@ -51,10 +52,14 @@ def sync_to_db(athlete_id):
         traceback.print_exc()
         return jsonify(error="Sync failed", details=str(e)), 500
 
+    finally:
+        if session:
+            session.close()
+
 @SYNC.route("/init-db")
 def init_db_route():
     """Manual DB initializer (same as /run.py -- init-db)."""
-    from src.services.db_bootstrap import init_db
+    from src.db.init_db import init_db
     try:
         init_db()
         return "✅ init_db() completed successfully", 200

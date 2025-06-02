@@ -7,7 +7,6 @@ import os
 
 from src.db.db_session import get_session  # ✅ Fixed import: consistent db_session usage
 from src.db.models.tokens import Token
-from src.utils.jwt_utils import decode_token
 
 
 def get_tokens_sa(session, athlete_id):
@@ -24,18 +23,20 @@ def get_tokens_sa(session, athlete_id):
         return None
 
 
-def save_tokens_sa(session, athlete_id, access_token, refresh_token):
+def save_tokens_sa(session, athlete_id, access_token, refresh_token, expires_at=None):
     """
     Save or update tokens for an athlete using SQLAlchemy.
+
+    For Strava, tokens are opaque (not JWT), so we skip decoding and simply store them.
     """
     try:
-        secret = current_app.config["SECRET_KEY"]
-        token_data = decode_token(access_token, secret)
-        expires_at = token_data.get("exp")
+        # If expires_at not provided, fallback to reasonable default (1 hour)
         if not expires_at:
-            raise ValueError("Access token missing 'exp' field")
+            now_ts = int(datetime.utcnow().timestamp())
+            expires_at = now_ts + 3600
 
         token = session.query(Token).filter_by(athlete_id=athlete_id).one_or_none()
+
         if token:
             token.access_token = access_token
             token.refresh_token = refresh_token
@@ -48,13 +49,14 @@ def save_tokens_sa(session, athlete_id, access_token, refresh_token):
                 expires_at=expires_at
             )
             session.add(token)
+
         session.commit()
     except IntegrityError as e:
         session.rollback()
         raise RuntimeError(f"Failed to save tokens via SQLAlchemy: {e}")
     except Exception as e:
         session.rollback()
-        raise RuntimeError(f"Token decoding or saving failed: {e}")
+        raise RuntimeError(f"Token saving failed: {e}")
 
 
 def get_valid_access_token_sa(session, athlete_id):

@@ -1,17 +1,18 @@
 # src/db/dao/activity_dao.py
 
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
 from src.db.models.activities import Activity
 
-
-def upsert_activities(conn, athlete_id, activities):
+def upsert_activities(session: Session, athlete_id: int, activities: list[dict]) -> int:
     """
-    Upserts a list of activity dicts into the 'activities' table.
-    Uses PostgreSQL's ON CONFLICT DO UPDATE.
+    Upserts a list of activity dicts into the 'activities' table using SQLAlchemy ORM session.
+    Fully safe for PostgreSQL transactions (uses flush/commit correctly).
     """
     if not activities:
         return 0
 
+    # Build the insert statement
     stmt = insert(Activity).values([
         {
             "activity_id": act["id"],
@@ -25,8 +26,11 @@ def upsert_activities(conn, athlete_id, activities):
             "total_elevation_gain": act.get("total_elevation_gain"),
             "external_id": act.get("external_id"),
             "timezone": act.get("timezone"),
-        } for act in activities
+        }
+        for act in activities
     ])
+
+    # Define conflict resolution
     update_cols = {
         "name": stmt.excluded.name,
         "type": stmt.excluded.type,
@@ -38,11 +42,13 @@ def upsert_activities(conn, athlete_id, activities):
         "external_id": stmt.excluded.external_id,
         "timezone": stmt.excluded.timezone,
     }
+
     stmt = stmt.on_conflict_do_update(
         index_elements=["activity_id"],
         set_=update_cols
     )
 
-    with conn.begin():
-        result = conn.execute(stmt)
-        return result.rowcount
+    # Use session.execute — session manages transaction scope
+    result = session.execute(stmt)
+    session.commit()
+    return result.rowcount

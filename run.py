@@ -13,6 +13,17 @@ load_dotenv()
 # Ensure the project root is on PYTHONPATH
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
+# Auto-rewrite DATABASE_URL for local if necessary
+env_db_url = os.environ.get("DATABASE_URL")
+is_local = os.environ.get("IS_LOCAL", "false").lower() == "true"
+
+if is_local and env_db_url and 'postgres@postgres:' in env_db_url:
+    patched_db_url = env_db_url.replace('postgres@postgres:', 'postgres@localhost:')
+    os.environ['DATABASE_URL'] = patched_db_url
+    print(f"🔧 DATABASE_URL rewritten for local: {patched_db_url}", flush=True)
+else:
+    print(f"✅ DATABASE_URL used as-is: {env_db_url}", flush=True)
+
 # Attempt to create the app and log failure explicitly
 try:
     from src.app import create_app

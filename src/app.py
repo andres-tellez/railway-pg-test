@@ -6,7 +6,6 @@ Application factory and core route registration for the Smart Marathon Coach API
 import os
 from pathlib import Path
 from flask import Flask
-from dotenv import load_dotenv
 
 from src.routes.sync_routes import SYNC
 from src.routes.auth import auth_bp
@@ -24,20 +23,10 @@ def create_app(test_config=None):
     print("📁 CWD:", os.getcwd(), flush=True)
     print("📁 Contents of current working dir:", os.listdir(os.getcwd()), flush=True)
 
-    # ✅ Load environment variables (local vs docker-compose)
+    # ✅ Read mode flags but DO NOT reload .env
     env_mode = os.getenv("FLASK_ENV", "production")
     is_local = os.getenv("IS_LOCAL", "false").lower() == "true"
     print(f"🌍 FLASK_ENV={env_mode} | IS_LOCAL={is_local}", flush=True)
-
-    env_path = Path(__file__).resolve().parent.parent / ".env"
-    if is_local:
-        if env_path.exists():
-            load_dotenv(dotenv_path=env_path, override=True)
-            print(f"📄 Loaded environment from: {env_path}", flush=True)
-        else:
-            print(f"❌ .env not found at: {env_path}", flush=True)
-    else:
-        print("📄 Docker mode - relying on injected env vars", flush=True)
 
     # ✅ Dump critical env vars (for debugging)
     print("🔐 ADMIN_USER:", os.getenv("ADMIN_USER"))

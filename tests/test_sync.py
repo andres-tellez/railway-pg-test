@@ -25,7 +25,7 @@ def test_sync_success(monkeypatch, client):
 
     # ✅ Patch sync_recent_activities directly — no need to patch get_session
     monkeypatch.setattr(
-        "src.routes.sync_routes.sync_recent_activities",
+        "src.routes.sync_routes.sync_recent",
         lambda session, athlete_id, access_token: 0
     )
 
