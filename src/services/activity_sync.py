@@ -29,26 +29,42 @@ def ensure_fresh_token(session, athlete_id: int) -> str:
     save_tokens_sa(session, athlete_id, refreshed["access_token"], refreshed["refresh_token"], refreshed["expires_at"])
     return refreshed["access_token"]
 
-def sync_activities_between(session, athlete_id: int, access_token: str, start_date: datetime, end_date: datetime, per_page=200) -> int:
+def sync_activities_between(session, athlete_id: int, access_token: str, start_date: datetime, end_date: datetime, per_page=200, max_activities=None) -> int:
     """
     Generic ingestion engine: Fetch and store activities for a given athlete between the specified dates.
-    Used for both historical backfill and scheduled sync.
+    Supports optional max_activities limit for controlled backfill tests.
     """
     try:
-        activities = fetch_activities_between(access_token, start_date, end_date, per_page)
-    except Exception as e:
-        raise RuntimeError(f"Failed to fetch activities between dates: {e}")
+        all_activities = []
+        page = 1
 
-    if not activities:
-        log.info(f"No activities found for athlete {athlete_id} between {start_date.date()} and {end_date.date()}")
-        return 0
+        while True:
+            activities = fetch_activities_between(access_token, start_date, end_date, per_page=per_page)
+            if not activities:
+                break
 
-    try:
-        count = upsert_activities(session, athlete_id, activities)
+            all_activities.extend(activities)
+
+            if max_activities and len(all_activities) >= max_activities:
+                all_activities = all_activities[:max_activities]
+                break
+
+            # Check if fewer than per_page returned, meaning no more pages
+            if len(activities) < per_page:
+                break
+
+            page += 1
+
+        if not all_activities:
+            log.info(f"No activities found for athlete {athlete_id} between {start_date.date()} and {end_date.date()}")
+            return 0
+
+        count = upsert_activities(session, athlete_id, all_activities)
         log.info(f"Synced {count} activities for athlete {athlete_id} between {start_date.date()} and {end_date.date()}")
         return count
+
     except Exception as e:
-        raise RuntimeError(f"Failed to persist activities: {e}")
+        raise RuntimeError(f"Failed to fetch or persist activities: {e}")
 
 def sync_recent(session, athlete_id: int, access_token: str) -> int:
     """
@@ -58,14 +74,15 @@ def sync_recent(session, athlete_id: int, access_token: str) -> int:
     start_date = end_date - timedelta(days=7)
     return sync_activities_between(session, athlete_id, access_token, start_date, end_date)
 
-def sync_full_history(session, athlete_id: int, access_token: str, lookback_days: int = 730) -> int:
+def sync_full_history(session, athlete_id: int, access_token: str, lookback_days: int = 730, max_activities=None) -> int:
     """
     Full historical backfill: Pull activities over entire historical window.
     Default to 2 years lookback, configurable.
+    Optional: limit total activities pulled for pilot testing.
     """
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=lookback_days)
-    return sync_activities_between(session, athlete_id, access_token, start_date, end_date)
+    return sync_activities_between(session, athlete_id, access_token, start_date, end_date, max_activities=max_activities)
 
 def enrich_missing_activities(session, athlete_id: int):
     """
