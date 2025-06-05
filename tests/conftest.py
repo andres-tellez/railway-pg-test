@@ -14,7 +14,8 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from src.app import create_app
 from src.db.db_session import get_engine  # ✅ use db_session directly
-from src.db.init_db import init_db
+from src.scripts.dev_only_init_db import init_db
+
 
 # DATABASE_URL for test Postgres instance
 TEST_DATABASE_URL = "postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach"

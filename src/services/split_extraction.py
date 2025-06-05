@@ -17,6 +17,9 @@ def extract_splits(activity):
 
     splits = []
     for lap in laps:
+        split_value = lap.get("split", True)
+        split_bool = bool(split_value) if split_value is not None else True
+
         split_data = {
             "activity_id": activity_id,
             "lap_index": lap.get("lap_index") or lap.get("split"),  # allow both keys for safety
@@ -27,7 +30,7 @@ def extract_splits(activity):
             "max_speed": lap.get("max_speed"),
             "start_index": lap.get("start_index"),
             "end_index": lap.get("end_index"),
-            "split": lap.get("split", True)
+            "split": split_bool
         }
         splits.append(split_data)
 

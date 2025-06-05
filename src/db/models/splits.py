@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, Float, Boolean, ForeignKey, TIMESTAMP, B
 from sqlalchemy.sql import func
 from src.db.db_session import Base
 
+from sqlalchemy import UniqueConstraint
+
 class Split(Base):
     __tablename__ = "splits"
 
@@ -17,3 +19,7 @@ class Split(Base):
     end_index = Column(Integer)
     split = Column(Boolean, default=True)
     created_at = Column(TIMESTAMP, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('activity_id', 'lap_index', name='uq_activity_lap'),
+    )

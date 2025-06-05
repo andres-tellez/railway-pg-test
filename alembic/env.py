@@ -24,6 +24,11 @@ if not DATABASE_URL:
 # Import SQLAlchemy Base AFTER sys.path is fully patched
 from src.db.models.base import Base
 
+# ✅ Import all models so that Alembic can detect them
+import src.db.models.activities
+import src.db.models.tokens
+import src.db.models.splits
+
 # Alembic Config object
 config = context.config
 

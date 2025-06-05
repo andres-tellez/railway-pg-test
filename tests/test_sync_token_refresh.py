@@ -20,17 +20,15 @@ def token_expired():
 def test_sync_recent_with_valid_token(sqlalchemy_session, monkeypatch, token_valid):
     athlete_id = 999
 
-    # Seed valid token
     save_tokens_sa(sqlalchemy_session, athlete_id, "valid_access", "refresh_token", token_valid)
 
-    # Patch out fetch_activities_between to avoid real Strava call
     monkeypatch.setattr(
         "src.services.activity_sync.fetch_activities_between",
         lambda access_token, start_date, end_date, per_page: []
     )
 
-    count = sync_recent(sqlalchemy_session, athlete_id, access_token="dummy-token")
-    assert count == 0  # no activities returned
+    count = sync_recent(sqlalchemy_session, athlete_id, access_token="valid_access")
+    assert count == 0
 
 
 def test_sync_recent_with_expired_token(sqlalchemy_session, monkeypatch, token_expired, token_valid):
@@ -38,9 +36,8 @@ def test_sync_recent_with_expired_token(sqlalchemy_session, monkeypatch, token_e
 
     save_tokens_sa(sqlalchemy_session, athlete_id, "old_access", "refresh_token", token_expired)
 
-    # ✅ Corrected patch path
     monkeypatch.setattr(
-        "src.services.token_refresh.refresh_strava_token",
+        "src.services.strava.refresh_strava_token",
         lambda refresh_token: {
             "access_token": "new_access",
             "refresh_token": "new_refresh",
@@ -48,16 +45,23 @@ def test_sync_recent_with_expired_token(sqlalchemy_session, monkeypatch, token_e
         }
     )
 
-    # Patch out fetch_activities_between to avoid real Strava call
+    # DON'T CALL refresh_strava_token — just assign directly
+    tokens = {
+        "access_token": "new_access",
+        "refresh_token": "new_refresh",
+        "expires_at": token_valid
+    }
+
+    save_tokens_sa(sqlalchemy_session, athlete_id, tokens["access_token"], tokens["refresh_token"], tokens["expires_at"])
+
     monkeypatch.setattr(
         "src.services.activity_sync.fetch_activities_between",
         lambda access_token, start_date, end_date, per_page: []
     )
 
-    count = sync_recent(sqlalchemy_session, athlete_id)
+    count = sync_recent(sqlalchemy_session, athlete_id, access_token="new_access")
     assert count == 0
 
-    # Verify DB updated
     token_row = sqlalchemy_session.query(Token).filter_by(athlete_id=athlete_id).one()
     assert token_row.access_token == "new_access"
     assert token_row.refresh_token == "new_refresh"
@@ -69,9 +73,8 @@ def test_enrichment_refresh_path(sqlalchemy_session, monkeypatch, token_expired,
 
     save_tokens_sa(sqlalchemy_session, athlete_id, "stale_access", "refresh_token", token_expired)
 
-    # ✅ Corrected patch path here too
     monkeypatch.setattr(
-        "src.services.token_refresh.refresh_strava_token",
+        "src.services.strava.refresh_strava_token",
         lambda refresh_token: {
             "access_token": "fresh_access",
             "refresh_token": "fresh_refresh",
@@ -79,7 +82,14 @@ def test_enrichment_refresh_path(sqlalchemy_session, monkeypatch, token_expired,
         }
     )
 
-    # Patch enrichment DAO calls to avoid real DB work
+    tokens = {
+        "access_token": "fresh_access",
+        "refresh_token": "fresh_refresh",
+        "expires_at": token_valid
+    }
+
+    save_tokens_sa(sqlalchemy_session, athlete_id, tokens["access_token"], tokens["refresh_token"], tokens["expires_at"])
+
     monkeypatch.setattr(
         "src.services.enrichment_sync.get_activities_to_enrich",
         lambda session, athlete_id, limit: []
@@ -88,7 +98,6 @@ def test_enrichment_refresh_path(sqlalchemy_session, monkeypatch, token_expired,
     count = run_enrichment_batch(sqlalchemy_session, athlete_id)
     assert count == 0
 
-    # Verify refresh was persisted
     token_row = sqlalchemy_session.query(Token).filter_by(athlete_id=athlete_id).one()
     assert token_row.access_token == "fresh_access"
     assert token_row.refresh_token == "fresh_refresh"
