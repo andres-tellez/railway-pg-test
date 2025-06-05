@@ -5,6 +5,9 @@ import sys
 import pytest
 from pathlib import Path
 from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
+load_dotenv()  # This will load environment variables from the .env file
+
 
 # Ensure project root is on sys.path
 sys.path.append(str(Path(__file__).resolve().parent.parent))

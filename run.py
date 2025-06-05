@@ -11,7 +11,8 @@ print("📦 Starting run.py...", flush=True)
 load_dotenv()
 
 # Ensure the project root is on PYTHONPATH
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 
 # Auto-rewrite DATABASE_URL for local if necessary
 env_db_url = os.environ.get("DATABASE_URL")

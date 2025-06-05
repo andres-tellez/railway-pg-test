@@ -94,7 +94,7 @@ def refresh_strava_token(refresh_token):
     client_secret = os.getenv("STRAVA_CLIENT_SECRET")
 
     response = requests.post(
-        "https://www.strava.com/oauth/token",
+        "https://www.strava.com/api/v3/oauth/token",
         data={
             "client_id": int(client_id),
             "client_secret": client_secret,
@@ -107,9 +107,10 @@ def refresh_strava_token(refresh_token):
     response.raise_for_status()
     tokens = response.json()
 
+    # ✅ FIXED: athlete is not returned on token refresh
     return {
         "access_token": tokens["access_token"],
         "refresh_token": tokens["refresh_token"],
         "expires_at": tokens["expires_at"],
-        "athlete_id": tokens["athlete"]["id"]
+        "athlete_id": tokens.get("athlete", {}).get("id", None)
     }

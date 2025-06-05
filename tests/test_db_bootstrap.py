@@ -6,7 +6,7 @@ from pathlib import Path
 def test_db_schema_bootstrap(tmp_path):
     # Use a standalone SQLite file
     db_path = tmp_path / f"{uuid.uuid4().hex}.sqlite3"
-    schema_path = Path("schema.sql")
+    schema_path = Path("schema.sql")  # <-- switched to schema.sql
 
     assert schema_path.exists(), "Missing schema.sql at project root"
 

@@ -5,8 +5,10 @@ import traceback
 from flask import Blueprint, request, jsonify
 
 # Services
-from src.services.activity_sync import sync_recent, ensure_fresh_token
+from src.services.activity_sync import sync_recent
+from src.services.token_refresh import ensure_fresh_access_token
 from src.services.strava import generate_strava_auth_url
+
 
 # DAO imports (SQLAlchemy-only)
 from src.db.db_session import get_session
@@ -30,7 +32,7 @@ def sync_to_db(athlete_id):
 
         # Fully handle token lookup + refresh
         try:
-            access_token = ensure_fresh_token(session, athlete_id)
+            access_token = ensure_fresh_access_token(session, athlete_id)
         except Exception as token_err:
             print("❌ Token retrieval or refresh failed:", token_err)
             auth_url = generate_strava_auth_url(athlete_id)

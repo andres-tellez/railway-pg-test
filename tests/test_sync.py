@@ -1,6 +1,5 @@
-# tests/test_sync.py
-
 import pytest
+from unittest.mock import patch
 
 @pytest.mark.parametrize(
     "key,code",
@@ -13,22 +12,18 @@ def test_sync_auth_and_error(client, key, code):
     resp = client.get(f"/sync-strava-to-db/123?key={key}")
     assert resp.status_code == code
 
-def test_sync_success(monkeypatch, client):
+@patch("src.routes.sync_routes.sync_recent")
+@patch("src.routes.sync_routes.ensure_fresh_access_token")
+def test_sync_success(mock_ensure_fresh_access_token, mock_sync_recent, monkeypatch, client):
     # ✅ Set CRON_SECRET_KEY for authorization
     monkeypatch.setenv("CRON_SECRET_KEY", "devkey123")
 
-    # ✅ Patch token DAO directly — this fully bypasses session
-    monkeypatch.setattr(
-        "src.routes.sync_routes.get_valid_access_token_sa",
-        lambda session, athlete_id: "fake-token"
-    )
+    # ✅ Mock ensure_fresh_access_token to avoid real DB lookup
+    mock_ensure_fresh_access_token.return_value = "mock-token"
 
-    # ✅ Patch sync_recent_activities directly — no need to patch get_session
-    monkeypatch.setattr(
-        "src.routes.sync_routes.sync_recent",
-        lambda session, athlete_id, access_token: 0
-    )
+    # ✅ Mock sync_recent to avoid real Strava API call
+    mock_sync_recent.return_value = 10
 
     resp = client.get("/sync-strava-to-db/123?key=devkey123")
     assert resp.status_code == 200
-    assert resp.get_json() == {"synced": 0}
+    assert resp.get_json() == {"synced": 10}

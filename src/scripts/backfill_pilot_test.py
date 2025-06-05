@@ -1,6 +1,8 @@
 from src.db.db_session import get_session
-from src.services.activity_sync import sync_full_history, ensure_fresh_token
+from src.services.token_refresh import ensure_fresh_access_token
 from src.env_loader import *  # load environment patcher
+
+
 
 
 # TODO: Replace this with a real athlete_id you have authorized via OAuth

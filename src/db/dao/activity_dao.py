@@ -1,5 +1,3 @@
-# src/db/dao/activity_dao.py
-
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 from src.db.models.activities import Activity
@@ -12,9 +10,7 @@ def upsert_activities(session: Session, athlete_id: int, activities: list[dict])
     if not activities:
         return 0
 
-    # Build the insert statement
-    stmt = insert(Activity).values([
-        {
+    stmt = insert(Activity).values([{
             "activity_id": act["id"],
             "athlete_id": athlete_id,
             "name": act.get("name"),
@@ -26,11 +22,9 @@ def upsert_activities(session: Session, athlete_id: int, activities: list[dict])
             "total_elevation_gain": act.get("total_elevation_gain"),
             "external_id": act.get("external_id"),
             "timezone": act.get("timezone"),
-        }
-        for act in activities
-    ])
+        } for act in activities])
 
-    # Define conflict resolution
+    # Conflict resolution for PostgreSQL upsert
     update_cols = {
         "name": stmt.excluded.name,
         "type": stmt.excluded.type,
@@ -48,7 +42,6 @@ def upsert_activities(session: Session, athlete_id: int, activities: list[dict])
         set_=update_cols
     )
 
-    # Use session.execute — session manages transaction scope
     result = session.execute(stmt)
-    session.commit()
+    session.commit()  # Ensure commit here after both activity and split insertions
     return result.rowcount

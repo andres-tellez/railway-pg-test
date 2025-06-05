@@ -27,6 +27,7 @@ services:
     environment:
       - FLASK_APP=src.app
       - FLASK_ENV=development
+      - IN_DOCKER=true  # <-- added
     env_file:
       - .env
     depends_on:
