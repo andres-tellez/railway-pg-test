@@ -6,9 +6,7 @@ from flask import Blueprint, request, jsonify
 
 # Services
 from src.services.activity_sync import sync_recent
-from src.services.token_refresh import ensure_fresh_access_token
 from src.services.strava import generate_strava_auth_url
-
 
 # DAO imports (SQLAlchemy-only)
 from src.db.db_session import get_session
@@ -30,22 +28,9 @@ def sync_to_db(athlete_id):
     try:
         session = get_session()
 
-        # Fully handle token lookup + refresh
-        try:
-            access_token = ensure_fresh_access_token(session, athlete_id)
-        except Exception as token_err:
-            print("❌ Token retrieval or refresh failed:", token_err)
-            auth_url = generate_strava_auth_url(athlete_id)
-            return jsonify(
-                error="Unable to obtain valid tokens.",
-                auth_url=auth_url,
-                details=str(token_err)
-            ), 401
-
         inserted = sync_recent(
             session=session,
-            athlete_id=athlete_id,
-            access_token=access_token
+            athlete_id=athlete_id
         )
 
         return jsonify(synced=inserted), 200
@@ -61,7 +46,7 @@ def sync_to_db(athlete_id):
 @SYNC.route("/init-db")
 def init_db_route():
     """Manual DB initializer (same as /run.py -- init-db)."""
-    from src.db.init_db import init_db
+    from src.scripts.dev_only_init_db import init_db
     try:
         init_db()
         return "✅ init_db() completed successfully", 200
