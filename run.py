@@ -38,7 +38,7 @@ except Exception as e:
 
 # CLI mode: run init-db early and exit
 if len(sys.argv) > 1 and sys.argv[1] == "init-db":
-    from src.db.init_db import init_db
+    from src.scripts.dev_only_init_db import init_db
     print("🔧 Running init-db...", flush=True)
     try:
         init_db()

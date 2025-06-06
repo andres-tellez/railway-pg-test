@@ -1,5 +1,4 @@
 from src.db.db_session import get_session
-from src.services.token_refresh import ensure_fresh_access_token
 from src.env_loader import *  # load environment patcher
 
 

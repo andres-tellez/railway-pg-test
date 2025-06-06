@@ -1,23 +1,18 @@
 import time
 import logging
-import requests
 from datetime import datetime, timedelta
+
+import src.env_loader
+
+
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
 from src.db.db_session import get_session
-from src.services.token_refresh import ensure_fresh_access_token
+from src.services.strava_client import StravaClient  # ✅ Centralized client only
 
 log = logging.getLogger("backfill_sync")
 log.setLevel(logging.INFO)
 
-STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
-STRAVA_ZONE_URL = "https://www.strava.com/api/v3/activities/{activity_id}/zones"
-
-DEFAULT_RETRY_LIMIT = 5
-DEFAULT_SLEEP = 5
-DEFAULT_RETRY_BACKOFF = 2
-
-# --- Conversion helpers (same as before) ---
+# --- Conversion helpers ---
 def meters_to_miles(meters):
     return round(meters / 1609.344, 2) if meters else None
 
@@ -34,64 +29,29 @@ def format_seconds_to_hms(seconds):
     hours, minutes = divmod(minutes, 60)
     return f"{hours}:{minutes:02}:{sec:02}" if hours else f"{minutes}:{sec:02}"
 
-# ------------------------------------------------
-
-def fetch_hr_zone_percentages(activity_id, access_token):
-    url = STRAVA_ZONE_URL.format(activity_id=activity_id)
-    headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(url, headers=headers, timeout=10)
-
-    if resp.status_code != 200:
+# --- Business logic now fully clean ---
+def fetch_hr_zone_percentages(strava: StravaClient, activity_id):
+    try:
+        zones_data = strava.get_zones(activity_id)
+        for zone_group in zones_data:
+            if zone_group.get("type") == "heartrate":
+                hr_zones = zone_group.get("distribution_buckets", [])
+                times = [z.get("time") or 0.0 for z in hr_zones]
+                total_time = sum(times)
+                if total_time == 0:
+                    return None
+                zone_pcts = [
+                    round(((z.get("time") or 0.0) / total_time) * 100, 1)
+                    for z in hr_zones
+                ]
+                zone_pcts = zone_pcts[:5]
+                while len(zone_pcts) < 5:
+                    zone_pcts.append(0.0)
+                return zone_pcts
+    except Exception as e:
+        log.warning(f"Failed to fetch HR zones: {e}")
         return None
-    
-    zones_data = resp.json()
-    for zone_group in zones_data:
-        if zone_group.get("type") == "heartrate":
-            hr_zones = zone_group.get("distribution_buckets", [])
-            times = [z.get("time") or 0.0 for z in hr_zones]
-            total_time = sum(times)
-            if total_time == 0:
-                return None
-            zone_pcts = [
-                round(((z.get("time") or 0.0) / total_time) * 100, 1)
-                for z in hr_zones
-            ]
-            zone_pcts = zone_pcts[:5]
-            while len(zone_pcts) < 5:
-                zone_pcts.append(0.0)
-            return zone_pcts
     return None
-
-def pull_recent_activities(access_token, after_date):
-    all_activities = []
-    page = 1
-    while True:
-        params = {
-            "after": int(after_date.timestamp()),
-            "per_page": 100,
-            "page": page
-        }
-        headers = {"Authorization": f"Bearer {access_token}"}
-        resp = requests.get(STRAVA_ACTIVITIES_URL, headers=headers, params=params, timeout=10)
-        
-        if resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", DEFAULT_SLEEP))
-            log.warning(f"Rate limit hit, sleeping {retry_after}s")
-            time.sleep(retry_after)
-            continue
-        elif resp.status_code != 200:
-            log.error(f"Failed activity fetch HTTP {resp.status_code}")
-            break
-        
-        batch = resp.json()
-        if not batch:
-            break
-        
-        all_activities.extend(batch)
-        page += 1
-        
-        time.sleep(1)
-    return all_activities
 
 def upsert_activity(session, activity_json, hr_zone_pcts):
     params = {
@@ -124,7 +84,7 @@ def upsert_activity(session, activity_json, hr_zone_pcts):
         "hr_zone_4_pct": hr_zone_pcts[3] if hr_zone_pcts else None,
         "hr_zone_5_pct": hr_zone_pcts[4] if hr_zone_pcts else None
     }
-    
+
     session.execute(text("""
         INSERT INTO activities (
             activity_id, athlete_id, name, type, start_date, distance, moving_time, elapsed_time, 
@@ -166,25 +126,35 @@ def upsert_activity(session, activity_json, hr_zone_pcts):
 
 def run_backfill(athlete_id, months=6):
     with get_session() as session:
-        access_token = ensure_fresh_access_token(session, athlete_id)
+        strava = StravaClient(athlete_id)
+
         after_date = datetime.utcnow() - timedelta(days=30 * months)
         log.info(f"Fetching data since {after_date.date()}...")
-        activities = pull_recent_activities(access_token, after_date)
-        log.info(f"Found {len(activities)} activities")
 
-        for activity_json in activities:
-            retries = 0
-            while retries < DEFAULT_RETRY_LIMIT:
+        page = 1
+        total_fetched = 0
+
+        while True:
+            activities = strava.list_activities(after_date.timestamp(), page=page)
+            if not activities:
+                break
+
+            log.info(f"Processing page {page} with {len(activities)} activities")
+            for activity_json in activities:
                 try:
-                    hr_zone_pcts = fetch_hr_zone_percentages(activity_json['id'], access_token)
+                    hr_zone_pcts = fetch_hr_zone_percentages(strava, activity_json['id'])
                     upsert_activity(session, activity_json, hr_zone_pcts)
                     session.commit()
                     log.info(f"✅ Synced activity {activity_json['id']}")
-                    break
+                    total_fetched += 1
                 except Exception as e:
-                    retries += 1
-                    log.warning(f"Retry {retries} for activity {activity_json['id']}: {e}")
-                    time.sleep(DEFAULT_SLEEP * (DEFAULT_RETRY_BACKOFF ** retries))
+                    log.error(f"❌ Failed to process activity {activity_json['id']}: {e}")
+                    session.rollback()
+
+            page += 1
+            time.sleep(1)
+
+        log.info(f"✅ Backfill complete — {total_fetched} activities processed.")
 
 if __name__ == "__main__":
     run_backfill(athlete_id=347085, months=6)

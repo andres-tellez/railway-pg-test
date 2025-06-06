@@ -1,13 +1,10 @@
-# src/routes/oauth.py
-
 from flask import Blueprint, request, jsonify
-import os
-import requests
 import traceback
 
 from src.db.db_session import get_session
 from src.db.dao.token_dao import save_tokens_sa
 from src.services.activity_sync import sync_full_history
+from src.services.strava_client import StravaClient  # ✅ Centralized import
 
 oauth_bp = Blueprint("oauth", __name__)
 
@@ -23,34 +20,11 @@ def oauth_callback():
         if not code:
             return jsonify(error="Missing `code` param in query string"), 400
 
-        # Read env vars
-        client_id = os.getenv("STRAVA_CLIENT_ID")
-        client_secret = os.getenv("STRAVA_CLIENT_SECRET")
-        redirect_uri = os.getenv("REDIRECT_URI")
+        print("🌐 Performing token exchange via centralized StravaClient", flush=True)
 
-        if not client_id or not client_secret or not redirect_uri:
-            return jsonify(error="Missing required environment variables"), 500
+        # ✅ Token exchange handled by client
+        tokens = StravaClient.exchange_token(code)
 
-        print("🌐 Preparing token exchange request", flush=True)
-
-        client_id_int = int(client_id)
-
-        response = requests.post(
-            "https://www.strava.com/api/v3/oauth/token",
-            data={
-                "client_id": client_id_int,
-                "client_secret": client_secret,
-                "code": code,
-                "grant_type": "authorization_code",
-                "redirect_uri": redirect_uri
-            },
-            timeout=10,
-        )
-
-        response.raise_for_status()
-        tokens = response.json()
-
-        # Defensive parsing for robustness
         athlete = tokens.get("athlete")
         if not athlete or "id" not in athlete:
             return jsonify(error="Strava response missing athlete ID"), 502
@@ -75,7 +49,6 @@ def oauth_callback():
                 expires_at=expires_at
             )
 
-            # ✅ Corrected call signature for sync_full_history
             inserted = sync_full_history(
                 session=session,
                 athlete_id=athlete_id,
@@ -95,10 +68,6 @@ def oauth_callback():
             session.close()
 
         return jsonify(message="OAuth success!", athlete_id=athlete_id, inserted=inserted), 200
-
-    except requests.RequestException as req_err:
-        print("❌ RequestException:", str(req_err), flush=True)
-        return jsonify(error="Token exchange failed", details=str(req_err)), 502
 
     except Exception as e:
         print("🔥 Internal Error:", str(e), flush=True)

@@ -3,7 +3,6 @@
 from datetime import datetime, timedelta
 from src.utils.logger import get_logger
 from src.services.strava import fetch_activities_between
-from src.services.token_refresh import ensure_fresh_access_token
 from src.db.dao.activity_dao import upsert_activities
 from src.db.dao.split_dao import upsert_splits
 from src.services.split_extraction import extract_splits

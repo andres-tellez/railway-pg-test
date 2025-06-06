@@ -35,3 +35,5 @@ class Activity(Base):
     hr_zone_3_pct = Column(Float)
     hr_zone_4_pct = Column(Float)
     hr_zone_5_pct = Column(Float)
+    
+    enriched_at = Column(DateTime, nullable=True)

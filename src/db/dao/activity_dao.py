@@ -35,6 +35,7 @@ def upsert_activities(session: Session, athlete_id: int, activities: list[dict])
         "total_elevation_gain": stmt.excluded.total_elevation_gain,
         "external_id": stmt.excluded.external_id,
         "timezone": stmt.excluded.timezone,
+        "enriched_at": stmt.excluded.enriched_at,  # <-- ADD THIS LINE
     }
 
     stmt = stmt.on_conflict_do_update(

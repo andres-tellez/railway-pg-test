@@ -1,11 +1,9 @@
-# src/services/enrichment_sync.py
-
 import time
 import logging
 import requests
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from src.services.token_refresh import ensure_fresh_access_token
+from datetime import datetime  # 🚩 new import
 from src.services.split_extraction import extract_splits
 from src.db.dao.split_dao import upsert_splits
 
@@ -20,7 +18,7 @@ DEFAULT_RETRY_LIMIT = 5
 DEFAULT_SLEEP = 5
 DEFAULT_RETRY_BACKOFF = 2
 
-# --- Unit conversion helpers ---
+# --- Unit conversion helpers --- (unchanged)
 def meters_to_miles(meters):
     return round(meters / 1609.344, 2) if meters else None
 
@@ -54,6 +52,16 @@ def get_activities_to_enrich(session, athlete_id, limit):
 
 def enrich_one_activity(session, athlete_id, access_token, activity_id):
     try:
+        # 🚩 Check enrichment state first
+        enriched = session.execute(
+            text("SELECT enriched_at FROM activities WHERE activity_id = :activity_id"),
+            {"activity_id": activity_id}
+        ).scalar()
+
+        if enriched:
+            log.info(f"⏩ Skipping already enriched activity {activity_id} (enriched_at: {enriched})")
+            return True
+
         url = STRAVA_URL.format(activity_id=activity_id)
         headers = {"Authorization": f"Bearer {access_token}"}
         resp = requests.get(url, headers=headers, timeout=10)
@@ -72,18 +80,27 @@ def enrich_one_activity(session, athlete_id, access_token, activity_id):
                 upsert_splits(session, splits)
                 log.info(f"✅ Synced {len(splits)} splits for activity {activity_id}")
 
-            log.info(f"✅ Enriched activity {activity_id}")
+            # 🚩 Set enrichment timestamp after successful full enrichment
+            session.execute(
+                text("""
+                    UPDATE activities SET enriched_at = :enriched_at WHERE activity_id = :activity_id
+                """),
+                {"enriched_at": datetime.utcnow(), "activity_id": activity_id}
+            )
+            session.commit()
+
+            log.info(f"✅ Fully enriched activity {activity_id}")
             return True
 
         elif resp.status_code == 429:
             retry_after = int(resp.headers.get("Retry-After", DEFAULT_SLEEP))
             log.warning(f"⚠️ 429 Rate Limited. Retry-After: {retry_after}s")
             time.sleep(retry_after)
-            return False  # signal to caller to retry
+            return False
 
         else:
             log.error(f"❌ Failed to enrich {activity_id} — HTTP {resp.status_code}")
-            return True  # fail fast and skip to next
+            return True
 
     except Exception as e:
         log.error(f"🔥 Exception while enriching {activity_id}: {e}")

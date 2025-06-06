@@ -2,7 +2,6 @@
 
 import argparse
 from src.db.db_session import get_session
-from src.services.token_refresh import ensure_fresh_access_token
 from src.services.activity_sync import sync_full_history
 from src.services.enrichment_sync import run_enrichment_batch
 
