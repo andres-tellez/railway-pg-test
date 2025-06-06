@@ -12,7 +12,6 @@ services:
       - "15432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U smartcoach"]
       interval: 5s
@@ -23,11 +22,11 @@ services:
     build: .
     command: flask run --host=0.0.0.0 --port=8080
     ports:
-      - "18081:8080"
+      - "8080:8080"   # <-- modified here
     environment:
       - FLASK_APP=src.app
       - FLASK_ENV=development
-      - IN_DOCKER=true  # <-- added
+      - IN_DOCKER=true
     env_file:
       - .env
     depends_on:

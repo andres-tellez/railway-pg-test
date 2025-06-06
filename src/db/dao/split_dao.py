@@ -21,10 +21,15 @@ def upsert_splits(session, splits: list) -> int:
             "max_speed": split["max_speed"],
             "start_index": split["start_index"],
             "end_index": split["end_index"],
-            "split": split["split"]
+            "split": split["split"],
+            "average_heartrate": split.get("average_heartrate"),
+            "pace_zone": split.get("pace_zone"),
+            "conv_distance": split.get("conv_distance"),
+            "conv_avg_speed": split.get("conv_avg_speed"),    # ✅ updated to support string
+            "conv_moving_time": split.get("conv_moving_time"),
+            "conv_elapsed_time": split.get("conv_elapsed_time"),
         } for split in splits])
 
-    # Define conflict resolution
     update_cols = {
         "lap_index": stmt.excluded.lap_index,
         "distance": stmt.excluded.distance,
@@ -34,7 +39,13 @@ def upsert_splits(session, splits: list) -> int:
         "max_speed": stmt.excluded.max_speed,
         "start_index": stmt.excluded.start_index,
         "end_index": stmt.excluded.end_index,
-        "split": stmt.excluded.split
+        "split": stmt.excluded.split,
+        "average_heartrate": stmt.excluded.average_heartrate,
+        "pace_zone": stmt.excluded.pace_zone,
+        "conv_distance": stmt.excluded.conv_distance,
+        "conv_avg_speed": stmt.excluded.conv_avg_speed,
+        "conv_moving_time": stmt.excluded.conv_moving_time,
+        "conv_elapsed_time": stmt.excluded.conv_elapsed_time,
     }
 
     stmt = stmt.on_conflict_do_update(
@@ -43,5 +54,5 @@ def upsert_splits(session, splits: list) -> int:
     )
 
     result = session.execute(stmt)
-    session.commit()  # Ensure commit here after split insertions
+    session.commit()
     return result.rowcount

@@ -3,15 +3,14 @@
 from flask import Blueprint, jsonify, request
 from src.services import enrichment_sync
 from src.db.db_session import get_session
+from sqlalchemy import text
 
 enrich_bp = Blueprint("enrich", __name__)
-
 
 @enrich_bp.route("/status", methods=["GET"])
 def status():
     """Quick health check"""
     return jsonify({"enrich": "ok"}), 200
-
 
 @enrich_bp.route("/activity/<int:activity_id>", methods=["POST"])
 def enrich_single(activity_id):
@@ -20,7 +19,7 @@ def enrich_single(activity_id):
     try:
         # Grab athlete_id directly from DB for safety
         row = session.execute(
-            "SELECT athlete_id FROM activities WHERE activity_id = :id",
+            text("SELECT athlete_id FROM activities WHERE activity_id = :id"),
             {"id": activity_id}
         ).fetchone()
 
@@ -29,12 +28,13 @@ def enrich_single(activity_id):
 
         athlete_id = row.athlete_id
 
-        enrichment_sync.enrich_one_activity(
+        # ✅ Use your service helper that automatically handles token refresh
+        enrichment_sync.enrich_one_activity_with_refresh(
             session=session,
             athlete_id=athlete_id,
-            access_token=enrichment_sync.get_valid_access_token(session, athlete_id),
             activity_id=activity_id
         )
+
         return jsonify({"status": f"Activity {activity_id} enriched"}), 200
 
     except Exception as e:
@@ -42,7 +42,6 @@ def enrich_single(activity_id):
 
     finally:
         session.close()
-
 
 @enrich_bp.route("/batch-enrich", methods=["POST"])
 def enrich_batch():

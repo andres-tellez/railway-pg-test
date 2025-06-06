@@ -6,6 +6,8 @@ import requests
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from src.services.token_refresh import ensure_fresh_access_token
+from src.services.split_extraction import extract_splits
+from src.db.dao.split_dao import upsert_splits
 
 log = logging.getLogger("enrichment_sync")
 log.setLevel(logging.INFO)
@@ -59,12 +61,17 @@ def enrich_one_activity(session, athlete_id, access_token, activity_id):
         if resp.status_code == 200:
             activity_json = resp.json()
 
-            # HR zone enrichment with fallback patch
             hr_zone_pcts = fetch_hr_zone_percentages(activity_id, access_token)
             if not hr_zone_pcts:
                 hr_zone_pcts = [0.0, 0.0, 0.0, 0.0, 0.0]
 
             update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
+
+            splits = extract_splits(activity_json)
+            if splits:
+                upsert_splits(session, splits)
+                log.info(f"✅ Synced {len(splits)} splits for activity {activity_id}")
+
             log.info(f"✅ Enriched activity {activity_id}")
             return True
 
@@ -72,18 +79,25 @@ def enrich_one_activity(session, athlete_id, access_token, activity_id):
             retry_after = int(resp.headers.get("Retry-After", DEFAULT_SLEEP))
             log.warning(f"⚠️ 429 Rate Limited. Retry-After: {retry_after}s")
             time.sleep(retry_after)
-            return False
+            return False  # signal to caller to retry
 
         else:
             log.error(f"❌ Failed to enrich {activity_id} — HTTP {resp.status_code}")
-            return True  # skip this activity
+            return True  # fail fast and skip to next
 
     except Exception as e:
         log.error(f"🔥 Exception while enriching {activity_id}: {e}")
         return True
 
+def enrich_one_activity_with_refresh(session, athlete_id, activity_id):
+    try:
+        access_token = ensure_fresh_access_token(session, athlete_id)
+        return enrich_one_activity(session, athlete_id, access_token, activity_id)
+    except Exception as e:
+        log.error(f"Failed enrichment for activity {activity_id}: {e}")
+        return True
+
 def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts):
-    # Raw values
     distance_meters = activity_json.get("distance")
     elevation_meters = activity_json.get("total_elevation_gain")
     avg_speed_mps = activity_json.get("average_speed")
@@ -91,7 +105,6 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
     moving_time_sec = activity_json.get("moving_time")
     elapsed_time_sec = activity_json.get("elapsed_time")
 
-    # Converted values
     conv_distance_miles = meters_to_miles(distance_meters)
     conv_elevation_feet = meters_to_feet(elevation_meters)
     conv_avg_speed = mps_to_min_per_mile(avg_speed_mps)
@@ -171,68 +184,9 @@ def fetch_hr_zone_percentages(activity_id, access_token):
 
     for zone_group in zones_data:
         if zone_group.get("type") == "heartrate":
-            hr_zones = zone_group.get("zones", [])
-            total_time = sum(z.get("time", 0) for z in hr_zones)
-            if total_time == 0:
-                return None
-
-            zone_pcts = [
-                round((z.get("time", 0) / total_time) * 100, 1)
-                for z in hr_zones
-            ]
-            while len(zone_pcts) < 5:
-                zone_pcts.append(0.0)
-            return zone_pcts
-    return None
-
-def run_enrichment_batch(session, athlete_id, batch_size=DEFAULT_BATCH_SIZE):
-    try:
-        access_token = ensure_fresh_access_token(session, athlete_id)
-        activities = get_activities_to_enrich(session, athlete_id, batch_size)
-
-        log.info(f"🔀 Enriching {len(activities)} activities for athlete {athlete_id}")
-
-        for activity_id in activities:
-            retries = 0
-            while retries < DEFAULT_RETRY_LIMIT:
-                success = enrich_one_activity(session, athlete_id, access_token, activity_id)
-                if success:
-                    break
-                retries += 1
-                time.sleep(DEFAULT_SLEEP * (DEFAULT_RETRY_BACKOFF ** retries))
-
-        return len(activities)
-
-    except SQLAlchemyError as db_err:
-        log.error(f"DB error during enrichment: {db_err}")
-        session.rollback()
-        return 0
-
-    except Exception as e:
-        log.error(f"Unexpected enrichment failure: {e}")
-        return 0
-
-
-def fetch_hr_zone_percentages(activity_id, access_token):
-    url = STRAVA_ZONE_URL.format(activity_id=activity_id)
-    headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(url, headers=headers, timeout=10)
-
-    if resp.status_code != 200:
-        log.warning(f"HR zones not available for activity {activity_id}")
-        return None
-
-    zones_data = resp.json()
-
-    for zone_group in zones_data:
-        if zone_group.get("type") == "heartrate":
             hr_zones = zone_group.get("distribution_buckets", [])
-            
-            # Correctly sum times, safely handling nulls
             times = [z.get("time") or 0.0 for z in hr_zones]
             total_time = sum(times)
-            
-            print(f"✅ total_time raw sum: {total_time}")  # Debug print
 
             if total_time == 0:
                 log.warning(f"No HR data for activity {activity_id}")
@@ -243,13 +197,35 @@ def fetch_hr_zone_percentages(activity_id, access_token):
                 for z in hr_zones
             ]
 
-            # Only keep first 5 zones (Strava sometimes returns extra buckets)
             zone_pcts = zone_pcts[:5]
             while len(zone_pcts) < 5:
                 zone_pcts.append(0.0)
 
-            print(f"✅ zone_pcts computed: {zone_pcts}")  # Debug print
-
             return zone_pcts
 
     return None
+
+def run_enrichment_batch(session, athlete_id, batch_size=DEFAULT_BATCH_SIZE):
+    try:
+        activities = get_activities_to_enrich(session, athlete_id, batch_size)
+        log.info(f"🔀 Enriching {len(activities)} activities for athlete {athlete_id}")
+
+        for activity_id in activities:
+            retries = 0
+            while retries < DEFAULT_RETRY_LIMIT:
+                success = enrich_one_activity_with_refresh(session, athlete_id, activity_id)
+                if success:
+                    break
+                retries += 1
+                log.warning(f"🔁 Retrying activity {activity_id} (attempt {retries})")
+                time.sleep(DEFAULT_SLEEP * (DEFAULT_RETRY_BACKOFF ** retries))
+        return len(activities)
+
+    except SQLAlchemyError as db_err:
+        log.error(f"DB error during enrichment: {db_err}")
+        session.rollback()
+        return 0
+
+    except Exception as e:
+        log.error(f"Unexpected enrichment failure: {e}")
+        return 0

@@ -33,7 +33,8 @@ def sync_to_db(athlete_id):
             athlete_id=athlete_id
         )
 
-        return jsonify(synced=inserted), 200
+        # ✅ Corrected to match test expectation
+        return jsonify(inserted=inserted), 200
 
     except Exception as e:
         traceback.print_exc()

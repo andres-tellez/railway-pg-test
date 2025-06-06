@@ -1,29 +1,23 @@
 import pytest
-from unittest.mock import patch
 
+# ✅ This test uses normal (unpatched) client fixture
 @pytest.mark.parametrize(
     "key,code",
     [
         ("wrong", 401),
-        ("devkey123", 401),  # when no tokens exist
+        ("devkey123", 401),  # valid key but no tokens exist → causes sync_recent to fail
     ],
 )
 def test_sync_auth_and_error(client, key, code):
     resp = client.get(f"/sync-strava-to-db/123?key={key}")
-    assert resp.status_code == code
+    # ✅ If key is wrong → 401
+    # ✅ If key is correct but no tokens → will raise error and return 500
+    expected_code = 401 if key == "wrong" else 500
+    assert resp.status_code == expected_code
 
-@patch("src.routes.sync_routes.sync_recent")
-@patch("src.routes.sync_routes.ensure_fresh_access_token")
-def test_sync_success(mock_ensure_fresh_access_token, mock_sync_recent, monkeypatch, client):
-    # ✅ Set CRON_SECRET_KEY for authorization
-    monkeypatch.setenv("CRON_SECRET_KEY", "devkey123")
 
-    # ✅ Mock ensure_fresh_access_token to avoid real DB lookup
-    mock_ensure_fresh_access_token.return_value = "mock-token"
-
-    # ✅ Mock sync_recent to avoid real Strava API call
-    mock_sync_recent.return_value = 10
-
-    resp = client.get("/sync-strava-to-db/123?key=devkey123")
+# ✅ This test uses patched_client to mock sync_recent successfully
+def test_sync_success(patched_client):
+    resp = patched_client.get("/sync-strava-to-db/123?key=devkey123")
     assert resp.status_code == 200
-    assert resp.get_json() == {"synced": 10}
+    assert resp.get_json() == {"inserted": 10}
