@@ -1,19 +1,13 @@
-# src/services/enrichment_sync.py
-
 import time
 import logging
-import requests
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from src.services.token_refresh import ensure_fresh_access_token
-from src.services.split_extraction import extract_splits
 from src.db.dao.split_dao import upsert_splits
+from src.services.strava_client import StravaClient
 
 log = logging.getLogger("enrichment_sync")
 log.setLevel(logging.INFO)
-
-STRAVA_URL = "https://www.strava.com/api/v3/activities/{activity_id}?include_all_efforts=true"
-STRAVA_ZONE_URL = "https://www.strava.com/api/v3/activities/{activity_id}/zones"
 
 DEFAULT_BATCH_SIZE = 20
 DEFAULT_RETRY_LIMIT = 5
@@ -54,36 +48,25 @@ def get_activities_to_enrich(session, athlete_id, limit):
 
 def enrich_one_activity(session, athlete_id, access_token, activity_id):
     try:
-        url = STRAVA_URL.format(activity_id=activity_id)
-        headers = {"Authorization": f"Bearer {access_token}"}
-        resp = requests.get(url, headers=headers, timeout=10)
+        client = StravaClient(session, athlete_id)
 
-        if resp.status_code == 200:
-            activity_json = resp.json()
+        # Fully centralized calls:
+        activity_json = client.get_activity(activity_id)
+        zones_data = client.get_hr_zones(activity_id)
 
-            hr_zone_pcts = fetch_hr_zone_percentages(activity_id, access_token)
-            if not hr_zone_pcts:
-                hr_zone_pcts = [0.0, 0.0, 0.0, 0.0, 0.0]
+        hr_zone_pcts = extract_hr_zone_percentages(zones_data)
+        if not hr_zone_pcts:
+            hr_zone_pcts = [0.0, 0.0, 0.0, 0.0, 0.0]
 
-            update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
+        update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
 
-            splits = extract_splits(activity_json)
-            if splits:
-                upsert_splits(session, splits)
-                log.info(f"✅ Synced {len(splits)} splits for activity {activity_id}")
+        splits = extract_splits(activity_json)
+        if splits:
+            upsert_splits(session, splits)
+            log.info(f"✅ Synced {len(splits)} splits for activity {activity_id}")
 
-            log.info(f"✅ Enriched activity {activity_id}")
-            return True
-
-        elif resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", DEFAULT_SLEEP))
-            log.warning(f"⚠️ 429 Rate Limited. Retry-After: {retry_after}s")
-            time.sleep(retry_after)
-            return False  # signal to caller to retry
-
-        else:
-            log.error(f"❌ Failed to enrich {activity_id} — HTTP {resp.status_code}")
-            return True  # fail fast and skip to next
+        log.info(f"✅ Enriched activity {activity_id}")
+        return True
 
     except Exception as e:
         log.error(f"🔥 Exception while enriching {activity_id}: {e}")
@@ -171,17 +154,7 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
     )
     session.commit()
 
-def fetch_hr_zone_percentages(activity_id, access_token):
-    url = STRAVA_ZONE_URL.format(activity_id=activity_id)
-    headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(url, headers=headers, timeout=10)
-
-    if resp.status_code != 200:
-        log.warning(f"HR zones not available for activity {activity_id}")
-        return None
-
-    zones_data = resp.json()
-
+def extract_hr_zone_percentages(zones_data):
     for zone_group in zones_data:
         if zone_group.get("type") == "heartrate":
             hr_zones = zone_group.get("distribution_buckets", [])
@@ -189,7 +162,7 @@ def fetch_hr_zone_percentages(activity_id, access_token):
             total_time = sum(times)
 
             if total_time == 0:
-                log.warning(f"No HR data for activity {activity_id}")
+                log.warning("No HR data available.")
                 return None
 
             zone_pcts = [
@@ -204,6 +177,32 @@ def fetch_hr_zone_percentages(activity_id, access_token):
             return zone_pcts
 
     return None
+
+def extract_splits(activity_json):
+    activity_id = activity_json["id"]
+    splits_json = activity_json.get("laps", [])
+
+    extracted = []
+    for split_obj in splits_json:
+        extracted.append({
+            "activity_id": activity_id,
+            "lap_index": split_obj.get("split_index"),
+            "distance": split_obj.get("distance"),
+            "elapsed_time": split_obj.get("elapsed_time"),
+            "moving_time": split_obj.get("moving_time"),
+            "average_speed": split_obj.get("average_speed"),
+            "max_speed": split_obj.get("max_speed"),
+            "start_index": split_obj.get("start_index"),
+            "end_index": split_obj.get("end_index"),
+            "split": True,
+            "average_heartrate": split_obj.get("average_heartrate"),
+            "pace_zone": split_obj.get("pace_zone"),
+            "conv_distance": split_obj.get("conv_distance"),
+            "conv_avg_speed": split_obj.get("conv_avg_speed"),
+            "conv_moving_time": split_obj.get("conv_moving_time"),
+            "conv_elapsed_time": split_obj.get("conv_elapsed_time"),
+        })
+    return extracted
 
 def run_enrichment_batch(session, athlete_id, batch_size=DEFAULT_BATCH_SIZE):
     try:

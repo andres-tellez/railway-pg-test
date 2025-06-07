@@ -2,95 +2,102 @@
 
 from datetime import datetime, timedelta
 from src.utils.logger import get_logger
-from src.services.strava import fetch_activities_between
 from src.services.token_refresh import ensure_fresh_access_token
 from src.db.dao.activity_dao import upsert_activities
 from src.db.dao.split_dao import upsert_splits
-from src.services.split_extraction import extract_splits
+from src.services.strava_client import StravaClient
 
 log = get_logger(__name__)
 
-def sync_recent(session, athlete_id: int, access_token: str = None, per_page=200, max_activities=None) -> int:
+DEFAULT_PER_PAGE = 200
+
+def sync_recent(session, athlete_id: int, lookback_days: int = 30, max_activities=None) -> int:
     """
-    Sync recent activities for a given athlete.
-    Automatically refreshes tokens if access_token is not provided or expired.
+    Sync recent activities for a given athlete (last N days).
+    Automatically refreshes tokens as needed.
     """
-    try:
-        # 🔑 If access_token not provided, refresh it automatically
-        if not access_token:
-            access_token = ensure_fresh_access_token(session, athlete_id)
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=lookback_days)
 
-        end_date = datetime.utcnow()
-        start_date = end_date - timedelta(days=30)
+    return sync_activities_between(session, athlete_id, start_date, end_date, max_activities)
 
-        return sync_activities_between(
-            session, athlete_id, access_token, start_date, end_date, per_page, max_activities
-        )
-
-    except Exception as e:
-        raise RuntimeError(f"Failed to sync recent activities: {e}")
-
-
-def sync_full_history(session, athlete_id: int, access_token: str = None, lookback_days: int = 365, per_page=200, max_activities=None) -> int:
+def sync_full_history(session, athlete_id: int, lookback_days: int = 365, max_activities=None) -> int:
     """
-    Sync full historical activities, auto-refreshing tokens if needed.
+    Sync full historical activities.
     """
-    try:
-        if not access_token:
-            access_token = ensure_fresh_access_token(session, athlete_id)
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=lookback_days)
 
-        end_date = datetime.utcnow()
-        start_date = end_date - timedelta(days=lookback_days)
+    return sync_activities_between(session, athlete_id, start_date, end_date, max_activities)
 
-        return sync_activities_between(
-            session, athlete_id, access_token, start_date, end_date, per_page, max_activities
-        )
-
-    except Exception as e:
-        raise RuntimeError(f"Failed to sync full history for athlete {athlete_id}: {e}")
-
-
-def sync_activities_between(session, athlete_id: int, access_token: str, start_date: datetime, end_date: datetime, per_page=200, max_activities=None) -> int:
+def sync_activities_between(session, athlete_id: int, start_date: datetime, end_date: datetime, max_activities=None) -> int:
     """
-    Core ingestion logic (unchanged).
+    Ingest activities and splits using modern StravaClient.
     """
-    try:
-        all_activities = []
-        page = 1
+    access_token = ensure_fresh_access_token(session, athlete_id)
+    client = StravaClient(session, athlete_id)
 
-        while True:
-            activities = fetch_activities_between(access_token, start_date, end_date, per_page=per_page)
-            if not activities:
-                break
+    all_activities = []
+    page = 1
 
-            all_activities.extend(activities)
+    while True:
+        activities = client.get_activities(after=int(start_date.timestamp()), before=int(end_date.timestamp()), page=page, per_page=DEFAULT_PER_PAGE)
 
-            if max_activities and len(all_activities) >= max_activities:
-                all_activities = all_activities[:max_activities]
-                break
+        if not activities:
+            break
 
-            if len(activities) < per_page:
-                break
+        all_activities.extend(activities)
 
-            page += 1
+        if max_activities and len(all_activities) >= max_activities:
+            all_activities = all_activities[:max_activities]
+            break
 
-        if not all_activities:
-            log.info(f"No activities found for athlete {athlete_id} between {start_date.date()} and {end_date.date()}")
-            return 0
+        if len(activities) < DEFAULT_PER_PAGE:
+            break
 
-        count = upsert_activities(session, athlete_id, all_activities)
-        log.info(f"Synced {count} activities for athlete {athlete_id} between {start_date.date()} and {end_date.date()}")
+        page += 1
 
-        all_splits = []
-        for activity in all_activities:
-            splits = extract_splits(activity)
-            all_splits.extend(splits)
+    if not all_activities:
+        log.info(f"No activities found for athlete {athlete_id} between {start_date.date()} and {end_date.date()}")
+        return 0
 
-        if all_splits:
-            upsert_splits(session, all_splits)
-            log.info(f"Synced {len(all_splits)} splits for athlete {athlete_id}")
+    count = upsert_activities(session, athlete_id, all_activities)
+    log.info(f"Synced {count} activities for athlete {athlete_id} between {start_date.date()} and {end_date.date()}")
 
-        return count
+    # Process splits directly from activity 'laps' field if present
+    all_splits = []
+    for activity in all_activities:
+        splits = extract_splits_from_activity(activity)
+        all_splits.extend(splits)
 
-    except Exception as e:
-        raise RuntimeError(f"Failed to fetch or persist activities: {e}")
+    if all_splits:
+        upsert_splits(session, all_splits)
+        log.info(f"Synced {len(all_splits)} splits for athlete {athlete_id}")
+
+    return count
+
+def extract_splits_from_activity(activity_json):
+    activity_id = activity_json["id"]
+    splits_json = activity_json.get("laps", [])
+
+    extracted = []
+    for split_obj in splits_json:
+        extracted.append({
+            "activity_id": activity_id,
+            "lap_index": split_obj.get("split_index"),
+            "distance": split_obj.get("distance"),
+            "elapsed_time": split_obj.get("elapsed_time"),
+            "moving_time": split_obj.get("moving_time"),
+            "average_speed": split_obj.get("average_speed"),
+            "max_speed": split_obj.get("max_speed"),
+            "start_index": split_obj.get("start_index"),
+            "end_index": split_obj.get("end_index"),
+            "split": True,
+            "average_heartrate": split_obj.get("average_heartrate"),
+            "pace_zone": split_obj.get("pace_zone"),
+            "conv_distance": split_obj.get("conv_distance"),
+            "conv_avg_speed": split_obj.get("conv_avg_speed"),
+            "conv_moving_time": split_obj.get("conv_moving_time"),
+            "conv_elapsed_time": split_obj.get("conv_elapsed_time"),
+        })
+    return extracted

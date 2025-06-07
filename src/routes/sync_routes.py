@@ -6,7 +6,6 @@ from flask import Blueprint, request, jsonify
 
 # Services
 from src.services.activity_sync import sync_recent
-from src.services.strava import generate_strava_auth_url
 
 # DAO imports (SQLAlchemy-only)
 from src.db.db_session import get_session

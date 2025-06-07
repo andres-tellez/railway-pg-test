@@ -22,7 +22,8 @@ if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is not set. Alembic cannot continue.")
 
 # Import SQLAlchemy Base AFTER sys.path is fully patched
-from src.db.models.base import Base
+from src.db.db_session import Base
+
 
 # ✅ Import all models so that Alembic can detect them
 import src.db.models.activities

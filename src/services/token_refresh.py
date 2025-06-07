@@ -1,9 +1,7 @@
-# src/services/token_refresh.py
-
 from datetime import datetime
 from src.db.dao.token_dao import get_tokens_sa, save_tokens_sa
-from src.services.strava import refresh_strava_token
 from src.db.models.tokens import Token
+from src.services.strava_client import StravaClient
 
 def ensure_fresh_access_token(session, athlete_id: int) -> str:
     """
@@ -20,7 +18,7 @@ def ensure_fresh_access_token(session, athlete_id: int) -> str:
         return tokens["access_token"]
 
     # Token expired — refresh and persist updated tokens
-    refreshed = refresh_strava_token(tokens["refresh_token"])
+    refreshed = StravaClient.refresh_token_static(tokens["refresh_token"])
     save_tokens_sa(
         session,
         athlete_id,

@@ -1,17 +1,14 @@
 import time
 import logging
-import requests
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from src.db.db_session import get_session
 from src.services.token_refresh import ensure_fresh_access_token
+from src.services.strava_client import StravaClient
 
 log = logging.getLogger("backfill_sync")
 log.setLevel(logging.INFO)
-
-STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
-STRAVA_ZONE_URL = "https://www.strava.com/api/v3/activities/{activity_id}/zones"
 
 DEFAULT_RETRY_LIMIT = 5
 DEFAULT_SLEEP = 5
@@ -36,15 +33,10 @@ def format_seconds_to_hms(seconds):
 
 # ------------------------------------------------
 
-def fetch_hr_zone_percentages(activity_id, access_token):
-    url = STRAVA_ZONE_URL.format(activity_id=activity_id)
-    headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(url, headers=headers, timeout=10)
+def fetch_hr_zone_percentages(activity_id, client: StravaClient):
+    endpoint = f"/activities/{activity_id}/zones"
+    zones_data = client._request("GET", endpoint)
 
-    if resp.status_code != 200:
-        return None
-    
-    zones_data = resp.json()
     for zone_group in zones_data:
         if zone_group.get("type") == "heartrate":
             hr_zones = zone_group.get("distribution_buckets", [])
@@ -62,7 +54,7 @@ def fetch_hr_zone_percentages(activity_id, access_token):
             return zone_pcts
     return None
 
-def pull_recent_activities(access_token, after_date):
+def pull_recent_activities(client: StravaClient, after_date):
     all_activities = []
     page = 1
     while True:
@@ -71,26 +63,20 @@ def pull_recent_activities(access_token, after_date):
             "per_page": 100,
             "page": page
         }
-        headers = {"Authorization": f"Bearer {access_token}"}
-        resp = requests.get(STRAVA_ACTIVITIES_URL, headers=headers, params=params, timeout=10)
-        
-        if resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", DEFAULT_SLEEP))
-            log.warning(f"Rate limit hit, sleeping {retry_after}s")
-            time.sleep(retry_after)
-            continue
-        elif resp.status_code != 200:
-            log.error(f"Failed activity fetch HTTP {resp.status_code}")
+
+        try:
+            batch = client._request("GET", "/athlete/activities", params=params)
+        except Exception as e:
+            log.error(f"Failed to fetch activities: {e}")
             break
-        
-        batch = resp.json()
+
         if not batch:
             break
-        
+
         all_activities.extend(batch)
         page += 1
-        
         time.sleep(1)
+
     return all_activities
 
 def upsert_activity(session, activity_json, hr_zone_pcts):
@@ -124,7 +110,7 @@ def upsert_activity(session, activity_json, hr_zone_pcts):
         "hr_zone_4_pct": hr_zone_pcts[3] if hr_zone_pcts else None,
         "hr_zone_5_pct": hr_zone_pcts[4] if hr_zone_pcts else None
     }
-    
+
     session.execute(text("""
         INSERT INTO activities (
             activity_id, athlete_id, name, type, start_date, distance, moving_time, elapsed_time, 
@@ -167,16 +153,17 @@ def upsert_activity(session, activity_json, hr_zone_pcts):
 def run_backfill(athlete_id, months=6):
     with get_session() as session:
         access_token = ensure_fresh_access_token(session, athlete_id)
+        client = StravaClient(access_token)
         after_date = datetime.utcnow() - timedelta(days=30 * months)
         log.info(f"Fetching data since {after_date.date()}...")
-        activities = pull_recent_activities(access_token, after_date)
+        activities = pull_recent_activities(client, after_date)
         log.info(f"Found {len(activities)} activities")
 
         for activity_json in activities:
             retries = 0
             while retries < DEFAULT_RETRY_LIMIT:
                 try:
-                    hr_zone_pcts = fetch_hr_zone_percentages(activity_json['id'], access_token)
+                    hr_zone_pcts = fetch_hr_zone_percentages(activity_json['id'], client)
                     upsert_activity(session, activity_json, hr_zone_pcts)
                     session.commit()
                     log.info(f"✅ Synced activity {activity_json['id']}")

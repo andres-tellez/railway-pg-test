@@ -11,13 +11,14 @@ from src.db.models.tokens import Token
 
 def get_tokens_sa(session, athlete_id):
     """
-    Retrieve access and refresh tokens for the given athlete using SQLAlchemy.
+    Retrieve access, refresh, and expiration tokens for the given athlete using SQLAlchemy.
     """
     try:
         token = session.query(Token).filter_by(athlete_id=athlete_id).one()
         return {
             "access_token": token.access_token,
-            "refresh_token": token.refresh_token
+            "refresh_token": token.refresh_token,
+            "expires_at": token.expires_at   # ✅ ADDED THIS FIELD
         }
     except NoResultFound:
         return None
