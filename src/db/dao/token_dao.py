@@ -5,9 +5,8 @@ from sqlalchemy.exc import NoResultFound, IntegrityError
 from flask import current_app
 import os
 
-from src.db.db_session import get_session  # ✅ Fixed import: consistent db_session usage
+from src.db.db_session import get_session  # ✅ consistent db_session usage
 from src.db.models.tokens import Token
-
 
 def get_tokens_sa(session, athlete_id):
     """
@@ -18,11 +17,10 @@ def get_tokens_sa(session, athlete_id):
         return {
             "access_token": token.access_token,
             "refresh_token": token.refresh_token,
-            "expires_at": token.expires_at   # ✅ ADDED THIS FIELD
+            "expires_at": token.expires_at
         }
     except NoResultFound:
         return None
-
 
 def save_tokens_sa(session, athlete_id, access_token, refresh_token, expires_at=None):
     """
@@ -58,22 +56,3 @@ def save_tokens_sa(session, athlete_id, access_token, refresh_token, expires_at=
     except Exception as e:
         session.rollback()
         raise RuntimeError(f"Token saving failed: {e}")
-
-
-def get_valid_access_token_sa(session, athlete_id):
-    """
-    Retrieve a valid (non-expired) access token using SQLAlchemy.
-    """
-    try:
-        token = session.query(Token).filter_by(athlete_id=athlete_id).one_or_none()
-        if not token:
-            return None
-
-        now_ts = int(datetime.utcnow().timestamp())
-        if token.expires_at > now_ts:
-            return token.access_token
-        else:
-            print(f"⚠️ Token expired for athlete {athlete_id}")
-            return None
-    except Exception as e:
-        raise RuntimeError(f"Failed to fetch valid access token: {e}")

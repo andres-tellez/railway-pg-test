@@ -2,7 +2,7 @@ import time
 import logging
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from src.services.token_refresh import ensure_fresh_access_token
+from src.services.token_service import get_valid_token  # ✅ Use new token service
 from src.db.dao.split_dao import upsert_splits
 from src.services.strava_client import StravaClient
 
@@ -74,7 +74,7 @@ def enrich_one_activity(session, athlete_id, access_token, activity_id):
 
 def enrich_one_activity_with_refresh(session, athlete_id, activity_id):
     try:
-        access_token = ensure_fresh_access_token(session, athlete_id)
+        access_token = get_valid_token(session, athlete_id)  # ✅ Main fix here
         return enrich_one_activity(session, athlete_id, access_token, activity_id)
     except Exception as e:
         log.error(f"Failed enrichment for activity {activity_id}: {e}")

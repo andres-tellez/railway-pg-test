@@ -5,7 +5,7 @@ import logging
 
 from src.db.db_session import get_session
 from src.db.dao.token_dao import get_tokens_sa
-from src.services.token_refresh import ensure_fresh_access_token
+from src.services.token_service import ensure_fresh_access_token
 from src.services.activity_sync import sync_full_history
 from src.services.enrichment import ActivityEnrichor
 from src.utils.enrichment_debug_wrapper import EnrichmentDebugWrapper

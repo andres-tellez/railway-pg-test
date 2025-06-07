@@ -1,6 +1,6 @@
 import logging
 from src.db.db_session import get_session
-from src.services.token_refresh import ensure_fresh_access_token
+from src.services.token_service import ensure_fresh_access_token
 from src.services.enrichment_sync import enrich_one_activity
 
 logging.basicConfig(level=logging.INFO)
