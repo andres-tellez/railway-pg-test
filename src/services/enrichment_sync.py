@@ -2,7 +2,7 @@ import time
 import logging
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from src.services.token_service import get_valid_token  # ✅ Use new token service
+from src.services.token_service import get_valid_token
 from src.db.dao.split_dao import upsert_splits
 from src.services.strava_client import StravaClient
 
@@ -46,11 +46,10 @@ def get_activities_to_enrich(session, athlete_id, limit):
     result = session.execute(query, {"athlete_id": athlete_id, "limit": limit})
     return [row.activity_id for row in result.fetchall()]
 
-def enrich_one_activity(session, athlete_id, access_token, activity_id):
+def enrich_one_activity(session, access_token, activity_id):
     try:
-        client = StravaClient(session, athlete_id)
+        client = StravaClient(access_token)
 
-        # Fully centralized calls:
         activity_json = client.get_activity(activity_id)
         zones_data = client.get_hr_zones(activity_id)
 
@@ -74,8 +73,8 @@ def enrich_one_activity(session, athlete_id, access_token, activity_id):
 
 def enrich_one_activity_with_refresh(session, athlete_id, activity_id):
     try:
-        access_token = get_valid_token(session, athlete_id)  # ✅ Main fix here
-        return enrich_one_activity(session, athlete_id, access_token, activity_id)
+        access_token = get_valid_token(session, athlete_id)
+        return enrich_one_activity(session, access_token, activity_id)
     except Exception as e:
         log.error(f"Failed enrichment for activity {activity_id}: {e}")
         return True
@@ -178,31 +177,46 @@ def extract_hr_zone_percentages(zones_data):
 
     return None
 
+
 def extract_splits(activity_json):
     activity_id = activity_json["id"]
     splits_json = activity_json.get("laps", [])
 
     extracted = []
-    for split_obj in splits_json:
+    for i, split_obj in enumerate(splits_json):
+        # Handle missing split_index safely
+        lap_index = split_obj.get("split_index")
+        if lap_index is None:
+            lap_index = i  # fallback to sequential index
+
+        distance_meters = split_obj.get("distance")
+        elapsed_time_sec = split_obj.get("elapsed_time")
+        moving_time_sec = split_obj.get("moving_time")
+        avg_speed_mps = split_obj.get("average_speed")
+
         extracted.append({
             "activity_id": activity_id,
-            "lap_index": split_obj.get("split_index"),
-            "distance": split_obj.get("distance"),
-            "elapsed_time": split_obj.get("elapsed_time"),
-            "moving_time": split_obj.get("moving_time"),
-            "average_speed": split_obj.get("average_speed"),
+            "lap_index": lap_index,
+            "distance": distance_meters,
+            "elapsed_time": elapsed_time_sec,
+            "moving_time": moving_time_sec,
+            "average_speed": avg_speed_mps,
             "max_speed": split_obj.get("max_speed"),
             "start_index": split_obj.get("start_index"),
             "end_index": split_obj.get("end_index"),
             "split": True,
             "average_heartrate": split_obj.get("average_heartrate"),
             "pace_zone": split_obj.get("pace_zone"),
-            "conv_distance": split_obj.get("conv_distance"),
-            "conv_avg_speed": split_obj.get("conv_avg_speed"),
-            "conv_moving_time": split_obj.get("conv_moving_time"),
-            "conv_elapsed_time": split_obj.get("conv_elapsed_time"),
+            "conv_distance": meters_to_miles(distance_meters),
+            "conv_avg_speed": mps_to_min_per_mile(avg_speed_mps),
+            "conv_moving_time": format_seconds_to_hms(moving_time_sec),
+            "conv_elapsed_time": format_seconds_to_hms(elapsed_time_sec),
         })
     return extracted
+
+
+
+
 
 def run_enrichment_batch(session, athlete_id, batch_size=DEFAULT_BATCH_SIZE):
     try:

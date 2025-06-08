@@ -1,109 +1,59 @@
-import os
+# src/services/strava_client.py
+
 import requests
-from datetime import datetime
-from src.db.dao.token_dao import get_tokens_sa, save_tokens_sa
+import time
 
 class StravaClient:
-    def __init__(self, session, athlete_id):
-        self.session = session
-        self.athlete_id = athlete_id
+    def __init__(self, access_token):
+        self.access_token = access_token
 
-        token_data = get_tokens_sa(session, athlete_id)
-        if not token_data:
-            raise RuntimeError(f"No tokens found for athlete_id={athlete_id}")
+    def _request_with_backoff(self, method, url, **kwargs):
+        max_retries = 5
+        backoff = 10  # Start with 10 sec backoff
 
-        self.access_token = token_data["access_token"]
-        self.refresh_token = token_data["refresh_token"]
-        self.expires_at = token_data["expires_at"]
+        for attempt in range(max_retries):
+            response = requests.request(method, url, headers={"Authorization": f"Bearer {self.access_token}"}, **kwargs)
 
-        if self.is_token_expired():
-            self.refresh_access_token()
+            if response.status_code == 429:
+                print(f"⚠️ Rate limit hit (429). Backing off {backoff} seconds...")
+                time.sleep(backoff)
+                backoff *= 2  # Exponential backoff
+                continue
 
-    def is_token_expired(self):
-        now_epoch = int(datetime.utcnow().timestamp())
-        return self.expires_at <= now_epoch
+            response.raise_for_status()
+            return response.json()
 
-    def refresh_access_token(self):
-        tokens = StravaClient.refresh_token_static(self.refresh_token)
-
-        self.access_token = tokens["access_token"]
-        self.refresh_token = tokens["refresh_token"]
-        self.expires_at = tokens["expires_at"]
-
-        save_tokens_sa(
-            self.session,
-            athlete_id=self.athlete_id,
-            access_token=self.access_token,
-            refresh_token=self.refresh_token,
-            expires_at=self.expires_at,
-        )
-
-    @staticmethod
-    def refresh_token_static(refresh_token):
-        client_id = os.getenv("STRAVA_CLIENT_ID")
-        client_secret = os.getenv("STRAVA_CLIENT_SECRET")
-
-        response = requests.post(
-            "https://www.strava.com/api/v3/oauth/token",
-            data={
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-            },
-        )
-        response.raise_for_status()
-        return response.json()
-
-    @staticmethod
-    def exchange_code_for_token(code):
-        client_id = os.getenv("STRAVA_CLIENT_ID")
-        client_secret = os.getenv("STRAVA_CLIENT_SECRET")
-        redirect_uri = os.getenv("REDIRECT_URI")
-
-        response = requests.post(
-            "https://www.strava.com/api/v3/oauth/token",
-            data={
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "code": code,
-                "grant_type": "authorization_code",
-                "redirect_uri": redirect_uri,
-            },
-        )
-        response.raise_for_status()
-        return response.json()
-
-    def get_activity(self, activity_id):
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        url = f"https://www.strava.com/api/v3/activities/{activity_id}"
-
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json()
-
-    def get_hr_zones(self, activity_id):
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        url = f"https://www.strava.com/api/v3/activities/{activity_id}/zones"
-
-        response = requests.get(url, headers=headers)
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        return response.json()
+        # If we exhausted retries
+        raise RuntimeError("Exceeded max retries due to repeated 429 errors")
 
     def get_activities(self, after=None, before=None, page=1, per_page=200):
-        headers = {"Authorization": f"Bearer {self.access_token}"}
         params = {"page": page, "per_page": per_page}
         if after:
             params["after"] = after
         if before:
             params["before"] = before
 
-        response = requests.get(
-            "https://www.strava.com/api/v3/athlete/activities",
-            headers=headers,
-            params=params,
-        )
-        response.raise_for_status()
-        return response.json()
+        url = "https://www.strava.com/api/v3/athlete/activities"
+        return self._request_with_backoff("GET", url, params=params)
+
+    def get_activity(self, activity_id):
+        url = f"https://www.strava.com/api/v3/activities/{activity_id}"
+        return self._request_with_backoff("GET", url)
+
+    def get_hr_zones(self, activity_id):
+        url = f"https://www.strava.com/api/v3/activities/{activity_id}/zones"
+        try:
+            return self._request_with_backoff("GET", url)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+    def get_splits(self, activity_id):
+        url = f"https://www.strava.com/api/v3/activities/{activity_id}/laps"
+        try:
+            return self._request_with_backoff("GET", url)
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                return []
+            raise

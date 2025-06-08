@@ -7,7 +7,7 @@ import traceback
 
 from src.db.db_session import get_session
 from src.db.dao.token_dao import save_tokens_sa
-from src.services.activity_sync import sync_full_history
+from src.services.activity_ingestion_service import ActivityIngestionService  # ✅ Modern ingestion orchestrator
 
 oauth_bp = Blueprint("oauth", __name__)
 
@@ -75,13 +75,9 @@ def oauth_callback():
                 expires_at=expires_at
             )
 
-            # ✅ Corrected call signature for sync_full_history
-            inserted = sync_full_history(
-                session=session,
-                athlete_id=athlete_id,
-                access_token=access_token,
-                lookback_days=730
-            )
+            # ✅ Modern ingestion orchestrator here:
+            ingestion_service = ActivityIngestionService(session, athlete_id)
+            inserted = ingestion_service.ingest_full_history(lookback_days=730)
 
             print(f"📊 Historical sync inserted {inserted} activities for athlete {athlete_id}", flush=True)
             session.commit()

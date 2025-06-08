@@ -5,9 +5,7 @@ import traceback
 from flask import Blueprint, request, jsonify
 
 # Services
-from src.services.activity_sync import sync_recent
-
-# DAO imports (SQLAlchemy-only)
+from src.services.activity_ingestion_service import ActivityIngestionService
 from src.db.db_session import get_session
 
 SYNC = Blueprint("sync", __name__)
@@ -27,12 +25,9 @@ def sync_to_db(athlete_id):
     try:
         session = get_session()
 
-        inserted = sync_recent(
-            session=session,
-            athlete_id=athlete_id
-        )
+        ingestion_service = ActivityIngestionService(session, athlete_id)
+        inserted = ingestion_service.ingest_recent(lookback_days=30)
 
-        # ✅ Corrected to match test expectation
         return jsonify(inserted=inserted), 200
 
     except Exception as e:
