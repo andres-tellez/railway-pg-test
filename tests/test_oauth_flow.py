@@ -8,9 +8,9 @@ def set_env(monkeypatch):
     monkeypatch.setenv("STRAVA_CLIENT_SECRET", "test_secret")
     monkeypatch.setenv("REDIRECT_URI", "http://localhost/oauth/callback")
 
+@patch("src.routes.oauth.ActivityIngestionService")
 @patch("requests.post")
-@patch("src.routes.oauth.sync_full_history")  # ✅ Correct patch location
-def test_oauth_callback_success(mock_sync_full_history, mock_post, client, sqlalchemy_session):
+def test_oauth_callback_success(mock_post, mock_ingestion_service, client, sqlalchemy_session):
     mock_response = Mock()
     mock_response.raise_for_status.return_value = None
     mock_response.json.return_value = {
@@ -21,8 +21,8 @@ def test_oauth_callback_success(mock_sync_full_history, mock_post, client, sqlal
     }
     mock_post.return_value = mock_response
 
-    # ✅ prevent real ingestion call
-    mock_sync_full_history.return_value = 10
+    mock_instance = mock_ingestion_service.return_value
+    mock_instance.ingest_full_history.return_value = 10
 
     resp = client.get("/oauth/callback?code=fakecode")
     assert resp.status_code == 200
