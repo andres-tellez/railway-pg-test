@@ -7,6 +7,7 @@ import os
 
 from src.db.db_session import get_session  # ✅ consistent db_session usage
 from src.db.models.tokens import Token
+from sqlalchemy.dialects.postgresql import insert
 
 def get_tokens_sa(session, athlete_id):
     """
@@ -22,37 +23,30 @@ def get_tokens_sa(session, athlete_id):
     except NoResultFound:
         return None
 
-def save_tokens_sa(session, athlete_id, access_token, refresh_token, expires_at=None):
+
+
+def insert_token_sa(session, athlete_id, access_token, refresh_token, expires_at):
+    existing = session.query(Token).filter_by(athlete_id=athlete_id).first()
+
+    if existing:
+        existing.access_token = access_token
+        existing.refresh_token = refresh_token
+        existing.expires_at = expires_at
+    else:
+        new_token = Token(
+            athlete_id=athlete_id,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_at=expires_at
+        )
+        session.add(new_token)
+
+    session.commit()
+
+
+def delete_tokens_sa(session, athlete_id):
     """
-    Save or update tokens for an athlete using SQLAlchemy.
-
-    For Strava, tokens are opaque (not JWT), so we skip decoding and simply store them.
+    Deletes token record for the given athlete ID.
     """
-    try:
-        # If expires_at not provided, fallback to reasonable default (1 hour)
-        if not expires_at:
-            now_ts = int(datetime.utcnow().timestamp())
-            expires_at = now_ts + 3600
-
-        token = session.query(Token).filter_by(athlete_id=athlete_id).one_or_none()
-
-        if token:
-            token.access_token = access_token
-            token.refresh_token = refresh_token
-            token.expires_at = expires_at
-        else:
-            token = Token(
-                athlete_id=athlete_id,
-                access_token=access_token,
-                refresh_token=refresh_token,
-                expires_at=expires_at
-            )
-            session.add(token)
-
-        session.commit()
-    except IntegrityError as e:
-        session.rollback()
-        raise RuntimeError(f"Failed to save tokens via SQLAlchemy: {e}")
-    except Exception as e:
-        session.rollback()
-        raise RuntimeError(f"Token saving failed: {e}")
+    session.query(Token).filter_by(athlete_id=athlete_id).delete()
+    session.commit()

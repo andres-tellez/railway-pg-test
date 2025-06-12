@@ -6,8 +6,8 @@ import logging
 from src.db.db_session import get_session
 from src.db.dao.token_dao import get_tokens_sa
 from src.services.token_service import get_valid_token
-from src.services.activity_ingestion_service import ActivityIngestionService
-from src.services.enrichment_sync import run_enrichment_batch  # ✅ Correct import
+from src.services.activity_service import ActivityIngestionService
+from src.services.activity_service import run_enrichment_batch  # ✅ Correct import
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

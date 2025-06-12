@@ -1,18 +1,23 @@
 import time
 import logging
+from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from src.services.token_service import get_valid_token
 from src.db.dao.split_dao import upsert_splits
-from src.services.strava_client import StravaClient
+from src.db.dao.activity_dao import upsert_activities
+from src.services.strava_access_service import StravaClient
+from src.utils.logger import get_logger
 
-log = logging.getLogger("enrichment_sync")
+log = get_logger(__name__)
 log.setLevel(logging.INFO)
 
 DEFAULT_BATCH_SIZE = 20
 DEFAULT_RETRY_LIMIT = 5
 DEFAULT_SLEEP = 5
 DEFAULT_RETRY_BACKOFF = 2
+DEFAULT_LOOKBACK_DAYS = 30
+DEFAULT_PER_PAGE = 200
 
 # --- Unit conversion helpers ---
 def meters_to_miles(meters):
@@ -49,7 +54,6 @@ def get_activities_to_enrich(session, athlete_id, limit):
 def enrich_one_activity(session, access_token, activity_id):
     try:
         client = StravaClient(access_token)
-
         activity_json = client.get_activity(activity_id)
         zones_data = client.get_hr_zones(activity_id)
 
@@ -177,17 +181,13 @@ def extract_hr_zone_percentages(zones_data):
 
     return None
 
-
 def extract_splits(activity_json):
     activity_id = activity_json["id"]
     splits_json = activity_json.get("laps", [])
 
     extracted = []
     for i, split_obj in enumerate(splits_json):
-        # Handle missing split_index safely
-        lap_index = split_obj.get("split_index")
-        if lap_index is None:
-            lap_index = i  # fallback to sequential index
+        lap_index = split_obj.get("split_index", i)
 
         distance_meters = split_obj.get("distance")
         elapsed_time_sec = split_obj.get("elapsed_time")
@@ -214,10 +214,6 @@ def extract_splits(activity_json):
         })
     return extracted
 
-
-
-
-
 def run_enrichment_batch(session, athlete_id, batch_size=DEFAULT_BATCH_SIZE):
     try:
         activities = get_activities_to_enrich(session, athlete_id, batch_size)
@@ -242,3 +238,59 @@ def run_enrichment_batch(session, athlete_id, batch_size=DEFAULT_BATCH_SIZE):
     except Exception as e:
         log.error(f"Unexpected enrichment failure: {e}")
         return 0
+
+# -------------------------------------------------------------------
+
+class ActivityIngestionService:
+    def __init__(self, session, athlete_id):
+        self.session = session
+        self.athlete_id = athlete_id
+        self.access_token = get_valid_token(session, athlete_id)
+        self.client = StravaClient(self.access_token)
+
+    def ingest_recent(self, lookback_days=DEFAULT_LOOKBACK_DAYS, max_activities=None):
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=lookback_days)
+        return self.ingest_between(start_date, end_date, max_activities)
+
+    def ingest_full_history(self, lookback_days=365, max_activities=None):
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=lookback_days)
+        return self.ingest_between(start_date, end_date, max_activities)
+
+    def ingest_between(self, start_date, end_date, max_activities=None):
+        all_activities = []
+        page = 1
+
+        while True:
+            activities = self.client.get_activities(
+                after=int(start_date.timestamp()),
+                before=int(end_date.timestamp()),
+                page=page,
+                per_page=DEFAULT_PER_PAGE
+            )
+
+            if not activities:
+                break
+
+            all_activities.extend(activities)
+            if max_activities and len(all_activities) >= max_activities:
+                break
+
+            page += 1
+
+        if max_activities:
+            all_activities = all_activities[:max_activities]
+
+        activity_count = upsert_activities(self.session, self.athlete_id, all_activities)
+
+        log.info(f"✅ Ingested {activity_count} activities (splits skipped during testing)")
+
+        return activity_count
+
+
+def sync_strava_to_db(session, athlete_id):
+    """Sync activities from Strava into the DB, then enrich them."""
+    ingestor = ActivityIngestionService(session, athlete_id)
+    ingestor.ingest_recent()
+    run_enrichment_batch(session, athlete_id)

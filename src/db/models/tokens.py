@@ -1,12 +1,14 @@
-# src/db/models/tokens.py
+#models/tokens.py
 
-from sqlalchemy import Column, BigInteger, Text
-from src.db.db_session import Base
+from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, BigInteger, String
+
+Base = declarative_base()
 
 class Token(Base):
     __tablename__ = "tokens"
 
     athlete_id = Column(BigInteger, primary_key=True)
-    access_token = Column(Text, nullable=False)
-    refresh_token = Column(Text, nullable=False)
-    expires_at = Column(BigInteger, nullable=False)
+    access_token = Column(String)
+    refresh_token = Column(String)
+    expires_at = Column(BigInteger)

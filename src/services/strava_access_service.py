@@ -1,4 +1,4 @@
-# src/services/strava_client.py
+# src/services/strava_access_service.py
 
 import requests
 import time

@@ -22,13 +22,12 @@ services:
     build: .
     command: flask run --host=0.0.0.0 --port=8080
     ports:
-      - "8080:8080"   # <-- modified here
+      - "8080:8080"
     environment:
       - FLASK_APP=src.app
       - FLASK_ENV=development
       - IN_DOCKER=true
-    env_file:
-      - .env
+      - DATABASE_URL=postgresql+psycopg2://smartcoach:devpass@postgres:5432/smartcoach
     depends_on:
       postgres:
         condition: service_healthy

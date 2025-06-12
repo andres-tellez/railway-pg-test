@@ -7,11 +7,17 @@ WORKDIR /app
 # Ensure src is importable by gunicorn
 ENV PYTHONPATH=/app
 
+# Install PostgreSQL client utilities (including pg_isready)
+RUN apt-get update && apt-get install -y postgresql-client
+
 # Copy app source and dependencies
 COPY src/ ./src/
 COPY requirements.txt .
 COPY run.py .
-COPY schema.sql /app/
+COPY alembic.ini .
+COPY alembic/ ./alembic/
+ENV IN_DOCKER=true
+
 
 # Install Python dependencies
 RUN pip install --upgrade pip && pip install -r requirements.txt
@@ -22,6 +28,5 @@ RUN echo "📁 Docker build: listing /app contents:" && ls -R /app
 # Expose internal container port (Gunicorn listens here)
 EXPOSE 8080
 
-# Start Gunicorn with app factory
-CMD ["gunicorn", "--preload", "wsgi:app", "--bind", "0.0.0.0:8080"]
-
+# Ensure database schema is up to date by running Alembic migrations before starting the app
+CMD alembic upgrade head && gunicorn --preload wsgi:app --bind 0.0.0.0:8080

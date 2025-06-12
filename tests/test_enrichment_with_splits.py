@@ -1,11 +1,10 @@
 import pytest
 from unittest.mock import patch
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from src.db.models.activities import Activity
 from src.db.models.splits import Split
-from src.services.enrichment_sync import enrich_one_activity_with_refresh
-from src.db.dao.token_dao import save_tokens_sa  # ✅ ADD THIS IMPORT
+from src.services.activity_service import enrich_one_activity_with_refresh
 
 # ✅ Sample activity data
 SAMPLE_ACTIVITY_JSON = {
@@ -22,7 +21,7 @@ SAMPLE_ACTIVITY_JSON = {
     "average_heartrate": 150,
     "max_heartrate": 170,
     "calories": 400,
-    "laps": [  # ✅ Updated: enrichment reads from laps after refactor
+    "laps": [
         {
             "split_index": 1,
             "distance": 1000,
@@ -37,7 +36,6 @@ SAMPLE_ACTIVITY_JSON = {
     ]
 }
 
-# ✅ Sample HR zone data
 SAMPLE_HR_ZONE_RESPONSE = [
     {
         "type": "heartrate",
@@ -54,8 +52,6 @@ SAMPLE_HR_ZONE_RESPONSE = [
 @pytest.fixture
 def seed_activity(sqlalchemy_session):
     athlete_id = 42
-
-    # ✅ Insert activity row
     activity = Activity(
         activity_id=99999,
         athlete_id=athlete_id,
@@ -63,16 +59,13 @@ def seed_activity(sqlalchemy_session):
     )
     sqlalchemy_session.add(activity)
     sqlalchemy_session.commit()
-
-    # ✅ Seed valid token for enrichment refresh path
-    valid_token = int((datetime.utcnow() + timedelta(hours=1)).timestamp())
-    save_tokens_sa(sqlalchemy_session, athlete_id, "dummy_access", "dummy_refresh", valid_token)
-
     return activity
 
-@patch("src.services.strava_client.StravaClient.get_hr_zones")
-@patch("src.services.strava_client.StravaClient.get_activity")
-def test_enrich_one_activity_with_splits(mock_get_activity, mock_get_hr_zones, sqlalchemy_session, seed_activity):
+# ✅ Patching based on how it's imported in `activity_service`
+@patch("src.services.activity_service.get_valid_token", return_value="dummy_access")
+@patch("src.services.strava_access_service.StravaClient.get_activity")
+@patch("src.services.strava_access_service.StravaClient.get_hr_zones")
+def test_enrich_one_activity_with_splits(mock_get_hr_zones, mock_get_activity, mock_get_token, sqlalchemy_session, seed_activity):
     mock_get_activity.return_value = SAMPLE_ACTIVITY_JSON
     mock_get_hr_zones.return_value = SAMPLE_HR_ZONE_RESPONSE
 

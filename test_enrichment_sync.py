@@ -1,5 +1,5 @@
 from src.db.db_session import get_session
-from src.services.enrichment_sync import run_enrichment_batch
+from src.services.activity_service import run_enrichment_batch
 
 if __name__ == "__main__":
     athlete_id = 12345  # <-- replace with a valid athlete_id from your database
