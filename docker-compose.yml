@@ -27,12 +27,13 @@ services:
       - FLASK_APP=src.app
       - FLASK_ENV=development
       - IN_DOCKER=true
-      - DATABASE_URL=postgresql+psycopg2://smartcoach:devpass@postgres:5432/smartcoach
+      # Remove DATABASE_URL here to keep internal Docker networking hostname
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - .:/app
+    # Volumes removed to avoid overwriting /app in container
+    # volumes:
+    #   - .:/app
 
 volumes:
   postgres_data:

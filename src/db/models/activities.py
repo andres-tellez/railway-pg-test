@@ -30,8 +30,10 @@ class Activity(Base):
     conv_moving_time = Column(String)
     conv_elapsed_time = Column(String)
 
-    hr_zone_1_pct = Column(Float)
-    hr_zone_2_pct = Column(Float)
-    hr_zone_3_pct = Column(Float)
-    hr_zone_4_pct = Column(Float)
-    hr_zone_5_pct = Column(Float)
+    # HR Zone enrichment (test field)
+    hr_zone_1 = Column(Float, nullable=True)
+    hr_zone_2 = Column(Float, nullable=True)
+    hr_zone_3 = Column(Float, nullable=True)
+    hr_zone_4 = Column(Float, nullable=True)
+    hr_zone_5 = Column(Float, nullable=True)
+

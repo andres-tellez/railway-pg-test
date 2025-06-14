@@ -53,6 +53,11 @@ def sqlalchemy_session(shared_engine):
     transaction.rollback()
     connection.close()
 
+# ✅ Fixture alias to match DAO test naming
+@pytest.fixture(scope="function")
+def test_db_session(sqlalchemy_session):
+    return sqlalchemy_session
+
 # ✅ Patched app fixture for mocking sync_recent
 @pytest.fixture(scope="function")
 def patched_app(monkeypatch):
