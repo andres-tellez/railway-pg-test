@@ -1,24 +1,23 @@
 import sys
 import os
 
-import src.db.models.athletes
-
+from dotenv import load_dotenv
 
 # --- Add project root to sys.path ---
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-# --- Add 'src' folder to sys.path so Alembic can find env_loader ---
+# --- Add 'src' folder to sys.path ---
 sys.path.insert(0, os.path.join(project_root, "src"))
 
-# --- Now safe to import env_loader ---
-import configuration.env_loader as env_loader  # <-- This will correctly apply DATABASE_URL patches
+# ✅ Load environment variables from .env
+load_dotenv()
 
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-# DATABASE_URL after env_loader patched it
+# DATABASE_URL after .env is loaded
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 print(f"DEBUG: Using DATABASE_URL = {DATABASE_URL}")
@@ -29,11 +28,11 @@ if not DATABASE_URL:
 # Import SQLAlchemy Base AFTER sys.path is fully patched
 from src.db.db_session import Base
 
-# ✅ Import all models so that Alembic can detect them
+# ✅ Import all models so Alembic can detect schema
 import src.db.models.activities
 import src.db.models.tokens
 import src.db.models.splits
-import src.db.models.athletes  # <--- add this linea
+import src.db.models.athletes
 
 # Alembic Config object
 config = context.config

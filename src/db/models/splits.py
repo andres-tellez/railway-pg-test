@@ -1,6 +1,15 @@
-from sqlalchemy import Column, Integer, Float, Boolean, ForeignKey, TIMESTAMP, BigInteger, String
+from sqlalchemy import (
+    Column,
+    Integer,
+    Float,
+    Boolean,
+    ForeignKey,
+    TIMESTAMP,
+    BigInteger,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.sql import func
-from sqlalchemy import UniqueConstraint
 from src.db.db_session import Base
 
 class Split(Base):
@@ -16,10 +25,10 @@ class Split(Base):
     max_speed = Column(Float)
     start_index = Column(Integer)
     end_index = Column(Integer)
-    split = Column(Boolean, default=True)
-    average_heartrate = Column(Float)     
-    pace_zone = Column(Integer)           
-    created_at = Column(TIMESTAMP, server_default=func.now())   # <-- ✅ fixed paren
+    split = Column(Boolean)  # ✅ Corrected from Integer to Boolean
+    average_heartrate = Column(Float)
+    pace_zone = Column(Integer)
+    created_at = Column(TIMESTAMP, server_default=func.now())
     conv_distance = Column(Float)
     conv_avg_speed = Column(Float)
     conv_moving_time = Column(String)

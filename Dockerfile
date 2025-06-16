@@ -7,17 +7,14 @@ WORKDIR /app
 # Ensure src and configuration folders are importable
 ENV PYTHONPATH=/app/src:/app/configuration
 
-# Install PostgreSQL client utilities (including pg_isready)
-RUN apt-get update && apt-get install -y postgresql-client
+# Install PostgreSQL client utilities and curl
+RUN apt-get update && apt-get install -y postgresql-client curl
 
 # Copy application source code
 COPY src/ ./src/
 
 # Copy scripts folder explicitly with absolute path in container
 COPY src/scripts /app/scripts
-
-# Copy configuration folder to support imports like configuration.env_loader
-COPY configuration/ ./configuration/
 
 # Debug: list contents of /app/scripts right after copy
 RUN echo "Listing /app/scripts after copy:" && ls -la /app/scripts || echo "/app/scripts does not exist"

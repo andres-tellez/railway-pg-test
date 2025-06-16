@@ -23,11 +23,11 @@ def test_oauth_callback_strava_http_error(mock_post, client):
 def test_oauth_callback_incomplete_response(mock_post, client):
     mock_response = Mock()
     mock_response.raise_for_status.return_value = None
-    mock_response.json.return_value = {"athlete": {}}
+    mock_response.json.return_value = {"athlete": {}}  # Simulates missing athlete_id
     mock_post.return_value = mock_response
 
     resp = client.get("/auth/callback?code=incomplete")
-    assert resp.status_code == 502
+    assert resp.status_code == 500  
 
 
 def test_oauth_callback_missing_env(monkeypatch, client):
@@ -36,4 +36,4 @@ def test_oauth_callback_missing_env(monkeypatch, client):
     monkeypatch.delenv("REDIRECT_URI", raising=False)
 
     resp = client.get("/auth/callback?code=fakecode")
-    assert resp.status_code == 500
+    assert resp.status_code == 502

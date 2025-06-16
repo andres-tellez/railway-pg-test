@@ -1,9 +1,8 @@
-# run.py
-
-import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+
+import src.utils.config as config
 
 print("📦 Starting run.py...", flush=True)
 
@@ -13,17 +12,13 @@ load_dotenv()
 # Ensure the project root is on PYTHONPATH
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-
 # Auto-rewrite DATABASE_URL for local if necessary
-env_db_url = os.environ.get("DATABASE_URL")
-is_local = os.environ.get("IS_LOCAL", "false").lower() == "true"
-
-if is_local and env_db_url and 'postgres@postgres:' in env_db_url:
-    patched_db_url = env_db_url.replace('postgres@postgres:', 'postgres@localhost:')
+if config.IS_LOCAL and config.DATABASE_URL and 'postgres@postgres:' in config.DATABASE_URL:
+    patched_db_url = config.DATABASE_URL.replace('postgres@postgres:', 'postgres@localhost:')
     os.environ['DATABASE_URL'] = patched_db_url
     print(f"🔧 DATABASE_URL rewritten for local: {patched_db_url}", flush=True)
 else:
-    print(f"✅ DATABASE_URL used as-is: {env_db_url}", flush=True)
+    print(f"✅ DATABASE_URL used as-is: {config.DATABASE_URL}", flush=True)
 
 # Attempt to create the app and log failure explicitly
 try:
@@ -36,20 +31,6 @@ except Exception as e:
     traceback.print_exc()
     raise  # Re-raise so Railway crash logs capture the stack
 
-# CLI mode: run init-db early and exit
-if len(sys.argv) > 1 and sys.argv[1] == "init-db":
-    from src.db.init_db import init_db
-    print("🔧 Running init-db...", flush=True)
-    try:
-        init_db()
-        print("✅ init-db completed successfully", flush=True)
-    except Exception as e:
-        print("❌ init-db failed:", e, flush=True)
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
-    sys.exit(0)
-
 # Check that templates folder is visible to Flask
 template_dir = Path(__file__).parent / "templates"
 if not template_dir.exists():
@@ -59,12 +40,11 @@ else:
 
 # If run directly, use Flask dev server
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5050))
+    port = config.PORT
 
     # 🔍 Full environment debug
-    env_db_url = os.environ.get("DATABASE_URL")
-    config_db_url = app.config.get("DATABASE_URL") or env_db_url
-    print("🔍 ENV DATABASE_URL =", env_db_url, flush=True)
+    config_db_url = app.config.get("DATABASE_URL") or config.DATABASE_URL
+    print("🔍 ENV DATABASE_URL =", config.DATABASE_URL, flush=True)
     print("🔍 CONFIG DATABASE_URL =", config_db_url, flush=True)
 
     if not config_db_url:
@@ -74,7 +54,8 @@ if __name__ == "__main__":
     try:
         from psycopg2 import connect
         print(f"🔌 Attempting psycopg2.connect() to: {config_db_url}", flush=True)
-        conn = connect(config_db_url)
+        sanitized_url = config_db_url.replace("postgresql+psycopg2://", "postgresql://")
+        conn = connect(sanitized_url)
         with conn.cursor() as cur:
             cur.execute("SELECT 1;")
             cur.fetchone()

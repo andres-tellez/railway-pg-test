@@ -1,4 +1,4 @@
-# src/scripts/onboard_and_sync.py
+# src/scripts/main_pipeline.py
 
 import argparse
 import logging

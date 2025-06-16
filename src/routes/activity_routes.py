@@ -1,13 +1,13 @@
 from flask import Blueprint, jsonify, request
-import os
 import traceback
 from sqlalchemy import text
 
+import src.utils.config as config
 from src.services.activity_service import ActivityIngestionService, run_enrichment_batch
 from src.db.db_session import get_session
-from src.db.models.activities import Activity
 
 activity_bp = Blueprint("activity", __name__)
+
 
 # -------- Enrichment Routes --------
 
@@ -31,9 +31,8 @@ def enrich_single(activity_id):
             return jsonify({"error": f"Activity {activity_id} not found"}), 404
 
         athlete_id = row.athlete_id
-
         service = ActivityIngestionService(session, athlete_id)
-        service.enrich_single_activity(activity_id)  # ✅ Updated to match architectural guardrails
+        service.enrich_single_activity(activity_id)
 
         return jsonify({"status": f"Activity {activity_id} enriched"}), 200
 
@@ -64,14 +63,14 @@ def enrich_batch():
     finally:
         session.close()
 
+
 # -------- Sync Routes --------
 
 @activity_bp.route("/sync/<int:athlete_id>")
 def sync_strava_to_db(athlete_id):
     """Strava sync endpoint secured via CRON secret"""
-    cron_key = os.getenv("CRON_SECRET_KEY")
     key = request.args.get("key")
-    if not cron_key or key != cron_key:
+    if not config.CRON_SECRET_KEY or key != config.CRON_SECRET_KEY:
         return jsonify(error="Unauthorized"), 401
 
     session = get_session()
@@ -84,5 +83,3 @@ def sync_strava_to_db(athlete_id):
         return jsonify(error="Sync failed", details=str(e)), 500
     finally:
         session.close()
-
-

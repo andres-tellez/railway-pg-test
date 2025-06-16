@@ -3,22 +3,21 @@ import logging
 from datetime import datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+
 from src.services.token_service import get_valid_token
 from src.db.dao.split_dao import upsert_splits
 from src.db.dao.activity_dao import upsert_activities
 from src.services.strava_access_service import StravaClient
 from src.utils.logger import get_logger
+import src.utils.config as config
 
 log = get_logger(__name__)
 log.setLevel(logging.INFO)
 
+# Constants (can be migrated to config.py if needed later)
 DEFAULT_BATCH_SIZE = 20
-DEFAULT_RETRY_LIMIT = 5
-DEFAULT_SLEEP = 5
-DEFAULT_RETRY_BACKOFF = 2
 DEFAULT_LOOKBACK_DAYS = 30
 DEFAULT_PER_PAGE = 200
-
 
 # --- Unit conversion helpers ---
 def meters_to_miles(meters):
@@ -37,17 +36,17 @@ def format_seconds_to_hms(seconds):
     hours, minutes = divmod(minutes, 60)
     return f"{hours}:{minutes:02}:{sec:02}" if hours > 0 else f"{minutes}:{sec:02}"
 
-
 def get_activities_to_enrich(session, athlete_id, limit):
-    query = text("""
-        SELECT activity_id FROM activities
-        WHERE athlete_id = :athlete_id
-        ORDER BY start_date DESC
-        LIMIT :limit
-    """)
-    result = session.execute(query, {"athlete_id": athlete_id, "limit": limit})
+    result = session.execute(
+        text("""
+            SELECT activity_id FROM activities
+            WHERE athlete_id = :athlete_id
+            ORDER BY start_date DESC
+            LIMIT :limit
+        """),
+        {"athlete_id": athlete_id, "limit": limit}
+    )
     return [row.activity_id for row in result.fetchall()]
-
 
 def enrich_one_activity(session, access_token, activity_id):
     try:
@@ -55,10 +54,7 @@ def enrich_one_activity(session, access_token, activity_id):
         activity_json = client.get_activity(activity_id)
         zones_data = client.get_hr_zones(activity_id)
 
-        hr_zone_pcts = extract_hr_zone_percentages(zones_data)
-        if not hr_zone_pcts:
-            hr_zone_pcts = [0.0, 0.0, 0.0, 0.0, 0.0]
-
+        hr_zone_pcts = extract_hr_zone_percentages(zones_data) or [0.0] * 5
         update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
 
         splits = extract_splits(activity_json, activity_id)
@@ -73,7 +69,6 @@ def enrich_one_activity(session, access_token, activity_id):
         log.error(f"🔥 Exception while enriching {activity_id}: {e}")
         return True
 
-
 def enrich_one_activity_with_refresh(session, athlete_id, activity_id):
     try:
         access_token = get_valid_token(session, athlete_id)
@@ -81,7 +76,6 @@ def enrich_one_activity_with_refresh(session, athlete_id, activity_id):
     except Exception as e:
         log.error(f"Failed enrichment for activity {activity_id}: {e}")
         return True
-
 
 def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts):
     distance_meters = activity_json.get("distance")
@@ -127,44 +121,41 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
 
     session.execute(
         text("""
-        UPDATE activities SET
-            name = :name,
-            distance = :distance,
-            moving_time = :moving_time,
-            elapsed_time = :elapsed_time,
-            total_elevation_gain = :elevation,
-            type = :type,
-            average_speed = :avg_speed,
-            max_speed = :max_speed,
-            suffer_score = :suffer_score,
-            average_heartrate = :average_heartrate,
-            max_heartrate = :max_heartrate,
-            calories = :calories,
-            conv_distance = :conv_distance,
-            conv_elevation_feet = :conv_elevation_feet,
-            conv_avg_speed = :conv_avg_speed,
-            conv_max_speed = :conv_max_speed,
-            conv_moving_time = :conv_moving_time,
-            conv_elapsed_time = :conv_elapsed_time,
-            hr_zone_1 = :hr_zone_1,
-            hr_zone_2 = :hr_zone_2,
-            hr_zone_3 = :hr_zone_3,
-            hr_zone_4 = :hr_zone_4,
-            hr_zone_5 = :hr_zone_5
-        WHERE activity_id = :activity_id
+            UPDATE activities SET
+                name = :name,
+                distance = :distance,
+                moving_time = :moving_time,
+                elapsed_time = :elapsed_time,
+                total_elevation_gain = :elevation,
+                type = :type,
+                average_speed = :avg_speed,
+                max_speed = :max_speed,
+                suffer_score = :suffer_score,
+                average_heartrate = :average_heartrate,
+                max_heartrate = :max_heartrate,
+                calories = :calories,
+                conv_distance = :conv_distance,
+                conv_elevation_feet = :conv_elevation_feet,
+                conv_avg_speed = :conv_avg_speed,
+                conv_max_speed = :conv_max_speed,
+                conv_moving_time = :conv_moving_time,
+                conv_elapsed_time = :conv_elapsed_time,
+                hr_zone_1 = :hr_zone_1,
+                hr_zone_2 = :hr_zone_2,
+                hr_zone_3 = :hr_zone_3,
+                hr_zone_4 = :hr_zone_4,
+                hr_zone_5 = :hr_zone_5
+            WHERE activity_id = :activity_id
         """),
         params
     )
     session.commit()
 
-
-# --- MISSING COMPONENTS ADDED HERE ---
 def extract_hr_zone_percentages(zones_data):
     try:
         return [zone["score"] for zone in zones_data.get("heart_rate", {}).get("custom_zones", [])]
     except Exception:
         return [0.0] * 5
-
 
 def extract_splits(activity_json, activity_id):
     splits = []
@@ -184,7 +175,6 @@ def extract_splits(activity_json, activity_id):
             "pace_zone": lap.get("pace_zone")
         })
     return splits
-
 
 class ActivityIngestionService:
     def __init__(self, session, athlete_id):
@@ -206,7 +196,6 @@ class ActivityIngestionService:
         before = int(end_date.timestamp())
         activities = self.client.get_activities(after=after, before=before, per_page=DEFAULT_PER_PAGE, max_items=max_activities)
         return upsert_activities(self.session, self.athlete_id, activities)
-
 
 def run_enrichment_batch(session, athlete_id, batch_size=DEFAULT_BATCH_SIZE):
     activity_ids = get_activities_to_enrich(session, athlete_id, batch_size)

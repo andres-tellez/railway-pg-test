@@ -1,12 +1,12 @@
 # src/routes/auth_routes.py
 
 from flask import Blueprint, redirect, request, jsonify
-import os
 import traceback
 import requests
 from datetime import datetime, timedelta
 import jwt
 
+import src.utils.config as config
 from src.services.token_service import (
     get_authorization_url,
     store_tokens_from_callback,
@@ -17,30 +17,30 @@ from src.db.db_session import get_session
 
 auth_bp = Blueprint("auth", __name__)
 
-# -------- Admin Login (Basic) --------
 
+# -------- Admin Login (Basic) --------
 @auth_bp.route("/login", methods=["POST"])
 def admin_login():
     try:
         data = request.get_json()
         username = data.get("username")
         password = data.get("password")
-        if username == os.getenv("ADMIN_USER") and password == os.getenv("ADMIN_PASS"):
-            secret_key = os.getenv("SECRET_KEY", "dev")
+
+        if username == config.ADMIN_USER and password == config.ADMIN_PASS:
             access_token = jwt.encode(
                 {
                     "sub": username,
-                    "exp": datetime.utcnow() + timedelta(hours=1)
+                    "exp": datetime.utcnow() + timedelta(seconds=config.ACCESS_TOKEN_EXP)
                 },
-                secret_key,
+                config.SECRET_KEY,
                 algorithm="HS256"
             )
             refresh_token = jwt.encode(
                 {
                     "sub": username,
-                    "exp": datetime.utcnow() + timedelta(days=7)
+                    "exp": datetime.utcnow() + timedelta(seconds=config.REFRESH_TOKEN_EXP)
                 },
-                secret_key,
+                config.SECRET_KEY,
                 algorithm="HS256"
             )
             return jsonify({
@@ -53,8 +53,8 @@ def admin_login():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# -------- Strava OAuth Flow --------
 
+# -------- Strava OAuth Flow --------
 @auth_bp.route("/callback")
 def callback():
     session = get_session()
@@ -80,8 +80,8 @@ def callback():
     finally:
         session.close()
 
-# -------- Token Operations --------
 
+# -------- Token Operations --------
 @auth_bp.route("/refresh/<int:athlete_id>", methods=["POST"])
 def refresh_token(athlete_id):
     session = get_session()
@@ -91,9 +91,8 @@ def refresh_token(athlete_id):
             return jsonify({"error": "Missing or invalid Authorization header"}), 401
 
         token = auth_header.split(" ")[1]
-        secret_key = os.getenv("SECRET_KEY", "dev")
         try:
-            jwt.decode(token, secret_key, algorithms=["HS256"])
+            jwt.decode(token, config.SECRET_KEY, algorithms=["HS256"])
         except jwt.ExpiredSignatureError:
             return jsonify({"error": "Refresh token expired"}), 401
         except jwt.InvalidTokenError:
@@ -108,7 +107,6 @@ def refresh_token(athlete_id):
         session.close()
 
 
-
 @auth_bp.route("/logout/<int:athlete_id>", methods=["POST"])
 def logout(athlete_id):
     session = get_session()
@@ -121,8 +119,8 @@ def logout(athlete_id):
     finally:
         session.close()
 
-# -------- Token Monitoring --------
 
+# -------- Token Monitoring --------
 @auth_bp.route("/monitor-tokens", methods=["GET"])
 def monitor_tokens():
     session = get_session()

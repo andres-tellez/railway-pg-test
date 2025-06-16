@@ -1,4 +1,4 @@
-import os
+import logging
 import requests
 import urllib.parse
 import jwt
@@ -6,12 +6,19 @@ from datetime import datetime, timedelta
 
 from flask import current_app, has_app_context
 
+import src.utils.config as config
 from src.db.dao.token_dao import get_tokens_sa, insert_token_sa, delete_tokens_sa
 from src.db.db_session import get_engine, get_session
 
-# ---------- Utility Constants ----------
-ACCESS_TOKEN_EXP = lambda: int(os.getenv("ACCESS_TOKEN_EXP", 900))        # 15 minutes
-REFRESH_TOKEN_EXP = lambda: int(os.getenv("REFRESH_TOKEN_EXP", 604800))   # 7 days
+logger = logging.getLogger(__name__)
+
+
+# ---------- Helpers ----------
+def is_expired(expires_at):
+    return expires_at <= int(datetime.utcnow().timestamp())
+
+def resolve_db_url():
+    return config.DATABASE_URL
 
 
 # ---------- Token Management ----------
@@ -25,15 +32,12 @@ def get_valid_token(session, athlete_id):
 
     return token_data["access_token"]
 
-def is_expired(expires_at):
-    now_epoch = int(datetime.utcnow().timestamp())
-    return expires_at <= now_epoch
-
 def refresh_access_token(session, athlete_id):
     token_data = get_tokens_sa(session, athlete_id)
-    refresh_token = token_data["refresh_token"]
+    if not token_data:
+        raise RuntimeError(f"No refresh token available for athlete {athlete_id}")
 
-    tokens = refresh_token_static(refresh_token)
+    tokens = refresh_token_static(token_data["refresh_token"])
 
     insert_token_sa(
         session=session,
@@ -46,34 +50,29 @@ def refresh_access_token(session, athlete_id):
     return tokens
 
 def refresh_token_static(refresh_token):
-    client_id = os.getenv("STRAVA_CLIENT_ID")
-    client_secret = os.getenv("STRAVA_CLIENT_SECRET")
-
+    logger.info("Refreshing Strava token...")
     response = requests.post(
         "https://www.strava.com/api/v3/oauth/token",
         data={
-            "client_id": client_id,
-            "client_secret": client_secret,
+            "client_id": config.STRAVA_CLIENT_ID,
+            "client_secret": config.STRAVA_CLIENT_SECRET,
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
         },
     )
+    logger.debug(f"Strava response: {response.status_code} - {response.text}")
     response.raise_for_status()
     return response.json()
 
 def exchange_code_for_token(code):
-    client_id = os.getenv("STRAVA_CLIENT_ID")
-    client_secret = os.getenv("STRAVA_CLIENT_SECRET")
-    redirect_uri = os.getenv("REDIRECT_URI")
-
     response = requests.post(
         "https://www.strava.com/api/v3/oauth/token",
         data={
-            "client_id": int(client_id),
-            "client_secret": client_secret,
+            "client_id": config.STRAVA_CLIENT_ID,
+            "client_secret": config.STRAVA_CLIENT_SECRET,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": redirect_uri
+            "redirect_uri": config.STRAVA_REDIRECT_URI
         },
     )
     response.raise_for_status()
@@ -92,16 +91,13 @@ def refresh_token_if_expired(session, athlete_id):
 
 # ---------- Strava OAuth Routing ----------
 def get_authorization_url():
-    client_id = os.getenv("STRAVA_CLIENT_ID")
-    redirect_uri = os.getenv("STRAVA_REDIRECT_URI")
-
-    if not client_id or not redirect_uri:
+    if not config.STRAVA_CLIENT_ID or not config.STRAVA_REDIRECT_URI:
         raise ValueError("Missing STRAVA_CLIENT_ID or STRAVA_REDIRECT_URI in environment")
 
     params = {
-        "client_id": client_id,
+        "client_id": config.STRAVA_CLIENT_ID,
         "response_type": "code",
-        "redirect_uri": redirect_uri,
+        "redirect_uri": config.STRAVA_REDIRECT_URI,
         "approval_prompt": "auto",
         "scope": "read,activity:read_all"
     }
@@ -111,54 +107,47 @@ def get_authorization_url():
 def store_tokens_from_callback(code, session):
     token_response = exchange_code_for_token(code)
 
-    athlete_id = token_response["athlete"]["id"]
-    access_token = token_response["access_token"]
-    refresh_token = token_response["refresh_token"]
-    expires_at = token_response["expires_at"]
+    athlete_id = token_response.get("athlete", {}).get("id")
+    access_token = token_response.get("access_token")
+    refresh_token = token_response.get("refresh_token")
+    expires_at = token_response.get("expires_at")
 
     insert_token_sa(session, athlete_id, access_token, refresh_token, expires_at)
     return athlete_id
 
 
 # ---------- Admin Login / JWT ----------
-def resolve_db_url():
-    if has_app_context():
-        return current_app.config.get("DATABASE_URL", os.getenv("DATABASE_URL"))
-    return os.getenv("DATABASE_URL")
-
 def login_user(data: dict) -> tuple[str, str]:
     username = data.get("username")
     password = data.get("password")
 
-    if username != os.getenv("ADMIN_USER") or password != os.getenv("ADMIN_PASS"):
+    if username != config.ADMIN_USER or password != config.ADMIN_PASS:
         raise PermissionError("Invalid credentials")
 
     now = datetime.utcnow()
-    secret = os.getenv("SECRET_KEY", "dev")
 
     access_payload = {
         "sub": username,
-        "exp": now + timedelta(seconds=ACCESS_TOKEN_EXP()),
+        "exp": now + timedelta(seconds=config.ACCESS_TOKEN_EXP),
     }
     refresh_payload = {
         "sub": username,
-        "exp": now + timedelta(seconds=REFRESH_TOKEN_EXP()),
+        "exp": now + timedelta(seconds=config.REFRESH_TOKEN_EXP),
     }
 
-    access_token = jwt.encode(access_payload, secret, algorithm="HS256")
-    refresh_token = jwt.encode(refresh_payload, secret, algorithm="HS256")
+    access_token = jwt.encode(access_payload, config.SECRET_KEY, algorithm="HS256")
+    refresh_token = jwt.encode(refresh_payload, config.SECRET_KEY, algorithm="HS256")
 
-    expires_at = int(now.timestamp()) + REFRESH_TOKEN_EXP()
+    expires_at = int(now.timestamp()) + config.REFRESH_TOKEN_EXP
 
     session = get_session()
-    insert_token_sa(session, athlete_id=0, access_token=access_token, refresh_token=refresh_token, expires_at=expires_at)
+    insert_token_sa(session, athlete_id=config.ADMIN_ATHLETE_ID, access_token=access_token, refresh_token=refresh_token, expires_at=expires_at)
 
     return access_token, refresh_token
 
 def refresh_token(refresh_token_str: str) -> str:
-    secret = os.getenv("SECRET_KEY", "dev")
     try:
-        payload = jwt.decode(refresh_token_str, secret, algorithms=["HS256"])
+        payload = jwt.decode(refresh_token_str, config.SECRET_KEY, algorithms=["HS256"])
     except jwt.ExpiredSignatureError:
         raise PermissionError("Refresh token expired")
     except jwt.InvalidTokenError:
@@ -166,7 +155,7 @@ def refresh_token(refresh_token_str: str) -> str:
 
     username = payload.get("sub")
     session = get_session()
-    tokens = get_tokens_sa(session, athlete_id=0)
+    tokens = get_tokens_sa(session, athlete_id=config.ADMIN_ATHLETE_ID)
 
     if not tokens or tokens.get("refresh_token") != refresh_token_str:
         raise PermissionError("Refresh token not recognized")
@@ -174,17 +163,14 @@ def refresh_token(refresh_token_str: str) -> str:
     now = datetime.utcnow()
     new_payload = {
         "sub": username,
-        "exp": now + timedelta(seconds=ACCESS_TOKEN_EXP()),
+        "exp": now + timedelta(seconds=config.ACCESS_TOKEN_EXP),
     }
 
-    return jwt.encode(new_payload, secret, algorithm="HS256")
+    return jwt.encode(new_payload, config.SECRET_KEY, algorithm="HS256")
 
 def logout_user(refresh_token_str: str) -> None:
-    # No-op
     pass
 
-
 def delete_athlete_tokens(session, athlete_id):
-    """Deletes token record for the given athlete"""
     delete_tokens_sa(session, athlete_id)
     return True
