@@ -81,3 +81,20 @@ class StravaClient:
             if e.response.status_code == 404:
                 return []
             raise
+
+    def get_streams(self, activity_id, keys):
+        url = f"{STRAVA_API_BASE_URL}/activities/{activity_id}/streams"
+        resp = self._request_with_backoff("GET", url, params={"keys": ",".join(keys), "key_by_type": "true"})
+
+        streams = {}
+        for key in keys:
+            raw = resp.get(key)
+            if isinstance(raw, dict) and "data" in raw:
+                try:
+                    streams[key] = [float(x) for x in raw["data"] if isinstance(x, (int, float, str)) and str(x).replace('.', '', 1).isdigit()]
+                except Exception as e:
+                    print(f"Failed to convert stream {key}: {e}")
+                    streams[key] = []
+            else:
+                streams[key] = []
+        return streams

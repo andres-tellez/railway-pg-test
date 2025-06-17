@@ -18,7 +18,7 @@ from src.db.db_session import get_session
 auth_bp = Blueprint("auth", __name__)
 
 
-# -------- Admin Login (Basic) --------
+# -------- Admin Login (POST, API) --------
 @auth_bp.route("/login", methods=["POST"])
 def admin_login():
     try:
@@ -54,7 +54,16 @@ def admin_login():
         return jsonify({"error": str(e)}), 500
 
 
-# -------- Strava OAuth Flow --------
+# -------- Strava OAuth Login (GET, Browser) --------
+@auth_bp.route("/login", methods=["GET"])
+def strava_login():
+    """
+    Redirects browser to Strava OAuth authorization URL.
+    """
+    return redirect(get_authorization_url())
+
+
+# -------- Strava OAuth Callback --------
 @auth_bp.route("/callback")
 def callback():
     session = get_session()
@@ -81,7 +90,7 @@ def callback():
         session.close()
 
 
-# -------- Token Operations --------
+# -------- Token Refresh --------
 @auth_bp.route("/refresh/<int:athlete_id>", methods=["POST"])
 def refresh_token(athlete_id):
     session = get_session()
@@ -107,6 +116,7 @@ def refresh_token(athlete_id):
         session.close()
 
 
+# -------- Logout --------
 @auth_bp.route("/logout/<int:athlete_id>", methods=["POST"])
 def logout(athlete_id):
     session = get_session()

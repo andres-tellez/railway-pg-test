@@ -10,6 +10,9 @@ import src.utils.config as config
 from src.db.dao.token_dao import get_tokens_sa, insert_token_sa, delete_tokens_sa
 from src.db.db_session import get_engine, get_session
 
+from src.db.dao.athlete_dao import insert_athlete  
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -107,12 +110,23 @@ def get_authorization_url():
 def store_tokens_from_callback(code, session):
     token_response = exchange_code_for_token(code)
 
-    athlete_id = token_response.get("athlete", {}).get("id")
+    athlete_info = token_response.get("athlete", {})
+    athlete_id = athlete_info.get("id")
     access_token = token_response.get("access_token")
     refresh_token = token_response.get("refresh_token")
     expires_at = token_response.get("expires_at")
 
     insert_token_sa(session, athlete_id, access_token, refresh_token, expires_at)
+
+    # 👇 NEW: insert athlete into the athletes table
+    if athlete_info:
+        insert_athlete(
+            session,
+            strava_athlete_id=athlete_id,
+            name=f"{athlete_info.get('firstname', '')} {athlete_info.get('lastname', '')}".strip(),
+            email=athlete_info.get("email")
+        )
+
     return athlete_id
 
 

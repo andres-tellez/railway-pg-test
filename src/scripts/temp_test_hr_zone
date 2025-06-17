@@ -1,0 +1,16 @@
+from src.db.db_session import get_session
+from src.services.activity_service import enrich_one_activity_with_refresh
+
+def main():
+    athlete_id = 347085
+    activity_id = 14569985708
+
+    session = get_session()
+    try:
+        result = enrich_one_activity_with_refresh(session, athlete_id, activity_id)
+        print(f"Enrichment result for activity {activity_id}: {result}")
+    finally:
+        session.close()
+
+if __name__ == "__main__":
+    main()

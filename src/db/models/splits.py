@@ -2,7 +2,6 @@ from sqlalchemy import (
     Column,
     Integer,
     Float,
-    Boolean,
     ForeignKey,
     TIMESTAMP,
     BigInteger,
@@ -10,7 +9,9 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.sql import func
-from src.db.db_session import Base
+from sqlalchemy.dialects.postgresql import insert
+from src.db.db_session import Base, get_session
+
 
 class Split(Base):
     __tablename__ = "splits"
@@ -25,7 +26,7 @@ class Split(Base):
     max_speed = Column(Float)
     start_index = Column(Integer)
     end_index = Column(Integer)
-    split = Column(Boolean)  # ✅ Corrected from Integer to Boolean
+    split = Column(Integer)
     average_heartrate = Column(Float)
     pace_zone = Column(Integer)
     created_at = Column(TIMESTAMP, server_default=func.now())
@@ -37,3 +38,23 @@ class Split(Base):
     __table_args__ = (
         UniqueConstraint("activity_id", "lap_index", name="uq_activity_lap"),
     )
+
+
+def upsert_splits(session, splits_data: list[dict]):
+    if not splits_data:
+        return
+
+    stmt = insert(Split).values(splits_data)
+    update_cols = {
+        c.name: getattr(stmt.excluded, c.name)
+        for c in Split.__table__.columns
+        if c.name not in {"id", "created_at"}
+    }
+
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_activity_lap",
+        set_=update_cols
+    )
+
+    session.execute(stmt)
+    session.commit()

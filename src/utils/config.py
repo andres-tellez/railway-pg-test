@@ -1,5 +1,10 @@
 import os
 
+from dotenv import load_dotenv
+load_dotenv()
+
+
+
 # ----- OAuth / Strava -----
 STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
 STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
@@ -26,3 +31,6 @@ INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 
 # ----- Misc -----
 PORT = int(os.getenv("PORT", 5000))
+
+
+IS_LOCAL = os.getenv("IS_LOCAL", "false").lower() == "true"
