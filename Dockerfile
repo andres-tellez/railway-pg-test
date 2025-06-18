@@ -12,12 +12,7 @@ RUN apt-get update && apt-get install -y postgresql-client curl
 
 # Copy application source code
 COPY src/ ./src/
-
-# Copy scripts folder explicitly with absolute path in container
 COPY src/scripts /app/scripts
-
-# Debug: list contents of /app/scripts right after copy
-RUN echo "Listing /app/scripts after copy:" && ls -la /app/scripts || echo "/app/scripts does not exist"
 
 # Copy other necessary files to /app root
 COPY requirements.txt .
@@ -32,11 +27,8 @@ ENV IN_DOCKER=true
 # Install Python dependencies
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Debug: list contents of /app to verify all files
-RUN echo "📁 Docker build: listing /app contents:" && ls -R /app
-
-# Expose the correct port (Railway uses 8080)
+# Expose port 8080 (required by Railway)
 EXPOSE 8080
 
-# ✅ Final entrypoint to run Flask app directly
-CMD ["python", "staging_auth_app.py"]
+# Start the staging_auth_app with gunicorn on port 8080
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "staging_auth_app:app"]
