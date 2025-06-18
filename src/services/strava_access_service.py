@@ -1,10 +1,10 @@
 import requests
 import time
-
 from src.utils.config import STRAVA_API_BASE_URL
 
 
-class StravaClient:
+
+class StravaAccessService:
     def __init__(self, access_token):
         self.access_token = access_token
 
@@ -31,7 +31,7 @@ class StravaClient:
 
         raise RuntimeError("Exceeded max retries due to repeated 429 errors")
 
-    def get_activities(self, after=None, before=None, max_items=None, per_page=200):
+    def get_activities(self, after=None, before=None, limit=None, per_page=200):
         url = f"{STRAVA_API_BASE_URL}/athlete/activities"
         all_activities = []
         page = 1
@@ -53,8 +53,8 @@ class StravaClient:
 
             all_activities.extend(batch)
 
-            if max_items and len(all_activities) >= max_items:
-                return all_activities[:max_items]
+            if limit and len(all_activities) >= limit:
+                return all_activities[:limit]
 
             page += 1
 
@@ -91,7 +91,10 @@ class StravaClient:
             raw = resp.get(key)
             if isinstance(raw, dict) and "data" in raw:
                 try:
-                    streams[key] = [float(x) for x in raw["data"] if isinstance(x, (int, float, str)) and str(x).replace('.', '', 1).isdigit()]
+                    streams[key] = [
+                        float(x) for x in raw["data"]
+                        if isinstance(x, (int, float, str)) and str(x).replace('.', '', 1).isdigit()
+                    ]
                 except Exception as e:
                     print(f"Failed to convert stream {key}: {e}")
                     streams[key] = []

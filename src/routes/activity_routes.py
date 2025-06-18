@@ -73,10 +73,16 @@ def sync_strava_to_db(athlete_id):
     if not config.CRON_SECRET_KEY or key != config.CRON_SECRET_KEY:
         return jsonify(error="Unauthorized"), 401
 
+    lookback_days = request.args.get("lookback", default=30, type=int)
+    max_activities = request.args.get("limit", default=None, type=int)  # <--- FIXED HERE
+
     session = get_session()
     try:
         ingestion_service = ActivityIngestionService(session, athlete_id)
-        inserted = ingestion_service.ingest_recent(lookback_days=30)
+        inserted = ingestion_service.ingest_recent(
+            lookback_days=lookback_days,
+            max_activities=max_activities  # <--- FIXED HERE
+        )
         return jsonify(inserted=inserted), 200
     except Exception as e:
         traceback.print_exc()

@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -54,7 +55,7 @@ if __name__ == "__main__":
     try:
         from psycopg2 import connect
         print(f"🔌 Attempting psycopg2.connect() to: {config_db_url}", flush=True)
-        sanitized_url = config_db_url.replace("postgresql+psycopg2://", "postgresql://")
+        sanitized_url = config_db_url.replace("postgresql+psycopg2://", "postgresql://").split("#")[0].strip()
         conn = connect(sanitized_url)
         with conn.cursor() as cur:
             cur.execute("SELECT 1;")

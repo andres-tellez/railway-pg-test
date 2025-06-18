@@ -7,5 +7,19 @@
     "**/__pycache__/": true,
     "**/*.pyc": true
   },
-  "python.analysis.extraPaths": ["./src"]
+  "python.analysis.extraPaths": [
+    "./src"
+  ],
+  "sqltools.connections": [
+    {
+      "previewLimit": 50,
+      "server": "localhost",
+      "port": 15432,
+      "driver": "PostgreSQL",
+      "name": "SC Local (Docker)",
+      "database": "smartcoach",
+      "username": "smartcoach",
+      "password": "devpass"
+    }
+  ]
 }

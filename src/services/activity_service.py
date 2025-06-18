@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.services.token_service import get_valid_token
 from src.db.dao.split_dao import upsert_splits
 from src.db.dao.activity_dao import ActivityDAO
-from src.services.strava_access_service import StravaClient
+from src.services.strava_access_service import StravaAccessService
 from src.utils.logger import get_logger
 import src.utils.config as config
 from src.utils.conversions import convert_metrics, meters_to_miles, mps_to_min_per_mile, format_seconds_to_hms
@@ -33,7 +33,7 @@ def get_activities_to_enrich(session, athlete_id, limit):
 
 def enrich_one_activity(session, access_token, activity_id):
     try:
-        client = StravaClient(access_token)
+        client = StravaAccessService(access_token)
         activity_json = client.get_activity(activity_id)
         zones_data = client.get_hr_zones(activity_id)
         streams = client.get_streams(activity_id, keys=["distance", "time", "velocity_smooth", "heartrate"])
@@ -149,8 +149,6 @@ def extract_hr_zone_percentages(zones_data):
         log.warning(f"⚠️ HR zone extraction failed: {e}")
     return [0.0] * 5
 
-
-
 def build_mile_splits(activity_id, streams):
     def get_data(key):
         if isinstance(streams, list):
@@ -176,7 +174,7 @@ def build_mile_splits(activity_id, streams):
     try:
         for i, d in enumerate(distances):
             segment_distance = float(d) - float(distances[start_index])
-            
+
             # Skip short leftover if under 0.5 mile
             if i == len(distances) - 1 and segment_distance < (mile_threshold * 0.5):
                 break
@@ -214,18 +212,16 @@ def build_mile_splits(activity_id, streams):
 
     return splits
 
-
-
 class ActivityIngestionService:
     def __init__(self, session, athlete_id):
         self.session = session
         self.athlete_id = athlete_id
         self.access_token = get_valid_token(session, athlete_id)
-        self.client = StravaClient(self.access_token)
+        self.client = StravaAccessService(self.access_token)
 
     def ingest_recent(self, lookback_days=DEFAULT_LOOKBACK_DAYS, max_activities=None):
         after = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
-        activities = self.client.get_activities(after=after, per_page=DEFAULT_PER_PAGE, max_items=max_activities)
+        activities = self.client.get_activities(after=after, per_page=DEFAULT_PER_PAGE, limit=max_activities)
         return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
 
     def ingest_full_history(self, lookback_days=365, max_activities=None):
@@ -234,7 +230,7 @@ class ActivityIngestionService:
     def ingest_between(self, start_date, end_date, max_activities=None):
         after = int(start_date.timestamp())
         before = int(end_date.timestamp())
-        activities = self.client.get_activities(after=after, before=before, per_page=DEFAULT_PER_PAGE, max_items=max_activities)
+        activities = self.client.get_activities(after=after, before=before, per_page=DEFAULT_PER_PAGE, limit=max_activities)
         return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
 
 def run_enrichment_batch(session, athlete_id, batch_size=DEFAULT_BATCH_SIZE):
