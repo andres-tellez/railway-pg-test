@@ -31,4 +31,4 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 EXPOSE 8080
 
 # Start the staging_auth_app with gunicorn on port 8080
-CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "staging_auth_app:app"]
+CMD gunicorn --bind 0.0.0.0:$PORT staging_auth_app:app
