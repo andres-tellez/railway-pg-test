@@ -35,8 +35,8 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 # Debug: list contents of /app to verify all files
 RUN echo "📁 Docker build: listing /app contents:" && ls -R /app
 
-# Expose port Flask will listen on
-EXPOSE 5000
+# Expose the correct port (Railway uses 8080)
+EXPOSE 8080
 
-# Entry point: Run staging auth app directly, no Alembic
+# ✅ Final entrypoint to run Flask app directly
 CMD ["python", "staging_auth_app.py"]
