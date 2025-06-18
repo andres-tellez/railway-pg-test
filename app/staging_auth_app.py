@@ -45,6 +45,3 @@ def ping():
     return "pong from staging OAuth app"
 
 
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8888))
-    app.run(host="0.0.0.0", port=port)
