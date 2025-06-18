@@ -24,6 +24,7 @@ COPY requirements.txt .
 COPY run.py .
 COPY alembic.ini .
 COPY alembic/ ./alembic/
+COPY app/staging_auth_app.py ./staging_auth_app.py
 
 # Set environment variable to indicate running inside Docker
 ENV IN_DOCKER=true
@@ -34,8 +35,8 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 # Debug: list contents of /app to verify all files
 RUN echo "📁 Docker build: listing /app contents:" && ls -R /app
 
-# Expose port Gunicorn will listen on
-EXPOSE 8080
+# Expose port Flask will listen on
+EXPOSE 5000
 
-# On container start: run migrations, then launch Gunicorn app server
-CMD alembic upgrade head && gunicorn --preload wsgi:app --bind 0.0.0.0:8080
+# Entry point: Run staging auth app directly, no Alembic
+CMD ["python", "staging_auth_app.py"]
