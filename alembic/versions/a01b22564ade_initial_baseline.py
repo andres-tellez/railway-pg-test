@@ -74,7 +74,7 @@ def upgrade() -> None:
     sa.Column('max_speed', sa.Float(), nullable=True),
     sa.Column('start_index', sa.Integer(), nullable=True),
     sa.Column('end_index', sa.Integer(), nullable=True),
-    sa.Column('split', sa.Integer(), nullable=True),
+    sa.Column('split', sa.Boolean(), nullable=True),
     sa.Column('average_heartrate', sa.Float(), nullable=True),
     sa.Column('pace_zone', sa.Integer(), nullable=True),
     sa.Column('created_at', sa.TIMESTAMP(), server_default=sa.text('now()'), nullable=True),

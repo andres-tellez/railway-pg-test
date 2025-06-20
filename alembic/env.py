@@ -10,16 +10,19 @@ sys.path.insert(0, project_root)
 # --- Add 'src' folder to sys.path ---
 sys.path.insert(0, os.path.join(project_root, "src"))
 
-# ✅ Load environment variables from .env
-load_dotenv()
+# ✅ Load environment variables from explicit .env path with override
+dotenv_path = os.path.join(project_root, ".env")
+load_dotenv(dotenv_path, override=True)
+
+print("🚨 .env loaded from:", dotenv_path)
+print("🚨 DATABASE_URL =", os.getenv("DATABASE_URL"))
 
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, create_engine, pool
 from alembic import context
 
 # DATABASE_URL after .env is loaded
 DATABASE_URL = os.getenv("DATABASE_URL")
-
 print(f"DEBUG: Using DATABASE_URL = {DATABASE_URL}")
 
 if not DATABASE_URL:
@@ -64,9 +67,10 @@ def run_migrations_offline():
 
 def run_migrations_online():
     """Run migrations in 'online' mode (DB connection active)."""
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
-        prefix="sqlalchemy.",
+    # ✅ Replace with explicit engine creation and echo enabled
+    connectable = create_engine(
+        DATABASE_URL,
+        echo=True,  # 🔍 Enable SQL echoing
         poolclass=pool.NullPool,
     )
 

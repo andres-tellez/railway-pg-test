@@ -56,14 +56,28 @@ def create_app(test_config=None):
     @app.route("/db-check")
     def db_check():
         try:
-            from psycopg2 import connect
+            from sqlalchemy import create_engine, inspect
+
             db_url = config.DATABASE_URL
             print("🧪 /db-check using DB URL:", db_url, flush=True)
-            conn = connect(db_url)
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1;")
-                cur.fetchone()
-            return {"status": "ok", "db": True}
+
+            engine = create_engine(db_url)
+            insp = inspect(engine)
+
+            columns = insp.get_columns("splits")
+            split_col = next((c for c in columns if c["name"] == "split"), None)
+
+            print("🧪 SPLIT COLUMN:", split_col, flush=True)
+
+            return {
+                "status": "ok",
+                "db": True,
+                "split_column": {
+                    "name": split_col["name"],
+                    "type": str(split_col["type"]),
+                    "nullable": split_col["nullable"]
+                } if split_col else "not found"
+            }
         except Exception as e:
             import traceback
             print("🔥 DB-CHECK EXCEPTION:", flush=True)

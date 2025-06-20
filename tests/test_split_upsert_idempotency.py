@@ -21,7 +21,7 @@ def test_upsert_splits_idempotency(sqlalchemy_session):
             "max_speed": 3.5,
             "start_index": 0,
             "end_index": 299,
-            "split": True
+            "split": 1
         }
     ]
 
@@ -36,3 +36,4 @@ def test_upsert_splits_idempotency(sqlalchemy_session):
     # Verify only 1 row exists
     rows = sqlalchemy_session.query(Split).filter_by(activity_id=activity_id).all()
     assert len(rows) == 1
+    assert isinstance(rows[0].split, int)

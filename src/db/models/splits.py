@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     String,
     UniqueConstraint,
+    Boolean,  # ✅ Added Boolean
 )
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import insert
@@ -26,7 +27,7 @@ class Split(Base):
     max_speed = Column(Float)
     start_index = Column(Integer)
     end_index = Column(Integer)
-    split = Column(Integer)
+    split = Column(Integer, nullable=True)
     average_heartrate = Column(Float)
     pace_zone = Column(Integer)
     created_at = Column(TIMESTAMP, server_default=func.now())

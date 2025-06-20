@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.services.token_service import get_valid_token
 from src.db.dao.split_dao import upsert_splits
 from src.db.dao.activity_dao import ActivityDAO
-from src.services.strava_access_service import StravaAccessService
+from src.services.strava_access_service import StravaClient
 from src.utils.logger import get_logger
 import src.utils.config as config
 from src.utils.conversions import convert_metrics, meters_to_miles, mps_to_min_per_mile, format_seconds_to_hms
@@ -33,7 +33,7 @@ def get_activities_to_enrich(session, athlete_id, limit):
 
 def enrich_one_activity(session, access_token, activity_id):
     try:
-        client = StravaAccessService(access_token)
+        client = StravaClient(access_token)
         activity_json = client.get_activity(activity_id)
         zones_data = client.get_hr_zones(activity_id)
         streams = client.get_streams(activity_id, keys=["distance", "time", "velocity_smooth", "heartrate"])
@@ -175,7 +175,6 @@ def build_mile_splits(activity_id, streams):
         for i, d in enumerate(distances):
             segment_distance = float(d) - float(distances[start_index])
 
-            # Skip short leftover if under 0.5 mile
             if i == len(distances) - 1 and segment_distance < (mile_threshold * 0.5):
                 break
 
@@ -217,7 +216,7 @@ class ActivityIngestionService:
         self.session = session
         self.athlete_id = athlete_id
         self.access_token = get_valid_token(session, athlete_id)
-        self.client = StravaAccessService(self.access_token)
+        self.client = StravaClient(self.access_token)
 
     def ingest_recent(self, lookback_days=DEFAULT_LOOKBACK_DAYS, max_activities=None):
         after = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())

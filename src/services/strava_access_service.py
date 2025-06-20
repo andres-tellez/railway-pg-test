@@ -3,8 +3,7 @@ import time
 from src.utils.config import STRAVA_API_BASE_URL
 
 
-
-class StravaAccessService:
+class StravaClient:
     def __init__(self, access_token):
         self.access_token = access_token
 

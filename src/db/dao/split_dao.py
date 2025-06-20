@@ -6,12 +6,25 @@ def upsert_splits(session, splits: list) -> int:
     """
     Upserts multiple split records into the 'splits' table.
     Applies conversion logic centrally before inserting.
+    Ensures 'split' field is consistently a valid integer type.
     """
     if not splits:
         return 0
 
     converted = []
     for s in splits:
+        # Ensure 'split' is a true int, not a bool or invalid type
+        split_raw = s.get("split")
+        split_value = None
+        if split_raw is not None:
+            if isinstance(split_raw, bool):
+                split_value = 1 if split_raw else 0
+            elif isinstance(split_raw, (int, float, str)):
+                try:
+                    split_value = int(split_raw)
+                except (ValueError, TypeError):
+                    split_value = None  # fallback for invalid string etc.
+
         conv_fields = ["distance", "average_speed", "moving_time", "elapsed_time"]
         conv_data = {
             "distance": s.get("distance"),
@@ -31,7 +44,7 @@ def upsert_splits(session, splits: list) -> int:
             "max_speed": s["max_speed"],
             "start_index": s["start_index"],
             "end_index": s["end_index"],
-            "split": s["split"],
+            "split": split_value,
             "average_heartrate": s.get("average_heartrate"),
             "pace_zone": s.get("pace_zone"),
             "conv_distance": enriched.get("conv_distance"),
@@ -39,6 +52,9 @@ def upsert_splits(session, splits: list) -> int:
             "conv_moving_time": enriched.get("conv_moving_time"),
             "conv_elapsed_time": enriched.get("conv_elapsed_time"),
         })
+
+    # 🔍 Debug output to verify types
+    print(f"[DAO DEBUG] split values: {[row['split'] for row in converted]} | types: {[type(row['split']) for row in converted]}")
 
     stmt = insert(Split).values(converted)
 

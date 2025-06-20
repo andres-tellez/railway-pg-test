@@ -25,7 +25,7 @@ SAMPLE_ACTIVITY_JSON = {
             "max_speed": 3.5,
             "start_index": 0,
             "end_index": 299,
-            "split": True,
+            "split": 1,
             "average_heartrate": 145,
             "pace_zone": 2
         }
@@ -42,4 +42,12 @@ SAMPLE_HR_ZONE_RESPONSE = {
             {"score": 0.15}
         ]
     }
+}
+
+
+SAMPLE_STREAMS_RESPONSE = {
+    "distance": {"data": [0.0, 500.0, 1000.0]},
+    "time": {"data": [0, 150, 300]},
+    "velocity_smooth": {"data": [3.2, 3.4, 3.3]},
+    "heartrate": {"data": [130, 140, 150]}
 }

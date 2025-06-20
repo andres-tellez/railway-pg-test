@@ -21,7 +21,7 @@ def test_upsert_splits_basic(sqlalchemy_session):
             "max_speed": None,
             "start_index": None,
             "end_index": None,
-            "split": True
+            "split": 1  # Ensure it's stored as INTEGER
         },
         {
             "activity_id": 123,
@@ -33,7 +33,7 @@ def test_upsert_splits_basic(sqlalchemy_session):
             "max_speed": None,
             "start_index": None,
             "end_index": None,
-            "split": True
+            "split": 2  # Ensure it's stored as INTEGER
         }
     ]
 
@@ -48,3 +48,4 @@ def test_upsert_splits_basic(sqlalchemy_session):
     assert rows[0].distance == 1000.0
     assert rows[0].elapsed_time == 300
     assert rows[0].average_speed == 3.33
+    assert isinstance(rows[0].split, int)
