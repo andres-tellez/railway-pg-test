@@ -1,8 +1,14 @@
 import argparse
 import logging
+import sys
 from datetime import datetime
+
 from src.db.db_session import get_session
-from src.services.ingestion_orchestrator_service import run_full_ingestion_and_enrichment, ingest_specific_activity, ingest_between_dates
+from src.services.ingestion_orchestrator_service import (
+    run_full_ingestion_and_enrichment,
+    ingest_specific_activity,
+    ingest_between_dates,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -15,7 +21,7 @@ def parse_date(date_str):
     except ValueError:
         raise argparse.ArgumentTypeError(f"Invalid date format: {date_str}. Use YYYY-MM-DD.")
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="Orchestrate full sync + enrichment for existing athlete")
     parser.add_argument("--athlete_id", required=True, type=int)
     parser.add_argument("--lookback_days", type=int, default=30)
@@ -29,13 +35,10 @@ if __name__ == "__main__":
     session = get_session()
     try:
         if args.activity_id:
-            # Call ingestion for a single activity
             ingest_specific_activity(session, args.athlete_id, args.activity_id)
         elif args.start_date and args.end_date:
-            # Call ingestion for date range
             ingest_between_dates(session, args.athlete_id, args.start_date, args.end_date)
         else:
-            # Default full ingestion
             run_full_ingestion_and_enrichment(
                 session,
                 args.athlete_id,
@@ -44,5 +47,11 @@ if __name__ == "__main__":
             )
     except Exception as e:
         logger.exception(f"❌ Error in main_pipeline: {e}")
+        sys.exit(1)  # Exit with error status
     finally:
         session.close()
+
+    sys.exit(0)  # Explicitly exit successfully
+
+if __name__ == "__main__":
+    main()

@@ -1,10 +1,34 @@
 from datetime import datetime
 from src.db.dao.activity_dao import ActivityDAO
 from src.utils.logger import get_logger
-from src.services.activity_service import ActivityIngestionService, enrich_one_activity_with_refresh
-
+from src.services.activity_service import ActivityIngestionService, enrich_one_activity_with_refresh, run_enrichment_batch
+from src.db.dao.token_dao import get_tokens_sa
+from src.services.token_service import get_valid_token
 
 logger = get_logger(__name__)
+
+def run_full_ingestion_and_enrichment(session, athlete_id, lookback_days=30, max_activities=None, batch_size=10):
+    logger.info(f"🚀 Starting run_full_ingestion_and_enrichment for athlete {athlete_id}")
+
+    tokens = get_tokens_sa(session, athlete_id)
+    if not tokens:
+        raise RuntimeError(
+            f"No tokens found for athlete {athlete_id}. "
+            "Please complete OAuth authorization first via /oauth/callback."
+        )
+
+    access_token = get_valid_token(session, athlete_id)
+    logger.info(f"🟢 Retrieved valid access token for athlete {athlete_id}")
+
+    service = ActivityIngestionService(session, athlete_id)
+    inserted = service.ingest_full_history(lookback_days=lookback_days, max_activities=max_activities)
+    logger.info(f"✅ Synced {inserted} activities")
+
+    enriched = run_enrichment_batch(session, athlete_id, batch_size=batch_size)
+    logger.info(f"✅ Enriched {enriched} activities")
+
+    logger.info(f"🎯 Ingestion + enrichment complete for athlete {athlete_id}")
+    return {"inserted": inserted, "enriched": enriched}
 
 def ingest_specific_activity(session, athlete_id, activity_id):
     logger.info(f"⏳ Ingesting specific activity {activity_id} for athlete {athlete_id}")
