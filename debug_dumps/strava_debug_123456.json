@@ -1,0 +1,40 @@
+{
+  "activity": {
+    "id": 123456,
+    "name": "Mocked Run",
+    "distance": 5000,
+    "moving_time": 1800,
+    "elapsed_time": 1900,
+    "total_elevation_gain": 100,
+    "type": "Run",
+    "average_speed": 2.8,
+    "max_speed": 3.5,
+    "suffer_score": 30,
+    "average_heartrate": 145,
+    "max_heartrate": 160,
+    "calories": 300,
+    "start_date": "2025-06-01T08:00:00Z"
+  },
+  "zones": {
+    "id": 123456,
+    "name": "Mocked Run",
+    "distance": 5000,
+    "moving_time": 1800,
+    "elapsed_time": 1900,
+    "total_elevation_gain": 100,
+    "type": "Run",
+    "average_speed": 2.8,
+    "max_speed": 3.5,
+    "suffer_score": 30,
+    "average_heartrate": 145,
+    "max_heartrate": 160,
+    "calories": 300,
+    "start_date": "2025-06-01T08:00:00Z"
+  },
+  "streams": {
+    "distance": [],
+    "time": [],
+    "velocity_smooth": [],
+    "heartrate": []
+  }
+}

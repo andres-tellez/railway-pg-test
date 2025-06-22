@@ -135,7 +135,9 @@ def test_build_mile_splits_correctness():
 @patch("src.services.activity_service.get_valid_token", return_value="fake-token")
 def test_activity_ingestion_service_methods(mock_token, mock_get_activities, mock_upsert, mock_session, athlete_id):
     # Setup mock activities
-    mock_get_activities.return_value = [{"id": 1}, {"id": 2}]
+    # Setup mock activities with "Run" type to pass filtering logic
+    mock_get_activities.return_value = [{"id": 1, "type": "Run"}, {"id": 2, "type": "Run"}] 
+
 
     service = svc.ActivityIngestionService(mock_session, athlete_id)
 

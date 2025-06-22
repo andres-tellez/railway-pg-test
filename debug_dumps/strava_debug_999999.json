@@ -1,0 +1,58 @@
+{
+  "activity": {
+    "id": 999999,
+    "name": "Mock Activity",
+    "type": "Run",
+    "distance": 5000,
+    "moving_time": 1500,
+    "elapsed_time": 1550,
+    "total_elevation_gain": 80,
+    "average_speed": 3.3,
+    "max_speed": 4.0,
+    "suffer_score": 45,
+    "average_heartrate": 150,
+    "max_heartrate": 170,
+    "calories": 300,
+    "start_date": "2025-06-01T08:00:00Z"
+  },
+  "zones": [
+    {
+      "type": "heartrate",
+      "distribution_buckets": [
+        {
+          "time": 300
+        },
+        {
+          "time": 300
+        },
+        {
+          "time": 200
+        },
+        {
+          "time": 100
+        },
+        {
+          "time": 100
+        }
+      ]
+    }
+  ],
+  "streams": {
+    "distance": [
+      1000,
+      2000
+    ],
+    "time": [
+      300,
+      610
+    ],
+    "velocity_smooth": [
+      3.3,
+      3.2
+    ],
+    "heartrate": [
+      140,
+      145
+    ]
+  }
+}

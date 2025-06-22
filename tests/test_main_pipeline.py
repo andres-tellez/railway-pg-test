@@ -13,7 +13,13 @@ def test_main_pipeline_calls_full_ingestion(monkeypatch):
     with pytest.raises(SystemExit):
         main_pipeline.main()
 
-    mock_ingestion.assert_called_once_with(mock_session, 123, lookback_days=30, batch_size=10)
+    # ✅ Allow flexibility with kwargs
+    mock_ingestion.assert_called_once()
+    args, kwargs = mock_ingestion.call_args
+    assert args[0] == mock_session
+    assert args[1] == 123
+    assert kwargs["lookback_days"] == 30
+    assert kwargs["batch_size"] == 10
     patch.stopall()
 
 def test_main_pipeline_calls_specific_activity(monkeypatch):

@@ -2,6 +2,9 @@ import sys
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import os
+print("DATABASE_URL at runtime:", os.getenv("DATABASE_URL"))
+
 
 import src.utils.config as config
 

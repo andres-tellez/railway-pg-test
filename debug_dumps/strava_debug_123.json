@@ -1,0 +1,70 @@
+{
+  "activity": {
+    "id": 123,
+    "name": "Test Activity",
+    "distance": 5000,
+    "total_elevation_gain": 100,
+    "average_speed": 3.5,
+    "max_speed": 5.0,
+    "moving_time": 1800,
+    "elapsed_time": 2000,
+    "type": "Run",
+    "suffer_score": 50,
+    "average_heartrate": 140,
+    "max_heartrate": 170,
+    "calories": 400,
+    "hr_zone_1": 10,
+    "hr_zone_2": 20,
+    "hr_zone_3": 30,
+    "hr_zone_4": 25,
+    "hr_zone_5": 15
+  },
+  "zones": [
+    {
+      "type": "heartrate",
+      "distribution_buckets": [
+        {
+          "time": 300
+        },
+        {
+          "time": 300
+        },
+        {
+          "time": 200
+        },
+        {
+          "time": 100
+        },
+        {
+          "time": 100
+        }
+      ]
+    }
+  ],
+  "streams": {
+    "distance": [
+      0,
+      1609.344,
+      3218.688,
+      4000
+    ],
+    "time": [
+      0,
+      600,
+      1200,
+      1500
+    ],
+    "velocity_smooth": [
+      3.0,
+      3.5,
+      4.0,
+      3.8
+    ],
+    "heartrate": [
+      130,
+      135,
+      140,
+      145
+    ]
+  }
+}

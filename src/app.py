@@ -7,7 +7,6 @@ from src.routes.admin_routes import admin_bp
 from src.routes.auth_routes import auth_bp
 from src.routes.activity_routes import activity_bp
 
-
 def create_app(test_config=None):
     print("✅ ENTERED create_app()", flush=True)
     print("📁 CWD:", os.getcwd(), flush=True)
@@ -17,12 +16,24 @@ def create_app(test_config=None):
     is_local = os.getenv("IS_LOCAL", "false").lower() == "true"
     print(f"🌍 FLASK_ENV={env_mode} | IS_LOCAL={is_local}", flush=True)
 
-    print("🔐 ADMIN_USER:", config.ADMIN_USER)
-    print("🔐 ADMIN_PASS:", config.ADMIN_PASS)
-    print("🔐 STRAVA_CLIENT_ID:", config.STRAVA_CLIENT_ID)
-    print("🔐 STRAVA_CLIENT_SECRET:", config.STRAVA_CLIENT_SECRET)
-    print("🔐 STRAVA_REDIRECT_URI:", config.STRAVA_REDIRECT_URI)
-    print("💾 CONFIG DATABASE_URL:", config.DATABASE_URL)
+    # Explicitly print critical environment variables for debugging
+    print("DEBUG ENV VARS:")
+    print(f"DATABASE_URL={os.getenv('DATABASE_URL')}", flush=True)
+    print(f"CRON_SECRET_KEY={os.getenv('CRON_SECRET_KEY')}", flush=True)
+    print(f"SECRET_KEY={os.getenv('SECRET_KEY')}", flush=True)
+    print(f"INTERNAL_API_KEY={os.getenv('INTERNAL_API_KEY')}", flush=True)
+    print(f"ADMIN_USER={os.getenv('ADMIN_USER')}", flush=True)
+    print(f"ADMIN_PASS={os.getenv('ADMIN_PASS')}", flush=True)
+    print(f"STRAVA_CLIENT_ID={os.getenv('STRAVA_CLIENT_ID')}", flush=True)
+    print(f"STRAVA_CLIENT_SECRET={os.getenv('STRAVA_CLIENT_SECRET')}", flush=True)
+    print(f"STRAVA_REDIRECT_URI={os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
+
+    print("🔐 ADMIN_USER:", config.ADMIN_USER, flush=True)
+    print("🔐 ADMIN_PASS:", config.ADMIN_PASS, flush=True)
+    print("🔐 STRAVA_CLIENT_ID:", config.STRAVA_CLIENT_ID, flush=True)
+    print("🔐 STRAVA_CLIENT_SECRET:", config.STRAVA_CLIENT_SECRET, flush=True)
+    print("🔐 STRAVA_REDIRECT_URI:", config.STRAVA_REDIRECT_URI, flush=True)
+    print("💾 CONFIG DATABASE_URL:", config.DATABASE_URL, flush=True)
 
     templates_path = Path(__file__).resolve().parent.parent / "templates"
 
@@ -42,9 +53,9 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
-    print("💾 CONFIG DATABASE_URL (from app.config):", app.config.get("DATABASE_URL"))
+    print("💾 CONFIG DATABASE_URL (from app.config):", app.config.get("DATABASE_URL"), flush=True)
 
-    # ✅ Register Blueprints with correct prefixes
+    # Register Blueprints with correct prefixes
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(activity_bp, url_prefix="/sync")
@@ -58,8 +69,9 @@ def create_app(test_config=None):
         try:
             from sqlalchemy import create_engine, inspect
 
-            db_url = config.DATABASE_URL
-            print("🧪 /db-check using DB URL:", db_url, flush=True)
+            # Print the env var just before creating engine (double check connection string)
+            db_url = os.getenv("DATABASE_URL")
+            print("🧪 /db-check using DB URL from env:", db_url, flush=True)
 
             engine = create_engine(db_url)
             insp = inspect(engine)
