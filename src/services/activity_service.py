@@ -269,19 +269,24 @@ class ActivityIngestionService:
     def __init__(self, session, athlete_id):
         self.session = session
         self.athlete_id = athlete_id
-        self.access_token = get_valid_token(session, athlete_id)
-        self.client = StravaClient(self.access_token)
+        self._refresh_client()
+        
+    def _refresh_client(self):
+        access_token = get_valid_token(self.session, self.athlete_id)
+        self.client = StravaClient(access_token)
 
     def ingest_recent(self, lookback_days, max_activities=None, per_page=200):
+        self._refresh_client()
         after = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
         activities = self.client.get_activities(after=after, per_page=per_page, limit=max_activities)
-        activities = [a for a in activities if a.get("type") == "Run"]  # ✅ Only keep runs
+        activities = [a for a in activities if a.get("type") == "Run"]
         return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
 
     def ingest_full_history(self, lookback_days=30, max_activities=None, per_page=200, dry_run=False):
+        self._refresh_client()
         after = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
         all_activities = self.client.get_activities(after=after, per_page=per_page, limit=max_activities)
-        all_activities = [a for a in all_activities if a.get("type") == "Run"]  # ✅ Only keep runs
+        all_activities = [a for a in all_activities if a.get("type") == "Run"]
         if dry_run:
             return all_activities
         if not all_activities:
@@ -290,10 +295,11 @@ class ActivityIngestionService:
         return len(all_activities)
 
     def ingest_between(self, start_date, end_date, max_activities=None, per_page=200):
+        self._refresh_client()
         after = int(start_date.timestamp())
         before = int(end_date.timestamp())
         activities = self.client.get_activities(after=after, before=before, per_page=per_page, limit=max_activities)
-        activities = [a for a in activities if a.get("type") == "Run"]  # ✅ Only keep runs
+        activities = [a for a in activities if a.get("type") == "Run"]
         return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
 
 def run_enrichment_batch(session, athlete_id, batch_size=10):
