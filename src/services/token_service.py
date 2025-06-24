@@ -6,8 +6,6 @@ import src.utils.config as config
 from src.db.dao.token_dao import get_tokens_sa, insert_token_sa
 from src.db.models.tokens import Token
 
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -73,9 +71,39 @@ def refresh_token_if_expired(session, athlete_id):
     return False
 
 
-
-
 def delete_athlete_tokens(session, athlete_id):
     deleted = session.query(Token).filter_by(athlete_id=athlete_id).delete()
     session.commit()
     return deleted
+
+
+# ✅ MISSING FUNCTION: Store tokens after OAuth callback
+def store_tokens_from_callback(code, session):
+    print(f"🔁 Exchanging code for tokens: {code}", flush=True)
+    response = requests.post(
+        "https://www.strava.com/api/v3/oauth/token",
+        data={
+            "client_id": config.STRAVA_CLIENT_ID,
+            "client_secret": config.STRAVA_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code"
+        },
+    )
+    response.raise_for_status()
+    token_data = response.json()
+
+    athlete = token_data.get("athlete")
+    if not athlete or "id" not in athlete:
+        raise KeyError("❌ Strava callback response missing athlete ID")
+
+    athlete_id = athlete["id"]
+    insert_token_sa(
+        session=session,
+        athlete_id=athlete_id,
+        access_token=token_data["access_token"],
+        refresh_token=token_data["refresh_token"],
+        expires_at=token_data["expires_at"]
+    )
+
+    print(f"✅ Token stored for athlete: {athlete_id}", flush=True)
+    return athlete_id

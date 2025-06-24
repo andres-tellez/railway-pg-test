@@ -74,29 +74,30 @@ def strava_login():
 # -------- Strava OAuth Callback --------
 @auth_bp.route("/callback")
 def callback():
-    from src.services.token_service import store_tokens_from_callback  # Moved inside function
+    from src.services.token_service import store_tokens_from_callback
     session = get_session()
     try:
         code = request.args.get("code")
         if not code:
+            print("❌ Missing code param", flush=True)
             return "❌ Missing OAuth code", 400
 
+        print(f"➡️ Received OAuth code: {code}", flush=True)
+
         athlete_id = store_tokens_from_callback(code, session)
+
+        print(f"✅ Stored token for athlete_id: {athlete_id}", flush=True)
         return f"✅ Token stored for athlete_id: {athlete_id}", 200
 
-    except requests.exceptions.HTTPError as http_err:
-        if http_err.response and http_err.response.status_code == 400:
-            return jsonify({"error": "Invalid OAuth code or bad request"}), 401
-        traceback.print_exc()
-        return jsonify({"error": str(http_err)}), 502
-    except KeyError:
-        traceback.print_exc()
-        return "❌ Strava callback data incomplete", 502
     except Exception as e:
+        import traceback
+        print(f"🔥 Callback error: {e}", flush=True)
         traceback.print_exc()
         return f"❌ Callback error: {str(e)}", 500
     finally:
         session.close()
+
+
 
 
 # -------- Token Refresh --------
