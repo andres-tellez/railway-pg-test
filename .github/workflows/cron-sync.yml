@@ -32,10 +32,14 @@ jobs:
       - name: Debug ENV setup
         run: |
           echo "🔍 .env.prod contents:"
-          cat .env.prod || echo "⚠️  .env.prod not found"
+          cat .env.prod | grep DATABASE_URL || echo "DATABASE_URL not set"
 
       - name: Debug DB Token
-        run: python src/scripts/debug_token.py
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/src
+          python src/scripts/debug_token.py
 
       - name: Run ingestion + enrichment pipeline
-        run: python -m src.scripts.scheduled_ingest
+        run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/src
+          python -m src.scripts.scheduled_ingest
