@@ -3,11 +3,7 @@ name: Daily Ingestion Cron
 on:
   schedule:
     - cron: '0 10,19 * * *'  # Runs daily at 10:00 AM and 7:00 PM UTC
-  workflow_dispatch:        # Allows manual trigger
-
-defaults:
-  run:
-    working-directory: railway-pg-test
+  workflow_dispatch:
 
 jobs:
   cron-ingestion:
