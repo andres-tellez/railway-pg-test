@@ -9,7 +9,6 @@ import os
 
 import src.utils.config as config
 from src.services.token_service import (
-    store_tokens_from_callback,
     refresh_token_if_expired,
     delete_athlete_tokens
 )
@@ -75,6 +74,7 @@ def strava_login():
 # -------- Strava OAuth Callback --------
 @auth_bp.route("/callback")
 def callback():
+    from src.services.token_service import store_tokens_from_callback  # Moved inside function
     session = get_session()
     try:
         code = request.args.get("code")
