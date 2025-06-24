@@ -11,11 +11,18 @@ class StravaClient:
         max_retries = 5
         backoff = 10  # Start with 10 sec backoff
 
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+
+        print(f"📤 Strava Request: {method} {url}")
+        print(f"📤 Headers: {headers}")
+        if "params" in kwargs:
+            print(f"📤 Params: {kwargs['params']}")
+
         for attempt in range(max_retries):
             response = requests.request(
                 method,
                 url,
-                headers={"Authorization": f"Bearer {self.access_token}"},
+                headers=headers,
                 **kwargs
             )
 
@@ -25,10 +32,14 @@ class StravaClient:
                 backoff *= 2
                 continue
 
+            if response.status_code == 401:
+                print(f"❌ Unauthorized! Token: {self.access_token}")
+
             response.raise_for_status()
             return response.json()
 
         raise RuntimeError("Exceeded max retries due to repeated 429 errors")
+
 
     def get_activities(self, after=None, before=None, limit=None, per_page=200):
         url = f"{STRAVA_API_BASE_URL}/athlete/activities"
