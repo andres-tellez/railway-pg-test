@@ -5,10 +5,10 @@ import traceback
 import requests
 from datetime import datetime, timedelta
 import jwt
+import os
 
 import src.utils.config as config
 from src.services.token_service import (
-    get_authorization_url,
     store_tokens_from_callback,
     refresh_token_if_expired,
     delete_athlete_tokens
@@ -60,7 +60,16 @@ def strava_login():
     """
     Redirects browser to Strava OAuth authorization URL.
     """
-    return redirect(get_authorization_url())
+    redirect_uri = os.getenv("STRAVA_REDIRECT_URI")
+    client_id = os.getenv("STRAVA_CLIENT_ID")
+    url = (
+        f"https://www.strava.com/oauth/authorize"
+        f"?client_id={client_id}"
+        f"&response_type=code"
+        f"&redirect_uri={redirect_uri}"
+        f"&scope=read,activity:read_all"
+    )
+    return redirect(url)
 
 
 # -------- Strava OAuth Callback --------
