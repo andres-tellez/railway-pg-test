@@ -13,7 +13,7 @@ load_dotenv()
 print("DATABASE_URL at runtime:", os.getenv("DATABASE_URL"), flush=True)
 
 import src.utils.config as config
-from src.db.db_session import get_db_session
+from src.db.db_session import get_session
 from src.services.ingestion_orchestrator_service import run_full_ingestion_and_enrichment
 
 # ─────────────────────────────
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     if os.getenv("RUN_CRON") == "true":
         print(f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()}", flush=True)
         try:
-            session = get_db_session()
+            session = get_session()
             athlete_id = int(os.getenv("ATHLETE_ID", "123456"))
             result = run_full_ingestion_and_enrichment(session, athlete_id)
             print(f"[CRON SYNC] ✅ Sync complete: {result}", flush=True)
