@@ -13,8 +13,8 @@ load_dotenv()
 print("DATABASE_URL at runtime:", os.getenv("DATABASE_URL"), flush=True)
 
 import src.utils.config as config
-from src.db.session import get_db_session
-from src.services.ingestion_orchestration_service import run_full_ingestion_and_enrichment
+from src.db.db_session import get_db_session
+from src.services.ingestion_orchestrator_service import run_full_ingestion_and_enrichment
 
 # ─────────────────────────────
 # 🚀 Flask App Setup for Gunicorn
