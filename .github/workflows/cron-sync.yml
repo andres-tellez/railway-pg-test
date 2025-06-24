@@ -3,7 +3,7 @@ name: Daily Ingestion Cron
 on:
   schedule:
     - cron: '0 10,19 * * *'  # Runs daily at 10:00 AM and 7:00 PM UTC
-  workflow_dispatch:
+  workflow_dispatch:        # Allows manual trigger
 
 jobs:
   cron-ingestion:
@@ -32,10 +32,10 @@ jobs:
       - name: Debug ENV setup
         run: |
           echo "🔍 .env.prod contents:"
-          python -c "print('✅ DATABASE_URL:', [l for l in open('.env.prod') if 'DATABASE_URL=' in l][0].strip())"
+          cat .env.prod || echo "⚠️  .env.prod not found"
 
       - name: Debug DB Token
-        run: python scripts/debug_token.py
+        run: python src/scripts/debug_token.py
 
       - name: Run ingestion + enrichment pipeline
         run: python -m src.scripts.scheduled_ingest
