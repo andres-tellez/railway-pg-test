@@ -3,7 +3,7 @@ name: Daily Ingestion Cron
 on:
   schedule:
     - cron: '0 10,19 * * *'  # Runs daily at 10:00 AM and 7:00 PM UTC
-  workflow_dispatch:         # Allows you to trigger it manually
+  workflow_dispatch:        # Allows manual trigger
 
 jobs:
   cron-ingestion:
@@ -25,7 +25,14 @@ jobs:
           pip install -r requirements.txt
 
       - name: Load ENV_PROD secret into .env.prod
-        run: echo "${{ secrets.ENV_PROD }}" | sed 's/\\n/\n/g' > .env.prod
+        run: echo "$ENV_PROD" | sed 's/\\n/\n/g' > .env.prod
+        env:
+          ENV_PROD: ${{ secrets.ENV_PROD }}
+
+      - name: Debug ENV setup
+        run: |
+          echo "🔍 .env.prod contents:"
+          cat .env.prod | grep DATABASE_URL || echo "DATABASE_URL not set"
 
       - name: Run ingestion + enrichment pipeline
         run: python -m src.scripts.scheduled_ingest
