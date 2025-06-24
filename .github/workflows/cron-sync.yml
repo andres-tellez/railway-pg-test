@@ -2,8 +2,8 @@ name: Daily Ingestion Cron
 
 on:
   schedule:
-    - cron: '0 */12 * * *'  # Runs every 12 hours
-  workflow_dispatch:
+    - cron: '0 10,19 * * *'  # Runs daily at 10:00 AM and 7:00 PM UTC
+  workflow_dispatch:         # Allows you to trigger it manually
 
 jobs:
   cron-ingestion:

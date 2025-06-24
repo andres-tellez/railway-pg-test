@@ -2,7 +2,7 @@ import sys
 import os
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import exists
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))  # adds project root
@@ -23,6 +23,8 @@ from src.utils.seeder import seed_sample_activity
 logger = get_logger(__name__)
 
 def run_full_ingestion_and_enrichment(session, athlete_id, lookback_days=30, max_activities=None, batch_size=10, per_page=200):
+    logger.info(f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()}")
+
     logger.info(f"🚀 Starting run_full_ingestion_and_enrichment for athlete {athlete_id}")
 
     tokens = get_tokens_sa(session, athlete_id)
@@ -108,7 +110,6 @@ def ingest_between_dates(session, athlete_id, start_date: datetime, end_date: da
         limit=max_activities
     )
 
-    # 🚫 Filter out non-Run types
     activities = [a for a in activities if a.get("type") == "Run"]
 
     if not activities:
@@ -125,10 +126,14 @@ def ingest_between_dates(session, athlete_id, start_date: datetime, end_date: da
             count += 1
             if count % batch_size == 0:
                 logger.info(f"Processed {count} activities for enrichment")
-        except Exception as e:
-            #logger.error(f)
-            #logger.error(f"⚠️ Skipping enrichment for activity {act['id']} due to error: {e}")
-            continue  # <-- This ensures the loop continues regardless of failure
+        except Exception:
+            continue
 
     logger.info(f"✅ Enriched {count} activities")
     return count
+
+def ingest_today(session, athlete_id):
+    today = datetime.utcnow()
+    start = datetime(today.year, today.month, today.day)
+    end = start + timedelta(days=1)
+    return ingest_between_dates(session, athlete_id, start_date=start, end_date=end)
