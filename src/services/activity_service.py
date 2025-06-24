@@ -283,16 +283,23 @@ class ActivityIngestionService:
         return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
 
     def ingest_full_history(self, lookback_days=30, max_activities=None, per_page=200, dry_run=False):
-        self._refresh_client()
+        # 🔁 Get fresh token dynamically
+        access_token = get_valid_token(self.session, self.athlete_id)
+        client = StravaClient(access_token)
+
         after = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
-        all_activities = self.client.get_activities(after=after, per_page=per_page, limit=max_activities)
+        all_activities = client.get_activities(after=after, per_page=per_page, limit=max_activities)
         all_activities = [a for a in all_activities if a.get("type") == "Run"]
+        
         if dry_run:
             return all_activities
+
         if not all_activities:
             return 0
+
         ActivityDAO.upsert_activities(self.session, self.athlete_id, all_activities)
         return len(all_activities)
+
 
     def ingest_between(self, start_date, end_date, max_activities=None, per_page=200):
         self._refresh_client()
