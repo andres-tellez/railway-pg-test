@@ -32,6 +32,7 @@ def refresh_access_token(session, athlete_id):
         raise RuntimeError(f"No refresh token available for athlete {athlete_id}")
 
     tokens = refresh_token_static(token_data["refresh_token"])
+    print("🔁 Refreshed token:", tokens, flush=True)
     insert_token_sa(
         session=session,
         athlete_id=athlete_id,
