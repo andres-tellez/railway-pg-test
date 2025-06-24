@@ -53,18 +53,16 @@ def run_full_ingestion_and_enrichment(session, athlete_id, lookback_days=30, max
     access_token = get_valid_token(session, athlete_id)
     logger.info(f"🟢 Retrieved valid access token for athlete {athlete_id}")
 
-    logger.info(f"📆 Fetching activities for the past {lookback_days} days from Strava...")
+    logger.info(f"🗖️ Fetching activities for the past {lookback_days} days from Strava...")
     service = ActivityIngestionService(session, athlete_id)
     all_fetched = service.ingest_full_history(lookback_days=lookback_days, max_activities=max_activities, per_page=per_page, dry_run=True)
 
     if not all_fetched:
-        logger.info("📭 No activities returned from Strava.")
+        logger.info("📬 No activities returned from Strava.")
         return {"synced": 0, "enriched": 0}
 
-    # Filter out already-existing activities by ID
     fetched_ids = [a["id"] for a in all_fetched]
     existing_ids = {r[0] for r in session.query(Activity.activity_id).filter(Activity.activity_id.in_(fetched_ids)).all()}
-
     new_activities = [a for a in all_fetched if a["id"] not in existing_ids]
 
     if not new_activities:
@@ -81,9 +79,6 @@ def run_full_ingestion_and_enrichment(session, athlete_id, lookback_days=30, max
     logger.info(f"🎯 Ingestion + enrichment complete for athlete {athlete_id}")
     return {"synced": len(new_activities), "enriched": enriched}
 
-
-
-
 def ingest_specific_activity(session, athlete_id, activity_id):
     logger.info(f"⏳ Ingesting specific activity {activity_id} for athlete {athlete_id}")
     service = ActivityIngestionService(session, athlete_id)
@@ -95,8 +90,11 @@ def ingest_specific_activity(session, athlete_id, activity_id):
     ActivityDAO.upsert_activities(session, athlete_id, [activity_data])
     logger.info(f"✅ Activity {activity_id} upserted")
 
-    enrich_one_activity_with_refresh(session, athlete_id, activity_id)
-    logger.info(f"✅ Activity {activity_id} enriched")
+    try:
+        enrich_one_activity_with_refresh(session, athlete_id, activity_id)
+        logger.info(f"✅ Activity {activity_id} enriched")
+    except Exception as e:
+        logger.error(f"❌ Skipping enrichment for activity {activity_id} due to error: {e}")
 
     return 1
 
@@ -110,8 +108,11 @@ def ingest_between_dates(session, athlete_id, start_date: datetime, end_date: da
         limit=max_activities
     )
 
+    # 🚫 Filter out non-Run types
+    activities = [a for a in activities if a.get("type") == "Run"]
+
     if not activities:
-        logger.warning(f"No activities found between dates for athlete {athlete_id}")
+        logger.warning(f"No Run activities found between dates for athlete {athlete_id}")
         return 0
 
     ActivityDAO.upsert_activities(session, athlete_id, activities)
@@ -119,10 +120,15 @@ def ingest_between_dates(session, athlete_id, start_date: datetime, end_date: da
 
     count = 0
     for act in activities:
-        enrich_one_activity_with_refresh(session, athlete_id, act["id"])
-        count += 1
-        if count % batch_size == 0:
-            logger.info(f"Processed {count} activities for enrichment")
+        try:
+            enrich_one_activity_with_refresh(session, athlete_id, act["id"])
+            count += 1
+            if count % batch_size == 0:
+                logger.info(f"Processed {count} activities for enrichment")
+        except Exception as e:
+            #logger.error(f)
+            #logger.error(f"⚠️ Skipping enrichment for activity {act['id']} due to error: {e}")
+            continue  # <-- This ensures the loop continues regardless of failure
 
     logger.info(f"✅ Enriched {count} activities")
     return count

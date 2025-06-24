@@ -11,10 +11,24 @@ sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, "src"))
 
 # ✅ Load environment variables from explicit .env path with override
-dotenv_path = os.path.join(project_root, ".env")
+# ✅ Load the appropriate .env file based on FLASK_ENV
+# Use FLASK_ENV or fallback to RAILWAY_ENVIRONMENT or default to "development"
+env_mode = os.getenv("FLASK_ENV") or os.getenv("RAILWAY_ENVIRONMENT") or "development"
+
+if env_mode == "testing":
+    env_file = ".env.test"
+elif env_mode == "production":
+    env_file = ".env.prod"
+else:
+    env_file = ".env"
+
+dotenv_path = os.path.join(project_root, env_file)
 load_dotenv(dotenv_path, override=True)
 
-print("🚨 .env loaded from:", dotenv_path)
+print(f"✅ [Alembic] Loaded environment: {env_file}")
+
+
+
 print("🚨 DATABASE_URL =", os.getenv("DATABASE_URL"))
 
 from logging.config import fileConfig

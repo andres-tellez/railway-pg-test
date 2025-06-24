@@ -2,20 +2,16 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 from src.db.models.activities import Activity
 from src.utils.conversions import convert_metrics
+from src.utils.logger import get_logger
+from typing import List, Dict
 
+logger = get_logger(__name__)
 
 class ActivityDAO:
     @staticmethod
-    def get_by_id(session: Session, activity_id: int):
+    def upsert_activities(session: Session, athlete_id: int, activities: List[Dict]) -> int:
         """
-        Fetch a single activity by its ID.
-        """
-        return session.query(Activity).filter(Activity.activity_id == activity_id).first()
-
-    @staticmethod
-    def upsert_activities(session: Session, athlete_id: int, activities: list[dict]) -> int:
-        """
-        Upsert activities into the database.
+        Upsert activities into the database, filtering only 'Run' types.
 
         Args:
             session (Session): SQLAlchemy session object.
@@ -30,6 +26,22 @@ class ActivityDAO:
 
         rows = []
         for act in activities:
+            if act.get("type") != "Run":
+                logger.warning(f"⚠️ Skipping non-Run activity {act.get('id')} — type={act.get('type')}")
+                continue
+
+            name = act.get("name", "").lower()
+            is_treadmill = "treadmill" in name
+
+            required_fields = ["id", "start_date", "distance", "moving_time", "elapsed_time"]
+            if not is_treadmill:
+                required_fields.append("external_id")
+
+            missing = [f for f in required_fields if not act.get(f)]
+            if missing:
+                logger.error(f"❌ Skipping activity {act.get('id')} due to missing required fields: {missing}")
+                continue
+
             conv_input = {
                 "distance": act.get("distance"),
                 "elevation": act.get("total_elevation_gain"),
@@ -67,18 +79,16 @@ class ActivityDAO:
             }
             rows.append(row)
 
-        stmt = insert(Activity).values(rows)
+        if not rows:
+            return 0
 
+        stmt = insert(Activity).values(rows)
         update_cols = {
             col.name: getattr(stmt.excluded, col.name)
             for col in Activity.__table__.columns
             if col.name != "activity_id"
         }
-
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["activity_id"],
-            set_=update_cols
-        )
+        stmt = stmt.on_conflict_do_update(index_elements=["activity_id"], set_=update_cols)
 
         result = session.execute(stmt)
         session.commit()

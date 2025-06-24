@@ -1,0 +1,53 @@
+2025-06-23 16:49:54,635 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:49:54,635 ERROR 🔥 Enrichment error on attempt 1 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:50:02,293 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:50:02,293 ERROR 🔥 Enrichment error on attempt 2 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:50:07,310 ERROR ❌ All retries failed — Activity 14566316341 has incomplete enrichment.
+2025-06-23 16:52:26,315 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:52:26,315 ERROR 🔥 Enrichment error on attempt 1 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:52:33,585 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:52:33,585 ERROR 🔥 Enrichment error on attempt 2 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:52:38,596 ERROR ❌ All retries failed — Activity 14566316341 has incomplete enrichment.
+2025-06-23 16:52:38,596 ERROR ⚠️ Skipping enrichment for activity 14566316341 due to error: Enrichment failed for activity 14566316341
+2025-06-23 16:57:23,114 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:57:23,114 ERROR 🔥 Enrichment error on attempt 1 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:57:30,586 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:57:30,586 ERROR 🔥 Enrichment error on attempt 2 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 16:57:35,590 ERROR ❌ All retries failed — Activity 14566316341 has incomplete enrichment.
+2025-06-23 16:57:35,590 ERROR ⚠️ Skipping enrichment for activity 14566316341 due to error: Enrichment failed for activity 14566316341
+2025-06-23 17:01:31,966 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:01:31,966 ERROR 🔥 Enrichment error on attempt 1 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:01:39,229 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:01:39,229 ERROR 🔥 Enrichment error on attempt 2 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:01:44,234 ERROR ❌ All retries failed — Activity 14566316341 has incomplete enrichment.
+2025-06-23 17:01:44,234 ERROR ❌ Enrichment failed for activity 14566316341: Enrichment failed for activity 14566316341
+2025-06-23 17:03:07,294 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:03:07,294 ERROR 🔥 Enrichment error on attempt 1 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:03:14,739 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:03:14,739 ERROR 🔥 Enrichment error on attempt 2 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:03:19,745 ERROR ❌ All retries failed — Activity 14566316341 has incomplete enrichment.
+2025-06-23 17:03:19,745 ERROR ⚠️ Skipping enrichment for activity 14566316341 due to error: Enrichment failed for activity 14566316341
+2025-06-23 17:38:40,441 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:38:40,441 ERROR 🔥 Enrichment error on attempt 1 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:38:47,963 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:38:47,963 ERROR 🔥 Enrichment error on attempt 2 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 17:38:52,964 ERROR ❌ All retries failed — Activity 14566316341 has incomplete enrichment.
+2025-06-23 17:38:52,965 ERROR ⚠️ Skipping enrichment for activity 14566316341 due to error: Enrichment failed for activity 14566316341
+2025-06-23 19:26:41,765 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 19:26:41,766 ERROR 🔥 Enrichment error on attempt 1 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 19:26:49,070 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 19:26:49,071 ERROR 🔥 Enrichment error on attempt 2 for 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 19:26:54,073 ERROR ❌ All retries failed — Activity 14566316341 has incomplete enrichment.
+2025-06-23 19:26:54,074 ERROR ⚠️ Skipping enrichment for activity 14566316341 due to error: Enrichment failed for activity 14566316341
+2025-06-23 19:31:08,214 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 19:31:15,615 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 19:31:20,618 ERROR ❌ All retries failed — Activity 14566316341 has incomplete enrichment.
+2025-06-23 19:31:20,619 ERROR ⚠️ Skipping enrichment for activity 14566316341 due to error: Enrichment failed for activity 14566316341
+2025-06-23 19:32:56,113 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 19:33:03,878 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 19:33:08,880 ERROR ⚠️ Skipping enrichment for activity 14566316341 due to error: name 'f' is not defined
+2025-06-23 19:39:40,822 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 19:39:48,223 ERROR 🔥 Exception while enriching 14566316341: 404 Client Error: Not Found for url: https://www.strava.com/api/v3/activities/14566316341/streams?keys=distance%2Ctime%2Cvelocity_smooth%2Cheartrate&key_by_type=true
+2025-06-23 19:39:53,226 ERROR ⚠️ Skipping enrichment for activity 14566316341 due to error: name 'f' is not defined
+2025-06-23 19:41:15,579 ERROR ⚠️ Skipping enrichment for activity 14566316341 due to error: name 'f' is not defined
+2025-06-23 19:46:20,891 ERROR ⚠️ Skipping enrichment for activity 14566316341 due to error: name 'f' is not defined

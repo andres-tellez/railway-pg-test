@@ -1,4 +1,5 @@
 import os
+print("🔍 Runtime DATABASE_URL:", os.getenv("DATABASE_URL"))
 from pathlib import Path
 from flask import Flask
 
@@ -6,6 +7,10 @@ import src.utils.config as config
 from src.routes.admin_routes import admin_bp
 from src.routes.auth_routes import auth_bp
 from src.routes.activity_routes import activity_bp
+
+from src.routes.health_routes import health_bp
+
+
 
 def create_app(test_config=None):
     print("✅ ENTERED create_app()", flush=True)
@@ -59,6 +64,7 @@ def create_app(test_config=None):
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(activity_bp, url_prefix="/sync")
+    app.register_blueprint(health_bp)
 
     @app.route("/ping")
     def ping():

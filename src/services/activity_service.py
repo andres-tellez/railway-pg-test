@@ -56,8 +56,9 @@ def enrich_one_activity(session, access_token, activity_id):
 
             if all(activity_json.get(field) for field in required_fields):
                 break
-            log.warning(f"⚠️ Missing required fields for activity {activity_id}, retry {attempt + 1}/{retries}...")
-            time.sleep(5)
+            log.warning(f)
+            #log.warning(f"⚠️ Missing required fields for activity {activity_id}, retry {attempt + 1}/{retries}...")
+            time.sleep(1)
         else:
             raise ValueError(f"❌ Critical data missing after retries for activity {activity_id}: {[(field, activity_json.get(field)) for field in required_fields]}")
 
@@ -65,7 +66,8 @@ def enrich_one_activity(session, access_token, activity_id):
 
         missing_soft = [f for f in soft_fields if activity_json.get(f) is None]
         if missing_soft:
-            log.warning(f"⚠️ Partial enrichment for activity {activity_id} — missing: {missing_soft}")
+            log.warning(f)
+            #log.warning(f"⚠️ Partial enrichment for activity {activity_id} — missing: {missing_soft}")
 
         log.info(f"➡️ Enriching activity {activity_id} — {activity_json.get('name')}")
         hr_zone_pcts = extract_hr_zone_percentages(zones_data) or [0.0] * 5
@@ -78,7 +80,8 @@ def enrich_one_activity(session, access_token, activity_id):
 
         return True
     except Exception as e:
-        log.error(f"🔥 Exception while enriching {activity_id}: {e}")
+        log.error(f)
+        #log.error(f"🔥 Exception while enriching {activity_id}: {e}")
         raise
 
 def enrich_one_activity_with_refresh(session, athlete_id, activity_id, max_retries=2):
@@ -101,14 +104,16 @@ def enrich_one_activity_with_refresh(session, athlete_id, activity_id, max_retri
                 log.info(f"✅ Enrichment succeeded on attempt {attempt} for activity {activity_id}")
                 return True
 
-            log.warning(f"⚠️ Enrichment fields missing on attempt {attempt} for {activity_id}. Retrying in 5s...")
-            time.sleep(5)
+            log.warning(f)
+            #log.warning(f"⚠️ Enrichment fields missing on attempt {attempt} for {activity_id}. Retrying in 5s...")
+            time.sleep(1)
 
         except Exception as e:
-            log.error(f"🔥 Enrichment error on attempt {attempt} for {activity_id}: {e}")
-            time.sleep(5)
+            #=log.error(f"🔥 Enrichment error on attempt {attempt} for {activity_id}: {e}")
+            time.sleep(1)
 
-    log.error(f"❌ All retries failed — Activity {activity_id} has incomplete enrichment.")
+    log.error(f)
+    #log.error(f"❌ All retries failed — Activity {activity_id} has incomplete enrichment.")
     raise RuntimeError(f"Enrichment failed for activity {activity_id}")
 
 def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts):
@@ -123,7 +128,8 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
 
     for key in ["average_heartrate", "max_speed", "suffer_score", "calories"]:
         if activity_json.get(key) is None:
-            log.warning(f"⚠️ {key} missing from activity {activity_id}")
+            log.warning(f)
+            #log.warning(f"⚠️ {key} missing from activity {activity_id}")
 
     params = {
         "activity_id": activity_id,
@@ -294,4 +300,4 @@ def run_enrichment_batch(session, athlete_id, batch_size=10):
     activity_ids = get_activities_to_enrich(session, athlete_id, batch_size)
     for aid in activity_ids:
         enrich_one_activity_with_refresh(session, athlete_id, aid)
-        time.sleep(3)  # Optional pacing
+        time.sleep(1)  # Optional pacing
