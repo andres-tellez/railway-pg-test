@@ -37,4 +37,4 @@ jobs:
         run: python -m src.scripts.debug_token
 
       - name: Run ingestion + enrichment pipeline
-        run: python src/scripts/main_pipeline.py --all --lookback_days=1
+        run: python -m src.scripts.main_pipeline --all --lookback_days=1
