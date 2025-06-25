@@ -34,7 +34,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Debug DB Token (optional)
-        run: python src/scripts/debug_token.py
+        run: python -m src.scripts.debug_token
 
       - name: Run ingestion + enrichment pipeline
         run: python src/scripts/main_pipeline.py --all --lookback_days=1
