@@ -2,7 +2,7 @@ name: Daily Ingestion Cron
 
 on:
   schedule:
-    - cron: '0 10,19 * * *'  # Runs daily at 10:00 AM and 7:00 PM UTC
+    - cron: '0 15,0 * * *'  # 10AM & 7PM CT
   workflow_dispatch:        # Allows manual trigger
 
 jobs:
