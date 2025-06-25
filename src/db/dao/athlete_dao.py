@@ -33,3 +33,10 @@ def insert_athlete(session: Session, strava_athlete_id: int, name: Optional[str]
     session.commit()
     session.refresh(new_athlete)
     return new_athlete.id
+
+
+def get_all_athletes(session: Session) -> list[Athlete]:
+    """
+    Retrieve all athletes from the database.
+    """
+    return session.query(Athlete).all()

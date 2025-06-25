@@ -10,6 +10,15 @@ jobs:
     name: Ingest and Enrich Data
     runs-on: ubuntu-latest
 
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+      STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+      REDIRECT_URI: ${{ secrets.REDIRECT_URI }}
+      INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+      CRON_SECRET_KEY: ${{ secrets.CRON_SECRET_KEY }}
+      PYTHONPATH: ${{ github.workspace }}/src
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -24,22 +33,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Load ENV_PROD secret into .env.prod
-        run: echo "$ENV_PROD" | sed 's/\\n/\n/g' > .env.prod
-        env:
-          ENV_PROD: ${{ secrets.ENV_PROD }}
-
-      - name: Debug ENV setup
-        run: |
-          echo "🔍 .env.prod contents:"
-          cat .env.prod | grep DATABASE_URL || echo "DATABASE_URL not set"
-
-      - name: Debug DB Token
-        run: |
-          export PYTHONPATH=$PYTHONPATH:$(pwd)/src
-          python src/scripts/debug_token.py
+      - name: Debug DB Token (optional)
+        run: python src/scripts/debug_token.py
 
       - name: Run ingestion + enrichment pipeline
-        run: |
-          export PYTHONPATH=$PYTHONPATH:$(pwd)/src
-          python -m src.scripts.scheduled_ingest
+        run: python src/scripts/main_pipeline.py --all --lookback_days=1
