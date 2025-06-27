@@ -2,7 +2,7 @@ import os
 import jwt
 from datetime import datetime, timedelta
 from unittest.mock import patch
-
+import src.utils.config as config  # Import config for admin credentials
 
 
 @patch("src.services.token_service.refresh_token_static")
@@ -14,8 +14,8 @@ def test_login_refresh_logout(mock_refresh, client):
         "expires_at": int((datetime.utcnow() + timedelta(hours=1)).timestamp())
     }
 
-    # Step 1: Login
-    resp = client.post("/auth/login", json={"username": "admin", "password": "secret"})
+    # Step 1: Login with correct credentials from config
+    resp = client.post("/auth/login", json={"username": config.ADMIN_USER, "password": config.ADMIN_PASS})
     assert resp.status_code == 200
 
     tokens = resp.get_json()
@@ -44,7 +44,6 @@ def test_login_refresh_logout(mock_refresh, client):
     # Step 3: Logout
     resp = client.post("/auth/logout/0", headers=headers)
     assert resp.status_code == 200
-
 
 
 def test_invalid_login_rejected(client):

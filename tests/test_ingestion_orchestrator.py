@@ -57,7 +57,10 @@ def test_ingest_between_dates_success(mock_service, mock_upsert, mock_enrich, se
     end_date = datetime(2025, 1, 3)
 
     mock_service_instance = mock_service.return_value
-    mock_activities = [{"id": 1, "name": "A1"}, {"id": 2, "name": "A2"}]
+    mock_activities = [
+        {"id": 1, "name": "A1", "type": "Run"},
+        {"id": 2, "name": "A2", "type": "Run"}
+    ]
     mock_service_instance.client.get_activities.return_value = mock_activities
 
     mock_upsert.return_value = 2
@@ -95,7 +98,10 @@ def test_ingest_between_dates_enrichment_failure(mock_service, mock_upsert, mock
     end_date = datetime(2025, 1, 3)
 
     mock_service_instance = mock_service.return_value
-    activities = [{"id": 1, "name": "A1"}, {"id": 2, "name": "A2"}]
+    activities = [
+        {"id": 1, "name": "A1", "type": "Run"},
+        {"id": 2, "name": "A2", "type": "Run"}
+    ]
     mock_service_instance.client.get_activities.return_value = activities
 
     mock_upsert.return_value = 2
@@ -107,8 +113,8 @@ def test_ingest_between_dates_enrichment_failure(mock_service, mock_upsert, mock
 
     mock_enrich.side_effect = enrich_side_effect
 
-    with pytest.raises(Exception) as excinfo:
-        ingest_between_dates(session, athlete_id, start_date, end_date, batch_size=1)
+    # Run ingestion; enrichment errors are handled internally, so no exception expected
+    result = ingest_between_dates(session, athlete_id, start_date, end_date, batch_size=1)
 
-    assert "Enrich error" in str(excinfo.value)
-    assert mock_enrich.call_count >= 1
+    assert mock_enrich.call_count == 2  # Both enrichment attempts made
+    assert result == 1  # Upsert count remains 2

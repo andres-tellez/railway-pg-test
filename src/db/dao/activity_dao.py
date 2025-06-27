@@ -93,3 +93,11 @@ class ActivityDAO:
         result = session.execute(stmt)
         session.commit()
         return result.rowcount
+    
+    
+    @staticmethod
+    def get_by_id(session: Session, activity_id: int) -> Activity | None:
+        """
+        Retrieve a single activity by its activity_id.
+        """
+        return session.query(Activity).filter_by(activity_id=activity_id).first()

@@ -8,6 +8,9 @@ from src.db.models.activities import Activity
 from src.db.models.splits import Split
 from src.scripts.main_pipeline import run_full_ingestion_and_enrichment
 
+# Import the sample activity JSON with external_id included
+from tests.test_data.sample_activities import SAMPLE_ACTIVITY_JSON
+
 @pytest.fixture(scope="module")
 def test_session():
     session = get_session()
@@ -39,30 +42,19 @@ def test_run_full_ingestion_flow(
     test_session, seeded_token
 ):
     athlete_id = 1
-    mock_activity_id = 123456
+    mock_activity_id = SAMPLE_ACTIVITY_JSON["id"]
 
     # Ensure no conflicting data
     test_session.query(Split).filter_by(activity_id=mock_activity_id).delete()
     test_session.query(Activity).filter_by(activity_id=mock_activity_id).delete()
     test_session.commit()
 
-    mock_activities.return_value = [{
-        "id": mock_activity_id,
-        "name": "Mock Activity",
-        "type": "Run",
-        "distance": 5000,
-        "moving_time": 1500,
-        "elapsed_time": 1550,
-        "total_elevation_gain": 80,
-        "average_speed": 3.3,
-        "max_speed": 4.0,
-        "suffer_score": 45,
-        "average_heartrate": 150,
-        "max_heartrate": 170,
-        "calories": 300,
-        "start_date": "2025-06-01T08:00:00Z"
-    }]
-    mock_activity.return_value = mock_activities.return_value[0]
+    # Use SAMPLE_ACTIVITY_JSON and ensure it has external_id
+    mock_activity_data = SAMPLE_ACTIVITY_JSON.copy()
+    mock_activity_data["external_id"] = f"external_{mock_activity_id}"  # Ensure external_id exists
+
+    mock_activities.return_value = [mock_activity_data]
+    mock_activity.return_value = mock_activity_data
 
     mock_splits.return_value = [
         {"elapsed_time": 600, "distance": 1609, "average_speed": 3.3, "split": 1},
@@ -89,9 +81,9 @@ def test_run_full_ingestion_flow(
 
     activity = test_session.query(Activity).filter_by(activity_id=mock_activity_id).first()
     assert activity is not None, "Activity not found in DB"
-    assert activity.name == "Mock Activity"
+    assert activity.name == mock_activity_data["name"]
     assert activity.start_date.isoformat().startswith("2025-06-01")
-    assert activity.distance == 5000
+    assert activity.distance == mock_activity_data["distance"]
 
     splits = test_session.query(Split).filter_by(activity_id=mock_activity_id).all()
     assert len(splits) == 2, "Expected 2 splits to be inserted"

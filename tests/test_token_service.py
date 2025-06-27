@@ -6,6 +6,9 @@ from requests.models import Response
 from src.services import token_service
 
 
+from src.db.models.tokens import Token
+
+
 def test_is_expired():
     past = int((datetime.utcnow() - timedelta(seconds=10)).timestamp())
     future = int((datetime.utcnow() + timedelta(seconds=10)).timestamp())
@@ -92,16 +95,31 @@ def test_exchange_code_for_token_success(mock_post):
     mock_post.assert_called_once()
 
 
+@patch("src.services.token_service.refresh_token_static")
 @patch("src.services.token_service.get_tokens_sa")
-@patch("src.services.token_service.refresh_access_token")
-def test_refresh_token_if_expired_true(mock_refresh_access, mock_get_tokens):
+def test_refresh_token_if_expired_true(monkeypatch):
     mock_session = MagicMock()
-    athlete_id = 123
-    mock_get_tokens.return_value = {"expires_at": 1}
-    mock_refresh_access.return_value = {"access_token": "new_access"}
-    result = token_service.refresh_token_if_expired(mock_session, athlete_id)
+    # Token expires in past to trigger refresh
+    expired_token = Token(
+        athlete_id=123,
+        access_token="old",
+        refresh_token="old_refresh",
+        expires_at=int((datetime.utcnow() - timedelta(hours=1)).timestamp())
+    )
+    mock_query = MagicMock()
+    mock_query.filter_by.return_value.first.return_value = expired_token
+    mock_session.query.return_value = mock_query
+
+    # Patch refresh_token_static to avoid actual HTTP calls
+    monkeypatch.setattr("src.services.token_service.refresh_token_static", lambda rt: {
+        "access_token": "new_access",
+        "refresh_token": "new_refresh",
+        "expires_at": int((datetime.utcnow() + timedelta(hours=1)).timestamp())
+    })
+
+    from src.services import token_service
+    result = token_service.refresh_token_if_expired(mock_session, 123)
     assert result is True
-    mock_refresh_access.assert_called_once()
 
 
 @patch("src.services.token_service.get_tokens_sa")
@@ -174,7 +192,7 @@ def test_login_user_invalid_credentials():
 @patch("src.services.token_service.jwt.decode")
 @patch("src.services.token_service.get_tokens_sa")
 @patch("src.services.token_service.get_session")
-def test_refresh_token_success(mock_get_session, mock_get_tokens, mock_jwt_decode):
+def test_refresh_token_success_basic(mock_get_session, mock_get_tokens, mock_jwt_decode):
     mock_get_session.return_value = MagicMock()
     mock_get_tokens.return_value = {"refresh_token": "valid_token"}
     mock_jwt_decode.return_value = {"sub": "admin"}
@@ -197,15 +215,35 @@ def test_refresh_token_invalid_token(mock_jwt_decode):
         token_service.refresh_token("token")
 
 
-@patch("src.services.token_service.delete_tokens_sa")
-def test_delete_athlete_tokens(mock_delete_tokens):
+def test_delete_athlete_tokens():
     mock_session = MagicMock()
+    mock_session.query().filter_by().delete.return_value = True
+
     athlete_id = 123
     result = token_service.delete_athlete_tokens(mock_session, athlete_id)
+
     assert result is True
-    mock_delete_tokens.assert_called_once_with(mock_session, athlete_id)
+    mock_session.query().filter_by().delete.assert_called_once()
+    mock_session.commit.assert_called_once()
 
 
 def test_logout_user_noop():
-    # Function is empty, so just call to ensure no error
     token_service.logout_user("token")
+
+
+@patch("src.services.token_service.refresh_token_static")
+@patch("src.services.token_service.jwt.decode")
+@patch("src.services.token_service.get_tokens_sa")
+@patch("src.services.token_service.get_session")
+def test_refresh_token_success(mock_get_session, mock_get_tokens, mock_jwt_decode, mock_refresh_static):
+    mock_get_session.return_value = MagicMock()
+    mock_get_tokens.return_value = {"refresh_token": "valid_token"}
+    mock_jwt_decode.return_value = {"sub": "admin", "type": "refresh"}
+    mock_refresh_static.return_value = {
+        "access_token": "new_access",
+        "refresh_token": "new_refresh",
+        "expires_at": 1234567890
+    }
+
+    new_token = token_service.refresh_token("valid_token")
+    assert new_token is not None

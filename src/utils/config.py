@@ -43,3 +43,6 @@ INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY")
 # ----- Misc -----
 PORT = int(os.getenv("PORT", 5000))
 IS_LOCAL = os.getenv("IS_LOCAL", "false").lower() == "true"
+
+JWT_SECRET = SECRET_KEY
+

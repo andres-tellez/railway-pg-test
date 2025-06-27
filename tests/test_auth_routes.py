@@ -1,14 +1,17 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from flask import url_for
+from flask import Flask
 import jwt
 from datetime import datetime, timedelta
 import src.utils.config as config
 from src.routes.auth_routes import auth_bp
 
+# ----------------------
+# Test Setup
+# ----------------------
+
 @pytest.fixture
 def client():
-    from flask import Flask
     app = Flask(__name__)
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.config['TESTING'] = True
@@ -20,7 +23,9 @@ def create_jwt_token(sub="admin", exp=None):
         exp = datetime.utcnow() + timedelta(seconds=config.ACCESS_TOKEN_EXP)
     return jwt.encode({"sub": sub, "exp": exp}, config.SECRET_KEY, algorithm="HS256")
 
-# --- /auth/login POST ---
+# ----------------------
+# /auth/login POST
+# ----------------------
 
 def test_admin_login_success(client):
     data = {"username": config.ADMIN_USER, "password": config.ADMIN_PASS}
@@ -37,22 +42,29 @@ def test_admin_login_invalid_credentials(client):
 
 def test_admin_login_missing_json(client):
     response = client.post("/auth/login")
-    assert response.status_code == 500 or response.status_code == 400
+    assert response.status_code in (400, 500)
 
-# --- /auth/login GET (Strava OAuth) ---
+# ----------------------
+# /auth/login GET (Strava OAuth)
+# ----------------------
 
-@patch("src.routes.auth_routes.get_authorization_url")
-def test_strava_login_redirect(mock_get_auth_url, client):
-    mock_get_auth_url.return_value = "http://fake-auth-url"
+def test_strava_login_redirect(client, monkeypatch):
+    # Patch os.getenv to return expected environment variables
+    monkeypatch.setattr("os.getenv", lambda k: {
+        "STRAVA_CLIENT_ID": "123",
+        "STRAVA_REDIRECT_URI": "http://redirect"
+    }.get(k))
     response = client.get("/auth/login")
     assert response.status_code == 302
-    assert response.location == "http://fake-auth-url"
+    assert "strava.com/oauth/authorize" in response.location
 
-# --- /auth/callback GET ---
+# ----------------------
+# /auth/callback GET
+# ----------------------
 
+@patch("src.services.token_service.store_tokens_from_callback")
 @patch("src.routes.auth_routes.get_session")
-@patch("src.routes.auth_routes.store_tokens_from_callback")
-def test_callback_success(mock_store_tokens, mock_get_session, client):
+def test_callback_success(mock_get_session, mock_store_tokens, client):
     mock_store_tokens.return_value = 123
     mock_get_session.return_value = MagicMock()
     response = client.get("/auth/callback?code=fakecode")
@@ -64,15 +76,17 @@ def test_callback_missing_code(client):
     assert response.status_code == 400
     assert "Missing OAuth code" in response.get_data(as_text=True)
 
+@patch("src.services.token_service.store_tokens_from_callback", side_effect=Exception("fail"))
 @patch("src.routes.auth_routes.get_session")
-@patch("src.routes.auth_routes.store_tokens_from_callback", side_effect=Exception("fail"))
-def test_callback_exception(mock_store, mock_session, client):
-    mock_session.return_value = MagicMock()
+def test_callback_exception(mock_get_session, mock_store_tokens, client):
+    mock_get_session.return_value = MagicMock()
     response = client.get("/auth/callback?code=code")
     assert response.status_code == 500
     assert "Callback error" in response.get_data(as_text=True)
 
-# --- /auth/refresh/<athlete_id> POST ---
+# ----------------------
+# /auth/refresh/<athlete_id> POST
+# ----------------------
 
 @patch("src.routes.auth_routes.get_session")
 @patch("src.routes.auth_routes.refresh_token_if_expired")
@@ -96,7 +110,9 @@ def test_refresh_token_invalid_token(client):
     assert response.status_code == 401
     assert response.json["error"] == "Invalid token"
 
-# --- /auth/logout/<athlete_id> POST ---
+# ----------------------
+# /auth/logout/<athlete_id> POST
+# ----------------------
 
 @patch("src.routes.auth_routes.get_session")
 @patch("src.routes.auth_routes.delete_athlete_tokens")
@@ -107,7 +123,9 @@ def test_logout_success(mock_delete, mock_get_session, client):
     assert response.status_code == 200
     assert response.json == {"deleted": True}
 
-# --- /auth/monitor-tokens GET ---
+# ----------------------
+# /auth/monitor-tokens GET
+# ----------------------
 
 @patch("src.routes.auth_routes.get_session")
 def test_monitor_tokens_success(mock_get_session, client):

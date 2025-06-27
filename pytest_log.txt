@@ -1,0 +1,2882 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.8, pytest-8.3.5, pluggy-1.6.0
+rootdir: C:\Users\andre\projects\railway-pg-test
+plugins: cov-6.2.1
+collected 107 items
+
+tests\test_activity_dao.py FF..F                                         [  4%]
+tests\test_activity_routes.py .......                                    [ 11%]
+tests\test_activity_service.py ........                                  [ 18%]
+tests\test_app.py .....                                                  [ 23%]
+tests\test_athlete_dao.py E                                              [ 24%]
+tests\test_auth.py F...                                                  [ 28%]
+tests\test_auth_routes.py ...FF.F......                                  [ 40%]
+tests\test_enrichment_with_splits.py E                                   [ 41%]
+tests\test_extract_hr_zone_percentages.py ....                           [ 44%]
+tests\test_full_ingestion_flow.py E                                      [ 45%]
+tests\test_health.py .                                                   [ 46%]
+tests\test_ingestion_orchestrator.py ..F.F                               [ 51%]
+tests\test_integration_ingestion.py E                                    [ 52%]
+tests\test_jwt_utils.py ........                                         [ 59%]
+tests\test_main_pipeline.py F...                                         [ 63%]
+tests\test_oauth_flow.py .F.F                                            [ 67%]
+tests\test_split_dao.py E                                                [ 68%]
+tests\test_split_upsert_idempotency.py E                                 [ 69%]
+tests\test_splits.py .F.F                                                [ 72%]
+tests\test_strava_access_service.py .........                            [ 81%]
+tests\test_sync.py F                                                     [ 82%]
+tests\test_token_service.py ......FFFFFFFFFFFFF                          [100%]
+
+=================================== ERRORS ====================================
+________________ ERROR at setup of test_insert_and_get_athlete ________________
+
+self = <sqlalchemy.engine.base.Connection object at 0x000001E8AF319890>
+engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+connection = None, _has_events = None, _allow_revalidate = True
+_allow_autobegin = True
+
+    def __init__(
+        self,
+        engine: Engine,
+        connection: Optional[PoolProxiedConnection] = None,
+        _has_events: Optional[bool] = None,
+        _allow_revalidate: bool = True,
+        _allow_autobegin: bool = True,
+    ):
+        """Construct a new Connection."""
+        self.engine = engine
+        self.dialect = dialect = engine.dialect
+    
+        if connection is None:
+            try:
+>               self._dbapi_connection = engine.raw_connection()
+
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+
+The above exception was the direct cause of the following exception:
+
+shared_engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+
+    @pytest.fixture(scope="function")
+    def sqlalchemy_session(shared_engine):
+>       connection = shared_engine.connect()
+
+tests\conftest.py:60: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
+    return self._connection_cls(self)
+venv\Lib\site-packages\sqlalchemy\engine\base.py:147: in __init__
+    Connection._handle_dbapi_exception_noconnection(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2436: in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: in __init__
+    self._dbapi_connection = engine.raw_connection()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       
+E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+---------------------------- Captured stdout setup ----------------------------
+[TEST] Using DATABASE_URL = postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach
+___________ ERROR at setup of test_enrich_one_activity_with_splits ____________
+
+self = <sqlalchemy.engine.base.Connection object at 0x000001E8AF212C90>
+engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+connection = None, _has_events = None, _allow_revalidate = True
+_allow_autobegin = True
+
+    def __init__(
+        self,
+        engine: Engine,
+        connection: Optional[PoolProxiedConnection] = None,
+        _has_events: Optional[bool] = None,
+        _allow_revalidate: bool = True,
+        _allow_autobegin: bool = True,
+    ):
+        """Construct a new Connection."""
+        self.engine = engine
+        self.dialect = dialect = engine.dialect
+    
+        if connection is None:
+            try:
+>               self._dbapi_connection = engine.raw_connection()
+
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+
+The above exception was the direct cause of the following exception:
+
+shared_engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+
+    @pytest.fixture(scope="function")
+    def sqlalchemy_session(shared_engine):
+>       connection = shared_engine.connect()
+
+tests\conftest.py:60: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
+    return self._connection_cls(self)
+venv\Lib\site-packages\sqlalchemy\engine\base.py:147: in __init__
+    Connection._handle_dbapi_exception_noconnection(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2436: in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: in __init__
+    self._dbapi_connection = engine.raw_connection()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       
+E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+_______________ ERROR at setup of test_run_full_ingestion_flow ________________
+
+self = <sqlalchemy.engine.base.Connection object at 0x000001E8AFC327D0>
+engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+connection = None, _has_events = None, _allow_revalidate = True
+_allow_autobegin = True
+
+    def __init__(
+        self,
+        engine: Engine,
+        connection: Optional[PoolProxiedConnection] = None,
+        _has_events: Optional[bool] = None,
+        _allow_revalidate: bool = True,
+        _allow_autobegin: bool = True,
+    ):
+        """Construct a new Connection."""
+        self.engine = engine
+        self.dialect = dialect = engine.dialect
+    
+        if connection is None:
+            try:
+>               self._dbapi_connection = engine.raw_connection()
+
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+
+The above exception was the direct cause of the following exception:
+
+test_session = <sqlalchemy.orm.session.Session object at 0x000001E8AF300650>
+
+    @pytest.fixture(scope="function")
+    def seeded_token(test_session):
+        token = Token(
+            athlete_id=1,
+            access_token="mock_access",
+            refresh_token="mock_refresh",
+            expires_at=int((datetime.utcnow() + timedelta(hours=1)).timestamp())
+        )
+        test_session.add(token)
+>       test_session.commit()
+
+tests\test_full_ingestion_flow.py:27: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2032: in commit
+    trans.commit(_to_root=True)
+<string>:2: in commit
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1313: in commit
+    self._prepare_impl()
+<string>:2: in _prepare_impl
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1288: in _prepare_impl
+    self.session.flush()
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4345: in flush
+    self._flush(objects)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4480: in _flush
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4441: in _flush
+    flush_context.execute()
+venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:466: in execute
+    rec.execute(self)
+venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:642: in execute
+    util.preloaded.orm_persistence.save_obj(
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:60: in save_obj
+    for (
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:223: in _organize_states_for_save
+    for state, dict_, mapper, connection in _connections_for_states(
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:1753: in _connections_for_states
+    connection = uowtransaction.transaction.connection(base_mapper)
+<string>:2: in connection
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1039: in connection
+    return self._connection_for_bind(bind, execution_options)
+<string>:2: in _connection_for_bind
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1175: in _connection_for_bind
+    conn = self._parent._connection_for_bind(
+<string>:2: in _connection_for_bind
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1189: in _connection_for_bind
+    conn = bind.connect()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
+    return self._connection_cls(self)
+venv\Lib\site-packages\sqlalchemy\engine\base.py:147: in __init__
+    Connection._handle_dbapi_exception_noconnection(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2436: in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: in __init__
+    self._dbapi_connection = engine.raw_connection()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       
+E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+_________ ERROR at setup of test_ingest_specific_activity_integration _________
+
+self = <sqlalchemy.engine.base.Connection object at 0x000001E8AF2A7DD0>
+engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+connection = None, _has_events = None, _allow_revalidate = True
+_allow_autobegin = True
+
+    def __init__(
+        self,
+        engine: Engine,
+        connection: Optional[PoolProxiedConnection] = None,
+        _has_events: Optional[bool] = None,
+        _allow_revalidate: bool = True,
+        _allow_autobegin: bool = True,
+    ):
+        """Construct a new Connection."""
+        self.engine = engine
+        self.dialect = dialect = engine.dialect
+    
+        if connection is None:
+            try:
+>               self._dbapi_connection = engine.raw_connection()
+
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+
+The above exception was the direct cause of the following exception:
+
+test_session = <sqlalchemy.orm.session.Session object at 0x000001E8AF2A5E50>
+
+    @pytest.fixture(scope="function")
+    def token_fixture(test_session):
+        token = Token(
+            athlete_id=1,
+            access_token="test_token",
+            refresh_token="test_refresh",
+            expires_at=int((datetime.utcnow() + timedelta(hours=1)).timestamp()),
+        )
+        test_session.add(token)
+>       test_session.commit()
+
+tests\test_integration_ingestion.py:27: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2032: in commit
+    trans.commit(_to_root=True)
+<string>:2: in commit
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1313: in commit
+    self._prepare_impl()
+<string>:2: in _prepare_impl
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1288: in _prepare_impl
+    self.session.flush()
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4345: in flush
+    self._flush(objects)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4480: in _flush
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4441: in _flush
+    flush_context.execute()
+venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:466: in execute
+    rec.execute(self)
+venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:642: in execute
+    util.preloaded.orm_persistence.save_obj(
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:60: in save_obj
+    for (
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:223: in _organize_states_for_save
+    for state, dict_, mapper, connection in _connections_for_states(
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:1753: in _connections_for_states
+    connection = uowtransaction.transaction.connection(base_mapper)
+<string>:2: in connection
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1039: in connection
+    return self._connection_for_bind(bind, execution_options)
+<string>:2: in _connection_for_bind
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1175: in _connection_for_bind
+    conn = self._parent._connection_for_bind(
+<string>:2: in _connection_for_bind
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1189: in _connection_for_bind
+    conn = bind.connect()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
+    return self._connection_cls(self)
+venv\Lib\site-packages\sqlalchemy\engine\base.py:147: in __init__
+    Connection._handle_dbapi_exception_noconnection(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2436: in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: in __init__
+    self._dbapi_connection = engine.raw_connection()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       
+E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+_________________ ERROR at setup of test_upsert_splits_basic __________________
+
+self = <sqlalchemy.engine.base.Connection object at 0x000001E8AF7F2110>
+engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+connection = None, _has_events = None, _allow_revalidate = True
+_allow_autobegin = True
+
+    def __init__(
+        self,
+        engine: Engine,
+        connection: Optional[PoolProxiedConnection] = None,
+        _has_events: Optional[bool] = None,
+        _allow_revalidate: bool = True,
+        _allow_autobegin: bool = True,
+    ):
+        """Construct a new Connection."""
+        self.engine = engine
+        self.dialect = dialect = engine.dialect
+    
+        if connection is None:
+            try:
+>               self._dbapi_connection = engine.raw_connection()
+
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+
+The above exception was the direct cause of the following exception:
+
+shared_engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+
+    @pytest.fixture(scope="function")
+    def sqlalchemy_session(shared_engine):
+>       connection = shared_engine.connect()
+
+tests\conftest.py:60: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
+    return self._connection_cls(self)
+venv\Lib\site-packages\sqlalchemy\engine\base.py:147: in __init__
+    Connection._handle_dbapi_exception_noconnection(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2436: in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: in __init__
+    self._dbapi_connection = engine.raw_connection()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       
+E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+______________ ERROR at setup of test_upsert_splits_idempotency _______________
+
+self = <sqlalchemy.engine.base.Connection object at 0x000001E8B118CF90>
+engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+connection = None, _has_events = None, _allow_revalidate = True
+_allow_autobegin = True
+
+    def __init__(
+        self,
+        engine: Engine,
+        connection: Optional[PoolProxiedConnection] = None,
+        _has_events: Optional[bool] = None,
+        _allow_revalidate: bool = True,
+        _allow_autobegin: bool = True,
+    ):
+        """Construct a new Connection."""
+        self.engine = engine
+        self.dialect = dialect = engine.dialect
+    
+        if connection is None:
+            try:
+>               self._dbapi_connection = engine.raw_connection()
+
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+
+The above exception was the direct cause of the following exception:
+
+shared_engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+
+    @pytest.fixture(scope="function")
+    def sqlalchemy_session(shared_engine):
+>       connection = shared_engine.connect()
+
+tests\conftest.py:60: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
+    return self._connection_cls(self)
+venv\Lib\site-packages\sqlalchemy\engine\base.py:147: in __init__
+    Connection._handle_dbapi_exception_noconnection(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2436: in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: in __init__
+    self._dbapi_connection = engine.raw_connection()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       
+E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+================================== FAILURES ===================================
+_______________________ test_get_by_id_returns_activity _______________________
+
+    def test_get_by_id_returns_activity():
+        mock_session = MagicMock()
+    
+        # Setup mocks for the chain: query().filter().first()
+        mock_query = mock_session.query
+        mock_filter = mock_query.return_value.filter
+        mock_first = mock_filter.return_value.first
+    
+        expected_activity = Activity(activity_id=123)
+        mock_first.return_value = expected_activity
+    
+>       result = ActivityDAO.get_by_id(mock_session, 123)
+E       AttributeError: type object 'ActivityDAO' has no attribute 'get_by_id'
+
+tests\test_activity_dao.py:17: AttributeError
+_________________________ test_get_by_id_returns_none _________________________
+
+    def test_get_by_id_returns_none():
+        mock_session = MagicMock()
+        mock_session.query().filter().first.return_value = None
+    
+>       result = ActivityDAO.get_by_id(mock_session, 999)
+E       AttributeError: type object 'ActivityDAO' has no attribute 'get_by_id'
+
+tests\test_activity_dao.py:29: AttributeError
+_________________ test_upsert_activities_multiple_activities __________________
+
+mock_convert = <MagicMock name='convert_metrics' id='2098882216464'>
+
+    @patch("src.db.dao.activity_dao.convert_metrics")
+    def test_upsert_activities_multiple_activities(mock_convert):
+        mock_session = MagicMock()
+        mock_convert.return_value = {
+            "conv_distance": 100,
+            "conv_elevation_feet": 50,
+            "conv_avg_speed": 5,
+            "conv_max_speed": 10,
+            "conv_moving_time": 60,
+            "conv_elapsed_time": 65,
+        }
+    
+        activities = [
+            {"id": 201, "name": "Ride", "type": "Ride", "distance": 1000, "elapsed_time": 65, "moving_time": 60, "total_elevation_gain": 15},
+            {"id": 202, "name": "Swim", "type": "Swim", "distance": 500, "elapsed_time": 35, "moving_time": 30, "total_elevation_gain": 5},
+        ]
+    
+        mock_result = MagicMock()
+        mock_result.rowcount = 2
+        mock_session.execute.return_value = mock_result
+    
+        count = ActivityDAO.upsert_activities(mock_session, athlete_id=99, activities=activities)
+    
+>       assert count == 2
+E       assert 0 == 2
+
+tests\test_activity_dao.py:105: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2025-06-26 16:04:25,923 WARNING \u26a0\ufe0f Skipping non-Run activity 201 \u2014 type=Ride\n2025-06-26 16:04:25,923 WARNING \u26a0\ufe0f Skipping non-Run activity 202 \u2014 type=Swim
+------------------------------ Captured log call ------------------------------
+WARNING  src.db.dao.activity_dao:activity_dao.py:30 \u26a0\ufe0f Skipping non-Run activity 201 \u2014 type=Ride\nWARNING  src.db.dao.activity_dao:activity_dao.py:30 \u26a0\ufe0f Skipping non-Run activity 202 \u2014 type=Swim
+__________________________ test_login_refresh_logout __________________________
+
+mock_refresh = <MagicMock name='refresh_token_static' id='2098884727568'>
+client = <FlaskClient <Flask 'src.app'>>
+
+    @patch("src.services.token_service.refresh_token_static")
+    def test_login_refresh_logout(mock_refresh, client):
+        """Test successful login, token refresh using Authorization header, and logout."""
+        mock_refresh.return_value = {
+            "access_token": "mocked_access",
+            "refresh_token": "mocked_refresh",
+            "expires_at": int((datetime.utcnow() + timedelta(hours=1)).timestamp())
+        }
+    
+        # Step 1: Login
+        resp = client.post("/auth/login", json={"username": "admin", "password": "secret"})
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_auth.py:19: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+\u2705 ENTERED create_app()\n\U0001f4c1 CWD: C:\\Users\\andre\\projects\\railway-pg-test\n\U0001f4c1 Contents of current working dir: ['.coverage', '.dockerignore', '.env', '.env.prod', '.env.test', '.git', '.github', '.gitignore', '.pytest_cache', '.vscode', 'activity_ingestion.log', 'alembic', 'alembic.ini', 'app', 'debug_dumps', 'docker-compose.yml', 'Dockerfile', 'final_project_map.docx', 'htmlcov', 'migrations', 'pytest_log.txt', 'README.md', 'requirements.txt', 'reset_and_init_db.sh', 'run.py', 'src', 'tests', 'test_enrichment_sync.py', 'venv', 'wsgi.py', '__pycache__']\n\U0001f30d FLASK_ENV=testing | IS_LOCAL=True\nDEBUG ENV VARS:\nDATABASE_URL=postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\nCRON_SECRET_KEY=testcron\nSECRET_KEY=testsecret\nINTERNAL_API_KEY=testinternal\nADMIN_USER=testadmin\nADMIN_PASS=testpass\nSTRAVA_CLIENT_ID=123456\nSTRAVA_CLIENT_SECRET=testsecret\nSTRAVA_REDIRECT_URI=http://localhost:5001/auth/callback\n\U0001f510 ADMIN_USER: testadmin\n\U0001f510 ADMIN_PASS: testpass\n\U0001f510 STRAVA_CLIENT_ID: 123456\n\U0001f510 STRAVA_CLIENT_SECRET: testsecret\n\U0001f510 STRAVA_REDIRECT_URI: http://localhost:5001/auth/callback\n\U0001f4be CONFIG DATABASE_URL: postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\n\U0001f4be CONFIG DATABASE_URL (from app.config): postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\n\u2705 Registered routes:\n  /static/<path:filename> -> static\n  /auth/login -> auth.admin_login\n  /auth/login -> auth.strava_login\n  /auth/callback -> auth.callback\n  /auth/refresh/<int:athlete_id> -> auth.refresh_token\n  /auth/logout/<int:athlete_id> -> auth.logout\n  /auth/monitor-tokens -> auth.monitor_tokens\n  /admin/admin/ping -> admin.ping\n  /sync/enrich/status -> activity.enrich_status\n  /sync/enrich/activity/<int:activity_id> -> activity.enrich_single\n  /sync/enrich/batch -> activity.enrich_batch\n  /sync/sync/<int:athlete_id> -> activity.sync_strava_to_db\n  /health -> health.health_check\n  /ping -> ping\n  /db-check -> db_check\n  /startup -> startup
+_________________________ test_strava_login_redirect __________________________
+
+args = (), keywargs = {'client': <FlaskClient <Flask 'test_auth_routes'>>}
+
+    @wraps(func)
+    def patched(*args, **keywargs):
+>       with self.decoration_helper(patched,
+                                    args,
+                                    keywargs) as (newargs, newkeywargs):
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1443: in __enter__
+    original, local = self.get_original()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <unittest.mock._patch object at 0x000001E8AF0D1D90>
+
+    def get_original(self):
+        target = self.getter()
+        name = self.attribute
+    
+        original = DEFAULT
+        local = False
+    
+        try:
+            original = target.__dict__[name]
+        except (AttributeError, KeyError):
+            original = getattr(target, name, DEFAULT)
+        else:
+            local = True
+    
+        if name in _builtins and isinstance(target, ModuleType):
+            self.create = True
+    
+        if not self.create and original is DEFAULT:
+>           raise AttributeError(
+                "%s does not have the attribute %r" % (target, name)
+            )
+E           AttributeError: <module 'src.routes.auth_routes' from 'C:\\Users\\andre\\projects\\railway-pg-test\\src\\routes\\auth_routes.py'> does not have the attribute 'get_authorization_url'
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1416: AttributeError
+____________________________ test_callback_success ____________________________
+
+args = (), keywargs = {'client': <FlaskClient <Flask 'test_auth_routes'>>}
+
+    @wraps(func)
+    def patched(*args, **keywargs):
+>       with self.decoration_helper(patched,
+                                    args,
+                                    keywargs) as (newargs, newkeywargs):
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1443: in __enter__
+    original, local = self.get_original()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <unittest.mock._patch object at 0x000001E8AF0D1FD0>
+
+    def get_original(self):
+        target = self.getter()
+        name = self.attribute
+    
+        original = DEFAULT
+        local = False
+    
+        try:
+            original = target.__dict__[name]
+        except (AttributeError, KeyError):
+            original = getattr(target, name, DEFAULT)
+        else:
+            local = True
+    
+        if name in _builtins and isinstance(target, ModuleType):
+            self.create = True
+    
+        if not self.create and original is DEFAULT:
+>           raise AttributeError(
+                "%s does not have the attribute %r" % (target, name)
+            )
+E           AttributeError: <module 'src.routes.auth_routes' from 'C:\\Users\\andre\\projects\\railway-pg-test\\src\\routes\\auth_routes.py'> does not have the attribute 'store_tokens_from_callback'
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1416: AttributeError
+___________________________ test_callback_exception ___________________________
+
+args = (), keywargs = {'client': <FlaskClient <Flask 'test_auth_routes'>>}
+
+    @wraps(func)
+    def patched(*args, **keywargs):
+>       with self.decoration_helper(patched,
+                                    args,
+                                    keywargs) as (newargs, newkeywargs):
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1443: in __enter__
+    original, local = self.get_original()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <unittest.mock._patch object at 0x000001E8AF0D2290>
+
+    def get_original(self):
+        target = self.getter()
+        name = self.attribute
+    
+        original = DEFAULT
+        local = False
+    
+        try:
+            original = target.__dict__[name]
+        except (AttributeError, KeyError):
+            original = getattr(target, name, DEFAULT)
+        else:
+            local = True
+    
+        if name in _builtins and isinstance(target, ModuleType):
+            self.create = True
+    
+        if not self.create and original is DEFAULT:
+>           raise AttributeError(
+                "%s does not have the attribute %r" % (target, name)
+            )
+E           AttributeError: <module 'src.routes.auth_routes' from 'C:\\Users\\andre\\projects\\railway-pg-test\\src\\routes\\auth_routes.py'> does not have the attribute 'store_tokens_from_callback'
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1416: AttributeError
+______________________ test_ingest_between_dates_success ______________________
+
+mock_service = <MagicMock name='ActivityIngestionService' id='2098882089360'>
+mock_upsert = <MagicMock name='upsert_activities' id='2098891337104'>
+mock_enrich = <MagicMock name='enrich_one_activity_with_refresh' id='2098891339408'>
+session = <MagicMock id='2098888072016'>
+
+    @patch("src.services.ingestion_orchestrator_service.enrich_one_activity_with_refresh")
+    @patch("src.services.ingestion_orchestrator_service.ActivityDAO.upsert_activities")
+    @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
+    def test_ingest_between_dates_success(mock_service, mock_upsert, mock_enrich, session):
+        athlete_id = 123
+        start_date = datetime(2025, 1, 1)
+        end_date = datetime(2025, 1, 3)
+    
+        mock_service_instance = mock_service.return_value
+        mock_activities = [{"id": 1, "name": "A1"}, {"id": 2, "name": "A2"}]
+        mock_service_instance.client.get_activities.return_value = mock_activities
+    
+        mock_upsert.return_value = 2
+        mock_enrich.return_value = None
+    
+        result = ingest_between_dates(session, athlete_id, start_date, end_date, batch_size=1)
+    
+        mock_service_instance.client.get_activities.assert_called_once()
+>       mock_upsert.assert_called_once_with(session, athlete_id, mock_activities)
+
+tests\test_ingestion_orchestrator.py:69: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <MagicMock name='upsert_activities' id='2098891337104'>
+args = (<MagicMock id='2098888072016'>, 123, [{'id': 1, 'name': 'A1'}, {'id': 2, 'name': 'A2'}])
+kwargs = {}
+msg = "Expected 'upsert_activities' to be called once. Called 0 times."
+
+    def assert_called_once_with(self, /, *args, **kwargs):
+        """assert that the mock was called exactly once and that that call was
+        with the specified arguments."""
+        if not self.call_count == 1:
+            msg = ("Expected '%s' to be called once. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'upsert_activities' to be called once. Called 0 times.
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:950: AssertionError
+---------------------------- Captured stdout call -----------------------------
+2025-06-26 16:04:42,535 INFO \u23f3 Ingesting activities for athlete 123 between 2025-01-01 00:00:00 and 2025-01-03 00:00:00\n2025-06-26 16:04:42,535 WARNING No Run activities found between dates for athlete 123
+------------------------------ Captured log call ------------------------------
+INFO     src.services.ingestion_orchestrator_service:ingestion_orchestrator_service.py:104 \u23f3 Ingesting activities for athlete 123 between 2025-01-01 00:00:00 and 2025-01-03 00:00:00\nWARNING  src.services.ingestion_orchestrator_service:ingestion_orchestrator_service.py:116 No Run activities found between dates for athlete 123
+________________ test_ingest_between_dates_enrichment_failure _________________
+
+mock_service = <MagicMock name='ActivityIngestionService' id='2098882766288'>
+mock_upsert = <MagicMock name='upsert_activities' id='2098882757328'>
+mock_enrich = <MagicMock name='enrich_one_activity_with_refresh' id='2098882771600'>
+session = <MagicMock id='2098884492880'>
+
+    @patch("src.services.ingestion_orchestrator_service.enrich_one_activity_with_refresh")
+    @patch("src.services.ingestion_orchestrator_service.ActivityDAO.upsert_activities")
+    @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
+    def test_ingest_between_dates_enrichment_failure(mock_service, mock_upsert, mock_enrich, session):
+        athlete_id = 123
+        start_date = datetime(2025, 1, 1)
+        end_date = datetime(2025, 1, 3)
+    
+        mock_service_instance = mock_service.return_value
+        activities = [{"id": 1, "name": "A1"}, {"id": 2, "name": "A2"}]
+        mock_service_instance.client.get_activities.return_value = activities
+    
+        mock_upsert.return_value = 2
+    
+        def enrich_side_effect(sess, ath_id, act_id):
+            if act_id == 2:
+                raise Exception("Enrich error")
+            return None
+    
+        mock_enrich.side_effect = enrich_side_effect
+    
+>       with pytest.raises(Exception) as excinfo:
+E       Failed: DID NOT RAISE <class 'Exception'>
+
+tests\test_ingestion_orchestrator.py:110: Failed
+---------------------------- Captured stdout call -----------------------------
+2025-06-26 16:04:42,566 INFO \u23f3 Ingesting activities for athlete 123 between 2025-01-01 00:00:00 and 2025-01-03 00:00:00\n2025-06-26 16:04:42,566 WARNING No Run activities found between dates for athlete 123
+------------------------------ Captured log call ------------------------------
+INFO     src.services.ingestion_orchestrator_service:ingestion_orchestrator_service.py:104 \u23f3 Ingesting activities for athlete 123 between 2025-01-01 00:00:00 and 2025-01-03 00:00:00\nWARNING  src.services.ingestion_orchestrator_service:ingestion_orchestrator_service.py:116 No Run activities found between dates for athlete 123
+___________________ test_main_pipeline_calls_full_ingestion ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001E8B1384E90>
+
+    def test_main_pipeline_calls_full_ingestion(monkeypatch):
+        test_args = ["main_pipeline.py", "--athlete_id", "123"]
+        monkeypatch.setattr("sys.argv", test_args)
+    
+        mock_session = MagicMock()
+        mock_ingestion = patch("src.scripts.main_pipeline.run_full_ingestion_and_enrichment").start()
+        patch("src.scripts.main_pipeline.get_session", return_value=mock_session).start()
+    
+        with pytest.raises(SystemExit):
+            main_pipeline.main()
+    
+        # \u2705 Allow flexibility with kwargs
+>       mock_ingestion.assert_called_once()
+
+tests\test_main_pipeline.py:17: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <MagicMock name='run_full_ingestion_and_enrichment' id='2098917223696'>
+
+    def assert_called_once(self):
+        """assert that the mock was called only once.
+        """
+        if not self.call_count == 1:
+            msg = ("Expected '%s' to have been called once. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'run_full_ingestion_and_enrichment' to have been called once. Called 0 times.
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:918: AssertionError
+---------------------------- Captured stdout call -----------------------------
+\u2699\ufe0f FLASK_ENV = testing\n\u2699\ufe0f config.DATABASE_URL = postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach
+------------------------------ Captured log call ------------------------------
+ERROR    src.scripts.main_pipeline:main_pipeline.py:108 \u274c Pipeline failed: '<=' not supported between instances of 'MagicMock' and 'float'\nTraceback (most recent call last):\n  File "C:\\Users\\andre\\projects\\railway-pg-test\\src\\scripts\\main_pipeline.py", line 105, in main\n    run_for_athlete(session, args.athlete_id, args)\n  File "C:\\Users\\andre\\projects\\railway-pg-test\\src\\scripts\\main_pipeline.py", line 58, in run_for_athlete\n    refresh_token_if_expired(session, athlete_id)\n  File "C:\\Users\\andre\\projects\\railway-pg-test\\src\\services\\token_service.py", line 64, in refresh_token_if_expired\n    if token.expires_at <= now:\n       ^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: '<=' not supported between instances of 'MagicMock' and 'float'
+____________________ test_oauth_callback_strava_http_error ____________________
+
+mock_post = <MagicMock name='post' id='2098884749648'>
+client = <FlaskClient <Flask 'src.app'>>
+
+    @patch("requests.post")
+    def test_oauth_callback_strava_http_error(mock_post, client):
+        mock_response = Mock()
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("Strava error")
+        mock_response.text = "Bad Request"
+        mock_post.return_value = mock_response
+    
+        resp = client.get("/auth/callback?code=badcode")
+>       assert resp.status_code == 502
+E       assert 500 == 502
+E        +  where 500 = <WrapperTestResponse streamed [500 INTERNAL SERVER ERROR]>.status_code
+
+tests\test_oauth_flow.py:19: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+\u2705 ENTERED create_app()\n\U0001f4c1 CWD: C:\\Users\\andre\\projects\\railway-pg-test\n\U0001f4c1 Contents of current working dir: ['.coverage', '.dockerignore', '.env', '.env.prod', '.env.test', '.git', '.github', '.gitignore', '.pytest_cache', '.vscode', 'activity_ingestion.log', 'alembic', 'alembic.ini', 'app', 'debug_dumps', 'docker-compose.yml', 'Dockerfile', 'final_project_map.docx', 'htmlcov', 'migrations', 'pytest_log.txt', 'README.md', 'requirements.txt', 'reset_and_init_db.sh', 'run.py', 'src', 'tests', 'test_enrichment_sync.py', 'venv', 'wsgi.py', '__pycache__']\n\U0001f30d FLASK_ENV=testing | IS_LOCAL=True\nDEBUG ENV VARS:\nDATABASE_URL=postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\nCRON_SECRET_KEY=testcron\nSECRET_KEY=testsecret\nINTERNAL_API_KEY=testinternal\nADMIN_USER=testadmin\nADMIN_PASS=testpass\nSTRAVA_CLIENT_ID=123456\nSTRAVA_CLIENT_SECRET=testsecret\nSTRAVA_REDIRECT_URI=http://localhost:5001/auth/callback\n\U0001f510 ADMIN_USER: testadmin\n\U0001f510 ADMIN_PASS: testpass\n\U0001f510 STRAVA_CLIENT_ID: 123456\n\U0001f510 STRAVA_CLIENT_SECRET: testsecret\n\U0001f510 STRAVA_REDIRECT_URI: http://localhost:5001/auth/callback\n\U0001f4be CONFIG DATABASE_URL: postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\n\U0001f4be CONFIG DATABASE_URL (from app.config): postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\n\u2705 Registered routes:\n  /static/<path:filename> -> static\n  /auth/login -> auth.admin_login\n  /auth/login -> auth.strava_login\n  /auth/callback -> auth.callback\n  /auth/refresh/<int:athlete_id> -> auth.refresh_token\n  /auth/logout/<int:athlete_id> -> auth.logout\n  /auth/monitor-tokens -> auth.monitor_tokens\n  /admin/admin/ping -> admin.ping\n  /sync/enrich/status -> activity.enrich_status\n  /sync/enrich/activity/<int:activity_id> -> activity.enrich_single\n  /sync/enrich/batch -> activity.enrich_batch\n  /sync/sync/<int:athlete_id> -> activity.sync_strava_to_db\n  /health -> health.health_check\n  /ping -> ping\n  /db-check -> db_check\n  /startup -> startup
+---------------------------- Captured stdout call -----------------------------
+\u27a1\ufe0f Received OAuth code: badcode\n\U0001f501 Exchanging code for tokens: badcode\n\U0001f525 Callback error: Strava error
+---------------------------- Captured stderr call -----------------------------
+Traceback (most recent call last):
+  File "C:\Users\andre\projects\railway-pg-test\src\routes\auth_routes.py", line 87, in callback
+    athlete_id = store_tokens_from_callback(code, session)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andre\projects\railway-pg-test\src\services\token_service.py", line 92, in store_tokens_from_callback
+    response.raise_for_status()
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py", line 1183, in _execute_mock_call
+    raise effect
+requests.exceptions.HTTPError: Strava error
+_______________________ test_oauth_callback_missing_env _______________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001E8AFD18C90>
+client = <FlaskClient <Flask 'src.app'>>
+
+    def test_oauth_callback_missing_env(monkeypatch, client):
+        monkeypatch.delenv("STRAVA_CLIENT_ID", raising=False)
+        monkeypatch.delenv("STRAVA_CLIENT_SECRET", raising=False)
+        monkeypatch.delenv("REDIRECT_URI", raising=False)
+    
+        resp = client.get("/auth/callback?code=fakecode")
+>       assert resp.status_code == 502
+E       assert 500 == 502
+E        +  where 500 = <WrapperTestResponse streamed [500 INTERNAL SERVER ERROR]>.status_code
+
+tests\test_oauth_flow.py:39: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+\u2705 ENTERED create_app()\n\U0001f4c1 CWD: C:\\Users\\andre\\projects\\railway-pg-test\n\U0001f4c1 Contents of current working dir: ['.coverage', '.dockerignore', '.env', '.env.prod', '.env.test', '.git', '.github', '.gitignore', '.pytest_cache', '.vscode', 'activity_ingestion.log', 'alembic', 'alembic.ini', 'app', 'debug_dumps', 'docker-compose.yml', 'Dockerfile', 'final_project_map.docx', 'htmlcov', 'migrations', 'pytest_log.txt', 'README.md', 'requirements.txt', 'reset_and_init_db.sh', 'run.py', 'src', 'tests', 'test_enrichment_sync.py', 'venv', 'wsgi.py', '__pycache__']\n\U0001f30d FLASK_ENV=testing | IS_LOCAL=True\nDEBUG ENV VARS:\nDATABASE_URL=postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\nCRON_SECRET_KEY=testcron\nSECRET_KEY=testsecret\nINTERNAL_API_KEY=testinternal\nADMIN_USER=testadmin\nADMIN_PASS=testpass\nSTRAVA_CLIENT_ID=123456\nSTRAVA_CLIENT_SECRET=testsecret\nSTRAVA_REDIRECT_URI=http://localhost:5001/auth/callback\n\U0001f510 ADMIN_USER: testadmin\n\U0001f510 ADMIN_PASS: testpass\n\U0001f510 STRAVA_CLIENT_ID: 123456\n\U0001f510 STRAVA_CLIENT_SECRET: testsecret\n\U0001f510 STRAVA_REDIRECT_URI: http://localhost:5001/auth/callback\n\U0001f4be CONFIG DATABASE_URL: postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\n\U0001f4be CONFIG DATABASE_URL (from app.config): postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\n\u2705 Registered routes:\n  /static/<path:filename> -> static\n  /auth/login -> auth.admin_login\n  /auth/login -> auth.strava_login\n  /auth/callback -> auth.callback\n  /auth/refresh/<int:athlete_id> -> auth.refresh_token\n  /auth/logout/<int:athlete_id> -> auth.logout\n  /auth/monitor-tokens -> auth.monitor_tokens\n  /admin/admin/ping -> admin.ping\n  /sync/enrich/status -> activity.enrich_status\n  /sync/enrich/activity/<int:activity_id> -> activity.enrich_single\n  /sync/enrich/batch -> activity.enrich_batch\n  /sync/sync/<int:athlete_id> -> activity.sync_strava_to_db\n  /health -> health.health_check\n  /ping -> ping\n  /db-check -> db_check\n  /startup -> startup
+---------------------------- Captured stdout call -----------------------------
+\u27a1\ufe0f Received OAuth code: fakecode\n\U0001f501 Exchanging code for tokens: fakecode\n\U0001f525 Callback error: 401 Client Error: Unauthorized for url: https://www.strava.com/api/v3/oauth/token
+---------------------------- Captured stderr call -----------------------------
+Traceback (most recent call last):
+  File "C:\Users\andre\projects\railway-pg-test\src\routes\auth_routes.py", line 87, in callback
+    athlete_id = store_tokens_from_callback(code, session)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\andre\projects\railway-pg-test\src\services\token_service.py", line 92, in store_tokens_from_callback
+    response.raise_for_status()
+  File "C:\Users\andre\projects\railway-pg-test\venv\Lib\site-packages\requests\models.py", line 1021, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 401 Client Error: Unauthorized for url: https://www.strava.com/api/v3/oauth/token
+_______________________ test_upsert_inserts_and_updates _______________________
+
+self = <sqlalchemy.engine.base.Connection object at 0x000001E8AF02F950>
+engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+connection = None, _has_events = None, _allow_revalidate = True
+_allow_autobegin = True
+
+    def __init__(
+        self,
+        engine: Engine,
+        connection: Optional[PoolProxiedConnection] = None,
+        _has_events: Optional[bool] = None,
+        _allow_revalidate: bool = True,
+        _allow_autobegin: bool = True,
+    ):
+        """Construct a new Connection."""
+        self.engine = engine
+        self.dialect = dialect = engine.dialect
+    
+        if connection is None:
+            try:
+>               self._dbapi_connection = engine.raw_connection()
+
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+
+The above exception was the direct cause of the following exception:
+
+session = <sqlalchemy.orm.session.Session object at 0x000001E8AF2239D0>
+
+    def test_upsert_inserts_and_updates(session):
+        # Delete existing activity if present to avoid PK conflict
+>       existing = session.query(Activity).filter_by(activity_id=1).first()
+
+tests\test_splits.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\orm\query.py:2759: in first
+    return self.limit(1)._iter().first()  # type: ignore
+venv\Lib\site-packages\sqlalchemy\orm\query.py:2857: in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2365: in execute
+    return self._execute_internal(
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2241: in _execute_internal
+    conn = self._connection_for_bind(bind)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2110: in _connection_for_bind
+    return trans._connection_for_bind(engine, execution_options)
+<string>:2: in _connection_for_bind
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1189: in _connection_for_bind
+    conn = bind.connect()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
+    return self._connection_cls(self)
+venv\Lib\site-packages\sqlalchemy\engine\base.py:147: in __init__
+    Connection._handle_dbapi_exception_noconnection(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2436: in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: in __init__
+    self._dbapi_connection = engine.raw_connection()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       
+E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+___________________________ test_unique_constraint ____________________________
+
+self = <sqlalchemy.engine.base.Connection object at 0x000001E8B14D4110>
+engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smartcoach)
+connection = None, _has_events = None, _allow_revalidate = True
+_allow_autobegin = True
+
+    def __init__(
+        self,
+        engine: Engine,
+        connection: Optional[PoolProxiedConnection] = None,
+        _has_events: Optional[bool] = None,
+        _allow_revalidate: bool = True,
+        _allow_autobegin: bool = True,
+    ):
+        """Construct a new Connection."""
+        self.engine = engine
+        self.dialect = dialect = engine.dialect
+    
+        if connection is None:
+            try:
+>               self._dbapi_connection = engine.raw_connection()
+
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+
+The above exception was the direct cause of the following exception:
+
+session = <sqlalchemy.orm.session.Session object at 0x000001E8AFBA9390>
+
+    def test_unique_constraint(session):
+>       existing = session.query(Activity).filter_by(activity_id=2).first()
+
+tests\test_splits.py:63: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+venv\Lib\site-packages\sqlalchemy\orm\query.py:2759: in first
+    return self.limit(1)._iter().first()  # type: ignore
+venv\Lib\site-packages\sqlalchemy\orm\query.py:2857: in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2365: in execute
+    return self._execute_internal(
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2241: in _execute_internal
+    conn = self._connection_for_bind(bind)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2110: in _connection_for_bind
+    return trans._connection_for_bind(engine, execution_options)
+<string>:2: in _connection_for_bind
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1189: in _connection_for_bind
+    conn = bind.connect()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
+    return self._connection_cls(self)
+venv\Lib\site-packages\sqlalchemy\engine\base.py:147: in __init__
+    Connection._handle_dbapi_exception_noconnection(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2436: in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145: in __init__
+    self._dbapi_connection = engine.raw_connection()
+venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
+    return self.pool.connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:449: in connect
+    return _ConnectionFairy._checkout(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:1264: in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:713: in checkout
+    rec = pool._do_get()
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:179: in _do_get
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\impl.py:177: in _do_get
+    return self._create_connection()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:390: in _create_connection
+    return _ConnectionRecord(self)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:675: in __init__
+    self.__connect()
+venv\Lib\site-packages\sqlalchemy\pool\base.py:901: in __connect
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\pool\base.py:897: in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+venv\Lib\site-packages\sqlalchemy\engine\create.py:646: in connect
+    return dialect.connect(*cargs, **cparams)
+venv\Lib\site-packages\sqlalchemy\engine\default.py:625: in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+dsn = 'host=localhost dbname=smartcoach user=smartcoach password=devpass port=15432'
+connection_factory = None, cursor_factory = None
+kwargs = {'dbname': 'smartcoach', 'host': 'localhost', 'password': 'devpass', 'port': 15432, ...}
+kwasync = {}
+
+    def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
+        """
+        Create a new database connection.
+    
+        The connection parameters can be specified as a string:
+    
+            conn = psycopg2.connect("dbname=test user=postgres password=secret")
+    
+        or using a set of keyword arguments:
+    
+            conn = psycopg2.connect(database="test", user="postgres", password="secret")
+    
+        Or as a mix of both. The basic connection parameters are:
+    
+        - *dbname*: the database name
+        - *database*: the database name (only as keyword argument)
+        - *user*: user name used to authenticate
+        - *password*: password used to authenticate
+        - *host*: database host address (defaults to UNIX socket if not provided)
+        - *port*: connection port number (defaults to 5432 if not provided)
+    
+        Using the *connection_factory* parameter a different class or connections
+        factory can be specified. It should be a callable object taking a dsn
+        argument.
+    
+        Using the *cursor_factory* parameter, a new default cursor factory will be
+        used by cursor().
+    
+        Using *async*=True an asynchronous connection will be created. *async_* is
+        a valid alias (for Python versions where ``async`` is a keyword).
+    
+        Any other keyword parameter will be passed to the underlying client
+        library: the list of supported parameters depends on the library version.
+    
+        """
+        kwasync = {}
+        if 'async' in kwargs:
+            kwasync['async'] = kwargs.pop('async')
+        if 'async_' in kwargs:
+            kwasync['async_'] = kwargs.pop('async_')
+    
+        dsn = _ext.make_dsn(dsn, **kwargs)
+>       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
+E       	Is the server running on that host and accepting TCP/IP connections?
+E       
+E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
+______________________________ test_sync_success ______________________________
+
+mock_ingestor = <MagicMock name='ActivityIngestionService' id='2098888383184'>
+mock_enrich = <MagicMock name='run_enrichment_batch' id='2098888378320'>
+mock_token = <MagicMock name='get_valid_token' id='2098888390544'>
+mock_strava = <MagicMock name='StravaClient' id='2098887001360'>
+client = <FlaskClient <Flask 'src.app'>>
+
+    @patch("src.services.activity_service.StravaClient")
+    @patch("src.services.activity_service.get_valid_token", return_value="fake-token")
+    @patch("src.services.activity_service.run_enrichment_batch", return_value=1)
+    @patch("src.routes.activity_routes.ActivityIngestionService")  # \u2705 Patch from where it's used
+    def test_sync_success(mock_ingestor, mock_enrich, mock_token, mock_strava, client):
+        instance = mock_ingestor.return_value
+        instance.ingest_recent.return_value = 5
+        mock_strava.return_value.get_activities.return_value = []
+    
+        resp = client.get("/sync/sync/123?key=devkey123")
+>       assert resp.status_code == 200
+E       assert 401 == 200
+E        +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+
+tests\test_sync.py:13: AssertionError
+---------------------------- Captured stdout setup ----------------------------
+\u2705 ENTERED create_app()\n\U0001f4c1 CWD: C:\\Users\\andre\\projects\\railway-pg-test\n\U0001f4c1 Contents of current working dir: ['.coverage', '.dockerignore', '.env', '.env.prod', '.env.test', '.git', '.github', '.gitignore', '.pytest_cache', '.vscode', 'activity_ingestion.log', 'alembic', 'alembic.ini', 'app', 'debug_dumps', 'docker-compose.yml', 'Dockerfile', 'final_project_map.docx', 'htmlcov', 'migrations', 'pytest_log.txt', 'README.md', 'requirements.txt', 'reset_and_init_db.sh', 'run.py', 'src', 'tests', 'test_enrichment_sync.py', 'venv', 'wsgi.py', '__pycache__']\n\U0001f30d FLASK_ENV=testing | IS_LOCAL=True\nDEBUG ENV VARS:\nDATABASE_URL=postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\nCRON_SECRET_KEY=testcron\nSECRET_KEY=testsecret\nINTERNAL_API_KEY=testinternal\nADMIN_USER=testadmin\nADMIN_PASS=testpass\nSTRAVA_CLIENT_ID=123456\nSTRAVA_CLIENT_SECRET=testsecret\nSTRAVA_REDIRECT_URI=http://localhost:5001/auth/callback\n\U0001f510 ADMIN_USER: testadmin\n\U0001f510 ADMIN_PASS: testpass\n\U0001f510 STRAVA_CLIENT_ID: 123456\n\U0001f510 STRAVA_CLIENT_SECRET: testsecret\n\U0001f510 STRAVA_REDIRECT_URI: http://localhost:5001/auth/callback\n\U0001f4be CONFIG DATABASE_URL: postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\n\U0001f4be CONFIG DATABASE_URL (from app.config): postgresql+psycopg2://smartcoach:devpass@localhost:15432/smartcoach\n\u2705 Registered routes:\n  /static/<path:filename> -> static\n  /auth/login -> auth.admin_login\n  /auth/login -> auth.strava_login\n  /auth/callback -> auth.callback\n  /auth/refresh/<int:athlete_id> -> auth.refresh_token\n  /auth/logout/<int:athlete_id> -> auth.logout\n  /auth/monitor-tokens -> auth.monitor_tokens\n  /admin/admin/ping -> admin.ping\n  /sync/enrich/status -> activity.enrich_status\n  /sync/enrich/activity/<int:activity_id> -> activity.enrich_single\n  /sync/enrich/batch -> activity.enrich_batch\n  /sync/sync/<int:athlete_id> -> activity.sync_strava_to_db\n  /health -> health.health_check\n  /ping -> ping\n  /db-check -> db_check\n  /startup -> startup
+____________________ test_exchange_code_for_token_success _____________________
+
+mock_post = <MagicMock name='post' id='2098884707408'>
+
+    @patch("src.services.token_service.requests.post")
+    def test_exchange_code_for_token_success(mock_post):
+        mock_resp = MagicMock(spec=Response)
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"access_token": "access", "refresh_token": "refresh", "expires_at": 12345}
+        mock_post.return_value = mock_resp
+    
+>       tokens = token_service.exchange_code_for_token("dummy_code")
+E       AttributeError: module 'src.services.token_service' has no attribute 'exchange_code_for_token'
+
+tests\test_token_service.py:90: AttributeError
+_____________________ test_refresh_token_if_expired_true ______________________
+
+mock_refresh_access = <MagicMock name='refresh_access_token' id='2098915550032'>
+mock_get_tokens = <MagicMock name='get_tokens_sa' id='2098915542544'>
+
+    @patch("src.services.token_service.get_tokens_sa")
+    @patch("src.services.token_service.refresh_access_token")
+    def test_refresh_token_if_expired_true(mock_refresh_access, mock_get_tokens):
+        mock_session = MagicMock()
+        athlete_id = 123
+        mock_get_tokens.return_value = {"expires_at": 1}
+        mock_refresh_access.return_value = {"access_token": "new_access"}
+>       result = token_service.refresh_token_if_expired(mock_session, athlete_id)
+
+tests\test_token_service.py:102: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+session = <MagicMock id='2098915556560'>, athlete_id = 123
+
+    def refresh_token_if_expired(session, athlete_id):
+        token = session.query(Token).filter_by(athlete_id=athlete_id).first()
+        if not token:
+            raise ValueError(f"No token found for athlete ID {athlete_id}")
+    
+        now = datetime.utcnow().timestamp()
+>       if token.expires_at <= now:
+E       TypeError: '<=' not supported between instances of 'MagicMock' and 'float'
+
+src\services\token_service.py:64: TypeError
+_____________________ test_refresh_token_if_expired_false _____________________
+
+mock_get_tokens = <MagicMock name='get_tokens_sa' id='2098890158160'>
+
+    @patch("src.services.token_service.get_tokens_sa")
+    def test_refresh_token_if_expired_false(mock_get_tokens):
+        mock_session = MagicMock()
+        athlete_id = 123
+        mock_get_tokens.return_value = {"expires_at": 9999999999}
+>       result = token_service.refresh_token_if_expired(mock_session, athlete_id)
+
+tests\test_token_service.py:112: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+session = <MagicMock id='2098890153424'>, athlete_id = 123
+
+    def refresh_token_if_expired(session, athlete_id):
+        token = session.query(Token).filter_by(athlete_id=athlete_id).first()
+        if not token:
+            raise ValueError(f"No token found for athlete ID {athlete_id}")
+    
+        now = datetime.utcnow().timestamp()
+>       if token.expires_at <= now:
+E       TypeError: '<=' not supported between instances of 'MagicMock' and 'float'
+
+src\services\token_service.py:64: TypeError
+___________________ test_refresh_token_if_expired_no_tokens ___________________
+
+mock_get_tokens = <MagicMock name='get_tokens_sa' id='2098915104208'>
+
+    @patch("src.services.token_service.get_tokens_sa", return_value=None)
+    def test_refresh_token_if_expired_no_tokens(mock_get_tokens):
+        mock_session = MagicMock()
+        athlete_id = 123
+        with pytest.raises(ValueError):
+>           token_service.refresh_token_if_expired(mock_session, athlete_id)
+
+tests\test_token_service.py:121: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+session = <MagicMock id='2098915101328'>, athlete_id = 123
+
+    def refresh_token_if_expired(session, athlete_id):
+        token = session.query(Token).filter_by(athlete_id=athlete_id).first()
+        if not token:
+            raise ValueError(f"No token found for athlete ID {athlete_id}")
+    
+        now = datetime.utcnow().timestamp()
+>       if token.expires_at <= now:
+E       TypeError: '<=' not supported between instances of 'MagicMock' and 'float'
+
+src\services\token_service.py:64: TypeError
+______________________ test_get_authorization_url_valid _______________________
+
+    def test_get_authorization_url_valid():
+>       url = token_service.get_authorization_url()
+E       AttributeError: module 'src.services.token_service' has no attribute 'get_authorization_url'
+
+tests\test_token_service.py:125: AttributeError
+_______________________ test_store_tokens_from_callback _______________________
+
+args = (), keywargs = {}
+
+    @wraps(func)
+    def patched(*args, **keywargs):
+>       with self.decoration_helper(patched,
+                                    args,
+                                    keywargs) as (newargs, newkeywargs):
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1443: in __enter__
+    original, local = self.get_original()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <unittest.mock._patch object at 0x000001E8AF14A150>
+
+    def get_original(self):
+        target = self.getter()
+        name = self.attribute
+    
+        original = DEFAULT
+        local = False
+    
+        try:
+            original = target.__dict__[name]
+        except (AttributeError, KeyError):
+            original = getattr(target, name, DEFAULT)
+        else:
+            local = True
+    
+        if name in _builtins and isinstance(target, ModuleType):
+            self.create = True
+    
+        if not self.create and original is DEFAULT:
+>           raise AttributeError(
+                "%s does not have the attribute %r" % (target, name)
+            )
+E           AttributeError: <module 'src.services.token_service' from 'C:\\Users\\andre\\projects\\railway-pg-test\\src\\services\\token_service.py'> does not have the attribute 'insert_athlete'
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1416: AttributeError
+___________________________ test_login_user_success ___________________________
+
+args = (), keywargs = {}
+
+    @wraps(func)
+    def patched(*args, **keywargs):
+>       with self.decoration_helper(patched,
+                                    args,
+                                    keywargs) as (newargs, newkeywargs):
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1443: in __enter__
+    original, local = self.get_original()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <unittest.mock._patch object at 0x000001E8AF14A410>
+
+    def get_original(self):
+        target = self.getter()
+        name = self.attribute
+    
+        original = DEFAULT
+        local = False
+    
+        try:
+            original = target.__dict__[name]
+        except (AttributeError, KeyError):
+            original = getattr(target, name, DEFAULT)
+        else:
+            local = True
+    
+        if name in _builtins and isinstance(target, ModuleType):
+            self.create = True
+    
+        if not self.create and original is DEFAULT:
+>           raise AttributeError(
+                "%s does not have the attribute %r" % (target, name)
+            )
+E           AttributeError: <module 'src.services.token_service' from 'C:\\Users\\andre\\projects\\railway-pg-test\\src\\services\\token_service.py'> does not have the attribute 'get_session'
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1416: AttributeError
+_____________________ test_login_user_invalid_credentials _____________________
+
+    def test_login_user_invalid_credentials():
+        data = {"username": "bad", "password": "bad"}
+        with pytest.raises(PermissionError):
+>           token_service.login_user(data)
+E           AttributeError: module 'src.services.token_service' has no attribute 'login_user'
+
+tests\test_token_service.py:171: AttributeError
+_________________________ test_refresh_token_success __________________________
+
+args = (), keywargs = {}
+
+    @wraps(func)
+    def patched(*args, **keywargs):
+>       with self.decoration_helper(patched,
+                                    args,
+                                    keywargs) as (newargs, newkeywargs):
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1443: in __enter__
+    original, local = self.get_original()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <unittest.mock._patch object at 0x000001E8AF14AA90>
+
+    def get_original(self):
+        target = self.getter()
+        name = self.attribute
+    
+        original = DEFAULT
+        local = False
+    
+        try:
+            original = target.__dict__[name]
+        except (AttributeError, KeyError):
+            original = getattr(target, name, DEFAULT)
+        else:
+            local = True
+    
+        if name in _builtins and isinstance(target, ModuleType):
+            self.create = True
+    
+        if not self.create and original is DEFAULT:
+>           raise AttributeError(
+                "%s does not have the attribute %r" % (target, name)
+            )
+E           AttributeError: <module 'src.services.token_service' from 'C:\\Users\\andre\\projects\\railway-pg-test\\src\\services\\token_service.py'> does not have the attribute 'get_session'
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1416: AttributeError
+____________________ test_refresh_token_expired_signature _____________________
+
+args = (), keywargs = {}
+
+    @wraps(func)
+    def patched(*args, **keywargs):
+>       with self.decoration_helper(patched,
+                                    args,
+                                    keywargs) as (newargs, newkeywargs):
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1427: in __enter__
+    self.target = self.getter()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'src.services.token_service.jwt'
+
+    def resolve_name(name):
+        """
+        Resolve a name to an object.
+    
+        It is expected that `name` will be a string in one of the following
+        formats, where W is shorthand for a valid Python identifier and dot stands
+        for a literal period in these pseudo-regexes:
+    
+        W(.W)*
+        W(.W)*:(W(.W)*)?
+    
+        The first form is intended for backward compatibility only. It assumes that
+        some part of the dotted name is a package, and the rest is an object
+        somewhere within that package, possibly nested inside other objects.
+        Because the place where the package stops and the object hierarchy starts
+        can't be inferred by inspection, repeated attempts to import must be done
+        with this form.
+    
+        In the second form, the caller makes the division point clear through the
+        provision of a single colon: the dotted name to the left of the colon is a
+        package to be imported, and the dotted name to the right is the object
+        hierarchy within that package. Only one import is needed in this form. If
+        it ends with the colon, then a module object is returned.
+    
+        The function will return an object (which might be a module), or raise one
+        of the following exceptions:
+    
+        ValueError - if `name` isn't in a recognised format
+        ImportError - if an import failed when it shouldn't have
+        AttributeError - if a failure occurred when traversing the object hierarchy
+                         within the imported package to get to the desired object.
+        """
+        global _NAME_PATTERN
+        if _NAME_PATTERN is None:
+            # Lazy import to speedup Python startup time
+            import re
+            dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+            _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                       f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                       re.UNICODE)
+    
+        m = _NAME_PATTERN.match(name)
+        if not m:
+            raise ValueError(f'invalid format: {name!r}')
+        gd = m.groupdict()
+        if gd.get('cln'):
+            # there is a colon - a one-step import is all that's needed
+            mod = importlib.import_module(gd['pkg'])
+            parts = gd.get('obj')
+            parts = parts.split('.') if parts else []
+        else:
+            # no colon - have to iterate to find the package boundary
+            parts = name.split('.')
+            modname = parts.pop(0)
+            # first part *must* be a module/package.
+            mod = importlib.import_module(modname)
+            while parts:
+                p = parts[0]
+                s = f'{modname}.{p}'
+                try:
+                    mod = importlib.import_module(s)
+                    parts.pop(0)
+                    modname = s
+                except ImportError:
+                    break
+        # if we reach this point, mod is the module, already imported, and
+        # parts is the list of parts in the object hierarchy to be traversed, or
+        # an empty list if just the module is wanted.
+        result = mod
+        for p in parts:
+>           result = getattr(result, p)
+E           AttributeError: module 'src.services.token_service' has no attribute 'jwt'
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\pkgutil.py:715: AttributeError
+______________________ test_refresh_token_invalid_token _______________________
+
+args = (), keywargs = {}
+
+    @wraps(func)
+    def patched(*args, **keywargs):
+>       with self.decoration_helper(patched,
+                                    args,
+                                    keywargs) as (newargs, newkeywargs):
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1427: in __enter__
+    self.target = self.getter()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+name = 'src.services.token_service.jwt'
+
+    def resolve_name(name):
+        """
+        Resolve a name to an object.
+    
+        It is expected that `name` will be a string in one of the following
+        formats, where W is shorthand for a valid Python identifier and dot stands
+        for a literal period in these pseudo-regexes:
+    
+        W(.W)*
+        W(.W)*:(W(.W)*)?
+    
+        The first form is intended for backward compatibility only. It assumes that
+        some part of the dotted name is a package, and the rest is an object
+        somewhere within that package, possibly nested inside other objects.
+        Because the place where the package stops and the object hierarchy starts
+        can't be inferred by inspection, repeated attempts to import must be done
+        with this form.
+    
+        In the second form, the caller makes the division point clear through the
+        provision of a single colon: the dotted name to the left of the colon is a
+        package to be imported, and the dotted name to the right is the object
+        hierarchy within that package. Only one import is needed in this form. If
+        it ends with the colon, then a module object is returned.
+    
+        The function will return an object (which might be a module), or raise one
+        of the following exceptions:
+    
+        ValueError - if `name` isn't in a recognised format
+        ImportError - if an import failed when it shouldn't have
+        AttributeError - if a failure occurred when traversing the object hierarchy
+                         within the imported package to get to the desired object.
+        """
+        global _NAME_PATTERN
+        if _NAME_PATTERN is None:
+            # Lazy import to speedup Python startup time
+            import re
+            dotted_words = r'(?!\d)(\w+)(\.(?!\d)(\w+))*'
+            _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
+                                       f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
+                                       re.UNICODE)
+    
+        m = _NAME_PATTERN.match(name)
+        if not m:
+            raise ValueError(f'invalid format: {name!r}')
+        gd = m.groupdict()
+        if gd.get('cln'):
+            # there is a colon - a one-step import is all that's needed
+            mod = importlib.import_module(gd['pkg'])
+            parts = gd.get('obj')
+            parts = parts.split('.') if parts else []
+        else:
+            # no colon - have to iterate to find the package boundary
+            parts = name.split('.')
+            modname = parts.pop(0)
+            # first part *must* be a module/package.
+            mod = importlib.import_module(modname)
+            while parts:
+                p = parts[0]
+                s = f'{modname}.{p}'
+                try:
+                    mod = importlib.import_module(s)
+                    parts.pop(0)
+                    modname = s
+                except ImportError:
+                    break
+        # if we reach this point, mod is the module, already imported, and
+        # parts is the list of parts in the object hierarchy to be traversed, or
+        # an empty list if just the module is wanted.
+        result = mod
+        for p in parts:
+>           result = getattr(result, p)
+E           AttributeError: module 'src.services.token_service' has no attribute 'jwt'
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\pkgutil.py:715: AttributeError
+_________________________ test_delete_athlete_tokens __________________________
+
+args = (), keywargs = {}
+
+    @wraps(func)
+    def patched(*args, **keywargs):
+>       with self.decoration_helper(patched,
+                                    args,
+                                    keywargs) as (newargs, newkeywargs):
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1443: in __enter__
+    original, local = self.get_original()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <unittest.mock._patch object at 0x000001E8AF14B210>
+
+    def get_original(self):
+        target = self.getter()
+        name = self.attribute
+    
+        original = DEFAULT
+        local = False
+    
+        try:
+            original = target.__dict__[name]
+        except (AttributeError, KeyError):
+            original = getattr(target, name, DEFAULT)
+        else:
+            local = True
+    
+        if name in _builtins and isinstance(target, ModuleType):
+            self.create = True
+    
+        if not self.create and original is DEFAULT:
+>           raise AttributeError(
+                "%s does not have the attribute %r" % (target, name)
+            )
+E           AttributeError: <module 'src.services.token_service' from 'C:\\Users\\andre\\projects\\railway-pg-test\\src\\services\\token_service.py'> does not have the attribute 'delete_tokens_sa'
+
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1416: AttributeError
+____________________________ test_logout_user_noop ____________________________
+
+    def test_logout_user_noop():
+        # Function is empty, so just call to ensure no error
+>       token_service.logout_user("token")
+E       AttributeError: module 'src.services.token_service' has no attribute 'logout_user'
+
+tests\test_token_service.py:211: AttributeError
+=========================== short test summary info ===========================
+FAILED tests/test_activity_dao.py::test_get_by_id_returns_activity - Attribut...
+FAILED tests/test_activity_dao.py::test_get_by_id_returns_none - AttributeErr...
+FAILED tests/test_activity_dao.py::test_upsert_activities_multiple_activities
+FAILED tests/test_auth.py::test_login_refresh_logout - assert 401 == 200
+FAILED tests/test_auth_routes.py::test_strava_login_redirect - AttributeError...
+FAILED tests/test_auth_routes.py::test_callback_success - AttributeError: <mo...
+FAILED tests/test_auth_routes.py::test_callback_exception - AttributeError: <...
+FAILED tests/test_ingestion_orchestrator.py::test_ingest_between_dates_success
+FAILED tests/test_ingestion_orchestrator.py::test_ingest_between_dates_enrichment_failure
+FAILED tests/test_main_pipeline.py::test_main_pipeline_calls_full_ingestion
+FAILED tests/test_oauth_flow.py::test_oauth_callback_strava_http_error - asse...
+FAILED tests/test_oauth_flow.py::test_oauth_callback_missing_env - assert 500...
+FAILED tests/test_splits.py::test_upsert_inserts_and_updates - sqlalchemy.exc...
+FAILED tests/test_splits.py::test_unique_constraint - sqlalchemy.exc.Operatio...
+FAILED tests/test_sync.py::test_sync_success - assert 401 == 200
+FAILED tests/test_token_service.py::test_exchange_code_for_token_success - At...
+FAILED tests/test_token_service.py::test_refresh_token_if_expired_true - Type...
+FAILED tests/test_token_service.py::test_refresh_token_if_expired_false - Typ...
+FAILED tests/test_token_service.py::test_refresh_token_if_expired_no_tokens
+FAILED tests/test_token_service.py::test_get_authorization_url_valid - Attrib...
+FAILED tests/test_token_service.py::test_store_tokens_from_callback - Attribu...
+FAILED tests/test_token_service.py::test_login_user_success - AttributeError:...
+FAILED tests/test_token_service.py::test_login_user_invalid_credentials - Att...
+FAILED tests/test_token_service.py::test_refresh_token_success - AttributeErr...
+FAILED tests/test_token_service.py::test_refresh_token_expired_signature - At...
+FAILED tests/test_token_service.py::test_refresh_token_invalid_token - Attrib...
+FAILED tests/test_token_service.py::test_delete_athlete_tokens - AttributeErr...
+FAILED tests/test_token_service.py::test_logout_user_noop - AttributeError: m...
+ERROR tests/test_athlete_dao.py::test_insert_and_get_athlete - sqlalchemy.exc...
+ERROR tests/test_enrichment_with_splits.py::test_enrich_one_activity_with_splits
+ERROR tests/test_full_ingestion_flow.py::test_run_full_ingestion_flow - sqlal...
+ERROR tests/test_integration_ingestion.py::test_ingest_specific_activity_integration
+ERROR tests/test_split_dao.py::test_upsert_splits_basic - sqlalchemy.exc.Oper...
+ERROR tests/test_split_upsert_idempotency.py::test_upsert_splits_idempotency
+================== 28 failed, 73 passed, 6 errors in 40.94s ===================

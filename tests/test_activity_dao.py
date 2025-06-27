@@ -6,28 +6,34 @@ from src.db.dao.activity_dao import ActivityDAO
 def test_get_by_id_returns_activity():
     mock_session = MagicMock()
 
-    # Setup mocks for the chain: query().filter().first()
-    mock_query = mock_session.query
-    mock_filter = mock_query.return_value.filter
-    mock_first = mock_filter.return_value.first
-
+    # Setup mocks for the chain: query().filter_by().first()
+    mock_query = mock_session.query.return_value
+    mock_filter_by = mock_query.filter_by.return_value
     expected_activity = Activity(activity_id=123)
-    mock_first.return_value = expected_activity
+    mock_filter_by.first.return_value = expected_activity
 
     result = ActivityDAO.get_by_id(mock_session, 123)
     assert result == expected_activity
 
     # Check that query was called with Activity model
-    mock_query.assert_called_once_with(Activity)
-    mock_filter.assert_called_once()
-    mock_first.assert_called_once()
+    mock_session.query.assert_called_once_with(Activity)
+    mock_query.filter_by.assert_called_once_with(activity_id=123)
+    mock_filter_by.first.assert_called_once()
+
 
 def test_get_by_id_returns_none():
     mock_session = MagicMock()
-    mock_session.query().filter().first.return_value = None
+    mock_query = mock_session.query.return_value
+    mock_filter_by = mock_query.filter_by.return_value
+    mock_filter_by.first.return_value = None
 
     result = ActivityDAO.get_by_id(mock_session, 999)
     assert result is None
+
+    mock_session.query.assert_called_once_with(Activity)
+    mock_query.filter_by.assert_called_once_with(activity_id=999)
+    mock_filter_by.first.assert_called_once()
+
 
 @patch("src.db.dao.activity_dao.convert_metrics")
 def test_upsert_activities_empty_list_returns_zero(mock_convert):
@@ -79,6 +85,7 @@ def test_upsert_activities_single_activity(mock_convert):
     mock_session.execute.assert_called_once()
     mock_session.commit.assert_called_once()
 
+
 @patch("src.db.dao.activity_dao.convert_metrics")
 def test_upsert_activities_multiple_activities(mock_convert):
     mock_session = MagicMock()
@@ -91,9 +98,10 @@ def test_upsert_activities_multiple_activities(mock_convert):
         "conv_elapsed_time": 65,
     }
 
+    # Add 'start_date' to satisfy required fields check
     activities = [
-        {"id": 201, "name": "Ride", "type": "Ride", "distance": 1000, "elapsed_time": 65, "moving_time": 60, "total_elevation_gain": 15},
-        {"id": 202, "name": "Swim", "type": "Swim", "distance": 500, "elapsed_time": 35, "moving_time": 30, "total_elevation_gain": 5},
+        {"id": 201, "name": "Morning Run", "type": "Run", "start_date": "2023-01-01T06:00:00Z", "distance": 1000, "elapsed_time": 65, "moving_time": 60, "total_elevation_gain": 15, "external_id": "ext-201"},
+        {"id": 202, "name": "Treadmill Run", "type": "Run", "start_date": "2023-01-02T07:00:00Z", "distance": 500, "elapsed_time": 35, "moving_time": 30, "total_elevation_gain": 5, "external_id": "ext-202"},
     ]
 
     mock_result = MagicMock()

@@ -89,13 +89,19 @@ def callback():
         print(f"✅ Stored token for athlete_id: {athlete_id}", flush=True)
         return f"✅ Token stored for athlete_id: {athlete_id}", 200
 
+    except requests.exceptions.HTTPError as e:
+        print(f"🔥 Callback HTTP error: {e}", flush=True)
+        return jsonify({"error": "Strava OAuth token exchange failed"}), 502
+
     except Exception as e:
         import traceback
         print(f"🔥 Callback error: {e}", flush=True)
         traceback.print_exc()
         return f"❌ Callback error: {str(e)}", 500
+
     finally:
         session.close()
+
 
 
 

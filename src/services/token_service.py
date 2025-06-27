@@ -8,6 +8,11 @@ from src.db.models.tokens import Token
 
 logger = logging.getLogger(__name__)
 
+from src.db.db_session import get_session as db_get_session
+
+def get_session():
+    return db_get_session()
+
 
 def is_expired(expires_at):
     return expires_at <= int(datetime.utcnow().timestamp())
@@ -107,3 +112,88 @@ def store_tokens_from_callback(code, session):
 
     print(f"✅ Token stored for athlete: {athlete_id}", flush=True)
     return athlete_id
+
+
+def logout_user(token):
+    # No-op logout function (used for UI logout tracking)
+    print(f"[LOGOUT] Token logged out: {token}")
+    
+    
+    
+
+import jwt
+
+def login_user(data):
+    if data["username"] != config.ADMIN_USER or data["password"] != config.ADMIN_PASS:
+        raise PermissionError("Invalid credentials")
+
+    session = get_session()
+    token_payload = {"sub": "admin"}
+    access_token = jwt.encode(token_payload, config.SECRET_KEY, algorithm="HS256")
+    refresh_token = jwt.encode({"sub": "admin", "type": "refresh"}, config.JWT_SECRET, algorithm="HS256")
+
+    insert_token_sa(
+        session=session,
+        athlete_id=0,  # Assuming admin does not have athlete_id
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_at=int(datetime.utcnow().timestamp()) + 3600,
+    )
+
+    return access_token, refresh_token
+
+
+
+
+
+
+
+def refresh_token(encoded_refresh_token):
+    try:
+        payload = jwt.decode(encoded_refresh_token, config.SECRET_KEY, algorithms=["HS256"])
+        if payload.get("type") != "refresh":
+            raise PermissionError("Invalid token type")
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        raise PermissionError("Invalid or expired refresh token")
+
+    session = get_session()
+    token_data = get_tokens_sa(session, config.ADMIN_ATHLETE_ID)
+    if not token_data:
+        raise PermissionError("No refresh token found")
+
+    new_tokens = refresh_token_static(token_data["refresh_token"])
+    insert_token_sa(
+        session=session,
+        athlete_id=config.ADMIN_ATHLETE_ID,
+        access_token=new_tokens["access_token"],
+        refresh_token=new_tokens["refresh_token"],
+        expires_at=new_tokens["expires_at"]
+    )
+    return new_tokens["access_token"]
+
+
+def exchange_code_for_token(code):
+    response = requests.post(
+        "https://www.strava.com/api/v3/oauth/token",
+        data={
+            "client_id": config.STRAVA_CLIENT_ID,
+            "client_secret": config.STRAVA_CLIENT_SECRET,
+            "code": code,
+            "grant_type": "authorization_code"
+        },
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_authorization_url():
+    redirect_uri = config.STRAVA_REDIRECT_URI
+    client_id = config.STRAVA_CLIENT_ID
+    url = (
+        f"https://www.strava.com/oauth/authorize"
+        f"?client_id={client_id}"
+        f"&response_type=code"
+        f"&redirect_uri={redirect_uri}"
+        f"&scope=read,activity:read_all"
+    )
+    return url

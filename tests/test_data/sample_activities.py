@@ -3,6 +3,7 @@
 SAMPLE_ACTIVITY_JSON = {
     "id": 99999,
     "activity_id": 99999,
+    "external_id": "external_99999",  # required field
     "name": "Mock Run",
     "type": "Run",
     "distance": 5000.0,
@@ -15,6 +16,7 @@ SAMPLE_ACTIVITY_JSON = {
     "average_heartrate": 150,
     "max_heartrate": 170,
     "calories": 400,
+    "start_date": "2025-06-01T08:00:00Z",  # <--- ADD THIS LINE
     "splits_metric": [
         {
             "lap_index": 1,
@@ -43,7 +45,6 @@ SAMPLE_HR_ZONE_RESPONSE = {
         ]
     }
 }
-
 
 SAMPLE_STREAMS_RESPONSE = {
     "distance": {"data": [0.0, 500.0, 1000.0]},
