@@ -10,7 +10,7 @@ from src.routes.activity_routes import activity_bp
 
 from src.routes.health_routes import health_bp
 
-
+from src.routes.ask_routes import ask_bp
 
 def create_app(test_config=None):
     print("✅ ENTERED create_app()", flush=True)
@@ -65,6 +65,7 @@ def create_app(test_config=None):
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(activity_bp, url_prefix="/sync")
     app.register_blueprint(health_bp)
+    app.register_blueprint(ask_bp)
 
     @app.route("/ping")
     def ping():

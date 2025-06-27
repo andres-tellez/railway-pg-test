@@ -12,14 +12,6 @@ class ActivityDAO:
     def upsert_activities(session: Session, athlete_id: int, activities: List[Dict]) -> int:
         """
         Upsert activities into the database, filtering only 'Run' types.
-
-        Args:
-            session (Session): SQLAlchemy session object.
-            athlete_id (int): ID of the athlete.
-            activities (list): List of activity dicts from Strava.
-
-        Returns:
-            int: Number of rows affected.
         """
         if not activities:
             return 0
@@ -93,8 +85,7 @@ class ActivityDAO:
         result = session.execute(stmt)
         session.commit()
         return result.rowcount
-    
-    
+
     @staticmethod
     def get_by_id(session: Session, activity_id: int) -> Activity | None:
         """

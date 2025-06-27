@@ -60,3 +60,11 @@
 2025-06-26 17:34:36,019 ERROR ❌ Skipping enrichment for activity 123456 due to error: name 'f' is not defined
 2025-06-26 17:48:39,142 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
 2025-06-26 17:48:41,711 ERROR ❌ Skipping enrichment for activity 123456 due to error: name 'f' is not defined
+2025-06-26 22:41:08,786 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
+2025-06-26 22:41:11,356 ERROR ❌ Skipping enrichment for activity 123456 due to error: name 'f' is not defined
+2025-06-26 22:52:20,838 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
+2025-06-26 22:52:23,394 ERROR ❌ Skipping enrichment for activity 123456 due to error: name 'f' is not defined
+2025-06-26 23:05:14,659 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
+2025-06-26 23:05:17,206 ERROR ❌ Skipping enrichment for activity 123456 due to error: name 'f' is not defined
+2025-06-26 23:05:54,328 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
+2025-06-26 23:05:56,867 ERROR ❌ Skipping enrichment for activity 123456 due to error: name 'f' is not defined

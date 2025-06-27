@@ -56,8 +56,7 @@ def enrich_one_activity(session, access_token, activity_id):
 
             if all(activity_json.get(field) for field in required_fields):
                 break
-            log.warning(f)
-            #log.warning(f"⚠️ Missing required fields for activity {activity_id}, retry {attempt + 1}/{retries}...")
+            log.warning(f"⚠️ Missing required fields for activity {activity_id}, retry {attempt + 1}/{retries}...")
             time.sleep(1)
         else:
             raise ValueError(f"❌ Critical data missing after retries for activity {activity_id}: {[(field, activity_json.get(field)) for field in required_fields]}")
