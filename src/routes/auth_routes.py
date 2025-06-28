@@ -1,6 +1,4 @@
-# src/routes/auth_routes.py
-
-from flask import Blueprint, redirect, request, jsonify
+from flask import Blueprint, redirect, request, jsonify, session as flask_session
 import traceback
 import requests
 from datetime import datetime, timedelta
@@ -15,6 +13,15 @@ from src.services.token_service import (
 from src.db.db_session import get_session
 
 auth_bp = Blueprint("auth", __name__)
+
+
+# -------- WhoAmI (Session Identity) --------
+@auth_bp.route('/whoami', methods=['GET'])
+def whoami():
+    athlete_id = flask_session.get("athlete_id")
+    if not athlete_id:
+        return jsonify({"error": "Not logged in"}), 401
+    return jsonify({"athlete_id": athlete_id})
 
 
 # -------- Admin Login (POST, API) --------
@@ -56,9 +63,6 @@ def admin_login():
 # -------- Strava OAuth Login (GET, Browser) --------
 @auth_bp.route("/login", methods=["GET"])
 def strava_login():
-    """
-    Redirects browser to Strava OAuth authorization URL.
-    """
     redirect_uri = os.getenv("STRAVA_REDIRECT_URI")
     client_id = os.getenv("STRAVA_CLIENT_ID")
     url = (
@@ -86,24 +90,21 @@ def callback():
 
         athlete_id = store_tokens_from_callback(code, session)
 
-        print(f"✅ Stored token for athlete_id: {athlete_id}", flush=True)
-        return f"✅ Token stored for athlete_id: {athlete_id}", 200
+        flask_session["athlete_id"] = athlete_id  # ✅ store in session
+
+        print(f"✅ Stored token and session for athlete_id: {athlete_id}", flush=True)
+        return redirect("/?authed=true")
 
     except requests.exceptions.HTTPError as e:
         print(f"🔥 Callback HTTP error: {e}", flush=True)
         return jsonify({"error": "Strava OAuth token exchange failed"}), 502
 
     except Exception as e:
-        import traceback
-        print(f"🔥 Callback error: {e}", flush=True)
         traceback.print_exc()
         return f"❌ Callback error: {str(e)}", 500
 
     finally:
         session.close()
-
-
-
 
 
 # -------- Token Refresh --------

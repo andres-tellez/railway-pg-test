@@ -1,6 +1,7 @@
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 from src.db.models.activities import Activity
+
 from src.utils.conversions import convert_metrics
 from src.utils.logger import get_logger
 from typing import List, Dict
@@ -92,3 +93,13 @@ class ActivityDAO:
         Retrieve a single activity by its activity_id.
         """
         return session.query(Activity).filter_by(activity_id=activity_id).first()
+    
+    
+    @staticmethod
+    def get_activities_by_athlete(session: Session, athlete_id: int) -> list[Activity]:
+        return (
+            session.query(Activity)
+            .filter(Activity.athlete_id == athlete_id)
+            .order_by(Activity.start_date.desc())
+            .all()
+        )
