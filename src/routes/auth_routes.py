@@ -88,10 +88,29 @@ def callback():
 
         print(f"➡️ Received OAuth code: {code}", flush=True)
 
+        # 💬 Log the full request payload before calling Strava
+        import pprint
+        pp = pprint.PrettyPrinter(indent=2)
+
+        token_payload = {
+            "client_id": os.getenv("STRAVA_CLIENT_ID"),
+            "client_secret": os.getenv("STRAVA_CLIENT_SECRET"),
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": os.getenv("STRAVA_REDIRECT_URI"),
+        }
+
+        print("🚨 Token request payload being sent to Strava:")
+        pp.pprint(token_payload)
+
+        # (Optional) Live test:
+        # response = requests.post("https://www.strava.com/api/v3/oauth/token", data=token_payload)
+        # print("🔁 Strava token response:", response.status_code, response.text)
+
+        # ✅ Now call the service to store tokens as before
         athlete_id = store_tokens_from_callback(code, session)
 
-        flask_session["athlete_id"] = athlete_id  # ✅ store in session
-
+        flask_session["athlete_id"] = athlete_id
         print(f"✅ Stored token and session for athlete_id: {athlete_id}", flush=True)
         return redirect("/?authed=true")
 
