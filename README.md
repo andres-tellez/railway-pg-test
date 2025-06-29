@@ -117,4 +117,4 @@ railway-pg-test/
 
 - Python 3.11+
 - SQLite or Postgres
-- A Strava API App (https://www.strava.com/settings/api)
+- A Strava API App (https://www.strava.com/settings/api)# Triggering redeploy
