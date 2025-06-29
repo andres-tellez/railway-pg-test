@@ -104,6 +104,10 @@ def create_app(test_config=None):
             traceback.print_exc()
             return {"status": "fail", "error": str(e)}, 500
 
+    @app.route("/")
+    def home():
+        return "✅ OAuth complete. You are now logged in!", 200
+
     print("✅ Registered routes:")
     for rule in app.url_map.iter_rules():
         print(f"  {rule.rule} -> {rule.endpoint}", flush=True)
