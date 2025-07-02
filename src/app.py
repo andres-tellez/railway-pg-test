@@ -16,7 +16,7 @@ else:
 print(f"✅ EARLY dotenv loaded for FLASK_ENV={env_mode}", flush=True)
 
 # ✅ Now it's safe to import things that use env vars
-from flask import Flask
+from flask import Flask, send_from_directory
 import src.utils.config as config
 from src.routes.admin_routes import admin_bp
 from src.routes.auth_routes import auth_bp
@@ -24,7 +24,6 @@ from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 from pathlib import Path
-
 
 def create_app(test_config=None):
     print("✅ ENTERED create_app()", flush=True)
@@ -37,7 +36,8 @@ def create_app(test_config=None):
     print("DEBUG ENV VARS:")
     print(f"DATABASE_URL={os.getenv('DATABASE_URL')}", flush=True)
 
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder="../static")
+
 
     # Core app configuration
     app.config.from_mapping(
@@ -59,6 +59,12 @@ def create_app(test_config=None):
     app.register_blueprint(activity_bp, url_prefix="/sync")
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
+
+    # Serve the UI from static/ask_ui.html
+    @app.route("/ask-ui")
+    def ask_ui():
+        return send_from_directory("../static", "ask_ui.html")
+
 
     @app.route("/ping")
     def ping():
