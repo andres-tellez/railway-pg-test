@@ -62,14 +62,16 @@ def create_app(test_config=None):
     @app.route("/post-oauth")
     def post_oauth():
         env = os.getenv("FLASK_ENV", "production")
-        hosts = {
-            "production": "https://web-production-c4329.up.railway.app",
-            "test": "http://localhost:5173",
-            "development": "http://localhost:5173",
-        }
-        frontend_host = hosts.get(env)
 
-        return redirect(f"{frontend_host}/post-oauth?authed=true")
+        # Redirect to dev Vite server locally, serve index.html in production
+        if env in ["development", "test"]:
+            return redirect("http://localhost:5173/post-oauth?authed=true")
+
+        # In production, serve the built index.html file (SPA fallback)
+        index_path = os.path.join(app.static_folder, "index.html")
+        if os.path.exists(index_path):
+            return send_from_directory(app.static_folder, "index.html")
+        return "❌ Frontend not found", 404
 
 
 
