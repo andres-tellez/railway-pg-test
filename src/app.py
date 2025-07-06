@@ -45,6 +45,9 @@ def create_app(test_config=None):
     # 👉 Point to Vite production build
     #app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
     app = Flask(__name__, static_folder="static", static_url_path="/")
+    print("📁 static/ contents:", os.listdir("static"), flush=True)
+
+
 
 
     app.config.from_mapping(
