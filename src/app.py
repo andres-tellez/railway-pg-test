@@ -1,9 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-# ─────────────────────────────
 # 🌍 Load correct .env file
-# ─────────────────────────────
 raw_env_mode = os.environ.get("FLASK_ENV", "production")
 env_path = {
     "test": ".env.test",
@@ -20,9 +18,7 @@ else:
 
 print(f"📍 STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
-# ─────────────────────────────
 # 🚀 Flask Setup
-# ─────────────────────────────
 from flask import Flask, send_from_directory, redirect
 import src.utils.config as config
 from src.routes.admin_routes import admin_bp
@@ -31,7 +27,6 @@ from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 from pathlib import Path
-
 
 def create_app(test_config=None):
     print("✅ ENTERED create_app()", flush=True)
@@ -57,15 +52,14 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
-    # ─────────────────────────────
-    # 🔗 Routes
-    # ─────────────────────────────
+    # 🔗 Register Blueprints
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(activity_bp, url_prefix="/sync")
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
 
+    # 🧪 Utility Endpoints
     @app.route("/ping")
     def ping():
         return "pong", 200
@@ -110,13 +104,24 @@ def create_app(test_config=None):
             traceback.print_exc()
             return {"status": "fail", "error": str(e)}, 500
 
+    # ✅ SPA-compatible route for post-OAuth redirect
+    @app.route("/post-oauth")
+    def post_oauth():
+        env = os.getenv("FLASK_ENV", "production")
+        if env in ["development", "test"]:
+            return redirect("http://localhost:5173/post-oauth?authed=true")
+
+        index_path = os.path.join(app.static_folder, "index.html")
+        if os.path.exists(index_path):
+            return send_from_directory(app.static_folder, "index.html")
+        return "❌ Frontend not found", 404
+
+    # Root route (optional)
     @app.route("/")
     def home():
         return "✅ OAuth complete. You are now logged in!", 200
 
-    # ─────────────────────────────
-    # 🧾 Catch-all route for SPA support
-    # ─────────────────────────────
+    # 🧾 Catch-all for unmatched routes — needed for React Router in production
     @app.errorhandler(404)
     def spa_fallback(e):
         index_path = os.path.join(app.static_folder, "index.html")
@@ -129,7 +134,6 @@ def create_app(test_config=None):
         print(f"  {rule.rule} -> {rule.endpoint}", flush=True)
 
     return app
-
 
 if __name__ == "__main__":
     app = create_app()
