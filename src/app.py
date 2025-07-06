@@ -37,18 +37,14 @@ def create_app(test_config=None):
     print("✅ ENTERED create_app()", flush=True)
     print("📁 CWD:", os.getcwd(), flush=True)
     print("📁 Contents of current working dir:", os.listdir(os.getcwd()), flush=True)
+    print("📁 static/ contents:", os.listdir("static"), flush=True)
 
     print("DEBUG ENV VARS:")
     print(f"DATABASE_URL={os.getenv('DATABASE_URL')}", flush=True)
     print(f"STRAVA_REDIRECT_URI={os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
-    # 👉 Point to Vite production build
-    #app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
+    # ✅ Use universal static folder location
     app = Flask(__name__, static_folder="static", static_url_path="/")
-    print("📁 static/ contents:", os.listdir("static"), flush=True)
-
-
-
 
     app.config.from_mapping(
         SECRET_KEY=config.SECRET_KEY,
@@ -64,25 +60,6 @@ def create_app(test_config=None):
     # ─────────────────────────────
     # 🔗 Routes
     # ─────────────────────────────
-    @app.route("/post-oauth")
-    def post_oauth():
-        env = os.getenv("FLASK_ENV", "production")
-
-        # ✅ Local dev: redirect to Vite server
-        if env in ["development", "test"]:
-            return redirect("http://localhost:5173/post-oauth?authed=true")
-
-        # ✅ Production: Serve index.html and preserve path
-        index_path = os.path.join(app.static_folder, "index.html")
-        if os.path.exists(index_path):
-            # Let React Router handle /post-oauth client-side
-            return send_from_directory(app.static_folder, "index.html")
-        
-        return "❌ Frontend not found", 404
-
-
-
-
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(activity_bp, url_prefix="/sync")
