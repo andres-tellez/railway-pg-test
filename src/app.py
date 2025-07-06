@@ -43,7 +43,9 @@ def create_app(test_config=None):
     print(f"STRAVA_REDIRECT_URI={os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
     # 👉 Point to Vite production build
-    app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
+    #app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
+    app = Flask(__name__, static_folder="static", static_url_path="/")
+
 
     app.config.from_mapping(
         SECRET_KEY=config.SECRET_KEY,
