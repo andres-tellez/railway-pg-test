@@ -108,13 +108,27 @@ def create_app(test_config=None):
     @app.route("/post-oauth")
     def post_oauth():
         env = os.getenv("FLASK_ENV", "production")
+        print(f"🧪 /post-oauth triggered (FLASK_ENV={env})", flush=True)
+
+        # ✅ Local dev: redirect to Vite server
         if env in ["development", "test"]:
+            print("🔄 Redirecting to localhost Vite dev server", flush=True)
             return redirect("http://localhost:5173/post-oauth?authed=true")
 
+        # ✅ Production: Serve index.html
         index_path = os.path.join(app.static_folder, "index.html")
-        if os.path.exists(index_path):
+        print(f"🧾 Looking for index.html at: {index_path}", flush=True)
+
+        exists = os.path.exists(index_path)
+        print(f"📁 Does index.html exist? {exists}", flush=True)
+
+        if exists:
+            print("📦 Serving index.html", flush=True)
             return send_from_directory(app.static_folder, "index.html")
+
+        print("❌ index.html not found - returning 404", flush=True)
         return "❌ Frontend not found", 404
+
 
     # Root route (optional)
     @app.route("/")
