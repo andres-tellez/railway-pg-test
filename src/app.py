@@ -1,22 +1,29 @@
 import os
 from dotenv import load_dotenv
 
-# ✅ Load base env to read FLASK_ENV first
-load_dotenv(".env", override=False)
+# ─────────────────────────────
+# 🌍 Load correct .env file
+# ─────────────────────────────
+raw_env_mode = os.environ.get("FLASK_ENV", "production")
+env_path = {
+    "test": ".env.test",
+    "production": ".env.prod"
+}.get(raw_env_mode, ".env")
 
-# ✅ Load the correct environment file before any config-dependent imports
-env_mode = os.getenv("FLASK_ENV", "production")
-if env_mode == "test":
-    load_dotenv(".env.test", override=True)
-elif env_mode == "production":
-    load_dotenv(".env.prod", override=True)
+load_dotenv(env_path, override=True)
+print(f"✅ Loaded environment: {env_path}", flush=True)
+
+if env_path != ".env":
+    print("🚫 Skipping .env fallback", flush=True)
 else:
-    load_dotenv(".env.dev", override=True)
+    print("ℹ️ Default .env used", flush=True)
 
-print(f"✅ EARLY dotenv loaded for FLASK_ENV={env_mode}", flush=True)
+print(f"📍 STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
-# ✅ Now it's safe to import things that use env vars
-from flask import Flask, send_from_directory
+# ─────────────────────────────
+# 🚀 Flask Setup
+# ─────────────────────────────
+from flask import Flask, send_from_directory, redirect
 import src.utils.config as config
 from src.routes.admin_routes import admin_bp
 from src.routes.auth_routes import auth_bp
@@ -25,21 +32,19 @@ from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 from pathlib import Path
 
+
 def create_app(test_config=None):
     print("✅ ENTERED create_app()", flush=True)
     print("📁 CWD:", os.getcwd(), flush=True)
     print("📁 Contents of current working dir:", os.listdir(os.getcwd()), flush=True)
 
-    is_local = os.getenv("IS_LOCAL", "false").lower() == "true"
-    print(f"🌍 FLASK_ENV={env_mode} | IS_LOCAL={is_local}", flush=True)
-
     print("DEBUG ENV VARS:")
     print(f"DATABASE_URL={os.getenv('DATABASE_URL')}", flush=True)
+    print(f"STRAVA_REDIRECT_URI={os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
-    app = Flask(__name__, static_folder="../static")
+    # 👉 Point to Vite production build
+    app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
-
-    # Core app configuration
     app.config.from_mapping(
         SECRET_KEY=config.SECRET_KEY,
         DATABASE_URL=os.getenv("DATABASE_URL"),
@@ -51,20 +56,19 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
-    print("💾 CONFIG DATABASE_URL (from app.config):", app.config.get("DATABASE_URL"), flush=True)
+    # ─────────────────────────────
+    # 🔗 Routes
+    # ─────────────────────────────
+    @app.route("/post-oauth")
+    def post_oauth():
+        # 👇 Keep this dev-only redirect
+        return redirect("http://localhost:5173/post-oauth?authed=true")
 
-    # Register routes
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(activity_bp, url_prefix="/sync")
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
-
-    # Serve the UI from static/ask_ui.html
-    @app.route("/ask-ui")
-    def ask_ui():
-        return send_from_directory("../static", "ask_ui.html")
-
 
     @app.route("/ping")
     def ping():
@@ -114,8 +118,23 @@ def create_app(test_config=None):
     def home():
         return "✅ OAuth complete. You are now logged in!", 200
 
+    # ─────────────────────────────
+    # 🧾 Catch-all route for SPA support
+    # ─────────────────────────────
+    @app.errorhandler(404)
+    def spa_fallback(e):
+        index_path = os.path.join(app.static_folder, "index.html")
+        if os.path.exists(index_path):
+            return send_from_directory(app.static_folder, "index.html")
+        return "404 Not Found", 404
+
     print("✅ Registered routes:")
     for rule in app.url_map.iter_rules():
         print(f"  {rule.rule} -> {rule.endpoint}", flush=True)
 
     return app
+
+
+if __name__ == "__main__":
+    app = create_app()
+    app.run(host="127.0.0.1", port=5000)

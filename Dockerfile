@@ -1,34 +1,52 @@
-# Use official Python image
+# ─────────────────────────────
+# 📦 Base Python Environment
+# ─────────────────────────────
 FROM python:3.11-slim
 
-# Set working directory inside container
+# Set working directory
 WORKDIR /app
 
-# Ensure src and configuration folders are importable
+# Add src + config folders to Python path
 ENV PYTHONPATH=/app/src:/app/configuration
 
-# Install PostgreSQL client utilities and curl
-RUN apt-get update && apt-get install -y postgresql-client curl
+# ─────────────────────────────
+# 🔧 System Dependencies
+# ─────────────────────────────
+RUN apt-get update && \
+    apt-get install -y postgresql-client curl && \
+    apt-get clean
 
-# Copy application source code
-COPY src/ ./src/
-COPY src/scripts /app/scripts
-
-# Copy other necessary files to /app root
+# ─────────────────────────────
+# 🧱 Copy Application Files
+# ─────────────────────────────
 COPY requirements.txt .
 COPY run.py .
 COPY alembic.ini .
 COPY alembic/ ./alembic/
+COPY src/ ./src/
 COPY app/staging_auth_app.py ./staging_auth_app.py
 
-# Set environment variable to indicate running inside Docker
+# ─────────────────────────────
+# 🖼 Optional: Serve Vite Build
+# ─────────────────────────────
+COPY frontend/dist/ ./static/
+
+# ─────────────────────────────
+# 📦 Python Dependencies
+# ─────────────────────────────
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# ─────────────────────────────
+# ⚙️ Environment + Port
+# ─────────────────────────────
 ENV IN_DOCKER=true
+ENV PORT=8080
 
-# Install Python dependencies
-RUN pip install --upgrade pip && pip install -r requirements.txt
-
-# Expose port 8080 (required by Railway)
+# Railway expects this port exposed
 EXPOSE 8080
 
-# Start the staging_auth_app with gunicorn on port 8080
-CMD gunicorn --bind 0.0.0.0:$PORT staging_auth_app:app
+# ─────────────────────────────
+# 🚀 Start Gunicorn App
+# ─────────────────────────────
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "staging_auth_app:app"]

@@ -65,6 +65,12 @@ def admin_login():
 def strava_login():
     redirect_uri = os.getenv("STRAVA_REDIRECT_URI")
     client_id = os.getenv("STRAVA_CLIENT_ID")
+
+    # 🧪 DEBUG LOGGING
+    print(f"🌐 OAuth Login Triggered", flush=True)
+    print(f"🔑 STRAVA_CLIENT_ID = {client_id}", flush=True)
+    print(f"📍 STRAVA_REDIRECT_URI = {redirect_uri}", flush=True)
+
     url = (
         f"https://www.strava.com/oauth/authorize"
         f"?client_id={client_id}"
@@ -88,7 +94,6 @@ def callback():
 
         print(f"➡️ Received OAuth code: {code}", flush=True)
 
-        # 💬 Log the full request payload before calling Strava
         import pprint
         pp = pprint.PrettyPrinter(indent=2)
 
@@ -103,16 +108,11 @@ def callback():
         print("🚨 Token request payload being sent to Strava:")
         pp.pprint(token_payload)
 
-        # (Optional) Live test:
-        # response = requests.post("https://www.strava.com/api/v3/oauth/token", data=token_payload)
-        # print("🔁 Strava token response:", response.status_code, response.text)
-
-        # ✅ Now call the service to store tokens as before
         athlete_id = store_tokens_from_callback(code, session)
 
         flask_session["athlete_id"] = athlete_id
         print(f"✅ Stored token and session for athlete_id: {athlete_id}", flush=True)
-        return redirect("/?authed=true")
+        return redirect("/post-oauth?authed=true")
 
     except requests.exceptions.HTTPError as e:
         print(f"🔥 Callback HTTP error: {e}", flush=True)
@@ -174,6 +174,33 @@ def monitor_tokens():
         rows = session.execute("SELECT athlete_id, expires_at FROM tokens ORDER BY expires_at").fetchall()
         data = [{"athlete_id": r.athlete_id, "expires_at": r.expires_at} for r in rows]
         return jsonify(data), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
+
+
+# -------- Save Athlete Profile (Name & Email) --------
+@auth_bp.route("/profile", methods=["POST"])
+def save_athlete_profile():
+    from src.db.dao.athlete_dao import upsert_athlete
+    session = get_session()
+    try:
+        data = request.get_json()
+        athlete_id = data.get("athlete_id")
+        name = data.get("name", "").strip()
+        email = data.get("email", "").strip()
+
+        if not athlete_id:
+            return jsonify({"error": "Missing athlete_id"}), 400
+        if not name and not email:
+            return jsonify({"error": "At least one of name or email must be provided"}), 400
+
+        upsert_athlete(session, athlete_id, strava_athlete_id=athlete_id, name=name, email=email)
+
+        return jsonify({"status": "✅ Profile saved"}), 200
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500

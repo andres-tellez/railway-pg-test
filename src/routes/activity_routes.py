@@ -1,3 +1,21 @@
+"""
+activity_routes.py
+
+Enrichment-related endpoints only. All Strava activity ingestion must be run via CLI:
+
+    ✅ USE THIS:
+        python -m src.scripts.main_pipeline --athlete_id <id> --lookback_days <N>
+
+    ⛔ DO NOT USE:
+        /sync/<athlete_id> route — this is deprecated and will return 410.
+
+Why:
+- Ensures consistent ingestion logic
+- Avoids API parameter drift
+- Matches production cron jobs and test paths
+"""
+
+
 from flask import Blueprint, jsonify, request
 import traceback
 from sqlalchemy import text
@@ -64,28 +82,15 @@ def enrich_batch():
         session.close()
 
 
-# -------- Sync Routes --------
+# -------- Deprecated Sync Route --------
 
 @activity_bp.route("/sync/<int:athlete_id>")
-def sync_strava_to_db(athlete_id):
-    """Strava sync endpoint secured via CRON secret"""
-    key = request.args.get("key")
-    if not config.CRON_SECRET_KEY or key != config.CRON_SECRET_KEY:
-        return jsonify(error="Unauthorized"), 401
-
-    lookback_days = request.args.get("lookback", default=30, type=int)
-    max_activities = request.args.get("limit", default=None, type=int)  # <--- FIXED HERE
-
-    session = get_session()
-    try:
-        ingestion_service = ActivityIngestionService(session, athlete_id)
-        inserted = ingestion_service.ingest_recent(
-            lookback_days=lookback_days,
-            max_activities=max_activities  # <--- FIXED HERE
-        )
-        return jsonify(inserted=inserted), 200
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify(error="Sync failed", details=str(e)), 500
-    finally:
-        session.close()
+def sync_strava_to_db_deprecated(athlete_id):
+    """
+    ⚠️ This endpoint is deprecated. Use CLI:
+    python -m src.scripts.main_pipeline --athlete_id <id> --lookback_days <N>
+    """
+    return jsonify({
+        "error": "This sync route is deprecated. Use CLI ingestion instead.",
+        "hint": "python -m src.scripts.main_pipeline --athlete_id <id> --lookback_days <N>"
+    }), 410

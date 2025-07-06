@@ -1558,8 +1558,8 @@
     "device_name": "Garmin Forerunner 965",
     "embed_token": "f03c91634f09bdf743d3cef3d2d13099eff4d6f2",
     "similar_activities": {
-      "effort_count": 5,
-      "average_speed": 2.844581497131769,
+      "effort_count": 7,
+      "average_speed": 2.8292395771853256,
       "min_average_speed": 2.738325087883694,
       "mid_average_speed": 2.848056251477418,
       "max_average_speed": 2.9669489125184025,
@@ -1567,17 +1567,17 @@
       "frequency_milestone": 5,
       "trend": {
         "speeds": [
-          2.9669489125184025,
-          2.9380180332004855,
           2.9125280823106725,
           2.870735123103886,
-          2.8139062341577246
+          2.8139062341577246,
+          2.7745189291815593,
+          2.767997456526721
         ],
-        "current_activity_index": 4,
+        "current_activity_index": 2,
         "min_speed": 2.738325087883694,
         "mid_speed": 2.848056251477418,
         "max_speed": 2.9669489125184025,
-        "direction": -1
+        "direction": 0
       },
       "resource_state": 2
     },

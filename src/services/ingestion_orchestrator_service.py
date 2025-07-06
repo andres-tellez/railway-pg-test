@@ -22,9 +22,8 @@ from src.utils.seeder import seed_sample_activity
 
 logger = get_logger(__name__)
 
-def run_full_ingestion_and_enrichment(session, athlete_id, lookback_days=30, max_activities=None, batch_size=10, per_page=200):
+def run_full_ingestion_and_enrichment(session, athlete_id, lookback_days=None, max_activities=None, batch_size=10, per_page=200):
     logger.info(f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()}")
-
     logger.info(f"🚀 Starting run_full_ingestion_and_enrichment for athlete {athlete_id}")
 
     tokens = get_tokens_sa(session, athlete_id)
@@ -55,9 +54,12 @@ def run_full_ingestion_and_enrichment(session, athlete_id, lookback_days=30, max
     access_token = get_valid_token(session, athlete_id)
     logger.info(f"🟢 Retrieved valid access token for athlete {athlete_id}")
 
-    logger.info(f"🗖️ Fetching activities for the past {lookback_days} days from Strava...")
+    logger.info(f"🗖️ Fetching recent activities from Strava...")
     service = ActivityIngestionService(session, athlete_id)
-    all_fetched = service.ingest_full_history(lookback_days=lookback_days, max_activities=max_activities, per_page=per_page, dry_run=True)
+
+    after_ts = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp()) if lookback_days else None
+    all_fetched = service.client.get_activities(after=after_ts, per_page=per_page, limit=max_activities)
+    all_fetched = [a for a in all_fetched if a.get("type") == "Run"]
 
     if not all_fetched:
         logger.info("📬 No activities returned from Strava.")

@@ -11,3 +11,18 @@ __pycache__/
 *.log
 *.md
 tests/
+
+
+# Python virtual environments
+venv/
+.env*
+*.env
+
+# Coverage and test outputs
+htmlcov/
+coverage.*
+*.cover
+.pytest_cache/
+
+# OS/Editor specific
+*.swp

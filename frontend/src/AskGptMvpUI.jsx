@@ -1,15 +1,11 @@
 import React, { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 
 export default function AskGptMvpUI() {
   const [question, setQuestion] = useState("");
   const [response, setResponse] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const athleteId = 347085; // hardcoded for now
+  const athleteId = 347085;
 
   const handleAsk = async () => {
     if (!question.trim()) return;
@@ -17,7 +13,7 @@ export default function AskGptMvpUI() {
     setResponse("");
 
     try {
-      const res = await fetch("http://127.0.0.1:5000/ask", {
+      const res = await fetch("/ask", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -26,7 +22,7 @@ export default function AskGptMvpUI() {
       });
 
       const data = await res.json();
-      setResponse(data.response || "No response returned.");
+      setResponse(data.response || data.error || "No response returned.");
     } catch (err) {
       console.error("Error:", err);
       setResponse("❌ Error contacting backend.");
@@ -37,25 +33,27 @@ export default function AskGptMvpUI() {
 
   return (
     <div className="max-w-2xl mx-auto mt-10 p-4">
-      <Card className="p-4 shadow-xl">
-        <CardContent className="space-y-4">
-          <h1 className="text-2xl font-bold">SmartCoach Ask</h1>
-          <Textarea
-            placeholder="Ask a question about your training week..."
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            className="min-h-[100px]"
-          />
-          <Button onClick={handleAsk} disabled={loading}>
-            {loading ? "Loading..." : "Ask CoachGPT"}
-          </Button>
-          {response && (
-            <div className="mt-4 bg-gray-50 p-4 rounded-xl border text-sm whitespace-pre-line">
-              {response}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="border rounded-xl shadow-xl p-6 bg-white">
+        <h1 className="text-2xl font-bold mb-4">SmartCoach Ask</h1>
+        <textarea
+          placeholder="Ask a question about your training week..."
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          className="w-full min-h-[100px] p-2 border rounded-lg mb-4"
+        />
+        <button
+          onClick={handleAsk}
+          disabled={loading}
+          className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+        >
+          {loading ? "Loading..." : "Ask CoachGPT"}
+        </button>
+        {response && (
+          <div className="mt-4 bg-gray-50 p-4 rounded-xl border text-sm whitespace-pre-line">
+            {response}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

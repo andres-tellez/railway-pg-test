@@ -1,60 +1,14 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>SmartCoach Ask</title>
-  <link href="https://cdn.tailwindcss.com" rel="stylesheet">
-<script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-100 p-6">
-
-<div class="max-w-2xl mx-auto">
-  <div class="bg-white p-6 rounded-xl shadow-xl">
-    <h1 class="text-2xl font-bold mb-4">SmartCoach Ask</h1>
-
-    <textarea id="question"
-      placeholder="Ask a question about your training week..."
-      class="w-full border p-2 rounded min-h-[100px] mb-4"></textarea>
-
-    <button id="askBtn"
-      class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-    >Ask CoachGPT</button>
-
-    <div id="response" class="mt-6 bg-gray-50 p-4 rounded border text-sm whitespace-pre-line"></div>
-  </div>
-</div>
-
-<script>
-  const btn = document.getElementById("askBtn");
-  const questionInput = document.getElementById("question");
-  const responseDiv = document.getElementById("response");
-  const athleteId = 347085; // Hardcoded for now
-
-  btn.addEventListener("click", async () => {
-    const q = questionInput.value.trim();
-    if (!q) return;
-
-    btn.disabled = true;
-    btn.textContent = "Loading...";
-    responseDiv.textContent = "";
-
-    try {
-      const res = await fetch("/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: q, athlete_id: athleteId })
-      });
-      const data = await res.json();
-      responseDiv.textContent = data.response || "No response from server.";
-    } catch (err) {
-      console.error(err);
-      responseDiv.textContent = "❌ Error contacting backend.";
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Ask CoachGPT";
-    }
-  });
-</script>
-
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Removed favicon link to prevent 404 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite + React</title>
+    <script type="module" crossorigin src="/ask-ui/assets/index-TQXSZ40I.js"></script>
+    <link rel="stylesheet" crossorigin href="/ask-ui/assets/index-Dtn62Xmo.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
 </html>

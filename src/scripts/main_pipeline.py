@@ -74,12 +74,12 @@ def main():
     group.add_argument("--athlete_id", type=int, help="Run for one athlete")
     group.add_argument("--all", action="store_true", help="Run for all athletes")
 
-    parser.add_argument("--lookback_days", type=int, default=30)
-    parser.add_argument("--batch_size", type=int, default=10)
+    parser.add_argument("--lookback_days", type=int, default=None, help="Lookback window in days. If omitted, pulls latest N activities by --max_activities.")
+    parser.add_argument("--max_activities", type=int, default=10, help="Maximum number of activities to ingest")
+    parser.add_argument("--batch_size", type=int, default=10, help="Number of activities to enrich per batch")
     parser.add_argument("--activity_id", type=int, help="Specific activity ID to sync")
     parser.add_argument("--start_date", type=parse_date, help="Start date YYYY-MM-DD")
     parser.add_argument("--end_date", type=parse_date, help="End date YYYY-MM-DD")
-    parser.add_argument("--max_activities", type=int, help="Maximum number of activities to ingest")
     parser.add_argument("--per_page", type=int, default=200, help="Number of results per API page")
 
     args = parser.parse_args()

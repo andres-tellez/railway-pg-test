@@ -3,6 +3,14 @@
 set -e  # Exit on error
 set -o pipefail
 
+# 🛑 Safety prompt before destroying DB volume
+read -p "⚠️  This will erase the DB. Continue? (y/n) " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "🚫 Cancelled."
+    exit 1
+fi
+
 echo "🔁 Stopping and removing containers and volumes..."
 docker-compose down --volumes
 

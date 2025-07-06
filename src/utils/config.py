@@ -1,21 +1,13 @@
 import os
-from dotenv import load_dotenv
 
-# ----- Dynamic .env loading logic -----
+# ❌ REMOVE this block entirely:
+# from dotenv import load_dotenv
+# env_mode = os.getenv("FLASK_ENV") or os.getenv("RAILWAY_ENVIRONMENT") or "development"
+# env_file = ...
+# load_dotenv(env_file, override=True)
 
-# Use FLASK_ENV or fallback to RAILWAY_ENVIRONMENT or default to "development"
-env_mode = os.getenv("FLASK_ENV") or os.getenv("RAILWAY_ENVIRONMENT") or "development"
-
-if env_mode == "testing":
-    env_file = ".env.test"
-elif env_mode == "production":
-    env_file = ".env.prod"
-else:
-    env_file = ".env"
-
-# Load the selected environment file
-load_dotenv(env_file, override=True)
-print(f"✅ Loaded environment: {env_file}")
+# ✅ config.py should only read, never load
+# Assume env already set up by app.py
 
 # ----- OAuth / Strava -----
 STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
@@ -31,7 +23,7 @@ REFRESH_TOKEN_EXP = int(os.getenv("REFRESH_TOKEN_EXP", 604800))  # 7 days
 SECRET_KEY = os.getenv("SECRET_KEY", "dev")
 ADMIN_USER = os.getenv("ADMIN_USER")
 ADMIN_PASS = os.getenv("ADMIN_PASS")
-ADMIN_ATHLETE_ID = 0  # Constant for system user
+ADMIN_ATHLETE_ID = 0
 
 # ----- Database -----
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -45,4 +37,3 @@ PORT = int(os.getenv("PORT", 5000))
 IS_LOCAL = os.getenv("IS_LOCAL", "false").lower() == "true"
 
 JWT_SECRET = SECRET_KEY
-
