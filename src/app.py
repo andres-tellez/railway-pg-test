@@ -63,15 +63,18 @@ def create_app(test_config=None):
     def post_oauth():
         env = os.getenv("FLASK_ENV", "production")
 
-        # Redirect to dev Vite server locally, serve index.html in production
+        # ✅ Local dev: redirect to Vite server
         if env in ["development", "test"]:
             return redirect("http://localhost:5173/post-oauth?authed=true")
 
-        # In production, serve the built index.html file (SPA fallback)
+        # ✅ Production: Serve index.html and preserve path
         index_path = os.path.join(app.static_folder, "index.html")
         if os.path.exists(index_path):
+            # Let React Router handle /post-oauth client-side
             return send_from_directory(app.static_folder, "index.html")
+        
         return "❌ Frontend not found", 404
+
 
 
 
