@@ -61,8 +61,17 @@ def create_app(test_config=None):
     # ─────────────────────────────
     @app.route("/post-oauth")
     def post_oauth():
-        # 👇 Keep this dev-only redirect
-        return redirect("http://localhost:5173/post-oauth?authed=true")
+        env = os.getenv("FLASK_ENV", "production")
+        hosts = {
+            "production": "https://web-production-c4329.up.railway.app",
+            "test": "http://localhost:5173",
+            "development": "http://localhost:5173",
+        }
+        frontend_host = hosts.get(env)
+
+        return redirect(f"{frontend_host}/post-oauth?authed=true")
+
+
 
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
