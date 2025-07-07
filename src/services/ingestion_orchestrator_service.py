@@ -22,7 +22,7 @@ from src.utils.seeder import seed_sample_activity
 
 logger = get_logger(__name__)
 
-def run_full_ingestion_and_enrichment(session, athlete_id, lookback_days=None, max_activities=None, batch_size=10, per_page=200):
+def run_full_ingestion_and_enrichment(session, athlete_id):
     logger.info(f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()}")
     logger.info(f"🚀 Starting run_full_ingestion_and_enrichment for athlete {athlete_id}")
 
@@ -57,7 +57,12 @@ def run_full_ingestion_and_enrichment(session, athlete_id, lookback_days=None, m
     logger.info(f"🗖️ Fetching recent activities from Strava...")
     service = ActivityIngestionService(session, athlete_id)
 
-    after_ts = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp()) if lookback_days else None
+    # 👇 Force override: pull last 10 activities, NOT by date
+    after_ts = None
+    max_activities = 10
+    per_page = 15
+    batch_size = 10
+
     all_fetched = service.client.get_activities(after=after_ts, per_page=per_page, limit=max_activities)
     all_fetched = [a for a in all_fetched if a.get("type") == "Run"]
 
