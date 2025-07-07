@@ -41,7 +41,11 @@ def create_app(test_config=None):
     # ✅ Use universal static folder location
     from pathlib import Path
     BASE_DIR = Path(__file__).resolve().parent.parent
-    app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/")
+    #app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/")
+    
+    app = Flask(__name__, static_folder="static", static_url_path="/")
+
+
 
     
 
