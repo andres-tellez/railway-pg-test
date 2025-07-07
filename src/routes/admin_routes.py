@@ -16,8 +16,8 @@ def trigger_ingestion(athlete_id):
         result = run_full_ingestion_and_enrichment(
             session=session,
             athlete_id=athlete_id,
-            lookback_days=30,
-            max_activities=10,
+            lookback_days=None,     # ⛔ No timestamp filtering
+            max_activities=10,      # ✅ Just fetch most recent 10
             batch_size=10,
             per_page=200
         )
