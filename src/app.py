@@ -45,6 +45,7 @@ def create_app(test_config=None):
     from pathlib import Path
     BASE_DIR = Path(__file__).resolve().parent.parent
     #app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/")
+    #app = Flask(__name__, static_folder="static", static_url_path="/")
     
     app = Flask(__name__, static_folder="../static", static_url_path="/")
 
@@ -141,9 +142,9 @@ def create_app(test_config=None):
 
 
     # Root route (optional)
-    @app.route("/")
-    def home():
-        return "✅ OAuth complete. You are now logged in!", 200
+    #@app.route("/")
+    #def home():
+    #    return "✅ OAuth complete. You are now logged in!", 200
 
     # 🧾 Catch-all for unmatched routes — needed for React Router in production
     @app.errorhandler(404)
