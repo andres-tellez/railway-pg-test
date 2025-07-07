@@ -1,6 +1,9 @@
 import os
 from dotenv import load_dotenv
 
+# At the top of app.py
+# trigger: redeploy
+
 # 🌍 Load correct .env file
 raw_env_mode = os.environ.get("FLASK_ENV", "production")
 env_path = {
