@@ -1,6 +1,7 @@
 {
   "activity": {
     "id": 123456,
+    "external_id": "mock123.fit",
     "name": "Mocked Run",
     "distance": 5000,
     "moving_time": 1800,
@@ -17,6 +18,7 @@
   },
   "zones": {
     "id": 123456,
+    "external_id": "mock123.fit",
     "name": "Mocked Run",
     "distance": 5000,
     "moving_time": 1800,

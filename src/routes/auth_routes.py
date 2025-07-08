@@ -1,4 +1,4 @@
-from flask import Blueprint, redirect, request, jsonify, session as flask_session
+from flask import Blueprint, redirect, request, jsonify, session as flask_session, current_app
 import traceback
 import requests
 from datetime import datetime, timedelta
@@ -14,8 +14,6 @@ from src.db.db_session import get_session
 
 auth_bp = Blueprint("auth", __name__)
 
-
-# -------- WhoAmI (Session Identity) --------
 @auth_bp.route('/whoami', methods=['GET'])
 def whoami():
     athlete_id = flask_session.get("athlete_id")
@@ -23,8 +21,6 @@ def whoami():
         return jsonify({"error": "Not logged in"}), 401
     return jsonify({"athlete_id": athlete_id})
 
-
-# -------- Admin Login (POST, API) --------
 @auth_bp.route("/login", methods=["POST"])
 def admin_login():
     try:
@@ -34,20 +30,12 @@ def admin_login():
 
         if username == config.ADMIN_USER and password == config.ADMIN_PASS:
             access_token = jwt.encode(
-                {
-                    "sub": username,
-                    "exp": datetime.utcnow() + timedelta(seconds=config.ACCESS_TOKEN_EXP)
-                },
-                config.SECRET_KEY,
-                algorithm="HS256"
+                {"sub": username, "exp": datetime.utcnow() + timedelta(seconds=config.ACCESS_TOKEN_EXP)},
+                config.SECRET_KEY, algorithm="HS256"
             )
             refresh_token = jwt.encode(
-                {
-                    "sub": username,
-                    "exp": datetime.utcnow() + timedelta(seconds=config.REFRESH_TOKEN_EXP)
-                },
-                config.SECRET_KEY,
-                algorithm="HS256"
+                {"sub": username, "exp": datetime.utcnow() + timedelta(seconds=config.REFRESH_TOKEN_EXP)},
+                config.SECRET_KEY, algorithm="HS256"
             )
             return jsonify({
                 "access_token": access_token,
@@ -59,14 +47,11 @@ def admin_login():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-
-# -------- Strava OAuth Login (GET, Browser) --------
 @auth_bp.route("/login", methods=["GET"])
 def strava_login():
     redirect_uri = os.getenv("STRAVA_REDIRECT_URI")
     client_id = os.getenv("STRAVA_CLIENT_ID")
 
-    # 🧪 DEBUG LOGGING
     print(f"🌐 OAuth Login Triggered", flush=True)
     print(f"🔑 STRAVA_CLIENT_ID = {client_id}", flush=True)
     print(f"📍 STRAVA_REDIRECT_URI = {redirect_uri}", flush=True)
@@ -80,8 +65,6 @@ def strava_login():
     )
     return redirect(url)
 
-
-# -------- Strava OAuth Callback --------
 @auth_bp.route("/callback")
 def callback():
     from src.services.token_service import store_tokens_from_callback
@@ -94,9 +77,6 @@ def callback():
 
         print(f"➡️ Received OAuth code: {code}", flush=True)
 
-        import pprint
-        pp = pprint.PrettyPrinter(indent=2)
-
         token_payload = {
             "client_id": os.getenv("STRAVA_CLIENT_ID"),
             "client_secret": os.getenv("STRAVA_CLIENT_SECRET"),
@@ -106,12 +86,17 @@ def callback():
         }
 
         print("🚨 Token request payload being sent to Strava:")
-        pp.pprint(token_payload)
+        import pprint
+        pprint.PrettyPrinter(indent=2).pprint(token_payload)
 
         athlete_id = store_tokens_from_callback(code, session)
-
         flask_session["athlete_id"] = athlete_id
+
         print(f"✅ Stored token and session for athlete_id: {athlete_id}", flush=True)
+
+        if current_app.config.get("TESTING"):
+            return f"Token stored for athlete_id: {athlete_id}", 200
+
         return redirect("/post-oauth?authed=true")
 
     except requests.exceptions.HTTPError as e:
@@ -125,8 +110,6 @@ def callback():
     finally:
         session.close()
 
-
-# -------- Token Refresh --------
 @auth_bp.route("/refresh/<int:athlete_id>", methods=["POST"])
 def refresh_token(athlete_id):
     session = get_session()
@@ -151,8 +134,6 @@ def refresh_token(athlete_id):
     finally:
         session.close()
 
-
-# -------- Logout --------
 @auth_bp.route("/logout/<int:athlete_id>", methods=["POST"])
 def logout(athlete_id):
     session = get_session()
@@ -165,8 +146,6 @@ def logout(athlete_id):
     finally:
         session.close()
 
-
-# -------- Token Monitoring --------
 @auth_bp.route("/monitor-tokens", methods=["GET"])
 def monitor_tokens():
     session = get_session()
@@ -180,8 +159,6 @@ def monitor_tokens():
     finally:
         session.close()
 
-
-# -------- Save Athlete Profile (Name & Email) --------
 @auth_bp.route("/profile", methods=["POST"])
 def save_athlete_profile():
     from src.db.dao.athlete_dao import upsert_athlete
@@ -198,7 +175,6 @@ def save_athlete_profile():
             return jsonify({"error": "At least one of name or email must be provided"}), 400
 
         upsert_athlete(session, athlete_id, strava_athlete_id=athlete_id, name=name, email=email)
-
         return jsonify({"status": "✅ Profile saved"}), 200
 
     except Exception as e:

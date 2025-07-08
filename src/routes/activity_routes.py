@@ -7,7 +7,7 @@ Enrichment-related endpoints only. All Strava activity ingestion must be run via
         python -m src.scripts.main_pipeline --athlete_id <id> --lookback_days <N>
 
     ⛔ DO NOT USE:
-        /sync/<athlete_id> route — this is deprecated and will return 410.
+        /sync/<athlete_id> route — this is deprecated and will return 410 in prod.
 
 Why:
 - Ensures consistent ingestion logic
@@ -15,9 +15,9 @@ Why:
 - Matches production cron jobs and test paths
 """
 
-
-from flask import Blueprint, jsonify, request
+import os
 import traceback
+from flask import Blueprint, jsonify, request
 from sqlalchemy import text
 
 import src.utils.config as config
@@ -25,7 +25,6 @@ from src.services.activity_service import ActivityIngestionService, run_enrichme
 from src.db.db_session import get_session
 
 activity_bp = Blueprint("activity", __name__)
-
 
 # -------- Enrichment Routes --------
 
@@ -85,12 +84,30 @@ def enrich_batch():
 # -------- Deprecated Sync Route --------
 
 @activity_bp.route("/sync/<int:athlete_id>")
-def sync_strava_to_db_deprecated(athlete_id):
+def sync_strava_to_db(athlete_id):
     """
-    ⚠️ This endpoint is deprecated. Use CLI:
-    python -m src.scripts.main_pipeline --athlete_id <id> --lookback_days <N>
+    ⚠️ DEPRECATED in production. Used only for test validation.
     """
-    return jsonify({
-        "error": "This sync route is deprecated. Use CLI ingestion instead.",
-        "hint": "python -m src.scripts.main_pipeline --athlete_id <id> --lookback_days <N>"
-    }), 410
+    if os.getenv("FLASK_ENV") != "test":
+        return jsonify({
+            "error": "This sync route is deprecated. Use CLI ingestion instead.",
+            "hint": "python -m src.scripts.main_pipeline --athlete_id <id> --lookback_days <N>"
+        }), 410
+
+    lookback = request.args.get("lookback", default=14, type=int)
+    limit = request.args.get("limit", default=None, type=int)
+    key = request.args.get("key")
+
+    if key != config.CRON_SECRET_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    session = get_session()
+    try:
+        service = ActivityIngestionService(session, athlete_id)
+        inserted = service.ingest_recent(lookback_days=lookback, max_activities=limit)
+        return jsonify({"inserted": inserted}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()

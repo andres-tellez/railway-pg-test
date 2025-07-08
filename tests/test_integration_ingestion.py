@@ -29,6 +29,7 @@ def token_fixture(test_session):
     test_session.delete(token)
     test_session.commit()
 
+
 @patch("src.services.strava_access_service.StravaClient._request_with_backoff")
 def test_ingest_specific_activity_integration(mock_strava_call, test_session, token_fixture):
     athlete_id = 1
@@ -36,6 +37,7 @@ def test_ingest_specific_activity_integration(mock_strava_call, test_session, to
 
     mock_strava_call.return_value = {
         "id": activity_id,
+        "external_id": "mock123.fit",  # ✅ Required field
         "name": "Mocked Run",
         "distance": 5000,
         "moving_time": 1800,
@@ -57,3 +59,4 @@ def test_ingest_specific_activity_integration(mock_strava_call, test_session, to
     activity = test_session.query(Activity).filter(Activity.activity_id == activity_id).first()
     assert activity is not None
     assert activity.activity_id == activity_id
+

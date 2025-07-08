@@ -4,6 +4,7 @@ from datetime import datetime
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+
 def parse_date_safe(date_str: str) -> datetime:
     """
     Parses a date string that may or may not include time.
@@ -16,44 +17,26 @@ def parse_date_safe(date_str: str) -> datetime:
             continue
     raise ValueError(f"Unsupported date format: {date_str}")
 
+
 def format_prompt(user_question: str, activities: list[dict]) -> str:
     """
     Format a prompt string for GPT using the user's question and a list of activity records.
+    Always returns structured prompt for coaching assistant, even if empty input.
     """
-    header = "You are a smart coaching assistant. Answer the question using only the provided data."
-    activity_section = "\n\nACTIVITIES:\n"
+    prompt = "You are a smart coaching assistant helping a runner improve.\n\n"
+    prompt += "ACTIVITIES:\n"
 
-    # Define date range
-    start_date = datetime(2025, 6, 23).date()
-    end_date = datetime(2025, 6, 26).date()
+    if not activities:
+        prompt += "[No activities available]\n"
+    else:
+        for i, a in enumerate(activities, start=1):
+            prompt += f"[{i}] date: {a['date']}, distance_km: {a['distance_km']}, duration_min: {a['duration_min']}\n"
 
-    # Filter activities based on parsed dates
-    filtered_activities = []
-    for activity in activities:
-        try:
-            activity_date = parse_date_safe(activity.get('start_date', '')).date()
-            if start_date <= activity_date <= end_date:
-                filtered_activities.append(activity)
-        except ValueError:
-            continue  # skip invalid dates
+    prompt += "\nUSER QUESTION:\n"
+    prompt += user_question.strip()
 
-    if not filtered_activities:
-        return "No activities found for the selected date range."
+    return prompt
 
-    for i, activity in enumerate(filtered_activities, start=1):
-        summary = f"[{i}] Date: {activity['start_date']}, Distance: {activity['conv_distance']} miles, Duration: {activity.get('duration', 'N/A')}"
-        activity_section += summary + "\n"
-
-    question_section = f"\nUSER QUESTION:\n{user_question.strip()}\n"
-
-    clarification_prompt = (
-        "Please provide a detailed breakdown for the total distance calculation, "
-        "explaining which activities contributed to the total distance. "
-        "Include both the individual activity distances in miles, along with the running time for each activity. "
-        "Do not perform any conversion from kilometers to miles. Use the provided `conv_distance` values."
-    )
-
-    return f"{header}{activity_section}{question_section}{clarification_prompt}"
 
 def get_gpt_response(prompt: str) -> str:
     try:

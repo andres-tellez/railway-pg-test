@@ -68,3 +68,15 @@
 2025-06-26 23:05:17,206 ERROR ❌ Skipping enrichment for activity 123456 due to error: name 'f' is not defined
 2025-06-26 23:05:54,328 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
 2025-06-26 23:05:56,867 ERROR ❌ Skipping enrichment for activity 123456 due to error: name 'f' is not defined
+2025-07-07 20:41:07,228 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
+2025-07-07 20:41:09,815 ERROR ❌ All retries failed — Activity 123456 has incomplete enrichment.
+2025-07-07 20:41:09,816 ERROR ❌ Skipping enrichment for activity 123456 due to error: Enrichment failed for activity 123456
+2025-07-07 20:46:04,626 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
+2025-07-07 20:46:07,201 ERROR ❌ All retries failed — Activity 123456 has incomplete enrichment.
+2025-07-07 20:46:07,201 ERROR ❌ Skipping enrichment for activity 123456 due to error: Enrichment failed for activity 123456
+2025-07-07 20:49:43,569 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
+2025-07-07 20:49:46,106 ERROR ❌ All retries failed — Activity 123456 has incomplete enrichment.
+2025-07-07 20:49:46,106 ERROR ❌ Skipping enrichment for activity 123456 due to error: Enrichment failed for activity 123456
+2025-07-07 20:53:17,313 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
+2025-07-07 20:53:19,888 ERROR ❌ All retries failed — Activity 123456 has incomplete enrichment.
+2025-07-07 20:53:19,888 ERROR ❌ Skipping enrichment for activity 123456 due to error: Enrichment failed for activity 123456

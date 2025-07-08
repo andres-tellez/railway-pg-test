@@ -13,6 +13,7 @@ from src.routes.auth_routes import auth_bp
 @pytest.fixture
 def client():
     app = Flask(__name__)
+    app.secret_key = "test-secret-key"  # Required for flask.session usage
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.config['TESTING'] = True
     with app.test_client() as client:
@@ -49,7 +50,6 @@ def test_admin_login_missing_json(client):
 # ----------------------
 
 def test_strava_login_redirect(client, monkeypatch):
-    # Patch os.getenv to return expected environment variables
     monkeypatch.setattr("os.getenv", lambda k: {
         "STRAVA_CLIENT_ID": "123",
         "STRAVA_REDIRECT_URI": "http://redirect"

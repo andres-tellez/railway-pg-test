@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import patch
 from datetime import datetime, timedelta
+import random
 
 from src.db.models.activities import Activity
 from src.db.models.splits import Split
@@ -35,8 +36,9 @@ def sqlalchemy_token(sqlalchemy_session):
 
 @pytest.fixture
 def seed_activity(sqlalchemy_session):
+    activity_id = random.randint(100000, 999999)
     activity = Activity(
-        activity_id=99999,
+        activity_id=activity_id,
         athlete_id=42,
         start_date=datetime.utcnow()
     )
@@ -72,18 +74,20 @@ def test_enrich_one_activity_with_splits(
         {"elapsed_time": 300, "distance": 1700.0, "average_speed": 3.2, "split": 1, "lap_index": 1}
     ]
 
+    activity_id = seed_activity.activity_id
+
     result = enrich_one_activity_with_refresh(
-        sqlalchemy_session, seed_activity.athlete_id, activity_id=99999
+        sqlalchemy_session, seed_activity.athlete_id, activity_id=activity_id
     )
     assert result is True
 
-    splits = sqlalchemy_session.query(Split).filter_by(activity_id=99999).all()
+    splits = sqlalchemy_session.query(Split).filter_by(activity_id=activity_id).all()
     assert len(splits) == 1
     assert splits[0].lap_index == 1
     assert splits[0].distance == 1700.0
     assert splits[0].elapsed_time == 420
     assert isinstance(splits[0].split, int)
 
-    activity = sqlalchemy_session.query(Activity).filter_by(activity_id=99999).one()
+    activity = sqlalchemy_session.query(Activity).filter_by(activity_id=activity_id).one()
     assert activity.hr_zone_1 is not None
     assert activity.hr_zone_5 is not None

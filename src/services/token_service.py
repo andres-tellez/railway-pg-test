@@ -1,14 +1,16 @@
 import logging
 import requests
 from datetime import datetime
+import jwt
 
 import src.utils.config as config
+from src.db.db_session import get_session as db_get_session
 from src.db.dao.token_dao import get_tokens_sa, insert_token_sa
+from src.db.dao.athlete_dao import insert_athlete
 from src.db.models.tokens import Token
 
-logger = logging.getLogger(__name__)
 
-from src.db.db_session import get_session as db_get_session
+logger = logging.getLogger(__name__)
 
 def get_session():
     return db_get_session()
@@ -82,7 +84,6 @@ def delete_athlete_tokens(session, athlete_id):
     return deleted
 
 
-# ✅ MISSING FUNCTION: Store tokens after OAuth callback
 def store_tokens_from_callback(code, session):
     print(f"🔁 Exchanging code for tokens: {code}", flush=True)
     response = requests.post(
@@ -102,6 +103,18 @@ def store_tokens_from_callback(code, session):
         raise KeyError("❌ Strava callback response missing athlete ID")
 
     athlete_id = athlete["id"]
+
+    # ✅ Ensure athlete is inserted    
+    insert_athlete(
+    session=session,
+    strava_athlete_id=athlete_id,
+    name=f"{athlete.get('firstname', '')} {athlete.get('lastname', '')}".strip(),
+    email=athlete.get("email")
+    )
+
+
+
+
     insert_token_sa(
         session=session,
         athlete_id=athlete_id,
@@ -115,13 +128,8 @@ def store_tokens_from_callback(code, session):
 
 
 def logout_user(token):
-    # No-op logout function (used for UI logout tracking)
     print(f"[LOGOUT] Token logged out: {token}")
-    
-    
-    
 
-import jwt
 
 def login_user(data):
     if data["username"] != config.ADMIN_USER or data["password"] != config.ADMIN_PASS:
@@ -134,18 +142,13 @@ def login_user(data):
 
     insert_token_sa(
         session=session,
-        athlete_id=0,  # Assuming admin does not have athlete_id
+        athlete_id=0,
         access_token=access_token,
         refresh_token=refresh_token,
         expires_at=int(datetime.utcnow().timestamp()) + 3600,
     )
 
     return access_token, refresh_token
-
-
-
-
-
 
 
 def refresh_token(encoded_refresh_token):

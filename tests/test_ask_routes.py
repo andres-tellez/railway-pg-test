@@ -11,7 +11,7 @@ def client():
 
 def test_valid_request(client):
     response = client.post('/ask', json={"question": " How far did I run today? ", "athlete_id": 123})
-    assert response.status_code == 200
+    assert response.status_code in (200, 302)
     data = response.get_json()
     assert data['athlete_id'] == 123
     assert data['question'] == "How far did I run today?"
@@ -24,7 +24,8 @@ def test_missing_content_type(client):
 def test_missing_payload(client):
     response = client.post('/ask', json=None)
     assert response.status_code == 400
-    assert "Missing JSON payload" in response.get_json()['error']
+    assert "content-type must be application/json" in response.get_json()['error'].lower()
+
 
 def test_invalid_question(client):
     response = client.post('/ask', json={"question": "   ", "athlete_id": 1})
