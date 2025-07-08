@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Loader2, CheckCircle, AlertTriangle } from "lucide-react";
 
+const baseUrl = import.meta.env.VITE_API_BASE_URL;
+
 export default function PostOAuthSuccess() {
   const navigate = useNavigate();
   const [progress, setProgress] = useState("⏳ Starting sync...");
@@ -19,9 +21,10 @@ export default function PostOAuthSuccess() {
       setStep(1);
 
       try {
-        const response = await fetch("/auth/profile", {
+        const response = await fetch(`${baseUrl}/auth/profile`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ athlete_id: athleteId, name, email }),
         });
         const result = await response.json();
@@ -40,7 +43,9 @@ export default function PostOAuthSuccess() {
       setStep(0);
 
       try {
-        const res = await fetch("/auth/whoami");
+        const res = await fetch(`${baseUrl}/auth/whoami`, {
+          credentials: "include",
+        });
         const data = await res.json();
         if (res.ok && data.athlete_id) {
           await saveUserProfile(data.athlete_id);
@@ -49,8 +54,11 @@ export default function PostOAuthSuccess() {
 
           try {
             const ingestRes = await fetch(
-              `/admin/trigger-ingest/${data.athlete_id}`,
-              { method: "POST" }
+              `${baseUrl}/admin/trigger-ingest/${data.athlete_id}`,
+              {
+                method: "POST",
+                credentials: "include",
+              }
             );
             const ingestResult = await ingestRes.json();
             if (ingestRes.ok) {
@@ -87,7 +95,7 @@ export default function PostOAuthSuccess() {
     "Verifying session",
     "Saving profile",
     "Triggering ingestion",
-    "Redirecting to SmartCoach Ask"
+    "Redirecting to SmartCoach Ask",
   ];
 
   return (

@@ -1,11 +1,13 @@
 import React, { useState } from "react";
 
+const baseUrl = import.meta.env.VITE_API_BASE_URL;
+
 export default function AskGptMvpUI() {
   const [question, setQuestion] = useState("");
   const [response, setResponse] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const athleteId = 347085;
+  const athleteId = 347085; // TODO: Replace with dynamic value if needed
 
   const handleAsk = async () => {
     if (!question.trim()) return;
@@ -13,11 +15,12 @@ export default function AskGptMvpUI() {
     setResponse("");
 
     try {
-      const res = await fetch("/ask", {
+      const res = await fetch(`${baseUrl}/ask`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({ question, athlete_id: athleteId }),
       });
 

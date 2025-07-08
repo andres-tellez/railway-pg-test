@@ -13,14 +13,18 @@ def trigger_ingestion(athlete_id):
     print(f"⏱️ Received trigger-ingest for athlete {athlete_id}", flush=True)
     session = get_session()
     try:
+        
+        lookback_days = request.args.get("lookback_days", default=None, type=int)
+        max_activities = request.args.get("max_activities", default=10, type=int)
+
         result = run_full_ingestion_and_enrichment(
             session=session,
             athlete_id=athlete_id,
-            lookback_days=None,     # ⛔ No timestamp filtering
-            max_activities=10,      # ✅ Just fetch most recent 10
+            lookback_days=lookback_days,
+            max_activities=max_activities,
             batch_size=10,
             per_page=200
-        )
+)
         print(f"✅ Ingestion result: {result}", flush=True)
         return jsonify({"status": "success", "result": result}), 200
     except Exception as e:

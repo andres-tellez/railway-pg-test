@@ -30,6 +30,8 @@ from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 from pathlib import Path
+from flask_cors import CORS
+
 
 def create_app(test_config=None):
     print("✅ ENTERED create_app()", flush=True)
@@ -48,6 +50,7 @@ def create_app(test_config=None):
     #app = Flask(__name__, static_folder="static", static_url_path="/")
     
     app = Flask(__name__, static_folder="../static", static_url_path="/")
+    CORS(app, supports_credentials=True)
 
 
 

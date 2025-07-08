@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 
+const baseUrl = import.meta.env.VITE_API_BASE_URL;
+
 export default function OnboardingScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -10,10 +12,15 @@ export default function OnboardingScreen() {
       alert("Please enter your email address to continue.");
       return;
     }
+
     localStorage.setItem("user_name", name);
     localStorage.setItem("user_email", email);
-    window.location.href = "http://localhost:5000/auth/login";
 
+    try {
+      window.location.href = `${baseUrl}/auth/login`;
+    } catch (err) {
+      console.error("❌ Redirect failed:", err);
+    }
   };
 
   return (
@@ -76,4 +83,4 @@ export default function OnboardingScreen() {
       )}
     </div>
   );
-} 
+}

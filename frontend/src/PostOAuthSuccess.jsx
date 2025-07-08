@@ -1,5 +1,4 @@
-//PostOAuthSuccess.jsx
-
+// PostOAuthSuccess.jsx
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -11,6 +10,8 @@ const steps = [
   "Triggering ingestion...",
   "Redirecting to Ask Coach...",
 ];
+
+const baseUrl = import.meta.env.VITE_API_BASE_URL;
 
 export default function PostOAuthSuccess() {
   const navigate = useNavigate();
@@ -25,9 +26,10 @@ export default function PostOAuthSuccess() {
 
       setStep(2); // Saving profile
       try {
-        const res = await fetch("/auth/profile", {
+        const res = await fetch(`${baseUrl}/auth/profile`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({ athlete_id: athleteId, name, email }),
         });
         if (!res.ok) throw new Error("Failed to save profile");
@@ -43,16 +45,22 @@ export default function PostOAuthSuccess() {
 
       setStep(1); // Verifying session
       try {
-        const res = await fetch("/auth/whoami");
+        const res = await fetch(`${baseUrl}/auth/whoami`, {
+          credentials: "include",
+        });
         const data = await res.json();
 
         if (res.ok && data.athlete_id) {
           await saveUserProfile(data.athlete_id);
 
           setStep(3); // Triggering ingestion
-          const ingestRes = await fetch(`/admin/trigger-ingest/${data.athlete_id}`, {
-            method: "POST",
-          });
+          const ingestRes = await fetch(
+            `${baseUrl}/admin/trigger-ingest/${data.athlete_id}`,
+            {
+              method: "POST",
+              credentials: "include",
+            }
+          );
 
           if (ingestRes.ok) {
             setStep(4); // Redirecting
@@ -130,5 +138,3 @@ export default function PostOAuthSuccess() {
     </div>
   );
 }
-
-
