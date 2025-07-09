@@ -127,7 +127,9 @@ def create_app(test_config=None):
         # ✅ Local dev: redirect to Vite server
         if env in ["development", "test"]:
             print("🔄 Redirecting to localhost Vite dev server", flush=True)
-            return redirect("http://localhost:5173/post-oauth?authed=true")
+            redirect_url = os.getenv("FRONTEND_REDIRECT")
+            print(f"🔄 Redirecting to: {redirect_url}", flush=True)
+            return redirect(redirect_url)
 
         # ✅ Production: Serve index.html
         index_path = os.path.join(app.static_folder, "index.html")
