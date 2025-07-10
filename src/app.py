@@ -31,7 +31,8 @@ from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 
 def create_app(test_config=None):
-    app = Flask(__name__, static_folder="static", static_url_path="/")
+    app = Flask(__name__, static_folder="frontend/dist", static_url_path="/")
+
     CORS(app, supports_credentials=True)
 
     # 🔐 Configuration
