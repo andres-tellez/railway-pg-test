@@ -30,8 +30,11 @@ from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 
+# ✅ Always serve from absolute resolved build path
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+
 def create_app(test_config=None):
-    app = Flask(__name__, static_folder="frontend/dist", static_url_path="/")
+    app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="/")
     CORS(app, supports_credentials=True)
 
     # 🔐 Configuration
@@ -94,8 +97,7 @@ def create_app(test_config=None):
 
     @app.route("/post-oauth")
     def post_oauth():
-        env = os.getenv("FLASK_ENV", "production")
-        if env == "local":
+        if raw_env_mode == "local":
             redirect_url = os.getenv("FRONTEND_REDIRECT")
             return redirect(redirect_url)
         index_path = os.path.join(app.static_folder, "index.html")
@@ -110,25 +112,21 @@ def create_app(test_config=None):
             return send_from_directory(app.static_folder, "index.html")
         return "404 Not Found", 404
 
-    # 🧭 Serve frontend (staging/prod only)
+    # 🧭 Serve frontend (for production/staging)
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
     def serve_frontend(path):
-        env = os.getenv("FLASK_ENV", "production")
-        if env == "local":
+        if raw_env_mode == "local":
             return "✅ Dev mode — frontend served by Vite", 200
 
-        frontend_path = os.path.join("frontend", "dist")
-        requested_path = os.path.join(frontend_path, path)
-
-        if path and os.path.exists(requested_path) and not path.endswith("/"):
-            return send_from_directory(frontend_path, path)
-        else:
-            return send_from_directory(frontend_path, "index.html")
+        full_path = os.path.join(app.static_folder, path)
+        if path and os.path.exists(full_path) and not path.endswith("/"):
+            return send_from_directory(app.static_folder, path)
+        return send_from_directory(app.static_folder, "index.html")
 
     return app
 
-# 👟 Local dev only (use `flask run` in prod/staging)
+# 👟 Entry point for local dev
 if __name__ == "__main__":
     app = create_app()
     app.run(host="127.0.0.1", port=5000)
