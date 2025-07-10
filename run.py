@@ -24,11 +24,6 @@ else:
     load_dotenv(".env.prod", override=True)
     print("🔍 Loading .env.prod for production", flush=True)
 
-    
-    
-    
-    
-
 print("DATABASE_URL at runtime:", os.getenv("DATABASE_URL"), flush=True)
 
 import src.utils.config as config
@@ -36,17 +31,12 @@ from src.db.db_session import get_session
 from src.services.ingestion_orchestrator_service import run_full_ingestion_and_enrichment
 
 # ─────────────────────────────
-# 🚀 Flask App Setup for Gunicorn
+# 🚀 Flask App Setup for Gunicorn (top-level for Gunicorn import)
 # ─────────────────────────────
-try:
-    from src.app import create_app
-    app = create_app()
-    print("✅ App created via create_app()", flush=True)
-except Exception as e:
-    print("🔥 App creation failed:", e, flush=True)
-    import traceback
-    traceback.print_exc()
-    raise
+from src.app import create_app
+
+app = create_app()
+print("✅ App created via create_app()", flush=True)
 
 # ─────────────────────────────
 # 🧪 Local + Cron Execution Only
@@ -99,7 +89,6 @@ if __name__ == "__main__":
         print("⚠️ DB test query failed:", e, flush=True)
         import traceback
         traceback.print_exc()
-
 
     print(f"🚀 Starting app locally on 0.0.0.0:{port}", flush=True)
     app.run(host="0.0.0.0", port=port, debug=True)
