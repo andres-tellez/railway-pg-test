@@ -1,0 +1,10 @@
+[phases.setup]
+nixPkgs = ["nodejs-18_x", "python311"]
+
+[phases.build]
+cmds = [
+  "cd frontend && npm ci && npm run build"
+]
+
+[start]
+cmd = "python -m gunicorn app:create_app\\(\\) --bind 0.0.0.0:$PORT --workers 1"
