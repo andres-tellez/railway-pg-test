@@ -10,20 +10,15 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # Check and print the FLASK_ENV to confirm it's being set correctly
-env_mode = os.getenv("FLASK_ENV", "production")  # Default to production if FLASK_ENV is not set
-print(f"🌍 FLASK_ENV is set to: {env_mode}", flush=True)
+env_mode = os.getenv("FLASK_ENV", "production")
+env_file = {
+    "local": ".env.local",
+    "staging": ".env.staging",
+    "production": ".env.prod"
+}.get(env_mode, ".env")
 
-# Load environment variables based on FLASK_ENV
-if env_mode == "test":
-    load_dotenv(".env.test", override=True)
-    print("🔍 Loading .env.test for testing", flush=True)
-elif env_mode == "development":
-    load_dotenv(".env", override=True)
-    print("🔍 Loading .env for development", flush=True)
-else:
-    load_dotenv(".env.prod", override=True)
-    print("🔍 Loading .env.prod for production", flush=True)
-
+load_dotenv(env_file, override=True)
+print(f"🔍 Loaded environment file: {env_file}", flush=True)
 print("DATABASE_URL at runtime:", os.getenv("DATABASE_URL"), flush=True)
 
 import src.utils.config as config
