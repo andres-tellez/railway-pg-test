@@ -38,3 +38,4 @@ IS_LOCAL = os.getenv("IS_LOCAL", "false").lower() == "true"
 
 JWT_SECRET = SECRET_KEY
 
+
