@@ -5,7 +5,7 @@ from pathlib import Path
 # 📦 Environment Setup
 raw_env_mode = os.environ.get("FLASK_ENV", "production")
 env_path = {
-    "test": ".env.test",
+    "local": ".env.local",
     "staging": ".env.staging",
     "production": ".env.prod"
 }.get(raw_env_mode, ".env")
@@ -95,7 +95,7 @@ def create_app(test_config=None):
     @app.route("/post-oauth")
     def post_oauth():
         env = os.getenv("FLASK_ENV", "production")
-        if env in ["development", "test"]:
+        if env == "local":
             redirect_url = os.getenv("FRONTEND_REDIRECT")
             return redirect(redirect_url)
         index_path = os.path.join(app.static_folder, "index.html")
@@ -109,6 +109,22 @@ def create_app(test_config=None):
         if os.path.exists(index_path):
             return send_from_directory(app.static_folder, "index.html")
         return "404 Not Found", 404
+
+    # 🧭 Serve frontend (staging/prod only)
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def serve_frontend(path):
+        env = os.getenv("FLASK_ENV", "production")
+        if env == "local":
+            return "✅ Dev mode — frontend served by Vite", 200
+
+        frontend_path = os.path.join(os.getcwd(), "frontend", "dist")
+        requested_path = os.path.join(frontend_path, path)
+
+        if path and os.path.exists(requested_path):
+            return send_from_directory(frontend_path, path)
+        else:
+            return send_from_directory(frontend_path, "index.html")
 
     return app
 
