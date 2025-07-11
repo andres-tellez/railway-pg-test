@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig(({ mode }) => {
-  // Load .env file variables (VITE_BACKEND_URL expected)
   const env = loadEnv(mode, process.cwd(), '');
 
   return {
@@ -41,7 +40,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: '../src/frontend/dist',  // ✅ Matches backend static path
+      outDir: path.resolve(__dirname, 'dist'), // ✅ Local to frontend/
       emptyOutDir: true,
     },
   };
