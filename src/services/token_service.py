@@ -87,7 +87,7 @@ def store_tokens_from_callback(code, session, redirect_uri):
         "grant_type": "authorization_code",
         "redirect_uri": redirect_uri_clean
     }
-    print(f"[TokenService] Sending POST data to Strava token endpoint:\n{payload}", flush=True)
+    print(f"[TokenService] Sending POST data to Strava token endpoint:\n{payload}")
 
     response = requests.post(
         "https://www.strava.com/api/v3/oauth/token",
