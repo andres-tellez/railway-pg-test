@@ -40,3 +40,4 @@ frontend/dist-ssr/
 # OS-specific files
 .DS_Store
 Thumbs.db
+frontend/node_modules/
