@@ -15,6 +15,8 @@ from src.db.db_session import get_session
 
 auth_bp = Blueprint("auth", __name__)
 
+
+
 @auth_bp.route('/whoami', methods=['GET'])
 def whoami():
     athlete_id = flask_session.get("athlete_id")
@@ -73,9 +75,9 @@ def callback():
             return "❌ Missing OAuth code", 400
 
         # Hardcode redirect_uri here to rule out env issues
-        redirect_uri = "https://web-staging-production.up.railway.app/auth/callback"
-        print(f"[Callback] Using HARD-CODED STRAVA_REDIRECT_URI: '{redirect_uri}'", flush=True)
-
+        redirect_uri = os.getenv("STRAVA_REDIRECT_URI", "").strip().rstrip(";")
+        print(f"[Callback] Using STRAVA_REDIRECT_URI from env: '{redirect_uri}'", flush=True)
+        
         athlete_id = store_tokens_from_callback(code, session, redirect_uri)
         flask_session["athlete_id"] = athlete_id
 

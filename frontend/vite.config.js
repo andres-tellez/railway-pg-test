@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: path.resolve(__dirname, 'dist'), // ✅ Local to frontend/
+      outDir: 'dist',           // ✅ Output will stay inside frontend/dist
       emptyOutDir: true,
     },
   };
