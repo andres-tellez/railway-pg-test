@@ -82,7 +82,7 @@ def callback():
             "client_secret": os.getenv("STRAVA_CLIENT_SECRET"),
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": os.getenv("STRAVA_REDIRECT_URI"),
+            "redirect_uri": os.getenv("STRAVA_REDIRECT_URI", "").strip().rstrip(";"),
         }
 
         print("🚨 Token request payload being sent to Strava:")

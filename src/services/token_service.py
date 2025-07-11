@@ -50,7 +50,7 @@ def refresh_token_static(refresh_token):
             "client_id": config.STRAVA_CLIENT_ID,
             "client_secret": config.STRAVA_CLIENT_SECRET,
             "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
+            "refresh_token": refresh_token
         },
     )
     response.raise_for_status()
@@ -85,7 +85,7 @@ def store_tokens_from_callback(code, session):
             "client_secret": config.STRAVA_CLIENT_SECRET,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": config.STRAVA_REDIRECT_URI  # <-- Added this line
+            "redirect_uri": config.STRAVA_REDIRECT_URI.strip().rstrip(";")
         },
     )
     response.raise_for_status()
@@ -171,7 +171,7 @@ def exchange_code_for_token(code):
             "client_secret": config.STRAVA_CLIENT_SECRET,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": config.STRAVA_REDIRECT_URI  # Add here also if used
+            "redirect_uri": config.STRAVA_REDIRECT_URI.strip().rstrip(";")
         },
     )
     response.raise_for_status()
