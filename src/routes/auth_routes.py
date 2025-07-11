@@ -64,33 +64,25 @@ def strava_login():
 
 @auth_bp.route("/callback")
 def callback():
+    from src.services.token_service import store_tokens_from_callback
+
     session = get_session()
     try:
         code = request.args.get("code")
         if not code:
-            print("❌ Missing OAuth code", flush=True)
             return "❌ Missing OAuth code", 400
 
-        redirect_uri = os.getenv("STRAVA_REDIRECT_URI", "").strip().rstrip(";")
+        # Hardcode redirect_uri here to rule out env issues
+        redirect_uri = "https://web-staging-production.up.railway.app/auth/callback"
+        print(f"[Callback] Using HARD-CODED STRAVA_REDIRECT_URI: '{redirect_uri}'", flush=True)
 
         athlete_id = store_tokens_from_callback(code, session, redirect_uri)
         flask_session["athlete_id"] = athlete_id
 
-        if current_app.config.get("TESTING"):
-            return f"Token stored for athlete_id: {athlete_id}", 200
-
         return redirect("/post-oauth?authed=true")
-
-    except requests.exceptions.HTTPError as e:
-        print(f"🔥 Callback HTTP error: {e}", flush=True)
-        return jsonify({"error": "Strava OAuth token exchange failed"}), 502
-
-    except Exception as e:
-        traceback.print_exc()
-        return f"❌ Callback error: {str(e)}", 500
-
     finally:
         session.close()
+
 
 @auth_bp.route("/refresh/<int:athlete_id>", methods=["POST"])
 def refresh_token(athlete_id):
