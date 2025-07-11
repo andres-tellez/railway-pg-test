@@ -80,15 +80,18 @@ def store_tokens_from_callback(code, session, redirect_uri):
     redirect_uri_clean = redirect_uri.strip().rstrip(";")
     print(f"[TokenService] Using cleaned redirect_uri: '{redirect_uri_clean}'", flush=True)
 
+    payload = {
+        "client_id": config.STRAVA_CLIENT_ID,
+        "client_secret": config.STRAVA_CLIENT_SECRET,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": redirect_uri_clean
+    }
+    print(f"[TokenService] Sending POST data to Strava token endpoint:\n{payload}", flush=True)
+
     response = requests.post(
         "https://www.strava.com/api/v3/oauth/token",
-        data={
-            "client_id": config.STRAVA_CLIENT_ID,
-            "client_secret": config.STRAVA_CLIENT_SECRET,
-            "code": code,
-            "grant_type": "authorization_code",
-            "redirect_uri": redirect_uri_clean
-        },
+        data=payload,
     )
     response.raise_for_status()
     token_data = response.json()
@@ -119,6 +122,9 @@ def store_tokens_from_callback(code, session, redirect_uri):
 
     print(f"✅ Token stored for athlete: {strava_athlete_id}", flush=True)
     return strava_athlete_id
+
+
+
 
 def logout_user(token):
     print(f"[LOGOUT] Token logged out: {token}")
