@@ -11,6 +11,10 @@ env_path = {
 }.get(raw_env_mode, ".env")
 
 load_dotenv(env_path, override=True)
+
+print(f"[Startup] STRAVA_REDIRECT_URI raw from environment: '{os.getenv('STRAVA_REDIRECT_URI')}'", flush=True)
+
+
 print(f"✅ Loaded environment: {env_path}", flush=True)
 
 if env_path != ".env":

@@ -78,6 +78,9 @@ def delete_athlete_tokens(session, athlete_id):
 
 def store_tokens_from_callback(code, session):
     print(f"🔁 Exchanging code for tokens: {code}", flush=True)
+    redirect_uri = config.STRAVA_REDIRECT_URI
+    print(f"[Token Exchange] redirect_uri before clean: '{redirect_uri}'", flush=True)
+    
     response = requests.post(
         "https://www.strava.com/api/v3/oauth/token",
         data={
@@ -85,7 +88,7 @@ def store_tokens_from_callback(code, session):
             "client_secret": config.STRAVA_CLIENT_SECRET,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": config.STRAVA_REDIRECT_URI.strip().rstrip(";")
+            "redirect_uri": config.STRAVA_REDIRECT_URI
         },
     )
     response.raise_for_status()

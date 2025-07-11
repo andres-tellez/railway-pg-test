@@ -68,6 +68,10 @@ def strava_login():
 @auth_bp.route("/callback")
 def callback():
     from src.services.token_service import store_tokens_from_callback
+    
+    redirect_uri = os.getenv("STRAVA_REDIRECT_URI")
+    print(f"[Callback] STRAVA_REDIRECT_URI raw: '{redirect_uri}'", flush=True)
+    
     session = get_session()
     try:
         code = request.args.get("code")
