@@ -17,7 +17,7 @@ env_file = {
     "production": ".env.prod"
 }.get(env_mode, ".env")
 
-load_dotenv(env_file, override=True)
+load_dotenv(env_file, override=False)
 print(f"🔍 Loaded environment file: {env_file}", flush=True)
 print("DATABASE_URL at runtime:", os.getenv("DATABASE_URL"), flush=True)
 
