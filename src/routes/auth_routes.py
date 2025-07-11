@@ -68,10 +68,7 @@ def strava_login():
 @auth_bp.route("/callback")
 def callback():
     from src.services.token_service import store_tokens_from_callback
-    
-    redirect_uri = os.getenv("STRAVA_REDIRECT_URI")
-    print(f"[Callback] STRAVA_REDIRECT_URI raw: '{redirect_uri}'", flush=True)
-    
+
     session = get_session()
     try:
         code = request.args.get("code")
@@ -79,21 +76,23 @@ def callback():
             print("❌ Missing code param", flush=True)
             return "❌ Missing OAuth code", 400
 
-        print(f"➡️ Received OAuth code: {code}", flush=True)
+        redirect_uri_raw = os.getenv("STRAVA_REDIRECT_URI", "")
+        redirect_uri_clean = redirect_uri_raw.strip().rstrip(";")  # remove trailing semicolon & whitespace
+        print(f"[Callback] STRAVA_REDIRECT_URI cleaned: '{redirect_uri_clean}'", flush=True)
 
         token_payload = {
             "client_id": os.getenv("STRAVA_CLIENT_ID"),
             "client_secret": os.getenv("STRAVA_CLIENT_SECRET"),
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": os.getenv("STRAVA_REDIRECT_URI", "").strip().rstrip(";"),
+            "redirect_uri": redirect_uri_clean,
         }
 
         print("🚨 Token request payload being sent to Strava:")
         import pprint
         pprint.PrettyPrinter(indent=2).pprint(token_payload)
 
-        athlete_id = store_tokens_from_callback(code, session)
+        athlete_id = store_tokens_from_callback(code, session, redirect_uri_clean)
         flask_session["athlete_id"] = athlete_id
 
         print(f"✅ Stored token and session for athlete_id: {athlete_id}", flush=True)
@@ -113,6 +112,7 @@ def callback():
 
     finally:
         session.close()
+
 
 @auth_bp.route("/refresh/<int:athlete_id>", methods=["POST"])
 def refresh_token(athlete_id):
