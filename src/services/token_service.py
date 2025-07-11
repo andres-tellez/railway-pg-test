@@ -120,7 +120,6 @@ def store_tokens_from_callback(code, session, redirect_uri):
     print(f"✅ Token stored for athlete: {strava_athlete_id}", flush=True)
     return strava_athlete_id
 
-
 def logout_user(token):
     print(f"[LOGOUT] Token logged out: {token}")
 
@@ -166,7 +165,12 @@ def refresh_token(encoded_refresh_token):
     )
     return new_tokens["access_token"]
 
-def exchange_code_for_token(code):
+def exchange_code_for_token(code, redirect_uri=None):
+    if redirect_uri is None:
+        redirect_uri = config.STRAVA_REDIRECT_URI.strip().rstrip(";")
+    else:
+        redirect_uri = redirect_uri.strip().rstrip(";")
+
     response = requests.post(
         "https://www.strava.com/api/v3/oauth/token",
         data={
@@ -174,14 +178,14 @@ def exchange_code_for_token(code):
             "client_secret": config.STRAVA_CLIENT_SECRET,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": config.STRAVA_REDIRECT_URI.strip().rstrip(";")
+            "redirect_uri": redirect_uri
         },
     )
     response.raise_for_status()
     return response.json()
 
 def get_authorization_url():
-    redirect_uri = config.STRAVA_REDIRECT_URI
+    redirect_uri = config.STRAVA_REDIRECT_URI.strip().rstrip(";")
     client_id = config.STRAVA_CLIENT_ID
     url = (
         f"https://www.strava.com/oauth/authorize"
