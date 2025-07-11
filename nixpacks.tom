@@ -3,7 +3,10 @@ nixPkgs = ["nodejs-18_x", "python311"]
 
 [phases.build]
 cmds = [
-  "cd frontend && npm ci && npm run build"
+  "echo 🚀 STARTING FRONTEND BUILD",
+  "cd frontend && npm ci && npm run build",
+  "echo ✅ FRONTEND BUILD COMPLETE",
+  "ls -la frontend/dist || echo ❌ DIST NOT FOUND"
 ]
 
 [start]
