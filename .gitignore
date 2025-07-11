@@ -35,7 +35,6 @@ pytest_log.txt
 
 # Node modules and build outputs (for frontend)
 frontend/node_modules/
-frontend/dist/
 frontend/dist-ssr/
 
 # OS-specific files
