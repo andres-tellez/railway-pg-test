@@ -77,10 +77,10 @@ def delete_athlete_tokens(session, athlete_id):
     return deleted
 
 def store_tokens_from_callback(code, session):
-    print(f"🔁 Exchanging code for tokens: {code}", flush=True)
-    redirect_uri = config.STRAVA_REDIRECT_URI
-    print(f"[Token Exchange] redirect_uri before clean: '{redirect_uri}'", flush=True)
-    
+    redirect_uri_raw = config.STRAVA_REDIRECT_URI
+    redirect_uri_clean = redirect_uri_raw.strip().rstrip(";")
+    print(f"[TokenService] Using cleaned redirect_uri: '{redirect_uri_clean}'", flush=True)
+
     response = requests.post(
         "https://www.strava.com/api/v3/oauth/token",
         data={
@@ -88,7 +88,7 @@ def store_tokens_from_callback(code, session):
             "client_secret": config.STRAVA_CLIENT_SECRET,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": config.STRAVA_REDIRECT_URI
+            "redirect_uri": redirect_uri_clean
         },
     )
     response.raise_for_status()
@@ -101,7 +101,7 @@ def store_tokens_from_callback(code, session):
     strava_athlete_id = athlete["id"]
     internal_id = get_athlete_id_from_strava_id(session, strava_athlete_id)
 
-    # ✅ FIX: use strava_athlete_id as ID if no internal mapping exists
+    # Use strava_athlete_id if no internal mapping exists
     upsert_athlete(
         session=session,
         athlete_id=internal_id if internal_id else strava_athlete_id,
@@ -120,6 +120,7 @@ def store_tokens_from_callback(code, session):
 
     print(f"✅ Token stored for athlete: {strava_athlete_id}", flush=True)
     return strava_athlete_id
+
 
 def logout_user(token):
     print(f"[LOGOUT] Token logged out: {token}")

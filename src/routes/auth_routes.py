@@ -92,7 +92,7 @@ def callback():
         import pprint
         pprint.PrettyPrinter(indent=2).pprint(token_payload)
 
-        athlete_id = store_tokens_from_callback(code, session, redirect_uri_clean)
+        athlete_id = store_tokens_from_callback(code, session)
         flask_session["athlete_id"] = athlete_id
 
         print(f"✅ Stored token and session for athlete_id: {athlete_id}", flush=True)
