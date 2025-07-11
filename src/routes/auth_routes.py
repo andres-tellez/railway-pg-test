@@ -52,10 +52,6 @@ def strava_login():
     redirect_uri = os.getenv("STRAVA_REDIRECT_URI")
     client_id = os.getenv("STRAVA_CLIENT_ID")
 
-    print(f"🌐 OAuth Login Triggered", flush=True)
-    print(f"🔑 STRAVA_CLIENT_ID = {client_id}", flush=True)
-    print(f"📍 STRAVA_REDIRECT_URI = {redirect_uri}", flush=True)
-
     url = (
         f"https://www.strava.com/oauth/authorize"
         f"?client_id={client_id}"
@@ -73,45 +69,25 @@ def callback():
     try:
         code = request.args.get("code")
         if not code:
-            print("❌ Missing code param", flush=True)
             return "❌ Missing OAuth code", 400
 
-        redirect_uri_raw = os.getenv("STRAVA_REDIRECT_URI", "")
-        redirect_uri_clean = redirect_uri_raw.strip().rstrip(";")  # remove trailing semicolon & whitespace
-        print(f"[Callback] STRAVA_REDIRECT_URI cleaned: '{redirect_uri_clean}'", flush=True)
+        redirect_uri = os.getenv("STRAVA_REDIRECT_URI", "").strip().rstrip(";")
 
         token_payload = {
             "client_id": os.getenv("STRAVA_CLIENT_ID"),
             "client_secret": os.getenv("STRAVA_CLIENT_SECRET"),
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": redirect_uri_clean,
+            "redirect_uri": redirect_uri,
         }
 
-        print("🚨 Token request payload being sent to Strava:")
-        import pprint
-        pprint.PrettyPrinter(indent=2).pprint(token_payload)
-
-        athlete_id = store_tokens_from_callback(code, session, redirect_uri_clean)
+        athlete_id = store_tokens_from_callback(code, session, redirect_uri)
         flask_session["athlete_id"] = athlete_id
 
-        print(f"✅ Stored token and session for athlete_id: {athlete_id}", flush=True)
-
-        if current_app.config.get("TESTING"):
-            return f"Token stored for athlete_id: {athlete_id}", 200
-
         return redirect("/post-oauth?authed=true")
-
-    except requests.exceptions.HTTPError as e:
-        print(f"🔥 Callback HTTP error: {e}", flush=True)
-        return jsonify({"error": "Strava OAuth token exchange failed"}), 502
-
-    except Exception as e:
-        traceback.print_exc()
-        return f"❌ Callback error: {str(e)}", 500
-
     finally:
         session.close()
+
 
 
 @auth_bp.route("/refresh/<int:athlete_id>", methods=["POST"])
