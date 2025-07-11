@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL;
+const backendUrl = import.meta.env.VITE_BACKEND_URL;
+
 
 export default function OnboardingScreen() {
   const [name, setName] = useState('');
@@ -17,7 +18,8 @@ export default function OnboardingScreen() {
     localStorage.setItem("user_email", email);
 
     try {
-      window.location.href = `${baseUrl}/auth/login`;
+      console.log("🔗 Redirecting to:", `${backendUrl}/auth/redirect`);
+      window.location.href = `${backendUrl}/auth/login`;
     } catch (err) {
       console.error("❌ Redirect failed:", err);
     }

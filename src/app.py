@@ -35,7 +35,10 @@ FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 
 def create_app(test_config=None):
     app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="/")
-    CORS(app, supports_credentials=True)
+    cors_origins = os.getenv("CORS_ORIGINS", "")
+    origin_list = [o.strip() for o in cors_origins.split(",") if o.strip()]
+    CORS(app, supports_credentials=True, origins=origin_list)
+
 
     # 🔐 Configuration
     app.config.from_mapping(

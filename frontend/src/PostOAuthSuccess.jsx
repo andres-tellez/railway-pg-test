@@ -11,8 +11,6 @@ const steps = [
   "Redirecting to Ask Coach...",
 ];
 
-const baseUrl = import.meta.env.VITE_API_BASE_URL;
-
 export default function PostOAuthSuccess() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
@@ -26,7 +24,7 @@ export default function PostOAuthSuccess() {
 
       setStep(2); // Saving profile
       try {
-        const res = await fetch(`${baseUrl}/auth/profile`, {
+        const res = await fetch("/auth/profile", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -45,7 +43,7 @@ export default function PostOAuthSuccess() {
 
       setStep(1); // Verifying session
       try {
-        const res = await fetch(`${baseUrl}/auth/whoami`, {
+        const res = await fetch("/auth/whoami", {
           credentials: "include",
         });
         const data = await res.json();
@@ -54,13 +52,10 @@ export default function PostOAuthSuccess() {
           await saveUserProfile(data.athlete_id);
 
           setStep(3); // Triggering ingestion
-          const ingestRes = await fetch(
-            `${baseUrl}/admin/trigger-ingest/${data.athlete_id}`,
-            {
-              method: "POST",
-              credentials: "include",
-            }
-          );
+          const ingestRes = await fetch(`/admin/trigger-ingest/${data.athlete_id}`, {
+            method: "POST",
+            credentials: "include",
+          });
 
           if (ingestRes.ok) {
             setStep(4); // Redirecting

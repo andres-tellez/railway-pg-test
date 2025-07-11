@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig(({ mode }) => {
-  // Load .env files based on mode (e.g., .env.local, .env.staging)
+  // Load .env file variables (VITE_BACKEND_URL expected)
   const env = loadEnv(mode, process.cwd(), '');
 
   return {
@@ -15,19 +15,26 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      port: 5173,
+      strictPort: true,
       proxy: {
         '/auth': {
-          target: env.VITE_API_BASE_URL,
+          target: env.VITE_BACKEND_URL,
           changeOrigin: true,
           secure: false,
         },
         '/admin': {
-          target: env.VITE_API_BASE_URL,
+          target: env.VITE_BACKEND_URL,
           changeOrigin: true,
           secure: false,
         },
         '/sync': {
-          target: env.VITE_API_BASE_URL,
+          target: env.VITE_BACKEND_URL,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/ask': {
+          target: env.VITE_BACKEND_URL,
           changeOrigin: true,
           secure: false,
         },

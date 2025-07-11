@@ -22,7 +22,7 @@
     "location_state": null,
     "location_country": null,
     "achievement_count": 0,
-    "kudos_count": 4,
+    "kudos_count": 6,
     "comment_count": 0,
     "athlete_count": 1,
     "photo_count": 0,
@@ -1435,7 +1435,7 @@
       {
         "id": 3377337151638476546,
         "resource_state": 2,
-        "name": "Salomon - Tomorrow is Yours Segment",
+        "name": "Tomorrow is Yours Segment",
         "activity": {
           "id": 15036347424,
           "visibility": "everyone",
@@ -1460,7 +1460,7 @@
         "segment": {
           "id": 33326369,
           "resource_state": 2,
-          "name": "Salomon - Tomorrow is Yours Segment",
+          "name": "Tomorrow is Yours Segment",
           "activity_type": "Run",
           "distance": 605.9,
           "average_grade": 0.0,

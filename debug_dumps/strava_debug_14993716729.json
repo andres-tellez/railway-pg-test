@@ -727,7 +727,7 @@
       {
         "id": 3375829695113251850,
         "resource_state": 2,
-        "name": "Salomon - Tomorrow is Yours Segment",
+        "name": "Tomorrow is Yours Segment",
         "activity": {
           "id": 14993716729,
           "visibility": "everyone",
@@ -752,7 +752,7 @@
         "segment": {
           "id": 33326369,
           "resource_state": 2,
-          "name": "Salomon - Tomorrow is Yours Segment",
+          "name": "Tomorrow is Yours Segment",
           "activity_type": "Run",
           "distance": 605.9,
           "average_grade": 0.0,

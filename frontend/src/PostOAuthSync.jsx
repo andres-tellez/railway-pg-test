@@ -45,8 +45,23 @@ export default function PostOAuthSync() {
 
         if (res.ok && data.athlete_id) {
           await saveUserProfile(data.athlete_id);
-          setStatus("done");
 
+          // ✅ Trigger Strava ingestion
+          try {
+            const ingestRes = await fetch(`${baseUrl}/ingest/start`, {
+              method: "POST",
+              credentials: "include",
+            });
+
+            if (!ingestRes.ok) throw new Error("Ingestion failed");
+            console.log("✅ Ingestion started");
+          } catch (ingestErr) {
+            console.error("❌ Failed to start ingestion", ingestErr);
+            setStatus("error");
+            return;
+          }
+
+          setStatus("done");
           setTimeout(() => {
             navigate("/ask");
           }, 1500);

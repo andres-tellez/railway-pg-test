@@ -6,9 +6,8 @@ import jwt
 import src.utils.config as config
 from src.db.db_session import get_session as db_get_session
 from src.db.dao.token_dao import get_tokens_sa, insert_token_sa
-from src.db.dao.athlete_dao import insert_athlete
+from src.db.dao.athlete_dao import get_athlete_id_from_strava_id, upsert_athlete
 from src.db.models.tokens import Token
-
 
 logger = logging.getLogger(__name__)
 
@@ -102,29 +101,28 @@ def store_tokens_from_callback(code, session):
     if not athlete or "id" not in athlete:
         raise KeyError("❌ Strava callback response missing athlete ID")
 
-    athlete_id = athlete["id"]
+    strava_athlete_id = athlete["id"]
+    internal_id = get_athlete_id_from_strava_id(session, strava_athlete_id)
 
-    # ✅ Ensure athlete is inserted    
-    insert_athlete(
-    session=session,
-    strava_athlete_id=athlete_id,
-    name=f"{athlete.get('firstname', '')} {athlete.get('lastname', '')}".strip(),
-    email=athlete.get("email")
+    # ✅ FIX: use strava_athlete_id as ID if no internal mapping exists
+    upsert_athlete(
+        session=session,
+        athlete_id=internal_id if internal_id else strava_athlete_id,
+        strava_athlete_id=strava_athlete_id,
+        name=athlete.get("firstname", ""),
+        email=athlete.get("email")
     )
-
-
-
 
     insert_token_sa(
         session=session,
-        athlete_id=athlete_id,
+        athlete_id=strava_athlete_id,
         access_token=token_data["access_token"],
         refresh_token=token_data["refresh_token"],
         expires_at=token_data["expires_at"]
     )
 
-    print(f"✅ Token stored for athlete: {athlete_id}", flush=True)
-    return athlete_id
+    print(f"✅ Token stored for athlete: {strava_athlete_id}", flush=True)
+    return strava_athlete_id
 
 
 def logout_user(token):

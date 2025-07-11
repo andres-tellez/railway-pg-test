@@ -80,3 +80,5 @@
 2025-07-07 20:53:17,313 ERROR ❌ Skipping activity 123456 due to missing required fields: ['external_id']
 2025-07-07 20:53:19,888 ERROR ❌ All retries failed — Activity 123456 has incomplete enrichment.
 2025-07-07 20:53:19,888 ERROR ❌ Skipping enrichment for activity 123456 due to error: Enrichment failed for activity 123456
+2025-07-10 17:40:49,290 ERROR ❌ Skipping activity 447084 due to missing required fields: ['start_date', 'external_id']
+2025-07-10 17:40:49,354 ERROR ❌ Skipping activity 447084 due to missing required fields: ['start_date', 'external_id']
