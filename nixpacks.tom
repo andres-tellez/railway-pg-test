@@ -1,6 +1,10 @@
 [phases.setup]
 nixPkgs = ["nodejs-18_x", "python311"]
 
+[providers]
+nodejs = {}
+python = {}
+
 [phases.build]
 cmds = [
   "echo 🚀 STARTING FRONTEND BUILD",
