@@ -76,7 +76,7 @@ def delete_athlete_tokens(session, athlete_id):
     session.commit()
     return deleted
 
-def store_tokens_from_callback(code, session):
+def store_tokens_from_callback(code, session, redirect_uri):
     redirect_uri_raw = config.STRAVA_REDIRECT_URI
     redirect_uri_clean = redirect_uri_raw.strip().rstrip(";")
     print(f"[TokenService] Using cleaned redirect_uri: '{redirect_uri_clean}'", flush=True)
