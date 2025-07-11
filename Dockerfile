@@ -1,25 +1,23 @@
-# ✅ Use Node 20 for frontend to match engine requirements
-FROM node:20 AS frontend
+# Base: Node for frontend
+FROM node:18 AS frontend
 
-# Build frontend
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
+
 COPY frontend ./
 RUN npm run build
 
-# 🐍 Python backend with Gunicorn
+# Python backend with Gunicorn
 FROM python:3.11-slim AS backend
 
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy everything, including Flask app
 COPY . .
 
-# Move built frontend output into backend container
+# Move built frontend into backend
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
-# Start the Flask app via Gunicorn
-CMD ["gunicorn", "app:create_app()", "--bind", "0.0.0.0:8080", "--workers", "1"]
+CMD ["gunicorn", "main:create_app", "--bind", "0.0.0.0:8080", "--workers", "1"]
