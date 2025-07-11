@@ -10,7 +10,22 @@ env_path = {
     "production": ".env.prod"
 }.get(raw_env_mode, ".env")
 
-load_dotenv(env_path, override=True)
+from urllib.parse import urlparse
+
+load_dotenv(env_path, override=False)
+print(f"🔍 Loaded environment file: {env_path}", flush=True)
+
+# ⛏️ Patch for TablePlus-style port override on Railway
+original_url = os.getenv("DATABASE_URL", "")
+parsed = urlparse(original_url)
+
+if "proxy.rlwy.net" in parsed.hostname:
+    os.environ["DATABASE_URL"] = original_url
+    print("✅ Patched DATABASE_URL using proxy.rlwy.net override for staging.", flush=True)
+else:
+    print("ℹ️ Using DATABASE_URL as-is", flush=True)
+
+print("📦 DATABASE_URL at runtime (from app.py):", os.getenv("DATABASE_URL"), flush=True)
 
 print(f"[Startup] STRAVA_REDIRECT_URI raw from environment: '{os.getenv('STRAVA_REDIRECT_URI')}'", flush=True)
 
