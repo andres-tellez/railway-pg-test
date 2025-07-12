@@ -99,6 +99,11 @@ def create_app(test_config=None):
         try:
             from sqlalchemy import create_engine, inspect
             db_url = os.getenv("DATABASE_URL")
+            
+            # ✅ Fix: Ensure proper dialect
+            if db_url.startswith("postgres://"):
+                db_url = db_url.replace("postgres://", "postgresql://", 1)
+            
             engine = create_engine(db_url)
             insp = inspect(engine)
             columns = insp.get_columns("splits")
@@ -117,6 +122,8 @@ def create_app(test_config=None):
             traceback.print_exc()
             return {"status": "fail", "error": str(e)}, 500
 
+    
+    
     @app.route("/post-oauth")
     def post_oauth():
         if raw_env_mode == "local":
