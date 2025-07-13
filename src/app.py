@@ -50,7 +50,8 @@ from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 
 # ✅ Always serve from absolute resolved build path
-FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+# ⛏️ Corrected path to root-level /frontend/dist
+FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 
 def create_app(test_config=None):
     app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="/")
