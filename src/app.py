@@ -14,10 +14,9 @@ env_path = {
 load_dotenv(env_path, override=False)
 print(f"🔍 Loaded environment file: {env_path}", flush=True)
 
-# ⛏️ Patch for TablePlus-style port override on Railway
+# ⛏️ Patch for Railway proxy handling
 original_url = os.getenv("DATABASE_URL", "")
 parsed = urlparse(original_url)
-
 if "proxy.rlwy.net" in parsed.hostname:
     os.environ["DATABASE_URL"] = original_url
     print("✅ Patched DATABASE_URL using proxy.rlwy.net override for staging.", flush=True)
@@ -39,7 +38,7 @@ from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 
-# ✅ Serve from root-level /frontend/dist
+# ✅ Serve from absolute build path
 FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 
 def create_app(test_config=None):
@@ -48,7 +47,7 @@ def create_app(test_config=None):
     origin_list = [o.strip() for o in cors_origins.split(",") if o.strip()]
     CORS(app, supports_credentials=True, origins=origin_list)
 
-    # 🔐 Configuration
+    # 🔐 App config
     app.config.from_mapping(
         SECRET_KEY=config.SECRET_KEY,
         DATABASE_URL=os.getenv("DATABASE_URL"),
@@ -56,7 +55,6 @@ def create_app(test_config=None):
         INTERNAL_API_KEY=config.INTERNAL_API_KEY,
         SESSION_TYPE="filesystem"
     )
-
     if test_config:
         app.config.update(test_config)
 
@@ -67,7 +65,23 @@ def create_app(test_config=None):
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
 
-    # 🧪 Utility Endpoints
+    # ✅ Debug route to list files in /dist
+    @app.route("/debug-files")
+    def debug_files():
+        try:
+            files = []
+            for root, dirs, filenames in os.walk(app.static_folder):
+                for f in filenames:
+                    rel_path = os.path.relpath(os.path.join(root, f), app.static_folder)
+                    files.append(rel_path)
+            return {
+                "static_folder": app.static_folder,
+                "files": files
+            }
+        except Exception as e:
+            return {"error": str(e)}, 500
+
+    # 🧪 Other debug utilities
     @app.route("/ping")
     def ping():
         return "pong", 200
@@ -108,36 +122,33 @@ def create_app(test_config=None):
             traceback.print_exc()
             return {"status": "fail", "error": str(e)}, 500
 
+    # 🔁 Post OAuth redirect
     @app.route("/post-oauth")
     def post_oauth():
         if raw_env_mode == "local":
-            redirect_url = os.getenv("FRONTEND_REDIRECT")
-            return redirect(redirect_url)
+            return redirect(os.getenv("FRONTEND_REDIRECT"))
         index_path = os.path.join(app.static_folder, "index.html")
         if os.path.exists(index_path):
             return send_from_directory(app.static_folder, "index.html")
         return "❌ Frontend not found", 404
 
-    # 🧭 Serve frontend (SPA fallback)
+    # 🧭 Universal frontend handler (fallback)
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
     def serve_frontend(path):
         print("📁 Serving from:", app.static_folder)
         full_path = os.path.join(app.static_folder, path)
         print(f"🔍 Request for: {path} → Resolved path: {full_path}")
-
         if path and os.path.exists(full_path) and not path.endswith("/"):
             return send_from_directory(app.static_folder, path)
-
         index_path = os.path.join(app.static_folder, "index.html")
         if os.path.exists(index_path):
             return send_from_directory(app.static_folder, "index.html")
-
         return "❌ Frontend index.html not found", 404
 
     return app
 
-# 👟 Entry point
+# 🔄 Entry point
 app = create_app()
 
 if __name__ == "__main__":
