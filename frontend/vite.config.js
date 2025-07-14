@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: '../dist',  // ✅ Output now goes to root /dist
+      outDir: 'dist', // ✅ Keep output inside frontend/
       emptyOutDir: true,
     },
   };
