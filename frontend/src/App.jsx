@@ -2,7 +2,8 @@ import { Routes, Route } from "react-router-dom";
 import OnboardScreen from "./OnboardScreen";
 import AskGptMvpUI from "./AskGptMvpUI";
 import PostOAuthSync from "./PostOAuthSync";
-import PostOAuthSuccess from "./PostOAuthSuccess"; // ✅ make sure this exists
+import PostOAuthSuccess from "./PostOAuthSuccess";
+import AuthLogin from "./AuthLogin"; // ✅ newly added
 
 function App() {
   return (
@@ -10,8 +11,9 @@ function App() {
       <Routes>
         <Route path="/" element={<OnboardScreen />} />
         <Route path="/ask" element={<AskGptMvpUI />} />
-        <Route path="/post-oauth" element={<PostOAuthSuccess />} /> {/* ✅ Use the correct component */}
-        {/* Optional: <Route path="/sync" element={<PostOAuthSync />} /> if needed */}
+        <Route path="/post-oauth" element={<PostOAuthSuccess />} />
+        <Route path="/auth/login" element={<AuthLogin />} /> {/* ✅ new route */}
+        {/* Optional: <Route path="/sync" element={<PostOAuthSync />} /> */}
       </Routes>
     </div>
   );
