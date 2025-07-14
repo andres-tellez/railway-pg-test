@@ -9,27 +9,37 @@ from dotenv import load_dotenv
 # ─────────────────────────────
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-# Check and print the FLASK_ENV to confirm it's being set correctly
-env_mode = os.getenv("FLASK_ENV", "production")
-env_file = {
-    "local": ".env.local",
-    "staging": ".env.staging",
-    "production": ".env.prod"
-}.get(env_mode, ".env")
+# Explicitly load .env.local for local development
+env_path = Path(".env.local")
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path, override=True)
+    print("✅ Explicitly loaded .env.local", flush=True)
+else:
+    # Fallback to default selection logic if .env.local not found
+    env_mode = os.getenv("FLASK_ENV", "production")
+    env_file = {
+        "local": ".env.local",
+        "staging": ".env.staging",
+        "production": ".env.prod"
+    }.get(env_mode, ".env")
 
-load_dotenv(env_file, override=False)
-print(f"🔍 Loaded environment file: {env_file}", flush=True)
+    load_dotenv(env_file, override=False)
+    print(f"🔍 Loaded fallback environment file: {env_file}", flush=True)
+
+print("📍 STRAVA_REDIRECT_URI =", os.getenv("STRAVA_REDIRECT_URI"), flush=True)
 print("DATABASE_URL at runtime:", os.getenv("DATABASE_URL"), flush=True)
 
+# ─────────────────────────────
+# 🔧 Imports
+# ─────────────────────────────
 import src.utils.config as config
 from src.db.db_session import get_session
 from src.services.ingestion_orchestrator_service import run_full_ingestion_and_enrichment
-
-# ─────────────────────────────
-# 🚀 Flask App Setup for Gunicorn (top-level for Gunicorn import)
-# ─────────────────────────────
 from src.app import create_app
 
+# ─────────────────────────────
+# 🚀 Flask App Setup for Gunicorn
+# ─────────────────────────────
 app = create_app()
 print("✅ App created via create_app()", flush=True)
 
@@ -39,7 +49,7 @@ print("✅ App created via create_app()", flush=True)
 if __name__ == "__main__":
     print("📦 Starting run.py...", flush=True)
 
-    # Patch DB URL if running locally
+    # Patch DB URL if running locally in Docker
     if config.IS_LOCAL and config.DATABASE_URL and 'postgres@postgres:' in config.DATABASE_URL:
         patched_db_url = config.DATABASE_URL.replace('postgres@postgres:', 'postgres@localhost:')
         os.environ['DATABASE_URL'] = patched_db_url
@@ -47,7 +57,7 @@ if __name__ == "__main__":
     else:
         print(f"✅ DATABASE_URL used as-is: {config.DATABASE_URL}", flush=True)
 
-    # Run as CRON job if enabled
+    # Run Cron if triggered
     if os.getenv("RUN_CRON") == "true":
         print(f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()}", flush=True)
         try:

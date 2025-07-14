@@ -67,23 +67,29 @@ def strava_login():
 @auth_bp.route("/callback")
 def callback():
     from src.services.token_service import store_tokens_from_callback
-
     session = get_session()
     try:
         code = request.args.get("code")
         if not code:
             return "❌ Missing OAuth code", 400
 
-        # Hardcode redirect_uri here to rule out env issues
         redirect_uri = os.getenv("STRAVA_REDIRECT_URI", "").strip().rstrip(";")
-        print(f"[Callback] Using STRAVA_REDIRECT_URI from env: '{redirect_uri}'", flush=True)
-        
+        frontend_redirect = os.getenv("FRONTEND_REDIRECT", "").strip().rstrip(";")
+
+        if not frontend_redirect:
+            raise ValueError("Missing FRONTEND_REDIRECT in environment.")
+
+        print(f"[Callback] Redirect URI used for token exchange: {redirect_uri}", flush=True)
+        print(f"[Callback] Redirecting user to frontend at: {frontend_redirect}", flush=True)
+
         athlete_id = store_tokens_from_callback(code, session, redirect_uri)
         flask_session["athlete_id"] = athlete_id
 
-        return redirect("/post-oauth?authed=true")
+        return redirect(frontend_redirect)
+
     finally:
         session.close()
+
 
 
 @auth_bp.route("/refresh/<int:athlete_id>", methods=["POST"])
