@@ -39,7 +39,8 @@ from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 
 # ✅ Serve from absolute build path
-FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
+FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dist"))
+
 
 def create_app(test_config=None):
     app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="/")
