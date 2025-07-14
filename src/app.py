@@ -140,7 +140,7 @@ def create_app(test_config=None):
         print("📁 Serving from:", app.static_folder)
         full_path = os.path.join(app.static_folder, path)
         print(f"🔍 Request for: {path} → Resolved path: {full_path}")
-        if path and os.path.exists(full_path) and not path.endswith("/"):
+        if path != "" and os.path.exists(full_path):
             return send_from_directory(app.static_folder, path)
         index_path = os.path.join(app.static_folder, "index.html")
         if os.path.exists(index_path):
