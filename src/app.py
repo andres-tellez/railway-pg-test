@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+from urllib.parse import urlparse
 
 # 📦 Environment Setup
 raw_env_mode = os.environ.get("FLASK_ENV", "production")
@@ -9,8 +10,6 @@ env_path = {
     "staging": ".env.staging",
     "production": ".env.prod"
 }.get(raw_env_mode, ".env")
-
-from urllib.parse import urlparse
 
 load_dotenv(env_path, override=False)
 print(f"🔍 Loaded environment file: {env_path}", flush=True)
@@ -26,17 +25,8 @@ else:
     print("ℹ️ Using DATABASE_URL as-is", flush=True)
 
 print("📦 DATABASE_URL at runtime (from app.py):", os.getenv("DATABASE_URL"), flush=True)
-
 print(f"[Startup] STRAVA_REDIRECT_URI raw from environment: '{os.getenv('STRAVA_REDIRECT_URI')}'", flush=True)
-
-
 print(f"✅ Loaded environment: {env_path}", flush=True)
-
-if env_path != ".env":
-    print("🚫 Skipping .env fallback", flush=True)
-else:
-    print("ℹ️ Default .env used", flush=True)
-
 print(f"📍 STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
 # 🌐 Flask Setup
@@ -49,8 +39,7 @@ from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 
-# ✅ Always serve from absolute resolved build path
-# ⛏️ Corrected path to root-level /frontend/dist
+# ✅ Serve from root-level /frontend/dist
 FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
 
 def create_app(test_config=None):
@@ -58,7 +47,6 @@ def create_app(test_config=None):
     cors_origins = os.getenv("CORS_ORIGINS", "")
     origin_list = [o.strip() for o in cors_origins.split(",") if o.strip()]
     CORS(app, supports_credentials=True, origins=origin_list)
-
 
     # 🔐 Configuration
     app.config.from_mapping(
@@ -100,11 +88,8 @@ def create_app(test_config=None):
         try:
             from sqlalchemy import create_engine, inspect
             db_url = os.getenv("DATABASE_URL")
-            
-            # ✅ Fix: Ensure proper dialect
             if db_url.startswith("postgres://"):
                 db_url = db_url.replace("postgres://", "postgresql://", 1)
-            
             engine = create_engine(db_url)
             insp = inspect(engine)
             columns = insp.get_columns("splits")
@@ -123,8 +108,6 @@ def create_app(test_config=None):
             traceback.print_exc()
             return {"status": "fail", "error": str(e)}, 500
 
-    
-    
     @app.route("/post-oauth")
     def post_oauth():
         if raw_env_mode == "local":
@@ -135,33 +118,27 @@ def create_app(test_config=None):
             return send_from_directory(app.static_folder, "index.html")
         return "❌ Frontend not found", 404
 
-    @app.errorhandler(404)
-    def spa_fallback(e):
-        index_path = os.path.join(app.static_folder, "index.html")
-        if os.path.exists(index_path):
-            return send_from_directory(app.static_folder, "index.html")
-        return "404 Not Found", 404
-
-    # 🧭 Serve frontend (for production/staging)
+    # 🧭 Serve frontend (SPA fallback)
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
     def serve_frontend(path):
-        if raw_env_mode == "local":
-            return "✅ Dev mode — frontend served by Vite", 200
-
+        print("📁 Serving from:", app.static_folder)
         full_path = os.path.join(app.static_folder, path)
+        print(f"🔍 Request for: {path} → Resolved path: {full_path}")
+
         if path and os.path.exists(full_path) and not path.endswith("/"):
             return send_from_directory(app.static_folder, path)
-        return send_from_directory(app.static_folder, "index.html")
+
+        index_path = os.path.join(app.static_folder, "index.html")
+        if os.path.exists(index_path):
+            return send_from_directory(app.static_folder, "index.html")
+
+        return "❌ Frontend index.html not found", 404
 
     return app
 
-# 👟 Entry point for local dev
-
+# 👟 Entry point
 app = create_app()
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000)
-
-    
-    
