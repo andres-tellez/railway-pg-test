@@ -11,7 +11,7 @@ env_path = {
     "production": ".env.prod"
 }.get(raw_env_mode, ".env")
 
-load_dotenv(env_path, override=False)
+load_dotenv(env_path, override=True)
 print(f"🔍 Loaded environment file: {env_path}", flush=True)
 
 # ⛏️ Patch for Railway proxy handling
