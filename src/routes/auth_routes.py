@@ -16,13 +16,13 @@ from src.db.db_session import get_session
 auth_bp = Blueprint("auth", __name__)
 
 
-
 @auth_bp.route('/whoami', methods=['GET'])
 def whoami():
     athlete_id = flask_session.get("athlete_id")
     if not athlete_id:
         return jsonify({"error": "Not logged in"}), 401
     return jsonify({"athlete_id": athlete_id})
+
 
 @auth_bp.route("/login", methods=["POST"])
 def admin_login():
@@ -50,6 +50,7 @@ def admin_login():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
 @auth_bp.route("/login", methods=["GET"])
 def strava_login():
     redirect_uri = os.getenv("STRAVA_REDIRECT_URI", "").strip().rstrip(";")
@@ -64,9 +65,9 @@ def strava_login():
     )
     return redirect(url)
 
-@auth_bp.route("/callback")
+
+@auth_bp.route("/callback", methods=["GET"])
 def callback():
-    from src.services.token_service import store_tokens_from_callback
     session = get_session()
     try:
         code = request.args.get("code")
@@ -90,6 +91,26 @@ def callback():
     finally:
         session.close()
 
+
+@auth_bp.route("/callback", methods=["POST"])
+def callback_token_exchange():
+    session = get_session()
+    try:
+        data = request.get_json()
+        code = data.get("code")
+
+        if not code:
+            return jsonify({"error": "Missing OAuth code"}), 400
+
+        redirect_uri = os.getenv("STRAVA_REDIRECT_URI", "").strip().rstrip(";")
+        athlete_id = store_tokens_from_callback(code, session, redirect_uri)
+
+        return jsonify({"status": "success", "athlete_id": athlete_id}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        session.close()
 
 
 @auth_bp.route("/refresh/<int:athlete_id>", methods=["POST"])
@@ -116,6 +137,7 @@ def refresh_token(athlete_id):
     finally:
         session.close()
 
+
 @auth_bp.route("/logout/<int:athlete_id>", methods=["POST"])
 def logout(athlete_id):
     session = get_session()
@@ -127,6 +149,7 @@ def logout(athlete_id):
         return jsonify({"error": str(e)}), 500
     finally:
         session.close()
+
 
 @auth_bp.route("/monitor-tokens", methods=["GET"])
 def monitor_tokens():
@@ -140,6 +163,7 @@ def monitor_tokens():
         return jsonify({"error": str(e)}), 500
     finally:
         session.close()
+
 
 @auth_bp.route("/profile", methods=["POST"])
 def save_athlete_profile():
