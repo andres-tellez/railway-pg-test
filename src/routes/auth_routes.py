@@ -94,6 +94,7 @@ def callback():
     finally:
         session.close()
 
+from flask import session as flask_session  # 👈 required
 
 @auth_bp.route("/callback", methods=["POST"])
 def callback_token_exchange():
@@ -108,12 +109,16 @@ def callback_token_exchange():
         redirect_uri = os.getenv("STRAVA_REDIRECT_URI", "").strip().rstrip(";")
         athlete_id = store_tokens_from_callback(code, session, redirect_uri)
 
+        # ✅ Fix: persist athlete_id in the Flask session
+        flask_session["athlete_id"] = athlete_id
+
         return jsonify({"status": "success", "athlete_id": athlete_id}), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     finally:
         session.close()
+
 
 
 @auth_bp.route("/refresh/<int:athlete_id>", methods=["POST"])
