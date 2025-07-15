@@ -5,16 +5,18 @@ export default function OnboardingScreen() {
   const [email, setEmail] = useState('');
   const [hasStrava, setHasStrava] = useState(null);
 
-  const handleContinue = () => {
-    if (!email) {
-      alert("Please enter your email address to continue.");
-      return;
-    }
-    localStorage.setItem("user_name", name);
-    localStorage.setItem("user_email", email);
-    window.location.href = "http://localhost:5000/auth/login";
+const API = import.meta.env.VITE_BACKEND_URL;
 
-  };
+const handleContinue = () => {
+  if (!email) {
+    alert("Please enter your email address to continue.");
+    return;
+  }
+  localStorage.setItem("user_name", name);
+  localStorage.setItem("user_email", email);
+  window.location.href = `${API}/auth/login`;
+};
+
 
   return (
     <div className="max-w-xl mx-auto p-6 rounded-2xl shadow-md bg-white mt-10 text-center">

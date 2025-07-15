@@ -38,10 +38,19 @@ export default function PostOAuthSuccess() {
 
     async function fetchAthleteAndSync() {
       const params = new URLSearchParams(window.location.search);
-      if (!params.get("authed")) return;
+      const code = params.get("code");
+      if (!code) return;
 
-      setStep(1); // Verifying session
       try {
+        // Step 1: Token exchange
+        const tokenRes = await fetch(`${API}/auth/callback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        if (!tokenRes.ok) throw new Error("Token exchange failed");
+
+        setStep(1); // Verifying session
         const res = await fetch(`${API}/auth/whoami`);
         const data = await res.json();
 
@@ -66,7 +75,7 @@ export default function PostOAuthSuccess() {
           setStatus("error");
         }
       } catch (err) {
-        console.error("❌ Error verifying session", err);
+        console.error("❌ Error during sync process", err);
         setStatus("error");
       }
     }
