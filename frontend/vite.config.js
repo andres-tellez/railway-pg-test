@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
         },
         '/admin': {
           target: env.VITE_BACKEND_URL,
-          changeOrigin: true,A
+          changeOrigin: true,
           secure: false,
         },
         '/sync': {
@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: 'dist', // ✅ Keep output inside frontend/
+      outDir: 'dist',
       emptyOutDir: true,
     },
   };
