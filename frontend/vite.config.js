@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
         },
         '/admin': {
           target: env.VITE_BACKEND_URL,
-          changeOrigin: true,
+          changeOrigin: true,A
           secure: false,
         },
         '/sync': {

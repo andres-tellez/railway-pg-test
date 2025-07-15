@@ -51,7 +51,12 @@ export default function PostOAuthSuccess() {
         if (!tokenRes.ok) throw new Error("Token exchange failed");
 
         setStep(1); // Verifying session
-        const res = await fetch(`${API}/auth/whoami`);
+        const res = await fetch(`${API}/auth/whoami`, {
+          method: "GET",
+          credentials: "include"
+        });
+
+
         const data = await res.json();
 
         if (res.ok && data.athlete_id) {
