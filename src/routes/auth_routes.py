@@ -85,6 +85,9 @@ def callback():
 
         athlete_id = store_tokens_from_callback(code, session, redirect_uri)
         flask_session["athlete_id"] = athlete_id
+        
+        # ✅ Log session before redirect
+        print(f"✅ Flask session contents before redirect: {dict(flask_session)}", flush=True)
 
         return redirect(frontend_redirect)
 

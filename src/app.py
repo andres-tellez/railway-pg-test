@@ -40,13 +40,23 @@ from src.routes.ask_routes import ask_bp
 
 FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dist"))
 
+
+
 def create_app(test_config=None):
     app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="/")
     cors_origins = os.getenv("CORS_ORIGINS", "")
     origin_list = [o.strip() for o in cors_origins.split(",") if o.strip()]
-    CORS(app, supports_credentials=True, origins=origin_list)
+    CORS(app, origins=origin_list, supports_credentials=True)
     print("🛂 Allowed CORS origins:", origin_list, flush=True)
 
+    # 🔐 Allow cross-origin cookies
+    app.config.update(
+        SESSION_COOKIE_NAME="smartcoach_session",
+        SESSION_COOKIE_SAMESITE="None",      # This is key for cross-origin
+        SESSION_COOKIE_SECURE=True,          # Required for SameSite=None
+        SESSION_COOKIE_HTTPONLY=True
+    )
+    
     app.config.from_mapping(
         SECRET_KEY=config.SECRET_KEY,
         DATABASE_URL=os.getenv("DATABASE_URL"),
