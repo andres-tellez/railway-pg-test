@@ -11,10 +11,8 @@ env_path = {
     "production": ".env.prod"
 }.get(raw_env_mode, ".env")
 
-
 load_dotenv(env_path, override=True)
 print(f"🔍 Loaded environment file: {env_path}", flush=True)
-
 
 # ⛏️ Patch for Railway proxy handling
 original_url = os.getenv("DATABASE_URL", "")
@@ -31,7 +29,7 @@ print(f"✅ Loaded environment: {env_path}", flush=True)
 print(f"📍 STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
 # 🌐 Flask Setup
-from flask import Flask, send_from_directory, redirect
+from flask import Flask, send_from_directory, redirect, request
 from flask_cors import CORS
 import src.utils.config as config
 from src.routes.admin_routes import admin_bp
@@ -40,17 +38,15 @@ from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 
-# ✅ Serve from absolute build path
 FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dist"))
-
 
 def create_app(test_config=None):
     app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="/")
     cors_origins = os.getenv("CORS_ORIGINS", "")
     origin_list = [o.strip() for o in cors_origins.split(",") if o.strip()]
     CORS(app, supports_credentials=True, origins=origin_list)
+    print("🛂 Allowed CORS origins:", origin_list, flush=True)
 
-    # 🔐 App config
     app.config.from_mapping(
         SECRET_KEY=config.SECRET_KEY,
         DATABASE_URL=os.getenv("DATABASE_URL"),
@@ -68,7 +64,6 @@ def create_app(test_config=None):
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
 
-    # ✅ Debug route to list files in /dist
     @app.route("/debug-files")
     def debug_files():
         try:
@@ -84,7 +79,6 @@ def create_app(test_config=None):
         except Exception as e:
             return {"error": str(e)}, 500
 
-    # 🧪 Other debug utilities
     @app.route("/ping")
     def ping():
         return "pong", 200
@@ -125,7 +119,6 @@ def create_app(test_config=None):
             traceback.print_exc()
             return {"status": "fail", "error": str(e)}, 500
 
-    # 🔁 Post OAuth redirect
     @app.route("/post-oauth")
     def post_oauth():
         if raw_env_mode == "local":
@@ -135,7 +128,6 @@ def create_app(test_config=None):
             return send_from_directory(app.static_folder, "index.html")
         return "❌ Frontend not found", 404
 
-    # 🧭 Universal frontend handler (fallback)
     @app.route("/", defaults={"path": ""})
     @app.route("/<path:path>")
     def serve_frontend(path):
@@ -148,6 +140,18 @@ def create_app(test_config=None):
         if os.path.exists(index_path):
             return send_from_directory(app.static_folder, "index.html")
         return "❌ Frontend index.html not found", 404
+
+    # ✅ Step 2: Log request origin
+    @app.before_request
+    def log_request_origin():
+        origin = request.headers.get("Origin")
+        print(f"🌐 Incoming request from Origin: {origin}", flush=True)
+
+    # ✅ Step 3: Log response headers
+    @app.after_request
+    def log_response_headers(response):
+        print(f"🔁 Response headers: {dict(response.headers)}", flush=True)
+        return response
 
     return app
 
