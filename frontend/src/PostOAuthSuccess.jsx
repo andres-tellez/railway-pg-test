@@ -27,6 +27,7 @@ export default function PostOAuthSuccess() {
         const res = await fetch(`${API}/auth/profile`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include", // required to send session cookie
           body: JSON.stringify({ athlete_id: athleteId, name, email }),
         });
         if (!res.ok) throw new Error("Failed to save profile");
@@ -46,6 +47,7 @@ export default function PostOAuthSuccess() {
         const tokenRes = await fetch(`${API}/auth/callback`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include", // ensures session is set
           body: JSON.stringify({ code }),
         });
         if (!tokenRes.ok) throw new Error("Token exchange failed");
@@ -53,10 +55,8 @@ export default function PostOAuthSuccess() {
         setStep(1); // Verifying session
         const res = await fetch(`${API}/auth/whoami`, {
           method: "GET",
-          credentials: "include"
+          credentials: "include", // critical for session access
         });
-
-
         const data = await res.json();
 
         if (res.ok && data.athlete_id) {
@@ -65,6 +65,7 @@ export default function PostOAuthSuccess() {
           setStep(3); // Triggering ingestion
           const ingestRes = await fetch(`${API}/admin/trigger-ingest/${data.athlete_id}`, {
             method: "POST",
+            credentials: "include", // optional, depends on backend auth
           });
 
           if (ingestRes.ok) {
@@ -99,7 +100,6 @@ export default function PostOAuthSuccess() {
       <h1 className="text-3xl font-bold mb-6">🎉 Welcome to SmartCoach!</h1>
       <p className="text-lg mb-4">{steps[step]}</p>
 
-      {/* Animated Circle Progress */}
       <div className="relative w-24 h-24 mb-6">
         <svg className="w-full h-full" viewBox="0 0 36 36">
           <path
@@ -123,7 +123,6 @@ export default function PostOAuthSuccess() {
         </svg>
       </div>
 
-      {/* Step Descriptions */}
       <div className="w-64">
         {steps.map((label, index) => (
           <div
