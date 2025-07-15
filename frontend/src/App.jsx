@@ -3,7 +3,7 @@ import OnboardScreen from "./OnboardScreen";
 import AskGptMvpUI from "./AskGptMvpUI";
 import PostOAuthSync from "./PostOAuthSync";
 import PostOAuthSuccess from "./PostOAuthSuccess"; // ✅ make sure this exists
-import LoginPage from "./LoginPage"; // adjust path if needed
+import LoginPage from "./components/LoginPage";
 
 function App() {
   return (
