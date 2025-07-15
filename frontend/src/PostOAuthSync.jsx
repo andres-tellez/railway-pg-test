@@ -32,7 +32,9 @@ export default function PostOAuthSync() {
 
     async function fetchAthleteAndSync() {
       const params = new URLSearchParams(window.location.search);
-      if (!params.get("authed")) return;
+      const code = params.get("code");
+      if (!code) return;
+
 
       try {
         const res = await fetch(`${API}/auth/whoami`);
