@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-export default function PostOAuthSuccess() {
+const API = import.meta.env.VITE_BACKEND_URL;
+
+export default function PostOAuthSync() {
   const [status, setStatus] = useState("syncing");
   const navigate = useNavigate();
 
@@ -13,7 +15,7 @@ export default function PostOAuthSuccess() {
       if (!athleteId || (!name && !email)) return;
 
       try {
-        const response = await fetch("/auth/profile", {
+        const response = await fetch(`${API}/auth/profile`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -33,7 +35,7 @@ export default function PostOAuthSuccess() {
       if (!params.get("authed")) return;
 
       try {
-        const res = await fetch("/auth/whoami");
+        const res = await fetch(`${API}/auth/whoami`);
         const data = await res.json();
         if (res.ok && data.athlete_id) {
           await saveUserProfile(data.athlete_id);

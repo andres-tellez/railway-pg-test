@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Loader2, CheckCircle, AlertTriangle } from "lucide-react";
 
-export default function PostOAuthSuccess() {
+const API = import.meta.env.VITE_BACKEND_URL;
+
+export default function PostOAuthProgress() {
   const navigate = useNavigate();
   const [progress, setProgress] = useState("⏳ Starting sync...");
   const [step, setStep] = useState(0);
@@ -19,7 +21,7 @@ export default function PostOAuthSuccess() {
       setStep(1);
 
       try {
-        const response = await fetch("/auth/profile", {
+        const response = await fetch(`${API}/auth/profile`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ athlete_id: athleteId, name, email }),
@@ -40,7 +42,7 @@ export default function PostOAuthSuccess() {
       setStep(0);
 
       try {
-        const res = await fetch("/auth/whoami");
+        const res = await fetch(`${API}/auth/whoami`);
         const data = await res.json();
         if (res.ok && data.athlete_id) {
           await saveUserProfile(data.athlete_id);
@@ -48,10 +50,9 @@ export default function PostOAuthSuccess() {
           setStep(2);
 
           try {
-            const ingestRes = await fetch(
-              `/admin/trigger-ingest/${data.athlete_id}`,
-              { method: "POST" }
-            );
+            const ingestRes = await fetch(`${API}/admin/trigger-ingest/${data.athlete_id}`, {
+              method: "POST"
+            });
             const ingestResult = await ingestRes.json();
             if (ingestRes.ok) {
               console.log("✅ Ingestion triggered:", ingestResult);

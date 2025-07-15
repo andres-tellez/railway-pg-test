@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 
+const API = import.meta.env.VITE_BACKEND_URL;
+
 export default function AskGptMvpUI() {
   const [question, setQuestion] = useState("");
   const [response, setResponse] = useState("");
@@ -13,7 +15,7 @@ export default function AskGptMvpUI() {
     setResponse("");
 
     try {
-      const res = await fetch("/ask", {
+      const res = await fetch(`${API}/ask`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

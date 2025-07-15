@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+const API = import.meta.env.VITE_BACKEND_URL;
+
 const steps = [
   "Starting sync...",
   "Verifying session...",
@@ -22,7 +24,7 @@ export default function PostOAuthSuccess() {
 
       setStep(2); // Saving profile
       try {
-        const res = await fetch("/auth/profile", {
+        const res = await fetch(`${API}/auth/profile`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ athlete_id: athleteId, name, email }),
@@ -40,14 +42,14 @@ export default function PostOAuthSuccess() {
 
       setStep(1); // Verifying session
       try {
-        const res = await fetch("/auth/whoami");
+        const res = await fetch(`${API}/auth/whoami`);
         const data = await res.json();
 
         if (res.ok && data.athlete_id) {
           await saveUserProfile(data.athlete_id);
 
           setStep(3); // Triggering ingestion
-          const ingestRes = await fetch(`/admin/trigger-ingest/${data.athlete_id}`, {
+          const ingestRes = await fetch(`${API}/admin/trigger-ingest/${data.athlete_id}`, {
             method: "POST",
           });
 
