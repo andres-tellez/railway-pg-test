@@ -24,6 +24,7 @@ export default function PostOAuthProgress() {
         const response = await fetch(`${API}/auth/profile`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include", // ✅ added
           body: JSON.stringify({ athlete_id: athleteId, name, email }),
         });
         const result = await response.json();
@@ -42,18 +43,25 @@ export default function PostOAuthProgress() {
       setStep(0);
 
       try {
-        const res = await fetch(`${API}/auth/whoami`);
+        const res = await fetch(`${API}/auth/whoami`, {
+          method: "GET",
+          credentials: "include", // ✅ added
+        });
         const data = await res.json();
+
         if (res.ok && data.athlete_id) {
           await saveUserProfile(data.athlete_id);
+
           setProgress("📥 Syncing activities from Strava...");
           setStep(2);
 
           try {
             const ingestRes = await fetch(`${API}/admin/trigger-ingest/${data.athlete_id}`, {
-              method: "POST"
+              method: "POST",
+              credentials: "include", // ✅ added
             });
             const ingestResult = await ingestRes.json();
+
             if (ingestRes.ok) {
               console.log("✅ Ingestion triggered:", ingestResult);
               setProgress("✅ All done! Redirecting shortly...");
