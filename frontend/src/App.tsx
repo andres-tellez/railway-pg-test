@@ -12,7 +12,7 @@ const App: React.FC = () => {
           <Route path="/" element={<OnboardScreen />} />
       {/* <Route path="/auth/login" element={<LoginPage />} /> */}
           <Route path="/auth/callback" element={<PostOAuthSuccess />} /> 
-      {/* <Route path="/ask" element={<AskGptMvpUI />} /> */}
+          <Route path="/ask" element={<AskGptMvpUI />} /> 
       {/* <Route path="/post-oauth" element={<PostOAuthSuccess />} /> */}
       </Routes>
     </div>
