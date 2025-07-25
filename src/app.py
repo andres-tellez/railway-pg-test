@@ -51,6 +51,7 @@ def create_app(test_config=None):
     cors_origins = os.getenv("CORS_ORIGINS", "")
     origin_list = [o.strip() for o in cors_origins.split(",") if o.strip()]
     CORS(app, origins=origin_list, supports_credentials=True)
+    print("🔬 Raw CORS_ORIGINS from env:", repr(cors_origins), flush=True)
     print("🛂 Allowed CORS origins:", origin_list, flush=True)
 
     # 🔐 Allow cross-origin cookies
