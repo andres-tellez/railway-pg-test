@@ -5,7 +5,7 @@ export default function OnboardingScreen() {
   const [email, setEmail] = useState('');
   const [hasStrava, setHasStrava] = useState(null);
 
-const API = import.meta.env.VITE_BACKEND_URL;
+const API = import.meta.env.VITE_API_URL;
 
 const handleContinue = () => {
   if (!email) {
