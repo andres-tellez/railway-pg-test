@@ -1,22 +1,15 @@
 import React, { useState } from 'react';
 
 export default function OnboardingScreen() {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
   const [hasStrava, setHasStrava] = useState(null);
 
-const API = import.meta.env.VITE_BACKEND_URL;
+  const clientId = import.meta.env.VITE_STRAVA_CLIENT_ID;
+  const redirectUri = import.meta.env.VITE_STRAVA_REDIRECT_URI;
 
-const handleContinue = () => {
-  if (!email) {
-    alert("Please enter your email address to continue.");
-    return;
-  }
-  localStorage.setItem("user_name", name);
-  localStorage.setItem("user_email", email);
-  window.location.href = `${API}/auth/login`;
-};
-
+  const handleAuthorize = () => {
+    const authUrl = `https://www.strava.com/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=read,activity:read_all`;
+    window.location.href = authUrl;
+  };
 
   return (
     <div className="max-w-xl mx-auto p-6 rounded-2xl shadow-md bg-white mt-10 text-center">
@@ -39,24 +32,6 @@ const handleContinue = () => {
         </div>
       ) : hasStrava ? (
         <div className="mt-6">
-          <label className="block mb-2 text-left font-medium">Your Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            className="w-full p-2 mb-4 border rounded-xl"
-            placeholder="Optional"
-          />
-
-          <label className="block mb-2 text-left font-medium">Email Address</label>
-          <input
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="w-full p-2 mb-4 border rounded-xl"
-            placeholder="Required"
-          />
-
           <div className="bg-yellow-50 border border-yellow-200 p-4 mb-4 rounded-xl text-sm text-left">
             <p className="mb-2 font-semibold">By continuing, you authorize SmartCoach to:</p>
             <ul className="list-disc list-inside text-gray-800">
@@ -66,7 +41,7 @@ const handleContinue = () => {
             </ul>
           </div>
 
-          <button onClick={handleContinue} className="bg-green-600 text-white px-6 py-2 rounded-xl shadow-md w-full">
+          <button onClick={handleAuthorize} className="bg-green-600 text-white px-6 py-2 rounded-xl shadow-md w-full">
             Authorize with Strava
           </button>
         </div>
@@ -78,4 +53,4 @@ const handleContinue = () => {
       )}
     </div>
   );
-} 
+}
