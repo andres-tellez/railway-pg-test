@@ -8,9 +8,12 @@ from typing import List, Dict
 
 logger = get_logger(__name__)
 
+
 class ActivityDAO:
     @staticmethod
-    def upsert_activities(session: Session, athlete_id: int, activities: List[Dict]) -> int:
+    def upsert_activities(
+        session: Session, athlete_id: int, activities: List[Dict]
+    ) -> int:
         """
         Upsert activities into the database, filtering only 'Run' types.
         """
@@ -20,19 +23,29 @@ class ActivityDAO:
         rows = []
         for act in activities:
             if act.get("type") != "Run":
-                logger.warning(f"⚠️ Skipping non-Run activity {act.get('id')} — type={act.get('type')}")
+                logger.warning(
+                    f"⚠️ Skipping non-Run activity {act.get('id')} — type={act.get('type')}"
+                )
                 continue
 
             name = act.get("name", "").lower()
             is_treadmill = "treadmill" in name
 
-            required_fields = ["id", "start_date", "distance", "moving_time", "elapsed_time"]
+            required_fields = [
+                "id",
+                "start_date",
+                "distance",
+                "moving_time",
+                "elapsed_time",
+            ]
             if not is_treadmill:
                 required_fields.append("external_id")
 
             missing = [f for f in required_fields if not act.get(f)]
             if missing:
-                logger.error(f"❌ Skipping activity {act.get('id')} due to missing required fields: {missing}")
+                logger.error(
+                    f"❌ Skipping activity {act.get('id')} due to missing required fields: {missing}"
+                )
                 continue
 
             conv_input = {
@@ -41,9 +54,16 @@ class ActivityDAO:
                 "average_speed": act.get("average_speed"),
                 "max_speed": act.get("max_speed"),
                 "moving_time": act.get("moving_time"),
-                "elapsed_time": act.get("elapsed_time")
+                "elapsed_time": act.get("elapsed_time"),
             }
-            conv_fields = ["distance", "elevation", "average_speed", "max_speed", "moving_time", "elapsed_time"]
+            conv_fields = [
+                "distance",
+                "elevation",
+                "average_speed",
+                "max_speed",
+                "moving_time",
+                "elapsed_time",
+            ]
             conv = convert_metrics(conv_input, conv_fields)
 
             row = {
@@ -81,7 +101,9 @@ class ActivityDAO:
             for col in Activity.__table__.columns
             if col.name != "activity_id"
         }
-        stmt = stmt.on_conflict_do_update(index_elements=["activity_id"], set_=update_cols)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["activity_id"], set_=update_cols
+        )
 
         result = session.execute(stmt)
         session.commit()
@@ -93,8 +115,7 @@ class ActivityDAO:
         Retrieve a single activity by its activity_id.
         """
         return session.query(Activity).filter_by(activity_id=activity_id).first()
-    
-    
+
     @staticmethod
     def get_activities_by_athlete(session: Session, athlete_id: int) -> list[Activity]:
         return (
@@ -103,3 +124,11 @@ class ActivityDAO:
             .order_by(Activity.start_date.desc())
             .all()
         )
+
+
+def has_existing_activities(session: Session, athlete_id: int) -> bool:
+    """
+    Return True if the athlete has any synced activities.
+    """
+    count = session.query(Activity).filter(Activity.athlete_id == athlete_id).count()
+    return count > 0

@@ -14,25 +14,63 @@ const steps = [
 export default function PostOAuthSuccess() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
-  const [status, setStatus] = useState("loading"); // 'loading' | 'error' | 'success'
+  const [status, setStatus] = useState("loading");
 
   useEffect(() => {
     async function saveUserProfile(athleteId) {
       const name = localStorage.getItem("user_name");
       const email = localStorage.getItem("user_email");
-      if (!athleteId || (!name && !email)) return;
 
-      setStep(2); // Saving profile
+      if (!athleteId) {
+        console.error("❌ saveUserProfile: athleteId is missing");
+        return;
+      }
+
+      if (!name && !email) {
+        console.warn("⚠️ saveUserProfile: no user_name or user_email in localStorage");
+        return;
+      }
+
+      setStep(2);
       try {
         const res = await fetch(`${API}/auth/profile`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          credentials: "include", // required to send session cookie
+          credentials: "include",
           body: JSON.stringify({ athlete_id: athleteId, name, email }),
         });
+
         if (!res.ok) throw new Error("Failed to save profile");
+
+        console.log("✅ Profile saved");
       } catch (err) {
-        console.error("❌ Profile sync failed", err);
+        console.error("❌ Error saving profile", err);
+        setStatus("error");
+      }
+    }
+
+    async function triggerIngestion(athleteId) {
+      setStep(3);
+      try {
+        const ingestRes = await fetch(`${API}/auth/trigger-ingest/${athleteId}`, {
+          method: "POST",
+          credentials: "include",
+        });
+
+        const result = await ingestRes.json().catch(() => null);
+        console.log("📦 Ingestion response:", result);
+
+        if (!ingestRes.ok) {
+          console.error("❌ Ingestion failed", result);
+          setStatus("error");
+          return;
+        }
+
+        setStep(4);
+        setStatus("success");
+        setTimeout(() => navigate("/ask"), 2000);
+      } catch (err) {
+        console.error("❌ Ingestion error", err);
         setStatus("error");
       }
     }
@@ -40,52 +78,57 @@ export default function PostOAuthSuccess() {
     async function fetchAthleteAndSync() {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
-      if (!code) return;
+
+      if (!code) {
+        console.error("❌ No code found in URL");
+        setStatus("error");
+        return;
+      }
 
       try {
-        // Step 1: Token exchange
+        console.log("📥 Exchanging code for tokens...");
         const tokenRes = await fetch(`${API}/auth/callback`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          credentials: "include", // ensures session is set
+          credentials: "include",
           body: JSON.stringify({ code }),
         });
-        if (!tokenRes.ok) throw new Error("Token exchange failed");
 
-        setStep(1); // Verifying session
+        if (!tokenRes.ok) {
+          const errText = await tokenRes.text();
+          throw new Error(`Token exchange failed: ${errText}`);
+        }
+
+        setStep(1);
+        console.log("🔍 Fetching athlete session...");
         const res = await fetch(`${API}/auth/whoami`, {
           method: "GET",
-          credentials: "include", // critical for session access
+          credentials: "include",
         });
-        const data = await res.json();
 
-        if (res.ok && data.athlete_id) {
-          await saveUserProfile(data.athlete_id);
-
-          setStep(3); // Triggering ingestion
-          const ingestRes = await fetch(`${API}/admin/trigger-ingest/${data.athlete_id}`, {
-            method: "POST",
-            credentials: "include", // optional, depends on backend auth
-          });
-
-          if (ingestRes.ok) {
-            setStep(4); // Redirecting
-            setStatus("success");
-            setTimeout(() => navigate("/ask"), 2000);
-          } else {
-            console.error("⚠️ Ingestion failed");
-            setStatus("error");
-          }
-        } else {
-          console.error("❌ No athlete_id returned");
-          setStatus("error");
+        if (!res.ok) {
+          throw new Error(`whoami failed with status ${res.status}`);
         }
+
+        const data = await res.json();
+        console.log("🙋 whoami response:", data);
+
+        const athleteId = data.athlete_id;
+        if (!athleteId) {
+          console.error("❌ No athlete_id returned from whoami");
+          setStatus("error");
+          return;
+        }
+
+        await saveUserProfile(athleteId);
+        await triggerIngestion(athleteId);
       } catch (err) {
-        console.error("❌ Error during sync process", err);
+        console.error("❌ Error during OAuth sync process", err);
         setStatus("error");
       }
     }
 
+    console.log("🔄 PostOAuthSuccess mounted — starting sync");
     fetchAthleteAndSync();
   }, [navigate]);
 
