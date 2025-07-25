@@ -21,6 +21,8 @@ export default function PostOAuthSuccess() {
       const name = localStorage.getItem("user_name");
       const email = localStorage.getItem("user_email");
 
+      console.log("📤 Saving profile with:", { athleteId, name, email });
+
       if (!athleteId) {
         console.error("❌ saveUserProfile: athleteId is missing");
         return;
@@ -79,6 +81,9 @@ export default function PostOAuthSuccess() {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
 
+      console.log("🔧 ENV VITE_BACKEND_URL =", API);
+      console.log("📥 OAuth code =", code);
+
       if (!code) {
         console.error("❌ No code found in URL");
         setStatus("error");
@@ -86,7 +91,7 @@ export default function PostOAuthSuccess() {
       }
 
       try {
-        console.log("📥 Exchanging code for tokens...");
+        console.log("🌐 POST /auth/callback...");
         const tokenRes = await fetch(`${API}/auth/callback`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -94,28 +99,33 @@ export default function PostOAuthSuccess() {
           body: JSON.stringify({ code }),
         });
 
+        const rawText = await tokenRes.text();
+        console.log("🔍 /auth/callback response:", tokenRes.status, rawText);
+
         if (!tokenRes.ok) {
-          const errText = await tokenRes.text();
-          throw new Error(`Token exchange failed: ${errText}`);
+          throw new Error(`Token exchange failed: ${rawText}`);
         }
 
         setStep(1);
-        console.log("🔍 Fetching athlete session...");
+
+        console.log("👤 GET /auth/whoami...");
         const res = await fetch(`${API}/auth/whoami`, {
           method: "GET",
           credentials: "include",
         });
 
+        const whoamiText = await res.text();
+        console.log("🙋 whoami raw response:", whoamiText);
+
         if (!res.ok) {
-          throw new Error(`whoami failed with status ${res.status}`);
+          throw new Error(`whoami failed: ${res.status}`);
         }
 
-        const data = await res.json();
-        console.log("🙋 whoami response:", data);
-
+        const data = JSON.parse(whoamiText);
         const athleteId = data.athlete_id;
+
         if (!athleteId) {
-          console.error("❌ No athlete_id returned from whoami");
+          console.error("❌ No athlete_id returned");
           setStatus("error");
           return;
         }
@@ -128,7 +138,7 @@ export default function PostOAuthSuccess() {
       }
     }
 
-    console.log("🔄 PostOAuthSuccess mounted — starting sync");
+    console.log("🚀 PostOAuthSuccess mounted");
     fetchAthleteAndSync();
   }, [navigate]);
 
