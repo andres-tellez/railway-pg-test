@@ -8,7 +8,7 @@ raw_env_mode = os.environ.get("FLASK_ENV", "production")
 env_path = {
     "local": ".env.local",
     "staging": ".env.staging",
-    "production": ".env.prod"
+    "production": ".env.prod",
 }.get(raw_env_mode, ".env")
 
 load_dotenv(env_path, override=True)
@@ -19,12 +19,19 @@ original_url = os.getenv("DATABASE_URL", "")
 parsed = urlparse(original_url)
 if "proxy.rlwy.net" in parsed.hostname:
     os.environ["DATABASE_URL"] = original_url
-    print("✅ Patched DATABASE_URL using proxy.rlwy.net override for staging.", flush=True)
+    print(
+        "✅ Patched DATABASE_URL using proxy.rlwy.net override for staging.", flush=True
+    )
 else:
     print("ℹ️ Using DATABASE_URL as-is", flush=True)
 
-print("📦 DATABASE_URL at runtime (from app.py):", os.getenv("DATABASE_URL"), flush=True)
-print(f"[Startup] STRAVA_REDIRECT_URI raw from environment: '{os.getenv('STRAVA_REDIRECT_URI')}'", flush=True)
+print(
+    "📦 DATABASE_URL at runtime (from app.py):", os.getenv("DATABASE_URL"), flush=True
+)
+print(
+    f"[Startup] STRAVA_REDIRECT_URI raw from environment: '{os.getenv('STRAVA_REDIRECT_URI')}'",
+    flush=True,
+)
 print(f"✅ Loaded environment: {env_path}", flush=True)
 print(f"📍 STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
@@ -38,8 +45,10 @@ from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 
-FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dist"))
-
+# FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dist"))
+FRONTEND_DIST = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+)
 
 
 def create_app(test_config=None):
@@ -52,17 +61,17 @@ def create_app(test_config=None):
     # 🔐 Allow cross-origin cookies
     app.config.update(
         SESSION_COOKIE_NAME="smartcoach_session",
-        SESSION_COOKIE_SAMESITE="None",      # This is key for cross-origin
-        SESSION_COOKIE_SECURE=True,          # Required for SameSite=None
-        SESSION_COOKIE_HTTPONLY=True
+        SESSION_COOKIE_SAMESITE="None",  # This is key for cross-origin
+        SESSION_COOKIE_SECURE=True,  # Required for SameSite=None
+        SESSION_COOKIE_HTTPONLY=True,
     )
-    
+
     app.config.from_mapping(
         SECRET_KEY=config.SECRET_KEY,
         DATABASE_URL=os.getenv("DATABASE_URL"),
         CRON_SECRET_KEY=config.CRON_SECRET_KEY,
         INTERNAL_API_KEY=config.INTERNAL_API_KEY,
-        SESSION_TYPE="filesystem"
+        SESSION_TYPE="filesystem",
     )
     if test_config:
         app.config.update(test_config)
@@ -82,10 +91,7 @@ def create_app(test_config=None):
                 for f in filenames:
                     rel_path = os.path.relpath(os.path.join(root, f), app.static_folder)
                     files.append(rel_path)
-            return {
-                "static_folder": app.static_folder,
-                "files": files
-            }
+            return {"static_folder": app.static_folder, "files": files}
         except Exception as e:
             return {"error": str(e)}, 500
 
@@ -108,6 +114,7 @@ def create_app(test_config=None):
     def db_check():
         try:
             from sqlalchemy import create_engine, inspect
+
             db_url = os.getenv("DATABASE_URL")
             if db_url.startswith("postgres://"):
                 db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -118,14 +125,19 @@ def create_app(test_config=None):
             return {
                 "status": "ok",
                 "db": True,
-                "split_column": {
-                    "name": split_col["name"],
-                    "type": str(split_col["type"]),
-                    "nullable": split_col["nullable"]
-                } if split_col else "not found"
+                "split_column": (
+                    {
+                        "name": split_col["name"],
+                        "type": str(split_col["type"]),
+                        "nullable": split_col["nullable"],
+                    }
+                    if split_col
+                    else "not found"
+                ),
             }
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             return {"status": "fail", "error": str(e)}, 500
 
@@ -164,6 +176,7 @@ def create_app(test_config=None):
         return response
 
     return app
+
 
 # 🔄 Entry point
 app = create_app()
