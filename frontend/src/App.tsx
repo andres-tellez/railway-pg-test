@@ -11,7 +11,7 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/" element={<OnboardScreen />} />
       {/* <Route path="/auth/login" element={<LoginPage />} /> */}
-      {/* <Route path="/auth/callback" element={<PostOAuthSuccess />} /> */}
+          <Route path="/auth/callback" element={<PostOAuthSuccess />} /> 
       {/* <Route path="/ask" element={<AskGptMvpUI />} /> */}
       {/* <Route path="/post-oauth" element={<PostOAuthSuccess />} /> */}
       </Routes>
