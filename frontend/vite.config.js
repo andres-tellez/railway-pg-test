@@ -38,6 +38,10 @@ export default defineConfig(({ mode }) => {
           secure: false,
         },
       },
+      historyApiFallback: true, // ✅ Serve index.html for unmatched routes in dev
+    },
+    preview: {
+      historyApiFallback: true, // ✅ Serve index.html for unmatched routes in preview/prod
     },
     build: {
       outDir: 'dist',
