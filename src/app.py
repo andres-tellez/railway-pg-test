@@ -36,7 +36,7 @@ print(f"✅ Loaded environment: {env_path}", flush=True)
 print(f"📍 STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
 # 🌐 Flask Setup
-from flask import Flask, send_from_directory, redirect, request
+from flask import Flask, request, redirect
 from flask_cors import CORS
 import src.utils.config as config
 from src.routes.admin_routes import admin_bp
@@ -45,14 +45,9 @@ from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 
-# FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dist"))
-FRONTEND_DIST = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-)
-
 
 def create_app(test_config=None):
-    app = Flask(__name__, static_folder=FRONTEND_DIST, static_url_path="/")
+    app = Flask(__name__)
     cors_origins = os.getenv("CORS_ORIGINS", "")
     origin_list = [o.strip() for o in cors_origins.split(",") if o.strip()]
     CORS(app, origins=origin_list, supports_credentials=True)
@@ -61,8 +56,8 @@ def create_app(test_config=None):
     # 🔐 Allow cross-origin cookies
     app.config.update(
         SESSION_COOKIE_NAME="smartcoach_session",
-        SESSION_COOKIE_SAMESITE="None",  # This is key for cross-origin
-        SESSION_COOKIE_SECURE=True,  # Required for SameSite=None
+        SESSION_COOKIE_SAMESITE="None",
+        SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
     )
 
@@ -86,12 +81,8 @@ def create_app(test_config=None):
     @app.route("/debug-files")
     def debug_files():
         try:
-            files = []
-            for root, dirs, filenames in os.walk(app.static_folder):
-                for f in filenames:
-                    rel_path = os.path.relpath(os.path.join(root, f), app.static_folder)
-                    files.append(rel_path)
-            return {"static_folder": app.static_folder, "files": files}
+            files = [p.name for p in Path(".").iterdir()]
+            return {"cwd": os.getcwd(), "files": files}
         except Exception as e:
             return {"error": str(e)}, 500
 
@@ -141,35 +132,11 @@ def create_app(test_config=None):
             traceback.print_exc()
             return {"status": "fail", "error": str(e)}, 500
 
-    @app.route("/post-oauth")
-    def post_oauth():
-        if raw_env_mode == "local":
-            return redirect(os.getenv("FRONTEND_REDIRECT"))
-        index_path = os.path.join(app.static_folder, "index.html")
-        if os.path.exists(index_path):
-            return send_from_directory(app.static_folder, "index.html")
-        return "❌ Frontend not found", 404
-
-    @app.route("/", defaults={"path": ""})
-    @app.route("/<path:path>")
-    def serve_frontend(path):
-        print("📁 Serving from:", app.static_folder)
-        full_path = os.path.join(app.static_folder, path)
-        print(f"🔍 Request for: {path} → Resolved path: {full_path}")
-        if path != "" and os.path.exists(full_path):
-            return send_from_directory(app.static_folder, path)
-        index_path = os.path.join(app.static_folder, "index.html")
-        if os.path.exists(index_path):
-            return send_from_directory(app.static_folder, "index.html")
-        return "❌ Frontend index.html not found", 404
-
-    # ✅ Step 2: Log request origin
     @app.before_request
     def log_request_origin():
         origin = request.headers.get("Origin")
         print(f"🌐 Incoming request from Origin: {origin}", flush=True)
 
-    # ✅ Step 3: Log response headers
     @app.after_request
     def log_response_headers(response):
         print(f"🔁 Response headers: {dict(response.headers)}", flush=True)

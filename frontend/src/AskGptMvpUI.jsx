@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 
-const API = import.meta.env.VITE_BACKEND_URL;
+
+const API = import.meta.env.VITE_API_URL;
 
 export default function AskGptMvpUI() {
   const [question, setQuestion] = useState("");
