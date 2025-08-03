@@ -44,14 +44,24 @@ from src.routes.auth_routes import auth_bp
 from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
+from src.routes.user_profile_routes import user_profile_bp
+from src.routes.onboarding_routes import onboarding_bp  # ✅ NEW
+from flask_jwt_extended import JWTManager
 
 
 def create_app(test_config=None):
     app = Flask(__name__)
+
+    # ✅ JWT configuration
+    app.config["JWT_SECRET_KEY"] = config.JWT_SECRET_KEY  # should be in .env
+    app.config["JWT_TOKEN_LOCATION"] = ["headers"]
+    app.config["JWT_HEADER_NAME"] = "Authorization"
+    app.config["JWT_HEADER_TYPE"] = "Bearer"
+
+    jwt = JWTManager(app)
+
     cors_origins = os.getenv("CORS_ORIGINS", "")
-
     origin_list = [o.strip().strip(";") for o in cors_origins.split(",") if o.strip()]
-
     CORS(app, origins=origin_list, supports_credentials=True)
     print("🔬 Raw CORS_ORIGINS from env:", repr(cors_origins), flush=True)
     print("🛂 Allowed CORS origins:", origin_list, flush=True)
@@ -80,6 +90,8 @@ def create_app(test_config=None):
     app.register_blueprint(activity_bp, url_prefix="/sync")
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
+    app.register_blueprint(user_profile_bp, url_prefix="/api")
+    app.register_blueprint(onboarding_bp)  # ✅ NEW
 
     @app.route("/debug-files")
     def debug_files():
