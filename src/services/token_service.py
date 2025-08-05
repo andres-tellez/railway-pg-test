@@ -11,11 +11,14 @@ from src.db.models.tokens import Token
 
 logger = logging.getLogger(__name__)
 
+
 def get_session():
     return db_get_session()
 
+
 def is_expired(expires_at):
     return expires_at <= int(datetime.utcnow().timestamp())
+
 
 def get_valid_token(session, athlete_id):
     token_data = get_tokens_sa(session, athlete_id)
@@ -26,6 +29,7 @@ def get_valid_token(session, athlete_id):
         return refresh_access_token(session, athlete_id)["access_token"]
 
     return token_data["access_token"]
+
 
 def refresh_access_token(session, athlete_id):
     token_data = get_tokens_sa(session, athlete_id)
@@ -39,9 +43,10 @@ def refresh_access_token(session, athlete_id):
         athlete_id=athlete_id,
         access_token=tokens["access_token"],
         refresh_token=tokens["refresh_token"],
-        expires_at=tokens["expires_at"]
+        expires_at=tokens["expires_at"],
     )
     return tokens
+
 
 def refresh_token_static(refresh_token):
     response = requests.post(
@@ -50,11 +55,12 @@ def refresh_token_static(refresh_token):
             "client_id": config.STRAVA_CLIENT_ID,
             "client_secret": config.STRAVA_CLIENT_SECRET,
             "grant_type": "refresh_token",
-            "refresh_token": refresh_token
+            "refresh_token": refresh_token,
         },
     )
     response.raise_for_status()
     return response.json()
+
 
 def refresh_token_if_expired(session, athlete_id):
     token = session.query(Token).filter_by(athlete_id=athlete_id).first()
@@ -71,21 +77,25 @@ def refresh_token_if_expired(session, athlete_id):
         return True
     return False
 
+
 def delete_athlete_tokens(session, athlete_id):
     deleted = session.query(Token).filter_by(athlete_id=athlete_id).delete()
     session.commit()
     return deleted
 
+
 def store_tokens_from_callback(code, session, redirect_uri):
     redirect_uri_clean = redirect_uri.strip().rstrip(";")
-    print(f"[TokenService] Using cleaned redirect_uri: '{redirect_uri_clean}'", flush=True)
+    print(
+        f"[TokenService] Using cleaned redirect_uri: '{redirect_uri_clean}'", flush=True
+    )
 
     payload = {
         "client_id": config.STRAVA_CLIENT_ID,
         "client_secret": config.STRAVA_CLIENT_SECRET,
         "code": code,
         "grant_type": "authorization_code",
-        "redirect_uri": redirect_uri_clean
+        "redirect_uri": redirect_uri_clean,
     }
     print(f"[TokenService] Sending POST data to Strava token endpoint:\n{payload}")
 
@@ -109,7 +119,7 @@ def store_tokens_from_callback(code, session, redirect_uri):
         athlete_id=internal_id if internal_id else strava_athlete_id,
         strava_athlete_id=strava_athlete_id,
         name=athlete.get("firstname", ""),
-        email=athlete.get("email")
+        email=athlete.get("email"),
     )
 
     insert_token_sa(
@@ -117,17 +127,16 @@ def store_tokens_from_callback(code, session, redirect_uri):
         athlete_id=strava_athlete_id,
         access_token=token_data["access_token"],
         refresh_token=token_data["refresh_token"],
-        expires_at=token_data["expires_at"]
+        expires_at=token_data["expires_at"],
     )
 
     print(f"✅ Token stored for athlete: {strava_athlete_id}", flush=True)
     return strava_athlete_id
 
 
-
-
 def logout_user(token):
     print(f"[LOGOUT] Token logged out: {token}")
+
 
 def login_user(data):
     if data["username"] != config.ADMIN_USER or data["password"] != config.ADMIN_PASS:
@@ -136,7 +145,9 @@ def login_user(data):
     session = get_session()
     token_payload = {"sub": "admin"}
     access_token = jwt.encode(token_payload, config.SECRET_KEY, algorithm="HS256")
-    refresh_token = jwt.encode({"sub": "admin", "type": "refresh"}, config.JWT_SECRET, algorithm="HS256")
+    refresh_token = jwt.encode(
+        {"sub": "admin", "type": "refresh"}, config.JWT_SECRET, algorithm="HS256"
+    )
 
     insert_token_sa(
         session=session,
@@ -148,9 +159,12 @@ def login_user(data):
 
     return access_token, refresh_token
 
+
 def refresh_token(encoded_refresh_token):
     try:
-        payload = jwt.decode(encoded_refresh_token, config.SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(
+            encoded_refresh_token, config.SECRET_KEY, algorithms=["HS256"]
+        )
         if payload.get("type") != "refresh":
             raise PermissionError("Invalid token type")
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
@@ -167,9 +181,10 @@ def refresh_token(encoded_refresh_token):
         athlete_id=config.ADMIN_ATHLETE_ID,
         access_token=new_tokens["access_token"],
         refresh_token=new_tokens["refresh_token"],
-        expires_at=new_tokens["expires_at"]
+        expires_at=new_tokens["expires_at"],
     )
     return new_tokens["access_token"]
+
 
 def exchange_code_for_token(code, redirect_uri=None):
     if redirect_uri is None:
@@ -184,11 +199,12 @@ def exchange_code_for_token(code, redirect_uri=None):
             "client_secret": config.STRAVA_CLIENT_SECRET,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": redirect_uri
+            "redirect_uri": redirect_uri,
         },
     )
     response.raise_for_status()
     return response.json()
+
 
 def get_authorization_url():
     redirect_uri = config.STRAVA_REDIRECT_URI.strip().rstrip(";")

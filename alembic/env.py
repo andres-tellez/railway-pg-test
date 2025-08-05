@@ -20,19 +20,17 @@ if env_mode == "testing":
 elif env_mode == "production":
     env_file = ".env.prod"
 else:
-    env_file = ".env"
+    env_file = ".env.local"
 
 dotenv_path = os.path.join(project_root, env_file)
 load_dotenv(dotenv_path, override=True)
 
 print(f"✅ [Alembic] Loaded environment: {env_file}")
 
-
-
 print("🚨 DATABASE_URL =", os.getenv("DATABASE_URL"))
 
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, create_engine, pool
+from sqlalchemy import engine_from_config, create_engine, pool, MetaData
 from alembic import context
 
 # DATABASE_URL after .env is loaded
@@ -40,7 +38,9 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 print(f"DEBUG: Using DATABASE_URL = {DATABASE_URL}")
 
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is not set. Alembic cannot continue.")
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. Alembic cannot continue."
+    )
 
 # Import SQLAlchemy Base AFTER sys.path is fully patched
 from src.db.db_session import Base
@@ -50,6 +50,14 @@ import src.db.models.activities
 import src.db.models.tokens
 import src.db.models.splits
 import src.db.models.athletes
+import src.db.models.user_profile  # Core table import
+from src.db.models.user_profile import metadata as user_profile_metadata  # ✅
+
+# ✅ Merge ORM and Core metadata
+target_metadata = MetaData()
+for m in [Base.metadata, user_profile_metadata]:
+    for table in m.tables.values():
+        target_metadata._add_table(table.name, table.schema, table)
 
 # Alembic Config object
 config = context.config
@@ -57,9 +65,6 @@ config = context.config
 # Configure logging
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-
-# Set target metadata for autogenerate
-target_metadata = Base.metadata
 
 # Inject DATABASE_URL dynamically for Alembic migrations
 config.set_main_option("sqlalchemy.url", DATABASE_URL)

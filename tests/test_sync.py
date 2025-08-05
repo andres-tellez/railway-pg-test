@@ -2,10 +2,10 @@ from unittest.mock import patch, MagicMock
 import pytest
 import os
 
+
 @pytest.fixture(scope="session", autouse=True)
 def set_env_vars():
     os.environ["CRON_SECRET_KEY"] = "devkey123"
-
 
 
 @patch("src.services.activity_service.StravaClient")

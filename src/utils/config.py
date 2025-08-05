@@ -21,9 +21,10 @@ REFRESH_TOKEN_EXP = int(os.getenv("REFRESH_TOKEN_EXP", 604800))  # 7 days
 
 # ----- JWT / Auth -----
 SECRET_KEY = os.getenv("SECRET_KEY", "dev")
+JWT_SECRET_KEY = SECRET_KEY  # 🔄 standardize naming to match Flask-JWT usage
 ADMIN_USER = os.getenv("ADMIN_USER")
 ADMIN_PASS = os.getenv("ADMIN_PASS")
-ADMIN_ATHLETE_ID = 0
+ADMIN_ATHLETE_ID = int(os.getenv("ADMIN_ATHLETE_ID", "0"))
 
 # ----- Database -----
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -37,5 +38,3 @@ PORT = int(os.getenv("PORT", 5000))
 IS_LOCAL = os.getenv("IS_LOCAL", "false").lower() == "true"
 
 JWT_SECRET = SECRET_KEY
-
-

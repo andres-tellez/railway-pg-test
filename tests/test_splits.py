@@ -5,13 +5,13 @@ from src.db.models.splits import Split, upsert_splits
 from src.db.models.activities import Activity
 
 
-
 @pytest.fixture
 def session():
     session = get_session()
     yield session
     session.rollback()
     session.close()
+
 
 def test_model_instantiation():
     split = Split(
@@ -34,6 +34,7 @@ def test_model_instantiation():
     assert split.lap_index == 1
     assert split.conv_moving_time == "9:50"
 
+
 def test_upsert_inserts_and_updates(session):
     # Delete existing activity if present to avoid PK conflict
     existing = session.query(Activity).filter_by(activity_id=1).first()
@@ -54,10 +55,12 @@ def test_upsert_inserts_and_updates(session):
     result = session.query(Split).filter(Split.activity_id == 1).all()
     assert len(result) == 2
 
+
 def test_upsert_empty_list(session):
     # Should not raise or commit anything
     upsert_splits(session, [])
     assert True  # Passed if no exception
+
 
 def test_unique_constraint(session):
     existing = session.query(Activity).filter_by(activity_id=2).first()

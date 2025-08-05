@@ -10,16 +10,16 @@ import src.utils.config as config
 @pytest.fixture
 def app():
     app = Flask(__name__)
-    app.config['TESTING'] = True
+    app.config["TESTING"] = True
     return app
 
 
 def create_token(payload, expired=False):
     key = config.SECRET_KEY
     if expired:
-        payload['exp'] = 0  # expired
+        payload["exp"] = 0  # expired
     else:
-        payload['exp'] = 9999999999
+        payload["exp"] = 9999999999
     return jwt.encode(payload, key, algorithm="HS256")
 
 

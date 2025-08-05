@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, BigInteger, String, DateTime, func
 from src.db.db_session import Base
 
+
 class Athlete(Base):
     __tablename__ = "athletes"
 

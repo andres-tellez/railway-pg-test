@@ -1,6 +1,7 @@
 from sqlalchemy import Column, BigInteger, Integer, String, Float, DateTime
 from src.db.db_session import Base
 
+
 class Activity(Base):
     __tablename__ = "activities"
 
@@ -36,4 +37,3 @@ class Activity(Base):
     hr_zone_3 = Column(Float, nullable=True)
     hr_zone_4 = Column(Float, nullable=True)
     hr_zone_5 = Column(Float, nullable=True)
-

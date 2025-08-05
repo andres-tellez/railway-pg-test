@@ -9,6 +9,7 @@ from src.db.dao.athlete_dao import (
 )
 from src.db.models.athletes import Athlete
 
+
 def test_insert_and_get_athlete(test_db_session: Session):
     strava_id = 123456789
     name = "Test User"

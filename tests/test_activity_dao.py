@@ -58,29 +58,33 @@ def test_upsert_activities_single_activity(mock_convert):
         "conv_elapsed_time": 65,
     }
 
-    activities = [{
-        "id": 101,
-        "name": "Run",
-        "type": "Run",
-        "start_date": "2023-01-01T00:00:00Z",
-        "distance": 1000,
-        "elapsed_time": 65,
-        "moving_time": 60,
-        "total_elevation_gain": 15,
-        "external_id": "ext-101",
-        "timezone": "UTC",
-        "hr_zone_1": 10,
-        "hr_zone_2": 20,
-        "hr_zone_3": 30,
-        "hr_zone_4": 40,
-        "hr_zone_5": 50
-    }]
+    activities = [
+        {
+            "id": 101,
+            "name": "Run",
+            "type": "Run",
+            "start_date": "2023-01-01T00:00:00Z",
+            "distance": 1000,
+            "elapsed_time": 65,
+            "moving_time": 60,
+            "total_elevation_gain": 15,
+            "external_id": "ext-101",
+            "timezone": "UTC",
+            "hr_zone_1": 10,
+            "hr_zone_2": 20,
+            "hr_zone_3": 30,
+            "hr_zone_4": 40,
+            "hr_zone_5": 50,
+        }
+    ]
 
     mock_result = MagicMock()
     mock_result.rowcount = 1
     mock_session.execute.return_value = mock_result
 
-    count = ActivityDAO.upsert_activities(mock_session, athlete_id=42, activities=activities)
+    count = ActivityDAO.upsert_activities(
+        mock_session, athlete_id=42, activities=activities
+    )
 
     assert count == 1
     mock_convert.assert_called_once()
@@ -101,15 +105,37 @@ def test_upsert_activities_multiple_activities(mock_convert):
     }
 
     activities = [
-        {"id": 201, "name": "Morning Run", "type": "Run", "start_date": "2023-01-01T06:00:00Z", "distance": 1000, "elapsed_time": 65, "moving_time": 60, "total_elevation_gain": 15, "external_id": "ext-201"},
-        {"id": 202, "name": "Treadmill Run", "type": "Run", "start_date": "2023-01-02T07:00:00Z", "distance": 500, "elapsed_time": 35, "moving_time": 30, "total_elevation_gain": 5, "external_id": "ext-202"},
+        {
+            "id": 201,
+            "name": "Morning Run",
+            "type": "Run",
+            "start_date": "2023-01-01T06:00:00Z",
+            "distance": 1000,
+            "elapsed_time": 65,
+            "moving_time": 60,
+            "total_elevation_gain": 15,
+            "external_id": "ext-201",
+        },
+        {
+            "id": 202,
+            "name": "Treadmill Run",
+            "type": "Run",
+            "start_date": "2023-01-02T07:00:00Z",
+            "distance": 500,
+            "elapsed_time": 35,
+            "moving_time": 30,
+            "total_elevation_gain": 5,
+            "external_id": "ext-202",
+        },
     ]
 
     mock_result = MagicMock()
     mock_result.rowcount = 2
     mock_session.execute.return_value = mock_result
 
-    count = ActivityDAO.upsert_activities(mock_session, athlete_id=99, activities=activities)
+    count = ActivityDAO.upsert_activities(
+        mock_session, athlete_id=99, activities=activities
+    )
 
     assert count == 2
     assert mock_convert.call_count == 2
@@ -125,7 +151,9 @@ def test_get_recent_activities():
     fake_activity.name = "Test Run"
     mock_session.scalars.return_value.all.return_value = [fake_activity]
 
-    result = ActivityStatsDAO.get_recent_activities(mock_session, athlete_id=123, days=7)
+    result = ActivityStatsDAO.get_recent_activities(
+        mock_session, athlete_id=123, days=7
+    )
 
     assert isinstance(result, list)
     assert result[0].activity_id == 999999

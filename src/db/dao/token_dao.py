@@ -19,22 +19,28 @@ def get_tokens_sa(session, athlete_id: int) -> dict | None:
         return None
 
 
-def insert_token_sa(session, athlete_id: int, access_token: str, refresh_token: str, expires_at: int) -> None:
+def insert_token_sa(
+    session, athlete_id: int, access_token: str, refresh_token: str, expires_at: int
+) -> None:
     """
     Inserts or updates a token record for the given athlete using upsert.
     """
-    stmt = insert(Token).values(
-        athlete_id=athlete_id,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_at=expires_at
-    ).on_conflict_do_update(
-        index_elements=["athlete_id"],
-        set_={
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "expires_at": expires_at
-        }
+    stmt = (
+        insert(Token)
+        .values(
+            athlete_id=athlete_id,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_at=expires_at,
+        )
+        .on_conflict_do_update(
+            index_elements=["athlete_id"],
+            set_={
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at,
+            },
+        )
     )
 
     session.execute(stmt)

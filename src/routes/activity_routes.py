@@ -28,6 +28,7 @@ activity_bp = Blueprint("activity", __name__)
 
 # -------- Enrichment Routes --------
 
+
 @activity_bp.route("/enrich/status", methods=["GET"])
 def enrich_status():
     """Quick health check"""
@@ -41,7 +42,7 @@ def enrich_single(activity_id):
     try:
         row = session.execute(
             text("SELECT athlete_id FROM activities WHERE activity_id = :id"),
-            {"id": activity_id}
+            {"id": activity_id},
         ).fetchone()
 
         if not row:
@@ -83,16 +84,22 @@ def enrich_batch():
 
 # -------- Deprecated Sync Route --------
 
+
 @activity_bp.route("/sync/<int:athlete_id>")
 def sync_strava_to_db(athlete_id):
     """
     ⚠️ DEPRECATED in production. Used only for test validation.
     """
     if os.getenv("FLASK_ENV") != "test":
-        return jsonify({
-            "error": "This sync route is deprecated. Use CLI ingestion instead.",
-            "hint": "python -m src.scripts.main_pipeline --athlete_id <id> --lookback_days <N>"
-        }), 410
+        return (
+            jsonify(
+                {
+                    "error": "This sync route is deprecated. Use CLI ingestion instead.",
+                    "hint": "python -m src.scripts.main_pipeline --athlete_id <id> --lookback_days <N>",
+                }
+            ),
+            410,
+        )
 
     lookback = request.args.get("lookback", default=14, type=int)
     limit = request.args.get("limit", default=None, type=int)

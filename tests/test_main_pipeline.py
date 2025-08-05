@@ -20,10 +20,18 @@ def test_main_pipeline_calls_full_ingestion(monkeypatch):
     mock_session = MagicMock()
     mock_session.query.return_value = mock_query
 
-    patch_get_session = patch("src.scripts.main_pipeline.get_session", return_value=mock_session)
-    patch_get_tokens_sa = patch("src.scripts.main_pipeline.get_tokens_sa", return_value=mock_token)
-    patch_ingestion = patch("src.scripts.main_pipeline.run_full_ingestion_and_enrichment")
-    patch_refresh_token = patch("src.scripts.main_pipeline.refresh_token_if_expired", return_value=None)
+    patch_get_session = patch(
+        "src.scripts.main_pipeline.get_session", return_value=mock_session
+    )
+    patch_get_tokens_sa = patch(
+        "src.scripts.main_pipeline.get_tokens_sa", return_value=mock_token
+    )
+    patch_ingestion = patch(
+        "src.scripts.main_pipeline.run_full_ingestion_and_enrichment"
+    )
+    patch_refresh_token = patch(
+        "src.scripts.main_pipeline.refresh_token_if_expired", return_value=None
+    )
 
     mock_get_session = patch_get_session.start()
     mock_get_tokens = patch_get_tokens_sa.start()
@@ -49,7 +57,9 @@ def test_main_pipeline_calls_specific_activity(monkeypatch):
     monkeypatch.setattr("sys.argv", test_args)
 
     session_mock = MagicMock()
-    patch_get_session = patch("src.scripts.main_pipeline.get_session", return_value=session_mock)
+    patch_get_session = patch(
+        "src.scripts.main_pipeline.get_session", return_value=session_mock
+    )
     patch_specific = patch("src.scripts.main_pipeline.ingest_specific_activity")
 
     mock_get_session = patch_get_session.start()
@@ -70,13 +80,20 @@ def test_main_pipeline_calls_specific_activity(monkeypatch):
 
 def test_main_pipeline_calls_between_dates(monkeypatch):
     test_args = [
-        "main_pipeline.py", "--athlete_id", "123",
-        "--start_date", "2025-01-01", "--end_date", "2025-01-05"
+        "main_pipeline.py",
+        "--athlete_id",
+        "123",
+        "--start_date",
+        "2025-01-01",
+        "--end_date",
+        "2025-01-05",
     ]
     monkeypatch.setattr("sys.argv", test_args)
 
     session_mock = MagicMock()
-    patch_get_session = patch("src.scripts.main_pipeline.get_session", return_value=session_mock)
+    patch_get_session = patch(
+        "src.scripts.main_pipeline.get_session", return_value=session_mock
+    )
     patch_between = patch("src.scripts.main_pipeline.ingest_between_dates")
 
     mock_get_session = patch_get_session.start()
@@ -99,8 +116,13 @@ def test_main_pipeline_handles_exception(monkeypatch):
     test_args = ["main_pipeline.py", "--athlete_id", "123"]
     monkeypatch.setattr("sys.argv", test_args)
 
-    patch_get_session = patch("src.scripts.main_pipeline.get_session", return_value=MagicMock())
-    patch_ingest = patch("src.scripts.main_pipeline.run_full_ingestion_and_enrichment", side_effect=Exception("fail"))
+    patch_get_session = patch(
+        "src.scripts.main_pipeline.get_session", return_value=MagicMock()
+    )
+    patch_ingest = patch(
+        "src.scripts.main_pipeline.run_full_ingestion_and_enrichment",
+        side_effect=Exception("fail"),
+    )
 
     patch_get_session.start()
     patch_ingest.start()

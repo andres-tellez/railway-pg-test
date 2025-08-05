@@ -4,6 +4,7 @@ from src.db.models.activities import Activity
 from src.db.dao.split_dao import upsert_splits
 from src.db.models.splits import Split
 
+
 def test_upsert_splits_idempotency(sqlalchemy_session):
     # Insert parent activity
     activity_id = 55555
@@ -21,7 +22,7 @@ def test_upsert_splits_idempotency(sqlalchemy_session):
             "max_speed": 3.5,
             "start_index": 0,
             "end_index": 299,
-            "split": 1
+            "split": 1,
         }
     ]
 

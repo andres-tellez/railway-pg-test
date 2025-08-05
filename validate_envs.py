@@ -5,16 +5,22 @@ from dotenv import load_dotenv
 import psycopg2
 
 REQUIRED_KEYS = [
-    "SECRET_KEY", "DATABASE_URL", "STRAVA_CLIENT_ID", "STRAVA_CLIENT_SECRET",
-    "STRAVA_REDIRECT_URI", "ADMIN_USER", "ADMIN_PASS", "CRON_SECRET_KEY",
-    "INTERNAL_API_KEY", "ACCESS_TOKEN_EXP", "REFRESH_TOKEN_EXP", "ATHLETE_ID"
+    "SECRET_KEY",
+    "DATABASE_URL",
+    "STRAVA_CLIENT_ID",
+    "STRAVA_CLIENT_SECRET",
+    "STRAVA_REDIRECT_URI",
+    "ADMIN_USER",
+    "ADMIN_PASS",
+    "CRON_SECRET_KEY",
+    "INTERNAL_API_KEY",
+    "ACCESS_TOKEN_EXP",
+    "REFRESH_TOKEN_EXP",
+    "ATHLETE_ID",
 ]
 
-ENV_FILES = {
-    "development": ".env",
-    "test": ".env.test",
-    "production": ".env.prod"
-}
+ENV_FILES = {"development": ".env", "test": ".env.test", "production": ".env.prod"}
+
 
 def validate_env(env_name, env_file):
     print(f"\nValidating {env_name.upper()} ({env_file})")
@@ -43,6 +49,7 @@ def validate_env(env_name, env_file):
         conn.close()
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
+
 
 if __name__ == "__main__":
     for name, path in ENV_FILES.items():

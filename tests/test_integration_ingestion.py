@@ -8,12 +8,14 @@ from src.services.ingestion_orchestrator_service import ingest_specific_activity
 from src.db.models.activities import Activity
 from src.db.models.tokens import Token
 
+
 @pytest.fixture(scope="module")
 def test_session():
     session = get_session()
     yield session
     session.rollback()
     session.close()
+
 
 @pytest.fixture(scope="function")
 def token_fixture(test_session):
@@ -31,7 +33,9 @@ def token_fixture(test_session):
 
 
 @patch("src.services.strava_access_service.StravaClient._request_with_backoff")
-def test_ingest_specific_activity_integration(mock_strava_call, test_session, token_fixture):
+def test_ingest_specific_activity_integration(
+    mock_strava_call, test_session, token_fixture
+):
     athlete_id = 1
     activity_id = 123456
 
@@ -50,13 +54,14 @@ def test_ingest_specific_activity_integration(mock_strava_call, test_session, to
         "average_heartrate": 145,
         "max_heartrate": 160,
         "calories": 300,
-        "start_date": "2025-06-01T08:00:00Z"
+        "start_date": "2025-06-01T08:00:00Z",
     }
 
     result = ingest_specific_activity(test_session, athlete_id, activity_id)
 
     assert result == 1
-    activity = test_session.query(Activity).filter(Activity.activity_id == activity_id).first()
+    activity = (
+        test_session.query(Activity).filter(Activity.activity_id == activity_id).first()
+    )
     assert activity is not None
     assert activity.activity_id == activity_id
-

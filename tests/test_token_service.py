@@ -36,13 +36,15 @@ def test_get_valid_token_no_tokens(mock_get_tokens):
 @patch("src.services.token_service.get_tokens_sa")
 @patch("src.services.token_service.refresh_token_static")
 @patch("src.services.token_service.insert_token_sa")
-def test_refresh_access_token_success(mock_insert, mock_refresh_static, mock_get_tokens):
+def test_refresh_access_token_success(
+    mock_insert, mock_refresh_static, mock_get_tokens
+):
     mock_session = MagicMock()
     mock_get_tokens.return_value = {"refresh_token": "old_refresh"}
     mock_refresh_static.return_value = {
         "access_token": "new_access",
         "refresh_token": "new_refresh",
-        "expires_at": 1234567890
+        "expires_at": 1234567890,
     }
 
     result = token_service.refresh_access_token(mock_session, 123)
@@ -61,7 +63,11 @@ def test_refresh_access_token_no_tokens(mock_get_tokens):
 def test_refresh_token_static_success(mock_post):
     mock_resp = MagicMock(spec=Response)
     mock_resp.status_code = 200
-    mock_resp.json.return_value = {"access_token": "access", "refresh_token": "refresh", "expires_at": 12345}
+    mock_resp.json.return_value = {
+        "access_token": "access",
+        "refresh_token": "refresh",
+        "expires_at": 12345,
+    }
     mock_post.return_value = mock_resp
 
     tokens = token_service.refresh_token_static("dummy_refresh")
@@ -72,7 +78,11 @@ def test_refresh_token_static_success(mock_post):
 def test_exchange_code_for_token_success(mock_post):
     mock_resp = MagicMock(spec=Response)
     mock_resp.status_code = 200
-    mock_resp.json.return_value = {"access_token": "access", "refresh_token": "refresh", "expires_at": 12345}
+    mock_resp.json.return_value = {
+        "access_token": "access",
+        "refresh_token": "refresh",
+        "expires_at": 12345,
+    }
     mock_post.return_value = mock_resp
 
     tokens = token_service.exchange_code_for_token("dummy_code")
@@ -85,15 +95,19 @@ def test_refresh_token_if_expired_true():
         athlete_id=123,
         access_token="old",
         refresh_token="old_refresh",
-        expires_at=int((datetime.utcnow() - timedelta(hours=1)).timestamp())
+        expires_at=int((datetime.utcnow() - timedelta(hours=1)).timestamp()),
     )
-    mock_session.query.return_value.filter_by.return_value.first.return_value = expired_token
+    mock_session.query.return_value.filter_by.return_value.first.return_value = (
+        expired_token
+    )
 
-    with patch("src.services.token_service.refresh_token_static") as mock_refresh_static:
+    with patch(
+        "src.services.token_service.refresh_token_static"
+    ) as mock_refresh_static:
         mock_refresh_static.return_value = {
             "access_token": "new_access",
             "refresh_token": "new_refresh",
-            "expires_at": int((datetime.utcnow() + timedelta(hours=1)).timestamp())
+            "expires_at": int((datetime.utcnow() + timedelta(hours=1)).timestamp()),
         }
         result = token_service.refresh_token_if_expired(mock_session, 123)
         assert result is True
@@ -105,9 +119,11 @@ def test_refresh_token_if_expired_false():
         athlete_id=123,
         access_token="abc",
         refresh_token="ref",
-        expires_at=int((datetime.utcnow() + timedelta(hours=1)).timestamp())
+        expires_at=int((datetime.utcnow() + timedelta(hours=1)).timestamp()),
     )
-    mock_session.query.return_value.filter_by.return_value.first.return_value = valid_token
+    mock_session.query.return_value.filter_by.return_value.first.return_value = (
+        valid_token
+    )
 
     result = token_service.refresh_token_if_expired(mock_session, 123)
     assert result is False
@@ -135,8 +151,15 @@ def test_store_tokens_from_callback(mock_insert_token, mock_post, mock_insert_at
     mock_response = MagicMock(spec=Response)
     mock_response.status_code = 200
     mock_response.json.return_value = {
-        "athlete": {"id": 123, "firstname": "John", "lastname": "Doe", "email": "john@example.com"},
-        "access_token": "access", "refresh_token": "refresh", "expires_at": 1234567890
+        "athlete": {
+            "id": 123,
+            "firstname": "John",
+            "lastname": "Doe",
+            "email": "john@example.com",
+        },
+        "access_token": "access",
+        "refresh_token": "refresh",
+        "expires_at": 1234567890,
     }
     mock_post.return_value = mock_response
 
@@ -146,12 +169,14 @@ def test_store_tokens_from_callback(mock_insert_token, mock_post, mock_insert_at
     mock_insert_athlete.assert_called_once()
 
 
-
 @patch("src.services.token_service.get_session")
 @patch("src.services.token_service.insert_token_sa")
 def test_login_user_success(mock_insert_token, mock_get_session):
     mock_get_session.return_value = MagicMock()
-    data = {"username": token_service.config.ADMIN_USER, "password": token_service.config.ADMIN_PASS}
+    data = {
+        "username": token_service.config.ADMIN_USER,
+        "password": token_service.config.ADMIN_PASS,
+    }
 
     access_token, refresh_token = token_service.login_user(data)
     assert access_token and refresh_token
@@ -167,14 +192,16 @@ def test_login_user_invalid_credentials():
 @patch("src.services.token_service.get_session")
 @patch("src.services.token_service.get_tokens_sa")
 @patch("src.services.token_service.jwt.decode")
-def test_refresh_token_success_basic(mock_jwt_decode, mock_get_tokens, mock_get_session, mock_refresh_static):
+def test_refresh_token_success_basic(
+    mock_jwt_decode, mock_get_tokens, mock_get_session, mock_refresh_static
+):
     mock_get_session.return_value = MagicMock()
     mock_get_tokens.return_value = {"refresh_token": "valid_token"}
     mock_jwt_decode.return_value = {"sub": "admin", "type": "refresh"}
     mock_refresh_static.return_value = {
         "access_token": "new_access",
         "refresh_token": "new_refresh",
-        "expires_at": 1234567890
+        "expires_at": 1234567890,
     }
 
     token = token_service.refresh_token("valid_token")

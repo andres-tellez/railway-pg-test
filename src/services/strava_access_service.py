@@ -19,12 +19,7 @@ class StravaClient:
             print(f"📤 Params: {kwargs['params']}")
 
         for attempt in range(max_retries):
-            response = requests.request(
-                method,
-                url,
-                headers=headers,
-                **kwargs
-            )
+            response = requests.request(method, url, headers=headers, **kwargs)
 
             if response.status_code == 429:
                 print(f"⚠️ Rate limit hit (429). Backing off {backoff} seconds...")
@@ -40,17 +35,13 @@ class StravaClient:
 
         raise RuntimeError("Exceeded max retries due to repeated 429 errors")
 
-
     def get_activities(self, after=None, before=None, limit=None, per_page=200):
         url = f"{STRAVA_API_BASE_URL}/athlete/activities"
         all_activities = []
         page = 1
 
         while True:
-            params = {
-                "page": page,
-                "per_page": per_page
-            }
+            params = {"page": page, "per_page": per_page}
             if after:
                 params["after"] = after
             if before:
@@ -94,7 +85,9 @@ class StravaClient:
 
     def get_streams(self, activity_id, keys):
         url = f"{STRAVA_API_BASE_URL}/activities/{activity_id}/streams"
-        resp = self._request_with_backoff("GET", url, params={"keys": ",".join(keys), "key_by_type": "true"})
+        resp = self._request_with_backoff(
+            "GET", url, params={"keys": ",".join(keys), "key_by_type": "true"}
+        )
 
         streams = {}
         for key in keys:
@@ -102,8 +95,10 @@ class StravaClient:
             if isinstance(raw, dict) and "data" in raw:
                 try:
                     streams[key] = [
-                        float(x) for x in raw["data"]
-                        if isinstance(x, (int, float, str)) and str(x).replace('.', '', 1).isdigit()
+                        float(x)
+                        for x in raw["data"]
+                        if isinstance(x, (int, float, str))
+                        and str(x).replace(".", "", 1).isdigit()
                     ]
                 except Exception as e:
                     print(f"Failed to convert stream {key}: {e}")

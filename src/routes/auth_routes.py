@@ -130,8 +130,34 @@ def callback():
             flush=True,
         )
 
-        query = urlencode({"code": code, "authed": "true"})
+        refresh_token = jwt.encode(
+            {
+                "sub": str(athlete_id),
+                "exp": datetime.utcnow() + timedelta(seconds=config.REFRESH_TOKEN_EXP),
+            },
+            config.SECRET_KEY,
+            algorithm="HS256",
+        )
+        access_token = jwt.encode(
+            {
+                "sub": str(athlete_id),
+                "exp": datetime.utcnow() + timedelta(seconds=config.ACCESS_TOKEN_EXP),
+            },
+            config.SECRET_KEY,
+            algorithm="HS256",
+        )
+
+        query = urlencode(
+            {
+                "authed": "true",
+                "code": code,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+            }
+        )
+
         full_redirect_url = f"{frontend_redirect}?{query}"
+
         print(f"[Callback] REDIRECT FINAL URL: {full_redirect_url}", flush=True)
 
         return redirect(full_redirect_url)
@@ -158,6 +184,16 @@ def callback_token_exchange():
         athlete_id = store_tokens_from_callback(code, session, redirect_uri)
 
         flask_session["athlete_id"] = athlete_id
+
+        token = jwt.encode(
+            {
+                "sub": str(athlete_id),
+                "exp": datetime.utcnow() + timedelta(seconds=config.ACCESS_TOKEN_EXP),
+            },
+            config.SECRET_KEY,
+            algorithm="HS256",
+        )
+
         return jsonify({"status": "success", "athlete_id": athlete_id}), 200
 
     except Exception as e:

@@ -4,9 +4,10 @@ from src.db.db_session import get_session
 from src.db.dao.activity_dao import ActivityDAO
 from datetime import datetime, timedelta
 
-ask_bp = Blueprint('ask', __name__)
+ask_bp = Blueprint("ask", __name__)
 
-@ask_bp.route('/ask', methods=['POST'])
+
+@ask_bp.route("/ask", methods=["POST"])
 def ask():
     if not request.is_json:
         print("Error: Content-Type is not JSON")
@@ -32,12 +33,19 @@ def ask():
             raise ValueError
     except (ValueError, TypeError):
         print("Error: Invalid or missing 'athlete_id'")
-        return jsonify({"error": "Invalid or missing 'athlete_id' (must be a positive integer)"}), 400
+        return (
+            jsonify(
+                {
+                    "error": "Invalid or missing 'athlete_id' (must be a positive integer)"
+                }
+            ),
+            400,
+        )
 
     sanitized_question = " ".join(question.strip().split())
 
-    
     from datetime import date, timedelta
+
     # Get start of current week (Monday)
     today = date.today()
     start_date = today - timedelta(days=today.weekday())
@@ -46,7 +54,8 @@ def ask():
     try:
         activities = ActivityDAO.get_activities_by_athlete(session, athlete_id)
         filtered = [
-            a for a in activities
+            a
+            for a in activities
             if a.start_date and start_date <= a.start_date.date() <= today
         ]
 
@@ -54,7 +63,7 @@ def ask():
             {
                 "start_date": a.start_date.strftime("%Y-%m-%d %H:%M:%S"),
                 "conv_distance": round(a.conv_distance, 2),
-                "duration": f"{round(a.moving_time / 60)} minutes"
+                "duration": f"{round(a.moving_time / 60)} minutes",
             }
             for a in filtered
         ]
@@ -69,9 +78,14 @@ def ask():
     gpt_response = get_gpt_response(prompt)
     print(f"Full GPT Response: {gpt_response}")
 
-    return jsonify({
-        "message": "✅ GPT response generated",
-        "athlete_id": athlete_id,
-        "question": sanitized_question,
-        "response": gpt_response
-    }), 200
+    return (
+        jsonify(
+            {
+                "message": "✅ GPT response generated",
+                "athlete_id": athlete_id,
+                "question": sanitized_question,
+                "response": gpt_response,
+            }
+        ),
+        200,
+    )

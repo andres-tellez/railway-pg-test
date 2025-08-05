@@ -2,6 +2,7 @@ from sqlalchemy.dialects.postgresql import insert
 from src.db.models.splits import Split
 from src.utils.conversions import convert_metrics
 
+
 def upsert_splits(session, splits: list) -> int:
     """
     Upserts multiple split records into the 'splits' table.
@@ -34,27 +35,31 @@ def upsert_splits(session, splits: list) -> int:
         }
         enriched = convert_metrics(conv_data, conv_fields)
 
-        converted.append({
-            "activity_id": s["activity_id"],
-            "lap_index": s["lap_index"],
-            "distance": s["distance"],
-            "elapsed_time": s["elapsed_time"],
-            "moving_time": s["moving_time"],
-            "average_speed": s["average_speed"],
-            "max_speed": s["max_speed"],
-            "start_index": s["start_index"],
-            "end_index": s["end_index"],
-            "split": split_value,
-            "average_heartrate": s.get("average_heartrate"),
-            "pace_zone": s.get("pace_zone"),
-            "conv_distance": enriched.get("conv_distance"),
-            "conv_avg_speed": enriched.get("conv_avg_speed"),
-            "conv_moving_time": enriched.get("conv_moving_time"),
-            "conv_elapsed_time": enriched.get("conv_elapsed_time"),
-        })
+        converted.append(
+            {
+                "activity_id": s["activity_id"],
+                "lap_index": s["lap_index"],
+                "distance": s["distance"],
+                "elapsed_time": s["elapsed_time"],
+                "moving_time": s["moving_time"],
+                "average_speed": s["average_speed"],
+                "max_speed": s["max_speed"],
+                "start_index": s["start_index"],
+                "end_index": s["end_index"],
+                "split": split_value,
+                "average_heartrate": s.get("average_heartrate"),
+                "pace_zone": s.get("pace_zone"),
+                "conv_distance": enriched.get("conv_distance"),
+                "conv_avg_speed": enriched.get("conv_avg_speed"),
+                "conv_moving_time": enriched.get("conv_moving_time"),
+                "conv_elapsed_time": enriched.get("conv_elapsed_time"),
+            }
+        )
 
     # 🔍 Debug output to verify types
-    print(f"[DAO DEBUG] split values: {[row['split'] for row in converted]} | types: {[type(row['split']) for row in converted]}")
+    print(
+        f"[DAO DEBUG] split values: {[row['split'] for row in converted]} | types: {[type(row['split']) for row in converted]}"
+    )
 
     stmt = insert(Split).values(converted)
 
@@ -65,8 +70,7 @@ def upsert_splits(session, splits: list) -> int:
     }
 
     stmt = stmt.on_conflict_do_update(
-        index_elements=["activity_id", "lap_index"],
-        set_=update_map
+        index_elements=["activity_id", "lap_index"], set_=update_map
     )
 
     result = session.execute(stmt)

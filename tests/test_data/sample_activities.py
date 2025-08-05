@@ -29,9 +29,9 @@ SAMPLE_ACTIVITY_JSON = {
             "end_index": 299,
             "split": 1,
             "average_heartrate": 145,
-            "pace_zone": 2
+            "pace_zone": 2,
         }
-    ]
+    ],
 }
 
 SAMPLE_HR_ZONE_RESPONSE = {
@@ -41,7 +41,7 @@ SAMPLE_HR_ZONE_RESPONSE = {
             {"score": 0.2},
             {"score": 0.3},
             {"score": 0.25},
-            {"score": 0.15}
+            {"score": 0.15},
         ]
     }
 }
@@ -50,5 +50,5 @@ SAMPLE_STREAMS_RESPONSE = {
     "distance": {"data": [0.0, 500.0, 1000.0]},
     "time": {"data": [0, 150, 300]},
     "velocity_smooth": {"data": [3.2, 3.4, 3.3]},
-    "heartrate": {"data": [130, 140, 150]}
+    "heartrate": {"data": [130, 140, 150]},
 }
