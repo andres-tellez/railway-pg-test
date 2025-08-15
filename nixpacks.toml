@@ -14,5 +14,7 @@ cmds = [
   "ls -la frontend/dist || echo ❌ DIST NOT FOUND"
 ]
 
+providers = ["...", "python"]
+
 [start]
 cmd = "gunicorn app:create_app\\(\\) --bind 0.0.0.0:$PORT --workers 1"
