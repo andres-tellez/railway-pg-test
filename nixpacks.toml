@@ -1,20 +1,14 @@
-[phases.setup]
-nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "python311Packages.gunicorn"]
+# nixpacks.toml
 
-providers = ["node", "python"]
-
-[phases.install]
-cmds = ["pip install -r requirements.txt"]
+providers = ["...", "python"]
 
 [phases.build]
 cmds = [
   "echo 🚀 STARTING FRONTEND BUILD",
   "cd frontend && npm ci && npm run build",
   "echo ✅ FRONTEND BUILD COMPLETE",
-  "ls -la frontend/dist || echo ❌ DIST NOT FOUND"
+  "ls -la frontend/dist || echo DIST NOT FOUND"
 ]
 
-providers = ["...", "python"]
-
 [start]
-cmd = "gunicorn app:create_app\\(\\) --bind 0.0.0.0:$PORT --workers 1"
+cmd = "gunicorn app:create_app\(\) --bind 0.0.0.0:$PORT --workers 1"
