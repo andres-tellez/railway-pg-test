@@ -59,9 +59,5 @@ def test_blueprints_registered(client):
     resp = client.get("/ping")
     assert resp.status_code == 200
 
-    resp = client.get("/auth/login")
-    # This route exists but may redirect or 405 if not POST; just check not 404
-    assert resp.status_code != 404
-
     resp = client.get("/sync/enrich/status")
     assert resp.status_code == 200

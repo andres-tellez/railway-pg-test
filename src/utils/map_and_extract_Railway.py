@@ -4,7 +4,7 @@ from docx.shared import Pt, RGBColor
 from docx.oxml.ns import qn
 
 ROOT_DIR = r"C:\Users\andre\projects\railway-pg-test"
-OUTPUT_DOCX = "final_project_map.docx"
+OUTPUT_DOCX = "ProjectCode_FileStructure.docx"
 
 EXCLUDE_DIRS = {
     "venv",

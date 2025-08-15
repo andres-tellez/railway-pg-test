@@ -14,8 +14,6 @@ def base_payload():
         "user_id": "test-user-123",
         "trainingDays": ["Mon", "Wed", "Fri"],
         "trainingGoal": "Build endurance",
-        "hasInjury": False,
-        "injuryDetails": None,
         "runnerLevel": "Intermediate",
         "raceHistory": False,
         "raceDate": "2025-09-01",
@@ -26,7 +24,6 @@ def base_payload():
         "mainGoal": "Run a race",
         "motivation": ["Competition"],
         "ageGroup": "25-34",
-        "longestRun": 10,
         "runPreference": "Distance",
         "trainingDaysPerWeek": 3,
     }

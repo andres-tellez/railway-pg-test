@@ -1,5 +1,9 @@
-import pytest
+import os
+
+os.environ["FLASK_ENV"] = "test"
 from unittest.mock import patch, MagicMock
+import pytest
+
 from src.routes.activity_routes import activity_bp
 
 
@@ -34,7 +38,7 @@ def test_enrich_single_activity_success(mock_service_cls, mock_get_session, clie
     resp = client.post("/enrich/activity/456")
 
     assert resp.status_code == 200
-    assert "enriched" in resp.json.get("status", "").lower()
+    assert resp.json.get("status") == "ok"
 
     mock_get_session.assert_called_once()
     mock_service_cls.assert_called_once_with(mock_session, 123)
@@ -65,7 +69,7 @@ def test_enrich_batch_success(mock_run_batch, mock_get_session, client):
     resp = client.post("/enrich/batch?athlete_id=123&batch=10")
 
     assert resp.status_code == 200
-    assert resp.json.get("count") == 5
+    assert resp.json.get("enriched_count") == 5
 
     mock_run_batch.assert_called_once_with(mock_session, 123, batch_size=10)
     mock_session.close.assert_called_once()

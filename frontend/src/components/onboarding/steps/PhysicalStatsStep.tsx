@@ -59,11 +59,6 @@ export default function PhysicalStatsStep() {
           type="number"
           min={0}
           step={1}
-          {...register('longestRun', {
-            setValueAs: (v) => (v === '' ? undefined : parseInt(v, 10)),
-            validate: (v) =>
-              Number.isInteger(v) || 'Please enter a whole number (no decimals)',
-          })}
           className="mt-1 border p-2 w-full rounded"
         />
       </div>

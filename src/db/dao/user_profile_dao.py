@@ -19,6 +19,8 @@ def save_user_profile(profile_data: dict):
     Strips enum prefixes and converts empty arrays to NULL before saving.
     """
 
+    longest_run = profile_data.get("longestRun")
+
     db_data = {
         "user_id": profile_data["user_id"],
         "runner_level": profile_data["runnerLevel"],
@@ -35,12 +37,11 @@ def save_user_profile(profile_data: dict):
         "main_goal": profile_data["mainGoal"],
         "motivation": _enum_to_str_list(profile_data.get("motivation", [])),
         "age_group": profile_data["ageGroup"],
-        "longest_run": profile_data.get("longestRun"),
         "run_preference": profile_data["runPreference"],
-        # ✅ store natively as boolean
-        "has_injury": profile_data["hasInjury"],
-        "injury_details": profile_data.get("injuryDetails"),
     }
+
+    if longest_run is not None:
+        db_data["longest_run"] = longest_run
 
     engine = get_engine()
     with engine.begin() as conn:
@@ -62,9 +63,5 @@ def get_user_profile(user_id: str) -> dict:
         stmt = select(user_profile_table).where(user_profile_table.c.user_id == user_id)
         result = conn.execute(stmt).mappings().fetchone()
         profile = normalize_postgres_row(result) if result else None
-
-        # ✅ defensive check (optional)
-        if profile is not None:
-            profile["hasInjury"] = bool(profile["hasInjury"])
 
         return profile

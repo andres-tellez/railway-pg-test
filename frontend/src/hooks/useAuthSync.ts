@@ -1,29 +1,46 @@
-import { useEffect, useState } from "react";
+// src/hooks/useAuthSync.ts
+import { useAuth0 } from "@auth0/auth0-react";
+import { useEffect, useMemo, useState } from "react";
 
-export function useAuthSync() {
-  const [token, setToken] = useState<string | null | undefined>(undefined);
+export function useAuthSync(): string | null {
+  const { isLoading, isAuthenticated, user } = useAuth0();
+  const [id, setId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const urlToken = url.searchParams.get("access_token");
-    const localToken = localStorage.getItem("access_token");
-
-    console.log("🧩 URL Token from query:", urlToken);
-    console.log("💾 Local storage token:", localToken);
-
-    if (urlToken) {
-      // Accept ANY token string, no JWT validation
-      localStorage.setItem("access_token", urlToken);
-      setToken(urlToken);
-      console.log("✅ Token set from URL");
-    } else if (localToken) {
-      setToken(localToken);
-      console.log("✅ Token set from localStorage");
-    } else {
-      setToken(null);
-      console.warn("❌ No token found at all");
+  // 1) Try URL ?user_id= first (nice for deep-links)
+  const urlUserId = useMemo(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("user_id");
+    } catch {
+      return null;
     }
   }, []);
 
-  return token;
+  // Prime from URL/localStorage once
+  useEffect(() => {
+    if (urlUserId) {
+      localStorage.setItem("user_id", urlUserId);
+      setId(urlUserId);
+      console.debug("[AuthSync] using user_id from URL:", urlUserId);
+      return;
+    }
+    const cached = localStorage.getItem("user_id");
+    if (cached) {
+      setId(cached);
+      console.debug("[AuthSync] using user_id from localStorage:", cached);
+    }
+  }, [urlUserId]);
+
+  // 2) When Auth0 is ready, prefer user.sub
+  useEffect(() => {
+    if (isLoading) return;
+    if (isAuthenticated && user?.sub) {
+      if (id !== user.sub) {
+        localStorage.setItem("user_id", user.sub);
+        setId(user.sub);
+        console.debug("[AuthSync] using user_id from Auth0:", user.sub);
+      }
+    }
+  }, [isLoading, isAuthenticated, user, id]);
+
+  return id;
 }

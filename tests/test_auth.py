@@ -3,6 +3,9 @@ import jwt
 from datetime import datetime, timedelta
 from unittest.mock import patch
 import src.utils.config as config  # Import config for admin credentials
+import pytest
+
+pytestmark = pytest.mark.skip(reason="legacy password login removed")
 
 
 @patch("src.services.token_service.refresh_token_static")

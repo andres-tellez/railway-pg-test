@@ -1,18 +1,16 @@
 import sys
 import os
-
 from dotenv import load_dotenv
+from logging.config import fileConfig
+from sqlalchemy import create_engine, pool, MetaData
+from alembic import context
 
-# --- Add project root to sys.path ---
+# --- Add project root & src folder to sys.path ---
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
-
-# --- Add 'src' folder to sys.path ---
 sys.path.insert(0, os.path.join(project_root, "src"))
 
-# ✅ Load environment variables from explicit .env path with override
-# ✅ Load the appropriate .env file based on FLASK_ENV
-# Use FLASK_ENV or fallback to RAILWAY_ENVIRONMENT or default to "development"
+# --- Load the appropriate .env file based on environment ---
 env_mode = os.getenv("FLASK_ENV") or os.getenv("RAILWAY_ENVIRONMENT") or "development"
 
 if env_mode == "testing":
@@ -26,14 +24,9 @@ dotenv_path = os.path.join(project_root, env_file)
 load_dotenv(dotenv_path, override=True)
 
 print(f"✅ [Alembic] Loaded environment: {env_file}")
-
 print("🚨 DATABASE_URL =", os.getenv("DATABASE_URL"))
 
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config, create_engine, pool, MetaData
-from alembic import context
-
-# DATABASE_URL after .env is loaded
+# --- Database URL ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 print(f"DEBUG: Using DATABASE_URL = {DATABASE_URL}")
 
@@ -42,36 +35,35 @@ if not DATABASE_URL:
         "DATABASE_URL environment variable is not set. Alembic cannot continue."
     )
 
-# Import SQLAlchemy Base AFTER sys.path is fully patched
+# --- Import SQLAlchemy Base AFTER sys.path patching ---
 from src.db.db_session import Base
 
-# ✅ Import all models so Alembic can detect schema
+# --- Import all models so Alembic can detect them ---
 import src.db.models.activities
 import src.db.models.tokens
 import src.db.models.splits
 import src.db.models.athletes
-import src.db.models.user_profile  # Core table import
-from src.db.models.user_profile import metadata as user_profile_metadata  # ✅
+import src.db.models.user_profile
+from src.db.models.user_profile import metadata as user_profile_metadata
+import src.db.models.user_identity
+from src.db.models.user_identity import metadata as user_identity_metadata
 
-# ✅ Merge ORM and Core metadata
+# --- Merge ORM and Core metadata ---
 target_metadata = MetaData()
-for m in [Base.metadata, user_profile_metadata]:
+for m in [Base.metadata, user_profile_metadata, user_identity_metadata]:
     for table in m.tables.values():
         target_metadata._add_table(table.name, table.schema, table)
 
-# Alembic Config object
+# --- Alembic Config ---
 config = context.config
-
-# Configure logging
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Inject DATABASE_URL dynamically for Alembic migrations
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 
 def run_migrations_offline():
-    """Run migrations in 'offline' mode (no DB connection)."""
+    """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -85,11 +77,10 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
-    """Run migrations in 'online' mode (DB connection active)."""
-    # ✅ Replace with explicit engine creation and echo enabled
+    """Run migrations in 'online' mode."""
     connectable = create_engine(
         DATABASE_URL,
-        echo=True,  # 🔍 Enable SQL echoing
+        echo=True,
         poolclass=pool.NullPool,
     )
 

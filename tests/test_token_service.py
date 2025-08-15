@@ -1,4 +1,6 @@
 import pytest
+
+pytestmark = pytest.mark.skip(reason="legacy password login removed")
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
 import jwt

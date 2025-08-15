@@ -172,3 +172,121 @@ def clean_user_profile(shared_engine):
     with shared_engine.connect() as conn:
         conn.execute(text("DELETE FROM user_profile WHERE user_id = 'test-user-123'"))
         conn.commit()
+
+
+# =====================================================================
+# 🆕 Added fixtures for user_athletes tests (non-destructive additions)
+# =====================================================================
+
+from functools import wraps
+from flask import g, request, jsonify
+
+
+@pytest.fixture(scope="function")
+def auth_header():
+    """
+    Helper to pass a deterministic test user into routes via header.
+    Pairs with patched requires_auth below.
+    """
+
+    def _h(sub: str, *, unauthorized: bool = False):
+        h = {"X-TEST-USER": sub}
+        if unauthorized:
+            h["X-TEST-UNAUTH"] = "1"
+        return h
+
+    return _h
+
+
+@pytest.fixture(scope="function", autouse=True)
+def patch_requires_auth(monkeypatch):
+    """
+    Patch src.utils.auth0_jwt.requires_auth so route tests can:
+      - set g.current_user['sub'] from X-TEST-USER header
+      - optionally force a 401 by sending X-TEST-UNAUTH: 1
+    This does NOT modify your production code and only applies in tests.
+    """
+    import src.utils.auth0_jwt as auth0_jwt
+
+    def test_requires_auth(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            if request.headers.get("X-TEST-UNAUTH") == "1":
+                return jsonify({"error": "Unauthorized"}), 401
+            sub = request.headers.get("X-TEST-USER", "auth0|test-user")
+            g.current_user = {"sub": sub}
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    monkeypatch.setattr(auth0_jwt, "requires_auth", lambda f: test_requires_auth(f))
+    yield
+    # No unpatch needed; monkeypatch fixture handles teardown
+
+
+@pytest.fixture(scope="function")
+def make_athlete(shared_engine):
+    """
+    Factory to create an Athlete row compatible with either schema variant:
+      - Newer: Athlete(id PK, strava_athlete_id BIGINT, created_at ...)
+      - Older: Athlete(athlete_id PK or column, first_name, last_name, ...)
+    Returns the ORM object with a usable primary key (a.id).
+    """
+    Session = sessionmaker(bind=shared_engine, future=True)
+
+    def _create(**overrides):
+        from time import time
+
+        with Session() as s:
+            a = None
+            # Try to handle both schemas gracefully
+            if hasattr(Athlete, "strava_athlete_id"):
+                # Newer schema
+                defaults = {
+                    "strava_athlete_id": overrides.pop(
+                        "strava_athlete_id", int(time() * 1_000_000)
+                    ),
+                }
+                a = Athlete(**{**defaults, **overrides})
+            else:
+                # Older schema fallback
+                defaults = {
+                    "athlete_id": overrides.pop("athlete_id", int(time() * 1_000_000)),
+                    "first_name": overrides.pop("first_name", "Test"),
+                    "last_name": overrides.pop("last_name", "Athlete"),
+                }
+                a = Athlete(**{**defaults, **overrides})
+
+            s.add(a)
+            s.commit()
+            s.refresh(a)
+            return a
+
+    return _create
+
+
+@pytest.fixture(scope="function")
+def link_user():
+    """
+    Helper to create a user↔athlete link via DAO (uses production code path).
+    """
+    from src.db.dao.user_athletes_dao import create_link
+
+    def _link(user_id: str, athlete_id: int):
+        return create_link(user_id, athlete_id)
+
+    return _link
+
+
+@pytest.fixture(scope="function", autouse=True)
+def clean_user_athletes(shared_engine):
+    """
+    Keep user_athletes clean between tests. Only deletes rows created by tests
+    for Auth0-like subjects to avoid interfering with other data.
+    """
+    yield
+    with shared_engine.connect() as conn:
+        # Delete typical test subjects
+        conn.execute(text("DELETE FROM user_athletes WHERE user_id LIKE 'auth0|%'"))
+        conn.execute(text("DELETE FROM user_athletes WHERE user_id = 'test-user-123'"))
+        conn.commit()

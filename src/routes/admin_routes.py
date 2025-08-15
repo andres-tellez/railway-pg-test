@@ -4,6 +4,7 @@ from src.services.ingestion_orchestrator_service import (
 )
 from src.db.db_session import get_session
 import logging
+from src.utils.auth0_jwt import requires_auth
 
 admin_bp = Blueprint("admin", __name__)
 logger = logging.getLogger(__name__)
@@ -15,6 +16,7 @@ def ping():
 
 
 @admin_bp.route("/trigger-ingest/<int:athlete_id>", methods=["POST"])
+@requires_auth
 def trigger_ingestion(athlete_id):
     logger.info(f"⏱️ [Trigger] Received trigger-ingest for athlete_id={athlete_id}")
     session = get_session()

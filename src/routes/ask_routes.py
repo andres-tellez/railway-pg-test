@@ -3,10 +3,12 @@ from src.utils.gpt_ops import format_prompt, get_gpt_response
 from src.db.db_session import get_session
 from src.db.dao.activity_dao import ActivityDAO
 from datetime import datetime, timedelta
+from src.utils.auth0_jwt import requires_auth
 
 ask_bp = Blueprint("ask", __name__)
 
 
+@requires_auth
 @ask_bp.route("/ask", methods=["POST"])
 def ask():
     if not request.is_json:

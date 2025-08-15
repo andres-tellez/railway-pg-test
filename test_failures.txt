@@ -1,0 +1,417 @@
+.......F.F.FF...................FsssssFFFFF..F..F....................... [ 54%]
+...........F...............FsssssssssssssssssssFFF...FFFFFFF             [100%]
+================================== FAILURES ===================================
+_____________________ test_enrich_single_activity_success _____________________
+tests\test_activity_routes.py:37: in test_enrich_single_activity_success
+    assert "enriched" in resp.json.get("status", "").lower()
+E   AssertionError: assert 'enriched' in 'ok'
+E    +  where 'ok' = <built-in method lower of str object at 0x000001F13FE23830>()
+E    +    where <built-in method lower of str object at 0x000001F13FE23830> = 'ok'.lower
+E    +      where 'ok' = <built-in method get of dict object at 0x000001F13FDF3E80>('status', '')
+E    +        where <built-in method get of dict object at 0x000001F13FDF3E80> = {'activity_id': 456, 'status': 'ok'}.get
+E    +          where {'activity_id': 456, 'status': 'ok'} = <WrapperTestResponse 34 bytes [200 OK]>.json
+__________________________ test_enrich_batch_success __________________________
+tests\test_activity_routes.py:68: in test_enrich_batch_success
+    assert resp.json.get("count") == 5
+E   AssertionError: assert None == 5
+E    +  where None = <built-in method get of dict object at 0x000001F13FEC5200>('count')
+E    +    where <built-in method get of dict object at 0x000001F13FEC5200> = {'athlete_id': 123, 'batch_size': 10, 'enriched_count': 5, 'status': 'ok'}.get
+E    +      where {'athlete_id': 123, 'batch_size': 10, 'enriched_count': 5, 'status': 'ok'} = <WrapperTestResponse 68 bytes [200 OK]>.json
+_______________________ test_sync_strava_to_db_success ________________________
+tests\test_activity_routes.py:101: in test_sync_strava_to_db_success
+    assert resp.status_code == 200
+E   assert 410 == 200
+E    +  where 410 = <WrapperTestResponse streamed [410 GONE]>.status_code
+_____________________ test_sync_strava_to_db_unauthorized _____________________
+tests\test_activity_routes.py:116: in test_sync_strava_to_db_unauthorized
+    assert resp.status_code == 401
+E   assert 410 == 401
+E    +  where 410 = <WrapperTestResponse streamed [410 GONE]>.status_code
+_________________________ test_insert_and_get_athlete _________________________
+tests\test_athlete_dao.py:19: in test_insert_and_get_athlete
+    athlete_id = insert_athlete(test_db_session, strava_id, name, email)
+E   TypeError: insert_athlete() takes 2 positional arguments but 4 were given
+__________________________ test_admin_login_success ___________________________
+tests\test_auth_routes.py:38: in test_admin_login_success
+    assert response.status_code == 200
+E   assert 405 == 200
+E    +  where 405 = <WrapperTestResponse streamed [405 METHOD NOT ALLOWED]>.status_code
+____________________ test_admin_login_invalid_credentials _____________________
+tests\test_auth_routes.py:46: in test_admin_login_invalid_credentials
+    assert response.status_code == 401
+E   assert 405 == 401
+E    +  where 405 = <WrapperTestResponse streamed [405 METHOD NOT ALLOWED]>.status_code
+________________________ test_admin_login_missing_json ________________________
+tests\test_auth_routes.py:52: in test_admin_login_missing_json
+    assert response.status_code in (400, 500)
+E   assert 405 in (400, 500)
+E    +  where 405 = <WrapperTestResponse streamed [405 METHOD NOT ALLOWED]>.status_code
+_________________________ test_strava_login_redirect __________________________
+tests\test_auth_routes.py:68: in test_strava_login_redirect
+    response = client.get("/auth/login")
+venv\Lib\site-packages\werkzeug\test.py:1162: in get
+    return self.open(*args, **kw)
+venv\Lib\site-packages\flask\testing.py:234: in open
+    response = super().open(
+venv\Lib\site-packages\werkzeug\test.py:1116: in open
+    response_parts = self.run_wsgi_app(request.environ, buffered=buffered)
+venv\Lib\site-packages\werkzeug\test.py:988: in run_wsgi_app
+    rv = run_wsgi_app(self.application, environ, buffered=buffered)
+venv\Lib\site-packages\werkzeug\test.py:1264: in run_wsgi_app
+    app_rv = app(environ, start_response)
+venv\Lib\site-packages\flask\app.py:1536: in __call__
+    return self.wsgi_app(environ, start_response)
+venv\Lib\site-packages\flask\app.py:1514: in wsgi_app
+    response = self.handle_exception(e)
+venv\Lib\site-packages\flask\app.py:1511: in wsgi_app
+    response = self.full_dispatch_request()
+venv\Lib\site-packages\flask\app.py:919: in full_dispatch_request
+    rv = self.handle_user_exception(e)
+venv\Lib\site-packages\flask\app.py:917: in full_dispatch_request
+    rv = self.dispatch_request()
+venv\Lib\site-packages\flask\app.py:902: in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+src\routes\auth_routes.py:60: in login_redirect_alias
+    return strava_login_redirect()
+src\routes\auth_routes.py:70: in strava_login_redirect
+    redirect_uri = os.getenv("STRAVA_REDIRECT_URI", "").strip().rstrip(";")
+E   TypeError: test_strava_login_redirect.<locals>.<lambda>() takes 1 positional argument but 2 were given
+---------------------------- Captured stdout call -----------------------------
+\U0001f6d1 Flask route /auth/strava-login was triggered
+____________________________ test_callback_success ____________________________
+tests\test_auth_routes.py:85: in test_callback_success
+    assert "Token stored for athlete_id: 123" in response.get_data(as_text=True)
+E   assert 'Token stored for athlete_id: 123' in '{"athlete_id":123,"status":"success"}\n'
+E    +  where '{"athlete_id":123,"status":"success"}\n' = get_data(as_text=True)
+E    +    where get_data = <WrapperTestResponse 38 bytes [200 OK]>.get_data
+---------------------------- Captured stdout call -----------------------------
+[Callback] Redirect URI used for token exchange: http://localhost:5000/auth/callback\n\u2705 Flask session contents before redirect: {'athlete_id': 123}
+_________________________ test_refresh_token_success __________________________
+..\..\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:1372: in patched
+    with self.decoration_helper(patched,
+..\..\AppData\Local\Programs\Python\Python311\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+..\..\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+..\..\AppData\Local\Programs\Python\Python311\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+..\..\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:1443: in __enter__
+    original, local = self.get_original()
+..\..\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:1416: in get_original
+    raise AttributeError(
+E   AttributeError: <module 'src.routes.auth_routes' from 'C:\\Users\\andre\\projects\\railway-pg-test\\src\\routes\\auth_routes.py'> does not have the attribute 'refresh_token_if_expired'
+_____________________________ test_logout_success _____________________________
+..\..\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:1372: in patched
+    with self.decoration_helper(patched,
+..\..\AppData\Local\Programs\Python\Python311\Lib\contextlib.py:137: in __enter__
+    return next(self.gen)
+..\..\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:1354: in decoration_helper
+    arg = exit_stack.enter_context(patching)
+..\..\AppData\Local\Programs\Python\Python311\Lib\contextlib.py:517: in enter_context
+    result = _enter(cm)
+..\..\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:1443: in __enter__
+    original, local = self.get_original()
+..\..\AppData\Local\Programs\Python\Python311\Lib\unittest\mock.py:1416: in get_original
+    raise AttributeError(
+E   AttributeError: <module 'src.routes.auth_routes' from 'C:\\Users\\andre\\projects\\railway-pg-test\\src\\routes\\auth_routes.py'> does not have the attribute 'delete_athlete_tokens'
+______________________ test_duplicate_submission_upserts ______________________
+tests\test_onboarding.py:109: in test_duplicate_submission_upserts
+    assert row[0] == 15  # Confirm it was updated
+E   assert None == 15
+---------------------------- Captured stdout call -----------------------------
+\U0001f310 Incoming request from Origin: http://localhost:5173\n\U0001f310 Incoming request from Origin: http://localhost:5173\n\U0001f4e1 Incoming POST request to: /api/onboarding\n\U0001f4e8 Incoming payload: {'ageGroup': '25-34', 'height': {'feet': 5, 'inches': 10}, 'mainGoal': 'Run a race', 'motivation': ['Competition'], 'pastRaces': ['5K', '10K'], 'raceDate': '2025-09-01', 'raceDistance': '10K', 'raceHistory': False, 'runPreference': 'Distance', 'runnerLevel': 'Intermediate', 'trainingDays': ['Mon', 'Wed', 'Fri'], 'trainingDaysPerWeek': 3, 'trainingGoal': 'Build endurance', 'user_id': 'test-user-123', 'weight': 165}\n\u2705 Schema validated for user_id=test-user-123\n\U0001f4e4 model_dump result: {'user_id': 'test-user-123', 'runnerLevel': <RunnerLevel.Intermediate: 'Intermediate'>, 'raceHistory': False, 'raceDate': '2025-09-01', 'raceDistance': <RaceDistance._10K: '10K'>, 'pastRaces': [<PastRace._5K: '5K'>, <PastRace._10K: '10K'>], 'height': {'feet': 5, 'inches': 10}, 'weight': 165, 'trainingDays': ['Mon', 'Wed', 'Fri'], 'mainGoal': <Goal.Race: 'Run a race'>, 'motivation': [<Motivation.Competition: 'Competition'>], 'ageGroup': <AgeGroup.Age25_34: '25-34'>, 'runPreference': <RunPreference.Distance: 'Distance'>}\n\U0001f4d0 Flattened height_feet=5, height_inches=10\n\U0001f4e6 FINAL user_dict going to DB: {'user_id': 'test-user-123', 'runnerLevel': 'Intermediate', 'raceHistory': False, 'raceDate': '2025-09-01', 'raceDistance': '10K', 'pastRaces': ['5K', '10K'], 'weight': 165, 'trainingDays': ['Mon', 'Wed', 'Fri'], 'mainGoal': 'Run a race', 'motivation': ['Competition'], 'ageGroup': '25-34', 'runPreference': 'Distance', 'height_feet': 5, 'height_inches': 10}\n\U0001f310 Incoming request from Origin: http://localhost:5173\n\U0001f310 Incoming request from Origin: http://localhost:5173\n\U0001f4e1 Incoming POST request to: /api/onboarding\n\U0001f4e8 Incoming payload: {'ageGroup': '25-34', 'height': {'feet': 5, 'inches': 10}, 'longestRun': 15, 'mainGoal': 'Run a race', 'motivation': ['Competition'], 'pastRaces': ['5K', '10K'], 'raceDate': '2025-09-01', 'raceDistance': '10K', 'raceHistory': False, 'runPreference': 'Distance', 'runnerLevel': 'Intermediate', 'trainingDays': ['Mon', 'Wed', 'Fri'], 'trainingDaysPerWeek': 3, 'trainingGoal': 'Build endurance', 'user_id': 'test-user-123', 'weight': 165}\n\u2705 Schema validated for user_id=test-user-123\n\U0001f4e4 model_dump result: {'user_id': 'test-user-123', 'runnerLevel': <RunnerLevel.Intermediate: 'Intermediate'>, 'raceHistory': False, 'raceDate': '2025-09-01', 'raceDistance': <RaceDistance._10K: '10K'>, 'pastRaces': [<PastRace._5K: '5K'>, <PastRace._10K: '10K'>], 'height': {'feet': 5, 'inches': 10}, 'weight': 165, 'trainingDays': ['Mon', 'Wed', 'Fri'], 'mainGoal': <Goal.Race: 'Run a race'>, 'motivation': [<Motivation.Competition: 'Competition'>], 'ageGroup': <AgeGroup.Age25_34: '25-34'>, 'runPreference': <RunPreference.Distance: 'Distance'>}\n\U0001f4d0 Flattened height_feet=5, height_inches=10\n\U0001f4e6 FINAL user_dict going to DB: {'user_id': 'test-user-123', 'runnerLevel': 'Intermediate', 'raceHistory': False, 'raceDate': '2025-09-01', 'raceDistance': '10K', 'pastRaces': ['5K', '10K'], 'weight': 165, 'trainingDays': ['Mon', 'Wed', 'Fri'], 'mainGoal': 'Run a race', 'motivation': ['Competition'], 'ageGroup': '25-34', 'runPreference': 'Distance', 'height_feet': 5, 'height_inches': 10}
+______________________________ test_sync_success ______________________________
+tests\test_sync.py:22: in test_sync_success
+    assert resp.status_code == 200
+E   assert 410 == 200
+E    +  where 410 = <WrapperTestResponse streamed [410 GONE]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+\U0001f6e0\ufe0f JWT configured for local dev with 'none' algorithm and no secret key\n\U0001f52c Raw CORS_ORIGINS from env: 'http://localhost:5173,https://localhost:5173'\n\U0001f6c2 Allowed CORS origins: ['http://localhost:5173', 'https://localhost:5173']
+---------------------------- Captured stdout call -----------------------------
+\U0001f310 Incoming request from Origin: None\n\U0001f310 Incoming request from Origin: None\n\U0001f4e1 Incoming GET request to: /sync/sync/123
+__________________________ test_create_and_get_link ___________________________
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1963: in _exec_single_context
+    self.dialect.do_execute(
+venv\Lib\site-packages\sqlalchemy\engine\default.py:943: in do_execute
+    cursor.execute(statement, parameters)
+E   psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint "athletes_strava_athlete_id_key"
+E   DETAIL:  Key (strava_athlete_id)=(123456789) already exists.
+
+The above exception was the direct cause of the following exception:
+tests\test_user_athletes_dao.py:18: in test_create_and_get_link
+    a = make_athlete()
+tests\test_user_athletes_dao.py:12: in make_athlete
+    s.commit()
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2032: in commit
+    trans.commit(_to_root=True)
+<string>:2: in commit
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1313: in commit
+    self._prepare_impl()
+<string>:2: in _prepare_impl
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1288: in _prepare_impl
+    self.session.flush()
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4345: in flush
+    self._flush(objects)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4480: in _flush
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4441: in _flush
+    flush_context.execute()
+venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:466: in execute
+    rec.execute(self)
+venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:642: in execute
+    util.preloaded.orm_persistence.save_obj(
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:93: in save_obj
+    _emit_insert_statements(
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:1233: in _emit_insert_statements
+    result = connection.execute(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1415: in execute
+    return meth(
+venv\Lib\site-packages\sqlalchemy\sql\elements.py:523: in _execute_on_connection
+    return connection._execute_clauseelement(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1637: in _execute_clauseelement
+    ret = self._execute_context(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1842: in _execute_context
+    return self._exec_single_context(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1982: in _exec_single_context
+    self._handle_dbapi_exception(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2351: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1963: in _exec_single_context
+    self.dialect.do_execute(
+venv\Lib\site-packages\sqlalchemy\engine\default.py:943: in do_execute
+    cursor.execute(statement, parameters)
+E   sqlalchemy.exc.IntegrityError: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "athletes_strava_athlete_id_key"
+E   DETAIL:  Key (strava_athlete_id)=(123456789) already exists.
+E   
+E   [SQL: INSERT INTO athletes (strava_athlete_id) VALUES (%(strava_athlete_id)s) RETURNING athletes.id, athletes.created_at]
+E   [parameters: {'strava_athlete_id': 123456789}]
+E   (Background on this error at: https://sqlalche.me/e/20/gkpj)
+____________________________ test_unique_conflicts ____________________________
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1963: in _exec_single_context
+    self.dialect.do_execute(
+venv\Lib\site-packages\sqlalchemy\engine\default.py:943: in do_execute
+    cursor.execute(statement, parameters)
+E   psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint "athletes_strava_athlete_id_key"
+E   DETAIL:  Key (strava_athlete_id)=(123456789) already exists.
+
+The above exception was the direct cause of the following exception:
+tests\test_user_athletes_dao.py:26: in test_unique_conflicts
+    a1, a2 = make_athlete(), make_athlete()
+tests\test_user_athletes_dao.py:12: in make_athlete
+    s.commit()
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2032: in commit
+    trans.commit(_to_root=True)
+<string>:2: in commit
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1313: in commit
+    self._prepare_impl()
+<string>:2: in _prepare_impl
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1288: in _prepare_impl
+    self.session.flush()
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4345: in flush
+    self._flush(objects)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4480: in _flush
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4441: in _flush
+    flush_context.execute()
+venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:466: in execute
+    rec.execute(self)
+venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:642: in execute
+    util.preloaded.orm_persistence.save_obj(
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:93: in save_obj
+    _emit_insert_statements(
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:1233: in _emit_insert_statements
+    result = connection.execute(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1415: in execute
+    return meth(
+venv\Lib\site-packages\sqlalchemy\sql\elements.py:523: in _execute_on_connection
+    return connection._execute_clauseelement(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1637: in _execute_clauseelement
+    ret = self._execute_context(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1842: in _execute_context
+    return self._exec_single_context(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1982: in _exec_single_context
+    self._handle_dbapi_exception(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2351: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1963: in _exec_single_context
+    self.dialect.do_execute(
+venv\Lib\site-packages\sqlalchemy\engine\default.py:943: in do_execute
+    cursor.execute(statement, parameters)
+E   sqlalchemy.exc.IntegrityError: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "athletes_strava_athlete_id_key"
+E   DETAIL:  Key (strava_athlete_id)=(123456789) already exists.
+E   
+E   [SQL: INSERT INTO athletes (strava_athlete_id) VALUES (%(strava_athlete_id)s) RETURNING athletes.id, athletes.created_at]
+E   [parameters: {'strava_athlete_id': 123456789}]
+E   (Background on this error at: https://sqlalche.me/e/20/gkpj)
+___________________________ test_delete_by_user_id ____________________________
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1963: in _exec_single_context
+    self.dialect.do_execute(
+venv\Lib\site-packages\sqlalchemy\engine\default.py:943: in do_execute
+    cursor.execute(statement, parameters)
+E   psycopg2.errors.UniqueViolation: duplicate key value violates unique constraint "athletes_strava_athlete_id_key"
+E   DETAIL:  Key (strava_athlete_id)=(123456789) already exists.
+
+The above exception was the direct cause of the following exception:
+tests\test_user_athletes_dao.py:35: in test_delete_by_user_id
+    a = make_athlete()
+tests\test_user_athletes_dao.py:12: in make_athlete
+    s.commit()
+venv\Lib\site-packages\sqlalchemy\orm\session.py:2032: in commit
+    trans.commit(_to_root=True)
+<string>:2: in commit
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1313: in commit
+    self._prepare_impl()
+<string>:2: in _prepare_impl
+    ???
+venv\Lib\site-packages\sqlalchemy\orm\state_changes.py:139: in _go
+    ret_value = fn(self, *arg, **kw)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:1288: in _prepare_impl
+    self.session.flush()
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4345: in flush
+    self._flush(objects)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4480: in _flush
+    with util.safe_reraise():
+venv\Lib\site-packages\sqlalchemy\util\langhelpers.py:224: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+venv\Lib\site-packages\sqlalchemy\orm\session.py:4441: in _flush
+    flush_context.execute()
+venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:466: in execute
+    rec.execute(self)
+venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py:642: in execute
+    util.preloaded.orm_persistence.save_obj(
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:93: in save_obj
+    _emit_insert_statements(
+venv\Lib\site-packages\sqlalchemy\orm\persistence.py:1233: in _emit_insert_statements
+    result = connection.execute(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1415: in execute
+    return meth(
+venv\Lib\site-packages\sqlalchemy\sql\elements.py:523: in _execute_on_connection
+    return connection._execute_clauseelement(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1637: in _execute_clauseelement
+    ret = self._execute_context(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1842: in _execute_context
+    return self._exec_single_context(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1982: in _exec_single_context
+    self._handle_dbapi_exception(
+venv\Lib\site-packages\sqlalchemy\engine\base.py:2351: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+venv\Lib\site-packages\sqlalchemy\engine\base.py:1963: in _exec_single_context
+    self.dialect.do_execute(
+venv\Lib\site-packages\sqlalchemy\engine\default.py:943: in do_execute
+    cursor.execute(statement, parameters)
+E   sqlalchemy.exc.IntegrityError: (psycopg2.errors.UniqueViolation) duplicate key value violates unique constraint "athletes_strava_athlete_id_key"
+E   DETAIL:  Key (strava_athlete_id)=(123456789) already exists.
+E   
+E   [SQL: INSERT INTO athletes (strava_athlete_id) VALUES (%(strava_athlete_id)s) RETURNING athletes.id, athletes.created_at]
+E   [parameters: {'strava_athlete_id': 123456789}]
+E   (Background on this error at: https://sqlalche.me/e/20/gkpj)
+___________________________ test_post_link_conflict ___________________________
+tests\test_user_link_routes.py:19: in test_post_link_conflict
+    assert resp.status_code == 409
+E   assert 401 == 409
+E    +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+\U0001f6e0\ufe0f JWT configured for local dev with 'none' algorithm and no secret key\n\U0001f52c Raw CORS_ORIGINS from env: 'http://localhost:5173,https://localhost:5173'\n\U0001f6c2 Allowed CORS origins: ['http://localhost:5173', 'https://localhost:5173']
+---------------------------- Captured stdout call -----------------------------
+\U0001f310 Incoming request from Origin: None\n\U0001f310 Incoming request from Origin: None\n\U0001f4e1 Incoming POST request to: /api/user/link
+_____________ test_post_link_conflict_same_athlete_different_user _____________
+tests\test_user_link_routes.py:34: in test_post_link_conflict_same_athlete_different_user
+    assert resp.status_code == 409
+E   assert 401 == 409
+E    +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+\U0001f6e0\ufe0f JWT configured for local dev with 'none' algorithm and no secret key\n\U0001f52c Raw CORS_ORIGINS from env: 'http://localhost:5173,https://localhost:5173'\n\U0001f6c2 Allowed CORS origins: ['http://localhost:5173', 'https://localhost:5173']
+---------------------------- Captured stdout call -----------------------------
+\U0001f310 Incoming request from Origin: None\n\U0001f310 Incoming request from Origin: None\n\U0001f4e1 Incoming POST request to: /api/user/link
+___________________________ test_post_link_and_get ____________________________
+tests\test_user_link_routes.py:45: in test_post_link_and_get
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+E   AssertionError: {"error":"Missing or invalid Authorization header"}
+E     
+E   assert 401 == 201
+E    +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+\U0001f6e0\ufe0f JWT configured for local dev with 'none' algorithm and no secret key\n\U0001f52c Raw CORS_ORIGINS from env: 'http://localhost:5173,https://localhost:5173'\n\U0001f6c2 Allowed CORS origins: ['http://localhost:5173', 'https://localhost:5173']
+---------------------------- Captured stdout call -----------------------------
+\U0001f310 Incoming request from Origin: None\n\U0001f310 Incoming request from Origin: None\n\U0001f4e1 Incoming POST request to: /api/user/link
+_______________________ test_get_link_404_when_missing ________________________
+tests\test_user_link_routes.py:57: in test_get_link_404_when_missing
+    assert resp.status_code == 404
+E   assert 401 == 404
+E    +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+\U0001f6e0\ufe0f JWT configured for local dev with 'none' algorithm and no secret key\n\U0001f52c Raw CORS_ORIGINS from env: 'http://localhost:5173,https://localhost:5173'\n\U0001f6c2 Allowed CORS origins: ['http://localhost:5173', 'https://localhost:5173']
+---------------------------- Captured stdout call -----------------------------
+\U0001f310 Incoming request from Origin: None\n\U0001f310 Incoming request from Origin: None\n\U0001f4e1 Incoming GET request to: /api/user/link
+______________________________ test_delete_link _______________________________
+tests\test_user_link_routes.py:69: in test_delete_link
+    assert resp.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+\U0001f6e0\ufe0f JWT configured for local dev with 'none' algorithm and no secret key\n\U0001f52c Raw CORS_ORIGINS from env: 'http://localhost:5173,https://localhost:5173'\n\U0001f6c2 Allowed CORS origins: ['http://localhost:5173', 'https://localhost:5173']
+---------------------------- Captured stdout call -----------------------------
+\U0001f310 Incoming request from Origin: None\n\U0001f310 Incoming request from Origin: None\n\U0001f4e1 Incoming POST request to: /api/user/link\n\U0001f310 Incoming request from Origin: None\n\U0001f310 Incoming request from Origin: None\n\U0001f4e1 Incoming DELETE request to: /api/user/link
+____________________ test_delete_link_missing_returns_404 _____________________
+tests\test_user_link_routes.py:77: in test_delete_link_missing_returns_404
+    assert resp.status_code == 404
+E   assert 401 == 404
+E    +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+\U0001f6e0\ufe0f JWT configured for local dev with 'none' algorithm and no secret key\n\U0001f52c Raw CORS_ORIGINS from env: 'http://localhost:5173,https://localhost:5173'\n\U0001f6c2 Allowed CORS origins: ['http://localhost:5173', 'https://localhost:5173']
+---------------------------- Captured stdout call -----------------------------
+\U0001f310 Incoming request from Origin: None\n\U0001f310 Incoming request from Origin: None\n\U0001f4e1 Incoming DELETE request to: /api/user/link
+____________________ test_ignores_spoofed_user_id_in_body _____________________
+tests\test_user_link_routes.py:88: in test_ignores_spoofed_user_id_in_body
+    assert resp.status_code == 201
+E   assert 401 == 201
+E    +  where 401 = <WrapperTestResponse streamed [401 UNAUTHORIZED]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+\U0001f6e0\ufe0f JWT configured for local dev with 'none' algorithm and no secret key\n\U0001f52c Raw CORS_ORIGINS from env: 'http://localhost:5173,https://localhost:5173'\n\U0001f6c2 Allowed CORS origins: ['http://localhost:5173', 'https://localhost:5173']
+---------------------------- Captured stdout call -----------------------------
+\U0001f310 Incoming request from Origin: None\n\U0001f310 Incoming request from Origin: None\n\U0001f4e1 Incoming POST request to: /api/user/link
+=========================== short test summary info ===========================
+FAILED tests/test_activity_routes.py::test_enrich_single_activity_success - A...
+FAILED tests/test_activity_routes.py::test_enrich_batch_success - AssertionEr...
+FAILED tests/test_activity_routes.py::test_sync_strava_to_db_success - assert...
+FAILED tests/test_activity_routes.py::test_sync_strava_to_db_unauthorized - a...
+FAILED tests/test_athlete_dao.py::test_insert_and_get_athlete - TypeError: in...
+FAILED tests/test_auth_routes.py::test_admin_login_success - assert 405 == 200
+FAILED tests/test_auth_routes.py::test_admin_login_invalid_credentials - asse...
+FAILED tests/test_auth_routes.py::test_admin_login_missing_json - assert 405 ...
+FAILED tests/test_auth_routes.py::test_strava_login_redirect - TypeError: tes...
+FAILED tests/test_auth_routes.py::test_callback_success - assert 'Token store...
+FAILED tests/test_auth_routes.py::test_refresh_token_success - AttributeError...
+FAILED tests/test_auth_routes.py::test_logout_success - AttributeError: <modu...
+FAILED tests/test_onboarding.py::test_duplicate_submission_upserts - assert N...
+FAILED tests/test_sync.py::test_sync_success - assert 410 == 200
+FAILED tests/test_user_athletes_dao.py::test_create_and_get_link - sqlalchemy...
+FAILED tests/test_user_athletes_dao.py::test_unique_conflicts - sqlalchemy.ex...
+FAILED tests/test_user_athletes_dao.py::test_delete_by_user_id - sqlalchemy.e...
+FAILED tests/test_user_link_routes.py::test_post_link_conflict - assert 401 =...
+FAILED tests/test_user_link_routes.py::test_post_link_conflict_same_athlete_different_user
+FAILED tests/test_user_link_routes.py::test_post_link_and_get - AssertionErro...
+FAILED tests/test_user_link_routes.py::test_get_link_404_when_missing - asser...
+FAILED tests/test_user_link_routes.py::test_delete_link - assert 401 == 200
+FAILED tests/test_user_link_routes.py::test_delete_link_missing_returns_404
+FAILED tests/test_user_link_routes.py::test_ignores_spoofed_user_id_in_body
+24 failed, 84 passed, 27 skipped in 80.85s (0:01:20)

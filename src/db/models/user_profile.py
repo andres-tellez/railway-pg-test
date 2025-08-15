@@ -15,7 +15,9 @@ import enum
 metadata = MetaData()
 
 
+# ---------------------------
 # Enumerations
+# ---------------------------
 class RunnerLevel(str, enum.Enum):
     Beginner = "Beginner"
     Intermediate = "Intermediate"
@@ -71,13 +73,9 @@ class RunPreference(str, enum.Enum):
     NonePref = "No preference"
 
 
-# ✅ NEW ENUM for has_injury
-class HasInjury(str, enum.Enum):
-    Yes = "Yes"
-    No = "No"
-
-
-# SQLAlchemy Core Table
+# ---------------------------
+# SQLAlchemy Core Table Definition
+# ---------------------------
 user_profile_table = Table(
     "user_profile",
     metadata,
@@ -96,9 +94,6 @@ user_profile_table = Table(
     Column("age_group", Enum(AgeGroup), nullable=False),
     Column("longest_run", Float),
     Column("run_preference", Enum(RunPreference), nullable=False),
-    # ✅ CHANGED: from Boolean → Enum(HasInjury)
-    Column("has_injury", Enum(HasInjury), nullable=False),
-    Column("injury_details", Text),
 )
 
 __all__ = ["user_profile_table"]

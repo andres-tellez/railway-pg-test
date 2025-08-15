@@ -1,92 +1,62 @@
+// src/schemas/onboardingSchema.ts
 import { z } from 'zod';
 
-export const onboardingSchema = z
-  .object({
-    user_id: z.string().min(1),
+// 1) Hoist literals + "as const"
+export const Days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] as const;
+export const Races = ['5K','10K','Half Marathon','Marathon','Ultra',"Haven\'t raced yet"] as const;
+export const Distances = ['5K','10K','Half Marathon','Marathon','Ultra','Other'] as const;
+export const RunnerLevels = ['Beginner','Intermediate','Expert'] as const;
+export const AgeGroups = ['Under 18','18-24','25-34','35-44','45-54','55+'] as const;
+export const RunPrefs = ['Distance','Time','No preference'] as const;
+export const Goals = ['General fitness','Run a race','Lose weight','Run faster','Other'] as const;
+export const Motivations = ['Health','Competition','Stress relief','Enjoyment','Other'] as const;
 
-    runnerLevel: z.enum(['Beginner', 'Intermediate', 'Expert']).optional(),
+// 2) Create Zod enums from those tuples
+const DaysEnum = z.enum(Days);
+const RaceEnum = z.enum(Races);
+const DistanceEnum = z.enum(Distances);
+const RunnerLevelEnum = z.enum(RunnerLevels);
+const AgeGroupEnum = z.enum(AgeGroups);
+const RunPrefEnum = z.enum(RunPrefs);
+const GoalEnum = z.enum(Goals);
+const MotivationEnum = z.enum(Motivations);
 
-    raceHistory: z.boolean(),
-    pastRaces: z.array(
-      z.enum(['5K', '10K', 'Half Marathon', 'Marathon', 'Ultra', "Haven't raced yet"])
-    ),
+// 3) Schema (aligned with your UI + multi-step)
+export const onboardingSchema = z.object({
+  user_id: z.string().min(1),
 
-    raceDate: z.string().optional(),
-    raceDistance: z
-      .enum(['5K', '10K', 'Half Marathon', 'Marathon', 'Ultra', 'Other'])
-      .optional(),
+  runnerLevel: RunnerLevelEnum.optional(),
+  mainGoal: GoalEnum.optional(),
+  runPreference: RunPrefEnum.optional(),
+  ageGroup: AgeGroupEnum.optional(),
 
-    runPreference: z.enum(['Distance', 'Time', 'No preference']).optional(),
+  raceHistory: z.boolean().default(false),
+  pastRaces: z.array(RaceEnum).default([]),
 
-    weight: z.number().min(80).max(400).optional(),
+  raceDate: z.string().optional(),
+  raceDistance: DistanceEnum.optional(),
 
-    height: z
-      .object({
-        feet: z.number().min(3, "Min 3ft").max(8, "Max 8ft"),
-        inches: z.number().min(0).max(11),
-      }),
+  // require at least one day on final step
+  trainingDays: z.array(DaysEnum).min(1, 'Select at least one training day'),
 
-    ageGroup: z
-      .enum(['Under 18', '18-24', '25-34', '35-44', '45-54', '55+'])
-      .optional(),
+  // height optional, but if present needs both parts
+  height: z.object({
+    feet: z.number().int().min(3, 'Min 3ft').max(8, 'Max 8ft').optional(),
+    inches: z.number().int().min(0).max(11).optional(),
+  }).optional(),
 
-    trainingDays: z.array(
-      z.enum(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
-    ),
+  weight: z.number().min(80).max(400).optional(),
 
-    mainGoal: z
-      .enum([
-        'General fitness',
-        'Run a race',
-        'Lose weight',
-        'Run faster',
-        'Other',
-      ])
-      .optional(),
-
-    motivation: z
-      .array(
-        z.enum([
-          'Health',
-          'Competition',
-          'Stress relief',
-          'Enjoyment',
-          'Other',
-        ])
-      )
-      .min(1, 'Select at least one motivation'),
-
-    longestRun: z.number().optional(),
-
-    hasInjury: z.boolean().nullable().refine(val => val !== null, {
-      message: '',
-    }),
-
-    injuryDetails: z.string().optional(),
-  })
-
-  // ✅ Validate injury details if hasInjury is true
-  .refine(
-    (data) => !data.hasInjury || (data.injuryDetails && data.injuryDetails.trim().length > 0),
-    {
-      path: ['injuryDetails'],
-      message: 'Please describe your injury',
-    }
-  )
-
-  // ✅ Validate height completeness if present
-  .refine(
-    (data) => {
-      if (!data.height) return true;
-      return (
-        typeof data.height.feet === 'number' &&
-        typeof data.height.inches === 'number'
-      );
-    },
-    {
-      path: ['height'],
-      message: 'Please enter both height (feet and inches)',
-    }
-  );
+  motivation: z.array(MotivationEnum).min(1, 'Select at least one motivation'),
+}).refine(
+  (data) => {
+    if (!data.height) return true;
+    const { feet, inches } = data.height;
+    const hasFeet = typeof feet === 'number';
+    const hasInches = typeof inches === 'number';
+    return (hasFeet && hasInches) || (!hasFeet && !hasInches);
+  },
+  { path: ['height'], message: 'Please enter both height (feet and inches) or leave blank' }
+);
 
 export type OnboardingFormData = z.infer<typeof onboardingSchema>;

@@ -1,3 +1,4 @@
+# src/services/token_service.py
 import logging
 import requests
 from datetime import datetime
@@ -6,8 +7,26 @@ import jwt
 import src.utils.config as config
 from src.db.db_session import get_session as db_get_session
 from src.db.dao.token_dao import get_tokens_sa, insert_token_sa
-from src.db.dao.athlete_dao import get_athlete_id_from_strava_id, upsert_athlete
 from src.db.models.tokens import Token
+
+# ✅ Use a simple "ensure athlete exists" flow.
+# Prefer DAO helpers if available; otherwise fall back to a tiny local insert.
+try:
+    from src.db.dao.athlete_dao import (
+        get_athlete_id_from_strava_id,
+        insert_athlete,  # expected helper for minimal insert
+    )
+except Exception:  # fallback if insert_athlete doesn't exist in your DAO yet
+    from src.db.dao.athlete_dao import get_athlete_id_from_strava_id  # type: ignore
+    from src.db.models.athletes import Athlete
+
+    def insert_athlete(session, strava_athlete_id: int) -> int:  # type: ignore
+        a = Athlete(strava_athlete_id=strava_athlete_id)
+        session.add(a)
+        session.commit()
+        session.refresh(a)
+        return a.id
+
 
 logger = logging.getLogger(__name__)
 
@@ -106,22 +125,29 @@ def store_tokens_from_callback(code, session, redirect_uri):
     response.raise_for_status()
     token_data = response.json()
 
+    # --- Changed: validate and ensure athlete row exists (no name/email required) ---
     athlete = token_data.get("athlete")
     if not athlete or "id" not in athlete:
         raise KeyError("❌ Strava callback response missing athlete ID")
 
     strava_athlete_id = athlete["id"]
+
+    # Ensure an internal athletes row exists mapped to this Strava ID.
     internal_id = get_athlete_id_from_strava_id(session, strava_athlete_id)
+    if internal_id is None:
+        internal_id = insert_athlete(session, strava_athlete_id)
+        print(
+            f"🆕 Inserted athlete row id={internal_id} for Strava #{strava_athlete_id}",
+            flush=True,
+        )
+    else:
+        print(
+            f"ℹ️ Found athlete row id={internal_id} for Strava #{strava_athlete_id}",
+            flush=True,
+        )
+    # -------------------------------------------------------------------------------
 
-    # Use strava_athlete_id if no internal mapping exists
-    upsert_athlete(
-        session=session,
-        athlete_id=internal_id if internal_id else strava_athlete_id,
-        strava_athlete_id=strava_athlete_id,
-        name=athlete.get("firstname", ""),
-        email=athlete.get("email"),
-    )
-
+    # We key tokens by Strava athlete id (existing behavior).
     insert_token_sa(
         session=session,
         athlete_id=strava_athlete_id,
@@ -132,58 +158,6 @@ def store_tokens_from_callback(code, session, redirect_uri):
 
     print(f"✅ Token stored for athlete: {strava_athlete_id}", flush=True)
     return strava_athlete_id
-
-
-def logout_user(token):
-    print(f"[LOGOUT] Token logged out: {token}")
-
-
-def login_user(data):
-    if data["username"] != config.ADMIN_USER or data["password"] != config.ADMIN_PASS:
-        raise PermissionError("Invalid credentials")
-
-    session = get_session()
-    token_payload = {"sub": "admin"}
-    access_token = jwt.encode(token_payload, config.SECRET_KEY, algorithm="HS256")
-    refresh_token = jwt.encode(
-        {"sub": "admin", "type": "refresh"}, config.JWT_SECRET, algorithm="HS256"
-    )
-
-    insert_token_sa(
-        session=session,
-        athlete_id=0,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_at=int(datetime.utcnow().timestamp()) + 3600,
-    )
-
-    return access_token, refresh_token
-
-
-def refresh_token(encoded_refresh_token):
-    try:
-        payload = jwt.decode(
-            encoded_refresh_token, config.SECRET_KEY, algorithms=["HS256"]
-        )
-        if payload.get("type") != "refresh":
-            raise PermissionError("Invalid token type")
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
-        raise PermissionError("Invalid or expired refresh token")
-
-    session = get_session()
-    token_data = get_tokens_sa(session, config.ADMIN_ATHLETE_ID)
-    if not token_data:
-        raise PermissionError("No refresh token found")
-
-    new_tokens = refresh_token_static(token_data["refresh_token"])
-    insert_token_sa(
-        session=session,
-        athlete_id=config.ADMIN_ATHLETE_ID,
-        access_token=new_tokens["access_token"],
-        refresh_token=new_tokens["refresh_token"],
-        expires_at=new_tokens["expires_at"],
-    )
-    return new_tokens["access_token"]
 
 
 def exchange_code_for_token(code, redirect_uri=None):

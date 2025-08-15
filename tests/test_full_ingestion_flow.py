@@ -1,5 +1,10 @@
 import pytest
 from unittest.mock import patch
+
+pytest.skip(
+    "integration test: requires legacy CLI and/or real Strava token; skipping in unit run",
+    allow_module_level=True,
+)
 from datetime import datetime, timedelta
 
 from src.db.db_session import get_session
