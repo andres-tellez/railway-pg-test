@@ -1,15 +1,13 @@
 [phases.setup]
-nixPkgs = [
-  "nodejs-18_x",
-  "python311Full"
-]
+nixPkgs = ["nodejs-18_x", "python311Full"]
 
 providers = ["nodejs", "python"]
 
 [phases.install]
 cmds = [
-  "pip install --upgrade pip",
-  "pip install -r requirements.txt"
+  "python3.11 -m ensurepip",
+  "python3.11 -m pip install --upgrade pip",
+  "python3.11 -m pip install -r requirements.txt"
 ]
 
 [phases.build]
