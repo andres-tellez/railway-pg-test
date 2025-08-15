@@ -1,9 +1,12 @@
+# pylint: skip-file
+"""Alembic environment configuration."""
+
 import sys
 import os
 from dotenv import load_dotenv
 from logging.config import fileConfig
 from sqlalchemy import create_engine, pool, MetaData
-from alembic import context
+from alembic import context  # type: ignore[import]
 
 # --- Add project root & src folder to sys.path ---
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,31 +52,31 @@ import src.db.models.user_identity
 from src.db.models.user_identity import metadata as user_identity_metadata
 
 # --- Merge ORM and Core metadata ---
-target_metadata = MetaData()
+TARGET_METADATA = MetaData()
 for m in [Base.metadata, user_profile_metadata, user_identity_metadata]:
     for table in m.tables.values():
-        target_metadata._add_table(table.name, table.schema, table)
+        TARGET_METADATA._add_table(table.name, table.schema, table)
 
 # --- Alembic Config ---
-config = context.config
+config = context.config  # type: ignore[attr-defined]
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+config.set_main_option("sqlalchemy.url", DATABASE_URL)  # type: ignore[attr-defined]
 
 
 def run_migrations_offline():
     """Run migrations in 'offline' mode."""
-    url = config.get_main_option("sqlalchemy.url")
-    context.configure(
+    url = config.get_main_option("sqlalchemy.url")  # type: ignore[attr-defined]
+    context.configure(  # type: ignore[attr-defined]
         url=url,
-        target_metadata=target_metadata,
+        target_metadata=TARGET_METADATA,
         literal_binds=True,
         compare_type=True,
     )
 
-    with context.begin_transaction():
-        context.run_migrations()
+    with context.begin_transaction():  # type: ignore[attr-defined]
+        context.run_migrations()  # type: ignore[attr-defined]
 
 
 def run_migrations_online():
@@ -85,17 +88,17 @@ def run_migrations_online():
     )
 
     with connectable.connect() as connection:
-        context.configure(
+        context.configure(  # type: ignore[attr-defined]
             connection=connection,
-            target_metadata=target_metadata,
+            target_metadata=TARGET_METADATA,
             compare_type=True,
         )
 
-        with context.begin_transaction():
-            context.run_migrations()
+        with context.begin_transaction():  # type: ignore[attr-defined]
+            context.run_migrations()  # type: ignore[attr-defined]
 
 
-if context.is_offline_mode():
+if context.is_offline_mode():  # type: ignore[attr-defined]
     run_migrations_offline()
 else:
     run_migrations_online()
