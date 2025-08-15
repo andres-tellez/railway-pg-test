@@ -2,7 +2,6 @@
 nixPkgs = [
   "nodejs-18_x",
   "python311",
-  "python311Packages.pip",
   "python311Packages.virtualenv"
 ]
 
@@ -10,9 +9,10 @@ providers = ["nodejs", "python"]
 
 [phases.install]
 cmds = [
-  "python3.11 -m ensurepip --upgrade",
-  "python3.11 -m pip install --upgrade pip",
-  "python3.11 -m pip install -r requirements.txt"
+  "python3.11 -m virtualenv /opt/venv",
+  "source /opt/venv/bin/activate",
+  "pip install --upgrade pip",
+  "pip install -r requirements.txt"
 ]
 
 [phases.build]
@@ -24,4 +24,4 @@ cmds = [
 ]
 
 [start]
-cmd = "gunicorn run:app --bind 0.0.0.0:$PORT --workers 1"
+cmd = "venv/bin/gunicorn run:app --bind 0.0.0.0:$PORT --workers 1"
