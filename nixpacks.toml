@@ -1,14 +1,9 @@
 [phases.setup]
-nixPkgs = ["nodejs-18_x", "python311Full"]
+nixPkgs = ["nodejs-18_x", "python311", "python311Packages.pip", "python311Packages.gunicorn"]
 
-providers = ["nodejs", "python"]
-
-[phases.install]
-cmds = [
-  "python3.11 -m ensurepip",
-  "python3.11 -m pip install --upgrade pip",
-  "python3.11 -m pip install -r requirements.txt"
-]
+[providers]
+  [providers.python]
+  pipRequirements = "requirements.txt"
 
 [phases.build]
 cmds = [
@@ -19,4 +14,4 @@ cmds = [
 ]
 
 [start]
-cmd = "gunicorn run:app --bind 0.0.0.0:$PORT --workers 1"
+cmd = "gunicorn app:create_app\\(\\) --bind 0.0.0.0:$PORT --workers 1"
