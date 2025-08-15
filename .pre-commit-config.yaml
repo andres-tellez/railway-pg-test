@@ -21,3 +21,4 @@ repos:
         require_serial: true
         types: [python]
         args: ["--disable=import-error"]
+        exclude: ^migrations/env\.py$
