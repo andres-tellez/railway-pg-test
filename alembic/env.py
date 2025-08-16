@@ -20,6 +20,8 @@ if env_mode == "testing":
     env_file = ".env.test"
 elif env_mode == "production":
     env_file = ".env.prod"
+elif env_mode == "staging":
+    env_file = ".env.staging"
 else:
     env_file = ".env.local"
 
