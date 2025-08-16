@@ -22,10 +22,20 @@ class UserAthlete(Base):
         unique=True,
     )
     created_at = Column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        server_default=func.now(),  # pylint: disable=not-callable
+        nullable=False,
     )
 
     __table_args__ = (
         UniqueConstraint("user_id", name="uq_user_athletes_user_id"),
         UniqueConstraint("athlete_id", name="uq_user_athletes_athlete_id"),
     )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "athlete_id": self.athlete_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }

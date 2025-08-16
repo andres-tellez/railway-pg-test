@@ -20,7 +20,7 @@ def get_user_link():
     if not row:
         return jsonify({"linked": False}), 404
     # row is a dict like {"user_id": "...", "athlete_id": 123}
-    return jsonify({"linked": True, **row}), 200
+    return jsonify({"linked": True, **row.to_dict()}), 200
 
 
 @identity_bp.post("/user/link")
