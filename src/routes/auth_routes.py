@@ -52,37 +52,40 @@ def admin_login():
 # ------------------------------------------------------------
 # Who am I? (reads Flask session set by /auth/callback)
 # ------------------------------------------------------------
+
+
 @auth_bp.route("/whoami", methods=["GET"])
 def whoami():
-    athlete_id = flask_session.get("athlete_id")
+    try:
+        athlete_id = flask_session.get("athlete_id")
 
-    if not athlete_id:
-        # Try JWT fallback
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-            try:
+        if not athlete_id:
+            # Try JWT fallback
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
                 payload = jwt.decode(token, config.SECRET_KEY, algorithms=["HS256"])
                 athlete_id = payload.get("sub")
-            except jwt.ExpiredSignatureError:
-                return jsonify({"error": "Token expired"}), 401
-            except jwt.InvalidTokenError:
-                return jsonify({"error": "Invalid token"}), 401
 
-    print(f"📩 /whoami called. Session contents: {dict(flask_session)}", flush=True)
+        print(f"📩 /whoami called. Session contents: {dict(flask_session)}", flush=True)
 
-    if not athlete_id:
-        return jsonify({"error": "Not logged in"}), 401
+        if not athlete_id:
+            return jsonify({"error": "Not logged in"}), 401
 
-    session = get_session()
-    try:
+        session = get_session()
         synced = has_existing_activities(session, athlete_id)
         return jsonify({"athlete_id": athlete_id, "already_synced": synced}), 200
+
+    except jwt.ExpiredSignatureError:
+        return jsonify({"error": "Token expired"}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({"error": "Invalid token"}), 401
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Unexpected server error"}), 500
     finally:
-        session.close()
+        if "session" in locals():
+            session.close()
 
 
 # ------------------------------------------------------------
