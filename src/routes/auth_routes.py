@@ -53,8 +53,11 @@ def admin_login():
 # Who am I? (reads Flask session set by /auth/callback)
 # ------------------------------------------------------------
 
-from src.utils.auth_helpers import decode_auth_token
+
 from jose.exceptions import JWTError
+
+AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
+AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
 
 
 @auth_bp.route("/whoami", methods=["GET"])
@@ -67,25 +70,57 @@ def whoami():
         if auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
             try:
-                payload = decode_auth_token(token)
+                jwks_url = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json"
+                jwks = requests.get(jwks_url).json()
+                unverified_header = jwt.get_unverified_header(token)
+
+                rsa_key = {}
+                for key in jwks["keys"]:
+                    if key["kid"] == unverified_header.get("kid"):
+                        rsa_key = {
+                            "kty": key["kty"],
+                            "kid": key["kid"],
+                            "use": key["use"],
+                            "n": key["n"],
+                            "e": key["e"],
+                        }
+                        break
+
+                if not rsa_key:
+                    return (
+                        jsonify({"error": "Unable to find appropriate JWKS key"}),
+                        401,
+                    )
+
+                payload = jwt.decode(
+                    token,
+                    rsa_key,
+                    algorithms=["RS256"],
+                    audience=AUTH0_AUDIENCE,
+                    issuer=f"https://{AUTH0_DOMAIN}/",
+                )
+
                 athlete_id = payload.get("sub")
+
             except JWTError as e:
                 return jsonify({"error": str(e)}), 401
+            except Exception as e:
+                return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
 
-    print(f"📩 /whoami called. Session contents: {dict(flask_session)}", flush=True)
+    print(f"/whoami called. Session contents: {dict(flask_session)}", flush=True)
 
     if not athlete_id:
         return jsonify({"error": "Not logged in"}), 401
 
-    session = get_session()
     try:
+        session = get_session()
         synced = has_existing_activities(session, athlete_id)
         return jsonify({"athlete_id": athlete_id, "already_synced": synced}), 200
     except Exception as e:
+        import traceback
+
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
 
 
 # ------------------------------------------------------------
