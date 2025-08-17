@@ -58,6 +58,7 @@ from jose.exceptions import JWTError
 
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
 AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
+ALGORITHMS = ["RS256"]
 
 
 @auth_bp.route("/whoami", methods=["GET"])
@@ -87,15 +88,12 @@ def whoami():
                         break
 
                 if not rsa_key:
-                    return (
-                        jsonify({"error": "Unable to find appropriate JWKS key"}),
-                        401,
-                    )
+                    return jsonify({"error": "Unable to find matching Auth0 key"}), 401
 
                 payload = jwt.decode(
                     token,
                     rsa_key,
-                    algorithms=["RS256"],
+                    algorithms=ALGORITHMS,
                     audience=AUTH0_AUDIENCE,
                     issuer=f"https://{AUTH0_DOMAIN}/",
                 )
@@ -112,13 +110,11 @@ def whoami():
     if not athlete_id:
         return jsonify({"error": "Not logged in"}), 401
 
+    session = get_session()
     try:
-        session = get_session()
         synced = has_existing_activities(session, athlete_id)
         return jsonify({"athlete_id": athlete_id, "already_synced": synced}), 200
     except Exception as e:
-        import traceback
-
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
