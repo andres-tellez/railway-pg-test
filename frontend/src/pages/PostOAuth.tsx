@@ -57,19 +57,25 @@ const PostOAuth: React.FC = () => {
           });
           console.log("whoami status:", whoRes.status);
           if (whoRes.ok) {
-            const { athlete_id } = (await whoRes.json()) as { athlete_id?: number };
-            console.log("whoami athlete_id:", athlete_id);
-            if (typeof athlete_id === "number") {
-              const token = await getAccessTokenSilently({
-                authorizationParams: {
-                  audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-                  scope: "openid profile email offline_access",
-                },
-              }).catch(() => "dev"); // local AUTH_BYPASS fallback
-              // Idempotent: backend returns 201 or 409 if already linked
-              await postLink(token, athlete_id).catch(() => {});
-              console.log("link: attempted (201 or 409 expected)");
+            try {
+              const { athlete_id } = (await whoRes.json()) as { athlete_id?: number };
+              console.log("whoami athlete_id:", athlete_id);
+              if (typeof athlete_id === "number") {
+                const token = await getAccessTokenSilently({
+                  authorizationParams: {
+                    audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+                    scope: "openid profile email offline_access",
+                  },
+                }).catch(() => "dev"); // local AUTH_BYPASS fallback
+                await postLink(token, athlete_id).catch(() => {});
+                console.log("link: attempted (201 or 409 expected)");
+              }
+            } catch (err) {
+              console.warn("⚠️ whoami response was not valid JSON:", err);
             }
+          } else {
+            const text = await whoRes.text();
+            console.warn(`⚠️ whoami failed: ${whoRes.status} - ${text}`);
           }
         } catch {
           console.log("whoami/link: skipped/failed");
