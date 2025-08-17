@@ -5,6 +5,7 @@ from flask import request, abort
 from jose import jwt, JWTError
 import requests
 import os
+from src.utils.config import AUTH0_DOMAIN, AUTH0_AUDIENCE
 
 ALGORITHMS = ["RS256"]
 
