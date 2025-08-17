@@ -51,39 +51,49 @@ const PostOAuth: React.FC = () => {
 
         // 1.5) Auto-link user ↔ athlete from Strava session (non-blocking)
         try {
-          const token = await getAccessTokenSilently({
-            authorizationParams: {
-              audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-              scope: "openid profile email offline_access",
-            },
-          }).catch(() => "dev"); // local AUTH_BYPASS fallback
+          // 1.5) Auto-link user ↔ athlete from Strava session (non-blocking)
+try {
+  const token = await getAccessTokenSilently({
+    authorizationParams: {
+      audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+      scope: "openid profile email offline_access",
+    },
+  }).catch(() => "dev"); // local AUTH_BYPASS fallback
 
-          const whoRes = await fetch(`${API}/auth/whoami`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            signal: ac.signal,
-          });
+  const whoRes = await fetch(`${API}/auth/whoami`, {
+    credentials: "include", // ✅ send session cookie
+    headers: {
+      Authorization: `Bearer ${token}`, // ✅ send fallback JWT
+    },
+    signal: ac.signal,
+  });
 
-          console.log("whoami status:", whoRes.status);
-          if (whoRes.ok) {
-            try {
-              const { athlete_id } = (await whoRes.json()) as { athlete_id?: number };
-              console.log("whoami athlete_id:", athlete_id);
-              if (typeof athlete_id === "number") {
-                await postLink(token, athlete_id).catch(() => {});
-                console.log("link: attempted (201 or 409 expected)");
-              }
-            } catch (err) {
-              console.warn("⚠️ whoami response was not valid JSON:", err);
-            }
-          } else {
-            const text = await whoRes.text();
-            console.warn(`⚠️ whoami failed: ${whoRes.status} - ${text}`);
-          }
-        } catch {
-          console.log("whoami/link: skipped/failed");
+  console.log("whoami status:", whoRes.status);
+  if (whoRes.ok) {
+    try {
+      const contentType = whoRes.headers.get("content-type");
+      if (contentType?.includes("application/json")) {
+        const { athlete_id } = (await whoRes.json()) as { athlete_id?: number };
+        console.log("whoami athlete_id:", athlete_id);
+        if (typeof athlete_id === "number") {
+          await postLink(token, athlete_id).catch(() => {});
+          console.log("link: attempted (201 or 409 expected)");
         }
+      } else {
+        const text = await whoRes.text();
+        console.warn("⚠️ whoami did not return JSON:", text);
+      }
+    } catch (err) {
+      console.warn("⚠️ whoami response error:", err);
+    }
+  } else {
+    const text = await whoRes.text();
+    console.warn(`⚠️ whoami failed: ${whoRes.status} - ${text}`);
+  }
+} catch {
+  console.log("whoami/link: skipped/failed");
+}
+
 
         // 2) Check onboarding profile and route appropriately
         const profRes = await fetch(
