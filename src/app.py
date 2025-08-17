@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from urllib.parse import urlparse
 from flask_session import Session
+from werkzeug.exceptions import HTTPException
 
 
 # 📦 Environment Setup
@@ -50,6 +51,7 @@ from src.routes.user_profile_routes import user_profile_bp
 from flask_jwt_extended import JWTManager
 from src.routes.user_identity_routes import identity_bp
 from src.routes.auth_me_routes import auth_me_bp
+from flask import jsonify
 
 
 def create_app(test_config=None):
@@ -189,6 +191,21 @@ def create_app(test_config=None):
         origin = request.headers.get("Origin")
         print(f"🌐 Incoming request from Origin: {origin}", flush=True)
         print(f"📡 Incoming {request.method} request to: {request.path}", flush=True)
+
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        if isinstance(e, HTTPException):
+            response = e.get_response()
+            return (
+                jsonify({"error": e.name, "message": e.description, "code": e.code}),
+                e.code,
+            )
+
+        # Handle non-HTTP exceptions
+        return (
+            jsonify({"error": "Internal Server Error", "message": str(e), "code": 500}),
+            500,
+        )
 
     return app
 
