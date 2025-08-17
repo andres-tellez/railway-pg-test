@@ -69,30 +69,30 @@ const PostOAuth: React.FC = () => {
 
           console.log("whoami status:", whoRes.status);
 
-          if (whoRes.ok) {
+          const contentType = whoRes.headers.get("content-type");
+
+          if (!whoRes.ok) {
+            const text = await whoRes.text();
+            console.warn(`⚠️ whoami failed: ${whoRes.status} - ${text}`);
+          } else if (contentType?.includes("application/json")) {
             try {
-              const contentType = whoRes.headers.get("content-type");
-              if (contentType?.includes("application/json")) {
-                const { athlete_id } = (await whoRes.json()) as { athlete_id?: number };
-                console.log("whoami athlete_id:", athlete_id);
-                if (typeof athlete_id === "number") {
-                  await postLink(token, athlete_id).catch(() => {});
-                  console.log("link: attempted (201 or 409 expected)");
-                }
-              } else {
-                const text = await whoRes.text();
-                console.warn("⚠️ whoami did not return JSON:", text);
+              const { athlete_id } = await whoRes.json();
+              console.log("whoami athlete_id:", athlete_id);
+              if (typeof athlete_id === "number") {
+                await postLink(token, athlete_id).catch(() => {});
+                console.log("link: attempted (201 or 409 expected)");
               }
             } catch (err) {
-              console.warn("⚠️ whoami response error:", err);
+              console.warn("⚠️ whoami response JSON error:", err);
             }
           } else {
             const text = await whoRes.text();
-            console.warn(`⚠️ whoami failed: ${whoRes.status} - ${text}`);
+            console.warn("⚠️ whoami returned non-JSON:", text);
           }
-        } catch {
-          console.log("whoami/link: skipped/failed");
+        } catch (err) {
+          console.log("whoami/link: skipped/failed", err);
         }
+
 
 
         // 2) Check onboarding profile and route appropriately
