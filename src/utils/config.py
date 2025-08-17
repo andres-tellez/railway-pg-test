@@ -16,6 +16,10 @@ SECRET_KEY = os.getenv("SECRET_KEY", "dev")
 # For libraries/extensions that expect this key name
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") or SECRET_KEY
 
+# ===== Auth0 =====
+AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
+AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
+
 # ===== Database =====
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -33,13 +37,3 @@ FRONTEND_REDIRECT = os.getenv("FRONTEND_REDIRECT")
 # keep everything else you have; ensure these exist:
 ADMIN_USER = os.getenv("ADMIN_USER")
 ADMIN_PASS = os.getenv("ADMIN_PASS")
-
-
-# ===== Auth0 =====
-AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
-if not AUTH0_DOMAIN:
-    raise RuntimeError("Missing AUTH0_DOMAIN in environment configuration")
-
-AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
-if not AUTH0_AUDIENCE:
-    raise RuntimeError("Missing AUTH0_AUDIENCE in environment configuration")
