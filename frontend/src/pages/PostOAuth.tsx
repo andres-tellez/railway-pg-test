@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { postLink } from "../utils/linkApi";
 
-const API = import.meta.env.VITE_API_URL ?? ""; // "" => Vite proxy in dev
+const API = import.meta.env.VITE_API_URL ?? "";
 
 const PostOAuth: React.FC = () => {
   const navigate = useNavigate();
@@ -12,14 +12,13 @@ const PostOAuth: React.FC = () => {
   const ran = useRef(false);
 
   useEffect(() => {
-    if (ran.current) return;                      // avoid double-run in StrictMode
+    if (ran.current) return;
     if (isLoading || !isAuthenticated || !user?.sub) return;
     ran.current = true;
 
     const ac = new AbortController();
     let done = false;
 
-    // Safety: bail to dashboard if something stalls
     const safety = setTimeout(() => {
       if (!done) navigate("/dashboard", { replace: true });
     }, 6000);
@@ -29,7 +28,7 @@ const PostOAuth: React.FC = () => {
         console.groupCollapsed("[PostOAuth] handoff");
         console.log("user.sub:", user.sub);
 
-        // 1) Persist Auth0 identity (non-blocking; safe to ignore failures)
+        // 1) Persist Auth0 identity
         try {
           await fetch(`${API}/api/user/identity`, {
             method: "POST",
@@ -49,8 +48,7 @@ const PostOAuth: React.FC = () => {
           console.log("identity: skipped/failed");
         }
 
-
-        // 1.5) Auto-link user ↔ athlete from Strava session (non-blocking)
+        // 1.5) Try whoami + link
         try {
           const token = await getAccessTokenSilently({
             authorizationParams: {
@@ -68,22 +66,21 @@ const PostOAuth: React.FC = () => {
           });
 
           console.log("whoami status:", whoRes.status);
-
-          const contentType = whoRes.headers.get("content-type");
+          const contentType = whoRes.headers.get("content-type") ?? "";
 
           if (!whoRes.ok) {
             const text = await whoRes.text();
             console.warn(`⚠️ whoami failed: ${whoRes.status} - ${text}`);
-          } else if (contentType?.includes("application/json")) {
-            try {
-              const { athlete_id } = await whoRes.json();
-              console.log("whoami athlete_id:", athlete_id);
-              if (typeof athlete_id === "number") {
-                await postLink(token, athlete_id).catch(() => {});
-                console.log("link: attempted (201 or 409 expected)");
-              }
-            } catch (err) {
-              console.warn("⚠️ whoami response JSON error:", err);
+          } else if (contentType.includes("application/json")) {
+            const data = await whoRes.json().catch(err => {
+              console.warn("⚠️ Failed to parse whoami JSON:", err);
+              return {};
+            });
+            const athlete_id = data?.athlete_id;
+            console.log("whoami athlete_id:", athlete_id);
+            if (typeof athlete_id === "number") {
+              await postLink(token, athlete_id).catch(() => {});
+              console.log("link: attempted");
             }
           } else {
             const text = await whoRes.text();
@@ -93,13 +90,12 @@ const PostOAuth: React.FC = () => {
           console.log("whoami/link: skipped/failed", err);
         }
 
-
-
-        // 2) Check onboarding profile and route appropriately
+        // 2) Route based on onboarding profile
         const profRes = await fetch(
           `${API}/api/onboarding?user_id=${encodeURIComponent(user.sub)}`,
           { credentials: "include", signal: ac.signal }
         );
+
         console.log("onboarding status:", profRes.status);
 
         done = true;
