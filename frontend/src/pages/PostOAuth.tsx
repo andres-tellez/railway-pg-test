@@ -51,22 +51,26 @@ const PostOAuth: React.FC = () => {
 
         // 1.5) Auto-link user ↔ athlete from Strava session (non-blocking)
         try {
+          const token = await getAccessTokenSilently({
+            authorizationParams: {
+              audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+              scope: "openid profile email offline_access",
+            },
+          }).catch(() => "dev"); // local AUTH_BYPASS fallback
+
           const whoRes = await fetch(`${API}/auth/whoami`, {
-            credentials: "include", // send Flask session cookie
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
             signal: ac.signal,
           });
+
           console.log("whoami status:", whoRes.status);
           if (whoRes.ok) {
             try {
               const { athlete_id } = (await whoRes.json()) as { athlete_id?: number };
               console.log("whoami athlete_id:", athlete_id);
               if (typeof athlete_id === "number") {
-                const token = await getAccessTokenSilently({
-                  authorizationParams: {
-                    audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-                    scope: "openid profile email offline_access",
-                  },
-                }).catch(() => "dev"); // local AUTH_BYPASS fallback
                 await postLink(token, athlete_id).catch(() => {});
                 console.log("link: attempted (201 or 409 expected)");
               }
