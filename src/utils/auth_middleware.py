@@ -6,8 +6,14 @@ from jose import jwt
 import requests
 import os
 
-AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN", "your-auth0-tenant.us.auth0.com")
-API_AUDIENCE = os.getenv("AUTH0_API_AUDIENCE", "https://api.smartcoach.dev")
+AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
+if not AUTH0_DOMAIN:
+    raise RuntimeError("Missing AUTH0_DOMAIN in environment configuration")
+
+API_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
+if not API_AUDIENCE:
+    raise RuntimeError("Missing AUTH0_AUDIENCE in environment configuration")
+
 ALGORITHMS = ["RS256"]
 
 
