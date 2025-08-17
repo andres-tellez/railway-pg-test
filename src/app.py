@@ -2,6 +2,8 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 from urllib.parse import urlparse
+from flask_session import Session
+
 
 # 📦 Environment Setup
 raw_env_mode = os.environ.get("FLASK_ENV", "production")
@@ -106,6 +108,10 @@ def create_app(test_config=None):
         INTERNAL_API_KEY=config.INTERNAL_API_KEY,
         SESSION_TYPE="filesystem",
     )
+
+    # ✅ Initialize sessions
+    Session(app)
+
     if test_config:
         app.config.update(test_config)
 
