@@ -53,7 +53,7 @@ def admin_login():
 # Who am I? (reads Flask session set by /auth/callback)
 # ------------------------------------------------------------
 
-from utils.auth_helpers import decode_auth_token
+from src.utils.auth_helpers import decode_auth_token
 from jose.exceptions import JWTError
 
 

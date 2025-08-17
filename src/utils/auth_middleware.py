@@ -3,7 +3,7 @@
 from functools import wraps
 from flask import request, abort
 from jose.exceptions import JWTError
-from .auth_helpers import decode_auth_token
+from src.utils.auth_helpers import decode_auth_token
 
 
 def requires_auth(f):
