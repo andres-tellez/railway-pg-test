@@ -5,6 +5,12 @@ from flask import request, abort
 from jose.exceptions import JWTError
 from src.utils.auth_helpers import decode_auth_token
 
+from src.utils import config  # ⬅️ import config
+
+AUTH0_DOMAIN = config.AUTH0_DOMAIN  # ⬅️ use config
+API_AUDIENCE = config.AUTH0_AUDIENCE  # ⬅️ use config
+ALGORITHMS = ["RS256"]
+
 
 def requires_auth(f):
     @wraps(f)

@@ -8,11 +8,10 @@ from typing import Any, Dict, Optional, Tuple
 import requests
 from flask import request, jsonify, g
 from jose import jwt, JWTError
+from src.utils import config  # ⬅️ import config
 
-AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")  # e.g. dev-xxxxx.us.auth0.com
-API_AUDIENCE = os.getenv("AUTH0_AUDIENCE") or os.getenv(
-    "AUTH0_API_AUDIENCE"
-)  # e.g. https://api.smartcoach.dev
+AUTH0_DOMAIN = config.AUTH0_DOMAIN  # ⬅️ use config
+API_AUDIENCE = config.AUTH0_AUDIENCE  # ⬅️ use config
 ALGORITHMS = ["RS256"]
 JWKS_URL = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json" if AUTH0_DOMAIN else None
 JWKS_TTL_SEC = 60 * 10  # 10 minutes cache
