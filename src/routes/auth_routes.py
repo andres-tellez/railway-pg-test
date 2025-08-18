@@ -173,7 +173,6 @@ def callback():
         frontend_redirect = (os.getenv("FRONTEND_REDIRECT") or "").strip().rstrip(";")
 
         if not client_id or not client_secret or not redirect_uri:
-            # tests may expect a 502 for missing env
             return (
                 jsonify({"error": "Callback error", "detail": "Missing Strava env"}),
                 502,
@@ -184,61 +183,29 @@ def callback():
             flush=True,
         )
 
-        # Exchange code, store tokens, and get the athlete id
         try:
             athlete_id = token_service.store_tokens_from_callback(
                 code, session, redirect_uri
             )
         except requests.exceptions.HTTPError as e:
-            # surface Strava rejection as a 502 with recognizable message
             return jsonify({"error": "Callback error", "detail": str(e)}), 502
 
-        # Persist Strava identity in the Flask session for whoami()
+        # ✅ Store athlete_id in session before redirect
         flask_session["athlete_id"] = athlete_id
         print(
             f"✅ Flask session contents before redirect: {dict(flask_session)}",
             flush=True,
         )
 
-        # short-lived UI tokens (kept for compatibility)
-        refresh_token = jwt.encode(
-            {
-                "sub": str(athlete_id),
-                "exp": datetime.utcnow() + timedelta(seconds=config.REFRESH_TOKEN_EXP),
-            },
-            config.SECRET_KEY,
-            algorithm="HS256",
-        )
-        access_token = jwt.encode(
-            {
-                "sub": str(athlete_id),
-                "exp": datetime.utcnow() + timedelta(seconds=config.ACCESS_TOKEN_EXP),
-            },
-            config.SECRET_KEY,
-            algorithm="HS256",
-        )
-
+        # ✅ Testing support (used in test harnesses)
         if current_app.testing:
-            # ✅ Make test assertion happy with exact substring:
             return f"Token stored for athlete_id: {athlete_id}", 200
 
-        # Normal runtime: redirect the SPA
-        query = urlencode(
-            {
-                "authed": "true",
-                "code": code,
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-            }
-        )
-        final_target = frontend_redirect or "http://localhost:5173/post-oauth"
-        full_redirect_url = f"{final_target}?{query}"
-        print(f"[Callback] REDIRECT FINAL URL: {full_redirect_url}", flush=True)
-        return redirect(full_redirect_url)
+        # ✅ Production redirect
+        return redirect(frontend_redirect or "/post-oauth")
 
     except Exception as e:
         traceback.print_exc()
-        # consistent 500 shape on unexpected failure
         return jsonify({"error": "Callback error", "detail": str(e)}), 500
     finally:
         session.close()
