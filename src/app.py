@@ -49,15 +49,14 @@ from src.routes.ask_routes import ask_bp
 from src.routes.user_profile_routes import user_profile_bp
 from src.routes.user_identity_routes import identity_bp
 from src.routes.auth_me_routes import auth_me_bp
-from flask import jsonify
+from src.utils.auth0_jwt import requires_auth  # <-- needed for /_debug/me
+from flask import jsonify, g
 
 
 def create_app(test_config=None):
     app = Flask(__name__)
 
-    # ❌ Removed flask_jwt_extended / HS256 app config.
-    # We use Auth0 (@requires_auth) for user auth, and Flask session for Strava.
-
+    # ❌ No flask_jwt_extended. We use Auth0 (@requires_auth) + Flask session (Strava).
     cors_origins = os.getenv("CORS_ORIGINS", "")
     origin_list = [o.strip().strip(";") for o in cors_origins.split(",") if o.strip()]
     CORS(
@@ -170,6 +169,41 @@ def create_app(test_config=None):
         print(f"📡 Incoming {request.method} request to: {request.path}", flush=True)
         print("🍪 Request cookies:", request.cookies, flush=True)
 
+    # --- DEBUG ONLY (enable with DEBUG_AUTH=1 in env) -------------------------
+    if os.getenv("DEBUG_AUTH") == "1":
+
+        @app.get("/_debug/headers")
+        def _debug_headers():
+            auth = request.headers.get("Authorization", "")
+            prefix = auth[:20]
+            return (
+                jsonify(
+                    {
+                        "has_authorization": bool(auth),
+                        "authorization_prefix": prefix,
+                        "authorization_len": len(auth),
+                        "origin": request.headers.get("Origin"),
+                        "path": request.path,
+                    }
+                ),
+                200,
+            )
+
+        @app.get("/_debug/me")
+        @requires_auth
+        def _debug_me():
+            return (
+                jsonify(
+                    {
+                        "ok": True,
+                        "claims": getattr(g, "current_user", {}),
+                    }
+                ),
+                200,
+            )
+
+    # -------------------------------------------------------------------------
+
     @app.errorhandler(Exception)
     def handle_exception(e):
         if isinstance(e, HTTPException):
@@ -178,8 +212,6 @@ def create_app(test_config=None):
                 jsonify({"error": e.name, "message": e.description, "code": e.code}),
                 e.code,
             )
-
-        # Handle non-HTTP exceptions
         return (
             jsonify({"error": "Internal Server Error", "message": str(e), "code": 500}),
             500,

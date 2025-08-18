@@ -2,12 +2,12 @@
 import os
 import time
 import threading
+import traceback
 from functools import wraps
 from typing import Any, Dict, Optional, Tuple
 
 import requests
 from flask import request, jsonify, g
-from jose import jwt, JWTError
 from src.utils import config  # ⬅️ import config
 
 AUTH0_DOMAIN = config.AUTH0_DOMAIN  # ⬅️ use config
@@ -80,70 +80,41 @@ def _error(status: int, message: str):
     return jsonify({"error": message}), status
 
 
-def requires_auth(f):
-    """Decorator for RS256/JWKS Auth0 validation."""
+DEBUG_AUTH = os.getenv("DEBUG_AUTH") == "1"
 
-    @wraps(f)
+
+def requires_auth(fn):
+    @wraps(fn)
     def wrapper(*args, **kwargs):
-        # --- DEV BYPASS: set AUTH_BYPASS=1 in your local env to skip JWT entirely ---
-        if os.getenv("AUTH_BYPASS") == "1":
-            g.current_user = {
-                "sub": "auth0|dev-bypass",
-                "scope": None,
-                "permissions": [],
-            }
-            return f(*args, **kwargs)
-
-        # Extract Bearer token
-        auth_header = request.headers.get("Authorization", "")
-        parts = auth_header.split()
-        if len(parts) != 2 or parts[0].lower() != "bearer":
-            return _error(401, "Missing or invalid Authorization header")
-
-        token = parts[1]
-
-        # Validate presence of required config
-        if not AUTH0_DOMAIN or not API_AUDIENCE:
-            return _error(500, "Auth0 not configured (domain/audience)")
-
-        # Get unverified header to find the kid
-        try:
-            unverified = jwt.get_unverified_header(token)
-            kid = unverified.get("kid")
-        except JWTError:
-            return _error(401, "Invalid token header")
-
-        if not kid:
-            return _error(401, "Missing kid in token header")
-
-        rsa_key = _get_rsa_key_for_kid(kid)
-        if not rsa_key:
-            return _error(401, "Unable to find matching JWKS key")
-
-        try:
-            payload = jwt.decode(
-                token,
-                rsa_key,
-                algorithms=ALGORITHMS,
-                audience=API_AUDIENCE,
-                issuer=f"https://{AUTH0_DOMAIN}/",
-                options={
-                    "verify_aud": True,
-                    "verify_iss": True,
-                    "verify_exp": True,
-                },
+        auth = request.headers.get("Authorization", "")
+        if DEBUG_AUTH:
+            print(
+                f"[requires_auth] Authorization present={bool(auth)} len={len(auth)}",
+                flush=True,
             )
-        except JWTError as e:
-            return _error(401, f"Token verification failed: {str(e)}")
 
-        # Success → attach user to request context
-        # (use flask.g to avoid mutating the request object)
-        g.current_user = {
-            "sub": payload.get("sub"),
-            "scope": payload.get("scope"),
-            "permissions": payload.get("permissions"),
-            "raw": payload,
-        }
-        return f(*args, **kwargs)
+        if not auth.startswith("Bearer "):
+            if DEBUG_AUTH:
+                print(
+                    "[requires_auth] Missing/invalid Authorization header", flush=True
+                )
+            return jsonify({"error": "unauthorized", "reason": "no_bearer"}), 401
+
+        token = auth.split(" ", 1)[1]
+        try:
+            # your existing JWKS fetch + jwt.decode(.. audience=AUTH0_AUDIENCE, issuer=..)
+            claims = verify_and_decode(token)  # <-- whatever you already do
+            g.current_user = claims
+            if DEBUG_AUTH:
+                aud = claims.get("aud")
+                sub = claims.get("sub")
+                iss = claims.get("iss")
+                print(f"[requires_auth] OK sub={sub} aud={aud} iss={iss}", flush=True)
+            return fn(*args, **kwargs)
+        except Exception as e:
+            if DEBUG_AUTH:
+                traceback.print_exc()
+                print(f"[requires_auth] 401 reason: {e}", flush=True)
+            return jsonify({"error": "unauthorized", "reason": str(e)}), 401
 
     return wrapper
