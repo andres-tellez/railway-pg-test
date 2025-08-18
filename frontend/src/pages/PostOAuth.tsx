@@ -71,7 +71,7 @@ const PostOAuth: React.FC = () => {
             try {
               const { strava_athlete_id: athlete_id } = JSON.parse(text);
               if (typeof athlete_id === "number") {
-                
+
                 try {
                   await postLink(token, athlete_id);
                   console.log("✅ Link created successfully");
