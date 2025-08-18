@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from flask import session as flask_session
+
 from src.db.dao.user_identity_dao import get_by_user_id, upsert_identity
 
 
@@ -53,8 +55,6 @@ def get_or_create_user_identity(claims: Dict[str, Any]) -> Dict[str, Any]:
         "email_verified": raw.get("email_verified"),
         "name": raw.get("name"),
         "picture": raw.get("picture"),
-        # We'll stamp updated_at on the server side in the DAO if needed,
-        # but try to preserve token's updated_at if present for future logic.
         "updated_at": _parse_updated_at(raw),
     }
 
@@ -74,9 +74,10 @@ def get_or_create_user_identity(claims: Dict[str, Any]) -> Dict[str, Any]:
     # Ensure updated_at is JSON-friendly
     ua = data.get("updated_at")
     if isinstance(ua, datetime):
-        # If you want a trailing 'Z', uncomment next line:
-        # data["updated_at"] = ua.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
         data["updated_at"] = ua.isoformat()
+
+    # ✅ Set session for downstream authentication (e.g. /auth/whoami)
+    flask_session["athlete_id"] = data.get("user_id") or sub
 
     return {
         "user_id": data.get("user_id") or sub,
