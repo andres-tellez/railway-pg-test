@@ -69,9 +69,16 @@ const PostOAuth: React.FC = () => {
             console.warn("⚠️ whoami failed or returned HTML:", whoRes.status, text.slice(0, 100));
           } else {
             try {
-              const { athlete_id } = JSON.parse(text);
+              const { strava_athlete_id: athlete_id } = JSON.parse(text);
               if (typeof athlete_id === "number") {
-                await postLink(token, athlete_id).catch(() => {});
+                
+                try {
+                  await postLink(token, athlete_id);
+                  console.log("✅ Link created successfully");
+                } catch (err) {
+                  console.error("❌ Failed to link user to athlete", err);
+                }
+
                 console.log("link: attempted");
               }
             } catch (err) {
