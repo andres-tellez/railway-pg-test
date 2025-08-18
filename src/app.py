@@ -5,7 +5,6 @@ from urllib.parse import urlparse
 from flask_session import Session
 from werkzeug.exceptions import HTTPException
 
-
 # 📦 Environment Setup
 raw_env_mode = os.environ.get("FLASK_ENV", "production")
 env_path = {
@@ -48,7 +47,6 @@ from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 from src.routes.ask_routes import ask_bp
 from src.routes.user_profile_routes import user_profile_bp
-from flask_jwt_extended import JWTManager
 from src.routes.user_identity_routes import identity_bp
 from src.routes.auth_me_routes import auth_me_bp
 from flask import jsonify
@@ -57,31 +55,8 @@ from flask import jsonify
 def create_app(test_config=None):
     app = Flask(__name__)
 
-    # === JWT configuration ===
-    env_mode = os.getenv("FLASK_ENV", "production")
-
-    if env_mode in ["local", "development"]:
-        # Allow unsigned tokens for local dev/testing
-        app.config["JWT_ALGORITHM"] = "none"
-        app.config["JWT_DECODE_ALGORITHMS"] = ["none", "HS256"]
-        app.config["JWT_SECRET_KEY"] = None  # Must be None if alg is "none"
-        print(
-            "🛠️ JWT configured for local dev with 'none' algorithm and no secret key",
-            flush=True,
-        )
-    else:
-        # Production/staging standard config
-        app.config["JWT_ALGORITHM"] = "HS256"
-        app.config["JWT_SECRET_KEY"] = config.JWT_SECRET_KEY  # from .env
-        print("🔐 JWT configured with HS256 and secret key", flush=True)
-
-    app.config["JWT_TOKEN_LOCATION"] = ["headers"]
-    app.config["JWT_HEADER_NAME"] = "Authorization"
-    app.config["JWT_HEADER_TYPE"] = "Bearer"
-    # ===========================
-
-    if not app.config.get("TESTING", False):
-        jwt = JWTManager(app)
+    # ❌ Removed flask_jwt_extended / HS256 app config.
+    # We use Auth0 (@requires_auth) for user auth, and Flask session for Strava.
 
     cors_origins = os.getenv("CORS_ORIGINS", "")
     origin_list = [o.strip().strip(";") for o in cors_origins.split(",") if o.strip()]
@@ -120,7 +95,6 @@ def create_app(test_config=None):
         app.config.update(test_config)
 
     # 🔗 Blueprints
-    # app.register_blueprint(auth_bp)
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(activity_bp, url_prefix="/sync")
@@ -128,6 +102,7 @@ def create_app(test_config=None):
     app.register_blueprint(ask_bp)
     app.register_blueprint(user_profile_bp)
     app.register_blueprint(identity_bp)
+    app.register_blueprint(auth_me_bp)  # optional helper (/me) behind Auth0
 
     @app.route("/debug-files")
     def debug_files():
@@ -194,12 +169,6 @@ def create_app(test_config=None):
         print(f"🌐 Incoming request from Origin: {origin}", flush=True)
         print(f"📡 Incoming {request.method} request to: {request.path}", flush=True)
         print("🍪 Request cookies:", request.cookies, flush=True)
-
-    @app.before_request
-    def log_request_details():
-        origin = request.headers.get("Origin")
-        print(f"🌐 Incoming request from Origin: {origin}", flush=True)
-        print(f"📡 Incoming {request.method} request to: {request.path}", flush=True)
 
     @app.errorhandler(Exception)
     def handle_exception(e):
