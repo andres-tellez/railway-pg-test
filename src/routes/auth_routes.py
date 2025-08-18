@@ -61,53 +61,6 @@ AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
 ALGORITHMS = ["RS256"]
 
 
-@auth_bp.route("/whoami", methods=["GET"])
-def whoami():
-    """
-    Report current user (from Auth0 JWT) and whether a Strava cookie is set.
-    This endpoint must NEVER 500 just because a cookie is a non-numeric value.
-    """
-    # Optional Strava cookie (set only after a Strava login flow)
-    strava_athlete_id = flask_session.get("athlete_id")
-    strava_connected = bool(strava_athlete_id)
-
-    # Optional Auth0 Bearer token
-    auth_header = request.headers.get("Authorization", "")
-    token = auth_header.split(" ", 1)[1] if auth_header.startswith("Bearer ") else None
-    user_sub = None
-
-    if token:
-        try:
-            jwks = PyJWKClient(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json")
-            signing_key = jwks.get_signing_key_from_jwt(token).key
-            payload = jwt.decode(
-                token,
-                signing_key,
-                algorithms=ALGORITHMS,
-                audience=AUTH0_AUDIENCE,
-                issuer=f"https://{AUTH0_DOMAIN}/",
-            )
-            user_sub = payload.get("sub")
-        except Exception as e:
-            # Do not crash; just report unauthenticated below
-            current_app.logger.warning("whoami: JWT decode failed: %s", e)
-
-    if not user_sub and not strava_connected:
-        return jsonify({"authenticated": False, "reason": "no_auth"}), 401
-
-    return (
-        jsonify(
-            {
-                "authenticated": True,
-                "user_sub": user_sub,
-                "strava_connected": strava_connected,
-                "strava_athlete_id": strava_athlete_id,  # may be string like "debug-athlete"
-            }
-        ),
-        200,
-    )
-
-
 # ------------------------------------------------------------
 # Legacy /auth/login (GET) → keep as a harmless Strava redirect shim
 # ------------------------------------------------------------

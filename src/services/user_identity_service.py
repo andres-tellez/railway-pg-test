@@ -4,8 +4,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from flask import session as flask_session
-
 from src.db.dao.user_identity_dao import get_by_user_id, upsert_identity
 
 
@@ -38,10 +36,8 @@ def _row_to_dict(row) -> Dict[str, Any]:
 
 def get_or_create_user_identity(claims: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Orchestrates 'who am I':
-      - ensure a row exists in user_identity for this Auth0 sub
-      - update profile fields if provided
-      - return a minimal JSON-safe dict our route can send back
+    Ensure a row exists in user_identity for this Auth0 sub, update basic fields,
+    and return a minimal JSON-safe dict. (Auth0 user identity only — no Flask session.)
     """
     sub = claims.get("sub")
     if not sub:
@@ -75,9 +71,6 @@ def get_or_create_user_identity(claims: Dict[str, Any]) -> Dict[str, Any]:
     ua = data.get("updated_at")
     if isinstance(ua, datetime):
         data["updated_at"] = ua.isoformat()
-
-    # ✅ Set session for downstream authentication (e.g. /auth/whoami)
-    flask_session["athlete_id"] = data.get("user_id") or sub
 
     return {
         "user_id": data.get("user_id") or sub,

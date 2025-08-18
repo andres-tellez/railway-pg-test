@@ -1,16 +1,15 @@
-// If you already use axios elsewhere, keep it; otherwise fetch works fine.
+// src/api/http.ts
 export async function getWhoAmI(apiBase: string, getToken: () => Promise<string>) {
   const token = await getToken();
-  const res = await fetch(`${apiBase}/auth/whoami`, {
-    method: 'GET',
-    credentials: 'include',                // keep cookies (for future Strava session)
+  const res = await fetch(`${apiBase}/api/me`, {
+    method: "GET",
+    credentials: "include",
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  // Avoid the "Unexpected token '<'" parse error on non-200s
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`whoami ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(`me ${res.status}: ${text.slice(0, 200)}`);
   }
   return res.json();
 }
