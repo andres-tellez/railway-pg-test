@@ -2,8 +2,7 @@
 import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
-
-const API = import.meta.env.VITE_API_URL ?? "";
+import { authFetchJSON } from "../utils/authFetch";
 
 const PostOAuth: React.FC = () => {
   const navigate = useNavigate();
@@ -22,44 +21,38 @@ const PostOAuth: React.FC = () => {
       if (!done) navigate("/dashboard", { replace: true });
     }, 6000);
 
+    const getToken = () =>
+      getAccessTokenSilently({
+        authorizationParams: {
+          audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+          scope: "openid profile email offline_access",
+        },
+      });
+
     const go = async () => {
       try {
-        // 1) Create/refresh our identity on the API (protected)
-        const token = await getAccessTokenSilently({
-          authorizationParams: {
-            audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-            scope: "openid profile email offline_access",
-          },
-        });
-
-        // optional: keep using /api/user/identity ping if you want, but it’s not required.
-        await fetch(`${API}/api/me`, {
-          credentials: "include",
-          headers: { Authorization: `Bearer ${token}` },
-          signal: ac.signal,
-        }).catch(() => {});
-
-        // 2) Onboarding check (server uses token sub; no user_id param)
-        const profRes = await fetch(`${API}/api/onboarding`, {
-          credentials: "include",
-          headers: { Authorization: `Bearer ${token}` },
-          signal: ac.signal,
-        });
-
-        const ct = profRes.headers.get("content-type") || "";
-        if (!ct.includes("application/json")) {
-          throw new Error("onboarding returned non-JSON");
+        // 1) Ensure user identity exists on the API (protected)
+        // NOTE: backend route is "/me" (no "/api" prefix)
+        try {
+          await authFetchJSON("/me", getToken, { signal: ac.signal });
+        } catch {
+          // Non-blocking: identity helper failure shouldn't stop flow
         }
+
+        // 2) Onboarding check (server uses token.sub; no user_id param)
+        const { res } = await authFetchJSON("/api/onboarding", getToken, {
+          signal: ac.signal,
+        });
 
         done = true;
         clearTimeout(safety);
 
-        if (profRes.status === 404) {
+        if (res.status === 404) {
           navigate("/onboarding", { replace: true });
-        } else if (profRes.ok) {
+        } else if (res.ok) {
           navigate("/dashboard", { replace: true });
         } else {
-          throw new Error(`onboarding failed: ${profRes.status}`);
+          throw new Error(`onboarding failed with status ${res.status}`);
         }
       } catch {
         done = true;

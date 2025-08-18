@@ -1,274 +1,206 @@
 // src/pages/OnboardingForm.tsx
-import { useForm, FormProvider } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  onboardingSchema,
-  type OnboardingFormData,
-} from "../schemas/onboardingSchema";
-import { useAuthSync } from "../hooks/useAuthSync";
+import { useAuth0 } from "@auth0/auth0-react";
+import { authFetchJSON } from "@/utils/authFetch";
 
-import RunnerLevelStep from "../components/onboarding/steps/RunnerLevelStep";
-import RaceGoalStep from "../components/onboarding/steps/RaceGoalStep";
-import RunPreferencesStep from "../components/onboarding/steps/RunPreferencesStep";
-import RaceHistoryStep from "../components/onboarding/steps/RaceHistoryStep";
-import PhysicalStatsStep from "../components/onboarding/steps/PhysicalStatsStep";
-import TrainingDaysStep from "../components/onboarding/steps/TrainingDaysStep";
-import DevAuthTools from "../components/DevAuthTools";
-
-const steps = [
-  { label: "Runner Level", Component: RunnerLevelStep },
-  { label: "Goals & Motivation", Component: RaceGoalStep },
-  { label: "Run Preferences", Component: RunPreferencesStep },
-  { label: "Race History", Component: RaceHistoryStep },
-  { label: "Physical Stats", Component: PhysicalStatsStep },
-  { label: "Training Days", Component: TrainingDaysStep },
-] as const;
-
-type FormKeys = keyof OnboardingFormData;
-
-const requiredFieldsPerStep: Record<number, FormKeys[]> = {
-  0: ["runnerLevel"],
-  1: ["mainGoal", "motivation"],
-  2: ["runPreference"],
-  3: ["raceHistory", "pastRaces", "raceDate", "raceDistance"],
-  4: ["height", "weight", "ageGroup"],
-  5: ["trainingDays"],
+type Profile = {
+  runner_level?: string;
+  race_history?: boolean;
+  race_date?: string | null;
+  race_distance?: string | null;
+  past_races?: string[];
+  heightFeet?: number;     // UI only (server normalizes to height.feet)
+  heightInches?: number;   // UI only (server normalizes to height.inches)
+  weight?: number | null;
+  training_days?: string[];
+  main_goal?: string | null;
+  motivation?: string[];
+  age_group?: string | null;
+  longestRun?: number | null;   // server maps to longest_run
+  run_preference?: string | null;
 };
 
-export default function OnboardingForm() {
-  // Auth0 user.sub (string) or null while loading
-  const token = useAuthSync();
-
-  const [stepIndex, setStepIndex] = useState(0);
-  const [errorMessage, setErrorMessage] = useState("");
+const OnboardingForm: React.FC = () => {
+  const { getAccessTokenSilently, isAuthenticated } = useAuth0();
   const navigate = useNavigate();
+  const ran = useRef(false);
 
-  const urlParams = useMemo(
-    () => new URLSearchParams(window.location.search),
-    []
-  );
-  const editMode = urlParams.get("edit") === "true";
-
-  const methods = useForm<OnboardingFormData>({
-    resolver: zodResolver(onboardingSchema),
-    mode: "onSubmit",
-    shouldUnregister: false,
-    defaultValues: {
-      user_id: "",
-      runnerLevel: undefined,
-      mainGoal: undefined,
-      motivation: [],
-      raceHistory: false,
-      pastRaces: [],
-      raceDate: undefined,
-      raceDistance: undefined,
-      runPreference: undefined,
-      height: undefined,
-      weight: undefined,
-      ageGroup: undefined,
-      trainingDays: [],
-    } as unknown as OnboardingFormData,
+  const [form, setForm] = useState<Profile>({
+    runner_level: "",
+    race_history: false,
+    race_date: "",
+    race_distance: "",
+    past_races: [],
+    heightFeet: undefined,
+    heightInches: undefined,
+    weight: undefined,
+    training_days: [],
+    main_goal: "",
+    motivation: [],
+    age_group: "",
+    longestRun: undefined,
+    run_preference: "",
   });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const { handleSubmit, setValue, reset, trigger, formState, getValues } = methods;
+  // Stable token getter for authFetchJSON
+  const getToken = useCallback(
+    () =>
+      getAccessTokenSilently({
+        authorizationParams: {
+          audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+          scope: "openid profile email offline_access",
+        },
+      }),
+    [getAccessTokenSilently]
+  );
 
-  // Tiny debug ping (ok if 404s)
+  // Load existing profile (server uses token.sub; no querystring)
   useEffect(() => {
+    if (!isAuthenticated || ran.current) return;
+    ran.current = true;
+
+    const ac = new AbortController();
     (async () => {
       try {
-        const r = await fetch("/api/onboarding-debug-ping");
-        console.debug("[Onboarding] debug ping status:", r.status);
-      } catch (e) {
-        console.debug("[Onboarding] debug ping failed:", e);
-      }
-    })();
-  }, []);
+        setLoading(true);
+        setError(null);
 
-  // Prefill when editing an existing profile
-  useEffect(() => {
-    if (!token || !editMode) return;
+        const { res, json } = await authFetchJSON<{ status: string; data?: any }>(
+          "/api/onboarding",
+          getToken,
+          { signal: ac.signal }
+        );
 
-    (async () => {
-      try {
-        const res = await fetch(`/api/onboarding?user_id=${encodeURIComponent(token)}`);
-        if (!res.ok) {
-          console.debug("[Onboarding] prefill GET status:", res.status);
+        if (res.status === 404) {
+          // Not onboarded yet; keep defaults
+          setLoading(false);
           return;
         }
-        const data = await res.json();
-        const profile = data?.data;
-        if (!profile) return;
+        if (!res.ok) throw new Error(`GET /api/onboarding ${res.status}`);
 
-        setValue("runnerLevel", profile.runner_level ?? undefined);
-        setValue("mainGoal", profile.main_goal ?? "General fitness");
-        setValue("motivation", profile.motivation ?? []);
-        setValue("raceHistory", !!profile.race_history);
-        setValue("pastRaces", profile.past_races ?? []);
-        setValue("raceDate", profile.race_date ?? undefined);
-        setValue("raceDistance", profile.race_distance ?? undefined);
-        setValue("runPreference", profile.run_preference ?? "No preference");
-        setValue("height", {
-          feet: profile.height_feet ?? 5,
-          inches: profile.height_inches ?? 6,
-        });
-        setValue("weight", profile.weight ?? 150);
-        setValue("ageGroup", profile.age_group ?? "25-34");
-        setValue("trainingDays", profile.training_days ?? []);
-        setValue("user_id", token, {
-          shouldValidate: false,
-          shouldDirty: false,
-          shouldTouch: false,
-        });
-      } catch (err) {
-        console.error("❌ Error loading profile for edit:", err);
+        const data = json?.data ?? {};
+        setForm((prev) => ({
+          ...prev,
+          runner_level: data.runner_level ?? "",
+          race_history: !!data.race_history,
+          race_date: data.race_date ?? "",
+          race_distance: data.race_distance ?? "",
+          past_races: data.past_races ?? [],
+          heightFeet: data.height_feet ?? undefined,
+          heightInches: data.height_inches ?? undefined,
+          weight: data.weight ?? undefined,
+          training_days: data.training_days ?? [],
+          main_goal: data.main_goal ?? "",
+          motivation: data.motivation ?? [],
+          age_group: data.age_group ?? "",
+          longestRun: data.longest_run ?? undefined,
+          run_preference: data.run_preference ?? "",
+        }));
+
+        setLoading(false);
+      } catch (e: any) {
+        if (e?.name === "AbortError") return;
+        setError(e?.message || "Failed to load profile");
+        setLoading(false);
       }
     })();
-  }, [token, editMode, setValue]);
 
-  // Ensure user_id mirrors Auth0 subject as soon as token is available
-  useEffect(() => {
-    if (!token) return;
-    if (getValues("user_id") !== token) {
-      setValue("user_id", token, {
-        shouldValidate: false,
-        shouldDirty: false,
-        shouldTouch: false,
-      });
-      console.debug("[Onboarding] user_id injected from useAuthSync()");
-    }
-  }, [token, getValues, setValue]);
+    return () => ac.abort();
+  }, [isAuthenticated, getToken]);
 
-  const onSubmit = async (data: OnboardingFormData) => {
-    setErrorMessage("");
-    console.debug("[Onboarding] onSubmit fired");
-
-    const payload: Record<string, any> = {
-      ...data,
-      heightFeet: data.height?.feet ?? null,
-      heightInches: data.height?.inches ?? null,
-      pastRaces: data.pastRaces?.length ? data.pastRaces : ["Haven't raced yet"],
-      raceDate: data.raceDate || undefined,
-      raceDistance: data.raceDistance || undefined,
-      runPreference: data.runPreference || "No preference",
-      trainingDays: Array.isArray(data.trainingDays)
-        ? data.trainingDays.map((d) => d.trim())
-        : [],
-    };
-    delete payload.height;
+  // Submit → POST /api/onboarding (server uses token.sub; DO NOT send user_id)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
 
     try {
-      console.debug("[Onboarding] POST /api/onboarding payload:", payload);
-      const res = await fetch("/api/onboarding", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const payload: Record<string, any> = { ...form };
+      // (Optional) If your UI stores strings for numbers, coerce here.
 
-      console.debug("[Onboarding] POST status:", res.status);
+      const { res, json } = await authFetchJSON(
+        "/api/onboarding",
+        getToken,
+        { method: "POST", body: JSON.stringify(payload) }
+      );
+
       if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        let parsed: any = {};
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          /* noop */
-        }
-        console.error("[Onboarding] POST error body:", parsed || text);
-        setErrorMessage(parsed?.message || text || "Request failed");
-        return;
+        const msg =
+          json?.message ||
+          (json?.errors ? JSON.stringify(json.errors) : `save failed ${res.status}`);
+        throw new Error(msg);
       }
 
-      reset();
-      navigate("/dashboard");
-    } catch (err) {
-      console.error("❌ Error submitting onboarding:", err);
-      setErrorMessage("Unexpected error. Please try again later.");
+      navigate("/dashboard", { replace: true });
+    } catch (e: any) {
+      setError(e?.message || "Failed to save profile");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const onSubmitError = (errors: unknown) => {
-    console.warn("[Onboarding] validation errors:", errors);
-    setErrorMessage("Please complete the required fields.");
-  };
-
-  const StepComponent = steps[stepIndex].Component;
-  const isSubmitting = formState.isSubmitting;
-
-  // 🔒 IMPORTANT: don’t render the form until Auth has finished.
-  // This avoids the “stuck on /post-oauth” feel and ensures user_id is ready.
-  if (!token) {
-    return (
-      <>
-        <DevAuthTools />
-        <div className="max-w-xl mx-auto p-6">Finishing sign-in…</div>
-      </>
-    );
-  }
+  // ------- Render (replace with your real fields/UI) -------
+  if (loading) return <div className="p-8">Loading profile…</div>;
 
   return (
-    <>
-      <DevAuthTools /> {/* dev-only widget; safe to remove later */}
+    <form className="p-8 space-y-4 max-w-xl" onSubmit={handleSubmit}>
+      <h1 className="text-2xl font-bold">Onboarding</h1>
 
-      <FormProvider {...methods}>
-        <form
-          noValidate
-          className="max-w-xl mx-auto p-6 space-y-6"
-          onSubmit={handleSubmit(onSubmit, onSubmitError)}
-          onKeyDown={(e) => {
-            // prevent accidental submits on Enter within multi-step
-            if (e.key === "Enter") e.preventDefault();
-          }}
-        >
-          <h2 className="text-2xl font-bold">{steps[stepIndex].label}</h2>
+      {error && (
+        <div className="p-3 rounded border border-red-300 bg-red-50 text-red-700">
+          {error}
+        </div>
+      )}
 
-          <StepComponent />
+      <div>
+        <label className="block text-sm mb-1">Runner Level</label>
+        <input
+          className="border px-2 py-1 w-full"
+          value={form.runner_level || ""}
+          onChange={(e) => setForm({ ...form, runner_level: e.target.value })}
+        />
+      </div>
 
-          {errorMessage && (
-            <div className="text-red-600 border border-red-400 p-2 rounded bg-red-100">
-              {errorMessage}
-            </div>
-          )}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm mb-1">Height (ft)</label>
+          <input
+            className="border px-2 py-1 w-full"
+            type="number"
+            value={form.heightFeet ?? ""}
+            onChange={(e) =>
+              setForm({ ...form, heightFeet: e.target.value === "" ? undefined : Number(e.target.value) })
+            }
+          />
+        </div>
+        <div>
+          <label className="block text-sm mb-1">Height (in)</label>
+          <input
+            className="border px-2 py-1 w-full"
+            type="number"
+            value={form.heightInches ?? ""}
+            onChange={(e) =>
+              setForm({ ...form, heightInches: e.target.value === "" ? undefined : Number(e.target.value) })
+            }
+          />
+        </div>
+      </div>
 
-          <div className="flex justify-between">
-            {stepIndex > 0 && (
-              <button
-                type="button"
-                className="px-4 py-2 bg-gray-300 rounded"
-                onClick={() => setStepIndex((i) => i - 1)}
-              >
-                Back
-              </button>
-            )}
+      {/* Add the rest of your fields here (dates, enums, multi-selects, etc.) */}
 
-            {stepIndex < steps.length - 1 ? (
-              <button
-                type="button"
-                className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-60"
-                disabled={isSubmitting}
-                onClick={async () => {
-                  const required = requiredFieldsPerStep[stepIndex] || [];
-                  const ok = await trigger(required, { shouldFocus: true });
-                  if (ok) setStepIndex((i) => i + 1);
-                }}
-              >
-                Next
-              </button>
-            ) : (
-              <button
-                type="submit"
-                className="px-4 py-2 bg-green-600 text-white rounded disabled:opacity-60"
-                disabled={isSubmitting}
-                aria-busy={isSubmitting}
-                data-testid="onboarding-submit"
-              >
-                {isSubmitting ? "Submitting…" : "Submit"}
-              </button>
-            )}
-          </div>
-        </form>
-      </FormProvider>
-    </>
+      <button
+        className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-60"
+        disabled={saving}
+        type="submit"
+      >
+        {saving ? "Saving…" : "Save & Continue"}
+      </button>
+    </form>
   );
-}
+};
+
+export default OnboardingForm;
