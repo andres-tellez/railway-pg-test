@@ -9,14 +9,17 @@ type State =
   | { kind: "loaded"; data: LinkStatus }
   | { kind: "error"; message: string };
 
-export default function StravaLinkStatus() {
+interface Props {
+  onError?: (msg: string) => void;
+}
+
+export default function StravaLinkStatus({ onError }: Props) {
   const { isAuthenticated, getAccessTokenSilently, loginWithRedirect } = useAuth0();
   const [state, setState] = React.useState<State>({ kind: "idle" });
   const [manualAthleteId, setManualAthleteId] = React.useState<string>("");
 
   const isBusy = state.kind === "loading";
 
-  // Centralized way to fetch an API-scoped token; falls back to "dev" for AUTH_BYPASS mode
   const getApiToken = React.useCallback(async () => {
     if (!isAuthenticated) return "dev";
     return getAccessTokenSilently({
@@ -36,17 +39,16 @@ export default function StravaLinkStatus() {
     } catch (err: any) {
       const message =
         typeof err === "string" ? err : err?.message || "Failed to load link status";
-      // If desired later: if (message.includes("401")) loginWithRedirect();
       setState({ kind: "error", message });
+      if (onError) onError(message);
     }
-  }, [getApiToken]);
+  }, [getApiToken, onError]);
 
   React.useEffect(() => {
     void load();
   }, [load]);
 
   function handleConnectStrava() {
-    // SPA starts the Strava OAuth via backend alias
     window.location.assign("/auth/strava/connect");
   }
 
@@ -58,7 +60,9 @@ export default function StravaLinkStatus() {
       await postLink(token, Number(manualAthleteId));
       await load();
     } catch (err: any) {
-      setState({ kind: "error", message: err?.message || "Failed to link athlete" });
+      const message = err?.message || "Failed to link athlete";
+      setState({ kind: "error", message });
+      if (onError) onError(message);
     }
   }
 
@@ -69,7 +73,9 @@ export default function StravaLinkStatus() {
       await deleteLink(token);
       await load();
     } catch (err: any) {
-      setState({ kind: "error", message: err?.message || "Failed to unlink" });
+      const message = err?.message || "Failed to unlink";
+      setState({ kind: "error", message });
+      if (onError) onError(message);
     }
   }
 
@@ -95,7 +101,6 @@ export default function StravaLinkStatus() {
     );
   }
 
-  // loaded
   const { data } = state;
 
   if (data.linked) {
@@ -112,7 +117,6 @@ export default function StravaLinkStatus() {
     );
   }
 
-  // not linked
   return (
     <div style={{ border: "1px solid #ffeeba", background: "#fff3cd", padding: 16, borderRadius: 8 }}>
       <div style={{ marginBottom: 8 }}>⚠️ Not linked to Strava yet.</div>

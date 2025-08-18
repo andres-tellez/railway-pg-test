@@ -1,9 +1,10 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import StravaLinkStatus from "@/components/StravaLinkStatus";
 
 const Dashboard: React.FC = () => {
   const { logout, user, isAuthenticated, isLoading } = useAuth0();
+  const [stravaError, setStravaError] = useState<string | null>(null);
 
   useEffect(() => {
     console.group("👤 Auth Debug");
@@ -25,9 +26,15 @@ const Dashboard: React.FC = () => {
         Logged in as: <strong>{user?.email}</strong>
       </div>
 
-      {/* 👉 NEW: Strava link status box */}
+      {/* Show strava error gently */}
+      {stravaError && (
+        <div className="mt-4 p-4 bg-yellow-100 text-yellow-800 border border-yellow-300 rounded">
+          ⚠️ Could not link with Strava. You can still use the app, but training sync won't work.
+        </div>
+      )}
+
       <div className="mt-6">
-        <StravaLinkStatus />
+        <StravaLinkStatus onError={(msg) => setStravaError(msg)} />
       </div>
 
       <button

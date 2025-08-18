@@ -63,10 +63,11 @@ ALGORITHMS = ["RS256"]
 
 @auth_bp.route("/whoami", methods=["GET"])
 def whoami():
-    athlete_id = flask_session.get("athlete_id")
+    session_user = flask_session.get("athlete_id")  # Strava athlete_id if connected
+    auth0_sub = None
 
-    if not athlete_id:
-        # Try JWT fallback
+    # If no Strava session, try Auth0 Bearer token (fallback path)
+    if not session_user:
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
@@ -97,9 +98,7 @@ def whoami():
                     audience=AUTH0_AUDIENCE,
                     issuer=f"https://{AUTH0_DOMAIN}/",
                 )
-
-                athlete_id = payload.get("sub")
-
+                auth0_sub = payload.get("sub")
             except JWTError as e:
                 return jsonify({"error": str(e)}), 401
             except Exception as e:
@@ -107,13 +106,30 @@ def whoami():
 
     print(f"/whoami called. Session contents: {dict(flask_session)}", flush=True)
 
-    if not athlete_id:
-        return jsonify({"error": "Not logged in"}), 401
+    if not session_user and not auth0_sub:
+        # No Strava session and no valid Auth0 token → unauthenticated
+        return jsonify({"authenticated": False, "reason": "no_session_or_token"}), 401
 
-    session = get_session()
+    # Decide what id to check for “already_synced”
+    user_for_sync = session_user or auth0_sub
+
+    db = get_session()
     try:
-        synced = has_existing_activities(session, athlete_id)
-        return jsonify({"athlete_id": athlete_id, "already_synced": synced}), 200
+        already_synced = (
+            has_existing_activities(db, user_for_sync) if session_user else False
+        )
+        return (
+            jsonify(
+                {
+                    "authenticated": True,
+                    "user_sub": auth0_sub,  # present when Auth0 token was supplied
+                    "strava_athlete_id": session_user,  # present when Strava connected
+                    "strava_connected": bool(session_user),
+                    "already_synced": already_synced,
+                }
+            ),
+            200,
+        )
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
