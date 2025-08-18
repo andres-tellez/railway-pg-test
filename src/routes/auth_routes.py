@@ -154,6 +154,28 @@ def strava_connect_alias():
     return strava_login_redirect()
 
 
+@auth_bp.route("/debug/set", methods=["GET"])
+def debug_set_cookie():
+    # write to the Flask session (forces Set-Cookie)
+    flask_session["athlete_id"] = "debug-athlete"
+    flask_session.permanent = True
+    return jsonify({"status": "set", "session": dict(flask_session)}), 200
+
+
+@auth_bp.route("/debug/show", methods=["GET"])
+def debug_show_cookie():
+    # what Flask sees from the incoming request
+    return (
+        jsonify(
+            {
+                "request_cookies": request.cookies,
+                "session": dict(flask_session),
+            }
+        ),
+        200,
+    )
+
+
 # ------------------------------------------------------------
 # Strava OAuth callback (GET)
 #   - In testing mode, return a *plain text* body that includes
