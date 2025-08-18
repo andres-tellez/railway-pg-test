@@ -28,11 +28,23 @@ const PostOAuth: React.FC = () => {
         console.groupCollapsed("[PostOAuth] handoff");
         console.log("user.sub:", user.sub);
 
-        // 1) Persist Auth0 identity
+        // ---- 0) Get an API-scoped token once and reuse it ----
+        const token =
+          (await getAccessTokenSilently({
+            authorizationParams: {
+              audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+              scope: "openid profile email offline_access",
+            },
+          }).catch(() => "dev")) || "dev";
+
+        // ---- 1) Persist Auth0 identity (NOW with Authorization) ----
         try {
           const identityRes = await fetch(`${API}/api/user/identity`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
             credentials: "include",
             body: JSON.stringify({
               user_id: user.sub,
@@ -43,21 +55,13 @@ const PostOAuth: React.FC = () => {
             }),
             signal: ac.signal,
           });
-
           console.log("identity status:", identityRes.status);
         } catch (err) {
           console.warn("⚠️ identity POST failed:", err);
         }
 
-        // 2) whoami + link attempt
+        // ---- 2) whoami + optional link attempt ----
         try {
-          const token = await getAccessTokenSilently({
-            authorizationParams: {
-              audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-              scope: "openid profile email offline_access",
-            },
-          }).catch(() => "dev");
-
           const whoRes = await fetch(`${API}/auth/whoami`, {
             credentials: "include",
             headers: { Authorization: `Bearer ${token}` },
@@ -69,17 +73,17 @@ const PostOAuth: React.FC = () => {
             console.warn("⚠️ whoami failed or returned HTML:", whoRes.status, text.slice(0, 100));
           } else {
             try {
-              const { strava_athlete_id: athlete_id } = JSON.parse(text);
+              // New whoami shape returns:
+              // { authenticated, user_sub, strava_athlete_id, strava_connected, already_synced }
+              const parsed = JSON.parse(text);
+              const athlete_id = parsed?.strava_athlete_id;
               if (typeof athlete_id === "number") {
-
                 try {
                   await postLink(token, athlete_id);
                   console.log("✅ Link created successfully");
                 } catch (err) {
                   console.error("❌ Failed to link user to athlete", err);
                 }
-
-                console.log("link: attempted");
               }
             } catch (err) {
               console.warn("⚠️ whoami JSON parse failed:", err);
@@ -89,7 +93,7 @@ const PostOAuth: React.FC = () => {
           console.warn("⚠️ whoami/link request failed:", err);
         }
 
-        // 3) Onboarding check
+        // ---- 3) Onboarding check (unchanged) ----
         try {
           const profRes = await fetch(
             `${API}/api/onboarding?user_id=${encodeURIComponent(user.sub)}`,
