@@ -101,7 +101,7 @@ def create_app(test_config=None):
         SESSION_COOKIE_SAMESITE="None",
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_DOMAIN=".smartcoach.dev",
+        SESSION_COOKIE_DOMAIN="smartcoach.dev",
     )
 
     app.config.from_mapping(
