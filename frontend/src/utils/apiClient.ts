@@ -7,6 +7,7 @@ export function useApiClient(): AxiosInstance {
 
   const client = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL as string,
+    withCredentials: true, // 🔐 Send cookies
   });
 
   client.interceptors.request.use(
