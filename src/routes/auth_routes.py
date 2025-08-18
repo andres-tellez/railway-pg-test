@@ -63,60 +63,65 @@ ALGORITHMS = ["RS256"]
 
 @auth_bp.route("/whoami", methods=["GET"])
 def whoami():
-    from jose import jwt
-    from jose.exceptions import JWTError
-
-    auth_header = request.headers.get("Authorization", "")
+    session_user = flask_session.get("athlete_id")  # Strava athlete_id if connected
     auth0_sub = None
-    session_user = flask_session.get("athlete_id")
 
-    if auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1]
-        try:
-            jwks_url = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json"
-            jwks = requests.get(jwks_url).json()
-            unverified_header = jwt.get_unverified_header(token)
+    if not session_user:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            try:
+                jwks_url = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json"
+                jwks = requests.get(jwks_url).json()
+                unverified_header = jwt.get_unverified_header(token)
 
-            rsa_key = next(
-                (
-                    {
-                        "kty": key["kty"],
-                        "kid": key["kid"],
-                        "use": key["use"],
-                        "n": key["n"],
-                        "e": key["e"],
-                    }
-                    for key in jwks["keys"]
-                    if key["kid"] == unverified_header.get("kid")
-                ),
-                None,
-            )
+                rsa_key = {}
+                for key in jwks["keys"]:
+                    if key["kid"] == unverified_header.get("kid"):
+                        rsa_key = {
+                            "kty": key["kty"],
+                            "kid": key["kid"],
+                            "use": key["use"],
+                            "n": key["n"],
+                            "e": key["e"],
+                        }
+                        break
 
-            if not rsa_key:
-                return jsonify({"error": "Unable to find matching Auth0 key"}), 401
+                if not rsa_key:
+                    return (
+                        jsonify({"authenticated": False, "reason": "no_matching_jwk"}),
+                        401,
+                    )
 
-            payload = jwt.decode(
-                token,
-                rsa_key,
-                algorithms=ALGORITHMS,
-                audience=AUTH0_AUDIENCE,
-                issuer=f"https://{AUTH0_DOMAIN}/",
-            )
-            auth0_sub = payload.get("sub")
+                payload = jwt.decode(
+                    token,
+                    rsa_key,
+                    algorithms=ALGORITHMS,
+                    audience=AUTH0_AUDIENCE,
+                    issuer=f"https://{AUTH0_DOMAIN}/",
+                )
+                auth0_sub = payload.get("sub")
+            except JWTError as e:
+                return jsonify({"authenticated": False, "reason": str(e)}), 401
+            except Exception as e:
+                return (
+                    jsonify(
+                        {"authenticated": False, "reason": f"Unexpected: {str(e)}"}
+                    ),
+                    500,
+                )
 
-        except JWTError as e:
-            return jsonify({"error": f"JWT validation failed: {str(e)}"}), 401
-        except Exception as e:
-            return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+    print(f"/whoami called. Session contents: {dict(flask_session)}", flush=True)
 
     if not session_user and not auth0_sub:
         return jsonify({"authenticated": False, "reason": "no_session_or_token"}), 401
 
     user_for_sync = session_user or auth0_sub
+
     db = get_session()
     try:
         already_synced = (
-            has_existing_activities(db, session_user) if session_user else False
+            has_existing_activities(db, user_for_sync) if session_user else False
         )
         return (
             jsonify(
@@ -125,7 +130,6 @@ def whoami():
                     "user_sub": auth0_sub,
                     "strava_athlete_id": session_user,
                     "strava_connected": bool(session_user),
-                    "athlete_id": session_user,
                     "already_synced": already_synced,
                 }
             ),
@@ -134,8 +138,6 @@ def whoami():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
-    finally:
-        db.close()
 
 
 # ------------------------------------------------------------

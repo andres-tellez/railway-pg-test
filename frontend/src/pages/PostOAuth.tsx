@@ -1,4 +1,3 @@
-// src/pages/PostOAuth.tsx
 import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
@@ -28,22 +27,21 @@ const PostOAuth: React.FC = () => {
         console.groupCollapsed("[PostOAuth] handoff");
         console.log("user.sub:", user.sub);
 
-        // ---- 0) Get an API-scoped token once and reuse it ----
-        const token =
-          (await getAccessTokenSilently({
-            authorizationParams: {
-              audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-              scope: "openid profile email offline_access",
-            },
-          }).catch(() => "dev")) || "dev";
+        // --- get API token once ---
+        const token = await getAccessTokenSilently({
+          authorizationParams: {
+            audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+            scope: "openid profile email offline_access",
+          },
+        }).catch(() => "dev");
 
-        // ---- 1) Persist Auth0 identity (NOW with Authorization) ----
+        // (1) Persist Auth0 identity (NOW WITH BEARER)
         try {
-          const identityRes = await fetch(`${API}/api/user/identity`, {
+          const res = await fetch(`${API}/api/user/identity`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
+              ...(token && token !== "dev" ? { Authorization: `Bearer ${token}` } : {}),
             },
             credentials: "include",
             body: JSON.stringify({
@@ -55,16 +53,16 @@ const PostOAuth: React.FC = () => {
             }),
             signal: ac.signal,
           });
-          console.log("identity status:", identityRes.status);
+          console.log("identity status:", res.status);
         } catch (err) {
           console.warn("⚠️ identity POST failed:", err);
         }
 
-        // ---- 2) whoami + optional link attempt ----
+        // (2) Try whoami (non-blocking), use it only to auto-link if we already have a Strava session
         try {
           const whoRes = await fetch(`${API}/auth/whoami`, {
             credentials: "include",
-            headers: { Authorization: `Bearer ${token}` },
+            headers: token && token !== "dev" ? { Authorization: `Bearer ${token}` } : {},
             signal: ac.signal,
           });
 
@@ -73,13 +71,12 @@ const PostOAuth: React.FC = () => {
             console.warn("⚠️ whoami failed or returned HTML:", whoRes.status, text.slice(0, 100));
           } else {
             try {
-              // New whoami shape returns:
-              // { authenticated, user_sub, strava_athlete_id, strava_connected, already_synced }
+              // NEW SHAPE: { authenticated, strava_athlete_id, ... }
               const parsed = JSON.parse(text);
-              const athlete_id = parsed?.strava_athlete_id;
-              if (typeof athlete_id === "number") {
+              const stravaId = parsed?.strava_athlete_id;
+              if (typeof stravaId === "number") {
                 try {
-                  await postLink(token, athlete_id);
+                  await postLink(token, stravaId);
                   console.log("✅ Link created successfully");
                 } catch (err) {
                   console.error("❌ Failed to link user to athlete", err);
@@ -93,7 +90,7 @@ const PostOAuth: React.FC = () => {
           console.warn("⚠️ whoami/link request failed:", err);
         }
 
-        // ---- 3) Onboarding check (unchanged) ----
+        // (3) Onboarding check (still non-blocking)
         try {
           const profRes = await fetch(
             `${API}/api/onboarding?user_id=${encodeURIComponent(user.sub)}`,
