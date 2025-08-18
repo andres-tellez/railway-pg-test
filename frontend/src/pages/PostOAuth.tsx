@@ -30,7 +30,7 @@ const PostOAuth: React.FC = () => {
 
         // 1) Persist Auth0 identity
         try {
-          await fetch(`${API}/api/user/identity`, {
+          const identityRes = await fetch(`${API}/api/user/identity`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
@@ -43,12 +43,13 @@ const PostOAuth: React.FC = () => {
             }),
             signal: ac.signal,
           });
-          console.log("identity: ok");
+
+          console.log("identity status:", identityRes.status);
         } catch (err) {
-          console.warn("identity: failed", err);
+          console.warn("⚠️ identity POST failed:", err);
         }
 
-        // 2) Try whoami + postLink
+        // 2) whoami + link attempt
         try {
           const token = await getAccessTokenSilently({
             authorizationParams: {
@@ -63,43 +64,36 @@ const PostOAuth: React.FC = () => {
             signal: ac.signal,
           });
 
-          console.log("whoami status:", whoRes.status);
-          const contentType = whoRes.headers.get("content-type") ?? "";
-
-          if (!whoRes.ok) {
-            const text = await whoRes.text().catch(() => "unknown");
-            console.warn(`⚠️ whoami failed: ${whoRes.status} - ${text}`);
-          } else if (contentType.includes("application/json")) {
-            const data = await whoRes.json().catch(err => {
-              console.warn("⚠️ Failed to parse whoami JSON:", err);
-              return {};
-            });
-
-            const athlete_id = data?.athlete_id;
-            console.log("whoami athlete_id:", athlete_id);
-
-            if (typeof athlete_id === "number") {
-              await postLink(token, athlete_id).catch(err =>
-                console.warn("linking failed", err)
-              );
-              console.log("link: attempted");
-            }
+          const text = await whoRes.text();
+          if (!whoRes.ok || !whoRes.headers.get("content-type")?.includes("application/json")) {
+            console.warn("⚠️ whoami failed or returned HTML:", whoRes.status, text.slice(0, 100));
           } else {
-            const text = await whoRes.text().catch(() => "unknown");
-            console.warn("⚠️ whoami returned non-JSON:", text);
+            try {
+              const { athlete_id } = JSON.parse(text);
+              if (typeof athlete_id === "number") {
+                await postLink(token, athlete_id).catch(() => {});
+                console.log("link: attempted");
+              }
+            } catch (err) {
+              console.warn("⚠️ whoami JSON parse failed:", err);
+            }
           }
         } catch (err) {
-          console.warn("whoami/link: error", err);
+          console.warn("⚠️ whoami/link request failed:", err);
         }
 
-        // 3) Fetch onboarding status and redirect
+        // 3) Onboarding check
         try {
           const profRes = await fetch(
             `${API}/api/onboarding?user_id=${encodeURIComponent(user.sub)}`,
             { credentials: "include", signal: ac.signal }
           );
 
-          console.log("onboarding status:", profRes.status);
+          const contentType = profRes.headers.get("content-type") ?? "";
+          if (!contentType.includes("application/json")) {
+            throw new Error("onboarding returned HTML or invalid response");
+          }
+
           done = true;
           clearTimeout(safety);
 
@@ -108,10 +102,10 @@ const PostOAuth: React.FC = () => {
           } else if (profRes.ok) {
             navigate("/dashboard", { replace: true });
           } else {
-            navigate("/onboarding", { replace: true });
+            throw new Error(`onboarding failed with status ${profRes.status}`);
           }
         } catch (err) {
-          console.warn("onboarding fetch failed", err);
+          console.error("⚠️ onboarding check failed:", err);
           done = true;
           clearTimeout(safety);
           navigate("/onboarding", { replace: true });
@@ -129,7 +123,6 @@ const PostOAuth: React.FC = () => {
     };
 
     void go();
-
     return () => {
       clearTimeout(safety);
       ac.abort();
