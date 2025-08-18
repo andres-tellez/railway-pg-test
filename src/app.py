@@ -136,6 +136,11 @@ def create_app(test_config=None):
         except Exception as e:
             return {"error": str(e)}, 500
 
+    @app.after_request
+    def debug_cookie(response):
+        print("🔍 Set-Cookie header:", response.headers.get("Set-Cookie"), flush=True)
+        return response
+
     @app.route("/ping")
     def ping():
         return "pong", 200
@@ -183,9 +188,11 @@ def create_app(test_config=None):
             return {"status": "fail", "error": str(e)}, 500
 
     @app.before_request
-    def log_request_origin():
+    def log_request_details():
         origin = request.headers.get("Origin")
         print(f"🌐 Incoming request from Origin: {origin}", flush=True)
+        print(f"📡 Incoming {request.method} request to: {request.path}", flush=True)
+        print("🍪 Request cookies:", request.cookies, flush=True)
 
     @app.before_request
     def log_request_details():
