@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping
 from enum import Enum
 
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, current_app
 from pydantic import ValidationError
 
 from src.db.dao.user_profile_dao import save_user_profile, get_user_profile
@@ -15,40 +15,28 @@ user_profile_bp = Blueprint("user_profile", __name__, url_prefix="/api")
 
 
 def _safe_to_mapping(row: Any) -> Mapping[str, Any]:
-    """
-    Accepts a SQLAlchemy Row/RowMapping, dict-like, or plain dict and returns a mapping.
-    Falls back to dict(row) if possible.
-    """
     if row is None:
         return {}
-    m = getattr(row, "_mapping", None)  # SQLAlchemy Row has _mapping in 1.4/2.0
+    m = getattr(row, "_mapping", None)
     if m is not None:
         return m
     if isinstance(row, Mapping):
         return row
-    return dict(row)  # last resort
+    return dict(row)
 
 
 def normalize_postgres_row(row: Mapping[str, Any]) -> Dict[str, Any]:
-    """
-    Convert SQLAlchemy/PG row values into JSON-safe primitives:
-    - Enums -> .value
-    - Lists[Enum] -> Lists[str]
-    - Leaves other primitives as-is
-    """
-    print("🔍 normalize_postgres_row called with:", row, flush=True)
-    normalized: Dict[str, Any] = {}
-    for key, val in row.items():
-        if isinstance(val, list):
-            normalized[key] = [
-                item.value if isinstance(item, Enum) else item for item in val
-            ]
-        elif isinstance(val, Enum):
-            normalized[key] = val.value
+    current_app.logger.debug("normalize_postgres_row IN: %r", row)
+    out: Dict[str, Any] = {}
+    for k, v in row.items():
+        if isinstance(v, list):
+            out[k] = [item.value if isinstance(item, Enum) else item for item in v]
+        elif isinstance(v, Enum):
+            out[k] = v.value
         else:
-            normalized[key] = val
-    print("✅ Normalized result:", normalized, flush=True)
-    return normalized
+            out[k] = v
+    current_app.logger.debug("normalize_postgres_row OUT: %r", out)
+    return out
 
 
 def _coerce_int(value: Any, default: int = 0) -> int:
@@ -62,26 +50,19 @@ def _coerce_int(value: Any, default: int = 0) -> int:
         return default
 
 
+@user_profile_bp.post("/onboarding")
 @requires_auth
-@user_profile_bp.route("/onboarding", methods=["POST"])
 def submit_user_profile():
     """
     Create/update a user's onboarding profile.
-
-    The user is determined from the Auth0 JWT (g.current_user['sub']).
-    We do NOT accept/require user_id in the request body.
-    Supports height in two forms:
-      - flat fields: heightFeet, heightInches
-      - nested: {"height": {"feet": int, "inches": int}}
+    Always uses the Auth0 subject from the access token; the client cannot override it.
     """
     sub = (getattr(g, "current_user", {}) or {}).get("sub")
     if not sub:
         return jsonify({"status": "error", "message": "No user"}), 401
 
     data = request.get_json(silent=True) or {}
-    print("📨 Incoming payload:", data, flush=True)
-
-    # Normalize height from flat fields (frontend may send heightFeet/heightInches)
+    # Accept legacy height fields
     if "heightFeet" in data or "heightInches" in data:
         feet = _coerce_int(data.pop("heightFeet", 0))
         inches = _coerce_int(data.pop("heightInches", 0))
@@ -91,24 +72,19 @@ def submit_user_profile():
                 400,
             )
         data["height"] = {"feet": feet, "inches": inches}
-        print("🔧 Normalized + coerced height:", data["height"], flush=True)
 
-    # Ensure the schema sees the correct user_id (if the schema requires it)
+    # Force user_id to token sub (schema still expects it)
     data["user_id"] = sub
 
     try:
-        # Validate + coerce to domain model
         validated = UserProfileSchema.model_validate(data)
-        print(f"✅ Schema validated for user_id={sub}", flush=True)
-
         user_dict: Dict[str, Any] = validated.model_dump(exclude_unset=True)
-        print("📤 model_dump result:", user_dict, flush=True)
 
-        # Flatten height into DB columns if present
+        # Flatten height if present
         if "height" in user_dict:
-            height_obj = user_dict.pop("height") or {}
-            feet = height_obj.get("feet")
-            inches = height_obj.get("inches")
+            height = user_dict.pop("height") or {}
+            feet = height.get("feet")
+            inches = height.get("inches")
             if feet is None or inches is None:
                 return (
                     jsonify(
@@ -121,11 +97,8 @@ def submit_user_profile():
                 )
             user_dict["height_feet"] = feet
             user_dict["height_inches"] = inches
-            print(
-                f"📐 Flattened height_feet={feet}, height_inches={inches}", flush=True
-            )
 
-        # Coerce Enums/lists of Enums to primitive values for DB
+        # Enum -> primitive
         for k, v in list(user_dict.items()):
             if isinstance(v, Enum):
                 user_dict[k] = v.value
@@ -134,12 +107,9 @@ def submit_user_profile():
                     item.value if isinstance(item, Enum) else item for item in v
                 ]
 
-        # Force the token’s sub as the owner
+        # Enforce the sub
         user_dict["user_id"] = sub
 
-        print("📦 FINAL user_dict going to DB:", user_dict, flush=True)
-
-        # Upsert via DAO
         save_user_profile(user_dict)
         return (
             jsonify({"status": "success", "message": "Profile saved successfully"}),
@@ -147,23 +117,21 @@ def submit_user_profile():
         )
 
     except ValidationError as e:
-        print(f"❌ Validation error for user_id={sub}: {e.errors()}", flush=True)
         return jsonify({"status": "error", "errors": e.errors()}), 400
     except Exception as e:
-        print(f"❌ Database error for user_id={sub}: {e}", flush=True)
+        current_app.logger.exception("submit_user_profile failed for sub=%s", sub)
         return jsonify({"status": "error", "message": "Failed to save profile"}), 500
 
 
+@user_profile_bp.get("/onboarding")
 @requires_auth
-@user_profile_bp.route("/onboarding", methods=["GET"])
 def get_user_profile_route():
     """
-    Fetch the current user's onboarding profile; user is derived from JWT.
+    Fetch onboarding profile for the authenticated user (Auth0 sub).
     """
     sub = (getattr(g, "current_user", {}) or {}).get("sub")
     if not sub:
         return jsonify({"status": "error", "message": "No user"}), 401
-
     try:
         profile = get_user_profile(sub)
         if not profile:
@@ -171,10 +139,8 @@ def get_user_profile_route():
                 jsonify({"status": "error", "message": "User profile not found"}),
                 404,
             )
-
         normalized = normalize_postgres_row(_safe_to_mapping(profile))
         return jsonify({"status": "success", "data": normalized}), 200
-
-    except Exception as e:
-        print(f"❌ Error fetching profile for user_id={sub}: {e}", flush=True)
+    except Exception:
+        current_app.logger.exception("get_user_profile failed for sub=%s", sub)
         return jsonify({"status": "error", "message": "Failed to fetch profile"}), 500

@@ -63,20 +63,23 @@ ALGORITHMS = ["RS256"]
 
 @auth_bp.route("/whoami", methods=["GET"])
 def whoami():
-    # Strava (server-side) session, if the user already connected Strava
-    session_athlete_id = flask_session.get("athlete_id")
-    auth0_sub = None
+    """
+    Report current user (from Auth0 JWT) and whether a Strava cookie is set.
+    This endpoint must NEVER 500 just because a cookie is a non-numeric value.
+    """
+    # Optional Strava cookie (set only after a Strava login flow)
+    strava_athlete_id = flask_session.get("athlete_id")
+    strava_connected = bool(strava_athlete_id)
 
-    # Try Auth0 bearer token
-    token = None
+    # Optional Auth0 Bearer token
     auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header.split(" ", 1)[1].strip()
+    token = auth_header.split(" ", 1)[1] if auth_header.startswith("Bearer ") else None
+    user_sub = None
 
-    if not session_athlete_id and token:
+    if token:
         try:
-            jwks_client = PyJWKClient(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json")
-            signing_key = jwks_client.get_signing_key_from_jwt(token).key
+            jwks = PyJWKClient(f"https://{AUTH0_DOMAIN}/.well-known/jwks.json")
+            signing_key = jwks.get_signing_key_from_jwt(token).key
             payload = jwt.decode(
                 token,
                 signing_key,
@@ -84,40 +87,25 @@ def whoami():
                 audience=AUTH0_AUDIENCE,
                 issuer=f"https://{AUTH0_DOMAIN}/",
             )
-            auth0_sub = payload.get("sub")
+            user_sub = payload.get("sub")
         except Exception as e:
-            # Don’t crash, just log and fall through to 401
-            print(f"[whoami] JWT decode failed: {e}", flush=True)
+            # Do not crash; just report unauthenticated below
+            current_app.logger.warning("whoami: JWT decode failed: %s", e)
 
-    print(f"/whoami called. Session contents: {dict(flask_session)}", flush=True)
+    if not user_sub and not strava_connected:
+        return jsonify({"authenticated": False, "reason": "no_auth"}), 401
 
-    if not session_athlete_id and not auth0_sub:
-        return jsonify({"authenticated": False, "reason": "no_session_or_token"}), 401
-
-    db = get_session()
-    try:
-        athlete_id = int(session_athlete_id) if session_athlete_id else None
-        already_synced = (
-            has_existing_activities(db, athlete_id) if athlete_id else False
-        )
-
-        return (
-            jsonify(
-                {
-                    "authenticated": True,
-                    "user_sub": auth0_sub,  # present if Auth0 token was valid
-                    "athlete_id": athlete_id,  # <-- consistent key name
-                    "strava_connected": bool(athlete_id),
-                    "already_synced": already_synced,
-                }
-            ),
-            200,
-        )
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        db.close()
+    return (
+        jsonify(
+            {
+                "authenticated": True,
+                "user_sub": user_sub,
+                "strava_connected": strava_connected,
+                "strava_athlete_id": strava_athlete_id,  # may be string like "debug-athlete"
+            }
+        ),
+        200,
+    )
 
 
 # ------------------------------------------------------------
