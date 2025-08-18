@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:staging": "rimraf dist && vite build --mode staging",
+    "build:staging": "vite build --mode staging",
     "lint": "eslint .",
     "preview": "vite preview"
   },
