@@ -1,7 +1,7 @@
 // src/utils/linkApi.ts
 export type LinkStatus = { linked: boolean; user_id?: string; athlete_id?: number };
 
-const API = import.meta.env.VITE_API_URL ?? "";
+const API = import.meta.env.VITE_API_URL as string; // https://api.smartcoach.dev
 
 function safeJson<T = any>(res: Response): Promise<T> {
   const ct = res.headers.get("content-type") || "";
@@ -14,15 +14,15 @@ function safeJson<T = any>(res: Response): Promise<T> {
   return res.json();
 }
 
-export async function getLink(token: string): Promise<LinkStatus> {
+export async function getLink(token: string) {
   const res = await fetch(`${API}/api/user/link`, {
-    method: "GET",
-    headers: token && token !== "dev" ? { Authorization: `Bearer ${token}` } : {},
+    headers: { Authorization: `Bearer ${token}` },
     credentials: "include",
   });
-  if (res.status === 404) return { linked: false };
-  const data = await safeJson(res);
-  return { linked: true, user_id: data.user_id, athlete_id: data.athlete_id };
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) throw new Error("Non-JSON response");
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export async function postLink(token: string, athleteId: number): Promise<void> {
