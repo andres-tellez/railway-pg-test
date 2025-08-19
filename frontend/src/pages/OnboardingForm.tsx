@@ -74,12 +74,6 @@ const OnboardingForm: React.FC = () => {
     return () => ac.abort();
   }, [isAuthenticated, getToken, methods, navigate]);
 
-  const handleNext = async () => {
-    const valid = await methods.trigger();
-    if (!valid) return;
-    if (step < steps.length - 1) setStep(step + 1);
-    else handleSubmit();
-  };
 
   const handleBack = () => {
     if (step > 0) setStep(step - 1);
@@ -107,6 +101,18 @@ const OnboardingForm: React.FC = () => {
       setSaving(false);
     }
   };
+
+  const handleNext = async () => {
+    const valid = await methods.trigger();
+    console.log("✅ Validation passed?", valid);
+    console.log("🧨 Form errors:", methods.formState.errors);
+
+    if (!valid) return;
+
+    if (step < steps.length - 1) setStep(step + 1);
+    else handleSubmit();
+  };
+
 
   const StepComponent = steps[step].Component;
 
