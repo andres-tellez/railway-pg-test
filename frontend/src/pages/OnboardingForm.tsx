@@ -9,10 +9,17 @@ import { onboardingSchema, OnboardingFormData } from "@/schemas/onboardingSchema
 
 // Step components
 import RaceGoalStep from "@/components/onboarding/steps/RaceGoalStep";; // You can import others here
+import TrainingDaysStep from "@/components/onboarding/steps/TrainingDaysStep";
+import PhysicalStatsStep from "@/components/onboarding/steps/PhysicalStatsStep";
+import RunPreferencesStep from "@/components/onboarding/steps/RunPreferencesStep";
+import RunnerLevelStep from "@/components/onboarding/steps/RunnerLevelStep";
 
 const steps = [
   { title: "Goals", Component: RaceGoalStep },
-  // Add other steps like TrainingDaysStep, PhysicalStatsStep, etc.
+  { title: "Training Days", Component: TrainingDaysStep },
+  { title: "Physical Stats", Component: PhysicalStatsStep },
+  { title: "Preferences", Component: RunPreferencesStep },
+  { title: "Runner Level", Component: RunnerLevelStep },
 ];
 
 const OnboardingForm: React.FC = () => {
