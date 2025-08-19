@@ -45,3 +45,6 @@ frontend/node_modules/
 # Local debug files and test artifacts
 debug_dumps/
 test_failures.txt
+
+# Frontend build output
+frontend/dist/
