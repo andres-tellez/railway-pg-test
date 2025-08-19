@@ -60,7 +60,7 @@ Please change the parent <Route path="${M}"> to <Route path="${M==="/"?"*":`${M}
             path: iss.path ? [${V}, ...iss.path] : [${V}]
           })));
         }
-        
+
         if (${G}.value === undefined) {
           if (${V} in input) {
             newResult[${V}] = undefined;
