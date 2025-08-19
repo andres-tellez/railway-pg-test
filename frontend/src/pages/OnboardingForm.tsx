@@ -1,205 +1,141 @@
 // src/pages/OnboardingForm.tsx
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
+import { useForm, FormProvider } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { authFetchJSON } from "@/utils/authFetch";
+import { onboardingSchema, OnboardingFormData } from "@/schemas/onboardingSchema";
 
-type Profile = {
-  runner_level?: string;
-  race_history?: boolean;
-  race_date?: string | null;
-  race_distance?: string | null;
-  past_races?: string[];
-  heightFeet?: number;     // UI only (server normalizes to height.feet)
-  heightInches?: number;   // UI only (server normalizes to height.inches)
-  weight?: number | null;
-  training_days?: string[];
-  main_goal?: string | null;
-  motivation?: string[];
-  age_group?: string | null;
-  longestRun?: number | null;   // server maps to longest_run
-  run_preference?: string | null;
-};
+// Step components
+import RaceGoalStep from "@/components/onboarding/steps/RaceGoalStep";; // You can import others here
+
+const steps = [
+  { title: "Goals", Component: RaceGoalStep },
+  // Add other steps like TrainingDaysStep, PhysicalStatsStep, etc.
+];
 
 const OnboardingForm: React.FC = () => {
   const { getAccessTokenSilently, isAuthenticated } = useAuth0();
   const navigate = useNavigate();
   const ran = useRef(false);
 
-  const [form, setForm] = useState<Profile>({
-    runner_level: "",
-    race_history: false,
-    race_date: "",
-    race_distance: "",
-    past_races: [],
-    heightFeet: undefined,
-    heightInches: undefined,
-    weight: undefined,
-    training_days: [],
-    main_goal: "",
-    motivation: [],
-    age_group: "",
-    longestRun: undefined,
-    run_preference: "",
+  const methods = useForm<OnboardingFormData>({
+    resolver: zodResolver(onboardingSchema),
+    mode: "onBlur",
   });
+
+  const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // Stable token getter for authFetchJSON
-  const getToken = useCallback(
-    () =>
-      getAccessTokenSilently({
-        authorizationParams: {
-          audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-          scope: "openid profile email offline_access",
-        },
-      }),
-    [getAccessTokenSilently]
-  );
+  const getToken = () =>
+    getAccessTokenSilently({
+      authorizationParams: {
+        audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+        scope: "openid profile email offline_access",
+      },
+    });
 
-  // Load existing profile (server uses token.sub; no querystring)
   useEffect(() => {
     if (!isAuthenticated || ran.current) return;
     ran.current = true;
 
     const ac = new AbortController();
     (async () => {
+      setLoading(true);
       try {
-        setLoading(true);
-        setError(null);
-
-        const { res, json } = await authFetchJSON<{ status: string; data?: any }>(
+        const { res, json } = await authFetchJSON<{ data?: OnboardingFormData }>(
           "/api/onboarding",
           getToken,
           { signal: ac.signal }
         );
 
-        if (res.status === 404) {
-          // Not onboarded yet; keep defaults
-          setLoading(false);
-          return;
+        if (res.ok && json?.data) {
+          methods.reset(json.data);
+          navigate("/dashboard", { replace: true }); // Already onboarded
         }
-        if (!res.ok) throw new Error(`GET /api/onboarding ${res.status}`);
-
-        const data = json?.data ?? {};
-        setForm((prev) => ({
-          ...prev,
-          runner_level: data.runner_level ?? "",
-          race_history: !!data.race_history,
-          race_date: data.race_date ?? "",
-          race_distance: data.race_distance ?? "",
-          past_races: data.past_races ?? [],
-          heightFeet: data.height_feet ?? undefined,
-          heightInches: data.height_inches ?? undefined,
-          weight: data.weight ?? undefined,
-          training_days: data.training_days ?? [],
-          main_goal: data.main_goal ?? "",
-          motivation: data.motivation ?? [],
-          age_group: data.age_group ?? "",
-          longestRun: data.longest_run ?? undefined,
-          run_preference: data.run_preference ?? "",
-        }));
-
-        setLoading(false);
       } catch (e: any) {
-        if (e?.name === "AbortError") return;
-        setError(e?.message || "Failed to load profile");
+        if (e?.name !== "AbortError" && e?.message) {
+          setError(e.message);
+        }
+      } finally {
         setLoading(false);
       }
     })();
-
     return () => ac.abort();
-  }, [isAuthenticated, getToken]);
+  }, [isAuthenticated, getToken, methods, navigate]);
 
-  // Submit → POST /api/onboarding (server uses token.sub; DO NOT send user_id)
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleNext = async () => {
+    const valid = await methods.trigger();
+    if (!valid) return;
+    if (step < steps.length - 1) setStep(step + 1);
+    else handleSubmit();
+  };
+
+  const handleBack = () => {
+    if (step > 0) setStep(step - 1);
+  };
+
+  const handleSubmit = async () => {
     setSaving(true);
     setError(null);
-
     try {
-      const payload: Record<string, any> = { ...form };
-      // (Optional) If your UI stores strings for numbers, coerce here.
-
-      const { res, json } = await authFetchJSON(
-        "/api/onboarding",
-        getToken,
-        { method: "POST", body: JSON.stringify(payload) }
-      );
+      const values = methods.getValues();
+      const { res, json } = await authFetchJSON("/api/onboarding", getToken, {
+        method: "POST",
+        body: JSON.stringify(values),
+      });
 
       if (!res.ok) {
-        const msg =
-          json?.message ||
-          (json?.errors ? JSON.stringify(json.errors) : `save failed ${res.status}`);
+        const msg = json?.message || JSON.stringify(json?.errors) || "Save failed";
         throw new Error(msg);
       }
 
       navigate("/dashboard", { replace: true });
     } catch (e: any) {
-      setError(e?.message || "Failed to save profile");
+      setError(e?.message || "Submit error");
     } finally {
       setSaving(false);
     }
   };
 
-  // ------- Render (replace with your real fields/UI) -------
-  if (loading) return <div className="p-8">Loading profile…</div>;
+  const StepComponent = steps[step].Component;
+
+  if (loading) return <div className="p-8">Loading…</div>;
 
   return (
-    <form className="p-8 space-y-4 max-w-xl" onSubmit={handleSubmit}>
-      <h1 className="text-2xl font-bold">Onboarding</h1>
+    <FormProvider {...methods}>
+      <form className="p-6 max-w-2xl mx-auto space-y-4" onSubmit={(e) => e.preventDefault()}>
+        <h1 className="text-xl font-semibold">{steps[step].title}</h1>
 
-      {error && (
-        <div className="p-3 rounded border border-red-300 bg-red-50 text-red-700">
-          {error}
+        {error && <div className="text-red-600 bg-red-50 border p-2 rounded">{error}</div>}
+
+        <StepComponent />
+
+        <div className="flex justify-between pt-4">
+          {step > 0 && (
+            <button
+              type="button"
+              onClick={handleBack}
+              className="px-4 py-2 border rounded"
+              disabled={saving}
+            >
+              Back
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleNext}
+            className="px-4 py-2 bg-blue-600 text-white rounded"
+            disabled={saving}
+          >
+            {step === steps.length - 1 ? "Finish" : "Next"}
+          </button>
         </div>
-      )}
-
-      <div>
-        <label className="block text-sm mb-1">Runner Level</label>
-        <input
-          className="border px-2 py-1 w-full"
-          value={form.runner_level || ""}
-          onChange={(e) => setForm({ ...form, runner_level: e.target.value })}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-sm mb-1">Height (ft)</label>
-          <input
-            className="border px-2 py-1 w-full"
-            type="number"
-            value={form.heightFeet ?? ""}
-            onChange={(e) =>
-              setForm({ ...form, heightFeet: e.target.value === "" ? undefined : Number(e.target.value) })
-            }
-          />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">Height (in)</label>
-          <input
-            className="border px-2 py-1 w-full"
-            type="number"
-            value={form.heightInches ?? ""}
-            onChange={(e) =>
-              setForm({ ...form, heightInches: e.target.value === "" ? undefined : Number(e.target.value) })
-            }
-          />
-        </div>
-      </div>
-
-      {/* Add the rest of your fields here (dates, enums, multi-selects, etc.) */}
-
-      <button
-        className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-60"
-        disabled={saving}
-        type="submit"
-      >
-        {saving ? "Saving…" : "Save & Continue"}
-      </button>
-    </form>
+      </form>
+    </FormProvider>
   );
 };
 
