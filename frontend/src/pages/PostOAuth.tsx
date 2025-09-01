@@ -1,11 +1,14 @@
+// src/pages/PostOAuth.tsx
 import React, { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
+import { useApiClient } from "@/utils/apiClient";
 
 const PostOAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { isLoading, isAuthenticated, getAccessTokenSilently } = useAuth0();
+  const { isLoading, isAuthenticated } = useAuth0();
   const ran = useRef(false);
+  const api = useApiClient();
 
   useEffect(() => {
     if (ran.current || isLoading || !isAuthenticated) return;
@@ -20,48 +23,24 @@ const PostOAuth: React.FC = () => {
 
     const go = async () => {
       try {
-        const token = await getAccessTokenSilently({
-          authorizationParams: {
-            audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-            scope: "openid profile email offline_access",
-          },
-        });
-
         // 1. Save user identity
-        await fetch("/api/user/identity", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({}),
-          signal: ac.signal,
-        });
+        await api.post("/api/user/identity", {}, { signal: ac.signal });
 
         // 2. Ensure user is created
-        await fetch("/api/user", {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          signal: ac.signal,
-        });
+        await api.get("/api/user", { signal: ac.signal });
 
         // 3. Check onboarding status
-        const onboardingRes = await fetch("/api/onboarding", {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: ac.signal,
-        });
+        const res = await api.get("/api/onboarding", { signal: ac.signal });
 
         done = true;
         clearTimeout(safety);
 
-        if (onboardingRes.status === 404) {
+        if (res.status === 404) {
           navigate("/onboarding", { replace: true });
-        } else if (onboardingRes.ok) {
+        } else if (res.status === 200) {
           navigate("/dashboard", { replace: true });
         } else {
-          throw new Error(`Unexpected response: ${onboardingRes.status}`);
+          throw new Error(`Unexpected response: ${res.status}`);
         }
       } catch (err) {
         console.error("PostOAuth error:", err);
@@ -76,7 +55,7 @@ const PostOAuth: React.FC = () => {
       clearTimeout(safety);
       ac.abort();
     };
-  }, [isLoading, isAuthenticated, getAccessTokenSilently, navigate]);
+  }, [isLoading, isAuthenticated, api, navigate]);
 
   return <div>🔐 Finishing sign-in…</div>;
 };

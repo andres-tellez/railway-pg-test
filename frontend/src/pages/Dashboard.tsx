@@ -1,6 +1,7 @@
 // src/pages/Dashboard.tsx
 import React, { useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
+import { useApiClient } from "../utils/apiClient";
 
 type UserInfo = {
   name: string;
@@ -11,17 +12,15 @@ type UserInfo = {
 };
 
 const Dashboard: React.FC = () => {
-  const { isAuthenticated, isLoading, getAccessTokenSilently, user } = useAuth0();
+  const { isAuthenticated, isLoading, user } = useAuth0();
+  const api = useApiClient();
+
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [activityCount, setActivityCount] = useState<number>(0);
   const [syncing, setSyncing] = useState(false);
 
   const fetchUserData = async () => {
-    const token = await getAccessTokenSilently();
-    const res = await fetch("/api/user", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
+    const { data } = await api.get("/api/user");
     setUserInfo({
       name: data.name || user?.name || "",
       email: data.email || user?.email || "",
@@ -32,23 +31,13 @@ const Dashboard: React.FC = () => {
   };
 
   const fetchActivityCount = async () => {
-    const token = await getAccessTokenSilently();
-    const res = await fetch("/api/activities/status", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setActivityCount(data.recentActivitiesCount || 0);
-    }
+    const { data } = await api.get("/api/activities/status");
+    setActivityCount(data.recentActivitiesCount || 0);
   };
 
   const syncActivities = async () => {
     setSyncing(true);
-    const token = await getAccessTokenSilently();
-    await fetch("/api/activities/sync", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    await api.post("/api/activities/sync");
     await fetchActivityCount();
     setSyncing(false);
   };
@@ -79,30 +68,25 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {[
-          {
-            label: "Onboarding Complete",
-            status: userInfo.hasOnboarded,
-            actionLabel: "Complete Onboarding",
-            onClick: () => (window.location.href = "/onboarding"),
-          },
-          {
-            label: "Strava Connected",
-            status: userInfo.hasStrava,
-            actionLabel: "Connect Strava",
-            onClick: () => (window.location.href = "/auth/strava"),
-          },
-          {
-            label: "10+ Activities Found",
-            status: activityCount >= 10,
-            actionLabel: "Sync Activities",
-            onClick: syncActivities,
-          },
-          {
-            label: "Authenticated",
-            status: true,
-          },
-        ].map(({ label, status, actionLabel, onClick }, idx) => (
+        {[{
+          label: "Onboarding Complete",
+          status: userInfo.hasOnboarded,
+          actionLabel: "Complete Onboarding",
+          onClick: () => window.location.href = "/onboarding",
+        }, {
+          label: "Strava Connected",
+          status: userInfo.hasStrava,
+          actionLabel: "Connect Strava",
+          onClick: () => window.location.href = "/auth/strava",
+        }, {
+          label: "10+ Activities Found",
+          status: activityCount >= 10,
+          actionLabel: "Sync Activities",
+          onClick: syncActivities,
+        }, {
+          label: "Authenticated",
+          status: true,
+        }].map(({ label, status, actionLabel, onClick }, idx) => (
           <div key={idx} className="bg-white shadow rounded-lg p-4 flex flex-col justify-between">
             <div>
               <h2 className="text-lg font-medium">{label}</h2>

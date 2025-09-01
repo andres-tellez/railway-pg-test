@@ -1,24 +1,27 @@
 // src/utils/linkApi.ts
-import { authFetchJSON } from "./authFetch";
+import { useApiClient } from "./apiClient";
 
 export type LinkStatus =
   | { linked: false }
   | { linked: true; user_id: string; athlete_id: number };
 
-export async function getLink(getToken: () => Promise<string>) {
-  const { json } = await authFetchJSON<LinkStatus>("/api/user/link", getToken);
-  return json;
-}
+export function useLinkApi() {
+  const api = useApiClient();
 
-export async function postLink(getToken: () => Promise<string>, athlete_id: number) {
-  const { json } = await authFetchJSON<LinkStatus>("/api/user/link", getToken, {
-    method: "POST",
-    body: JSON.stringify({ athlete_id }),
-  });
-  return json;
-}
+  const getLink = async (): Promise<LinkStatus> => {
+    const { data } = await api.get<LinkStatus>("/api/user/link");
+    return data;
+  };
 
-export async function deleteLink(getToken: () => Promise<string>) {
-  await authFetchJSON("/api/user/link", getToken, { method: "DELETE" });
-  return true;
+  const postLink = async (athlete_id: number): Promise<LinkStatus> => {
+    const { data } = await api.post<LinkStatus>("/api/user/link", { athlete_id });
+    return data;
+  };
+
+  const deleteLink = async (): Promise<boolean> => {
+    await api.delete("/api/user/link");
+    return true;
+  };
+
+  return { getLink, postLink, deleteLink };
 }

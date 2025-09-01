@@ -1,9 +1,11 @@
+// src/pages/OnboardingForm.tsx
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { onboardingSchema, OnboardingFormData } from "@/schemas/onboardingSchema";
+import { useApiClient } from "@/utils/apiClient";
 
 // Step components
 import RaceGoalStep from "@/components/onboarding/steps/RaceGoalStep";
@@ -21,7 +23,8 @@ const steps = [
 ];
 
 const OnboardingForm: React.FC = () => {
-  const { getAccessTokenSilently, isAuthenticated } = useAuth0();
+  const { isAuthenticated } = useAuth0();
+  const api = useApiClient();
   const navigate = useNavigate();
   const ran = useRef(false);
 
@@ -43,24 +46,13 @@ const OnboardingForm: React.FC = () => {
     (async () => {
       setLoading(true);
       try {
-        const token = await getAccessTokenSilently({
-          authorizationParams: {
-            audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-            scope: "openid profile email offline_access",
-          },
-        });
-
-        const res = await fetch("/api/onboarding", {
-          headers: { Authorization: `Bearer ${token}` },
+        const { data } = await api.get("/api/onboarding", {
           signal: ac.signal,
         });
 
-        if (res.ok) {
-          const json = await res.json();
-          if (json?.data) {
-            methods.reset(json.data);
-            navigate("/dashboard", { replace: true });
-          }
+        if (data) {
+          methods.reset(data);
+          navigate("/dashboard", { replace: true });
         }
       } catch (e: any) {
         if (e?.name !== "AbortError") {
@@ -71,7 +63,7 @@ const OnboardingForm: React.FC = () => {
       }
     })();
     return () => ac.abort();
-  }, [isAuthenticated, getAccessTokenSilently, methods, navigate]);
+  }, [isAuthenticated, api, methods, navigate]);
 
   const handleBack = () => {
     if (step > 0) setStep(step - 1);
@@ -81,32 +73,12 @@ const OnboardingForm: React.FC = () => {
     setSaving(true);
     setError(null);
     try {
-      const token = await getAccessTokenSilently({
-        authorizationParams: {
-          audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-          scope: "openid profile email offline_access",
-        },
-      });
-
       const values = methods.getValues();
-      const res = await fetch("/api/onboarding", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(values),
-      });
-
-      if (!res.ok) {
-        const json = await res.json();
-        const msg = json?.message || JSON.stringify(json?.errors) || "Save failed";
-        throw new Error(msg);
-      }
-
+      await api.post("/api/onboarding", values);
       navigate("/dashboard", { replace: true });
     } catch (e: any) {
-      setError(e?.message || "Submit error");
+      const msg = e?.response?.data?.message || JSON.stringify(e?.response?.data?.errors) || "Submit error";
+      setError(msg);
     } finally {
       setSaving(false);
     }

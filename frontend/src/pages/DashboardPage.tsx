@@ -1,24 +1,25 @@
+// src/pages/DashboardPage.tsx
 import React, { useEffect, useState } from "react";
 import UserInfoCard from "../components/UserInfoCard";
 import StatusTable from "../components/StatusTable";
+import { useApiClient } from "../utils/apiClient";
 
 export default function DashboardPage() {
+  const api = useApiClient();
+
   const [identity, setIdentity] = useState<any>(null);
   const [status, setStatus] = useState<any>(null);
   const [activityCount, setActivityCount] = useState<number | null>(null);
 
   useEffect(() => {
     async function fetchData() {
-      const resUser = await fetch("/api/user");
-      const dataUser = await resUser.json();
-      const resIdentity = await fetch("/api/user/identity");
-      const dataIdentity = await resIdentity.json();
-      const resActivities = await fetch("/api/strava/activities/status");
-      const dataActivities = await resActivities.json();
+      const { data: userStatus } = await api.get("/api/user");
+      const { data: userIdentity } = await api.get("/api/user/identity");
+      const { data: activities } = await api.get("/api/strava/activities/status");
 
-      setStatus(dataUser);
-      setIdentity(dataIdentity);
-      setActivityCount(dataActivities.recentActivitiesCount);
+      setStatus(userStatus);
+      setIdentity(userIdentity);
+      setActivityCount(activities.recentActivitiesCount);
     }
     fetchData();
   }, []);
@@ -42,7 +43,7 @@ export default function DashboardPage() {
           onboard: () => window.location.href = "/onboarding",
           connectStrava: () => window.location.href = "/auth/strava",
           fetchActivities: async () => {
-            await fetch("/api/strava/sync", { method: "POST" });
+            await api.post("/api/strava/sync");
             window.location.reload();
           },
         }}
