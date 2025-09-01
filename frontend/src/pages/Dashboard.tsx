@@ -13,41 +13,54 @@ type UserInfo = {
 
 const Dashboard: React.FC = () => {
   const { isAuthenticated, isLoading, user } = useAuth0();
-  const api = useApiClient();
+  const { call } = useApiClient();
 
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [activityCount, setActivityCount] = useState<number>(0);
   const [syncing, setSyncing] = useState(false);
 
   const fetchUserData = async () => {
-    const { data } = await api.get("/api/user");
-    setUserInfo({
-      name: data.name || user?.name || "",
-      email: data.email || user?.email || "",
-      picture: data.picture || user?.picture || "",
-      hasOnboarded: data.hasOnboarded,
-      hasStrava: data.hasStrava,
-    });
+    try {
+      const { data } = await call("get", "/api/user");
+      setUserInfo({
+        name: data.name || user?.name || "",
+        email: data.email || user?.email || "",
+        picture: data.picture || user?.picture || "",
+        hasOnboarded: data.hasOnboarded,
+        hasStrava: data.hasStrava,
+      });
+    } catch (err) {
+      console.error("Failed to fetch user data:", err);
+    }
   };
 
   const fetchActivityCount = async () => {
-    const { data } = await api.get("/api/activities/status");
-    setActivityCount(data.recentActivitiesCount || 0);
+    try {
+      const { data } = await call("get", "/api/activities/status");
+      setActivityCount(data.recentActivitiesCount || 0);
+    } catch (err) {
+      console.error("Failed to fetch activity count:", err);
+    }
   };
 
   const syncActivities = async () => {
-    setSyncing(true);
-    await api.post("/api/activities/sync");
-    await fetchActivityCount();
-    setSyncing(false);
+    try {
+      setSyncing(true);
+      await call("post", "/api/activities/sync");
+      await fetchActivityCount();
+    } catch (err) {
+      console.error("Activity sync failed:", err);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchUserData();
-      fetchActivityCount();
-    }
-  }, [isAuthenticated]);
+    if (!isAuthenticated || isLoading) return;
+
+    fetchUserData();
+    fetchActivityCount();
+  }, [isAuthenticated, isLoading]);
 
   if (isLoading) return <div className="p-6">🔄 Loading auth...</div>;
   if (!isAuthenticated) return <div className="p-6 text-red-600">❌ Not authenticated</div>;
