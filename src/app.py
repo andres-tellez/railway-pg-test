@@ -112,6 +112,15 @@ def create_app(test_config=None):
         except Exception as e:
             return {"error": str(e)}, 500
 
+    @app.route("/debug-files-root")
+    def debug_files_root():
+        from pathlib import Path
+
+        return {
+            "cwd": os.getcwd(),
+            "files": [str(p) for p in Path(".").glob("**/*") if p.is_file()],
+        }
+
     @app.after_request
     def debug_cookie(response):
         print("🔍 Set-Cookie header:", response.headers.get("Set-Cookie"), flush=True)
