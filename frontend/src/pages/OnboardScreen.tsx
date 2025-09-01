@@ -1,51 +1,32 @@
 import React, { useState } from "react";
-import { getAccessToken, getAuthHeader, getUserIdFromToken } from "../utils/auth";
+import { useApiClient } from "../utils/apiClient";
 
 export default function OnboardScreen() {
-  const [name, setName] = useState("");
-  const [goal, setGoal] = useState("");
+  const api = useApiClient();
+
+  const [form, setForm] = useState({ name: "", goal: "" });
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const token = getAccessToken();
-    if (!token) {
-      setError("⚠️ No access token found. Please log in first.");
-      return;
-    }
-
-    const userId = getUserIdFromToken(token);
-    if (!userId) {
-      setError("⚠️ Invalid access token. Please re-login.");
-      return;
-    }
-
-    const payload = { user_id: userId, name, goal };
-    console.log("📤 Submitting onboarding payload:", payload);
-
     try {
-      const apiBase = import.meta.env.VITE_BACKEND_URL;
-      const res = await fetch(`${apiBase}/api/onboarding`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeader(),
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.ok) {
+      const res = await api.post("/api/onboarding", form);
+      if (res.status === 200) {
         setSubmitted(true);
         setError(null);
       } else {
-        const data = await res.json();
-        setError(data?.error || "Submission failed");
-        console.error("❌ API Error:", data);
+        setError(res.data?.error || "Submission failed.");
+        console.error("❌ API error:", res.data);
       }
-    } catch (err) {
-      console.error("❌ Network Error:", err);
+    } catch (err: any) {
+      console.error("❌ Network error:", err);
       setError("Network error occurred. Please try again.");
     }
   };
@@ -61,10 +42,11 @@ export default function OnboardScreen() {
           <div>
             <label className="block font-semibold mb-1">Your Name</label>
             <input
+              name="name"
               type="text"
               className="w-full border rounded px-3 py-2"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={form.name}
+              onChange={handleChange}
               required
             />
           </div>
@@ -72,10 +54,11 @@ export default function OnboardScreen() {
           <div>
             <label className="block font-semibold mb-1">Goal (e.g. Run 5K)</label>
             <input
+              name="goal"
               type="text"
               className="w-full border rounded px-3 py-2"
-              value={goal}
-              onChange={(e) => setGoal(e.target.value)}
+              value={form.goal}
+              onChange={handleChange}
               required
             />
           </div>
