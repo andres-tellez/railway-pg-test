@@ -61,7 +61,8 @@ function LoginPage() {
 }
 
 function HomeGate() {
-  const { isLoading, isAuthenticated } = useAuth0();
+  const { isLoading, isAuthenticated, user } = useAuth0();
+  console.log("🔍 Auth State", { isAuthenticated, isLoading, user });
   if (isLoading) return <div className="p‑6">🔄 Loading…</div>;
   return isAuthenticated ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />;
 }

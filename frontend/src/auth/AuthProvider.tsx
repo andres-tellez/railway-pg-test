@@ -30,8 +30,8 @@ const AuthProviderWithHistory: React.FC<{ children: React.ReactNode }> = ({ chil
         scope: "openid profile email offline_access",
       }}
       onRedirectCallback={onRedirectCallback}
-      cacheLocation="memory"
-      useRefreshTokens={false}
+      cacheLocation="localstorage"
+      useRefreshTokens={true}
       useCookiesForTransactions={true}
     >
       {children}
