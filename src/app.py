@@ -57,7 +57,7 @@ def create_app(test_config=None):
     from src.db.db_session import db
 
     # ✅ CORS setup
-    cors_origins = os.getenv("CORS_ORIGINS", "")
+    cors_origins = os.getenv("CORS_ORIGINS", "https://app.smartcoach.dev")
     origin_list = [o.strip().strip(";") for o in cors_origins.split(",") if o.strip()]
     CORS(
         app,
@@ -96,30 +96,34 @@ def create_app(test_config=None):
     # 🔗 Register Blueprints
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
-    app.register_blueprint(activity_bp, url_prefix="/api/activities")  # ✅ Updated here
+    app.register_blueprint(activity_bp, url_prefix="/api/activities")
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
     app.register_blueprint(user_profile_bp)
     app.register_blueprint(identity_bp)
     app.register_blueprint(auth_me_bp)
 
-    # 🛠 Debug Utilities
-    @app.route("/debug-files")
-    def debug_files():
-        try:
-            files = [p.name for p in Path(".").iterdir()]
-            return {"cwd": os.getcwd(), "files": files}
-        except Exception as e:
-            return {"error": str(e)}, 500
+    # ✅ Global OPTIONS handler for preflight support
+    @app.before_request
+    def log_request_details():
+        origin = request.headers.get("Origin")
+        method = request.method
+        print(f"🌐 Incoming request from Origin: {origin}", flush=True)
+        print(f"📡 Incoming {method} request to: {request.path}", flush=True)
+        print("🍪 Request cookies:", request.cookies, flush=True)
 
-    @app.route("/debug-files-root")
-    def debug_files_root():
-        from pathlib import Path
+        # Log auth header for debug
+        if "Authorization" in request.headers:
+            print(
+                "🔐 Authorization header present (len={}):".format(
+                    len(request.headers["Authorization"])
+                ),
+                flush=True,
+            )
 
-        return {
-            "cwd": os.getcwd(),
-            "files": [str(p) for p in Path(".").glob("**/*") if p.is_file()],
-        }
+        if method == "OPTIONS":
+            print("🚦 Handling OPTIONS preflight", flush=True)
+            return ("", 204)
 
     @app.after_request
     def debug_cookie(response):
@@ -171,13 +175,6 @@ def create_app(test_config=None):
 
             traceback.print_exc()
             return {"status": "fail", "error": str(e)}, 500
-
-    @app.before_request
-    def log_request_details():
-        origin = request.headers.get("Origin")
-        print(f"🌐 Incoming request from Origin: {origin}", flush=True)
-        print(f"📡 Incoming {request.method} request to: {request.path}", flush=True)
-        print("🍪 Request cookies:", request.cookies, flush=True)
 
     if os.getenv("DEBUG_AUTH") == "1":
 
