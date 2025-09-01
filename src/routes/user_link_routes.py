@@ -1,17 +1,16 @@
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt
-
+# src/routes/user_link_routes.py
+from flask import Blueprint, request, jsonify, g
 from src.db.db_session import get_session
 from src.db.dao.user_athletes_dao import create_link, get_link_by_user, delete_link
+from src.utils.auth0_jwt import requires_auth
 
-user_link_bp = Blueprint("user_link", __name__)
+user_link_bp = Blueprint("user_link", __name__, url_prefix="/api/user/link")
 
 
-@user_link_bp.route("/api/user/link", methods=["POST"])
-@jwt_required()
+@user_link_bp.post("")
+@requires_auth
 def post_link():
-    # sub comes from the (mocked) JWT in tests
-    sub = get_jwt().get("sub")
+    sub = (getattr(g, "current_user", {}) or {}).get("sub")
     session = get_session()
     try:
         payload = request.get_json() or {}
@@ -25,10 +24,10 @@ def post_link():
         session.close()
 
 
-@user_link_bp.route("/api/user/link", methods=["GET"])
-@jwt_required()
+@user_link_bp.get("")
+@requires_auth
 def get_link():
-    sub = get_jwt().get("sub")
+    sub = (getattr(g, "current_user", {}) or {}).get("sub")
     session = get_session()
     try:
         row = get_link_by_user(session, sub)
@@ -39,10 +38,10 @@ def get_link():
         session.close()
 
 
-@user_link_bp.route("/api/user/link", methods=["DELETE"])
-@jwt_required()
+@user_link_bp.delete("")
+@requires_auth
 def delete_link_route():
-    sub = get_jwt().get("sub")
+    sub = (getattr(g, "current_user", {}) or {}).get("sub")
     session = get_session()
     try:
         deleted = delete_link(session, sub)

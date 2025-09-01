@@ -12,12 +12,12 @@ charset-normalizer==3.4.2
 click==8.2.1
 colorama==0.4.6
 croniter==6.0.0
+cryptography
 distlib==0.4.0
 distro==1.9.0
 filelock==3.18.0
 Flask==3.1.0
 flask-cors==6.0.1
-Flask-JWT-Extended==4.7.1
 Flask-Session
 flexcache==0.3
 flexparser==0.4

@@ -65,3 +65,18 @@ def get_user_profile(user_id: str) -> dict:
         profile = normalize_postgres_row(result) if result else None
 
         return profile
+
+
+from src.db.models.user_profile import user_profile_table  # ✅
+
+
+from sqlalchemy import select
+from src.db.db_session import get_engine
+
+
+def exists_user_profile(user_id: str) -> bool:
+    engine = get_engine()
+    with engine.begin() as conn:
+        stmt = select(user_profile_table).where(user_profile_table.c.user_id == user_id)
+        result = conn.execute(stmt).fetchone()
+        return result is not None

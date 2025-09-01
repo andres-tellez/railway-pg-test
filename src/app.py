@@ -38,7 +38,7 @@ print(f"✅ Loaded environment: {env_path}", flush=True)
 print(f"📍 STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
 # 🌐 Flask Setup
-from flask import Flask, request, redirect
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 import src.utils.config as config
 from src.routes.admin_routes import admin_bp
@@ -49,14 +49,14 @@ from src.routes.ask_routes import ask_bp
 from src.routes.user_profile_routes import user_profile_bp
 from src.routes.user_identity_routes import identity_bp
 from src.routes.auth_me_routes import auth_me_bp
-from src.utils.auth0_jwt import requires_auth  # <-- needed for /_debug/me
-from flask import jsonify, g
+from src.utils.auth0_jwt import requires_auth
 
 
 def create_app(test_config=None):
     app = Flask(__name__)
+    from src.db.db_session import db
 
-    # ❌ No flask_jwt_extended. We use Auth0 (@requires_auth) + Flask session (Strava).
+    # ✅ CORS setup
     cors_origins = os.getenv("CORS_ORIGINS", "")
     origin_list = [o.strip().strip(";") for o in cors_origins.split(",") if o.strip()]
     CORS(
@@ -69,7 +69,7 @@ def create_app(test_config=None):
     print("🔬 Raw CORS_ORIGINS from env:", repr(cors_origins), flush=True)
     print("🛂 Allowed CORS origins:", origin_list, flush=True)
 
-    # 🔐 Allow cross-origin cookies
+    # 🔐 Cookie/session handling
     app.config.update(
         SESSION_COOKIE_NAME="smartcoach_session",
         SESSION_COOKIE_SAMESITE="None",
@@ -79,30 +79,31 @@ def create_app(test_config=None):
         SESSION_COOKIE_PATH="/",
     )
 
+    # ✅ Required app config values
     app.config.from_mapping(
-        SECRET_KEY=config.SECRET_KEY,
-        DATABASE_URL=os.getenv("DATABASE_URL"),
+        SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL"),
         CRON_SECRET_KEY=config.CRON_SECRET_KEY,
         INTERNAL_API_KEY=config.INTERNAL_API_KEY,
         SESSION_TYPE="filesystem",
     )
 
-    # ✅ Initialize sessions
+    db.init_app(app)
     Session(app)
 
     if test_config:
         app.config.update(test_config)
 
-    # 🔗 Blueprints
+    # 🔗 Register Blueprints
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(admin_bp, url_prefix="/admin")
-    app.register_blueprint(activity_bp, url_prefix="/sync")
+    app.register_blueprint(activity_bp, url_prefix="/api/activities")  # ✅ Updated here
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
     app.register_blueprint(user_profile_bp)
     app.register_blueprint(identity_bp)
-    app.register_blueprint(auth_me_bp)  # optional helper (/me) behind Auth0
+    app.register_blueprint(auth_me_bp)
 
+    # 🛠 Debug Utilities
     @app.route("/debug-files")
     def debug_files():
         try:
@@ -169,7 +170,6 @@ def create_app(test_config=None):
         print(f"📡 Incoming {request.method} request to: {request.path}", flush=True)
         print("🍪 Request cookies:", request.cookies, flush=True)
 
-    # --- DEBUG ONLY (enable with DEBUG_AUTH=1 in env) -------------------------
     if os.getenv("DEBUG_AUTH") == "1":
 
         @app.get("/_debug/headers")
@@ -201,8 +201,6 @@ def create_app(test_config=None):
                 ),
                 200,
             )
-
-    # -------------------------------------------------------------------------
 
     @app.errorhandler(Exception)
     def handle_exception(e):

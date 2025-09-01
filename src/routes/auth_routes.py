@@ -7,8 +7,6 @@ from flask import (
     current_app,
 )
 import traceback
-from datetime import datetime, timedelta
-import jwt
 import os
 from urllib.parse import urlencode
 import requests  # for HTTPError type
@@ -31,30 +29,15 @@ from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
 )
 
+# ✅ Use our single source of truth for JWT
+from src.utils.auth0_jwt import verify_and_decode
+
 auth_bp = Blueprint("auth", __name__)
-
-
-@auth_bp.route("/login", methods=["POST"])
-def admin_login():
-    data = request.get_json(silent=True)
-    if data is None:
-        return jsonify({"error": "Missing JSON"}), 400
-
-    username = (data.get("username") or "").strip()
-    password = (data.get("password") or "").strip()
-
-    if username == config.ADMIN_USER and password == config.ADMIN_PASS:
-        return jsonify({"access_token": "ok", "refresh_token": "ok"}), 200
-
-    return jsonify({"error": "Unauthorized"}), 401
 
 
 # ------------------------------------------------------------
 # Who am I? (reads Flask session set by /auth/callback)
 # ------------------------------------------------------------
-
-
-from jose.exceptions import JWTError
 
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
 AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
@@ -66,7 +49,6 @@ ALGORITHMS = ["RS256"]
 # ------------------------------------------------------------
 @auth_bp.route("/login", methods=["GET"])
 def login_redirect_alias():
-    # Many old tests still call GET /auth/login; keep this as a redirect to Strava.
     return strava_login_redirect()
 
 
@@ -77,7 +59,6 @@ def login_redirect_alias():
 def strava_login_redirect():
     print("🛑 Flask route /auth/strava-login was triggered", flush=True)
 
-    # ✅ Avoid passing a second positional arg to patched os.getenv in tests
     redirect_uri = (os.getenv("STRAVA_REDIRECT_URI") or "").strip().rstrip(";")
     client_id = os.getenv("STRAVA_CLIENT_ID") or ""
 
@@ -98,7 +79,6 @@ def strava_connect_alias():
 
 @auth_bp.route("/debug/set", methods=["GET"])
 def debug_set_cookie():
-    # write to the Flask session (forces Set-Cookie)
     flask_session["athlete_id"] = "debug-athlete"
     flask_session.permanent = True
     return jsonify({"status": "set", "session": dict(flask_session)}), 200
@@ -106,7 +86,6 @@ def debug_set_cookie():
 
 @auth_bp.route("/debug/show", methods=["GET"])
 def debug_show_cookie():
-    # what Flask sees from the incoming request
     return (
         jsonify(
             {
@@ -120,8 +99,6 @@ def debug_show_cookie():
 
 # ------------------------------------------------------------
 # Strava OAuth callback (GET)
-#   - In testing mode, return a *plain text* body that includes
-#     "Token stored for athlete_id: <id>" so tests can assert on it.
 # ------------------------------------------------------------
 @auth_bp.route("/callback", methods=["GET"])
 def callback():
@@ -154,18 +131,15 @@ def callback():
         except requests.exceptions.HTTPError as e:
             return jsonify({"error": "Callback error", "detail": str(e)}), 502
 
-        # ✅ Store athlete_id in session before redirect
         flask_session["athlete_id"] = athlete_id
         print(
             f"✅ Flask session contents before redirect: {dict(flask_session)}",
             flush=True,
         )
 
-        # ✅ Testing support (used in test harnesses)
         if current_app.testing:
             return f"Token stored for athlete_id: {athlete_id}", 200
 
-        # ✅ Production redirect
         return redirect(frontend_redirect or "/post-oauth")
 
     except Exception as e:
@@ -176,7 +150,7 @@ def callback():
 
 
 # ------------------------------------------------------------
-# Strava OAuth callback (POST JSON exchange) — unchanged semantics
+# Strava OAuth callback (POST JSON exchange)
 # ------------------------------------------------------------
 @auth_bp.route("/callback", methods=["POST"])
 def callback_token_exchange():
@@ -202,7 +176,6 @@ def callback_token_exchange():
         )
         flask_session["athlete_id"] = athlete_id
 
-        # token value unused by tests; keep simple success payload
         return jsonify({"status": "success", "athlete_id": athlete_id}), 200
 
     except Exception as e:
@@ -225,11 +198,10 @@ def refresh_token(athlete_id):
 
         token = auth_header.split(" ")[1]
         try:
-            jwt.decode(token, config.SECRET_KEY, algorithms=["HS256"])
-        except jwt.ExpiredSignatureError:
-            return jsonify({"error": "Refresh token expired"}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({"error": "Invalid token"}), 401
+            # ✅ Use Auth0 RS256 verify instead of HS256
+            verify_and_decode(token)
+        except Exception as e:
+            return jsonify({"error": f"Invalid token: {str(e)}"}), 401
 
         refreshed = refresh_token_if_expired(session, athlete_id)
         return jsonify({"refreshed": refreshed}), 200
@@ -255,7 +227,7 @@ def logout(athlete_id):
 
 
 # ------------------------------------------------------------
-# Diagnostics / profile / ingest — unchanged
+# Diagnostics / profile / ingest
 # ------------------------------------------------------------
 @auth_bp.route("/monitor-tokens", methods=["GET"])
 def monitor_tokens():

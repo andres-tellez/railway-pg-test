@@ -1,10 +1,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from flask import Flask
-import jwt
-from datetime import datetime, timedelta
-import src.utils.config as config
 from src.routes.auth_routes import auth_bp
+import src.utils.config as config
 
 # ----------------------
 # Test Setup
@@ -14,17 +12,11 @@ from src.routes.auth_routes import auth_bp
 @pytest.fixture
 def client():
     app = Flask(__name__)
-    app.secret_key = "test-secret-key"  # Required for flask.session usage
+    app.secret_key = "test-secret-key"  # still needed for flask.session
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.config["TESTING"] = True
     with app.test_client() as client:
         yield client
-
-
-def create_jwt_token(sub="admin", exp=None):
-    if exp is None:
-        exp = datetime.utcnow() + timedelta(seconds=config.ACCESS_TOKEN_EXP)
-    return jwt.encode({"sub": sub, "exp": exp}, config.SECRET_KEY, algorithm="HS256")
 
 
 # ----------------------
@@ -101,36 +93,6 @@ def test_callback_exception(mock_get_session, mock_store_tokens, client):
     response = client.get("/auth/callback?code=code")
     assert response.status_code == 500
     assert "Callback error" in response.get_data(as_text=True)
-
-
-# ----------------------
-# /auth/refresh/<athlete_id> POST
-# ----------------------
-
-
-@patch("src.routes.auth_routes.get_session")
-@patch("src.routes.auth_routes.refresh_token_if_expired")
-def test_refresh_token_success(mock_refresh, mock_get_session, client):
-    mock_refresh.return_value = True
-    mock_get_session.return_value = MagicMock()
-    token = create_jwt_token()
-    headers = {"Authorization": f"Bearer {token}"}
-    response = client.post("/auth/refresh/1", headers=headers)
-    assert response.status_code == 200
-    assert response.json == {"refreshed": True}
-
-
-def test_refresh_token_missing_auth_header(client):
-    response = client.post("/auth/refresh/1")
-    assert response.status_code == 401
-    assert "Missing or invalid Authorization header" in response.json["error"]
-
-
-def test_refresh_token_invalid_token(client):
-    headers = {"Authorization": "Bearer invalidtoken"}
-    response = client.post("/auth/refresh/1", headers=headers)
-    assert response.status_code == 401
-    assert response.json["error"] == "Invalid token"
 
 
 # ----------------------

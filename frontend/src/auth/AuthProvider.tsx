@@ -1,19 +1,12 @@
 // frontend/src/auth/AuthProvider.tsx
 import { Auth0Provider } from "@auth0/auth0-react";
 import React from "react";
-import { useNavigate } from "react-router-dom";
 
 const AuthProviderWithHistory: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  return <InnerAuthProvider>{children}</InnerAuthProvider>;
-};
-
-const InnerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const navigate = useNavigate();
-
-  const domain       = import.meta.env.VITE_AUTH0_DOMAIN;
-  const clientId     = import.meta.env.VITE_AUTH0_CLIENT_ID;
-  const redirectUri  = import.meta.env.VITE_AUTH0_REDIRECT_URI; // https://localhost:5173/post-oauth
-  const audience     = import.meta.env.VITE_AUTH0_AUDIENCE;     // https://api.smartcoach.dev
+  const domain = import.meta.env.VITE_AUTH0_DOMAIN;
+  const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID;
+  const redirectUri = import.meta.env.VITE_AUTH0_REDIRECT_URI; // e.g. https://localhost:5173/post-oauth
+  const audience = import.meta.env.VITE_AUTH0_AUDIENCE;        // e.g. https://api.smartcoach.dev
 
   console.log("🔍 Auth0 Config", { domain, clientId, redirectUri, audience });
 
@@ -21,8 +14,10 @@ const InnerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }
     throw new Error("Missing Auth0 env values");
   }
 
+  // Use window.location for redirect fallback
   const onRedirectCallback = (appState?: { returnTo?: string }) => {
-    navigate(appState?.returnTo || "/dashboard", { replace: true });
+    window.history.replaceState({}, document.title, window.location.pathname);
+    window.location.assign(appState?.returnTo || "/dashboard");
   };
 
   return (
@@ -36,8 +31,8 @@ const InnerAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }
       }}
       onRedirectCallback={onRedirectCallback}
       cacheLocation="localstorage"
-      useRefreshTokens
-      useCookiesForTransactions
+      useRefreshTokens={true}
+      useCookiesForTransactions={true}
     >
       {children}
     </Auth0Provider>

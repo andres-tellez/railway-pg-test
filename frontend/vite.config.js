@@ -1,10 +1,7 @@
-// vite.config.js
+import fs from "fs";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
-import mkcert from "vite-plugin-mkcert";
-import tailwindcss from "@tailwindcss/vite";
 import path from "path";
-import fs from "fs";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
@@ -12,10 +9,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: "/",
-    plugins: [react(), mkcert(), tailwindcss()],
+    plugins: [react()],
     resolve: {
       alias: {
-        "@": path.resolve(__dirname, "./src"),
+        "@": path.resolve(__dirname, "src"),
       },
     },
     server: {
@@ -26,12 +23,17 @@ export default defineConfig(({ mode }) => {
       },
       strictPort: true,
       proxy: {
-        "/auth": { target: backendTarget, changeOrigin: true, secure: false },
-        "/api": { target: backendTarget, changeOrigin: true, secure: false },
+        "/auth": {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        "/api": {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
       },
-      historyApiFallback: true,
-    },
-    preview: {
       historyApiFallback: true,
     },
     build: {

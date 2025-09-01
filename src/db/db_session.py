@@ -1,9 +1,15 @@
+# src/db/db_session.py
+
+from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 import src.utils.config as config
 
-# Global declarative base — shared across models
+# ✅ SQLAlchemy instance for Flask use
+db = SQLAlchemy()
+
+# ✅ Declarative base for non-Flask models
 Base = declarative_base()
 
 
@@ -39,8 +45,8 @@ def get_db():
     Use in routes: `db = next(get_db())` or in context managers.
     """
     SessionLocal = get_session()
-    db = SessionLocal()
+    db_session = SessionLocal()
     try:
-        yield db
+        yield db_session
     finally:
-        db.close()
+        db_session.close()

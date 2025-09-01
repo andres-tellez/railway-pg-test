@@ -1,14 +1,12 @@
-// src/pages/OnboardingForm.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { authFetchJSON } from "@/utils/authFetch";
 import { onboardingSchema, OnboardingFormData } from "@/schemas/onboardingSchema";
 
 // Step components
-import RaceGoalStep from "@/components/onboarding/steps/RaceGoalStep";; // You can import others here
+import RaceGoalStep from "@/components/onboarding/steps/RaceGoalStep";
 import TrainingDaysStep from "@/components/onboarding/steps/TrainingDaysStep";
 import PhysicalStatsStep from "@/components/onboarding/steps/PhysicalStatsStep";
 import RunPreferencesStep from "@/components/onboarding/steps/RunPreferencesStep";
@@ -37,14 +35,6 @@ const OnboardingForm: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const getToken = () =>
-    getAccessTokenSilently({
-      authorizationParams: {
-        audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-        scope: "openid profile email offline_access",
-      },
-    });
-
   useEffect(() => {
     if (!isAuthenticated || ran.current) return;
     ran.current = true;
@@ -53,27 +43,35 @@ const OnboardingForm: React.FC = () => {
     (async () => {
       setLoading(true);
       try {
-        const { res, json } = await authFetchJSON<{ data?: OnboardingFormData }>(
-          "/api/onboarding",
-          getToken,
-          { signal: ac.signal }
-        );
+        const token = await getAccessTokenSilently({
+          authorizationParams: {
+            audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+            scope: "openid profile email offline_access",
+          },
+        });
 
-        if (res.ok && json?.data) {
-          methods.reset(json.data);
-          navigate("/dashboard", { replace: true }); // Already onboarded
+        const res = await fetch("/api/onboarding", {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: ac.signal,
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.data) {
+            methods.reset(json.data);
+            navigate("/dashboard", { replace: true });
+          }
         }
       } catch (e: any) {
-        if (e?.name !== "AbortError" && e?.message) {
-          setError(e.message);
+        if (e?.name !== "AbortError") {
+          setError(e.message || "Failed to fetch onboarding data");
         }
       } finally {
         setLoading(false);
       }
     })();
     return () => ac.abort();
-  }, [isAuthenticated, getToken, methods, navigate]);
-
+  }, [isAuthenticated, getAccessTokenSilently, methods, navigate]);
 
   const handleBack = () => {
     if (step > 0) setStep(step - 1);
@@ -83,13 +81,25 @@ const OnboardingForm: React.FC = () => {
     setSaving(true);
     setError(null);
     try {
+      const token = await getAccessTokenSilently({
+        authorizationParams: {
+          audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+          scope: "openid profile email offline_access",
+        },
+      });
+
       const values = methods.getValues();
-      const { res, json } = await authFetchJSON("/api/onboarding", getToken, {
+      const res = await fetch("/api/onboarding", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(values),
       });
 
       if (!res.ok) {
+        const json = await res.json();
         const msg = json?.message || JSON.stringify(json?.errors) || "Save failed";
         throw new Error(msg);
       }
@@ -104,18 +114,13 @@ const OnboardingForm: React.FC = () => {
 
   const handleNext = async () => {
     const valid = await methods.trigger();
-    console.log("✅ Validation passed?", valid);
-    console.log("🧨 Form errors:", methods.formState.errors);
-
     if (!valid) return;
 
     if (step < steps.length - 1) setStep(step + 1);
     else handleSubmit();
   };
 
-
   const StepComponent = steps[step].Component;
-
   if (loading) return <div className="p-8">Loading…</div>;
 
   return (

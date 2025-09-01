@@ -1,3 +1,4 @@
+# tests/conftest.py
 import os
 import sys
 import pytest
@@ -6,7 +7,6 @@ from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 from unittest.mock import patch
 from datetime import datetime, timedelta
-
 
 # -------------------------
 # 🔧 Environment & Path Setup
@@ -73,6 +73,7 @@ def test_db_session(sqlalchemy_session):
 
 @pytest.fixture(scope="function")
 def seed_test_data(test_db_session):
+    """Seed athletes, tokens, and activities with safe defaults."""
     if not test_db_session.query(Athlete).filter_by(athlete_id=1).first():
         test_db_session.add(
             Athlete(athlete_id=1, first_name="Test", last_name="Athlete")
@@ -136,101 +137,71 @@ def patched_client(patched_app):
 
 
 # -------------------------
-# 🔐 Token Mock Fixtures
+# 🔐 Auth0 Token Mocking
 # -------------------------
 
 
+@pytest.fixture(autouse=True)
+def mock_verify_and_decode(monkeypatch):
+    """
+    Automatically mock Auth0 JWT verification for all tests.
+    Prevents hitting Auth0 JWKS and ensures deterministic claims.
+    """
+
+    def fake_verify_and_decode(token: str):
+        return {"sub": "auth0|test-user", "email": "test@example.com"}
+
+    monkeypatch.setattr("src.utils.auth0_jwt.verify_and_decode", fake_verify_and_decode)
+    yield
+
+
 @pytest.fixture(scope="function")
-def patched_token_mocks():
-    with patch("src.services.token_service.get_valid_token") as mock_valid, patch(
-        "src.db.dao.token_dao.get_tokens_sa"
-    ) as mock_tokens:
+def auth_header():
+    """
+    Helper: generate headers for test users.
+    """
 
-        mock_tokens.return_value = [
-            Token(
-                athlete_id=1,
-                access_token="mock_access_token",
-                refresh_token="mock_refresh_token",
-                expires_at=int((datetime.utcnow() + timedelta(hours=1)).timestamp()),
-            )
-        ]
-        mock_valid.return_value = "mock_access_token"
+    def _h(sub: str = "auth0|test-user", *, unauthorized: bool = False):
+        if unauthorized:
+            return {"Authorization": "Bearer invalid"}
+        return {"Authorization": f"Bearer fake-token-for-{sub}"}
 
-        yield mock_tokens, mock_valid
+    return _h
 
+
+# -------------------------
+# 🧹 Table Cleanup Between Tests
+# -------------------------
 
 from sqlalchemy import text
 
 
 @pytest.fixture(scope="function", autouse=True)
 def clean_user_profile(shared_engine):
-    """
-    Clean up user_profile table after onboarding tests to ensure test isolation.
-    Only applies to test cases using 'test-user-123'.
-    """
     yield
     with shared_engine.connect() as conn:
-        conn.execute(text("DELETE FROM user_profile WHERE user_id = 'test-user-123'"))
+        conn.execute(text("DELETE FROM user_profile WHERE user_id LIKE 'auth0|%'"))
         conn.commit()
 
 
-# =====================================================================
-# 🆕 Added fixtures for user_athletes tests (non-destructive additions)
-# =====================================================================
-
-from functools import wraps
-from flask import g, request, jsonify
-
-
-@pytest.fixture(scope="function")
-def auth_header():
-    """
-    Helper to pass a deterministic test user into routes via header.
-    Pairs with patched requires_auth below.
-    """
-
-    def _h(sub: str, *, unauthorized: bool = False):
-        h = {"X-TEST-USER": sub}
-        if unauthorized:
-            h["X-TEST-UNAUTH"] = "1"
-        return h
-
-    return _h
-
-
 @pytest.fixture(scope="function", autouse=True)
-def patch_requires_auth(monkeypatch):
-    """
-    Patch src.utils.auth0_jwt.requires_auth so route tests can:
-      - set g.current_user['sub'] from X-TEST-USER header
-      - optionally force a 401 by sending X-TEST-UNAUTH: 1
-    This does NOT modify your production code and only applies in tests.
-    """
-    import src.utils.auth0_jwt as auth0_jwt
-
-    def test_requires_auth(fn):
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
-            if request.headers.get("X-TEST-UNAUTH") == "1":
-                return jsonify({"error": "Unauthorized"}), 401
-            sub = request.headers.get("X-TEST-USER", "auth0|test-user")
-            g.current_user = {"sub": sub}
-            return fn(*args, **kwargs)
-
-        return wrapper
-
-    monkeypatch.setattr(auth0_jwt, "requires_auth", lambda f: test_requires_auth(f))
+def clean_user_athletes(shared_engine):
     yield
-    # No unpatch needed; monkeypatch fixture handles teardown
+    with shared_engine.connect() as conn:
+        conn.execute(text("DELETE FROM user_athletes WHERE user_id LIKE 'auth0|%'"))
+        conn.commit()
+
+
+# -------------------------
+# 🏃 DAO Helpers
+# -------------------------
 
 
 @pytest.fixture(scope="function")
 def make_athlete(shared_engine):
     """
-    Factory to create an Athlete row compatible with either schema variant:
-      - Newer: Athlete(id PK, strava_athlete_id BIGINT, created_at ...)
-      - Older: Athlete(athlete_id PK or column, first_name, last_name, ...)
-    Returns the ORM object with a usable primary key (a.id).
+    Factory to insert a new athlete row.
+    Handles both old and new schema (athlete_id vs strava_athlete_id).
     """
     Session = sessionmaker(bind=shared_engine, future=True)
 
@@ -238,25 +209,18 @@ def make_athlete(shared_engine):
         from time import time
 
         with Session() as s:
-            a = None
-            # Try to handle both schemas gracefully
             if hasattr(Athlete, "strava_athlete_id"):
-                # Newer schema
-                defaults = {
-                    "strava_athlete_id": overrides.pop(
+                a = Athlete(
+                    strava_athlete_id=overrides.get(
                         "strava_athlete_id", int(time() * 1_000_000)
-                    ),
-                }
-                a = Athlete(**{**defaults, **overrides})
+                    )
+                )
             else:
-                # Older schema fallback
-                defaults = {
-                    "athlete_id": overrides.pop("athlete_id", int(time() * 1_000_000)),
-                    "first_name": overrides.pop("first_name", "Test"),
-                    "last_name": overrides.pop("last_name", "Athlete"),
-                }
-                a = Athlete(**{**defaults, **overrides})
-
+                a = Athlete(
+                    athlete_id=overrides.get("athlete_id", int(time() * 1_000_000)),
+                    first_name=overrides.get("first_name", "Test"),
+                    last_name=overrides.get("last_name", "Athlete"),
+                )
             s.add(a)
             s.commit()
             s.refresh(a)
@@ -267,26 +231,9 @@ def make_athlete(shared_engine):
 
 @pytest.fixture(scope="function")
 def link_user():
-    """
-    Helper to create a user↔athlete link via DAO (uses production code path).
-    """
     from src.db.dao.user_athletes_dao import create_link
 
     def _link(user_id: str, athlete_id: int):
         return create_link(user_id, athlete_id)
 
     return _link
-
-
-@pytest.fixture(scope="function", autouse=True)
-def clean_user_athletes(shared_engine):
-    """
-    Keep user_athletes clean between tests. Only deletes rows created by tests
-    for Auth0-like subjects to avoid interfering with other data.
-    """
-    yield
-    with shared_engine.connect() as conn:
-        # Delete typical test subjects
-        conn.execute(text("DELETE FROM user_athletes WHERE user_id LIKE 'auth0|%'"))
-        conn.execute(text("DELETE FROM user_athletes WHERE user_id = 'test-user-123'"))
-        conn.commit()

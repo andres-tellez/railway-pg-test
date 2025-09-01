@@ -11,10 +11,9 @@ ACCESS_TOKEN_EXP = int(os.getenv("ACCESS_TOKEN_EXP", "900"))  # 15 min
 REFRESH_TOKEN_EXP = int(os.getenv("REFRESH_TOKEN_EXP", "604800"))  # 7 days
 
 # ===== JWT / Auth =====
-# Flask app/session secret
-SECRET_KEY = os.getenv("SECRET_KEY", "dev")
-# For libraries/extensions that expect this key name
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY") or SECRET_KEY
+# 🔥 Removed legacy SECRET_KEY (HS256)
+# ✅ Keep JWT_SECRET_KEY only for libs/tests that expect it (unused for Auth0 RS256)
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "unused-secret")
 
 # ===== Auth0 =====
 AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
@@ -33,7 +32,3 @@ IS_LOCAL = os.getenv("IS_LOCAL", "false").lower() == "true"
 
 # Optional: centralize if you want to import instead of os.getenv in routes
 FRONTEND_REDIRECT = os.getenv("FRONTEND_REDIRECT")
-
-# keep everything else you have; ensure these exist:
-ADMIN_USER = os.getenv("ADMIN_USER")
-ADMIN_PASS = os.getenv("ADMIN_PASS")

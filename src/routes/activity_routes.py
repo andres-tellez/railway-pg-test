@@ -31,6 +31,57 @@ from src.utils.auth0_jwt import requires_auth
 
 activity_bp = Blueprint("activity", __name__)
 
+
+@activity_bp.get("/api/activities/status")
+@requires_auth
+def activities_status():
+    """Returns count of Strava activities for the current user."""
+    from flask import g
+
+    user_id = (getattr(g, "current_user", None) or {}).get("sub")
+    session = get_session()
+    try:
+        count = session.execute(
+            text("SELECT COUNT(*) FROM activities WHERE user_id = :uid"),
+            {"uid": user_id},
+        ).scalar()
+        return jsonify({"recentActivitiesCount": int(count)}), 200
+    except Exception:
+        traceback.print_exc()
+        return jsonify({"recentActivitiesCount": 0}), 200
+    finally:
+        session.close()
+
+
+@activity_bp.post("/activities/sync")
+@requires_auth
+def activities_sync():
+    """Triggers Strava sync for the current user."""
+    from src.services.ingestion_orchestrator_service import (
+        run_full_ingestion_and_enrichment,
+    )
+
+    session = get_session()
+    try:
+        from flask import g
+
+        user_id = (getattr(g, "current_user", None) or {}).get("sub")
+        result = run_full_ingestion_and_enrichment(
+            session=session,
+            athlete_id=user_id,
+            lookback_days=None,
+            max_activities=10,
+            batch_size=10,
+            per_page=200,
+        )
+        return jsonify({"ok": True, "fetched": result.get("fetched", 0)}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+    finally:
+        session.close()
+
+
 # -------- Enrichment Routes --------
 
 
@@ -102,50 +153,6 @@ def enrich_batch():
                     "batch_size": batch,
                     "enriched_count": int(enriched_count),
                 }
-            ),
-            200,
-        )
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-# -------- Deprecated Sync Route --------
-
-
-@requires_auth
-@activity_bp.route("/sync/<int:athlete_id>")
-def sync_strava_to_db(athlete_id: int):
-    """
-    ⚠️ DEPRECATED in production. Used only for test validation.
-    """
-    if os.getenv("FLASK_ENV") != "test":
-        return (
-            jsonify(
-                {
-                    "error": "This sync route is deprecated. Use CLI ingestion instead.",
-                    "hint": "python -m src.scripts.main_pipeline --athlete_id <id> --lookback_days <N>",
-                }
-            ),
-            410,
-        )
-
-    lookback = request.args.get("lookback", default=14, type=int)
-    limit = request.args.get("limit", default=None, type=int)
-    key = request.args.get("key")
-
-    if key != config.CRON_SECRET_KEY:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    session = get_session()
-    try:
-        service = ActivityIngestionService(session, athlete_id)
-        inserted = service.ingest_recent(lookback_days=lookback, max_activities=limit)
-        return (
-            jsonify(
-                {"inserted": int(inserted), "lookback_days": lookback, "limit": limit}
             ),
             200,
         )

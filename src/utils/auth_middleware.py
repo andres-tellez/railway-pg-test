@@ -1,34 +1,10 @@
 # src/utils/auth_middleware.py
+"""
+Deprecated shim file. Do NOT duplicate JWT logic here.
+Delegates to src.utils.auth0_jwt to ensure single source of truth.
+"""
 
-from functools import wraps
-from flask import request, abort
-from jose.exceptions import JWTError
-from src.utils.auth_helpers import decode_auth_token
+from src.utils.auth0_jwt import requires_auth
 
-from src.utils import config  # ⬅️ import config
-
-AUTH0_DOMAIN = config.AUTH0_DOMAIN  # ⬅️ use config
-API_AUDIENCE = config.AUTH0_AUDIENCE  # ⬅️ use config
-ALGORITHMS = ["RS256"]
-
-
-def requires_auth(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = None
-        auth_header = request.headers.get("Authorization", None)
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header.split(" ")[1]
-
-        if not token:
-            abort(401)
-
-        try:
-            payload = decode_auth_token(token)
-            # Optionally, you can attach payload to Flask's g if needed
-        except JWTError:
-            abort(401)
-
-        return f(*args, **kwargs)
-
-    return decorated
+# ✅ Re-export only
+__all__ = ["requires_auth"]

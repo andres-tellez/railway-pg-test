@@ -35,7 +35,7 @@ def generate_gpt_handoff_summary():
         doc, "• REDIRECT_URI=https://web-production-c4329.up.railway.app/oauth/callback"
     )
     add_paragraph(doc, "• DATABASE_URL=(set in Railway)")
-    add_paragraph(doc, "• SECRET_KEY, INTERNAL_API_KEY, CRON_SECRET_KEY defined")
+    add_paragraph(doc, "• INTERNAL_API_KEY, CRON_SECRET_KEY defined")
 
     # Architecture
     add_heading(doc, "🔧 Architecture Notes:", level=2)

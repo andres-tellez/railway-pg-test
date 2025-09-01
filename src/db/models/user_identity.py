@@ -1,18 +1,26 @@
 # src/db/models/user_identity.py
-from sqlalchemy import Table, Column, String, Boolean, DateTime, MetaData
+
+from sqlalchemy import Column, String, Boolean, DateTime
 from datetime import datetime
+from src.db.db_session import Base
 
-metadata = MetaData()
 
-user_identity = Table(
-    "user_identity",
-    metadata,
-    Column("user_id", String, primary_key=True),
-    Column("email", String, nullable=True),
-    Column("email_verified", Boolean, nullable=True),
-    Column("name", String, nullable=True),
-    Column("picture", String, nullable=True),
-    Column("updated_at", DateTime, nullable=False, default=datetime.utcnow),
-)
+class UserIdentity(Base):
+    __tablename__ = "user_identity"
 
-__all__ = ["user_identity", "metadata"]
+    user_id = Column(String, primary_key=True)
+    email = Column(String, nullable=True)
+    email_verified = Column(Boolean, nullable=True)
+    name = Column(String, nullable=True)
+    picture = Column(String, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "user_id": self.user_id,
+            "email": self.email,
+            "email_verified": self.email_verified,
+            "name": self.name,
+            "picture": self.picture,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }

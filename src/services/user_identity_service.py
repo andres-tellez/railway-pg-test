@@ -4,19 +4,19 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from flask import request
+
+from src.routes.user_identity_routes import fetch_userinfo_from_auth0
 from src.db.dao.user_identity_dao import get_by_user_id, upsert_identity
+from src.db.dao.user_profile_dao import exists_user_profile
+from src.db.dao.user_athletes_dao import get_by_user_id
 
 
 def _parse_updated_at(claims: Dict[str, Any]) -> datetime:
-    """
-    Try to parse 'updated_at' from token claims; fall back to now() if missing.
-    Accepts ISO strings with or without 'Z'.
-    """
     raw = claims.get("updated_at")
     if not raw:
         return datetime.now(timezone.utc)
     try:
-        # Normalize trailing 'Z' to +00:00 for fromisoformat
         if isinstance(raw, str) and raw.endswith("Z"):
             raw = raw.replace("Z", "+00:00")
         return datetime.fromisoformat(raw)
@@ -25,9 +25,6 @@ def _parse_updated_at(claims: Dict[str, Any]) -> datetime:
 
 
 def _row_to_dict(row) -> Dict[str, Any]:
-    """
-    SQLAlchemy Row -> dict (works whether it's Row or RowMapping).
-    """
     if not row:
         return {}
     m = getattr(row, "_mapping", None)
@@ -35,16 +32,19 @@ def _row_to_dict(row) -> Dict[str, Any]:
 
 
 def get_or_create_user_identity(claims: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Ensure a row exists in user_identity for this Auth0 sub, update basic fields,
-    and return a minimal JSON-safe dict. (Auth0 user identity only — no Flask session.)
-    """
     sub = claims.get("sub")
     if not sub:
         raise ValueError("Token missing 'sub' (user id)")
 
-    # Token may expose fields directly or under a nested 'raw'
+    # Use raw claims if present
     raw = claims.get("raw") or claims
+
+    # If critical fields are missing, fetch from Auth0
+    if not all(k in raw for k in ("email", "email_verified", "name", "picture")):
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header.split(" ")[1] if " " in auth_header else auth_header
+        raw = fetch_userinfo_from_auth0(token)
+
     payload = {
         "user_id": sub,
         "email": raw.get("email"),
@@ -54,20 +54,14 @@ def get_or_create_user_identity(claims: Dict[str, Any]) -> Dict[str, Any]:
         "updated_at": _parse_updated_at(raw),
     }
 
-    # One write, no extra reads: DAO returns the row after upsert
     row = upsert_identity(payload)
-
-    # Extremely defensive: if the upsert didn't return a row, re-read once
     if not row:
         row = get_by_user_id(sub)
 
     data = _row_to_dict(row)
-
-    # Roles/permissions can come later; keep the field present for the UI
     roles = raw.get("permissions") or []
     data.setdefault("roles", roles)
 
-    # Ensure updated_at is JSON-friendly
     ua = data.get("updated_at")
     if isinstance(ua, datetime):
         data["updated_at"] = ua.isoformat()
@@ -84,4 +78,13 @@ def get_or_create_user_identity(claims: Dict[str, Any]) -> Dict[str, Any]:
         "picture": data.get("picture"),
         "updated_at": data.get("updated_at"),
         "roles": data.get("roles", []),
+    }
+
+
+def get_user_status(user_id: str) -> dict:
+    has_onboarded = exists_user_profile(user_id)
+    has_strava = get_by_user_id(user_id) is not None
+    return {
+        "hasOnboarded": has_onboarded,
+        "hasStrava": has_strava,
     }

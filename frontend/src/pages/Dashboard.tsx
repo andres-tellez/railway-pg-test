@@ -1,48 +1,129 @@
+// src/pages/Dashboard.tsx
 import React, { useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
-import StravaLinkStatus from "@/components/StravaLinkStatus";
+
+type UserInfo = {
+  name: string;
+  email: string;
+  picture: string;
+  hasOnboarded: boolean;
+  hasStrava: boolean;
+};
 
 const Dashboard: React.FC = () => {
-  const { logout, user, isAuthenticated, isLoading } = useAuth0();
-  const [stravaError, setStravaError] = useState<string | null>(null);
+  const { isAuthenticated, isLoading, getAccessTokenSilently, user } = useAuth0();
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [activityCount, setActivityCount] = useState<number>(0);
+  const [syncing, setSyncing] = useState(false);
+
+  const fetchUserData = async () => {
+    const token = await getAccessTokenSilently();
+    const res = await fetch("/api/user", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    setUserInfo({
+      name: data.name || user?.name || "",
+      email: data.email || user?.email || "",
+      picture: data.picture || user?.picture || "",
+      hasOnboarded: data.hasOnboarded,
+      hasStrava: data.hasStrava,
+    });
+  };
+
+  const fetchActivityCount = async () => {
+    const token = await getAccessTokenSilently();
+    const res = await fetch("/api/activities/status", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setActivityCount(data.recentActivitiesCount || 0);
+    }
+  };
+
+  const syncActivities = async () => {
+    setSyncing(true);
+    const token = await getAccessTokenSilently();
+    await fetch("/api/activities/sync", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    await fetchActivityCount();
+    setSyncing(false);
+  };
 
   useEffect(() => {
-    console.group("👤 Auth Debug");
-    console.log("isAuthenticated:", isAuthenticated);
-    console.log("isLoading:", isLoading);
-    console.log("user:", user);
-    console.groupEnd();
-  }, [isAuthenticated, isLoading, user]);
+    if (isAuthenticated) {
+      fetchUserData();
+      fetchActivityCount();
+    }
+  }, [isAuthenticated]);
 
-  if (isLoading) return <div>🔄 Loading user...</div>;
-  if (!isAuthenticated) return <div>⚠️ Not authenticated.</div>;
+  if (isLoading) return <div className="p-6">🔄 Loading auth...</div>;
+  if (!isAuthenticated) return <div className="p-6 text-red-600">❌ Not authenticated</div>;
+  if (!userInfo) return <div className="p-6">🔍 Loading user info...</div>;
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold text-green-700">🏁 Welcome to your Dashboard!</h1>
-      <p className="mt-4 text-gray-600">You’ve successfully completed onboarding.</p>
-
-      <div className="mt-6 text-sm text-gray-500">
-        Logged in as: <strong>{user?.email}</strong>
+    <div className="max-w-4xl mx-auto p-6 space-y-6">
+      <div className="text-center">
+        <h1 className="text-3xl font-bold">🏁 Dashboard</h1>
       </div>
 
-      {/* Show strava error gently */}
-      {stravaError && (
-        <div className="mt-4 p-4 bg-yellow-100 text-yellow-800 border border-yellow-300 rounded">
-          ⚠️ Could not link with Strava. You can still use the app, but training sync won't work.
+      <div className="bg-white shadow rounded-lg p-6 flex items-center space-x-4">
+        <img src={userInfo.picture} className="w-20 h-20 rounded-full" alt="User Avatar" />
+        <div>
+          <p className="text-xl font-semibold">{userInfo.name}</p>
+          <p className="text-gray-600">{userInfo.email}</p>
         </div>
-      )}
-
-      <div className="mt-6">
-        <StravaLinkStatus onError={(msg) => setStravaError(msg)} />
       </div>
 
-      <button
-        className="mt-6 bg-red-600 text-white px-4 py-2 rounded"
-        onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
-      >
-        🔒 Logout
-      </button>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {[
+          {
+            label: "Onboarding Complete",
+            status: userInfo.hasOnboarded,
+            actionLabel: "Complete Onboarding",
+            onClick: () => (window.location.href = "/onboarding"),
+          },
+          {
+            label: "Strava Connected",
+            status: userInfo.hasStrava,
+            actionLabel: "Connect Strava",
+            onClick: () => (window.location.href = "/auth/strava"),
+          },
+          {
+            label: "10+ Activities Found",
+            status: activityCount >= 10,
+            actionLabel: "Sync Activities",
+            onClick: syncActivities,
+          },
+          {
+            label: "Authenticated",
+            status: true,
+          },
+        ].map(({ label, status, actionLabel, onClick }, idx) => (
+          <div key={idx} className="bg-white shadow rounded-lg p-4 flex flex-col justify-between">
+            <div>
+              <h2 className="text-lg font-medium">{label}</h2>
+              <p className="mt-2">
+                {status
+                  ? <span className="text-green-600 font-bold">✅ Completed</span>
+                  : <span className="text-red-500 font-bold">⏳ Pending</span>}
+              </p>
+            </div>
+            {actionLabel && !status && (
+              <button
+                onClick={onClick}
+                className="mt-4 bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
+                disabled={syncing}
+              >
+                {syncing && label === "10+ Activities Found" ? "Syncing…" : actionLabel}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

@@ -83,6 +83,24 @@ def _error(status: int, message: str):
 DEBUG_AUTH = os.getenv("DEBUG_AUTH") == "1"
 
 
+from jose import jwt
+
+
+def verify_and_decode(token: str) -> dict:
+    unverified_header = jwt.get_unverified_header(token)
+    rsa_key = _get_rsa_key_for_kid(unverified_header["kid"])
+    if rsa_key is None:
+        raise Exception("Unable to find appropriate key")
+
+    return jwt.decode(
+        token,
+        rsa_key,
+        algorithms=ALGORITHMS,
+        audience=API_AUDIENCE,
+        issuer=f"https://{AUTH0_DOMAIN}/",
+    )
+
+
 def requires_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
