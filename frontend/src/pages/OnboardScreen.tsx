@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useApiClient } from "../utils/apiClient";
 
 export default function OnboardScreen() {
-  const api = useApiClient();
+  const { call } = useApiClient();
 
   const [form, setForm] = useState({ name: "", goal: "" });
   const [submitted, setSubmitted] = useState(false);
@@ -17,7 +17,7 @@ export default function OnboardScreen() {
     e.preventDefault();
 
     try {
-      const res = await api.post("/api/onboarding", form);
+      const res = await call("post", "/api/onboarding", form);
       if (res.status === 200) {
         setSubmitted(true);
         setError(null);

@@ -3,29 +3,22 @@ import axios from "axios";
 import { useAuth0 } from "@auth0/auth0-react";
 
 export function useApiClient() {
-  const { getAccessTokenSilently, isAuthenticated, isLoading } = useAuth0();
+  const { getAccessTokenSilently } = useAuth0();
 
-  const call = async (method: string, url: string, data?: any, config?: any) => {
-    if (isLoading) return; // 🛑 Wait until Auth0 finishes
-    if (!isAuthenticated) throw new Error("Not authenticated");
+  const client = axios.create({
+    baseURL: "/api",
+  });
 
-    const token = await getAccessTokenSilently({
-      authorizationParams: {
-        audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-      },
-    });
+  client.interceptors.request.use(
+    async (config) => {
+      const token = await getAccessTokenSilently();
+      if (token) {
+        (config.headers as any).Authorization = `Bearer ${token}`;
+      }
+      return config;
+    },
+    (error) => Promise.reject(error)
+  );
 
-    return axios({
-      method,
-      url: `${import.meta.env.VITE_API_BASE_URL}${url}`,
-      data,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...config?.headers,
-      },
-      ...config,
-    });
-  };
-
-  return { call };
+  return client;
 }

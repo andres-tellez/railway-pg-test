@@ -13,7 +13,7 @@ type UserInfo = {
 
 const Dashboard: React.FC = () => {
   const { isAuthenticated, isLoading, user } = useAuth0();
-  const { call } = useApiClient();
+  const api = useApiClient(); // ✅ use the axios client directly
 
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [activityCount, setActivityCount] = useState<number>(0);
@@ -21,7 +21,7 @@ const Dashboard: React.FC = () => {
 
   const fetchUserData = async () => {
     try {
-      const { data } = await call("get", "/api/user");
+      const { data } = await api.get("/user"); // ✅ no '/api' prefix needed
       setUserInfo({
         name: data.name || user?.name || "",
         email: data.email || user?.email || "",
@@ -30,36 +30,39 @@ const Dashboard: React.FC = () => {
         hasStrava: data.hasStrava,
       });
     } catch (err) {
-      console.error("Failed to fetch user data:", err);
+      console.error("❌ Failed to fetch user data:", err);
     }
   };
 
   const fetchActivityCount = async () => {
     try {
-      const { data } = await call("get", "/api/activities/status");
+      const { data } = await api.get("/activities/status");
       setActivityCount(data.recentActivitiesCount || 0);
     } catch (err) {
-      console.error("Failed to fetch activity count:", err);
+      console.error("❌ Failed to fetch activity count:", err);
     }
   };
 
   const syncActivities = async () => {
     try {
       setSyncing(true);
-      await call("post", "/api/activities/sync");
+      await api.post("/activities/sync");
       await fetchActivityCount();
     } catch (err) {
-      console.error("Activity sync failed:", err);
+      console.error("❌ Activity sync failed:", err);
     } finally {
       setSyncing(false);
     }
   };
 
   useEffect(() => {
-    if (!isAuthenticated || isLoading) return;
+    console.log("🔍 Auth state:", { isAuthenticated, isLoading });
 
-    fetchUserData();
-    fetchActivityCount();
+    if (isAuthenticated && !isLoading) {
+      console.log("✅ Auth ready — fetching user data...");
+      fetchUserData();
+      fetchActivityCount();
+    }
   }, [isAuthenticated, isLoading]);
 
   if (isLoading) return <div className="p-6">🔄 Loading auth...</div>;

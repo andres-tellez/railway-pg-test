@@ -63,8 +63,8 @@ def create_app(test_config=None):
         app,
         origins=origin_list,
         supports_credentials=True,
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
+        expose_headers=["Content-Type", "Authorization"],
     )
     print("🔬 Raw CORS_ORIGINS from env:", repr(cors_origins), flush=True)
     print("🛂 Allowed CORS origins:", origin_list, flush=True)
