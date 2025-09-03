@@ -20,34 +20,52 @@ def fetch_userinfo_from_auth0(token: str) -> dict:
 
 
 def upsert_user_identity_from_userinfo(userinfo: dict) -> dict:
-    user_id = userinfo["sub"]
-    email = userinfo.get("email")
-    email_verified = userinfo.get("email_verified")
-    name = userinfo.get("name")
-    picture = userinfo.get("picture")
+    try:
+        print("⚠️ Received userinfo:", userinfo)
 
-    stmt = (
-        pg_insert(UserIdentity)
-        .values(
-            user_id=user_id,
-            email=email,
-            email_verified=email_verified,
-            name=name,
-            picture=picture,
+        user_id = userinfo["sub"]
+        email = userinfo.get("email")
+        email_verified = userinfo.get("email_verified")
+        name = userinfo.get("name")
+        picture = userinfo.get("picture")
+
+        stmt = (
+            pg_insert(UserIdentity)
+            .values(
+                user_id=user_id,
+                email=email,
+                email_verified=email_verified,
+                name=name,
+                picture=picture,
+            )
+            .on_conflict_do_update(
+                index_elements=["user_id"],
+                set_={
+                    "email": email,
+                    "email_verified": email_verified,
+                    "name": name,
+                    "picture": picture,
+                },
+            )
         )
-        .on_conflict_do_update(
-            index_elements=["user_id"],
-            set_={
-                "email": email,
-                "email_verified": email_verified,
-                "name": name,
-                "picture": picture,
-            },
-        )
-    )
-    db.session.execute(stmt)
-    db.session.commit()
-    return {"ok": True, "user_id": user_id}
+
+        db.session.execute(stmt)
+        db.session.commit()
+
+        print(f"✅ Successfully upserted identity for user_id={user_id}")
+        return {"ok": True, "user_id": user_id}
+
+    except Exception as e:
+        # 🔥 Full traceback
+        import traceback
+
+        traceback.print_exc()
+
+        print("❌ Failed to upsert user identity")
+        print("📦 Payload was:", userinfo)
+        print("🐞 Error:", str(e))
+
+        return {"ok": False, "error": str(e)}
 
 
 def get_or_create_user_identity(claims: dict) -> dict:
