@@ -6,6 +6,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import PostOAuth from "./pages/PostOAuth";
 import OnboardingForm from "./pages/OnboardingForm";
 import Dashboard from "./pages/Dashboard";
+import StravaCallbackHandler from "./pages/StravaCallbackHandler";
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
   const { isLoading, isAuthenticated } = useAuth0();
@@ -73,7 +74,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomeGate />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/post-oauth" element={<PostOAuth />} />
+        <Route path="/post-oauth" element={<StravaCallbackHandler  />} />
         <Route path="/onboarding" element={
           <ProtectedRoute>
             <OnboardingForm />

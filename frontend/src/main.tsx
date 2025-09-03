@@ -1,4 +1,7 @@
 // src/main.tsx
+
+console.log('AUTH0 CLIENT ID:', import.meta.env.VITE_AUTH0_CLIENT_ID);
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";

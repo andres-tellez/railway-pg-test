@@ -20,28 +20,39 @@ activity_bp = Blueprint("activity", __name__)
 @requires_auth
 def activities_status():
     """
-    Return count of Strava activities for the current logged-in user.
+    Return count of Strava activities and connection status for current logged-in user.
     Resolves user -> athlete via user_athletes mapping.
     """
     user_id = (getattr(g, "current_user", None) or {}).get("sub")
     session = get_session()
     try:
-        sql = text(
-            """
-            SELECT COUNT(*)
-            FROM activities a
-            WHERE a.athlete_id IN (
-                SELECT ua.athlete_id
-                FROM user_athletes ua
-                WHERE ua.user_id = :uid
+        athlete_row = session.execute(
+            text("SELECT athlete_id FROM user_athletes WHERE user_id = :uid LIMIT 1"),
+            {"uid": user_id},
+        ).fetchone()
+
+        is_connected = athlete_row is not None
+        athlete_id = athlete_row.athlete_id if is_connected else None
+
+        count = 0
+        if is_connected:
+            count = (
+                session.execute(
+                    text("SELECT COUNT(*) FROM activities WHERE athlete_id = :aid"),
+                    {"aid": athlete_id},
+                ).scalar()
+                or 0
             )
-            """
+
+        return (
+            jsonify(
+                {"stravaConnected": is_connected, "recentActivitiesCount": int(count)}
+            ),
+            200,
         )
-        count = session.execute(sql, {"uid": user_id}).scalar() or 0
-        return jsonify({"recentActivitiesCount": int(count)}), 200
     except Exception:
         traceback.print_exc()
-        return jsonify({"recentActivitiesCount": 0}), 200
+        return jsonify({"stravaConnected": False, "recentActivitiesCount": 0}), 200
     finally:
         session.close()
 

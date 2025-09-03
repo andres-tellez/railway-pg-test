@@ -1,3 +1,4 @@
+// src/pages/DashboardPage.tsx
 import React, { useEffect, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import UserInfoCard from "../components/UserInfoCard";
@@ -11,25 +12,50 @@ export default function DashboardPage() {
   const [identity, setIdentity] = useState<any>(null);
   const [status, setStatus] = useState<any>(null);
   const [activityCount, setActivityCount] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
+  // 🔁 Optional: clear ?strava=success from URL after handling
+  const clearStravaSuccessParam = () => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("strava")) {
+      url.searchParams.delete("strava");
+      window.history.replaceState({}, document.title, url.pathname);
+    }
+  };
+
+  // 🧠 Reusable dashboard data loader
+  const fetchDashboardData = async () => {
+    try {
+      const [{ data: userStatus }, { data: userIdentity }, { data: activities }] = await Promise.all([
+        api.get("/api/user"),
+        api.get("/api/user/identity"),
+        api.get("/api/strava/activities/status"),
+      ]);
+      setStatus(userStatus);
+      setIdentity(userIdentity);
+      setActivityCount(activities.recentActivitiesCount);
+    } catch (error) {
+      console.error("❌ Failed to fetch dashboard data:", error);
+    }
+  };
+
+  // 🧠 Optionally handle ?strava=success
+  useEffect(() => {
+    const search = new URLSearchParams(window.location.search);
+    if (search.get("strava") === "success") {
+      console.log("✅ Detected strava=success — syncing identity...");
+      api.post("/api/user/identity")
+        .then(() => {
+          fetchDashboardData();
+        })
+        .finally(clearStravaSuccessParam);
+    }
+  }, [api]);
+
+  // 🧠 Load dashboard once authenticated
   useEffect(() => {
     if (!isAuthenticated) return;
-
-    async function fetchData() {
-      try {
-        const { data: userStatus } = await api.get("/api/user");
-        const { data: userIdentity } = await api.get("/api/user/identity");
-        const { data: activities } = await api.get("/api/strava/activities/status");
-
-        setStatus(userStatus);
-        setIdentity(userIdentity);
-        setActivityCount(activities.recentActivitiesCount);
-      } catch (error) {
-        console.error("❌ Failed to fetch dashboard data:", error);
-      }
-    }
-
-    fetchData();
+    fetchDashboardData();
   }, [api, isAuthenticated]);
 
   if (isLoading || !isAuthenticated) {
@@ -55,8 +81,10 @@ export default function DashboardPage() {
           onboard: () => (window.location.href = "/onboarding"),
           connectStrava: () => (window.location.href = "/auth/strava"),
           fetchActivities: async () => {
+            setSyncing(true);
             await api.post("/api/strava/sync");
-            window.location.reload();
+            await fetchDashboardData();
+            setSyncing(false);
           },
         }}
       />

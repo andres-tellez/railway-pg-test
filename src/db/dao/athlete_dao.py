@@ -37,23 +37,17 @@ def get_all_athletes(session: Session) -> List[Athlete]:
     return session.query(Athlete).all()
 
 
-def upsert_athlete(
-    session: Session,
-    athlete_id: int,
-    strava_athlete_id: int,
-) -> None:
-    """
-    strava_athlete_id is only used during insert, never updated.
-    """
-    stmt = (
-        pg_insert(Athlete.__table__)
-        .values(id=athlete_id, strava_athlete_id=strava_athlete_id)
-        .on_conflict_do_update(
-            index_elements=["id"],
-            set_={
-                # ❌ do NOT include "strava_athlete_id"
-            },
-        )
+def upsert_athlete(session: Session, athlete_id: int, strava_athlete_id: int) -> None:
+    existing = (
+        session.query(Athlete).filter_by(strava_athlete_id=strava_athlete_id).first()
     )
-    session.execute(stmt)
+    if existing:
+        print(
+            f"🔁 Athlete with strava_id {strava_athlete_id} already exists (id={existing.id})"
+        )
+        return
+
+    print("🆕 Inserting new athlete")
+    athlete = Athlete(id=athlete_id, strava_athlete_id=strava_athlete_id)
+    session.add(athlete)
     session.commit()

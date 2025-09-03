@@ -123,15 +123,6 @@ def submit_user_profile():
         return jsonify({"status": "error", "message": "Failed to save profile"}), 500
 
 
-@user_profile_bp.get("/user")
-@requires_auth
-def get_user():
-    """
-    Lightweight Auth0 debug endpoint.
-    """
-    return jsonify({"ok": True, "user": getattr(g, "current_user", {})}), 200
-
-
 @user_profile_bp.get("/onboarding")
 @requires_auth
 def get_user_profile_route():

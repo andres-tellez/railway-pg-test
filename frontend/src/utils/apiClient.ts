@@ -14,7 +14,18 @@ export function useApiClient() {
   // If absolute (https://api.smartcoach.dev) ensure it ends with /api
   // If relative (/api), keep as-is
   const isAbsolute = /^https?:\/\//i.test(base);
-  const baseURL = isAbsolute ? (base.endsWith("/api") ? base : `${base}/api`) : base;
+
+
+  // Clean base URL to avoid double "/api/api"
+  if (isAbsolute) {
+    const url = new URL(base);
+    if (!url.pathname.endsWith("/api")) {
+      url.pathname = url.pathname.replace(/\/$/, "") + "/api";
+    }
+    base = url.toString().replace(/\/$/, "");
+}
+
+const baseURL = base;
 
   // (Optional) log in non-prod
   if (import.meta.env.MODE !== "production") {
