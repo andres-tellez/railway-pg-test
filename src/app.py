@@ -54,6 +54,8 @@ from src.utils.auth0_jwt import requires_auth
 
 def create_app(test_config=None):
     app = Flask(__name__)
+    app.config["SQLALCHEMY_ECHO"] = True
+
     from src.db.db_session import db
 
     # ✅ CORS setup
