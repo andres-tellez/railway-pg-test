@@ -5,22 +5,34 @@ import { useAuth0 } from "@auth0/auth0-react";
 export function useApiClient() {
   const { getAccessTokenSilently, loginWithRedirect } = useAuth0();
 
-  const client = axios.create({ baseURL: "/api" });
+  // Prefer VITE_API_BASE_URL, then VITE_API_URL, else fall back to relative '/api'
+  let base = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
+
+  // Normalize: remove trailing slash
+  if (base.endsWith("/")) base = base.slice(0, -1);
+
+  // If absolute (https://api.smartcoach.dev) ensure it ends with /api
+  // If relative (/api), keep as-is
+  const isAbsolute = /^https?:\/\//i.test(base);
+  const baseURL = isAbsolute ? (base.endsWith("/api") ? base : `${base}/api`) : base;
+
+  // (Optional) log in non-prod
+  if (import.meta.env.MODE !== "production") {
+    // eslint-disable-next-line no-console
+    console.log("API baseURL =", baseURL);
+  }
+
+  const client = axios.create({ baseURL });
 
   client.interceptors.request.use(async (config) => {
     try {
-      const token = await getAccessTokenSilently({
-        detailedResponse: false,
-        // audience and scope are already configured in AuthProvider, so no need to repeat
-      });
-
+      const token = await getAccessTokenSilently({ detailedResponse: false });
       if (token) {
         (config.headers ??= {});
         (config.headers as any).Authorization = `Bearer ${token}`;
       }
       return config;
     } catch (err: any) {
-      // No refresh token / consent not granted / third-party cookies blocked
       const msg = String(err?.error || err?.message || "");
       const needsConsent =
         msg.includes("missing_refresh_token") ||
@@ -28,15 +40,11 @@ export function useApiClient() {
         msg.includes("login_required");
 
       if (needsConsent) {
-        // Force a one-time re-consent to obtain a refresh token
         await loginWithRedirect({
-          authorizationParams: {
-            prompt: "consent", // ask again so we get offline_access
-          },
+          authorizationParams: { prompt: "consent" },
           appState: { returnTo: window.location.pathname || "/dashboard" },
         });
       }
-
       throw err;
     }
   });
