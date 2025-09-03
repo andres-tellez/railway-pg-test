@@ -37,6 +37,14 @@ print(
 print(f"✅ Loaded environment: {env_path}", flush=True)
 print(f"📍 STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
+
+# 🔑 Debug Auth0 vars
+print(f"🔑 AUTH0_DOMAIN={os.getenv('AUTH0_DOMAIN')}", flush=True)
+print(f"🔑 AUTH0_AUDIENCE={os.getenv('AUTH0_AUDIENCE')}", flush=True)
+print(f"🔑 AUTH0_ISSUER={os.getenv('AUTH0_ISSUER')}", flush=True)
+print(f"🔑 AUTH0_ALGORITHMS={os.getenv('AUTH0_ALGORITHMS')}", flush=True)
+
+
 # 🌐 Flask Setup
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
@@ -54,7 +62,7 @@ from src.utils.auth0_jwt import requires_auth
 
 def create_app(test_config=None):
     app = Flask(__name__)
-    app.config["SQLALCHEMY_ECHO"] = True
+    app.config["SQLALCHEMY_ECHO"] = False
 
     from src.db.db_session import db
 
