@@ -19,9 +19,13 @@ def fetch_userinfo_from_auth0(token: str) -> dict:
     return resp.json()
 
 
+import sys
+
+
 def upsert_user_identity_from_userinfo(userinfo: dict) -> dict:
     try:
         print("⚠️ Received userinfo:", userinfo)
+        sys.stdout.flush()
 
         user_id = userinfo["sub"]
         email = userinfo.get("email")

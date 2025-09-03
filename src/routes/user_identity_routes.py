@@ -1,4 +1,4 @@
-# src/routes/user_identity_routes.py
+import sys
 from flask import Blueprint, jsonify, request, g
 from sqlalchemy.exc import IntegrityError
 
@@ -62,14 +62,22 @@ def delete_user_link():
     return jsonify({"deleted": True}), 200
 
 
+# ✅ Updated version of /user/identity (add logging + flush)
 @identity_bp.post("/user/identity")
 @requires_auth
 def save_identity():
-    """Fetch profile from Auth0 and upsert."""
+    print("📬 /user/identity route hit")
+    sys.stdout.flush()
+
     auth = request.headers.get("Authorization", "")
     token = auth.split(" ", 1)[1] if " " in auth else auth
+
+    print(f"🪪 Extracted token (len={len(token)} chars)")
+    sys.stdout.flush()
+
     userinfo = fetch_userinfo_from_auth0(token)
     result = upsert_user_identity_from_userinfo(userinfo)
+
     return jsonify(result), 200
 
 
