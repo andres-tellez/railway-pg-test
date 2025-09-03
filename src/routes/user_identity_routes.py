@@ -62,7 +62,6 @@ def delete_user_link():
     return jsonify({"deleted": True}), 200
 
 
-# ✅ Updated version of /user/identity (add logging + flush)
 @identity_bp.post("/user/identity")
 @requires_auth
 def save_identity():
@@ -76,7 +75,12 @@ def save_identity():
     sys.stdout.flush()
 
     userinfo = fetch_userinfo_from_auth0(token)
+    print("👤 Userinfo from Auth0:", userinfo)
+    sys.stdout.flush()
+
     result = upsert_user_identity_from_userinfo(userinfo)
+    print("✅ Upsert result:", result)
+    sys.stdout.flush()
 
     return jsonify(result), 200
 
