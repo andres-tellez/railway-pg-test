@@ -13,15 +13,24 @@ type UserInfo = {
 
 const Dashboard: React.FC = () => {
   const { isAuthenticated, isLoading, user } = useAuth0();
-  const api = useApiClient(); // ✅ use the axios client directly
+  const api = useApiClient();
 
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [activityCount, setActivityCount] = useState<number>(0);
   const [syncing, setSyncing] = useState(false);
 
+  const upsertUserIdentity = async () => {
+    try {
+      await api.post("/user/identity");
+      console.log("✅ Identity upserted");
+    } catch (err) {
+      console.error("❌ Failed to upsert identity:", err);
+    }
+  };
+
   const fetchUserData = async () => {
     try {
-      const { data } = await api.get("/user"); // ✅ no '/api' prefix needed
+      const { data } = await api.get("/user");
       setUserInfo({
         name: data.name || user?.name || "",
         email: data.email || user?.email || "",
@@ -59,7 +68,8 @@ const Dashboard: React.FC = () => {
     console.log("🔍 Auth state:", { isAuthenticated, isLoading });
 
     if (isAuthenticated && !isLoading) {
-      console.log("✅ Auth ready — fetching user data...");
+      console.log("✅ Auth ready — syncing identity and fetching data...");
+      upsertUserIdentity();
       fetchUserData();
       fetchActivityCount();
     }
