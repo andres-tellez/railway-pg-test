@@ -48,3 +48,5 @@ test_failures.txt
 
 # Frontend build output
 frontend/dist/
+
+node_modules/

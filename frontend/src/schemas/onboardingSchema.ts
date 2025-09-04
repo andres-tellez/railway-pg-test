@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 // 1) Hoist literals + "as const"
 export const Days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] as const;
-export const Races = ['5K','10K','Half Marathon','Marathon','Ultra',"Haven\'t raced yet"] as const;
+export const Races = ['5K','10K','Half Marathon','Marathon','Ultra',"Haven't raced yet"] as const;
 export const Distances = ['5K','10K','Half Marathon','Marathon','Ultra','Other'] as const;
 export const RunnerLevels = ['Beginner','Intermediate','Expert'] as const;
 export const AgeGroups = ['Under 18','18-24','25-34','35-44','45-54','55+'] as const;
@@ -25,7 +25,7 @@ const MotivationEnum = z.enum(Motivations);
 export const onboardingSchema = z.object({
   user_id: z.string().min(1),
 
-  runnerLevel: RunnerLevelEnum.optional(),
+  runnerLevel: RunnerLevelEnum, // ✅ fixed
   mainGoal: GoalEnum.optional(),
   runPreference: RunPrefEnum.optional(),
   ageGroup: AgeGroupEnum.optional(),
@@ -36,10 +36,8 @@ export const onboardingSchema = z.object({
   raceDate: z.string().optional(),
   raceDistance: DistanceEnum.optional(),
 
-  // require at least one day on final step
   trainingDays: z.array(DaysEnum).min(1, 'Select at least one training day'),
 
-  // height optional, but if present needs both parts
   height: z.object({
     feet: z.number().int().min(3, 'Min 3ft').max(8, 'Max 8ft').optional(),
     inches: z.number().int().min(0).max(11).optional(),

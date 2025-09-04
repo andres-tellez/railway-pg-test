@@ -1,0 +1,15 @@
+// src/components/ui/DateInput.tsx
+import React from "react";
+
+type Props = React.InputHTMLAttributes<HTMLInputElement>;
+
+const DateInput = React.forwardRef<HTMLInputElement, Props>(({ className = "", ...props }, ref) => (
+  <input
+    ref={ref}
+    type="date"
+    {...props}
+    className={`w-full p-2 border rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`}
+  />
+));
+
+export default DateInput;

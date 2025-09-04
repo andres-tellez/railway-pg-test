@@ -92,14 +92,47 @@ def get_or_create_user_identity(claims: dict) -> dict:
     return row.to_dict()
 
 
+#
+# def get_user_status(user_id: str) -> dict:
+#    """Return flags used by the dashboard (hasOnboarded, hasStrava, etc.)."""
+#    # Minimal example; wire into your DAOs/services as needed.
+#    identity: UserIdentity | None = db.session.get(UserIdentity, user_id)
+#    return {
+#        "name": identity.name if identity else "",
+#        "email": identity.email if identity else "",
+#        "picture": identity.picture if identity else "",
+#        "hasOnboarded": bool(identity and identity.name),
+#        "hasStrava": bool(get_by_user_id(user_id)),  # if you map user->athlete
+#    }
+
+
+from src.db.db_session import get_session
+from src.db.models.user_profile import user_profile_table
+from sqlalchemy import select
+from src.db.dao.user_athletes_dao import get_by_user_id
+
+
 def get_user_status(user_id: str) -> dict:
-    """Return flags used by the dashboard (hasOnboarded, hasStrava, etc.)."""
-    # Minimal example; wire into your DAOs/services as needed.
-    identity: UserIdentity | None = db.session.get(UserIdentity, user_id)
-    return {
-        "name": identity.name if identity else "",
-        "email": identity.email if identity else "",
-        "picture": identity.picture if identity else "",
-        "hasOnboarded": bool(identity and identity.name),
-        "hasStrava": bool(get_by_user_id(user_id)),  # if you map user->athlete
-    }
+    session = get_session()
+    try:
+        # ✅ Check if user has onboarding profile
+        has_onboarded = (
+            session.execute(
+                select(user_profile_table).where(
+                    user_profile_table.c.user_id == user_id
+                )
+            ).first()
+            is not None
+        )
+
+        # ✅ Check if user is linked to a Strava athlete
+        link = get_by_user_id(user_id)
+        has_strava = link is not None
+
+        return {
+            "hasOnboarded": has_onboarded,
+            "hasStrava": has_strava,
+        }
+
+    finally:
+        session.close()

@@ -1,32 +1,23 @@
-import { useFormContext } from 'react-hook-form';
-import { OnboardingFormData } from '../../../schemas/onboardingSchema';
+import { useFormContext } from "react-hook-form";
+import FormField from "@/components/ui/FormField";
+import RadioGroup from "@/components/ui/RadioGroup";
 
-type Props = {
-  formData: Partial<OnboardingFormData>;
-  updateFields: (fields: Partial<OnboardingFormData>) => void;
-};
-
-export default function RunnerLevelStep({ formData }: Props) {
-  const { register, watch } = useFormContext<OnboardingFormData>();
-  const runnerLevel = watch('runnerLevel'); // ✅ camelCase
+const RunnerLevelStep = () => {
+  const { register, formState: { errors } } = useFormContext();
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-semibold">What's your current running level?</h2>
-
-      <div className="space-y-2">
-        {['Beginner', 'Intermediate', 'Expert'].map((level) => (
-          <label key={level} className="flex items-center gap-2">
-            <input
-              type="radio"
-              value={level}
-              {...register('runnerLevel')} // ✅ camelCase
-              checked={runnerLevel === level}
-            />
-            {level}
-          </label>
-        ))}
-      </div>
-    </div>
+    <FormField label="Runner Level" error={errors.runnerLevel}>
+      <RadioGroup
+        name="runnerLevel"
+        register={register}
+        options={[
+          { value: "Beginner", label: "Beginner" },
+          { value: "Intermediate", label: "Intermediate" },
+          { value: "Expert", label: "Expert" }, // <-- previously "Advanced"
+        ]}
+      />
+    </FormField>
   );
-}
+};
+
+export default RunnerLevelStep;
