@@ -46,7 +46,7 @@ frontend/node_modules/
 debug_dumps/
 test_failures.txt
 
-# Frontend build output
+# Frontend build output.
 frontend/dist/
 
 node_modules/
