@@ -26,8 +26,8 @@ logger = get_logger(__name__)
 def run_full_ingestion_and_enrichment(
     session,
     athlete_id,
-    lookback_days=None,
-    max_activities=10,
+    lookback_days=60,
+    max_activities=30,
     batch_size=10,
     per_page=200,
 ):
@@ -35,6 +35,7 @@ def run_full_ingestion_and_enrichment(
     logger.info(
         f"🚀 Starting run_full_ingestion_and_enrichment for athlete {athlete_id}"
     )
+    logger.info(f"🔍 Effective lookback_days: {lookback_days}")
 
     tokens = get_tokens_sa(session, athlete_id)
     if not tokens:
@@ -72,8 +73,12 @@ def run_full_ingestion_and_enrichment(
     service = ActivityIngestionService(session, athlete_id)
 
     after_ts = None
+
     if lookback_days:
         after_ts = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
+        logger.info(
+            f"🔍 Using 'after' timestamp: {after_ts} ({datetime.utcfromtimestamp(after_ts).isoformat()} UTC)"
+        )
 
     try:
         all_fetched = service.client.get_activities(

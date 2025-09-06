@@ -14,6 +14,7 @@ type UserInfo = {
 const Dashboard: React.FC = () => {
   const { isAuthenticated, isLoading, user } = useAuth0();
   const api = useApiClient();
+  const [activityStatus, setActivityStatus] = useState<string>("Pending");
 
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [activityCount, setActivityCount] = useState<number>(0);
@@ -58,49 +59,96 @@ const Dashboard: React.FC = () => {
   };
 
   const fetchActivityStatus = async () => {
-    try {
-      const { data } = await api.get("/activities/status");
-      setActivityCount(data.recentActivitiesCount || 0);
-      setUserInfo((prev) =>
-        prev
-          ? {
-              ...prev,
-              hasStrava: data.stravaConnected || false,
-            }
-          : {
-              name: user?.name || "",
-              email: user?.email || "",
-              picture: user?.picture || "",
-              hasOnboarded: false,
-              hasStrava: data.stravaConnected || false,
-            }
-      );
-    } catch (err) {
-      console.error("❌ Failed to fetch activity status:", err);
-    }
-  };
+  try {
+    const { data } = await api.get("/activities/status");
 
-  const syncActivities = async () => {
-    try {
-      setSyncing(true);
-      await api.post("/activities/sync");
-      await fetchActivityStatus();
-    } catch (err) {
-      console.error("❌ Activity sync failed:", err);
-    } finally {
-      setSyncing(false);
-    }
-  };
+    setActivityCount(prev => {
+      const newCount = data.recentActivitiesCount || 0;
+      return newCount !== prev ? newCount : prev;
+    });
+
+    setActivityStatus(prev =>
+      data.status && data.status !== prev ? data.status : prev
+    );
+
+    setUserInfo((prev) =>
+      prev
+        ? {
+            ...prev,
+            hasStrava: data.stravaConnected || false,
+          }
+        : {
+            name: user?.name || "",
+            email: user?.email || "",
+            picture: user?.picture || "",
+            hasOnboarded: false,
+            hasStrava: data.stravaConnected || false,
+          }
+    );
+  } catch (err) {
+    console.error("❌ Failed to fetch activity status:", err);
+  }
+};
+
+const syncActivities = async () => {
+  console.log("🆗 Sync button clicked");
+
+  try {
+    setSyncing(true);
+    console.log("🔄 Calling /activities/sync");
+
+    // 🔧 Extract access_token from Auth0 localStorage entry
+    const storageKey = Object.keys(localStorage).find((key) =>
+      key.includes("@@auth0spajs@@")
+    );
+
+    if (!storageKey) throw new Error("No Auth0 storage key found");
+
+    const tokenEntry = localStorage.getItem(storageKey);
+    const parsed = tokenEntry ? JSON.parse(tokenEntry) : null;
+    const accessToken = parsed?.body?.access_token;
+
+    if (!accessToken) throw new Error("Access token not found");
+
+    // 🔧 Manually call sync endpoint with token
+    const response = await fetch("http://localhost:5000/api/activities/sync", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    const data = await response.json();
+
+    console.log("✅ Sync success:", data);
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    await fetchActivityStatus();
+    await fetchUserData();
+  } catch (err) {
+    console.error("❌ Activity sync failed:", err);
+    alert("Sync failed. Check console for details.");
+  } finally {
+    setSyncing(false);
+  }
+};
+
+
+
+
 
   useEffect(() => {
     console.log("🔍 Auth state:", { isAuthenticated, isLoading });
 
-    if (isAuthenticated && !isLoading && !stravaHandled) {
+    if (isAuthenticated && !isLoading) {
       upsertUserIdentity();
       fetchUserData();
       fetchActivityStatus();
     }
-  }, [isAuthenticated, isLoading, stravaHandled]);
+  }, [isAuthenticated, isLoading]);
+
+
 
   if (isLoading) return <div className="p-6">🔄 Loading auth...</div>;
   if (!isAuthenticated) return <div className="p-6 text-red-600">❌ Not authenticated</div>;
@@ -140,7 +188,7 @@ const Dashboard: React.FC = () => {
           },
           {
             label: "10+ Activities Found",
-            status: activityCount >= 10,
+            status: activityStatus === "Complete",
             actionLabel: "Sync Activities",
             onClick: syncActivities,
           },
@@ -162,7 +210,10 @@ const Dashboard: React.FC = () => {
             </div>
             {actionLabel && !status && (
               <button
-                onClick={onClick}
+                onClick={() => {
+                  console.log(`🖱 Button clicked: ${label}`);
+                  onClick?.();
+                }}
                 className="mt-4 bg-blue-600 text-white py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
                 disabled={syncing}
               >
