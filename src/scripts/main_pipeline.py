@@ -1,3 +1,4 @@
+# src/scripts/main_pipeline.py
 import argparse
 import logging
 import sys
@@ -18,7 +19,7 @@ from src.services.ingestion_orchestrator_service import (
 from src.services.token_service import refresh_token_if_expired
 from src.db.dao.athlete_dao import get_all_athletes
 from src.db.dao.token_dao import get_tokens_sa
-from src.db.dao.activity_dao import has_existing_activities  # ✅ added
+from src.db.dao.activity_dao import has_existing_activities  # ✅ used carefully
 from src.scripts import oauth_cli
 
 logging.basicConfig(level=logging.INFO)
@@ -37,20 +38,22 @@ def parse_date(date_str):
 
 
 def run_for_athlete(session, athlete_id, args):
+    # Ensure we have tokens (kick off CLI OAuth if missing)
     try:
         tokens = get_tokens_sa(session, athlete_id)
     except Exception:
         tokens = None
 
     if not tokens:
-        logger.info(
-            f"🔐 No token found for athlete {athlete_id}. Launching OAuth flow..."
-        )
+        logger.info(f"🔐 No token for athlete {athlete_id}. Launching OAuth CLI...")
         oauth_cli.main(athlete_id_override=athlete_id)
 
+    # Branching by explicit modes first
     if args.activity_id:
         ingest_specific_activity(session, athlete_id, args.activity_id)
-    elif args.start_date and args.end_date:
+        return
+
+    if args.start_date and args.end_date:
         ingest_between_dates(
             session,
             athlete_id,
@@ -60,30 +63,41 @@ def run_for_athlete(session, athlete_id, args):
             max_activities=args.max_activities,
             per_page=args.per_page,
         )
-    elif args.start_date or args.end_date:
+        return
+
+    if args.start_date or args.end_date:
         raise ValueError("Both --start_date and --end_date must be provided together.")
-    else:
-        refresh_token_if_expired(session, athlete_id)
 
-        if has_existing_activities(session, athlete_id):
-            logger.info(
-                f"✅ Activities already exist for athlete {athlete_id}, skipping re-download."
-            )
-            return
+    # Default mode: recent pull / lookback pull
+    refresh_token_if_expired(session, athlete_id)
 
-        run_full_ingestion_and_enrichment(
-            session,
-            athlete_id,
-            lookback_days=args.lookback_days,
-            batch_size=args.batch_size,
-            max_activities=args.max_activities,
-            per_page=args.per_page,
+    # ❗ Only skip re-download if user did NOT request a lookback window
+    # (we still want to poll for recent changes on cron runs)
+    if args.lookback_days is None and has_existing_activities(session, athlete_id):
+        logger.info(
+            f"✅ Activities already exist for athlete {athlete_id}; nothing to do."
         )
+        return
+
+    run_full_ingestion_and_enrichment(
+        session,
+        athlete_id,
+        lookback_days=args.lookback_days,
+        batch_size=args.batch_size,
+        max_activities=args.max_activities,
+        per_page=args.per_page,
+    )
 
 
 def main():
+    # 🚦 Staging-only guard
+    if os.getenv("RUN_STAGING_CRON", "").lower() != "true":
+        print("🚫 Skipping cron ingestion (RUN_STAGING_CRON != true).")
+        sys.exit(0)
+
     print("⚙️ FLASK_ENV =", os.getenv("FLASK_ENV"))
     print("⚙️ config.DATABASE_URL =", config.DATABASE_URL)
+
     parser = argparse.ArgumentParser(description="Orchestrate sync + enrichment")
 
     group = parser.add_mutually_exclusive_group(required=True)
@@ -93,8 +107,8 @@ def main():
     parser.add_argument(
         "--lookback_days",
         type=int,
-        default=None,
-        help="Lookback window in days. If omitted, pulls latest N activities by --max_activities.",
+        default=1,  # 👈 default to 1 day so cron checks “recent” by default
+        help="Lookback window in days (default 1). If omitted, pulls latest N activities.",
     )
     parser.add_argument(
         "--max_activities",
