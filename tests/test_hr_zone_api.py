@@ -1,6 +1,14 @@
 import os
 import requests
 
+import pytest
+
+pytest.skip(
+    "integration test: requires legacy CLI and/or real Strava token; skipping in unit run",
+    allow_module_level=True,
+)
+
+
 # Replace with a valid activity_id you know has HR data
 activity_id = 14663194187  # <-- replace with one of your existing IDs
 

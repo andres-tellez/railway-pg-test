@@ -1,8 +1,15 @@
-import jwt
-from functools import wraps
-from flask import request, jsonify, current_app
+# src/utils/jwt_utils.py
+"""
+Auth utils (internal + external).
 
+✅ RS256 Auth0 JWT validation is delegated to src.utils.auth0_jwt
+✅ Only unique part here: support for X-Internal-Key override
+"""
+
+from functools import wraps
+from flask import request, jsonify, g
 import src.utils.config as config
+from src.utils.auth0_jwt import verify_and_decode
 
 
 def require_auth(f):
@@ -10,42 +17,41 @@ def require_auth(f):
     def decorated(*args, **kwargs):
         # ✅ Internal service key override
         internal_key = request.headers.get("X-Internal-Key")
-
-        if internal_key and config.INTERNAL_API_KEY and internal_key == config.INTERNAL_API_KEY:
-            request.user = {
-                "user_id": "internal",
-                "is_internal": True  # ✅ Enable admin privileges
+        if (
+            internal_key
+            and config.INTERNAL_API_KEY
+            and internal_key == config.INTERNAL_API_KEY
+        ):
+            g.current_user = {
+                "sub": "internal",
+                "is_internal": True,
             }
             return f(*args, **kwargs)
 
-        # 🔐 Fallback to regular Bearer token auth
+        # 🔐 Fallback to standard Auth0 Bearer token
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.lower().startswith("bearer "):
             return jsonify({"error": "Authorization header missing"}), 401
 
         token = auth_header.split(" ")[1]
+        print(f"[🔍 DEBUG] Received token: {token!r}")
         try:
-            payload = jwt.decode(token, config.SECRET_KEY, algorithms=["HS256"])
-            user_id = payload.get("sub")
-            if not user_id:
-                return jsonify({"error": "Token missing subject (sub)"}), 401
-
-            request.user = {
-                "user_id": user_id,
-                "is_internal": user_id == "internal"
-            }
-        except jwt.ExpiredSignatureError:
-            return jsonify({"error": "Token expired"}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({"error": "Invalid token"}), 401
+            claims = verify_and_decode(token)
+            g.current_user = claims
+        except Exception as e:
+            return jsonify({"error": f"Invalid token: {str(e)}"}), 401
 
         return f(*args, **kwargs)
+
     return decorated
 
 
 def decode_token(token: str) -> dict:
-    """Decode JWT without expiration check (for internal inspection)."""
+    """
+    Decode JWT for internal inspection (no expiration check).
+    ✅ Now delegates to verify_and_decode (Auth0 RS256).
+    """
     try:
-        return jwt.decode(token, config.SECRET_KEY, algorithms=["HS256"], options={"verify_exp": False})
-    except jwt.DecodeError:
-        raise ValueError("Invalid token format")
+        return verify_and_decode(token)
+    except Exception as e:
+        raise ValueError(f"Invalid token format: {str(e)}")

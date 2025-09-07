@@ -18,7 +18,11 @@ class Split(Base):
     __tablename__ = "splits"
 
     id = Column(Integer, primary_key=True)
-    activity_id = Column(BigInteger, ForeignKey("activities.activity_id", ondelete="CASCADE"), nullable=False)
+    activity_id = Column(
+        BigInteger,
+        ForeignKey("activities.activity_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     lap_index = Column(Integer, nullable=False)
     distance = Column(Float)
     elapsed_time = Column(Integer)
@@ -52,10 +56,7 @@ def upsert_splits(session, splits_data: list[dict]):
         if c.name not in {"id", "created_at"}
     }
 
-    stmt = stmt.on_conflict_do_update(
-        constraint="uq_activity_lap",
-        set_=update_cols
-    )
+    stmt = stmt.on_conflict_do_update(constraint="uq_activity_lap", set_=update_cols)
 
     session.execute(stmt)
     session.commit()

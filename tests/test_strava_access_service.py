@@ -3,9 +3,11 @@ from unittest.mock import patch, MagicMock
 from requests.exceptions import HTTPError
 from src.services.strava_access_service import StravaClient
 
+
 @pytest.fixture
 def client():
     return StravaClient(access_token="fake-token")
+
 
 @patch("src.services.strava_access_service.requests.request")
 def test_request_with_backoff_success(mock_request, client):
@@ -17,6 +19,7 @@ def test_request_with_backoff_success(mock_request, client):
     result = client._request_with_backoff("GET", "http://test-url")
     assert result == {"data": "ok"}
     mock_request.assert_called_once()
+
 
 @patch("src.services.strava_access_service.requests.request")
 @patch("time.sleep", return_value=None)
@@ -35,6 +38,7 @@ def test_request_with_backoff_rate_limit_retries(mock_sleep, mock_request, clien
     assert mock_request.call_count == 3
     assert mock_sleep.call_count == 2
 
+
 @patch("src.services.strava_access_service.requests.request")
 @patch("time.sleep", return_value=None)
 def test_request_with_backoff_max_retries_exceeded(mock_sleep, mock_request, client):
@@ -46,6 +50,7 @@ def test_request_with_backoff_max_retries_exceeded(mock_sleep, mock_request, cli
 
     with pytest.raises(RuntimeError, match="Exceeded max retries"):
         client._request_with_backoff("GET", "http://test-url")
+
 
 @patch("src.services.strava_access_service.requests.request")
 def test_get_activities_pagination_and_limit(mock_request, client):
@@ -64,6 +69,7 @@ def test_get_activities_pagination_and_limit(mock_request, client):
     assert activities[0]["id"] == 1
     assert mock_request.call_count == 2  # Corrected here
 
+
 @patch("src.services.strava_access_service.requests.request")
 def test_get_activity_success(mock_request, client):
     expected = {"id": 123}
@@ -72,6 +78,7 @@ def test_get_activity_success(mock_request, client):
     activity = client.get_activity(123)
     assert activity == expected
     mock_request.assert_called_once()
+
 
 @patch("src.services.strava_access_service.requests.request")
 def test_get_hr_zones_success_and_404(mock_request, client):
@@ -86,6 +93,7 @@ def test_get_hr_zones_success_and_404(mock_request, client):
     result = client.get_hr_zones(999)
     assert result is None
 
+
 @patch("src.services.strava_access_service.requests.request")
 def test_get_splits_success_and_404(mock_request, client):
     mock_request.return_value = MagicMock(status_code=200, json=lambda: [{"lap": 1}])
@@ -98,12 +106,13 @@ def test_get_splits_success_and_404(mock_request, client):
     splits = client.get_splits(999)
     assert splits == []
 
+
 @patch("src.services.strava_access_service.requests.request")
 def test_get_streams_parsing_and_empty(mock_request, client):
     resp_json = {
         "heartrate": {"data": [100, 101, "102", "abc"]},
         "cadence": {"data": [80, 81]},
-        "watts": None
+        "watts": None,
     }
     mock_request.return_value = MagicMock(status_code=200, json=lambda: resp_json)
 
@@ -111,6 +120,7 @@ def test_get_streams_parsing_and_empty(mock_request, client):
     assert streams["heartrate"] == [100.0, 101.0, 102.0]
     assert streams["cadence"] == [80.0, 81.0]
     assert streams["watts"] == []
+
 
 @patch("src.services.strava_access_service.requests.request")
 def test_get_streams_handles_bad_data(mock_request, client):

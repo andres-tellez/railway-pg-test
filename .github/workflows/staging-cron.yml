@@ -1,0 +1,47 @@
+name: Staging Strava Ingestion (Cron)
+
+on:
+  schedule:
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  staging-ingestion:
+    if: ${{ vars.RUN_STAGING_CRON == 'true' }}
+    runs-on: ubuntu-latest
+    environment: staging
+
+    env:
+      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      STRAVA_CLIENT_ID: ${{ secrets.STAGING_STRAVA_CLIENT_ID }} # ❗ Use secrets instead of vars
+      STRAVA_CLIENT_SECRET: ${{ secrets.STAGING_STRAVA_CLIENT_SECRET }}
+      REDIRECT_URI: ${{ secrets.STAGING_REDIRECT_URI }}
+      INTERNAL_API_KEY: ${{ secrets.STAGING_INTERNAL_API_KEY }}
+      CRON_SECRET_KEY: ${{ secrets.STAGING_CRON_SECRET_KEY }}
+      PYTHONPATH: ${{ github.workspace }}/src
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Echo key envs (sanity check)
+        run: |
+          echo "Branch: $GITHUB_REF"
+          echo "REDIRECT_URI=$REDIRECT_URI"
+          python -m src.scripts.check_envs
+
+      - name: (Optional) Debug token
+        run: python -m src.scripts.debug_token || true
+
+      - name: Run ingestion + enrichment (staging)
+        run: python -m src.scripts.main_pipeline --all --lookback_days=1

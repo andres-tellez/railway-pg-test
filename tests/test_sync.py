@@ -2,10 +2,12 @@ from unittest.mock import patch, MagicMock
 import pytest
 import os
 
+os.environ["FLASK_ENV"] = "test"
+
+
 @pytest.fixture(scope="session", autouse=True)
 def set_env_vars():
     os.environ["CRON_SECRET_KEY"] = "devkey123"
-
 
 
 @patch("src.services.activity_service.StravaClient")
@@ -20,4 +22,4 @@ def test_sync_success(mock_ingestor, mock_enrich, mock_token, mock_strava, clien
 
         resp = client.get("/sync/sync/123?key=devkey123")
         assert resp.status_code == 200
-        assert resp.json == {"inserted": 5}
+        assert resp.json == {"inserted": 5, "limit": None, "lookback_days": 14}

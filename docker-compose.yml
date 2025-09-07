@@ -1,0 +1,10 @@
+services:
+  app:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env.local
+    volumes:
+      - .:/app
+    command: python run.py

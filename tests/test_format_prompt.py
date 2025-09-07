@@ -1,6 +1,7 @@
 import pytest
 from src.utils.gpt_ops import format_prompt
 
+
 def test_format_prompt_with_valid_data():
     user_question = "How far did I run this week?"
     activities = [
@@ -16,6 +17,7 @@ def test_format_prompt_with_valid_data():
     assert "[2] date: 2025-06-25, distance_km: 10.0, duration_min: 54" in result
     assert "USER QUESTION" in result
     assert "How far did I run this week?" in result
+
 
 def test_format_prompt_with_empty_activities():
     result = format_prompt("What's my performance?", [])

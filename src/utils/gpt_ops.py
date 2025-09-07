@@ -44,14 +44,15 @@ def get_gpt_response(prompt: str) -> str:
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a helpful fitness assistant."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ],
             temperature=0.7,
-            max_tokens=2000
+            max_tokens=2000,
         )
-        return response['choices'][0]['message']['content'].strip()
+        return response["choices"][0]["message"]["content"].strip()
     except Exception as e:
         import traceback
+
         print("GPT API call failed:", e)
         traceback.print_exc()
         return f"❌ GPT error: {e}"

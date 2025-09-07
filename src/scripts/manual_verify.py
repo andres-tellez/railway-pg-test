@@ -16,7 +16,9 @@ print(f"[DEBUG] DATABASE_URL: {os.getenv('DATABASE_URL')}")
 
 # ✅ Import logic
 from src.db.db_session import get_session
-from src.services.ingestion_orchestrator_service import run_full_ingestion_and_enrichment
+from src.services.ingestion_orchestrator_service import (
+    run_full_ingestion_and_enrichment,
+)
 
 # ✅ Main entry
 if __name__ == "__main__":

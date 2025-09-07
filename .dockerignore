@@ -26,3 +26,7 @@ coverage.*
 
 # OS/Editor specific
 *.swp
+
+# Optional: Ignore built frontend artifacts
+/frontend/dist/
+/frontend/node_modules/

@@ -10,6 +10,7 @@
   "python.analysis.extraPaths": [
     "./src"
   ],
+  "python.envFile": "${workspaceFolder}/.env.local",
   "sqltools.connections": [
     {
       "previewLimit": 50,
