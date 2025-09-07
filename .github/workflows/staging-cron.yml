@@ -13,13 +13,12 @@ jobs:
 
     env:
       DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-      STRAVA_CLIENT_ID: ${{ vars.STAGING_STRAVA_CLIENT_ID }}
+      STRAVA_CLIENT_ID: ${{ secrets.STAGING_STRAVA_CLIENT_ID }} # ❗ Use secrets instead of vars
       STRAVA_CLIENT_SECRET: ${{ secrets.STAGING_STRAVA_CLIENT_SECRET }}
-      REDIRECT_URI: ${{ vars.STAGING_REDIRECT_URI }}
+      REDIRECT_URI: ${{ secrets.STAGING_REDIRECT_URI }}
       INTERNAL_API_KEY: ${{ secrets.STAGING_INTERNAL_API_KEY }}
       CRON_SECRET_KEY: ${{ secrets.STAGING_CRON_SECRET_KEY }}
       PYTHONPATH: ${{ github.workspace }}/src
-      RUN_STAGING_CRON: true
 
     steps:
       - name: Checkout
@@ -38,7 +37,6 @@ jobs:
       - name: Echo key envs (sanity check)
         run: |
           echo "Branch: $GITHUB_REF"
-          echo "RUN_STAGING_CRON=$RUN_STAGING_CRON"
           echo "REDIRECT_URI=$REDIRECT_URI"
           python -m src.scripts.check_envs
 
