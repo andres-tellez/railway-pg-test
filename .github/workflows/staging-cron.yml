@@ -45,13 +45,11 @@ jobs:
         run: |
           echo "DB Host: $(echo $DATABASE_URL | cut -d@ -f2 | cut -d/ -f1)"
 
-      - name: Check DB for athletes table
-        env:
-          PGPASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+      - name: Check DB tables in public schema
         run: |
           apt-get update && apt-get install -y postgresql-client
-          echo "Checking tables in 'public' schema..."
-          psql "$DATABASE_URL" -c "\dt public.*" || echo "Table check failed"
+          echo "Listing tables in public schema..."
+          psql "$DATABASE_URL" -c "\dt public.*"
 
       - name: (Optional) Debug token
         run: python -m src.scripts.debug_token || true
