@@ -1,23 +1,9 @@
-providers = ["node"]
-
-[phases.setup]
-nixPkgs = [
-  "nodejs_18",
-  "python311",
-  "postgresql_16",
-  "gcc"
-]
-
-[phases.install]
-cmds = [
-  "npm ci --prefix frontend",
-  "python -m venv venv && . venv/bin/activate && pip install -r requirements.txt"
-]
+providers = ["...", "python"]
 
 [phases.build]
 cmds = [
   "echo 🚀 STARTING FRONTEND BUILD",
-  "cd frontend && npm run build",
+  "cd frontend && npm ci && npm run build",
   "echo ✅ FRONTEND BUILD COMPLETE",
   "ls -la frontend/dist || echo DIST NOT FOUND"
 ]
