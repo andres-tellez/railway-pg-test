@@ -49,4 +49,4 @@ jobs:
         run: python -m src.scripts.debug_token || true
 
       - name: Run ingestion + enrichment (staging)
-        run: python -m src.scripts.run_staging_cron --lookback_days=1
+        run: python -m src.scripts.run_staging_cron
