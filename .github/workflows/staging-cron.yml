@@ -12,7 +12,7 @@ jobs:
     environment: web-staging
 
     env:
-      DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
       STRAVA_CLIENT_ID: ${{ secrets.STAGING_STRAVA_CLIENT_ID }}
       STRAVA_CLIENT_SECRET: ${{ secrets.STAGING_STRAVA_CLIENT_SECRET }}
       REDIRECT_URI: ${{ secrets.STAGING_REDIRECT_URI }}
