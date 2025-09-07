@@ -9,7 +9,7 @@ jobs:
   staging-ingestion:
     if: ${{ vars.RUN_STAGING_CRON == 'true' }}
     runs-on: ubuntu-latest
-    environment: web-staging
+    environment: web-staging (supportive-reprieve / production)
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
