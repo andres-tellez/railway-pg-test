@@ -41,6 +41,10 @@ jobs:
           echo "REDIRECT_URI=$REDIRECT_URI"
           python -m src.scripts.check_envs
 
+      - name: Print DB host/port (sanity check)
+        run: |
+          echo "DB Host: $(echo $DATABASE_URL | cut -d@ -f2 | cut -d/ -f1)"
+
       - name: (Optional) Debug token
         run: python -m src.scripts.debug_token || true
 
