@@ -51,11 +51,10 @@ import src.db.models.athletes
 import src.db.models.user_profile
 from src.db.models.user_profile import metadata as user_profile_metadata
 import src.db.models.user_identity
-from src.db.models.user_identity import metadata as user_identity_metadata
 
 # --- Merge ORM and Core metadata ---
 TARGET_METADATA = MetaData()
-for m in [Base.metadata, user_profile_metadata, user_identity_metadata]:
+for m in [Base.metadata, user_profile_metadata]:
     for table in m.tables.values():
         TARGET_METADATA._add_table(table.name, table.schema, table)
 
