@@ -13,6 +13,7 @@ jobs:
     if: ${{ vars.RUN_STAGING_CRON == 'true' }}
     runs-on: ubuntu-latest
     environment: staging
+    
 
     env:
       # Inject staging env **secrets**
