@@ -37,13 +37,21 @@ jobs:
       - name: Echo key envs (sanity check)
         run: |
           echo "Branch: $GITHUB_REF"
-          echo "DATABASE_URL=${DATABASE_URL:0:8}******"  # Masked to verify it's set
+          echo "DATABASE_URL=${DATABASE_URL:0:8}******"
           echo "REDIRECT_URI=$REDIRECT_URI"
           python -m src.scripts.check_envs
 
       - name: Print DB host/port (sanity check)
         run: |
           echo "DB Host: $(echo $DATABASE_URL | cut -d@ -f2 | cut -d/ -f1)"
+
+      - name: Check DB for athletes table
+        env:
+          PGPASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+        run: |
+          apt-get update && apt-get install -y postgresql-client
+          echo "Checking tables in 'public' schema..."
+          psql "$DATABASE_URL" -c "\dt public.*" || echo "Table check failed"
 
       - name: (Optional) Debug token
         run: python -m src.scripts.debug_token || true
