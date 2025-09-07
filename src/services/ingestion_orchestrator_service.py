@@ -74,17 +74,28 @@ def run_full_ingestion_and_enrichment(
     logger.info(f"🗖️ Fetching recent activities from Strava...")
     service = ActivityIngestionService(session, athlete_id)
 
-    after_ts = None
-
-    if lookback_days:
-        after_ts = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
-        logger.info(
-            f"🔍 Using 'after' timestamp: {after_ts} ({datetime.utcfromtimestamp(after_ts).isoformat()} UTC)"
+    if after is None:
+        after = int(
+            (datetime.utcnow() - timedelta(days=lookback_days))
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            .timestamp()
         )
+
+    if before is None:
+        before = int(
+            (
+                datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            ).timestamp()
+        )
+
+    logger.info(
+        f"🕐 Targeting activities from: {datetime.utcfromtimestamp(after).strftime('%Y-%m-%d')} (UTC)"
+    )
+    logger.info(f"🔍 after: {after} | before: {before}")
 
     try:
         all_fetched = service.client.get_activities(
-            after=after_ts, per_page=per_page, limit=max_activities
+            after=after, before=before, per_page=per_page, limit=max_activities
         )
         logger.info(f"📥 Received {len(all_fetched)} activities from Strava.")
     except Exception as e:
