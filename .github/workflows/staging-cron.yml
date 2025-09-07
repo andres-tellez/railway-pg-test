@@ -1,8 +1,7 @@
 name: Staging Strava Ingestion (Cron)
 
 on:
-  schedule:
-    - cron: "0 */2 * * *"
+  schedule: ["0 */2 * * *"]
   workflow_dispatch:
 
 jobs:
@@ -24,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -34,25 +33,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Echo key envs (sanity check)
+      - name: Echo key envs
         run: |
           echo "Branch: $GITHUB_REF"
           echo "DATABASE_URL=${DATABASE_URL:0:8}******"
           echo "REDIRECT_URI=$REDIRECT_URI"
           python -m src.scripts.check_envs
 
-      - name: Print DB host/port (sanity check)
+      - name: Print DB host and verify table visibility
         run: |
-          echo "DB Host: $(echo $DATABASE_URL | cut -d@ -f2 | cut -d/ -f1)"
+          echo "Detected psql at: $(which psql || echo 'not found')"
+          echo "DB Host: $(echo "$DATABASE_URL" | cut -d@ -f2 | cut -d/ -f1)"
+          echo "Tables in public schema:"
+          # Safely pass the URL with quotes to handle masked secrets
+          psql "$DATABASE_URL" -c "\dt public.*" || echo "Unable to list tables."
 
-      - name: Check DB tables in public schema
-        run: |
-          apt-get update && apt-get install -y postgresql-client
-          echo "Listing tables in public schema..."
-          psql "$DATABASE_URL" -c "\dt public.*"
-
-      - name: (Optional) Debug token
+      - name: Debug token
         run: python -m src.scripts.debug_token || true
 
-      - name: Run ingestion + enrichment (staging)
+      - name: Run ingestion + enrichment
         run: python -m src.scripts.run_staging_cron --lookback_days=1
