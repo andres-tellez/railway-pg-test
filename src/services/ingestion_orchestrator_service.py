@@ -30,6 +30,8 @@ def run_full_ingestion_and_enrichment(
     max_activities=30,
     batch_size=10,
     per_page=200,
+    after=None,
+    before=None,
 ):
     logger.info(f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()}")
     logger.info(
