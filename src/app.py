@@ -48,7 +48,7 @@ print(f"🔑 AUTH0_ALGORITHMS={os.getenv('AUTH0_ALGORITHMS')}", flush=True)
 # 🌐 Flask Setup
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
-import src.utils.config as config
+from src.utils.config import config
 from src.routes.admin_routes import admin_bp
 from src.routes.auth_routes import auth_bp
 from src.routes.activity_routes import activity_bp
@@ -98,6 +98,9 @@ def create_app(test_config=None):
     )
 
     db.init_app(app)
+
+    import src.db.models
+
     Session(app)
 
     if test_config:
@@ -112,6 +115,12 @@ def create_app(test_config=None):
     app.register_blueprint(user_profile_bp)
     app.register_blueprint(identity_bp)
     app.register_blueprint(auth_me_bp)
+
+    @app.route("/_debug/db-url")
+    def debug_db_url():
+        from src.db.db_session import engine
+
+        return {"connected_url": str(engine.url)}, 200
 
     # ✅ Global OPTIONS handler for preflight support
     @app.before_request

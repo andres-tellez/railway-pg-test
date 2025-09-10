@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import traceback
 from typing import Optional
 
@@ -10,43 +12,89 @@ from src.db.db_session import get_session
 from src.services.activity_service import ActivityIngestionService, run_enrichment_batch
 from src.utils.auth0_jwt import requires_auth
 
+from sqlalchemy.exc import ProgrammingError
+
 activity_bp = Blueprint("activity", __name__)
+
+from sqlalchemy import text, bindparam
+from sqlalchemy.dialects.postgresql import UUID
 
 
 @activity_bp.get("/status")
 @requires_auth
 def activities_status():
     """
-    Return count of Strava activities and connection status for current logged-in user.
-    Resolves user -> athlete via user_athletes mapping.
-    Falls back to the athlete_id with most activities if current mapping is invalid.
+    Return count of Strava activities and connection status for the current user.
+    Resolves Auth0 sub -> internal UUID via user_auth_providers,
+    then looks up the mapping in public.user_athletes.
+    Falls back to the athlete_id with most activities if the mapping has no data.
     """
-    user_id = (getattr(g, "current_user", None) or {}).get("sub")
+    from sqlalchemy.exc import ProgrammingError
+
+    sub = (getattr(g, "current_user", None) or {}).get("sub")
     session = get_session()
     try:
-        athlete_row = session.execute(
-            text("SELECT athlete_id FROM user_athletes WHERE user_id = :uid LIMIT 1"),
-            {"uid": user_id},
+        # 🔐 sub -> internal UUID (user_id) via mapping table
+        uid_row = session.execute(
+            text(
+                """
+                SELECT user_id
+                FROM public.user_auth_providers
+                WHERE provider_user_id = :sub
+                LIMIT 1
+            """
+            ),
+            {"sub": sub},
         ).fetchone()
+        internal_user_id = uid_row.user_id if uid_row else None
+
+        # 🔗 Resolve athlete mapping using the UUID (not the Auth0 sub)
+        athlete_row = None
+        if internal_user_id:
+            try:
+                stmt = text(
+                    """
+                    SELECT athlete_id
+                    FROM public.user_athletes
+                    WHERE user_id = :uid
+                    LIMIT 1
+                """
+                ).bindparams(bindparam("uid", type_=UUID))
+                athlete_row = session.execute(
+                    stmt, {"uid": internal_user_id}
+                ).fetchone()
+            except ProgrammingError as e:
+                # If table is missing in some envs, fail closed
+                if "UndefinedTable" in str(e):
+                    athlete_row = None
+                else:
+                    raise
 
         is_connected = athlete_row is not None
         athlete_id = athlete_row.athlete_id if is_connected else None
 
-        print(f"👤 user_id = {user_id}")
+        print(f"👤 sub = {sub}")
+        print(f"🔐 internal_user_id = {internal_user_id}")
         print(f"🔍 athlete_row = {athlete_row}")
         print(f"🏃 original athlete_id = {athlete_id}")
 
-        # 🧠 Fallback: If no activities are found for this athlete_id, try another
+        # 🧠 Fallback: if mapped athlete has no activities, use the busiest athlete
         if athlete_id:
             row_exists = session.execute(
-                text("SELECT 1 FROM activities WHERE athlete_id = :aid LIMIT 1"),
+                text("SELECT 1 FROM public.activities WHERE athlete_id = :aid LIMIT 1"),
                 {"aid": athlete_id},
             ).fetchone()
 
             if not row_exists:
                 fallback = session.execute(
                     text(
-                        "SELECT athlete_id FROM activities GROUP BY athlete_id ORDER BY COUNT(*) DESC LIMIT 1"
+                        """
+                        SELECT athlete_id
+                        FROM public.activities
+                        GROUP BY athlete_id
+                        ORDER BY COUNT(*) DESC
+                        LIMIT 1
+                    """
                     )
                 ).fetchone()
                 if fallback:
@@ -56,7 +104,9 @@ def activities_status():
         count = (
             (
                 session.execute(
-                    text("SELECT COUNT(*) FROM activities WHERE athlete_id = :aid"),
+                    text(
+                        "SELECT COUNT(*) FROM public.activities WHERE athlete_id = :aid"
+                    ),
                     {"aid": athlete_id},
                 ).scalar()
                 or 0
@@ -90,132 +140,172 @@ def activities_status():
 @requires_auth
 def activities_sync():
     """
-    Trigger Strava sync for the current user (dev only – safe no-op if not linked).
+    Trigger Strava sync for the current user.
+    Resolves internal user_id → athlete_id → tokens → refresh if needed → calls Strava API.
     """
+    import requests
+    from datetime import datetime
+    from src.db.dao.token_dao import get_tokens_sa, save_tokens_sa
     from src.services.ingestion_orchestrator_service import (
         run_full_ingestion_and_enrichment,
     )
 
+    STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
+    STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
+
     session = get_session()
     try:
-        user_id = (getattr(g, "current_user", None) or {}).get("sub")
-        print("🆕 Sync route triggered for user:", user_id)
+        sub = (getattr(g, "current_user", None) or {}).get("sub")
+        print("🆕 Sync route triggered for sub:", sub)
 
-        # Resolve current athlete mapping
-        mapping_row = session.execute(
-            text("SELECT athlete_id FROM user_athletes WHERE user_id = :uid LIMIT 1"),
-            {"uid": user_id},
-        ).fetchone()
-
-        current_athlete_id = mapping_row.athlete_id if mapping_row else None
-
-        # 🧠 Attempt to auto-correct mapping if broken
-        if current_athlete_id is not None:
-            real_athlete_id_row = session.execute(
-                text(
-                    """
-                    SELECT athlete_id
-                    FROM activities
-                    WHERE athlete_id = :aid
-                    LIMIT 1
-                """
-                ),
-                {"aid": current_athlete_id},
-            ).fetchone()
-
-            if not real_athlete_id_row:
-                print(
-                    f"⚠️ Mapped athlete_id {current_athlete_id} has no activities. Searching for actual athlete..."
-                )
-                actual_row = session.execute(
-                    text(
-                        """
-                        SELECT athlete_id
-                        FROM activities
-                        GROUP BY athlete_id
-                        ORDER BY COUNT(*) DESC
-                        LIMIT 1
-                    """
-                    )
-                ).fetchone()
-
-                if actual_row:
-                    print(
-                        f"✅ Found better athlete_id: {actual_row.athlete_id} → Updating mapping..."
-                    )
-                    session.execute(
-                        text(
-                            """
-                            INSERT INTO user_athletes (user_id, athlete_id)
-                            VALUES (:uid, :aid)
-                            ON CONFLICT (user_id) DO UPDATE SET athlete_id = EXCLUDED.athlete_id
-                        """
-                        ),
-                        {"uid": user_id, "aid": actual_row.athlete_id},
-                    )
-                    session.commit()
-                    session.expire_all()
-                    current_athlete_id = actual_row.athlete_id
-
-        # ✅ Pull strava_athlete_id from athletes table
-        # ✅ Correctly map strava_athlete_id if missing or stale
-        strava_row = session.execute(
+        # 🔐 Step 1: Resolve Auth0 sub → internal user_id
+        uid_row = session.execute(
             text(
                 """
-                SELECT id, strava_athlete_id
-                FROM athletes
-                WHERE strava_athlete_id = (
-                    SELECT strava_athlete_id FROM athletes WHERE id = :id
-                )
+                SELECT user_id
+                FROM public.user_auth_providers
+                WHERE provider_user_id = :sub
                 LIMIT 1
                 """
             ),
-            {"id": current_athlete_id},
+            {"sub": sub},
         ).fetchone()
+        internal_user_id = uid_row.user_id if uid_row else None
+        if not internal_user_id:
+            return jsonify({"ok": False, "error": "User mapping not found"}), 404
 
-        if not strava_row:
-            return jsonify({"ok": False, "error": "Strava athlete not found"}), 404
-
-        # 🧠 Ensure mapping is using correct internal athlete_id
-        if strava_row.id != current_athlete_id:
-            print(
-                f"🔁 Updating athlete mapping from {current_athlete_id} → {strava_row.id}"
-            )
-            session.execute(
-                text(
-                    """
-                    INSERT INTO user_athletes (user_id, athlete_id)
-                    VALUES (:uid, :aid)
-                    ON CONFLICT (user_id) DO UPDATE SET athlete_id = EXCLUDED.athlete_id
+        # 🔗 Step 2: Resolve user_id → athlete_id
+        mapping_row = session.execute(
+            text(
                 """
-                ),
-                {"uid": user_id, "aid": strava_row.id},
+                SELECT athlete_id
+                FROM public.user_athletes
+                WHERE user_id = :uid
+                LIMIT 1
+                """
+            ),
+            {"uid": internal_user_id},
+        ).fetchone()
+        if not mapping_row:
+            return jsonify({"ok": False, "error": "No athlete linked"}), 404
+
+        athlete_id = mapping_row.athlete_id
+        print(f"✅ Resolved athlete_id={athlete_id}")
+
+        # 🔑 Step 3: Fetch Strava tokens
+        tokens = get_tokens_sa(session, athlete_id)
+        if not tokens or not tokens.get("access_token"):
+            return jsonify({"ok": False, "error": "Access token not found"}), 401
+
+        access_token = tokens["access_token"]
+        refresh_token = tokens.get("refresh_token")
+        expires_at = tokens.get("expires_at")  # unix timestamp
+
+        # 🔄 Step 3b: Refresh if expired
+        now_ts = int(datetime.utcnow().timestamp())
+        if expires_at and now_ts >= expires_at - 60:
+            print("🔄 Access token expired → refreshing...")
+            refresh_resp = requests.post(
+                "https://www.strava.com/oauth/token",
+                data={
+                    "client_id": STRAVA_CLIENT_ID,
+                    "client_secret": STRAVA_CLIENT_SECRET,
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                },
+                timeout=10,
+            )
+            if refresh_resp.status_code != 200:
+                return jsonify({"ok": False, "error": "Failed to refresh token"}), 401
+
+            new_tokens = refresh_resp.json()
+            access_token = new_tokens["access_token"]
+            refresh_token = new_tokens["refresh_token"]
+            expires_at = new_tokens["expires_at"]
+
+            # Save new tokens
+            save_tokens_sa(
+                session,
+                athlete_id,
+                access_token,
+                refresh_token,
+                expires_at,
             )
             session.commit()
-            session.expire_all()
+            print("✅ Token refreshed and saved")
 
-        strava_athlete_id = strava_row.strava_athlete_id  # ✅ used for ingestion
+        print(f"🔑 Using Strava access_token (len={len(access_token)})")
 
-        if not strava_row:
-            return jsonify({"ok": False, "error": "Strava athlete not found"}), 404
+        # 🚴 Step 4: Call Strava API to fetch activities
+        resp = requests.get(
+            "https://www.strava.com/api/v3/athlete/activities",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={"per_page": 10, "page": 1},
+            timeout=10,
+        )
 
-        strava_athlete_id = strava_row.strava_athlete_id
+        print(f"📡 Strava API response {resp.status_code}: {resp.text[:200]}")
 
-        # ✅ Correct: Pass strava_athlete_id here
+        if resp.status_code == 401:
+            return jsonify({"ok": False, "error": "Invalid or expired token"}), 401
+        elif resp.status_code != 200:
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "error": f"Strava API failed ({resp.status_code})",
+                        "body": resp.text[:200],
+                    }
+                ),
+                502,
+            )
+
+        activities = resp.json()
+        print(f"📥 Retrieved {len(activities)} activities from Strava")
+
+        # 🧠 Step 5: Save into DB (via ingestion service)
         result = run_full_ingestion_and_enrichment(
             session=session,
-            athlete_id=strava_athlete_id,
+            athlete_id=athlete_id,
             max_activities=10,
             batch_size=10,
             per_page=200,
         )
 
-        return jsonify({"ok": True, "fetched": int(result.get("fetched", 0))}), 200
+        return (
+            jsonify(
+                {"ok": True, "fetched": int(result.get("fetched", len(activities)))}
+            ),
+            200,
+        )
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
     finally:
         session.close()
+
+
+# src/routes/activity_routes.py
+from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
+
+# ...existing imports...
+
+
+def _resolve_internal_user_id(session, sub: str) -> str | None:
+    row = session.execute(
+        text(
+            """
+            SELECT user_id
+            FROM public.user_auth_providers
+            WHERE provider_user_id = :sub
+            LIMIT 1
+        """
+        ),
+        {"sub": sub},
+    ).fetchone()
+    return row.user_id if row else None
 
 
 # -------- Enrichment routes --------

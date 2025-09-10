@@ -7,15 +7,17 @@ from dotenv import load_dotenv
 # ─────────────────────────────
 # 📦 Setup
 # ─────────────────────────────
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # for run.py-local imports
+sys.path.insert(
+    0, str(Path(__file__).resolve().parent / "src")
+)  # for all modules to find src.*
 
-# Explicitly load .env.local for local development
+# ✅ Load env vars before importing config
 env_path = Path(".env.local")
 if env_path.exists():
     load_dotenv(dotenv_path=env_path, override=True)
     print("✅ Explicitly loaded .env.local", flush=True)
 else:
-    # Fallback to default selection logic if .env.local not found
     env_mode = os.getenv("FLASK_ENV", "production")
     env_file = {
         "local": ".env.local",
@@ -29,10 +31,12 @@ else:
 print("📍 STRAVA_REDIRECT_URI =", os.getenv("STRAVA_REDIRECT_URI"), flush=True)
 print("DATABASE_URL at runtime:", os.getenv("DATABASE_URL"), flush=True)
 
+# ✅ Import config AFTER env vars are loaded
+from src.utils.config import config
+
 # ─────────────────────────────
 # 🔧 Imports
 # ─────────────────────────────
-import src.utils.config as config
 from src.db.db_session import get_session
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
@@ -51,7 +55,6 @@ print("✅ App created via create_app()", flush=True)
 if __name__ == "__main__":
     print("📦 Starting run.py...", flush=True)
 
-    # Patch DB URL if running locally in Docker
     if (
         config.IS_LOCAL
         and config.DATABASE_URL
@@ -65,7 +68,6 @@ if __name__ == "__main__":
     else:
         print(f"✅ DATABASE_URL used as-is: {config.DATABASE_URL}", flush=True)
 
-    # Run Cron if triggered
     if os.getenv("RUN_CRON") == "true":
         print(
             f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()}",
@@ -83,8 +85,6 @@ if __name__ == "__main__":
             traceback.print_exc()
         sys.exit(0)
 
-    # Dev mode — test DB connection and run server
-    # port = config.PORT
     port = int(os.environ.get("PORT", config.PORT or 8080))
 
     config_db_url = app.config.get("DATABASE_URL") or config.DATABASE_URL

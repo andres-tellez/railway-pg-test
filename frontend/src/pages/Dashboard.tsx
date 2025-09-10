@@ -90,49 +90,26 @@ const Dashboard: React.FC = () => {
   }
 };
 
+
 const syncActivities = async () => {
   console.log("🆗 Sync button clicked");
-
   try {
     setSyncing(true);
-    console.log("🔄 Calling /activities/sync");
 
-    // 🔧 Extract access_token from Auth0 localStorage entry
-    const storageKey = Object.keys(localStorage).find((key) =>
-      key.includes("@@auth0spajs@@")
-    );
+    const res = await api.post("/activities/sync");
+    console.log("✅ Sync success:", res.data);
 
-    if (!storageKey) throw new Error("No Auth0 storage key found");
-
-    const tokenEntry = localStorage.getItem(storageKey);
-    const parsed = tokenEntry ? JSON.parse(tokenEntry) : null;
-    const accessToken = parsed?.body?.access_token;
-
-    if (!accessToken) throw new Error("Access token not found");
-
-    // 🔧 Manually call sync endpoint with token
-    const response = await fetch("http://localhost:5000/api/activities/sync", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    const data = await response.json();
-
-    console.log("✅ Sync success:", data);
-
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
+    // Refresh status after syncing
     await fetchActivityStatus();
     await fetchUserData();
-  } catch (err) {
-    console.error("❌ Activity sync failed:", err);
+  } catch (err: any) {
+    console.error("❌ Activity sync failed:", err.response?.data || err.message);
     alert("Sync failed. Check console for details.");
   } finally {
     setSyncing(false);
   }
 };
+
 
 
 

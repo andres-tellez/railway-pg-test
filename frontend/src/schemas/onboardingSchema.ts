@@ -23,9 +23,9 @@ const MotivationEnum = z.enum(Motivations);
 
 // 3) Schema (aligned with your UI + multi-step)
 export const onboardingSchema = z.object({
-  user_id: z.string().min(1),
+  user_id: z.string().uuid().optional(),  // ✅ enforce UUID
 
-  runnerLevel: RunnerLevelEnum, // ✅ fixed
+  runnerLevel: RunnerLevelEnum,
   mainGoal: GoalEnum.optional(),
   runPreference: RunPrefEnum.optional(),
   ageGroup: AgeGroupEnum.optional(),
@@ -38,10 +38,12 @@ export const onboardingSchema = z.object({
 
   trainingDays: z.array(DaysEnum).min(1, 'Select at least one training day'),
 
-  height: z.object({
-    feet: z.number().int().min(3, 'Min 3ft').max(8, 'Max 8ft').optional(),
-    inches: z.number().int().min(0).max(11).optional(),
-  }).optional(),
+  height: z
+    .object({
+      feet: z.number().int().min(3, 'Min 3ft').max(8, 'Max 8ft').optional(),
+      inches: z.number().int().min(0).max(11).optional(),
+    })
+    .optional(),
 
   weight: z.number().min(80).max(400).optional(),
 

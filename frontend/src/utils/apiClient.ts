@@ -6,35 +6,33 @@ export function useApiClient() {
   const { getAccessTokenSilently, loginWithRedirect } = useAuth0();
 
   // Prefer VITE_API_BASE_URL, then VITE_API_URL, else fall back to relative '/api'
-  let base = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
+  let base =
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_URL ||
+    "/api";
 
   // Normalize: remove trailing slash
   if (base.endsWith("/")) base = base.slice(0, -1);
 
   // If absolute (https://api.smartcoach.dev) ensure it ends with /api
-  // If relative (/api), keep as-is
   const isAbsolute = /^https?:\/\//i.test(base);
-
-
-  // Clean base URL to avoid double "/api/api"
   if (isAbsolute) {
     const url = new URL(base);
     if (!url.pathname.endsWith("/api")) {
       url.pathname = url.pathname.replace(/\/$/, "") + "/api";
     }
     base = url.toString().replace(/\/$/, "");
-}
+  }
 
-const baseURL = base;
+  const baseURL = base;
 
-  // (Optional) log in non-prod
   if (import.meta.env.MODE !== "production") {
-    // eslint-disable-next-line no-console
     console.log("API baseURL =", baseURL);
   }
 
   const client = axios.create({ baseURL });
 
+  // 🔑 Always attach access token
   client.interceptors.request.use(async (config) => {
     try {
       const token = await getAccessTokenSilently({ detailedResponse: false });
@@ -59,6 +57,24 @@ const baseURL = base;
       throw err;
     }
   });
+
+  // 🔑 Capture `user_id` from backend identity response
+  client.interceptors.response.use(
+    (response) => {
+      if (
+        response.config.url?.includes("/user/identity") &&
+        response.data?.user_id
+      ) {
+        // Save internal UUID so onboarding can use it
+        localStorage.setItem("user_id", response.data.user_id);
+        if (import.meta.env.MODE !== "production") {
+          console.log("✅ Stored internal user_id:", response.data.user_id);
+        }
+      }
+      return response;
+    },
+    (error) => Promise.reject(error)
+  );
 
   return client;
 }

@@ -55,3 +55,7 @@ def delete_tokens_sa(session, athlete_id: int) -> int:
     result = session.query(Token).filter_by(athlete_id=athlete_id).delete()
     session.commit()
     return result
+
+
+# ✅ Alias for compatibility with code expecting `save_tokens_sa`
+save_tokens_sa = insert_token_sa

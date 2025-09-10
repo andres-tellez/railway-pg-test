@@ -71,22 +71,37 @@ const OnboardingForm: React.FC = () => {
   }, [isAuthenticated, api, methods, navigate]);
 
   const handleSubmit = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const values = methods.getValues();
-      await api.post("/onboarding", values); // ✅ fixed path
-      navigate("/dashboard", { replace: true });
-    } catch (e: any) {
-      const msg =
-        e.response?.data?.message ||
-        JSON.stringify(e.response?.data?.errors) ||
-        "Submit error";
-      setError(msg);
-    } finally {
-      setSaving(false);
-    }
-  };
+  setSaving(true);
+  setError(null);
+  try {
+    const values = methods.getValues();
+
+    // ✅ Ensure pastRaces always exists (default [])
+    const fixedValues = {
+      ...values,
+      pastRaces: values.pastRaces ?? [],
+    };
+
+    const userId = localStorage.getItem("user_id"); // should be UUID from backend
+    if (!userId) throw new Error("Missing user_id in localStorage");
+
+    await api.post("/onboarding", {
+      ...fixedValues,
+      user_id: userId, // 👈 inject UUID here
+    });
+
+    navigate("/dashboard", { replace: true });
+  } catch (e: any) {
+    const msg =
+      e.response?.data?.message ||
+      JSON.stringify(e.response?.data?.errors) ||
+      "Submit error";
+    setError(msg);
+  } finally {
+    setSaving(false);
+  }
+};
+
 
   const handleNext = async () => {
     const stepFields: Record<number, (keyof OnboardingFormData)[]> = {
@@ -125,12 +140,11 @@ const OnboardingForm: React.FC = () => {
           </p>
         </div>
 
-        {error && (
+        {error && error !== "canceled" && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
             {error}
           </div>
         )}
-
         <div className="space-y-4">
           <StepComponent />
         </div>

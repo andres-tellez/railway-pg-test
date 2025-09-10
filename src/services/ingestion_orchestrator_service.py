@@ -26,9 +26,9 @@ logger = get_logger(__name__)
 def run_full_ingestion_and_enrichment(
     session,
     athlete_id,
-    lookback_days=60,
-    max_activities=30,
-    batch_size=10,
+    lookback_days=365,
+    max_activities=200,
+    batch_size=50,
     per_page=200,
     after=None,
     before=None,
@@ -94,53 +94,53 @@ def run_full_ingestion_and_enrichment(
     logger.info(f"🔍 after: {after} | before: {before}")
 
     try:
-        all_fetched = service.client.get_activities(
-            after=after, before=before, per_page=per_page, limit=max_activities
+        all_fetched = fetch_runs_only(
+            service.client,
+            after=after,
+            before=before,
+            per_page=per_page,
+            limit=max_activities,
         )
-        logger.info(f"📥 Received {len(all_fetched)} activities from Strava.")
+        logger.info(f"📥 Received {len(all_fetched)} raw activities from Strava.")
+        for act in all_fetched:
+            logger.debug(
+                f"  → id={act.get('id')} type={act.get('type')} name={act.get('name')}"
+            )
     except Exception as e:
         logger.exception(f"❌ Failed to fetch activities from Strava: {e}")
         return {"synced": 0, "enriched": 0}
 
-    # Continue as before
-    all_fetched = [a for a in all_fetched if a.get("type") == "Run"]
-
-    if not all_fetched:
-        logger.warning("📬 No 'Run' type activities returned from Strava.")
-        return {"synced": 0, "enriched": 0}
-
-    logger.info(
-        f"📥 Pulled {len(all_fetched)} total activities from Strava (pre-filtering)"
-    )
-
+    # Separate runs vs non-runs
+    runs_only = [a for a in all_fetched if a.get("type") == "Run"]
     non_runs = [a for a in all_fetched if a.get("type") != "Run"]
+
+    logger.info(f"📥 Pulled {len(all_fetched)} total activities from Strava (raw)")
+    logger.info(f"🏃 {len(runs_only)} 'Run' activities after filtering")
+
     if non_runs:
-        logger.info(f"❌ {len(non_runs)} activities excluded because type != 'Run'")
+        logger.info(f"❌ {len(non_runs)} non-run activities excluded")
         for act in non_runs:
             logger.debug(
                 f"Filtered out: id={act.get('id')} type={act.get('type')} name={act.get('name')}"
             )
 
-    all_fetched = [a for a in all_fetched if a.get("type") == "Run"]
-    logger.info(f"🏃 {len(all_fetched)} 'Run' activities after filtering")
-
-    if not all_fetched:
+    if not runs_only:
         logger.warning("📬 No qualifying 'Run' activities returned from Strava.")
         return {"synced": 0, "enriched": 0}
 
-    fetched_ids = [a["id"] for a in all_fetched]
+    fetched_ids = [a["id"] for a in runs_only]
     existing_ids = {
         r[0]
         for r in session.query(Activity.activity_id)
         .filter(Activity.activity_id.in_(fetched_ids))
         .all()
     }
-    logger.info(f"📦 {len(existing_ids)} activities already exist in DB")
+    logger.info(f"📦 {len(existing_ids)} run activities already exist in DB")
     if existing_ids:
         logger.debug(f"Already in DB: {list(existing_ids)}")
 
-    new_activities = [a for a in all_fetched if a["id"] not in existing_ids]
-    logger.info(f"🆕 {len(new_activities)} new activities to ingest")
+    new_activities = [a for a in runs_only if a["id"] not in existing_ids]
+    logger.info(f"🆕 {len(new_activities)} new run activities to ingest")
 
     if not new_activities:
         logger.warning(
@@ -188,6 +188,15 @@ def ingest_specific_activity(session, athlete_id, activity_id):
         )
 
     return 1
+
+
+def fetch_runs_only(client, after, before, per_page=200, limit=10):
+    all_acts = client.get_activities(
+        after=after, before=before, per_page=per_page, limit=limit * 3
+    )
+    # fetch extra in case of non-runs
+    runs = [a for a in all_acts if a.get("type") == "Run"]
+    return runs[:limit]
 
 
 def ingest_between_dates(

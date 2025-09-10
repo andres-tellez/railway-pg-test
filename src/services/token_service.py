@@ -2,30 +2,13 @@
 import logging
 import requests
 from datetime import datetime
-import jwt
 
-import src.utils.config as config
+from src.utils.config import config
 from src.db.db_session import get_session as db_get_session
 from src.db.dao.token_dao import get_tokens_sa, insert_token_sa
 from src.db.models.tokens import Token
-
-# ✅ Use a simple "ensure athlete exists" flow.
-# Prefer DAO helpers if available; otherwise fall back to a tiny local insert.
-try:
-    from src.db.dao.athlete_dao import (
-        get_athlete_id_from_strava_id,
-        insert_athlete,  # expected helper for minimal insert
-    )
-except Exception:  # fallback if insert_athlete doesn't exist in your DAO yet
-    from src.db.dao.athlete_dao import get_athlete_id_from_strava_id  # type: ignore
-    from src.db.models.athletes import Athlete
-
-    def insert_athlete(session, strava_athlete_id: int) -> int:  # type: ignore
-        a = Athlete(strava_athlete_id=strava_athlete_id)
-        session.add(a)
-        session.commit()
-        session.refresh(a)
-        return a.id
+from sqlalchemy.exc import IntegrityError
+from src.db.dao import user_athletes_dao  # add this import
 
 
 logger = logging.getLogger(__name__)
@@ -103,7 +86,13 @@ def delete_athlete_tokens(session, athlete_id):
     return deleted
 
 
-def store_tokens_from_callback(code, session, redirect_uri):
+def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None = None):
+    from sqlalchemy.exc import IntegrityError
+    from src.db.dao import user_athletes_dao
+    from src.db.dao.token_dao import insert_token_sa
+    from src.utils.config import config
+    import requests
+
     redirect_uri_clean = redirect_uri.strip().rstrip(";")
     print(
         f"[TokenService] Using cleaned redirect_uri: '{redirect_uri_clean}'", flush=True
@@ -116,38 +105,30 @@ def store_tokens_from_callback(code, session, redirect_uri):
         "grant_type": "authorization_code",
         "redirect_uri": redirect_uri_clean,
     }
-    print(f"[TokenService] Sending POST data to Strava token endpoint:\n{payload}")
 
-    response = requests.post(
-        "https://www.strava.com/api/v3/oauth/token",
-        data=payload,
-    )
+    print(f"[TokenService] Sending POST data to Strava token endpoint:\n{payload}")
+    response = requests.post("https://www.strava.com/api/v3/oauth/token", data=payload)
     response.raise_for_status()
     token_data = response.json()
 
-    # --- Changed: validate and ensure athlete row exists (no name/email required) ---
     athlete = token_data.get("athlete")
     if not athlete or "id" not in athlete:
         raise KeyError("❌ Strava callback response missing athlete ID")
 
     strava_athlete_id = athlete["id"]
 
-    # Ensure an internal athletes row exists mapped to this Strava ID.
-    internal_id = get_athlete_id_from_strava_id(session, strava_athlete_id)
-    if internal_id is None:
-        internal_id = insert_athlete(session, strava_athlete_id)
-        print(
-            f"🆕 Inserted athlete row id={internal_id} for Strava #{strava_athlete_id}",
-            flush=True,
-        )
-    else:
-        print(
-            f"ℹ️ Found athlete row id={internal_id} for Strava #{strava_athlete_id}",
-            flush=True,
-        )
-    # -------------------------------------------------------------------------------
+    # ✅ 1. Ensure athlete exists in user_athletes BEFORE inserting token
+    if user_id:
+        try:
+            user_athletes_dao.create_link(
+                user_id=user_id,
+                athlete_id=strava_athlete_id,
+            )
+            print(f"✅ Linked user {user_id} → athlete {strava_athlete_id}", flush=True)
+        except IntegrityError:
+            print(f"🔗 Link already exists for user {user_id}", flush=True)
 
-    # We key tokens by Strava athlete id (existing behavior).
+    # ✅ 2. Now it's safe to insert token
     insert_token_sa(
         session=session,
         athlete_id=strava_athlete_id,
@@ -155,8 +136,8 @@ def store_tokens_from_callback(code, session, redirect_uri):
         refresh_token=token_data["refresh_token"],
         expires_at=token_data["expires_at"],
     )
-
     print(f"✅ Token stored for athlete: {strava_athlete_id}", flush=True)
+
     return strava_athlete_id
 
 

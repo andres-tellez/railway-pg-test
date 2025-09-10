@@ -352,30 +352,35 @@ class ActivityIngestionService:
         access_token = get_valid_token(self.session, self.athlete_id)
         self.client = StravaClient(access_token)
 
-    def ingest_recent(self, lookback_days, max_activities=None, per_page=200):
+    def fetch_all_activities(self, after=None, before=None, per_page=200, limit=None):
         """
-        Ingest recent activities within lookback_days.
+        Fetch all activities from Strava with pagination.
         """
         self._refresh_client()
-        after = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
-        activities = self.client.get_activities(
-            after=after, per_page=per_page, limit=max_activities
-        )
-        activities = [a for a in activities if a.get("type") == "Run"]
-        return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
+        page = 1
+        results = []
+        while True:
+            batch = self.client.get_activities(
+                after=after, before=before, per_page=per_page, page=page
+            )
+            if not batch:
+                break
+            results.extend(batch)
+            log.info(f"📥 Page {page} → {len(batch)} activities (total={len(results)})")
+            if limit and len(results) >= limit:
+                return results[:limit]
+            page += 1
+        return results
 
     def ingest_full_history(
         self, lookback_days=None, max_activities=None, per_page=200, dry_run=False
     ):
-        """
-        Ingest full history with optional filters.
-        """
         after = (
             int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
             if lookback_days
             else None
         )
-        all_activities = self.client.get_activities(
+        all_activities = self.fetch_all_activities(
             after=after, per_page=per_page, limit=max_activities
         )
         all_activities = [a for a in all_activities if a.get("type") == "Run"]

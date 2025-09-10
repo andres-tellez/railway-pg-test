@@ -3,10 +3,10 @@
 import argparse
 from datetime import datetime, timedelta
 from src.db.db_session import get_session
-from src.db.dao.athlete_dao import get_all_athletes
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
 )
+from src.db.dao.user_athletes_dao import get_all_athlete_ids
 
 
 def main():
@@ -26,13 +26,13 @@ def main():
     print(f"🔍 after: {after} | before: {before}")
 
     session = get_session()
-    athletes = get_all_athletes(session)
+    athletes = get_all_athlete_ids(session)
 
-    for athlete in athletes:
-        print(f"🔄 Syncing athlete {athlete.strava_athlete_id}")
+    for athlete_id in athletes:
+        print(f"📡 Syncing athlete {athlete_id}")
         run_full_ingestion_and_enrichment(
             session,
-            athlete.strava_athlete_id,
+            athlete_id,
             after=after,
             before=before,
             batch_size=args.batch_size,

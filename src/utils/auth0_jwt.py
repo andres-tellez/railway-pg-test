@@ -7,11 +7,16 @@ from functools import wraps
 from typing import Any, Dict, Optional, Tuple
 
 import requests
-from flask import request, jsonify, g
-from src.utils import config  # ⬅️ import config
+from flask import request, jsonify, g, current_app
+from src.utils.config import config
+from jose import jwt
 
-AUTH0_DOMAIN = config.AUTH0_DOMAIN  # ⬅️ use config
-API_AUDIENCE = config.AUTH0_AUDIENCE  # ⬅️ use config
+# src/utils/auth0_jwt.py
+from src.db.dao.user_identity_dao import get_or_create_internal_user_id
+
+
+AUTH0_DOMAIN = config.AUTH0_DOMAIN
+API_AUDIENCE = config.AUTH0_AUDIENCE
 ALGORITHMS = ["RS256"]
 JWKS_URL = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json" if AUTH0_DOMAIN else None
 JWKS_TTL_SEC = 60 * 10  # 10 minutes cache
@@ -83,9 +88,6 @@ def _error(status: int, message: str):
 DEBUG_AUTH = os.getenv("DEBUG_AUTH") == "1"
 
 
-from jose import jwt
-
-
 def verify_and_decode(token: str) -> dict:
     unverified_header = jwt.get_unverified_header(token)
     rsa_key = _get_rsa_key_for_kid(unverified_header["kid"])
@@ -120,14 +122,32 @@ def requires_auth(fn):
 
         token = auth.split(" ", 1)[1]
         try:
-            # your existing JWKS fetch + jwt.decode(.. audience=AUTH0_AUDIENCE, issuer=..)
-            claims = verify_and_decode(token)  # <-- whatever you already do
+            # Verify JWT
+            claims = verify_and_decode(token)
             g.current_user = claims
+
+            sub = claims.get("sub")
+            if not sub:
+                return jsonify({"error": "unauthorized", "reason": "no_sub"}), 401
+
+            # 🔑 Resolve internal UUID from identity table
+            internal_id = get_or_create_internal_user_id(sub)
+            if not internal_id:
+                return (
+                    jsonify({"error": "unauthorized", "reason": "no_internal_user_id"}),
+                    401,
+                )
+
+            g.user_id = str(internal_id)  # always a UUID string
+
             if DEBUG_AUTH:
                 aud = claims.get("aud")
-                sub = claims.get("sub")
                 iss = claims.get("iss")
-                print(f"[requires_auth] OK sub={sub} aud={aud} iss={iss}", flush=True)
+                print(
+                    f"[requires_auth] OK sub={sub} internal_id={internal_id} aud={aud} iss={iss}",
+                    flush=True,
+                )
+
             return fn(*args, **kwargs)
         except Exception as e:
             if DEBUG_AUTH:

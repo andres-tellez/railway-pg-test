@@ -11,10 +11,9 @@ import os
 from urllib.parse import urlencode
 import requests  # for HTTPError type
 
-from src.db.dao.activity_dao import has_existing_activities
+
 from src.db.db_session import get_session
-import src.utils.config as config
-from src.db.models.athletes import Athlete
+
 from src.db.dao import user_athletes_dao
 
 # >>> import the module, not individual functions, so tests that patch
@@ -26,7 +25,7 @@ delete_athlete_tokens = token_service.delete_athlete_tokens
 refresh_token_if_expired = token_service.refresh_token_if_expired
 store_tokens_from_callback = token_service.store_tokens_from_callback
 
-from src.db.dao.athlete_dao import upsert_athlete
+
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
 )
@@ -59,7 +58,6 @@ def login_redirect_alias():
 # ------------------------------------------------------------
 # Strava OAuth start (+ alias)
 # ------------------------------------------------------------
-from src.utils.auth0_jwt import verify_and_decode
 
 
 @auth_bp.route("/strava-login", methods=["GET"])
@@ -125,6 +123,11 @@ def debug_show_cookie():
 # ------------------------------------------------------------
 # Strava OAuth callback (GET)
 # ------------------------------------------------------------
+# earlier in file:
+
+from src.services.user_identity_service import resolve_user_id_from_auth_provider
+
+
 @auth_bp.route("/callback", methods=["GET"])
 def callback():
     session = get_session()
@@ -153,15 +156,35 @@ def callback():
             flush=True,
         )
 
-        # 🔑 Step 1: Store Strava tokens and get athlete_id
+        # 👇 Extract Auth0 sub from `state` query param
+        auth0_sub = request.args.get("state")
+        if not auth0_sub:
+            return (
+                jsonify({"error": "Callback error", "detail": "Missing state param"}),
+                400,
+            )
+
+        # ✅ Convert Auth0 sub (e.g., google-oauth2|123) to internal UUID
+        from src.services.user_identity_service import (
+            resolve_user_id_from_auth_provider,
+        )
+
+        user_id = resolve_user_id_from_auth_provider(auth0_sub)
+        if not user_id:
+            return (
+                jsonify(
+                    {
+                        "error": "Callback error",
+                        "detail": "User not found for Auth0 sub",
+                    }
+                ),
+                404,
+            )
+
+        # 🔑 Exchange + ensure link + store tokens (all in the service)
         try:
             athlete_id = token_service.store_tokens_from_callback(
-                code, session, redirect_uri
-            )
-            upsert_athlete(
-                session,
-                athlete_id,
-                strava_athlete_id=athlete_id,
+                code, session, redirect_uri, user_id=user_id
             )
         except requests.exceptions.HTTPError as e:
             return jsonify({"error": "Callback error", "detail": str(e)}), 502
@@ -169,35 +192,6 @@ def callback():
         flask_session["athlete_id"] = athlete_id
         print(f"✅ Stored tokens. Athlete ID: {athlete_id}", flush=True)
 
-        # ✅ Step 2: Link user_id → athlete_id from `state` param
-        user_id = request.args.get("state")
-        if user_id:
-            try:
-                athlete_row = (
-                    session.query(Athlete)
-                    .filter_by(strava_athlete_id=athlete_id)
-                    .first()
-                )
-                if not athlete_row:
-                    raise Exception(
-                        f"Athlete with strava_athlete_id={athlete_id} not found in DB"
-                    )
-
-                internal_athlete_id = athlete_row.id
-
-                # ✅ Use clean DAO method
-                user_athletes_dao.create_link(
-                    user_id=user_id, athlete_id=internal_athlete_id
-                )
-                print(
-                    f"✅ Linked user {user_id} to athlete {internal_athlete_id}",
-                    flush=True,
-                )
-
-            except Exception as e:
-                print(f"❌ Failed to insert into user_athletes: {e}", flush=True)
-
-        # ✅ Final redirect
         if current_app.testing:
             return f"Token stored and user linked to athlete_id: {athlete_id}", 200
 
@@ -317,35 +311,6 @@ def monitor_tokens():
         ).fetchall()
         data = [{"athlete_id": r.athlete_id, "expires_at": r.expires_at} for r in rows]
         return jsonify(data), 200
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        session.close()
-
-
-@auth_bp.route("/profile", methods=["POST"])
-def save_athlete_profile():
-    session = get_session()
-    try:
-        data = request.get_json() or {}
-        athlete_id = data.get("athlete_id")
-        name = (data.get("name") or "").strip()
-        email = (data.get("email") or "").strip()
-
-        if not athlete_id:
-            return jsonify({"error": "Missing athlete_id"}), 400
-        if not name and not email:
-            return (
-                jsonify({"error": "At least one of name or email must be provided"}),
-                400,
-            )
-
-        upsert_athlete(
-            session, athlete_id, strava_athlete_id=athlete_id, name=name, email=email
-        )
-        return jsonify({"status": "✅ Profile saved"}), 200
-
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500

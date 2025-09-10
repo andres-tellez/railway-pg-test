@@ -55,13 +55,14 @@ def _coerce_int(value: Any, default: int = 0) -> int:
 def submit_user_profile():
     """
     Create/update a user's onboarding profile.
-    Always uses the Auth0 subject from the access token; the client cannot override it.
+    Always uses the internal UUID from identity, not the raw Auth0 sub.
     """
-    sub = (getattr(g, "current_user", {}) or {}).get("sub")
-    if not sub:
-        return jsonify({"status": "error", "message": "No user"}), 401
+    internal_user_id = getattr(g, "user_id", None)  # <-- UUID from your middleware
+    if not internal_user_id:
+        return jsonify({"status": "error", "message": "No internal user_id"}), 401
 
     data = request.get_json(silent=True) or {}
+
     # Accept legacy height fields
     if "heightFeet" in data or "heightInches" in data:
         feet = _coerce_int(data.pop("heightFeet", 0))
@@ -73,14 +74,14 @@ def submit_user_profile():
             )
         data["height"] = {"feet": feet, "inches": inches}
 
-    # Force user_id to token sub (schema still expects it)
-    data["user_id"] = sub
+    # Force user_id to internal UUID (not client-provided)
+    data["user_id"] = str(internal_user_id)
 
     try:
         validated = UserProfileSchema.model_validate(data)
         user_dict: Dict[str, Any] = validated.model_dump(exclude_unset=True)
 
-        # Flatten height if present
+        # Flatten height
         if "height" in user_dict:
             height = user_dict.pop("height") or {}
             feet = height.get("feet")
@@ -107,8 +108,8 @@ def submit_user_profile():
                     item.value if isinstance(item, Enum) else item for item in v
                 ]
 
-        # Enforce the sub
-        user_dict["user_id"] = sub
+        # Always overwrite with UUID
+        user_dict["user_id"] = str(internal_user_id)
 
         save_user_profile(user_dict)
         return (
@@ -119,7 +120,9 @@ def submit_user_profile():
     except ValidationError as e:
         return jsonify({"status": "error", "errors": e.errors()}), 400
     except Exception as e:
-        current_app.logger.exception("submit_user_profile failed for sub=%s", sub)
+        current_app.logger.exception(
+            "submit_user_profile failed for user_id=%s", internal_user_id
+        )
         return jsonify({"status": "error", "message": "Failed to save profile"}), 500
 
 

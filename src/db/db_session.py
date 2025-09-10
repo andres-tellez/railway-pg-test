@@ -4,7 +4,8 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-import src.utils.config as config
+from src.utils.config import config
+
 
 # ✅ SQLAlchemy instance for Flask use
 db = SQLAlchemy()
@@ -13,7 +14,7 @@ db = SQLAlchemy()
 Base = declarative_base()
 
 
-# Engine creation
+# ✅ Engine creation with pool_pre_ping and sslmode
 def get_engine(db_url=None):
     """
     Create a SQLAlchemy engine.
@@ -22,10 +23,17 @@ def get_engine(db_url=None):
     db_url = db_url or config.DATABASE_URL
     if not db_url:
         raise RuntimeError("DATABASE_URL is not set in configuration.")
-    return create_engine(db_url, echo=False, future=True)
+
+    return create_engine(
+        db_url,
+        echo=False,
+        future=True,
+        pool_pre_ping=True,  # ✅ ensures dead connections are recycled
+        connect_args={"sslmode": "require"},  # ✅ especially for Railway
+    )
 
 
-# Session factory
+# ✅ Session factory
 def get_session(engine=None):
     """
     Create a new SQLAlchemy sessionmaker (not a global session).
@@ -38,7 +46,7 @@ def get_session(engine=None):
     return SessionLocal()
 
 
-# Dependency-style session generator (used in routes)
+# ✅ Dependency-style session generator (used in routes)
 def get_db():
     """
     Generator that yields a database session and ensures closure.
@@ -50,3 +58,7 @@ def get_db():
         yield db_session
     finally:
         db_session.close()
+
+
+# ✅ Eagerly initialize engine (optional if you use it directly)
+engine = get_engine()

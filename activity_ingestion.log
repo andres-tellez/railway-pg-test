@@ -83,3 +83,12 @@
 2025-07-10 17:40:49,290 ERROR ❌ Skipping activity 447084 due to missing required fields: ['start_date', 'external_id']
 2025-07-10 17:40:49,354 ERROR ❌ Skipping activity 447084 due to missing required fields: ['start_date', 'external_id']
 2025-09-05 15:25:54,534 ERROR ❌ Skipping activity 100142 due to missing required fields: ['start_date', 'external_id']
+2025-09-09 23:01:47,384 ERROR ❌ Failed to fetch activities from Strava: StravaClient.get_activities() got an unexpected keyword argument 'page'
+Traceback (most recent call last):
+  File "C:\Users\andre\projects\railway-pg-test\src\services\ingestion_orchestrator_service.py", line 97, in run_full_ingestion_and_enrichment
+    all_fetched = fetch_runs_only(
+                  ^^^^^^^^^^^^^^^^
+  File "C:\Users\andre\projects\railway-pg-test\src\services\ingestion_orchestrator_service.py", line 197, in fetch_runs_only
+    batch = client.get_activities(
+            ^^^^^^^^^^^^^^^^^^^^^^
+TypeError: StravaClient.get_activities() got an unexpected keyword argument 'page'

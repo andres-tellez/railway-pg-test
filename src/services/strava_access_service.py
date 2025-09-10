@@ -1,6 +1,6 @@
 import requests
 import time
-from src.utils.config import STRAVA_API_BASE_URL
+from src.utils.config import config
 
 
 class StravaClient:
@@ -36,7 +36,7 @@ class StravaClient:
         raise RuntimeError("Exceeded max retries due to repeated 429 errors")
 
     def get_activities(self, after=None, before=None, limit=None, per_page=200):
-        url = f"{STRAVA_API_BASE_URL}/athlete/activities"
+        url = f"{config.STRAVA_API_BASE_URL}/athlete/activities"
         all_activities = []
         page = 1
 
@@ -62,11 +62,11 @@ class StravaClient:
         return all_activities
 
     def get_activity(self, activity_id):
-        url = f"{STRAVA_API_BASE_URL}/activities/{activity_id}"
+        url = f"{config.STRAVA_API_BASE_URL}/activities/{activity_id}"
         return self._request_with_backoff("GET", url)
 
     def get_hr_zones(self, activity_id):
-        url = f"{STRAVA_API_BASE_URL}/activities/{activity_id}/zones"
+        url = f"{config.STRAVA_API_BASE_URL}/activities/{activity_id}/zones"
         try:
             return self._request_with_backoff("GET", url)
         except requests.exceptions.HTTPError as e:
@@ -75,7 +75,7 @@ class StravaClient:
             raise
 
     def get_splits(self, activity_id):
-        url = f"{STRAVA_API_BASE_URL}/activities/{activity_id}/laps"
+        url = f"{config.STRAVA_API_BASE_URL}/activities/{activity_id}/laps"
         try:
             return self._request_with_backoff("GET", url)
         except requests.exceptions.HTTPError as e:
@@ -84,7 +84,7 @@ class StravaClient:
             raise
 
     def get_streams(self, activity_id, keys):
-        url = f"{STRAVA_API_BASE_URL}/activities/{activity_id}/streams"
+        url = f"{config.STRAVA_API_BASE_URL}/activities/{activity_id}/streams"
         resp = self._request_with_backoff(
             "GET", url, params={"keys": ",".join(keys), "key_by_type": "true"}
         )
