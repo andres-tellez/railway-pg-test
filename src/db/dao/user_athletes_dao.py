@@ -6,18 +6,16 @@ from sqlalchemy.orm import Session
 
 from src.db.db_session import get_session
 from src.db.models.user_athletes import UserAthlete
-from src.db.models.user_auth_providers import UserAuthProvider
+from src.db.models.user_identity import UserIdentity  # ✅ FIXED
 
 
 def _validate_user_exists(session: Session, user_id: str) -> None:
-    """Ensure the internal UUID user ID exists in user_auth_providers."""
+    """Ensure the internal UUID user ID exists in user_identity."""  # ✅ FIXED DOCSTRING
     row = session.execute(
-        select(UserAuthProvider.user_id).where(UserAuthProvider.user_id == str(user_id))
+        select(UserIdentity.user_id).where(UserIdentity.user_id == str(user_id))
     ).first()
     if not row:
-        raise ValueError(
-            f"user_id '{user_id}' not present in user_auth_providers.user_id"
-        )
+        raise ValueError(f"user_id '{user_id}' not present in user_identity.user_id")
 
 
 def create_link(user_id: str, athlete_id: int) -> UserAthlete:

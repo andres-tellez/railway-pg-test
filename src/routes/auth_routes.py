@@ -125,8 +125,6 @@ def debug_show_cookie():
 # ------------------------------------------------------------
 # earlier in file:
 
-from src.services.user_identity_service import resolve_user_id_from_auth_provider
-
 
 @auth_bp.route("/callback", methods=["GET"])
 def callback():
@@ -164,18 +162,18 @@ def callback():
                 400,
             )
 
-        # ✅ Convert Auth0 sub (e.g., google-oauth2|123) to internal UUID
-        from src.services.user_identity_service import (
-            resolve_user_id_from_auth_provider,
-        )
+        # ✅ Resolve internal UUID (create if missing)
+        from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
 
-        user_id = resolve_user_id_from_auth_provider(auth0_sub)
+        user_id = resolve_user_id_from_auth_provider(
+            auth0_sub, {}, create_if_missing=True
+        )
         if not user_id:
             return (
                 jsonify(
                     {
                         "error": "Callback error",
-                        "detail": "User not found for Auth0 sub",
+                        "detail": "Could not resolve or create internal user_id",
                     }
                 ),
                 404,

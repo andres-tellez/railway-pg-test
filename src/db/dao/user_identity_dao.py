@@ -1,7 +1,6 @@
-# src/db/dao/user_identity_dao.py
 import uuid
 from datetime import datetime
-from typing import Mapping, Any, Optional
+from typing import Mapping, Any, Optional, Dict
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -12,19 +11,11 @@ from src.db.models.user_auth_providers import UserAuthProvider
 
 
 def get_by_user_id(user_id: str) -> Optional[UserIdentity]:
-    """
-    Return the row for this internal user_id (UUID), or None if not found.
-    """
     db = get_session()
     return db.query(UserIdentity).filter(UserIdentity.user_id == user_id).first()
 
 
 def upsert_identity(payload: Mapping[str, Any]):
-    """
-    Insert or update user_identity for the given payload.
-    Returns the inserted/updated row.
-    Allowed keys: user_id, email, email_verified, name, picture, updated_at (datetime or None)
-    """
     now = datetime.utcnow()
     data = {
         "user_id": payload["user_id"],  # required UUID
@@ -34,6 +25,10 @@ def upsert_identity(payload: Mapping[str, Any]):
         "picture": payload.get("picture"),
         "updated_at": payload.get("updated_at") or now,
     }
+
+    # Ensure we don’t violate the constraint
+    if not data["email"] and not data["name"]:
+        data["name"] = "Anonymous User"
 
     db = get_session()
     stmt = (
@@ -56,30 +51,62 @@ def upsert_identity(payload: Mapping[str, Any]):
     return result
 
 
-def get_or_create_internal_user_id(sub: str) -> uuid.UUID:
-    """
-    Ensure there is an internal UUID for this Auth0 `sub`.
-    Looks in user_auth_providers; if none, creates a new mapping.
-    Returns the UUID.
-    """
+def get_by_email(email: str) -> Optional[UserIdentity]:
     db = get_session()
+    return db.query(UserIdentity).filter(UserIdentity.email == email).first()
 
-    # Look up mapping
-    row = db.execute(
-        select(UserAuthProvider.user_id).where(UserAuthProvider.full_provider_id == sub)
-    ).first()
-    if row:
-        return row[0]
 
-    # No mapping → generate new internal UUID
-    new_uuid = uuid.uuid4()
+def resolve_user_id_from_auth_provider(
+    sub: str, userinfo: Optional[Dict[str, Any]] = None, create_if_missing: bool = False
+) -> Optional[uuid.UUID]:
+    """
+    Resolve internal user_id from an Auth0 `sub`.
+    If `create_if_missing=True`, will insert UserIdentity + UserAuthProvider.
+    Otherwise, returns None if no mapping exists.
+    """
+    if not sub:
+        return None
 
-    # Insert into mapping table
-    stmt = insert(UserAuthProvider).values(
-        user_id=new_uuid,
-        full_provider_id=sub,
+    db = get_session()
+    provider_name, provider_user_id = sub.split("|")
+
+    # ✅ Lookup
+    existing = db.execute(
+        select(UserAuthProvider.user_id).where(
+            UserAuthProvider.provider_name == provider_name,
+            UserAuthProvider.provider_user_id == provider_user_id,
+        )
+    ).scalar()
+    if existing:
+        return existing
+
+    # 🚫 Read-only mode
+    if not create_if_missing:
+        return None
+
+    # ✅ Write mode: create user_identity + auth_provider link
+    user_id = uuid.uuid4()
+    db.execute(
+        insert(UserIdentity).values(
+            user_id=user_id,
+            email=userinfo.get("email") if userinfo else None,
+            email_verified=userinfo.get("email_verified") if userinfo else None,
+            name=(userinfo.get("name") if userinfo else "Anonymous User"),
+            picture=userinfo.get("picture") if userinfo else None,
+            updated_at=datetime.utcnow(),
+        )
     )
-    db.execute(stmt)
-    db.commit()
 
-    return new_uuid
+    db.execute(
+        insert(UserAuthProvider)
+        .values(
+            user_id=user_id,
+            full_provider_id=sub,
+            provider_name=provider_name,
+            provider_user_id=provider_user_id,
+        )
+        .on_conflict_do_nothing()
+    )
+
+    db.commit()
+    return user_id

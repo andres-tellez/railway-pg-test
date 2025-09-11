@@ -25,50 +25,26 @@ from sqlalchemy.dialects.postgresql import UUID
 def activities_status():
     """
     Return count of Strava activities and connection status for the current user.
-    Resolves Auth0 sub -> internal UUID via user_auth_providers,
-    then looks up the mapping in public.user_athletes.
-    Falls back to the athlete_id with most activities if the mapping has no data.
     """
-    from sqlalchemy.exc import ProgrammingError
-
-    sub = (getattr(g, "current_user", None) or {}).get("sub")
     session = get_session()
     try:
-        # 🔐 sub -> internal UUID (user_id) via mapping table
-        uid_row = session.execute(
-            text(
-                """
-                SELECT user_id
-                FROM public.user_auth_providers
-                WHERE provider_user_id = :sub
-                LIMIT 1
-            """
-            ),
-            {"sub": sub},
-        ).fetchone()
-        internal_user_id = uid_row.user_id if uid_row else None
+        internal_user_id = getattr(g, "user_id", None)  # ✅ resolved in requires_auth
+        sub = getattr(g, "current_user", {}).get("sub")
 
-        # 🔗 Resolve athlete mapping using the UUID (not the Auth0 sub)
-        athlete_row = None
-        if internal_user_id:
-            try:
-                stmt = text(
-                    """
-                    SELECT athlete_id
-                    FROM public.user_athletes
-                    WHERE user_id = :uid
-                    LIMIT 1
-                """
-                ).bindparams(bindparam("uid", type_=UUID))
-                athlete_row = session.execute(
-                    stmt, {"uid": internal_user_id}
-                ).fetchone()
-            except ProgrammingError as e:
-                # If table is missing in some envs, fail closed
-                if "UndefinedTable" in str(e):
-                    athlete_row = None
-                else:
-                    raise
+        if not internal_user_id:
+            print("❌ No internal_user_id on g")
+            return jsonify({"stravaConnected": False, "recentActivitiesCount": 0}), 200
+
+        # 🔗 Resolve athlete mapping using the UUID
+        stmt = text(
+            """
+            SELECT athlete_id
+            FROM public.user_athletes
+            WHERE user_id = :uid
+            LIMIT 1
+        """
+        ).bindparams(bindparam("uid", type_=UUID))
+        athlete_row = session.execute(stmt, {"uid": internal_user_id}).fetchone()
 
         is_connected = athlete_row is not None
         athlete_id = athlete_row.athlete_id if is_connected else None
@@ -158,19 +134,8 @@ def activities_sync():
         sub = (getattr(g, "current_user", None) or {}).get("sub")
         print("🆕 Sync route triggered for sub:", sub)
 
-        # 🔐 Step 1: Resolve Auth0 sub → internal user_id
-        uid_row = session.execute(
-            text(
-                """
-                SELECT user_id
-                FROM public.user_auth_providers
-                WHERE provider_user_id = :sub
-                LIMIT 1
-                """
-            ),
-            {"sub": sub},
-        ).fetchone()
-        internal_user_id = uid_row.user_id if uid_row else None
+        # ✅ Already resolved by requires_auth
+        internal_user_id = getattr(g, "user_id", None)
         if not internal_user_id:
             return jsonify({"ok": False, "error": "User mapping not found"}), 404
 

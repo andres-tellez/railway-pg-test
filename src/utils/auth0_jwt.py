@@ -12,7 +12,7 @@ from src.utils.config import config
 from jose import jwt
 
 # src/utils/auth0_jwt.py
-from src.db.dao.user_identity_dao import get_or_create_internal_user_id
+from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
 
 
 AUTH0_DOMAIN = config.AUTH0_DOMAIN
@@ -131,7 +131,8 @@ def requires_auth(fn):
                 return jsonify({"error": "unauthorized", "reason": "no_sub"}), 401
 
             # 🔑 Resolve internal UUID from identity table
-            internal_id = get_or_create_internal_user_id(sub)
+            internal_id = resolve_user_id_from_auth_provider(sub)
+
             if not internal_id:
                 return (
                     jsonify({"error": "unauthorized", "reason": "no_internal_user_id"}),
