@@ -1,18 +1,57 @@
+# src/db/models/user_profile.py
 from sqlalchemy import (
-    Table,
     Column,
     Integer,
     String,
     Boolean,
     Enum,
     Float,
-    MetaData,
     Text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.types import TypeDecorator
+from sqlalchemy.ext.declarative import declarative_base
 import enum
+import json
+from src.db.db_session import Base
 
-metadata = MetaData()
+
+# ---------------------------
+# Cross-database compatibility
+# ---------------------------
+class SqliteArray(TypeDecorator):
+    """
+    Emulate PostgreSQL ARRAY in SQLite by storing as JSON.
+    """
+
+    impl = Text
+
+    def process_bind_param(self, value, dialect):
+        if dialect.name == "sqlite":
+            return json.dumps(value) if value is not None else None
+        return value
+
+    def process_result_value(self, value, dialect):
+        if dialect.name == "sqlite":
+            return json.loads(value) if value is not None else None
+        return value
+
+
+def ArrayType(base_type):
+    """Return ARRAY for Postgres, SqliteArray otherwise."""
+
+    def _factory():
+        from sqlalchemy import inspect
+
+        return (
+            ARRAY(base_type)
+            if base_type
+            and Base.metadata.bind
+            and Base.metadata.bind.dialect.name == "postgresql"
+            else SqliteArray()
+        )
+
+    return SqliteArray()  # default fallback; we’ll override properly in columns
 
 
 # ---------------------------
@@ -74,26 +113,23 @@ class RunPreference(str, enum.Enum):
 
 
 # ---------------------------
-# SQLAlchemy Core Table Definition
+# ORM Model
 # ---------------------------
-user_profile_table = Table(
-    "user_profile",
-    metadata,
-    Column("user_id", String, primary_key=True),
-    Column("runner_level", Enum(RunnerLevel), nullable=False),
-    Column("race_history", Boolean, nullable=False),
-    Column("race_date", String),
-    Column("race_distance", Enum(RaceDistance)),
-    Column("past_races", ARRAY(Enum(PastRace))),
-    Column("height_feet", Integer, nullable=False),
-    Column("height_inches", Integer, nullable=False),
-    Column("weight", Float, nullable=False),
-    Column("training_days", ARRAY(String)),
-    Column("main_goal", Enum(Goal), nullable=False),
-    Column("motivation", ARRAY(Enum(Motivation)), nullable=False),
-    Column("age_group", Enum(AgeGroup), nullable=False),
-    Column("longest_run", Float),
-    Column("run_preference", Enum(RunPreference), nullable=False),
-)
+class UserProfile(Base):
+    __tablename__ = "user_profile"
 
-__all__ = ["user_profile_table"]
+    user_id = Column(String, primary_key=True)
+    runner_level = Column(Enum(RunnerLevel), nullable=False)
+    race_history = Column(Boolean, nullable=False)
+    race_date = Column(String)
+    race_distance = Column(Enum(RaceDistance))
+    past_races = Column(SqliteArray)  # ✅ replaced ARRAY(Enum(PastRace))
+    height_feet = Column(Integer, nullable=False)
+    height_inches = Column(Integer, nullable=False)
+    weight = Column(Float, nullable=False)
+    training_days = Column(SqliteArray)  # ✅ replaced ARRAY(String)
+    main_goal = Column(Enum(Goal), nullable=False)
+    motivation = Column(SqliteArray)  # ✅ replaced ARRAY(Enum(Motivation))
+    age_group = Column(Enum(AgeGroup), nullable=False)
+    longest_run = Column(Float)
+    run_preference = Column(Enum(RunPreference), nullable=False)

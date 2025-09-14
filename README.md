@@ -65,7 +65,7 @@ INTERNAL_API_KEY=your_internal_key
 python run.py
 ```
 
-Then open [http://127.0.0.1:5000/ping](http://127.0.0.1:5000/ping)  
+Then open [http://127.0.0.1:5000/ping](http://127.0.0.1:5000/ping)
 You should see: `pong`
 
 ---

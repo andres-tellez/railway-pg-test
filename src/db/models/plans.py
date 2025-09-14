@@ -1,0 +1,34 @@
+# src/db/models/plans.py
+
+from sqlalchemy import Column, Integer, String, Date, Text, TIMESTAMP, ForeignKey, func
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
+from src.db.db_session import Base
+
+# *** Important: import PlanWorkout here so class is known before mapping
+from src.db.models.plan_workouts import PlanWorkout
+from src.db.models.user_identity import UserIdentity
+
+
+class Plan(Base):
+    __tablename__ = "plans"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("user_identity.user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    plan_name = Column(String(255), nullable=False)
+    race_date = Column(Date, nullable=True)
+    race_distance = Column(String(32), nullable=True)
+    notes = Column(Text, nullable=True)
+
+    created_by = Column(String(32), nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.now())
+
+    workouts = relationship(
+        "PlanWorkout", back_populates="plan", cascade="all, delete-orphan"
+    )
+    user = relationship("UserIdentity", back_populates="plans")

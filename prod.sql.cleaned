@@ -1080,4 +1080,3 @@ ALTER TABLE ONLY public.splits
 --
 -- PostgreSQL database dump complete
 --
-

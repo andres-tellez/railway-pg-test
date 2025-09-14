@@ -1,7 +1,6 @@
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import select
-from src.db.db_session import get_engine
-from src.db.models.user_profile import user_profile_table
+# src/db/dao/user_profile_dao.py
+from sqlalchemy.orm import Session
+from src.db.models.user_profile import UserProfile
 from src.utils.normalize import normalize_postgres_row
 
 
@@ -13,12 +12,11 @@ def _enum_to_str_list(items):
     return _empty_list_to_none([str(x).split(".")[-1] for x in items])
 
 
-def save_user_profile(profile_data: dict):
+def save_user_profile(session: Session, profile_data: dict):
     """
     Inserts or updates a user profile record in the database.
-    Strips enum prefixes and converts empty arrays to NULL before saving.
+    Uses ORM merge() instead of raw insert/update.
     """
-
     longest_run = profile_data.get("longestRun")
 
     db_data = {
@@ -43,40 +41,22 @@ def save_user_profile(profile_data: dict):
     if longest_run is not None:
         db_data["longest_run"] = longest_run
 
-    engine = get_engine()
-    with engine.begin() as conn:
-        stmt = (
-            insert(user_profile_table)
-            .values(**db_data)
-            .on_conflict_do_update(index_elements=["user_id"], set_=db_data)
-        )
-        conn.execute(stmt)
+    profile = UserProfile(**db_data)
+    session.merge(profile)
+    session.commit()
+    return profile
 
 
-def get_user_profile(user_id: str) -> dict:
+def get_user_profile(session: Session, user_id: str) -> dict:
     """
     Fetches and normalizes the user profile row by user_id.
-    Converts DB-native types (arrays/enums) to clean JSON-safe values.
     """
-    engine = get_engine()
-    with engine.begin() as conn:
-        stmt = select(user_profile_table).where(user_profile_table.c.user_id == user_id)
-        result = conn.execute(stmt).mappings().fetchone()
-        profile = normalize_postgres_row(result) if result else None
-
-        return profile
+    profile = session.query(UserProfile).filter_by(user_id=user_id).first()
+    return normalize_postgres_row(profile.__dict__) if profile else None
 
 
-from src.db.models.user_profile import user_profile_table  # ✅
-
-
-from sqlalchemy import select
-from src.db.db_session import get_engine
-
-
-def exists_user_profile(user_id: str) -> bool:
-    engine = get_engine()
-    with engine.begin() as conn:
-        stmt = select(user_profile_table).where(user_profile_table.c.user_id == user_id)
-        result = conn.execute(stmt).fetchone()
-        return result is not None
+def exists_user_profile(session: Session, user_id: str) -> bool:
+    """
+    Checks if a user profile exists for given user_id.
+    """
+    return session.query(UserProfile).filter_by(user_id=user_id).first() is not None

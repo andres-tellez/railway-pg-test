@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from flask_session import Session
 from werkzeug.exceptions import HTTPException
 
+
 # 📦 Environment Setup
 raw_env_mode = os.environ.get("FLASK_ENV", "production")
 env_path = {
@@ -58,6 +59,7 @@ from src.routes.user_profile_routes import user_profile_bp
 from src.routes.user_identity_routes import identity_bp
 from src.routes.auth_me_routes import auth_me_bp
 from src.utils.auth0_jwt import requires_auth
+from src.routes.plan_routes import plan_bp
 
 
 def create_app(test_config=None):
@@ -115,6 +117,7 @@ def create_app(test_config=None):
     app.register_blueprint(user_profile_bp)
     app.register_blueprint(identity_bp)
     app.register_blueprint(auth_me_bp)
+    app.register_blueprint(plan_bp)
 
     @app.route("/_debug/db-url")
     def debug_db_url():

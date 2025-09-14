@@ -46,12 +46,12 @@ _allow_autobegin = True
         """Construct a new Connection."""
         self.engine = engine
         self.dialect = dialect = engine.dialect
-    
+
         if connection is None:
             try:
 >               self._dbapi_connection = engine.raw_connection()
 
-venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
     return self.pool.connect()
@@ -91,44 +91,44 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
@@ -146,7 +146,7 @@ shared_engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smar
     def sqlalchemy_session(shared_engine):
 >       connection = shared_engine.connect()
 
-tests\conftest.py:60: 
+tests\conftest.py:60:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
     return self._connection_cls(self)
@@ -194,51 +194,51 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
 E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
-E       
+E
 E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
 
 venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
@@ -262,12 +262,12 @@ _allow_autobegin = True
         """Construct a new Connection."""
         self.engine = engine
         self.dialect = dialect = engine.dialect
-    
+
         if connection is None:
             try:
 >               self._dbapi_connection = engine.raw_connection()
 
-venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
     return self.pool.connect()
@@ -307,44 +307,44 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
@@ -362,7 +362,7 @@ shared_engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smar
     def sqlalchemy_session(shared_engine):
 >       connection = shared_engine.connect()
 
-tests\conftest.py:60: 
+tests\conftest.py:60:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
     return self._connection_cls(self)
@@ -410,51 +410,51 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
 E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
-E       
+E
 E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
 
 venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
@@ -476,12 +476,12 @@ _allow_autobegin = True
         """Construct a new Connection."""
         self.engine = engine
         self.dialect = dialect = engine.dialect
-    
+
         if connection is None:
             try:
 >               self._dbapi_connection = engine.raw_connection()
 
-venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
     return self.pool.connect()
@@ -521,44 +521,44 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
@@ -583,7 +583,7 @@ test_session = <sqlalchemy.orm.session.Session object at 0x000001E8AF300650>
         test_session.add(token)
 >       test_session.commit()
 
-tests\test_full_ingestion_flow.py:27: 
+tests\test_full_ingestion_flow.py:27:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\orm\session.py:2032: in commit
     trans.commit(_to_root=True)
@@ -681,51 +681,51 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
 E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
-E       
+E
 E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
 
 venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
@@ -747,12 +747,12 @@ _allow_autobegin = True
         """Construct a new Connection."""
         self.engine = engine
         self.dialect = dialect = engine.dialect
-    
+
         if connection is None:
             try:
 >               self._dbapi_connection = engine.raw_connection()
 
-venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
     return self.pool.connect()
@@ -792,44 +792,44 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
@@ -854,7 +854,7 @@ test_session = <sqlalchemy.orm.session.Session object at 0x000001E8AF2A5E50>
         test_session.add(token)
 >       test_session.commit()
 
-tests\test_integration_ingestion.py:27: 
+tests\test_integration_ingestion.py:27:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\orm\session.py:2032: in commit
     trans.commit(_to_root=True)
@@ -952,51 +952,51 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
 E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
-E       
+E
 E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
 
 venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
@@ -1018,12 +1018,12 @@ _allow_autobegin = True
         """Construct a new Connection."""
         self.engine = engine
         self.dialect = dialect = engine.dialect
-    
+
         if connection is None:
             try:
 >               self._dbapi_connection = engine.raw_connection()
 
-venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
     return self.pool.connect()
@@ -1063,44 +1063,44 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
@@ -1118,7 +1118,7 @@ shared_engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smar
     def sqlalchemy_session(shared_engine):
 >       connection = shared_engine.connect()
 
-tests\conftest.py:60: 
+tests\conftest.py:60:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
     return self._connection_cls(self)
@@ -1166,51 +1166,51 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
 E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
-E       
+E
 E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
 
 venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
@@ -1232,12 +1232,12 @@ _allow_autobegin = True
         """Construct a new Connection."""
         self.engine = engine
         self.dialect = dialect = engine.dialect
-    
+
         if connection is None:
             try:
 >               self._dbapi_connection = engine.raw_connection()
 
-venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
     return self.pool.connect()
@@ -1277,44 +1277,44 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
@@ -1332,7 +1332,7 @@ shared_engine = Engine(postgresql+psycopg2://smartcoach:***@localhost:15432/smar
     def sqlalchemy_session(shared_engine):
 >       connection = shared_engine.connect()
 
-tests\conftest.py:60: 
+tests\conftest.py:60:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3273: in connect
     return self._connection_cls(self)
@@ -1380,51 +1380,51 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
 E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
-E       
+E
 E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
 
 venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
@@ -1433,15 +1433,15 @@ _______________________ test_get_by_id_returns_activity _______________________
 
     def test_get_by_id_returns_activity():
         mock_session = MagicMock()
-    
+
         # Setup mocks for the chain: query().filter().first()
         mock_query = mock_session.query
         mock_filter = mock_query.return_value.filter
         mock_first = mock_filter.return_value.first
-    
+
         expected_activity = Activity(activity_id=123)
         mock_first.return_value = expected_activity
-    
+
 >       result = ActivityDAO.get_by_id(mock_session, 123)
 E       AttributeError: type object 'ActivityDAO' has no attribute 'get_by_id'
 
@@ -1451,7 +1451,7 @@ _________________________ test_get_by_id_returns_none _________________________
     def test_get_by_id_returns_none():
         mock_session = MagicMock()
         mock_session.query().filter().first.return_value = None
-    
+
 >       result = ActivityDAO.get_by_id(mock_session, 999)
 E       AttributeError: type object 'ActivityDAO' has no attribute 'get_by_id'
 
@@ -1471,18 +1471,18 @@ mock_convert = <MagicMock name='convert_metrics' id='2098882216464'>
             "conv_moving_time": 60,
             "conv_elapsed_time": 65,
         }
-    
+
         activities = [
             {"id": 201, "name": "Ride", "type": "Ride", "distance": 1000, "elapsed_time": 65, "moving_time": 60, "total_elevation_gain": 15},
             {"id": 202, "name": "Swim", "type": "Swim", "distance": 500, "elapsed_time": 35, "moving_time": 30, "total_elevation_gain": 5},
         ]
-    
+
         mock_result = MagicMock()
         mock_result.rowcount = 2
         mock_session.execute.return_value = mock_result
-    
+
         count = ActivityDAO.upsert_activities(mock_session, athlete_id=99, activities=activities)
-    
+
 >       assert count == 2
 E       assert 0 == 2
 
@@ -1504,7 +1504,7 @@ client = <FlaskClient <Flask 'src.app'>>
             "refresh_token": "mocked_refresh",
             "expires_at": int((datetime.utcnow() + timedelta(hours=1)).timestamp())
         }
-    
+
         # Step 1: Login
         resp = client.post("/auth/login", json={"username": "admin", "password": "secret"})
 >       assert resp.status_code == 200
@@ -1524,7 +1524,7 @@ args = (), keywargs = {'client': <FlaskClient <Flask 'test_auth_routes'>>}
                                     args,
                                     keywargs) as (newargs, newkeywargs):
 
-C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
     return next(self.gen)
@@ -1541,20 +1541,20 @@ self = <unittest.mock._patch object at 0x000001E8AF0D1D90>
     def get_original(self):
         target = self.getter()
         name = self.attribute
-    
+
         original = DEFAULT
         local = False
-    
+
         try:
             original = target.__dict__[name]
         except (AttributeError, KeyError):
             original = getattr(target, name, DEFAULT)
         else:
             local = True
-    
+
         if name in _builtins and isinstance(target, ModuleType):
             self.create = True
-    
+
         if not self.create and original is DEFAULT:
 >           raise AttributeError(
                 "%s does not have the attribute %r" % (target, name)
@@ -1572,7 +1572,7 @@ args = (), keywargs = {'client': <FlaskClient <Flask 'test_auth_routes'>>}
                                     args,
                                     keywargs) as (newargs, newkeywargs):
 
-C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
     return next(self.gen)
@@ -1589,20 +1589,20 @@ self = <unittest.mock._patch object at 0x000001E8AF0D1FD0>
     def get_original(self):
         target = self.getter()
         name = self.attribute
-    
+
         original = DEFAULT
         local = False
-    
+
         try:
             original = target.__dict__[name]
         except (AttributeError, KeyError):
             original = getattr(target, name, DEFAULT)
         else:
             local = True
-    
+
         if name in _builtins and isinstance(target, ModuleType):
             self.create = True
-    
+
         if not self.create and original is DEFAULT:
 >           raise AttributeError(
                 "%s does not have the attribute %r" % (target, name)
@@ -1620,7 +1620,7 @@ args = (), keywargs = {'client': <FlaskClient <Flask 'test_auth_routes'>>}
                                     args,
                                     keywargs) as (newargs, newkeywargs):
 
-C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
     return next(self.gen)
@@ -1637,20 +1637,20 @@ self = <unittest.mock._patch object at 0x000001E8AF0D2290>
     def get_original(self):
         target = self.getter()
         name = self.attribute
-    
+
         original = DEFAULT
         local = False
-    
+
         try:
             original = target.__dict__[name]
         except (AttributeError, KeyError):
             original = getattr(target, name, DEFAULT)
         else:
             local = True
-    
+
         if name in _builtins and isinstance(target, ModuleType):
             self.create = True
-    
+
         if not self.create and original is DEFAULT:
 >           raise AttributeError(
                 "%s does not have the attribute %r" % (target, name)
@@ -1672,20 +1672,20 @@ session = <MagicMock id='2098888072016'>
         athlete_id = 123
         start_date = datetime(2025, 1, 1)
         end_date = datetime(2025, 1, 3)
-    
+
         mock_service_instance = mock_service.return_value
         mock_activities = [{"id": 1, "name": "A1"}, {"id": 2, "name": "A2"}]
         mock_service_instance.client.get_activities.return_value = mock_activities
-    
+
         mock_upsert.return_value = 2
         mock_enrich.return_value = None
-    
+
         result = ingest_between_dates(session, athlete_id, start_date, end_date, batch_size=1)
-    
+
         mock_service_instance.client.get_activities.assert_called_once()
 >       mock_upsert.assert_called_once_with(session, athlete_id, mock_activities)
 
-tests\test_ingestion_orchestrator.py:69: 
+tests\test_ingestion_orchestrator.py:69:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 self = <MagicMock name='upsert_activities' id='2098891337104'>
@@ -1723,20 +1723,20 @@ session = <MagicMock id='2098884492880'>
         athlete_id = 123
         start_date = datetime(2025, 1, 1)
         end_date = datetime(2025, 1, 3)
-    
+
         mock_service_instance = mock_service.return_value
         activities = [{"id": 1, "name": "A1"}, {"id": 2, "name": "A2"}]
         mock_service_instance.client.get_activities.return_value = activities
-    
+
         mock_upsert.return_value = 2
-    
+
         def enrich_side_effect(sess, ath_id, act_id):
             if act_id == 2:
                 raise Exception("Enrich error")
             return None
-    
+
         mock_enrich.side_effect = enrich_side_effect
-    
+
 >       with pytest.raises(Exception) as excinfo:
 E       Failed: DID NOT RAISE <class 'Exception'>
 
@@ -1752,18 +1752,18 @@ monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001E8B1384E90>
     def test_main_pipeline_calls_full_ingestion(monkeypatch):
         test_args = ["main_pipeline.py", "--athlete_id", "123"]
         monkeypatch.setattr("sys.argv", test_args)
-    
+
         mock_session = MagicMock()
         mock_ingestion = patch("src.scripts.main_pipeline.run_full_ingestion_and_enrichment").start()
         patch("src.scripts.main_pipeline.get_session", return_value=mock_session).start()
-    
+
         with pytest.raises(SystemExit):
             main_pipeline.main()
-    
+
         # \u2705 Allow flexibility with kwargs
 >       mock_ingestion.assert_called_once()
 
-tests\test_main_pipeline.py:17: 
+tests\test_main_pipeline.py:17:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 self = <MagicMock name='run_full_ingestion_and_enrichment' id='2098917223696'>
@@ -1795,7 +1795,7 @@ client = <FlaskClient <Flask 'src.app'>>
         mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("Strava error")
         mock_response.text = "Bad Request"
         mock_post.return_value = mock_response
-    
+
         resp = client.get("/auth/callback?code=badcode")
 >       assert resp.status_code == 502
 E       assert 500 == 502
@@ -1831,7 +1831,7 @@ client = <FlaskClient <Flask 'src.app'>>
         monkeypatch.delenv("STRAVA_CLIENT_ID", raising=False)
         monkeypatch.delenv("STRAVA_CLIENT_SECRET", raising=False)
         monkeypatch.delenv("REDIRECT_URI", raising=False)
-    
+
         resp = client.get("/auth/callback?code=fakecode")
 >       assert resp.status_code == 502
 E       assert 500 == 502
@@ -1870,12 +1870,12 @@ _allow_autobegin = True
         """Construct a new Connection."""
         self.engine = engine
         self.dialect = dialect = engine.dialect
-    
+
         if connection is None:
             try:
 >               self._dbapi_connection = engine.raw_connection()
 
-venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
     return self.pool.connect()
@@ -1915,44 +1915,44 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
@@ -1970,7 +1970,7 @@ session = <sqlalchemy.orm.session.Session object at 0x000001E8AF2239D0>
         # Delete existing activity if present to avoid PK conflict
 >       existing = session.query(Activity).filter_by(activity_id=1).first()
 
-tests\test_splits.py:39: 
+tests\test_splits.py:39:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\orm\query.py:2759: in first
     return self.limit(1)._iter().first()  # type: ignore
@@ -2034,51 +2034,51 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
 E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
-E       
+E
 E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
 
 venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
@@ -2100,12 +2100,12 @@ _allow_autobegin = True
         """Construct a new Connection."""
         self.engine = engine
         self.dialect = dialect = engine.dialect
-    
+
         if connection is None:
             try:
 >               self._dbapi_connection = engine.raw_connection()
 
-venv\Lib\site-packages\sqlalchemy\engine\base.py:145: 
+venv\Lib\site-packages\sqlalchemy\engine\base.py:145:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\engine\base.py:3297: in raw_connection
     return self.pool.connect()
@@ -2145,44 +2145,44 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       psycopg2.OperationalError: connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
@@ -2199,7 +2199,7 @@ session = <sqlalchemy.orm.session.Session object at 0x000001E8AFBA9390>
     def test_unique_constraint(session):
 >       existing = session.query(Activity).filter_by(activity_id=2).first()
 
-tests\test_splits.py:63: 
+tests\test_splits.py:63:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 venv\Lib\site-packages\sqlalchemy\orm\query.py:2759: in first
     return self.limit(1)._iter().first()  # type: ignore
@@ -2263,51 +2263,51 @@ kwasync = {}
     def connect(dsn=None, connection_factory=None, cursor_factory=None, **kwargs):
         """
         Create a new database connection.
-    
+
         The connection parameters can be specified as a string:
-    
+
             conn = psycopg2.connect("dbname=test user=postgres password=secret")
-    
+
         or using a set of keyword arguments:
-    
+
             conn = psycopg2.connect(database="test", user="postgres", password="secret")
-    
+
         Or as a mix of both. The basic connection parameters are:
-    
+
         - *dbname*: the database name
         - *database*: the database name (only as keyword argument)
         - *user*: user name used to authenticate
         - *password*: password used to authenticate
         - *host*: database host address (defaults to UNIX socket if not provided)
         - *port*: connection port number (defaults to 5432 if not provided)
-    
+
         Using the *connection_factory* parameter a different class or connections
         factory can be specified. It should be a callable object taking a dsn
         argument.
-    
+
         Using the *cursor_factory* parameter, a new default cursor factory will be
         used by cursor().
-    
+
         Using *async*=True an asynchronous connection will be created. *async_* is
         a valid alias (for Python versions where ``async`` is a keyword).
-    
+
         Any other keyword parameter will be passed to the underlying client
         library: the list of supported parameters depends on the library version.
-    
+
         """
         kwasync = {}
         if 'async' in kwargs:
             kwasync['async'] = kwargs.pop('async')
         if 'async_' in kwargs:
             kwasync['async_'] = kwargs.pop('async_')
-    
+
         dsn = _ext.make_dsn(dsn, **kwargs)
 >       conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
 E       sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "localhost" (::1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
 E       connection to server at "localhost" (127.0.0.1), port 15432 failed: Connection refused (0x0000274D/10061)
 E       	Is the server running on that host and accepting TCP/IP connections?
-E       
+E
 E       (Background on this error at: https://sqlalche.me/e/20/e3q8)
 
 venv\Lib\site-packages\psycopg2\__init__.py:122: OperationalError
@@ -2327,7 +2327,7 @@ client = <FlaskClient <Flask 'src.app'>>
         instance = mock_ingestor.return_value
         instance.ingest_recent.return_value = 5
         mock_strava.return_value.get_activities.return_value = []
-    
+
         resp = client.get("/sync/sync/123?key=devkey123")
 >       assert resp.status_code == 200
 E       assert 401 == 200
@@ -2346,7 +2346,7 @@ mock_post = <MagicMock name='post' id='2098884707408'>
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"access_token": "access", "refresh_token": "refresh", "expires_at": 12345}
         mock_post.return_value = mock_resp
-    
+
 >       tokens = token_service.exchange_code_for_token("dummy_code")
 E       AttributeError: module 'src.services.token_service' has no attribute 'exchange_code_for_token'
 
@@ -2365,7 +2365,7 @@ mock_get_tokens = <MagicMock name='get_tokens_sa' id='2098915542544'>
         mock_refresh_access.return_value = {"access_token": "new_access"}
 >       result = token_service.refresh_token_if_expired(mock_session, athlete_id)
 
-tests\test_token_service.py:102: 
+tests\test_token_service.py:102:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 session = <MagicMock id='2098915556560'>, athlete_id = 123
@@ -2374,7 +2374,7 @@ session = <MagicMock id='2098915556560'>, athlete_id = 123
         token = session.query(Token).filter_by(athlete_id=athlete_id).first()
         if not token:
             raise ValueError(f"No token found for athlete ID {athlete_id}")
-    
+
         now = datetime.utcnow().timestamp()
 >       if token.expires_at <= now:
 E       TypeError: '<=' not supported between instances of 'MagicMock' and 'float'
@@ -2391,7 +2391,7 @@ mock_get_tokens = <MagicMock name='get_tokens_sa' id='2098890158160'>
         mock_get_tokens.return_value = {"expires_at": 9999999999}
 >       result = token_service.refresh_token_if_expired(mock_session, athlete_id)
 
-tests\test_token_service.py:112: 
+tests\test_token_service.py:112:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 session = <MagicMock id='2098890153424'>, athlete_id = 123
@@ -2400,7 +2400,7 @@ session = <MagicMock id='2098890153424'>, athlete_id = 123
         token = session.query(Token).filter_by(athlete_id=athlete_id).first()
         if not token:
             raise ValueError(f"No token found for athlete ID {athlete_id}")
-    
+
         now = datetime.utcnow().timestamp()
 >       if token.expires_at <= now:
 E       TypeError: '<=' not supported between instances of 'MagicMock' and 'float'
@@ -2417,7 +2417,7 @@ mock_get_tokens = <MagicMock name='get_tokens_sa' id='2098915104208'>
         with pytest.raises(ValueError):
 >           token_service.refresh_token_if_expired(mock_session, athlete_id)
 
-tests\test_token_service.py:121: 
+tests\test_token_service.py:121:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 session = <MagicMock id='2098915101328'>, athlete_id = 123
@@ -2426,7 +2426,7 @@ session = <MagicMock id='2098915101328'>, athlete_id = 123
         token = session.query(Token).filter_by(athlete_id=athlete_id).first()
         if not token:
             raise ValueError(f"No token found for athlete ID {athlete_id}")
-    
+
         now = datetime.utcnow().timestamp()
 >       if token.expires_at <= now:
 E       TypeError: '<=' not supported between instances of 'MagicMock' and 'float'
@@ -2449,7 +2449,7 @@ args = (), keywargs = {}
                                     args,
                                     keywargs) as (newargs, newkeywargs):
 
-C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
     return next(self.gen)
@@ -2466,20 +2466,20 @@ self = <unittest.mock._patch object at 0x000001E8AF14A150>
     def get_original(self):
         target = self.getter()
         name = self.attribute
-    
+
         original = DEFAULT
         local = False
-    
+
         try:
             original = target.__dict__[name]
         except (AttributeError, KeyError):
             original = getattr(target, name, DEFAULT)
         else:
             local = True
-    
+
         if name in _builtins and isinstance(target, ModuleType):
             self.create = True
-    
+
         if not self.create and original is DEFAULT:
 >           raise AttributeError(
                 "%s does not have the attribute %r" % (target, name)
@@ -2497,7 +2497,7 @@ args = (), keywargs = {}
                                     args,
                                     keywargs) as (newargs, newkeywargs):
 
-C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
     return next(self.gen)
@@ -2514,20 +2514,20 @@ self = <unittest.mock._patch object at 0x000001E8AF14A410>
     def get_original(self):
         target = self.getter()
         name = self.attribute
-    
+
         original = DEFAULT
         local = False
-    
+
         try:
             original = target.__dict__[name]
         except (AttributeError, KeyError):
             original = getattr(target, name, DEFAULT)
         else:
             local = True
-    
+
         if name in _builtins and isinstance(target, ModuleType):
             self.create = True
-    
+
         if not self.create and original is DEFAULT:
 >           raise AttributeError(
                 "%s does not have the attribute %r" % (target, name)
@@ -2554,7 +2554,7 @@ args = (), keywargs = {}
                                     args,
                                     keywargs) as (newargs, newkeywargs):
 
-C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
     return next(self.gen)
@@ -2571,20 +2571,20 @@ self = <unittest.mock._patch object at 0x000001E8AF14AA90>
     def get_original(self):
         target = self.getter()
         name = self.attribute
-    
+
         original = DEFAULT
         local = False
-    
+
         try:
             original = target.__dict__[name]
         except (AttributeError, KeyError):
             original = getattr(target, name, DEFAULT)
         else:
             local = True
-    
+
         if name in _builtins and isinstance(target, ModuleType):
             self.create = True
-    
+
         if not self.create and original is DEFAULT:
 >           raise AttributeError(
                 "%s does not have the attribute %r" % (target, name)
@@ -2602,7 +2602,7 @@ args = (), keywargs = {}
                                     args,
                                     keywargs) as (newargs, newkeywargs):
 
-C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
     return next(self.gen)
@@ -2619,30 +2619,30 @@ name = 'src.services.token_service.jwt'
     def resolve_name(name):
         """
         Resolve a name to an object.
-    
+
         It is expected that `name` will be a string in one of the following
         formats, where W is shorthand for a valid Python identifier and dot stands
         for a literal period in these pseudo-regexes:
-    
+
         W(.W)*
         W(.W)*:(W(.W)*)?
-    
+
         The first form is intended for backward compatibility only. It assumes that
         some part of the dotted name is a package, and the rest is an object
         somewhere within that package, possibly nested inside other objects.
         Because the place where the package stops and the object hierarchy starts
         can't be inferred by inspection, repeated attempts to import must be done
         with this form.
-    
+
         In the second form, the caller makes the division point clear through the
         provision of a single colon: the dotted name to the left of the colon is a
         package to be imported, and the dotted name to the right is the object
         hierarchy within that package. Only one import is needed in this form. If
         it ends with the colon, then a module object is returned.
-    
+
         The function will return an object (which might be a module), or raise one
         of the following exceptions:
-    
+
         ValueError - if `name` isn't in a recognised format
         ImportError - if an import failed when it shouldn't have
         AttributeError - if a failure occurred when traversing the object hierarchy
@@ -2656,7 +2656,7 @@ name = 'src.services.token_service.jwt'
             _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
                                        f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
                                        re.UNICODE)
-    
+
         m = _NAME_PATTERN.match(name)
         if not m:
             raise ValueError(f'invalid format: {name!r}')
@@ -2700,7 +2700,7 @@ args = (), keywargs = {}
                                     args,
                                     keywargs) as (newargs, newkeywargs):
 
-C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
     return next(self.gen)
@@ -2717,30 +2717,30 @@ name = 'src.services.token_service.jwt'
     def resolve_name(name):
         """
         Resolve a name to an object.
-    
+
         It is expected that `name` will be a string in one of the following
         formats, where W is shorthand for a valid Python identifier and dot stands
         for a literal period in these pseudo-regexes:
-    
+
         W(.W)*
         W(.W)*:(W(.W)*)?
-    
+
         The first form is intended for backward compatibility only. It assumes that
         some part of the dotted name is a package, and the rest is an object
         somewhere within that package, possibly nested inside other objects.
         Because the place where the package stops and the object hierarchy starts
         can't be inferred by inspection, repeated attempts to import must be done
         with this form.
-    
+
         In the second form, the caller makes the division point clear through the
         provision of a single colon: the dotted name to the left of the colon is a
         package to be imported, and the dotted name to the right is the object
         hierarchy within that package. Only one import is needed in this form. If
         it ends with the colon, then a module object is returned.
-    
+
         The function will return an object (which might be a module), or raise one
         of the following exceptions:
-    
+
         ValueError - if `name` isn't in a recognised format
         ImportError - if an import failed when it shouldn't have
         AttributeError - if a failure occurred when traversing the object hierarchy
@@ -2754,7 +2754,7 @@ name = 'src.services.token_service.jwt'
             _NAME_PATTERN = re.compile(f'^(?P<pkg>{dotted_words})'
                                        f'(?P<cln>:(?P<obj>{dotted_words})?)?$',
                                        re.UNICODE)
-    
+
         m = _NAME_PATTERN.match(name)
         if not m:
             raise ValueError(f'invalid format: {name!r}')
@@ -2798,7 +2798,7 @@ args = (), keywargs = {}
                                     args,
                                     keywargs) as (newargs, newkeywargs):
 
-C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372: 
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\unittest\mock.py:1372:
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.11_3.11.2288.0_x64__qbz5n2kfra8p0\Lib\contextlib.py:137: in __enter__
     return next(self.gen)
@@ -2815,20 +2815,20 @@ self = <unittest.mock._patch object at 0x000001E8AF14B210>
     def get_original(self):
         target = self.getter()
         name = self.attribute
-    
+
         original = DEFAULT
         local = False
-    
+
         try:
             original = target.__dict__[name]
         except (AttributeError, KeyError):
             original = getattr(target, name, DEFAULT)
         else:
             local = True
-    
+
         if name in _builtins and isinstance(target, ModuleType):
             self.create = True
-    
+
         if not self.create and original is DEFAULT:
 >           raise AttributeError(
                 "%s does not have the attribute %r" % (target, name)
