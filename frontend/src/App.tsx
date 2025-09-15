@@ -6,6 +6,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import PostOAuth from "./pages/PostOAuth";
 import OnboardingForm from "./pages/OnboardingForm";
 import Dashboard from "./pages/Dashboard";
+import LandingPage from "./pages/LandingPage";
 import StravaCallbackHandler from "./pages/StravaCallbackHandler";
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
@@ -14,15 +15,29 @@ function ProtectedRoute({ children }: { children: JSX.Element }) {
   return isAuthenticated ? children : <Navigate to="/login" replace />;
 }
 
+function isNewUser(user: any): boolean {
+  // TEMP: Replace with real logic (from backend or Auth0 metadata)
+  // Example: check for custom field or flag
+  return !user?.has_completed_onboarding;
+}
+
+
 function LoginPage() {
   const { loginWithRedirect, logout, isAuthenticated, isLoading, user } = useAuth0();
   const navigate = useNavigate();
 
+
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
+  if (!isLoading && isAuthenticated && user) {
+    if (isNewUser(user)) {
+      navigate("/welcome", { replace: true });
+    } else {
       navigate("/dashboard", { replace: true });
     }
-  }, [isLoading, isAuthenticated]);
+  }
+}, [isLoading, isAuthenticated, user, navigate]);
+
+
 
   if (isLoading) return <div className="p‑6">🔄 Loading…</div>;
 
@@ -73,6 +88,7 @@ export default function App() {
     <div className="min-h-screen bg-gray-50">
       <Routes>
         <Route path="/" element={<HomeGate />} />
+        <Route path="/welcome" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/post-oauth" element={<StravaCallbackHandler  />} />
         <Route path="/onboarding" element={
