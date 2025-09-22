@@ -34,6 +34,10 @@ class Config:
     IS_LOCAL = os.getenv("IS_LOCAL", "false").lower() == "true"
     FRONTEND_REDIRECT = os.getenv("FRONTEND_REDIRECT")
 
+    # ===== Business Rules =====
+    MIN_ACTIVITIES_REQUIRED = int(os.getenv("MIN_ACTIVITIES_REQUIRED", 1))
+    MAX_ACTIVITIES_TO_DOWNLOAD = int(os.getenv("MAX_ACTIVITIES_TO_DOWNLOAD", 50))
+
 
 # Export single instance for import convenience
 config = Config()

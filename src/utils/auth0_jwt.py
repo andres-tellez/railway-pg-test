@@ -98,7 +98,7 @@ def verify_and_decode(token: str) -> dict:
         token,
         rsa_key,
         algorithms=ALGORITHMS,
-        audience=API_AUDIENCE,
+        audience=API_AUDIENCE,  # must be a string
         issuer=f"https://{AUTH0_DOMAIN}/",
     )
 
@@ -130,8 +130,16 @@ def requires_auth(fn):
             if not sub:
                 return jsonify({"error": "unauthorized", "reason": "no_sub"}), 401
 
+            # 🔍 DEBUG: Log claims before resolving
+            if DEBUG_AUTH:
+                print("🔍 Decoded JWT claims:")
+                for k, v in claims.items():
+                    print(f"  {k}: {v}", flush=True)
+
             # 🔑 Resolve internal UUID from identity table
-            internal_id = resolve_user_id_from_auth_provider(sub)
+            internal_id = resolve_user_id_from_auth_provider(
+                sub, claims, create_if_missing=True
+            )
 
             if not internal_id:
                 return (
@@ -139,21 +147,22 @@ def requires_auth(fn):
                     401,
                 )
 
-            g.user_id = str(internal_id)  # always a UUID string
+            g.user_id = str(internal_id)
 
             if DEBUG_AUTH:
                 aud = claims.get("aud")
                 iss = claims.get("iss")
                 print(
-                    f"[requires_auth] OK sub={sub} internal_id={internal_id} aud={aud} iss={iss}",
+                    f"[requires_auth] ✅ OK sub={sub} internal_id={internal_id} aud={aud} iss={iss}",
                     flush=True,
                 )
 
             return fn(*args, **kwargs)
+
         except Exception as e:
             if DEBUG_AUTH:
                 traceback.print_exc()
-                print(f"[requires_auth] 401 reason: {e}", flush=True)
+                print(f"[requires_auth] ❌ 401 reason: {e}", flush=True)
             return jsonify({"error": "unauthorized", "reason": str(e)}), 401
 
     return wrapper

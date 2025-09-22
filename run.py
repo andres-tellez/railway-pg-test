@@ -5,12 +5,12 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # ─────────────────────────────
-# 📦 Setup
+# 📦 Path Setup
 # ─────────────────────────────
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # for run.py-local imports
-sys.path.insert(
-    0, str(Path(__file__).resolve().parent / "src")
-)  # for all modules to find src.*
+project_root = Path(__file__).resolve().parent
+src_path = project_root / "src"
+sys.path.insert(0, str(project_root))  # For run.py-local imports
+sys.path.insert(0, str(src_path))  # ⬅️ Ensures `import src...` works!
 
 # ✅ Load env vars before importing config
 env_path = Path(".env.local")
@@ -55,6 +55,7 @@ print("✅ App created via create_app()", flush=True)
 if __name__ == "__main__":
     print("📦 Starting run.py...", flush=True)
 
+    # Patch DATABASE_URL for local dev if necessary
     if (
         config.IS_LOCAL
         and config.DATABASE_URL
@@ -68,6 +69,7 @@ if __name__ == "__main__":
     else:
         print(f"✅ DATABASE_URL used as-is: {config.DATABASE_URL}", flush=True)
 
+    # Cron-only mode
     if os.getenv("RUN_CRON") == "true":
         print(
             f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()}",
@@ -85,6 +87,7 @@ if __name__ == "__main__":
             traceback.print_exc()
         sys.exit(0)
 
+    # Local run
     port = int(os.environ.get("PORT", config.PORT or 8080))
 
     config_db_url = app.config.get("DATABASE_URL") or config.DATABASE_URL
@@ -95,6 +98,7 @@ if __name__ == "__main__":
         print("❗ DATABASE_URL not set — exiting", flush=True)
         sys.exit(1)
 
+    # DB sanity check
     try:
         from psycopg2 import connect
 
@@ -115,5 +119,22 @@ if __name__ == "__main__":
 
         traceback.print_exc()
 
+    # 🔐 HTTPS support via mkcert (localhost.pem / localhost-key.pem)
+    cert_file = os.path.join(os.getcwd(), "localhost.pem")
+    key_file = os.path.join(os.getcwd(), "localhost-key.pem")
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        print(
+            f"🔐 Running with HTTPS using mkcert: {cert_file}, {key_file}", flush=True
+        )
+        ssl_context = (cert_file, key_file)
+    else:
+        print("⚠️ No mkcert certs found, running without HTTPS (HTTP only)", flush=True)
+        ssl_context = None
+
     print(f"🚀 Starting app locally on 0.0.0.0:{port}", flush=True)
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=True,
+        ssl_context=ssl_context,
+    )

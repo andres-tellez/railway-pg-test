@@ -102,6 +102,7 @@ def create_app(test_config=None):
     db.init_app(app)
 
     import src.db.models
+    from src.routes.progress import bp as progress_bp
 
     Session(app)
 
@@ -118,6 +119,7 @@ def create_app(test_config=None):
     app.register_blueprint(identity_bp)
     app.register_blueprint(auth_me_bp)
     app.register_blueprint(plan_bp)
+    app.register_blueprint(progress_bp)
 
     @app.route("/_debug/db-url")
     def debug_db_url():

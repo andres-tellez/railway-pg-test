@@ -5,16 +5,13 @@ import { useAuth0 } from "@auth0/auth0-react";
 export function useApiClient() {
   const { getAccessTokenSilently, loginWithRedirect } = useAuth0();
 
-  // Prefer VITE_API_BASE_URL, then VITE_API_URL, else fall back to relative '/api'
-  let base =
-    import.meta.env.VITE_API_BASE_URL ||
-    import.meta.env.VITE_API_URL ||
-    "/api";
+  // ✅ Use only VITE_BACKEND_URL (must be set in Railway + .env.local)
+  let base = import.meta.env.VITE_BACKEND_URL || "/api";
 
   // Normalize: remove trailing slash
   if (base.endsWith("/")) base = base.slice(0, -1);
 
-  // If absolute (https://api.smartcoach.dev) ensure it ends with /api
+  // If absolute (https://api.smartcoach.dev), ensure it ends with `/api`
   const isAbsolute = /^https?:\/\//i.test(base);
   if (isAbsolute) {
     const url = new URL(base);
@@ -65,7 +62,6 @@ export function useApiClient() {
         response.config.url?.includes("/user/identity") &&
         response.data?.user_id
       ) {
-        // Save internal UUID so onboarding can use it
         localStorage.setItem("user_id", response.data.user_id);
         if (import.meta.env.MODE !== "production") {
           console.log("✅ Stored internal user_id:", response.data.user_id);

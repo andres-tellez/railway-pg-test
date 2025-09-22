@@ -11,15 +11,15 @@ from sqlalchemy import (
 from src.db.db_session import Base
 
 
-class UserAthlete(Base):
+class UserAthleteLink(Base):
     __tablename__ = "user_athletes"
 
     id = Column(Integer, primary_key=True)
 
-    # Stores Auth0 sub (e.g., "google-oauth2|123") and references providers table
+    # Stores internal UUID (user_id) referencing user_identity.user_id
     user_id = Column(
         String,
-        ForeignKey("user_auth_providers.full_provider_id", ondelete="RESTRICT"),
+        ForeignKey("user_identity.user_id", ondelete="CASCADE"),
         nullable=False,
     )
 

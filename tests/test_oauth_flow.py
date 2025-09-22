@@ -4,7 +4,7 @@ from unittest.mock import patch, Mock
 
 
 def test_oauth_callback_missing_code(client):
-    resp = client.get("/auth/callback")
+    resp = client.get("/auth/strava/callback")
     assert resp.status_code == 400
 
 
@@ -17,7 +17,7 @@ def test_oauth_callback_strava_http_error(mock_post, client):
     mock_response.text = "Bad Request"
     mock_post.return_value = mock_response
 
-    resp = client.get("/auth/callback?code=badcode")
+    resp = client.get("/auth/strava/callback?code=badcode")
     assert resp.status_code == 502
 
 
@@ -28,7 +28,7 @@ def test_oauth_callback_incomplete_response(mock_post, client):
     mock_response.json.return_value = {"athlete": {}}  # Simulates missing athlete_id
     mock_post.return_value = mock_response
 
-    resp = client.get("/auth/callback?code=incomplete")
+    resp = client.get("/auth/strava/callback?code=incomplete")
     assert resp.status_code == 500
 
 
@@ -37,5 +37,5 @@ def test_oauth_callback_missing_env(monkeypatch, client):
     monkeypatch.delenv("STRAVA_CLIENT_SECRET", raising=False)
     monkeypatch.delenv("REDIRECT_URI", raising=False)
 
-    resp = client.get("/auth/callback?code=fakecode")
+    resp = client.get("/auth/strava/callback?code=fakecode")
     assert resp.status_code == 502

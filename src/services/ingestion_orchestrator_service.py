@@ -1,253 +1,228 @@
-import sys
+# src/services/ingestion_orchestrator_service.py
+
 import os
 import time
-from pathlib import Path
+import logging
 from datetime import datetime, timedelta
-from sqlalchemy import exists
 
-sys.path.append(str(Path(__file__).resolve().parents[2]))  # adds project root
-
+from src.db.db_session import get_session
+from src.db.dao.token_dao import get_tokens_sa
 from src.db.dao.activity_dao import ActivityDAO
-from src.utils.logger import get_logger
+from src.db.models.tokens import Token
+from src.db.models.activities import Activity
+from src.services.token_service import get_valid_token
 from src.services.activity_service import (
     ActivityIngestionService,
-    enrich_one_activity_with_refresh,
     run_enrichment_batch,
 )
-from src.db.dao.token_dao import get_tokens_sa
-from src.services.token_service import get_valid_token
-from src.db.models.activities import Activity
-from src.db.models.tokens import Token
 from src.utils.seeder import seed_sample_activity
+from src.routes.progress import set_progress  # ✅ in-memory progress tracker
+from src.utils.config import config
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def run_full_ingestion_and_enrichment(
-    session,
+    _unused_session,
     athlete_id,
+    user_id=None,
     lookback_days=365,
-    max_activities=200,
-    batch_size=50,
-    per_page=200,
+    max_activities=config.MAX_ACTIVITIES_TO_DOWNLOAD,
+    batch_size=None,
+    per_page=None,
     after=None,
     before=None,
 ):
-    logger.info(f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()}")
-    logger.info(
-        f"🚀 Starting run_full_ingestion_and_enrichment for athlete {athlete_id}"
-    )
-    logger.info(f"🔍 Effective lookback_days: {lookback_days}")
+    session = get_session()
 
-    tokens = get_tokens_sa(session, athlete_id)
-    if not tokens:
-        logger.warning(
-            f"⚠️ No tokens found for athlete {athlete_id}. Attempting to seed from .env..."
+    def progress(stage, message="", current=0, total=0, percent=None):
+        """Normalize backend stages into frontend-friendly buckets (UI uses user_id)."""
+        stage_map = {
+            "auth_ok": "fetching",
+            "compute_window": "fetching",
+            "fetch_start": "fetching",
+            "fetch_done": "fetching",
+            "filter_done": "fetching",
+            "upsert_start": "fetching",
+            "upsert_done": "fetching",
+            "enrich_start": "enriching",
+            "enrich_done": "enriching",
+        }
+        ui_stage = stage_map.get(stage, stage)
+
+        try:
+            if percent is None:
+                percent = (current / total * 100.0) if total else 0.0
+            if user_id:  # ✅ progress now keyed by user_id
+                logger.info(
+                    f"[Progress] user_id={user_id} | stage={ui_stage} | "
+                    f"message='{message}' | percent={percent:.1f}"
+                )
+                set_progress(str(user_id), ui_stage, message, percent)
+        except Exception:
+            logger.exception("Progress reporting failed (non-fatal)")
+
+    try:
+        logger.info(
+            f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()} for user_id={user_id}, athlete_id={athlete_id}"
         )
+        progress("starting", "Starting sync with Strava…", percent=2)
 
-        access_token = os.getenv("STRAVA_ACCESS_TOKEN")
-        refresh_token = os.getenv("STRAVA_REFRESH_TOKEN")
-        expires_at = int(os.getenv("STRAVA_EXPIRES_AT", time.time() + 3600))
+        # -------------------------
+        # Artificial delay for demo UX
+        # Remove these sleeps in production
+        import time
 
-        if access_token and refresh_token:
-            token = Token(
-                athlete_id=athlete_id,
-                access_token=access_token,
-                refresh_token=refresh_token,
-                expires_at=expires_at,
-            )
-            session.merge(token)
-            session.commit()
-            logger.info(f"✅ Seeded Strava token from .env for athlete {athlete_id}")
-        else:
-            logger.warning(
-                "⚠️ .env credentials not found. Using fallback seeding for mock activity"
-            )
-            seed_sample_activity(session, athlete_id)
-            session.commit()
-            logger.info(f"✅ Seeded mock activity for athlete {athlete_id}")
-            return {"synced": 1, "enriched": 0}
+        time.sleep(2)
+        # -------------------------
 
-    access_token = get_valid_token(session, athlete_id)
-    logger.info(f"🟢 Retrieved valid access token for athlete {athlete_id}")
+        max_activities = max_activities or 200
+        batch_size = batch_size or min(200, 50)
+        per_page = per_page or min(200, 50)
 
-    logger.info(f"🗖️ Fetching recent activities from Strava...")
-    service = ActivityIngestionService(session, athlete_id)
+        # Token handling
+        tokens = get_tokens_sa(session, athlete_id)
+        if not tokens:
+            access_token = os.getenv("STRAVA_ACCESS_TOKEN")
+            refresh_token = os.getenv("STRAVA_REFRESH_TOKEN")
+            expires_at = int(os.getenv("STRAVA_EXPIRES_AT", time.time() + 3600))
+            if access_token and refresh_token:
+                token = Token(
+                    athlete_id=athlete_id,
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    expires_at=expires_at,
+                )
+                session.merge(token)
+                session.commit()
+                logger.info("Seeded fallback Strava token")
+            else:
+                seed_sample_activity(session, athlete_id)
+                session.commit()
+                progress("done", "Mock activity seeded", percent=100)
+                return {"synced": 1, "enriched": 0}
 
-    if after is None:
-        after = int(
+        access_token = get_valid_token(session, athlete_id)
+        progress("auth_ok", "Access granted ✅", percent=8)
+
+        time.sleep(1)  # ⏳ simulate auth step
+
+        after = after or int(
             (datetime.utcnow() - timedelta(days=lookback_days))
             .replace(hour=0, minute=0, second=0, microsecond=0)
             .timestamp()
         )
-
-    if before is None:
-        before = int(
-            (
-                datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            ).timestamp()
+        before = before or int(
+            datetime.utcnow()
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            .timestamp()
         )
+        progress("compute_window", "Preparing date window", percent=12)
 
-    logger.info(
-        f"🕐 Targeting activities from: {datetime.utcfromtimestamp(after).strftime('%Y-%m-%d')} (UTC)"
-    )
-    logger.info(f"🔍 after: {after} | before: {before}")
+        time.sleep(1)  # ⏳ simulate compute window
 
-    try:
-        all_fetched = fetch_runs_only(
-            service.client,
-            after=after,
-            before=before,
-            per_page=per_page,
-            limit=max_activities,
-        )
-        logger.info(f"📥 Received {len(all_fetched)} raw activities from Strava.")
-        for act in all_fetched:
-            logger.debug(
-                f"  → id={act.get('id')} type={act.get('type')} name={act.get('name')}"
-            )
-    except Exception as e:
-        logger.exception(f"❌ Failed to fetch activities from Strava: {e}")
-        return {"synced": 0, "enriched": 0}
+        service = ActivityIngestionService(session, athlete_id)
+        progress("fetch_start", "Fetching recent runs from Strava…", percent=18)
 
-    # Separate runs vs non-runs
-    runs_only = [a for a in all_fetched if a.get("type") == "Run"]
-    non_runs = [a for a in all_fetched if a.get("type") != "Run"]
+        time.sleep(2)  # ⏳ simulate network fetch
 
-    logger.info(f"📥 Pulled {len(all_fetched)} total activities from Strava (raw)")
-    logger.info(f"🏃 {len(runs_only)} 'Run' activities after filtering")
-
-    if non_runs:
-        logger.info(f"❌ {len(non_runs)} non-run activities excluded")
-        for act in non_runs:
-            logger.debug(
-                f"Filtered out: id={act.get('id')} type={act.get('type')} name={act.get('name')}"
-            )
-
-    if not runs_only:
-        logger.warning("📬 No qualifying 'Run' activities returned from Strava.")
-        return {"synced": 0, "enriched": 0}
-
-    fetched_ids = [a["id"] for a in runs_only]
-    existing_ids = {
-        r[0]
-        for r in session.query(Activity.activity_id)
-        .filter(Activity.activity_id.in_(fetched_ids))
-        .all()
-    }
-    logger.info(f"📦 {len(existing_ids)} run activities already exist in DB")
-    if existing_ids:
-        logger.debug(f"Already in DB: {list(existing_ids)}")
-
-    new_activities = [a for a in runs_only if a["id"] not in existing_ids]
-    logger.info(f"🆕 {len(new_activities)} new run activities to ingest")
-
-    if not new_activities:
-        logger.warning(
-            f"⚠️ No new activities to ingest — all fetched entries already exist in DB."
-        )
-        return {"synced": 0, "enriched": 0}
-
-    for a in new_activities:
-        logger.debug(
-            f"⬇️ Ingesting activity: id={a['id']} name={a.get('name')} start_date={a.get('start_date')}"
-        )
-
-    ActivityDAO.upsert_activities(session, athlete_id, new_activities)
-    logger.info(f"✅ Synced {len(new_activities)} activities")
-
-    enriched = run_enrichment_batch(session, athlete_id, batch_size=batch_size)
-    logger.info(f"✅ Enriched {enriched} activities")
-
-    logger.info(
-        f"🧾 Ingestion summary for athlete {athlete_id}: pulled={len(fetched_ids)}, new={len(new_activities)}, enriched={enriched}"
-    )
-    logger.info(f"🎯 Ingestion + enrichment complete for athlete {athlete_id}")
-    return {"synced": len(new_activities), "enriched": enriched}
-
-
-def ingest_specific_activity(session, athlete_id, activity_id):
-    logger.info(
-        f"⏳ Ingesting specific activity {activity_id} for athlete {athlete_id}"
-    )
-    service = ActivityIngestionService(session, athlete_id)
-    activity_data = service.client.get_activity(activity_id)
-    if not activity_data:
-        logger.warning(f"Activity {activity_id} not found for athlete {athlete_id}")
-        return 0
-
-    ActivityDAO.upsert_activities(session, athlete_id, [activity_data])
-    logger.info(f"✅ Activity {activity_id} upserted")
-
-    try:
-        enrich_one_activity_with_refresh(session, athlete_id, activity_id)
-        logger.info(f"✅ Activity {activity_id} enriched")
-    except Exception as e:
-        logger.error(
-            f"❌ Skipping enrichment for activity {activity_id} due to error: {e}"
-        )
-
-    return 1
-
-
-def fetch_runs_only(client, after, before, per_page=200, limit=10):
-    all_acts = client.get_activities(
-        after=after, before=before, per_page=per_page, limit=limit * 3
-    )
-    # fetch extra in case of non-runs
-    runs = [a for a in all_acts if a.get("type") == "Run"]
-    return runs[:limit]
-
-
-def ingest_between_dates(
-    session,
-    athlete_id,
-    start_date: datetime,
-    end_date: datetime,
-    batch_size=10,
-    max_activities=None,
-    per_page=200,
-):
-    logger.info(
-        f"⏳ Ingesting activities for athlete {athlete_id} between {start_date} and {end_date}"
-    )
-    service = ActivityIngestionService(session, athlete_id)
-    activities = service.client.get_activities(
-        after=int(start_date.timestamp()),
-        before=int(end_date.timestamp()),
-        per_page=per_page,
-        limit=max_activities,
-    )
-
-    logger.info(f"📥 Pulled {len(activities)} activities from Strava in date range")
-
-    activities = [a for a in activities if a.get("type") == "Run"]
-
-    if not activities:
-        logger.warning(
-            f"No 'Run' activities found between dates for athlete {athlete_id}"
-        )
-        return 0
-
-    ActivityDAO.upsert_activities(session, athlete_id, activities)
-    logger.info(f"✅ Upserted {len(activities)} activities")
-
-    count = 0
-    for act in activities:
         try:
-            enrich_one_activity_with_refresh(session, athlete_id, act["id"])
-            count += 1
-            if count % batch_size == 0:
-                logger.info(f"Processed {count} activities for enrichment")
-        except Exception:
-            continue
+            all_fetched = service.client.get_activities(
+                after=after, before=before, per_page=per_page, limit=max_activities
+            )
+        except Exception as e:
+            progress("error", f"Failed to fetch: {e}")
+            return {"synced": 0, "enriched": 0}
 
-    logger.info(f"✅ Enriched {count} activities")
-    return count
+        progress(
+            "fetch_done",
+            f"Fetched {len(all_fetched)} activities",
+            current=len(all_fetched),
+            total=len(all_fetched),
+            percent=30,
+        )
 
+        time.sleep(1)
 
-def ingest_today(session, athlete_id):
-    today = datetime.utcnow()
-    start = datetime(today.year, today.month, today.day)
-    end = start + timedelta(days=1)
-    return ingest_between_dates(session, athlete_id, start_date=start, end_date=end)
+        runs_only = [a for a in all_fetched if a.get("type") == "Run"]
+        progress(
+            "filter_done",
+            f"Identified {len(runs_only)} runs",
+            current=len(runs_only),
+            total=len(all_fetched),
+            percent=36,
+        )
+
+        if not runs_only:
+            progress("done", "No runs found in Strava account", percent=100)
+            return {"synced": 0, "enriched": 0}
+
+        fetched_ids = [int(a.get("id")) for a in runs_only if a.get("id")]
+        existing_ids = {
+            r[0]
+            for r in session.query(Activity.activity_id)
+            .filter(Activity.activity_id.in_(fetched_ids))
+            .all()
+        }
+
+        new_activities = [a for a in runs_only if int(a.get("id")) not in existing_ids]
+        for a in new_activities:
+            a["activity_id"] = a.pop("id", None)
+            a["user_id"] = user_id  # ✅ store user_id (UUID) alongside activity
+
+        # Deduplicate by activity_id
+        dedup = {
+            int(a["activity_id"]): a for a in new_activities if a.get("activity_id")
+        }
+        unique_new_activities = list(dedup.values())
+
+        progress(
+            "upsert_start",
+            f"Saving {len(unique_new_activities)} runs…",
+            total=len(unique_new_activities),
+            percent=45,
+        )
+
+        time.sleep(1)
+
+        inserted_count = ActivityDAO.upsert_activities(
+            session, athlete_id, unique_new_activities, user_id=user_id
+        )
+
+        progress(
+            "upsert_done",
+            f"Synced {inserted_count} new runs",
+            current=inserted_count,
+            total=len(unique_new_activities),
+            percent=65,
+        )
+
+        time.sleep(1)
+
+        progress("enrich_start", "Enriching activities…", percent=75)
+
+        time.sleep(2)  # ⏳ simulate enrichment step
+
+        try:
+            enriched = (
+                run_enrichment_batch(session, athlete_id, batch_size=batch_size) or 0
+            )
+            progress("enrich_done", f"Enriched {enriched} activities ✅", percent=90)
+        except Exception as e:
+            progress("error", f"Enrichment failed: {e}", percent=90)
+            enriched = 0
+
+        progress(
+            "done",
+            f"Finished. Synced={inserted_count}, Enriched={enriched}",
+            percent=100,
+        )
+        return {"synced": inserted_count, "enriched": enriched}
+
+    except Exception as e:
+        session.rollback()
+        logger.exception(f"❌ Ingestion failed: {e}")
+        progress("error", f"Ingestion failed: {e}", percent=0)
+        return {"synced": 0, "enriched": 0}
+    finally:
+        session.close()
