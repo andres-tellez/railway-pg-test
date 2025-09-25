@@ -1,70 +1,95 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "../utils/apiClient";
-import { LandingProgress } from "../components/LandingProgress";
+import { useNavigate } from "react-router-dom";
 
 const LandingPage: React.FC = () => {
   const { user, isAuthenticated, isLoading } = useAuth0();
   const api = useApiClient();
+  const navigate = useNavigate();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [syncing, setSyncing] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null); // ✅ UUID from backend
+  const [userId, setUserId] = useState<string | null>(null);
 
-  // ✅ Always check backend for progress on load (via authenticated JWT)
+  const hasPostedIdentity = useRef(false);
+
+  // ✅ Initial identity sync + fetch user status
   useEffect(() => {
-    if (isAuthenticated && userId) {
-      api
-        .get("/progress/status")
-        .then((res) => {
-          const data = res.data;
-          console.log("📥 Progress response:", data);
+    if (isAuthenticated && !isLoading && !hasPostedIdentity.current) {
+      hasPostedIdentity.current = true;
 
-          if (data.stage === "done") {
+      api
+        .post<{ user_id: string }>("/api/user/identity")
+        .then((res) => {
+          const newUserId = res.data.user_id;
+          setUserId(newUserId);
+
+          return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/api/user");
+        })
+        .then((res) => {
+          const { hasOnboarded, hasStrava } = res.data;
+          console.log("📊 User status:", res.data);
+
+          if (hasOnboarded) {
+            console.log("→ branching to step 3");
+            setStep(3);
+          } else if (hasStrava) {
+            console.log("→ branching to step 2");
             setStep(2);
-            setSyncing(false);
-          } else if (data.stage !== "starting") {
-            setSyncing(true);
           } else {
-            setSyncing(false);
+            console.log("→ branching to step 1");
+            setStep(1);
           }
         })
-        .catch((err) => {
-          console.error("❌ Failed to check progress", err);
-        });
-    }
-  }, [isAuthenticated, api, userId]);
-
-  // ✅ Persist user identity once authenticated (and fetch UUID)
-  useEffect(() => {
-    if (isAuthenticated && !isLoading) {
-      api
-        .post<{ user_id: string }>("/user/identity")
-        .then((res) => {
-          console.log("✅ Stored internal user_id:", res.data.user_id);
-          setUserId(res.data.user_id);
-        })
-        .catch((err) =>
-          console.error("❌ Failed to upsert identity:", err)
-        );
+        .catch((err) => console.error("❌ Failed to fetch user status:", err));
     }
   }, [isAuthenticated, isLoading, api]);
 
-  // ✅ Correct connectStrava (only one copy)
+  // ✅ Detect Strava redirect success
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("strava") === "connected") {
+      console.log("🔄 Strava connected, starting sync spinner");
+      setSyncing(true);
+
+      params.delete("strava");
+      window.history.replaceState({}, "", `${window.location.pathname}`);
+
+      setTimeout(() => {
+        setSyncing(false);
+        // ⚠️ Do not force step transition — actual step will be determined via backend status
+        console.log("⏱ Done syncing. Awaiting status re-evaluation.");
+      }, 8000);
+    }
+  }, []);
+
+  // ✅ Detect onboarding redirect (optional)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("onboarding") === "done") {
+      console.log("✅ Onboarding finished. Clearing param only.");
+      params.delete("onboarding");
+      window.history.replaceState({}, "", `${window.location.pathname}`);
+    }
+  }, []);
+
   const connectStrava = () => {
     if (!userId) {
       console.error("❌ Cannot connect Strava: no internal userId yet");
       return;
     }
-    const apiBase = import.meta.env.VITE_BACKEND_URL;
 
-    setSyncing(true); // 🔑 Start showing progress UI when user clicks
-    window.location.href = `${apiBase}/auth/strava-login?user_id=${encodeURIComponent(userId)}`;
+    const apiBase = import.meta.env.VITE_BACKEND_URL;
+    setSyncing(true);
+
+    window.location.href = `${apiBase}/auth/strava-login?user_id=${encodeURIComponent(
+      userId
+    )}`;
   };
 
   if (isLoading) return <div className="p-6">🔄 Loading auth…</div>;
-  if (!isAuthenticated)
-    return <div className="p-6 text-red-600">❌ Not authenticated</div>;
+  if (!isAuthenticated) return <div className="p-6 text-red-600">❌ Not authenticated</div>;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-4 bg-gray-50">
@@ -89,26 +114,23 @@ const LandingPage: React.FC = () => {
         {/* Step 1 */}
         <div
           className={`p-4 border rounded-lg ${
-            step === 1
-              ? "bg-blue-50 border-blue-400 cursor-pointer"
-              : "bg-gray-100 opacity-50"
-          } ${!userId ? "opacity-50 cursor-not-allowed" : ""}`} // 🚫 disabled if no UUID yet
+            step === 1 ? "bg-blue-50 border-blue-400 cursor-pointer" : "bg-gray-100 opacity-50"
+          } ${!userId ? "opacity-50 cursor-not-allowed" : ""}`}
           onClick={() => {
-            if (step === 1 && userId) {
+            if (step === 1 && userId && !syncing) {
               connectStrava();
             }
           }}
         >
           <h2 className="font-medium text-lg">Step 1: Connect Strava</h2>
           {syncing ? (
-            <div className="mt-4">
-              {userId && <LandingProgress userId={userId} />} {/* ✅ pass UUID */}
+            <div className="mt-4 flex flex-col items-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <p className="text-sm text-gray-600 mt-2">Syncing your Strava data…</p>
             </div>
           ) : (
             <p className="text-sm text-gray-600 mt-1">
-              {userId
-                ? "Click to connect your Strava account"
-                : "Waiting for identity…"} {/* 🕒 clearer UX */}
+              {userId ? "Click to connect your Strava account" : "Waiting for identity…"}
             </p>
           )}
         </div>
@@ -116,16 +138,10 @@ const LandingPage: React.FC = () => {
         {/* Step 2 */}
         <div
           className={`p-4 border rounded-lg ${
-            step >= 2
-              ? "bg-blue-50 border-blue-400 cursor-pointer"
-              : "bg-gray-100 opacity-50"
+            step === 2 ? "bg-blue-50 border-blue-400 cursor-pointer" : "bg-gray-100 opacity-50"
           }`}
           onClick={() => {
-            console.log("🖱️ Step 2 clicked manually");
-            if (step >= 2) {
-              // Only navigate when the user clicks
-              window.location.href = "/onboarding";
-            }
+            if (step === 2) navigate("/onboarding");
           }}
         >
           <h2 className="font-medium text-lg">Step 2: Complete Onboarding</h2>
@@ -134,15 +150,14 @@ const LandingPage: React.FC = () => {
           </p>
         </div>
 
-
         {/* Step 3 */}
         <div
           className={`p-4 border rounded-lg ${
-            step >= 3
-              ? "bg-blue-50 border-blue-400 cursor-pointer"
-              : "bg-gray-100 opacity-50"
+            step === 3 ? "bg-blue-50 border-blue-400 cursor-pointer" : "bg-gray-100 opacity-50"
           }`}
-          onClick={() => step >= 3 && (window.location.href = "/plan")}
+          onClick={() => {
+            if (step === 3) navigate("/plan");
+          }}
         >
           <h2 className="font-medium text-lg">Step 3: Generate Plan</h2>
           <p className="text-sm text-gray-600 mt-1">

@@ -59,4 +59,73 @@ export const onboardingSchema = z.object({
   { path: ['height'], message: 'Please enter both height (feet and inches) or leave blank' }
 );
 
+// 2b) Value-to-label mappings (for UI display)
+export const DayLabels: Record<typeof Days[number], string> = {
+  Mon: 'Mon',
+  Tue: 'Tue',
+  Wed: 'Wed',
+  Thu: 'Thu',
+  Fri: 'Fri',
+  Sat: 'Sat',
+  Sun: 'Sun',
+};
+
+export const RaceLabels: Record<typeof Races[number], string> = {
+  '5K': '5K',
+  '10K': '10K',
+  'Half Marathon': 'Half Marathon',
+  'Marathon': 'Marathon',
+  'Ultra': 'Ultra',
+  "Haven't raced yet": "Haven't raced yet",
+};
+
+export const DistanceLabels: Record<typeof Distances[number], string> = {
+  '5K': '5K',
+  '10K': '10K',
+  'Half Marathon': 'Half Marathon',
+  'Marathon': 'Marathon',
+  'Ultra': 'Ultra',
+  'Other': 'Other',
+};
+
+export const RunnerLevelLabels: Record<typeof RunnerLevels[number], string> = {
+  Beginner: 'Beginner',
+  Intermediate: 'Intermediate',
+  Expert: 'Expert',
+};
+
+export const AgeGroupLabels: Record<typeof AgeGroups[number], string> = {
+  'Under 18': 'Under 18',
+  '18-24': '18–24',
+  '25-34': '25–34',
+  '35-44': '35–44',
+  '45-54': '45–54',
+  '55+': '55+',
+};
+
+export const RunPrefLabels: Record<typeof RunPrefs[number], string> = {
+  Distance: 'Distance',
+  Time: 'Time',
+  'No preference': 'No preference',
+};
+
+export const GoalLabels: Record<typeof Goals[number], string> = {
+  'General fitness': 'General fitness',
+  'Run a race': 'Run a race',
+  'Lose weight': 'Lose weight',
+  'Run faster': 'Run faster',
+  'Other': 'Other',
+};
+
+export const MotivationLabels: Record<typeof Motivations[number], string> = {
+  Health: 'Health',
+  Competition: 'Competition',
+  'Stress relief': 'Stress relief',
+  Enjoyment: 'Enjoyment',
+  Other: 'Other',
+};
+
+
+
+
 export type OnboardingFormData = z.infer<typeof onboardingSchema>;

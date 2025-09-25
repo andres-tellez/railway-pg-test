@@ -30,9 +30,9 @@ import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 
 import OnboardingForm from "./pages/OnboardingForm";
-import LandingPage from "./pages/LandingPage";
 import PlanPage from "./pages/PlanPage";
-import PostOAuth from "./pages/PostOAuth";
+
+import LandingPage from "./pages/LandingPage";
 
 // ---------------------------
 // ProtectedRoute
@@ -111,7 +111,6 @@ export default function App() {
           }
         />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/post-oauth" element={<PostOAuth />} />
         <Route
           path="/onboarding"
           element={

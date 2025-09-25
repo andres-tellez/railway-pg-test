@@ -2,6 +2,7 @@
 from sqlalchemy.orm import Session
 from src.db.models.user_profile import UserProfile
 from src.utils.normalize import normalize_postgres_row
+from src.db.enums.user_profile_enums import PastRace, Motivation, TrainingDay
 
 
 def _empty_list_to_none(val):
@@ -25,15 +26,19 @@ def save_user_profile(session: Session, profile_data: dict):
         "race_history": profile_data["raceHistory"],
         "race_date": profile_data.get("raceDate"),
         "race_distance": profile_data.get("raceDistance"),
-        "past_races": _enum_to_str_list(profile_data.get("pastRaces", [])),
+        "past_races": _empty_list_to_none(
+            [PastRace(x) for x in profile_data.get("pastRaces", [])]
+        ),
         "height_feet": profile_data.get("height_feet"),
         "height_inches": profile_data.get("height_inches"),
         "weight": profile_data["weight"],
         "training_days": _empty_list_to_none(
-            [str(x).strip() for x in profile_data.get("trainingDays", [])]
+            [TrainingDay(x) for x in profile_data.get("trainingDays", [])]
         ),
         "main_goal": profile_data["mainGoal"],
-        "motivation": _enum_to_str_list(profile_data.get("motivation", [])),
+        "motivation": _empty_list_to_none(
+            [Motivation(x) for x in profile_data.get("motivation", [])]
+        ),
         "age_group": profile_data["ageGroup"],
         "run_preference": profile_data["runPreference"],
     }

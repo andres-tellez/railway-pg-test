@@ -16,7 +16,6 @@ from src.services.activity_service import (
     run_enrichment_batch,
 )
 from src.utils.seeder import seed_sample_activity
-from src.routes.progress import set_progress  # ✅ in-memory progress tracker
 from src.utils.config import config
 
 logger = logging.getLogger(__name__)
@@ -35,44 +34,19 @@ def run_full_ingestion_and_enrichment(
 ):
     session = get_session()
 
-    def progress(stage, message="", current=0, total=0, percent=None):
-        """Normalize backend stages into frontend-friendly buckets (UI uses user_id)."""
-        stage_map = {
-            "auth_ok": "fetching",
-            "compute_window": "fetching",
-            "fetch_start": "fetching",
-            "fetch_done": "fetching",
-            "filter_done": "fetching",
-            "upsert_start": "fetching",
-            "upsert_done": "fetching",
-            "enrich_start": "enriching",
-            "enrich_done": "enriching",
-        }
-        ui_stage = stage_map.get(stage, stage)
-
-        try:
-            if percent is None:
-                percent = (current / total * 100.0) if total else 0.0
-            if user_id:  # ✅ progress now keyed by user_id
-                logger.info(
-                    f"[Progress] user_id={user_id} | stage={ui_stage} | "
-                    f"message='{message}' | percent={percent:.1f}"
-                )
-                set_progress(str(user_id), ui_stage, message, percent)
-        except Exception:
-            logger.exception("Progress reporting failed (non-fatal)")
+    logger.info(
+        f"[Ingestion] run_full_ingestion_and_enrichment called for user_id={user_id}, athlete_id={athlete_id}"
+    )
 
     try:
         logger.info(
-            f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()} for user_id={user_id}, athlete_id={athlete_id}"
+            f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()} "
+            f"for user_id={user_id}, athlete_id={athlete_id}"
         )
-        progress("starting", "Starting sync with Strava…", percent=2)
 
         # -------------------------
         # Artificial delay for demo UX
         # Remove these sleeps in production
-        import time
-
         time.sleep(2)
         # -------------------------
 
@@ -99,11 +73,11 @@ def run_full_ingestion_and_enrichment(
             else:
                 seed_sample_activity(session, athlete_id)
                 session.commit()
-                progress("done", "Mock activity seeded", percent=100)
+                logger.info("Mock activity seeded")
                 return {"synced": 1, "enriched": 0}
 
         access_token = get_valid_token(session, athlete_id)
-        progress("auth_ok", "Access granted ✅", percent=8)
+        logger.info("✅ Access granted")
 
         time.sleep(1)  # ⏳ simulate auth step
 
@@ -117,12 +91,12 @@ def run_full_ingestion_and_enrichment(
             .replace(hour=0, minute=0, second=0, microsecond=0)
             .timestamp()
         )
-        progress("compute_window", "Preparing date window", percent=12)
+        logger.info("📅 Prepared date window")
 
         time.sleep(1)  # ⏳ simulate compute window
 
         service = ActivityIngestionService(session, athlete_id)
-        progress("fetch_start", "Fetching recent runs from Strava…", percent=18)
+        logger.info("📥 Fetching recent runs from Strava…")
 
         time.sleep(2)  # ⏳ simulate network fetch
 
@@ -131,30 +105,18 @@ def run_full_ingestion_and_enrichment(
                 after=after, before=before, per_page=per_page, limit=max_activities
             )
         except Exception as e:
-            progress("error", f"Failed to fetch: {e}")
+            logger.error(f"❌ Failed to fetch activities: {e}")
             return {"synced": 0, "enriched": 0}
 
-        progress(
-            "fetch_done",
-            f"Fetched {len(all_fetched)} activities",
-            current=len(all_fetched),
-            total=len(all_fetched),
-            percent=30,
-        )
+        logger.info(f"📥 Fetched {len(all_fetched)} activities")
 
         time.sleep(1)
 
         runs_only = [a for a in all_fetched if a.get("type") == "Run"]
-        progress(
-            "filter_done",
-            f"Identified {len(runs_only)} runs",
-            current=len(runs_only),
-            total=len(all_fetched),
-            percent=36,
-        )
+        logger.info(f"🏃 Identified {len(runs_only)} runs")
 
         if not runs_only:
-            progress("done", "No runs found in Strava account", percent=100)
+            logger.info("ℹ️ No runs found in Strava account")
             return {"synced": 0, "enriched": 0}
 
         fetched_ids = [int(a.get("id")) for a in runs_only if a.get("id")]
@@ -176,12 +138,7 @@ def run_full_ingestion_and_enrichment(
         }
         unique_new_activities = list(dedup.values())
 
-        progress(
-            "upsert_start",
-            f"Saving {len(unique_new_activities)} runs…",
-            total=len(unique_new_activities),
-            percent=45,
-        )
+        logger.info(f"💾 Saving {len(unique_new_activities)} new runs…")
 
         time.sleep(1)
 
@@ -189,17 +146,11 @@ def run_full_ingestion_and_enrichment(
             session, athlete_id, unique_new_activities, user_id=user_id
         )
 
-        progress(
-            "upsert_done",
-            f"Synced {inserted_count} new runs",
-            current=inserted_count,
-            total=len(unique_new_activities),
-            percent=65,
-        )
+        logger.info(f"✅ Synced {inserted_count} new runs")
 
         time.sleep(1)
 
-        progress("enrich_start", "Enriching activities…", percent=75)
+        logger.info("⚙️ Enriching activities…")
 
         time.sleep(2)  # ⏳ simulate enrichment step
 
@@ -207,22 +158,19 @@ def run_full_ingestion_and_enrichment(
             enriched = (
                 run_enrichment_batch(session, athlete_id, batch_size=batch_size) or 0
             )
-            progress("enrich_done", f"Enriched {enriched} activities ✅", percent=90)
+            logger.info(f"✅ Enriched {enriched} activities")
         except Exception as e:
-            progress("error", f"Enrichment failed: {e}", percent=90)
+            logger.error(f"❌ Enrichment failed: {e}")
             enriched = 0
 
-        progress(
-            "done",
-            f"Finished. Synced={inserted_count}, Enriched={enriched}",
-            percent=100,
+        logger.info(
+            f"🏁 Finished ingestion. Synced={inserted_count}, Enriched={enriched}"
         )
         return {"synced": inserted_count, "enriched": enriched}
 
     except Exception as e:
         session.rollback()
         logger.exception(f"❌ Ingestion failed: {e}")
-        progress("error", f"Ingestion failed: {e}", percent=0)
         return {"synced": 0, "enriched": 0}
     finally:
         session.close()

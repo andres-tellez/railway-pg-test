@@ -159,9 +159,7 @@ def strava_callback_get():
         .rstrip("/")
     )
     print(f"🔀 Redirecting user to: {frontend_redirect}", flush=True)
-    return redirect(
-        f"{frontend_redirect}/?user_id={user_id}&athlete_id={athlete_id}&syncing=1"
-    )
+    return redirect(f"{frontend_redirect}?strava=connected")
 
 
 @auth_bp.route("/trigger-ingest/<int:athlete_id>", methods=["POST"])

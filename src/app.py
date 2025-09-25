@@ -1,9 +1,12 @@
+# app.py
+
 import os
 from dotenv import load_dotenv
 from pathlib import Path
 from urllib.parse import urlparse
 from flask_session import Session
 from werkzeug.exceptions import HTTPException
+import uuid
 
 
 # 📦 Environment Setup
@@ -47,7 +50,7 @@ print(f"🔑 AUTH0_ALGORITHMS={os.getenv('AUTH0_ALGORITHMS')}", flush=True)
 
 
 # 🌐 Flask Setup
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify, g, session
 from flask_cors import CORS
 from src.utils.config import config
 from src.routes.admin_routes import admin_bp
@@ -87,8 +90,8 @@ def create_app(test_config=None):
         SESSION_COOKIE_SAMESITE="None",
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_DOMAIN=".smartcoach.dev",
         SESSION_COOKIE_PATH="/",
+        SESSION_COOKIE_DOMAIN=os.getenv("SESSION_COOKIE_DOMAIN"),
     )
 
     # ✅ Required app config values
@@ -102,7 +105,6 @@ def create_app(test_config=None):
     db.init_app(app)
 
     import src.db.models
-    from src.routes.progress import bp as progress_bp
 
     Session(app)
 
@@ -119,7 +121,6 @@ def create_app(test_config=None):
     app.register_blueprint(identity_bp)
     app.register_blueprint(auth_me_bp)
     app.register_blueprint(plan_bp)
-    app.register_blueprint(progress_bp)
 
     @app.route("/_debug/db-url")
     def debug_db_url():
@@ -127,13 +128,26 @@ def create_app(test_config=None):
 
         return {"connected_url": str(engine.url)}, 200
 
+    @app.route("/debug/session/set")
+    def set_session_for_debug():
+        session["debug"] = "value"
+        return "✅ Session set", 200
+
     # ✅ Global OPTIONS handler for preflight support
     @app.before_request
     def log_request_details():
         origin = request.headers.get("Origin")
         method = request.method
-        print(f"🌐 Incoming request from Origin: {origin}", flush=True)
-        print(f"📡 Incoming {method} request to: {request.path}", flush=True)
+        path = request.path
+        user_agent = request.headers.get("User-Agent", "unknown")
+        request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+
+        print("🌐 Request Metadata:", flush=True)
+        print(f"  • ID: {request_id}", flush=True)
+        print(f"  • Method: {method}", flush=True)
+        print(f"  • Path: {path}", flush=True)
+        print(f"  • Origin: {origin}", flush=True)
+        print(f"  • User-Agent: {user_agent}", flush=True)
         print("🍪 Request cookies:", request.cookies, flush=True)
 
         # Log auth header for debug
@@ -244,6 +258,11 @@ def create_app(test_config=None):
             jsonify({"error": "Internal Server Error", "message": str(e), "code": 500}),
             500,
         )
+
+    @app.route("/hello", methods=["POST"])
+    def hello():
+        print("hello route called")
+        return jsonify({"hello": "ok"})
 
     return app
 

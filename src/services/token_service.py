@@ -87,6 +87,9 @@ def delete_athlete_tokens(session, athlete_id):
 
 
 def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None = None):
+    logger.info(
+        f"[store_tokens_from_callback] called with user_id={user_id}, redirect_uri={redirect_uri}"
+    )
     from sqlalchemy.exc import IntegrityError
     from src.db.dao import user_athletes_dao
     from src.db.dao.token_dao import insert_token_sa
@@ -166,6 +169,9 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
             session.commit()
             print(f"✅ Token updated for athlete: {strava_athlete_id}", flush=True)
 
+    logger.info(
+        f"[store_tokens_from_callback] ✅ Finished storing tokens for user_id={user_id}, athlete_id={strava_athlete_id}"
+    )
     return strava_athlete_id
 
 

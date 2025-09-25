@@ -1,19 +1,27 @@
-// src/pages/PostOAuth.tsx
-import React, { useEffect, useRef } from "react";
+// @file PostOAuth.tsx
+// @description: Handles Strava OAuth callback, token exchange, and ingestion trigger
+// @features: Auth0 token processing, secure backend login, polling ingestion status
+// @integration-points: Auth0, /auth/login/callback, /user/identity, LandingProgress
+// @usage: Called via redirect after Strava OAuth completes
+// @prerequisites: Auth0 must return valid id_token, user must be authenticated
+
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "@/utils/apiClient";
+import { LandingProgress } from "@/components/LandingProgress";
 
 const PostOAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { isLoading, isAuthenticated, getIdTokenClaims } = useAuth0();
+  const { isLoading, isAuthenticated, getIdTokenClaims, user } = useAuth0();
   const api = useApiClient();
   const ran = useRef(false);
+
+  const [readyToSync, setReadyToSync] = useState(false);
 
   useEffect(() => {
     console.log("🔍 PostOAuth mounted →", { isLoading, isAuthenticated });
 
-    if (ran.current) return;
     if (isLoading) {
       console.log("⏳ Auth0 still loading, skipping");
       return;
@@ -25,14 +33,13 @@ const PostOAuth: React.FC = () => {
       return;
     }
 
+    if (ran.current) return;
     ran.current = true;
 
     const ac = new AbortController();
-    let done = false;
-
-    // Fallback safety (prevents user being stuck forever)
     const safety = setTimeout(() => {
-      if (!done) navigate("/", { replace: true }); // ✅ fallback to LandingPage
+      console.warn("⏱️ Safety timeout triggered, redirecting");
+      navigate("/", { replace: true });
     }, 8000);
 
     const go = async () => {
@@ -61,18 +68,13 @@ const PostOAuth: React.FC = () => {
           throw new Error(`auth/login/callback failed: ${resp.status} ${body}`);
         }
 
-        // ✅ Fixed: no double `/api`
         await api.post("/user/identity", {}, { signal: ac.signal });
         await api.get("/user", { signal: ac.signal });
 
-        done = true;
         clearTimeout(safety);
-
-        // ✅ Always go back to LandingPage.
-        navigate("/", { replace: true });
+        setReadyToSync(true); // ✅ Show LandingProgress now
       } catch (err) {
         console.error("❌ PostOAuth error:", err);
-        done = true;
         clearTimeout(safety);
         navigate("/", { replace: true });
       }
@@ -85,6 +87,15 @@ const PostOAuth: React.FC = () => {
       ac.abort();
     };
   }, [isLoading, isAuthenticated, getIdTokenClaims, api, navigate]);
+
+  if (readyToSync) {
+    return (
+      <LandingProgress
+        userId={user?.sub || ""}
+        onComplete={() => navigate("/", { replace: true })}
+      />
+    );
+  }
 
   return <div className="p-6">🔐 Finishing sign-in…</div>;
 };
