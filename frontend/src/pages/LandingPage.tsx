@@ -21,12 +21,12 @@ const LandingPage: React.FC = () => {
       hasPostedIdentity.current = true;
 
       api
-        .post<{ user_id: string }>("/user/identity") // 🔧 no `/api`
+        .post<{ user_id: string }>("/user/identity")
         .then((res) => {
           const newUserId = res.data.user_id;
           setUserId(newUserId);
 
-          return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user"); // 🔧 no `/api`
+          return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user");
         })
         .then((res) => {
           const { hasOnboarded, hasStrava } = res.data;
@@ -146,13 +146,22 @@ const LandingPage: React.FC = () => {
               : "bg-gray-100 opacity-50"
           }`}
           onClick={() => {
-            if (step === 2) navigate("/onboarding");
+            if (step === 2 && !forceSyncing) navigate("/onboarding");
           }}
         >
           <h2 className="font-medium text-lg">Step 2: Complete Onboarding</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Answer a few quick questions about your goals
-          </p>
+          {forceSyncing ? (
+            <div className="mt-4 flex flex-col items-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <p className="text-sm text-gray-600 mt-2">
+                Syncing your Strava data…
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600 mt-1">
+              Answer a few quick questions about your goals
+            </p>
+          )}
         </div>
 
         {/* Step 3 */}
@@ -163,13 +172,22 @@ const LandingPage: React.FC = () => {
               : "bg-gray-100 opacity-50"
           }`}
           onClick={() => {
-            if (step === 3) navigate("/plan");
+            if (step === 3 && !forceSyncing) navigate("/plan");
           }}
         >
           <h2 className="font-medium text-lg">Step 3: Generate Plan</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Build your personalized running plan
-          </p>
+          {forceSyncing ? (
+            <div className="mt-4 flex flex-col items-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <p className="text-sm text-gray-600 mt-2">
+                Syncing your Strava data…
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600 mt-1">
+              Build your personalized running plan
+            </p>
+          )}
         </div>
       </div>
     </div>
