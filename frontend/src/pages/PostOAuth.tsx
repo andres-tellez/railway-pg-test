@@ -50,14 +50,16 @@ const PostOAuth: React.FC = () => {
 
         if (!idToken) throw new Error("No Auth0 id_token found");
 
-        const base = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
+        const base =
+          import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
+
         console.log("📡 Posting token to backend:", base);
 
         const resp = await fetch(`${base}/auth/login/callback`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id_token: idToken }),
-          credentials: "include",
+          credentials: "include", // ✅ this ensures cookies are handled
           signal: ac.signal,
         });
 
