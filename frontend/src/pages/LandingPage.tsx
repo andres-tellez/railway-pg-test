@@ -45,21 +45,22 @@ const LandingPage: React.FC = () => {
 
   // ✅ Detect Strava redirect success
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("strava") === "connected") {
-      console.log("🔄 Strava connected, starting sync spinner");
-      setSyncing(true);
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("strava") === "connected") {
+    console.log("🔄 Strava connected, starting sync spinner");
+    setSyncing(true);
+
+    // ✅ Wait 8 seconds BEFORE removing param
+    setTimeout(() => {
+      setSyncing(false);
+      console.log("⏱ Done syncing. Awaiting status re-evaluation.");
 
       params.delete("strava");
       window.history.replaceState({}, "", `${window.location.pathname}`);
+    }, 8000);
+  }
+}, []);
 
-      // ⚠️ better: poll /user, but temporary timeout is okay
-      setTimeout(() => {
-        setSyncing(false);
-        console.log("⏱ Done syncing. Awaiting status re-evaluation.");
-      }, 8000);
-    }
-  }, []);
 
   // ✅ Detect onboarding redirect (optional)
   useEffect(() => {
