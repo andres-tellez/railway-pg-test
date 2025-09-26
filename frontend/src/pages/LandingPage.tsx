@@ -10,6 +10,7 @@ const LandingPage: React.FC = () => {
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [syncing, setSyncing] = useState(false);
+  const [forceSyncing, setForceSyncing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
   const hasPostedIdentity = useRef(false);
@@ -20,12 +21,12 @@ const LandingPage: React.FC = () => {
       hasPostedIdentity.current = true;
 
       api
-        .post<{ user_id: string }>("/user/identity")   // 🔧 removed `/api`
+        .post<{ user_id: string }>("/user/identity") // 🔧 no `/api`
         .then((res) => {
           const newUserId = res.data.user_id;
           setUserId(newUserId);
 
-          return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user"); // 🔧 removed `/api`
+          return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user"); // 🔧 no `/api`
         })
         .then((res) => {
           const { hasOnboarded, hasStrava } = res.data;
@@ -45,22 +46,19 @@ const LandingPage: React.FC = () => {
 
   // ✅ Detect Strava redirect success
   useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("strava") === "connected") {
-    console.log("🔄 Strava connected, starting sync spinner");
-    setSyncing(true);
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("strava") === "connected") {
+      console.log("🔄 Strava connected, forcing sync spinner");
+      setForceSyncing(true);
 
-    // ✅ Wait 8 seconds BEFORE removing param
-    setTimeout(() => {
-      setSyncing(false);
-      console.log("⏱ Done syncing. Awaiting status re-evaluation.");
-
-      params.delete("strava");
-      window.history.replaceState({}, "", `${window.location.pathname}`);
-    }, 8000);
-  }
-}, []);
-
+      setTimeout(() => {
+        setForceSyncing(false);
+        console.log("⏱ Done syncing. Awaiting status re-evaluation.");
+        params.delete("strava");
+        window.history.replaceState({}, "", `${window.location.pathname}`);
+      }, 8000);
+    }
+  }, []);
 
   // ✅ Detect onboarding redirect (optional)
   useEffect(() => {
@@ -87,7 +85,8 @@ const LandingPage: React.FC = () => {
   };
 
   if (isLoading) return <div className="p-6">🔄 Loading auth…</div>;
-  if (!isAuthenticated) return <div className="p-6 text-red-600">❌ Not authenticated</div>;
+  if (!isAuthenticated)
+    return <div className="p-6 text-red-600">❌ Not authenticated</div>;
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-4 bg-gray-50">
@@ -112,7 +111,9 @@ const LandingPage: React.FC = () => {
         {/* Step 1 */}
         <div
           className={`p-4 border rounded-lg ${
-            step === 1 ? "bg-blue-50 border-blue-400 cursor-pointer" : "bg-gray-100 opacity-50"
+            step === 1
+              ? "bg-blue-50 border-blue-400 cursor-pointer"
+              : "bg-gray-100 opacity-50"
           } ${!userId ? "opacity-50 cursor-not-allowed" : ""}`}
           onClick={() => {
             if (step === 1 && userId && !syncing) {
@@ -121,14 +122,18 @@ const LandingPage: React.FC = () => {
           }}
         >
           <h2 className="font-medium text-lg">Step 1: Connect Strava</h2>
-          {syncing ? (
+          {(syncing || forceSyncing) ? (
             <div className="mt-4 flex flex-col items-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <p className="text-sm text-gray-600 mt-2">Syncing your Strava data…</p>
+              <p className="text-sm text-gray-600 mt-2">
+                Syncing your Strava data…
+              </p>
             </div>
           ) : (
             <p className="text-sm text-gray-600 mt-1">
-              {userId ? "Click to connect your Strava account" : "Waiting for identity…"}
+              {userId
+                ? "Click to connect your Strava account"
+                : "Waiting for identity…"}
             </p>
           )}
         </div>
@@ -136,7 +141,9 @@ const LandingPage: React.FC = () => {
         {/* Step 2 */}
         <div
           className={`p-4 border rounded-lg ${
-            step === 2 ? "bg-blue-50 border-blue-400 cursor-pointer" : "bg-gray-100 opacity-50"
+            step === 2
+              ? "bg-blue-50 border-blue-400 cursor-pointer"
+              : "bg-gray-100 opacity-50"
           }`}
           onClick={() => {
             if (step === 2) navigate("/onboarding");
@@ -151,7 +158,9 @@ const LandingPage: React.FC = () => {
         {/* Step 3 */}
         <div
           className={`p-4 border rounded-lg ${
-            step === 3 ? "bg-blue-50 border-blue-400 cursor-pointer" : "bg-gray-100 opacity-50"
+            step === 3
+              ? "bg-blue-50 border-blue-400 cursor-pointer"
+              : "bg-gray-100 opacity-50"
           }`}
           onClick={() => {
             if (step === 3) navigate("/plan");
