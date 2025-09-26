@@ -16,7 +16,7 @@ const LandingPage: React.FC = () => {
 
   // ✅ Initial identity sync + fetch user status
   useEffect(() => {
-    if (isAuthenticated && !isLoading && !hasPostedIdentity.current) {
+    if (isAuthenticated && !isLoading && !hasPostedIdentity.current && !syncing) {
       hasPostedIdentity.current = true;
 
       api
@@ -41,7 +41,7 @@ const LandingPage: React.FC = () => {
         })
         .catch((err) => console.error("❌ Failed to fetch user status:", err));
     }
-  }, [isAuthenticated, isLoading, api]);
+  }, [isAuthenticated, isLoading, syncing, api]);
 
   // ✅ Detect Strava redirect success
   useEffect(() => {
