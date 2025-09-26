@@ -34,6 +34,9 @@ import PlanPage from "./pages/PlanPage";
 
 import LandingPage from "./pages/LandingPage";
 
+import PostOAuth from "./pages/PostOAuth"; // ✅ Adjust path if needed
+
+
 // ---------------------------
 // ProtectedRoute
 // ---------------------------
@@ -111,6 +114,7 @@ export default function App() {
           }
         />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/post-oauth" element={<PostOAuth />} />
         <Route
           path="/onboarding"
           element={
