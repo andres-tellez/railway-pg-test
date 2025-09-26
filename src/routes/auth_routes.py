@@ -30,6 +30,8 @@ from flask import (
     request,
     jsonify,
     session as flask_session,
+    make_response,
+    Response,
 )
 
 import os, traceback, threading, logging
@@ -344,7 +346,8 @@ def login_callback():
             },
         )
 
-        resp = jsonify({"ok": True, "user_id": user_id})
+        # resp = jsonify({"ok": True, "user_id": user_id})
+        resp = make_response(redirect("https://app.smartcoach.dev"))
         resp.set_cookie(
             "user_jwt",
             user_jwt,
@@ -361,7 +364,7 @@ def login_callback():
         print("   • Secure:", True)
         print("   • SameSite: None")
         print("   • Path: /")
-        return resp, 200
+        return resp
 
     except Exception as e:
         traceback.print_exc()
