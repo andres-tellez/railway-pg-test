@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "@/utils/apiClient";
-import { LandingProgress } from "@/components/LandingProgress";
+
 
 const PostOAuth: React.FC = () => {
   const navigate = useNavigate();
@@ -72,7 +72,7 @@ const PostOAuth: React.FC = () => {
         await api.get("/user", { signal: ac.signal });
 
         clearTimeout(safety);
-        setReadyToSync(true); // ✅ Show LandingProgress now
+        setReadyToSync(true); // ✅ Show LandingProgress now...
       } catch (err) {
         console.error("❌ PostOAuth error:", err);
         clearTimeout(safety);
