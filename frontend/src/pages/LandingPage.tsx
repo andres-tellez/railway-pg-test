@@ -16,41 +16,42 @@ const LandingPage: React.FC = () => {
 
   const hasPostedIdentity = useRef(false);
 
-  // ✅ Initial identity sync + fetch user status h
   useEffect(() => {
-    if (
-      isAuthenticated &&
-      !isLoading &&
-      !hasPostedIdentity.current &&
-      !syncing
-    ) {
-      hasPostedIdentity.current = true;
+  if (
+    isAuthenticated &&
+    !isLoading &&
+    !hasPostedIdentity.current &&
+    !syncing &&
+    !forceSyncing // 👈 Wait for spinner to finish before evaluating
+  ) {
+    hasPostedIdentity.current = true;
 
-      api
-        .post<{ user_id: string }>("/user/identity")
-        .then((res) => {
-          const newUserId = res.data.user_id;
-          setUserId(newUserId);
+    api
+      .post<{ user_id: string }>("/user/identity")
+      .then((res) => {
+        const newUserId = res.data.user_id;
+        setUserId(newUserId);
 
-          return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user");
-        })
-        .then((res) => {
-          const { hasOnboarded, hasStrava } = res.data;
-          console.log("📊 User status:", res.data);
+        return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user");
+      })
+      .then((res) => {
+        const { hasOnboarded, hasStrava } = res.data;
+        console.log("📊 User status:", res.data);
 
-          const newStep = hasOnboarded ? 3 : hasStrava ? 2 : 1;
+        if (hasOnboarded) {
+          setStep(3);
+        } else if (hasStrava) {
+          setStep(2);
+        } else {
+          setStep(1);
+        }
+      })
+      .catch((err) =>
+        console.error("❌ Failed to fetch user status:", err)
+      );
+  }
+}, [isAuthenticated, isLoading, syncing, forceSyncing, api]);
 
-          if (forceSyncing) {
-            setPendingStep(newStep);
-          } else {
-            setStep(newStep);
-          }
-        })
-        .catch((err) =>
-          console.error("❌ Failed to fetch user status:", err)
-        );
-    }
-  }, [isAuthenticated, isLoading, syncing, api, forceSyncing]);
 
   // ✅ Detect Strava redirect success
   useEffect(() => {
