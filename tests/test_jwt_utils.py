@@ -84,9 +84,17 @@ def test_require_auth_invalid_token(app):
 
 
 def test_require_auth_valid_token(app):
-    app.route("/protected")(jwt_utils.require_auth(lambda: jsonify(success=True)))
+    @app.route("/protected")
+    @jwt_utils.require_auth
+    def protected():
+        from flask import g
+
+        return jsonify(success=True, user_id=g.user_id)
 
     with app.test_client() as client:
         resp = client.get("/protected", headers={"Authorization": "Bearer valid"})
         assert resp.status_code == 200
-        assert resp.json == {"success": True}
+        assert resp.json["success"] is True
+        # Now assert UUID-like value
+        assert isinstance(resp.json["user_id"], str)
+        assert len(resp.json["user_id"]) == 36  # UUID string

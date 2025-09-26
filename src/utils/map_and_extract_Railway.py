@@ -24,7 +24,7 @@ EXCLUDE_EXTENSIONS = {".json", ".html"}  # Added .html here
 INCLUDE_EXTENSIONS = {".py", ".md", ".txt", ".css", ".js"}  # Removed .html here
 
 MAX_FILE_SIZE_BYTES = 50 * 1024  # 50 KB
-MAX_LINES_PER_FILE = 300
+MAX_LINES_PER_FILE = 600
 
 
 def should_exclude_dir(name):

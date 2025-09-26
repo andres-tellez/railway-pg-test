@@ -5,16 +5,11 @@ import sys
 from flask import Blueprint, jsonify, request, g
 from sqlalchemy.exc import IntegrityError
 
-from src.utils.auth0_jwt import requires_auth
+from src.utils.auth0_jwt import requires_auth, verify_and_decode
 
 from src.db.models import UserIdentity
 from src.db.db_session import db
 
-from src.services.user_identity_service import (
-    fetch_userinfo_from_auth0,
-    upsert_user_identity_from_userinfo,
-    get_user_status,
-)
 
 from src.db.dao.user_athletes_dao import (
     get_by_user_id,
@@ -22,7 +17,15 @@ from src.db.dao.user_athletes_dao import (
     delete_by_user_id,
 )
 
+from src.services.user_identity_service import get_user_status
+
 from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
+
+# Normalize claims
+from src.utils.normalize_claims import normalize_claims
+from src.db.dao.user_identity_dao import upsert_identity
+from datetime import datetime
+
 
 identity_bp = Blueprint("identity", __name__, url_prefix="/api")
 
@@ -102,25 +105,27 @@ def delete_user_link():
 
 
 @identity_bp.post("/user/identity")
-def save_identity():  # 🚨 removed @requires_auth
-    print("📬 /user/identity route hit")
-    sys.stdout.flush()
+@requires_auth
+def save_identity():
+    claims = getattr(g, "current_user", {})
+    sub = claims.get("sub")
+    if not sub:
+        return jsonify({"error": "missing_sub"}), 400
 
-    auth = request.headers.get("Authorization", "")
-    token = auth.split(" ", 1)[1] if " " in auth else auth
+    claims = normalize_claims(claims)
+    user_id = resolve_user_id_from_auth_provider(sub, claims, create_if_missing=True)
 
-    print(f"🪪 Extracted token (len={len(token)} chars)")
-    sys.stdout.flush()
+    payload = {
+        "user_id": user_id,
+        "email": claims["email"],
+        "email_verified": claims["email_verified"],
+        "name": claims["name"],
+        "picture": claims["picture"],
+        "updated_at": datetime.utcnow(),
+    }
 
-    userinfo = fetch_userinfo_from_auth0(token)
-    print("👤 Userinfo from Auth0:", userinfo)
-    sys.stdout.flush()
-
-    result = upsert_user_identity_from_userinfo(userinfo)
-    print("✅ Upsert result:", result)
-    sys.stdout.flush()
-
-    return jsonify(result), 200
+    result = upsert_identity(payload)
+    return jsonify({"user_id": str(result)}), 200
 
 
 @identity_bp.get("/user")

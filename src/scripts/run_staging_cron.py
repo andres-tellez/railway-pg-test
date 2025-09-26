@@ -6,7 +6,7 @@ from src.db.db_session import get_session
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
 )
-from src.db.dao.user_athletes_dao import get_all_athlete_ids
+from sqlalchemy import text
 
 
 def main():
@@ -26,13 +26,21 @@ def main():
     print(f"🔍 after: {after} | before: {before}")
 
     session = get_session()
-    athletes = get_all_athlete_ids(session)
 
-    for athlete_id in athletes:
-        print(f"📡 Syncing athlete {athlete_id}")
+    # ✅ Fetch both athlete_id and user_id from mapping
+    rows = session.execute(
+        text("SELECT user_id, athlete_id FROM public.user_athletes")
+    ).fetchall()
+
+    for row in rows:
+        athlete_id = row.athlete_id
+        user_id = row.user_id
+        print(f"📡 Syncing athlete {athlete_id} (user {user_id})")
+
         run_full_ingestion_and_enrichment(
             session,
             athlete_id,
+            user_id=user_id,  # ✅ critical: link activities back to user
             after=after,
             before=before,
             batch_size=args.batch_size,

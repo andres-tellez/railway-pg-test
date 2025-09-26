@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from src.db.dao.user_profile_dao import save_user_profile, get_user_profile
 from src.schemas.user_profile_schema import UserProfileSchema
 from src.utils.auth0_jwt import requires_auth
+from src.db.db_session import get_session
 
 user_profile_bp = Blueprint("user_profile", __name__, url_prefix="/api")
 
@@ -111,7 +112,12 @@ def submit_user_profile():
         # Always overwrite with UUID
         user_dict["user_id"] = str(internal_user_id)
 
-        save_user_profile(user_dict)
+        session = get_session()
+        try:
+            save_user_profile(session, user_dict)
+        finally:
+            session.close()
+
         return (
             jsonify({"status": "success", "message": "Profile saved successfully"}),
             200,

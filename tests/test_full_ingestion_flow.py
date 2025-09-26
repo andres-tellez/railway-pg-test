@@ -55,6 +55,7 @@ def test_run_full_ingestion_flow(
     seeded_token,
 ):
     athlete_id = 1
+    mock_user_id = "00000000-0000-0000-0000-000000000001"  # fake UUID
     mock_activity_id = SAMPLE_ACTIVITY_JSON["id"]
 
     # Ensure no conflicting data
@@ -96,7 +97,12 @@ def test_run_full_ingestion_flow(
         "heartrate": [140, 145],
     }
 
-    result = run_full_ingestion_and_enrichment(test_session, athlete_id)
+    # ✅ Pass user_id explicitly
+    result = run_full_ingestion_and_enrichment(
+        test_session,
+        athlete_id,
+        user_id=mock_user_id,
+    )
 
     assert result["synced"] >= 1, "Expected at least one activity to be inserted"
 
@@ -104,6 +110,7 @@ def test_run_full_ingestion_flow(
         test_session.query(Activity).filter_by(activity_id=mock_activity_id).first()
     )
     assert activity is not None, "Activity not found in DB"
+    assert activity.user_id == mock_user_id  # ✅ check user_id linkage
     assert activity.name == mock_activity_data["name"]
     assert activity.start_date.isoformat().startswith("2025-06-01")
     assert activity.distance == mock_activity_data["distance"]

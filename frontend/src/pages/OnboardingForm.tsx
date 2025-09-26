@@ -56,7 +56,7 @@ const OnboardingForm: React.FC = () => {
     (async () => {
       setLoading(true);
       try {
-        const { data } = await api.get("/onboarding", { signal: ac.signal }); // ✅ fixed path
+        const { data } = await api.get("api/onboarding", { signal: ac.signal }); // ✅ fixed path
         if (data) {
           methods.reset(data);
           navigate("/dashboard", { replace: true });
@@ -85,9 +85,9 @@ const OnboardingForm: React.FC = () => {
     const userId = localStorage.getItem("user_id"); // should be UUID from backend
     if (!userId) throw new Error("Missing user_id in localStorage");
 
-    await api.post("/onboarding", {
+    await api.post("api/onboarding", {
       ...fixedValues,
-      user_id: userId, // 👈 inject UUID here
+      //user_id: userId, // 👈 inject UUID here
     });
 
     navigate("/dashboard", { replace: true });

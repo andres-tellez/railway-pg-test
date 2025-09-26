@@ -14,7 +14,7 @@ const AuthProviderWithHistory: React.FC<{ children: React.ReactNode }> = ({ chil
     throw new Error("Missing Auth0 env values");
   }
 
-  // Use window.location for redirect fallback
+  // Fallback redirect after login
   const onRedirectCallback = (appState?: { returnTo?: string }) => {
     window.history.replaceState({}, document.title, window.location.pathname);
     window.location.assign(appState?.returnTo || "/dashboard");
@@ -26,13 +26,12 @@ const AuthProviderWithHistory: React.FC<{ children: React.ReactNode }> = ({ chil
       clientId={clientId}
       authorizationParams={{
         redirect_uri: redirectUri,
-        audience,
-        scope: "openid profile email offline_access",
+        audience: audience,
+        scope: "openid profile email", // ✅ Required to receive those claims
       }}
-      onRedirectCallback={onRedirectCallback}
       cacheLocation="localstorage"
       useRefreshTokens={true}
-      useCookiesForTransactions={true}
+      onRedirectCallback={onRedirectCallback} // ✅ ensure redirect is handled
     >
       {children}
     </Auth0Provider>

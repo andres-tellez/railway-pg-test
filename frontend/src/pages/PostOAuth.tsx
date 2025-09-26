@@ -1,63 +1,103 @@
-// src/pages/PostOAuth.tsx
-import React, { useEffect, useRef } from "react";
+// @file PostOAuth.tsx
+// @description: Handles Strava OAuth callback, token exchange, and ingestion trigger
+// @features: Auth0 token processing, secure backend login, polling ingestion status
+// @integration-points: Auth0, /auth/login/callback, /user/identity, LandingProgress
+// @usage: Called via redirect after Strava OAuth completes
+// @prerequisites: Auth0 must return valid id_token, user must be authenticated
+
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "@/utils/apiClient";
+import { LandingProgress } from "@/components/LandingProgress";
 
 const PostOAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { isLoading, isAuthenticated } = useAuth0();
-  const ran = useRef(false);
+  const { isLoading, isAuthenticated, getIdTokenClaims, user } = useAuth0();
   const api = useApiClient();
+  const ran = useRef(false);
+
+  const [readyToSync, setReadyToSync] = useState(false);
 
   useEffect(() => {
-    if (ran.current || isLoading || !isAuthenticated) return;
+    console.log("🔍 PostOAuth mounted →", { isLoading, isAuthenticated });
+
+    if (isLoading) {
+      console.log("⏳ Auth0 still loading, skipping");
+      return;
+    }
+
+    if (!isAuthenticated) {
+      console.warn("🚨 Not authenticated after loading → sending to /login");
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    if (ran.current) return;
     ran.current = true;
 
     const ac = new AbortController();
-    let done = false;
-
     const safety = setTimeout(() => {
-      if (!done) navigate("/dashboard", { replace: true });
-    }, 6000);
+      console.warn("⏱️ Safety timeout triggered, redirecting");
+      navigate("/", { replace: true });
+    }, 8000);
 
     const go = async () => {
       try {
-        // 1. Save user identity
-        await api.post("/api/user/identity", {}, { signal: ac.signal });
+        const claims = await getIdTokenClaims();
+        const idToken = claims?.__raw;
+        console.log("🪪 ID token →", idToken ? "present" : "missing");
 
-        // 2. Ensure user is created
-        await api.get("/api/user", { signal: ac.signal });
+        if (!idToken) throw new Error("No Auth0 id_token found");
 
-        // 3. Check onboarding status
-        const res = await api.get("/api/onboarding", { signal: ac.signal });
+        const base = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
+        console.log("📡 Posting token to backend:", base);
 
-        done = true;
-        clearTimeout(safety);
+        const resp = await fetch(`${base}/auth/login/callback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id_token: idToken }),
+          credentials: "include",
+          signal: ac.signal,
+        });
 
-        if (res.status === 404) {
-          navigate("/onboarding", { replace: true });
-        } else if (res.status === 200) {
-          navigate("/dashboard", { replace: true });
-        } else {
-          throw new Error(`Unexpected response: ${res.status}`);
+        console.log("📡 /auth/login/callback →", resp.status);
+
+        if (!resp.ok) {
+          const body = await resp.text().catch(() => "");
+          throw new Error(`auth/login/callback failed: ${resp.status} ${body}`);
         }
-      } catch (err) {
-        console.error("PostOAuth error:", err);
-        done = true;
+
+        await api.post("/user/identity", {}, { signal: ac.signal });
+        await api.get("/user", { signal: ac.signal });
+
         clearTimeout(safety);
-        navigate("/onboarding", { replace: true });
+        setReadyToSync(true); // ✅ Show LandingProgress now
+      } catch (err) {
+        console.error("❌ PostOAuth error:", err);
+        clearTimeout(safety);
+        navigate("/", { replace: true });
       }
     };
 
     void go();
+
     return () => {
       clearTimeout(safety);
       ac.abort();
     };
-  }, [isLoading, isAuthenticated, api, navigate]);
+  }, [isLoading, isAuthenticated, getIdTokenClaims, api, navigate]);
 
-  return <div>🔐 Finishing sign-in…</div>;
+  if (readyToSync) {
+    return (
+      <LandingProgress
+        userId={user?.sub || ""}
+        onComplete={() => navigate("/", { replace: true })}
+      />
+    );
+  }
+
+  return <div className="p-6">🔐 Finishing sign-in…</div>;
 };
 
 export default PostOAuth;

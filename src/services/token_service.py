@@ -87,11 +87,20 @@ def delete_athlete_tokens(session, athlete_id):
 
 
 def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None = None):
+    logger.info(
+        f"[store_tokens_from_callback] called with user_id={user_id}, redirect_uri={redirect_uri}"
+    )
     from sqlalchemy.exc import IntegrityError
     from src.db.dao import user_athletes_dao
     from src.db.dao.token_dao import insert_token_sa
+    from src.db.models.tokens import Token
     from src.utils.config import config
     import requests
+
+    print("🔑 Using Strava client_id:", config.STRAVA_CLIENT_ID, flush=True)
+    print("🔑 Using Strava client_secret:", config.STRAVA_CLIENT_SECRET, flush=True)
+    print("🔑 Using redirect_uri:", redirect_uri, flush=True)
+    print("🔑 Using code:", code, flush=True)
 
     redirect_uri_clean = redirect_uri.strip().rstrip(";")
     print(
@@ -108,6 +117,11 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
 
     print(f"[TokenService] Sending POST data to Strava token endpoint:\n{payload}")
     response = requests.post("https://www.strava.com/api/v3/oauth/token", data=payload)
+
+    # 🔎 Debug logging so we can see the real error from Strava
+    print("📥 Strava token response status:", response.status_code, flush=True)
+    print("📥 Strava token response body:", response.text, flush=True)
+
     response.raise_for_status()
     token_data = response.json()
 
@@ -126,18 +140,38 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
             )
             print(f"✅ Linked user {user_id} → athlete {strava_athlete_id}", flush=True)
         except IntegrityError:
+            session.rollback()  # clear failed transaction
             print(f"🔗 Link already exists for user {user_id}", flush=True)
 
-    # ✅ 2. Now it's safe to insert token
-    insert_token_sa(
-        session=session,
-        athlete_id=strava_athlete_id,
-        access_token=token_data["access_token"],
-        refresh_token=token_data["refresh_token"],
-        expires_at=token_data["expires_at"],
-    )
-    print(f"✅ Token stored for athlete: {strava_athlete_id}", flush=True)
+    # ✅ 2. Insert or update tokens
+    try:
+        insert_token_sa(
+            session=session,
+            athlete_id=strava_athlete_id,
+            access_token=token_data["access_token"],
+            refresh_token=token_data["refresh_token"],
+            expires_at=token_data["expires_at"],
+        )
+        print(f"✅ Token stored for athlete: {strava_athlete_id}", flush=True)
+    except IntegrityError:
+        session.rollback()  # clear failed transaction
+        print(
+            f"♻️ Token already exists for athlete {strava_athlete_id}, updating instead",
+            flush=True,
+        )
 
+        # UPDATE existing token row instead of failing
+        existing = session.query(Token).filter_by(athlete_id=strava_athlete_id).first()
+        if existing:
+            existing.access_token = token_data["access_token"]
+            existing.refresh_token = token_data["refresh_token"]
+            existing.expires_at = token_data["expires_at"]
+            session.commit()
+            print(f"✅ Token updated for athlete: {strava_athlete_id}", flush=True)
+
+    logger.info(
+        f"[store_tokens_from_callback] ✅ Finished storing tokens for user_id={user_id}, athlete_id={strava_athlete_id}"
+    )
     return strava_athlete_id
 
 

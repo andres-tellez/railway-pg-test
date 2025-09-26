@@ -8,7 +8,7 @@ from sqlalchemy import (
     Float,
     Text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ENUM as PGEnum, ARRAY as PGArray
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.ext.declarative import declarative_base
 import enum
@@ -112,6 +112,16 @@ class RunPreference(str, enum.Enum):
     NonePref = "No preference"
 
 
+class TrainingDay(str, enum.Enum):
+    MON = "Mon"
+    TUE = "Tue"
+    WED = "Wed"
+    THU = "Thu"
+    FRI = "Fri"
+    SAT = "Sat"
+    SUN = "Sun"
+
+
 # ---------------------------
 # ORM Model
 # ---------------------------
@@ -123,13 +133,21 @@ class UserProfile(Base):
     race_history = Column(Boolean, nullable=False)
     race_date = Column(String)
     race_distance = Column(Enum(RaceDistance))
-    past_races = Column(SqliteArray)  # ✅ replaced ARRAY(Enum(PastRace))
+    past_races = Column(
+        PGArray(PGEnum(PastRace, name="pastrace", create_type=False)), nullable=True
+    )
     height_feet = Column(Integer, nullable=False)
     height_inches = Column(Integer, nullable=False)
     weight = Column(Float, nullable=False)
-    training_days = Column(SqliteArray)  # ✅ replaced ARRAY(String)
+    training_days = Column(
+        PGArray(PGEnum(TrainingDay, name="trainingday", create_type=True)),
+        nullable=True,
+    )
+
     main_goal = Column(Enum(Goal), nullable=False)
-    motivation = Column(SqliteArray)  # ✅ replaced ARRAY(Enum(Motivation))
+    motivation = Column(
+        PGArray(PGEnum(Motivation, name="motivation", create_type=False)), nullable=True
+    )
     age_group = Column(Enum(AgeGroup), nullable=False)
     longest_run = Column(Float)
     run_preference = Column(Enum(RunPreference), nullable=False)
