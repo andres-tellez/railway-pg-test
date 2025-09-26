@@ -334,6 +334,16 @@ def login_callback():
 
         user_jwt = id_token  # ← Use the token you just verified
 
+        print(
+            "🧪 Final cookie config →",
+            {
+                "domain": os.getenv("SESSION_COOKIE_DOMAIN"),
+                "path": "/",
+                "samesite": "None",
+                "secure": True,
+            },
+        )
+
         resp = jsonify({"ok": True, "user_id": user_id})
         resp.set_cookie(
             "user_jwt",
