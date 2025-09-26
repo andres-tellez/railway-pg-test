@@ -337,8 +337,10 @@ def login_callback():
             "user_jwt",
             id_token,
             httponly=True,
-            secure=True,  # ⚠️ ensure HTTPS in production
+            secure=True,
             samesite="None",
+            domain=os.getenv("SESSION_COOKIE_DOMAIN"),  # ✅ e.g. .smartcoach.dev
+            path="/",  # ✅ apply cookie across all paths
         )
         return resp, 200
 
