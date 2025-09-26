@@ -158,7 +158,16 @@ def create_app(test_config=None):
 
         if method == "OPTIONS":
             print("🚦 Handling OPTIONS preflight", flush=True)
-            return ("", 204)
+            resp = app.make_response("")
+            resp.status_code = 204
+            # 🔥 Add CORS headers here
+            resp.headers["Access-Control-Allow-Origin"] = (
+                origin or "https://app.smartcoach.dev"
+            )
+            resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            resp.headers["Access-Control-Allow-Credentials"] = "true"
+            return resp
 
     # ✅ CORS + Cookie debugging
     @app.after_request
