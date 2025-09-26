@@ -8,7 +8,6 @@ from flask_session import Session
 from werkzeug.exceptions import HTTPException
 import uuid
 
-
 # 📦 Environment Setup
 raw_env_mode = os.environ.get("FLASK_ENV", "production")
 env_path = {
@@ -41,13 +40,11 @@ print(
 print(f"✅ Loaded environment: {env_path}", flush=True)
 print(f"📍 STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
-
 # 🔑 Debug Auth0 vars
 print(f"🔑 AUTH0_DOMAIN={os.getenv('AUTH0_DOMAIN')}", flush=True)
 print(f"🔑 AUTH0_AUDIENCE={os.getenv('AUTH0_AUDIENCE')}", flush=True)
 print(f"🔑 AUTH0_ISSUER={os.getenv('AUTH0_ISSUER')}", flush=True)
 print(f"🔑 AUTH0_ALGORITHMS={os.getenv('AUTH0_ALGORITHMS')}", flush=True)
-
 
 # 🌐 Flask Setup
 from flask import Flask, request, jsonify, g, session
@@ -163,8 +160,11 @@ def create_app(test_config=None):
             print("🚦 Handling OPTIONS preflight", flush=True)
             return ("", 204)
 
+    # ✅ CORS + Cookie debugging
     @app.after_request
-    def debug_cookie(response):
+    def apply_cors_and_debug(response):
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Origin"] = "https://app.smartcoach.dev"
         print("🔍 Set-Cookie header:", response.headers.get("Set-Cookie"), flush=True)
         return response
 
