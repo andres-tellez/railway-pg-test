@@ -27,7 +27,10 @@ export function useApiClient() {
     console.log("API baseURL =", baseURL);
   }
 
-  const client = axios.create({ baseURL });
+  const client = axios.create({
+    baseURL,
+    withCredentials: true, // ✅ This sends session cookies
+  });
 
   // 🔑 Always attach access token
   client.interceptors.request.use(async (config) => {
