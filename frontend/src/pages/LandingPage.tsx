@@ -9,6 +9,7 @@ const LandingPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [pendingStep, setPendingStep] = useState<1 | 2 | 3 | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [forceSyncing, setForceSyncing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -17,7 +18,12 @@ const LandingPage: React.FC = () => {
 
   // ✅ Initial identity sync + fetch user status
   useEffect(() => {
-    if (isAuthenticated && !isLoading && !hasPostedIdentity.current && !syncing) {
+    if (
+      isAuthenticated &&
+      !isLoading &&
+      !hasPostedIdentity.current &&
+      !syncing
+    ) {
       hasPostedIdentity.current = true;
 
       api
@@ -32,17 +38,19 @@ const LandingPage: React.FC = () => {
           const { hasOnboarded, hasStrava } = res.data;
           console.log("📊 User status:", res.data);
 
-          if (hasOnboarded) {
-            setStep(3);
-          } else if (hasStrava) {
-            setStep(2);
+          const newStep = hasOnboarded ? 3 : hasStrava ? 2 : 1;
+
+          if (forceSyncing) {
+            setPendingStep(newStep);
           } else {
-            setStep(1);
+            setStep(newStep);
           }
         })
-        .catch((err) => console.error("❌ Failed to fetch user status:", err));
+        .catch((err) =>
+          console.error("❌ Failed to fetch user status:", err)
+        );
     }
-  }, [isAuthenticated, isLoading, syncing, api]);
+  }, [isAuthenticated, isLoading, syncing, api, forceSyncing]);
 
   // ✅ Detect Strava redirect success
   useEffect(() => {
@@ -56,9 +64,14 @@ const LandingPage: React.FC = () => {
         console.log("⏱ Done syncing. Awaiting status re-evaluation.");
         params.delete("strava");
         window.history.replaceState({}, "", `${window.location.pathname}`);
+
+        if (pendingStep !== null) {
+          setStep(pendingStep);
+          setPendingStep(null);
+        }
       }, 8000);
     }
-  }, []);
+  }, [pendingStep]);
 
   // ✅ Detect onboarding redirect (optional)
   useEffect(() => {
