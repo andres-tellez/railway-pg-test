@@ -332,16 +332,25 @@ def login_callback():
         if not user_id:
             return jsonify({"error": "Could not resolve or create user"}), 404
 
+        user_jwt = id_token  # ← Use the token you just verified
+
         resp = jsonify({"ok": True, "user_id": user_id})
         resp.set_cookie(
             "user_jwt",
-            id_token,
+            user_jwt,
             httponly=True,
             secure=True,
             samesite="None",
-            domain=os.getenv("SESSION_COOKIE_DOMAIN"),  # ✅ e.g. .smartcoach.dev
-            path="/",  # ✅ apply cookie across all paths
+            domain=os.getenv("SESSION_COOKIE_DOMAIN"),
+            path="/",
         )
+        # logs
+        print("🔐 Setting cookie → user_jwt")
+        print("   • Value (truncated):", user_jwt[:15])
+        print("   • Domain:", os.getenv("SESSION_COOKIE_DOMAIN"))
+        print("   • Secure:", True)
+        print("   • SameSite: None")
+        print("   • Path: /")
         return resp, 200
 
     except Exception as e:
