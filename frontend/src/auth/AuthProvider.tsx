@@ -5,7 +5,7 @@ import React from "react";
 const AuthProviderWithHistory: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const domain = import.meta.env.VITE_AUTH0_DOMAIN;
   const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID;
-  const redirectUri = import.meta.env.VITE_AUTH0_REDIRECT_URI; // e.g. https://localhost:5173/post-oauth
+  const redirectUri = import.meta.env.VITE_AUTH0_REDIRECT_URI; // e.g. https://app.smartcoach.dev/post-oauth
   const audience = import.meta.env.VITE_AUTH0_AUDIENCE;        // e.g. https://api.smartcoach.dev
 
   console.log("🔍 Auth0 Config", { domain, clientId, redirectUri, audience });
@@ -13,12 +13,6 @@ const AuthProviderWithHistory: React.FC<{ children: React.ReactNode }> = ({ chil
   if (!domain || !clientId || !redirectUri || !audience) {
     throw new Error("Missing Auth0 env values");
   }
-
-  // Fallback redirect after login
-  const onRedirectCallback = (appState?: { returnTo?: string }) => {
-    window.history.replaceState({}, document.title, window.location.pathname);
-    window.location.assign(appState?.returnTo || "/dashboard");
-  };
 
   return (
     <Auth0Provider
@@ -31,7 +25,6 @@ const AuthProviderWithHistory: React.FC<{ children: React.ReactNode }> = ({ chil
       }}
       cacheLocation="localstorage"
       useRefreshTokens={true}
-      onRedirectCallback={onRedirectCallback} // ✅ ensure redirect is handled
     >
       {children}
     </Auth0Provider>
