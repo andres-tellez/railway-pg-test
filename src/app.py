@@ -110,14 +110,14 @@ def create_app(test_config=None):
 
     # 🔗 Register Blueprints
     app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(identity_bp, url_prefix="")
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(activity_bp, url_prefix="/api/activities")
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
     app.register_blueprint(user_profile_bp)
-    app.register_blueprint(identity_bp)
-    app.register_blueprint(auth_me_bp)
     app.register_blueprint(plan_bp)
+    app.register_blueprint(auth_me_bp)
 
     @app.route("/_debug/db-url")
     def debug_db_url():
