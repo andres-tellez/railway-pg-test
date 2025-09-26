@@ -16,7 +16,7 @@ const LandingPage: React.FC = () => {
 
   const hasPostedIdentity = useRef(false);
 
-  // ✅ Initial identity sync + fetch user status
+  // ✅ Initial identity sync + fetch user status h
   useEffect(() => {
     if (
       isAuthenticated &&
