@@ -20,25 +20,22 @@ const LandingPage: React.FC = () => {
       hasPostedIdentity.current = true;
 
       api
-        .post<{ user_id: string }>("/api/user/identity")
+        .post<{ user_id: string }>("/user/identity")   // 🔧 removed `/api`
         .then((res) => {
           const newUserId = res.data.user_id;
           setUserId(newUserId);
 
-          return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/api/user");
+          return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user"); // 🔧 removed `/api`
         })
         .then((res) => {
           const { hasOnboarded, hasStrava } = res.data;
           console.log("📊 User status:", res.data);
 
           if (hasOnboarded) {
-            console.log("→ branching to step 3");
             setStep(3);
           } else if (hasStrava) {
-            console.log("→ branching to step 2");
             setStep(2);
           } else {
-            console.log("→ branching to step 1");
             setStep(1);
           }
         })
@@ -56,9 +53,9 @@ const LandingPage: React.FC = () => {
       params.delete("strava");
       window.history.replaceState({}, "", `${window.location.pathname}`);
 
+      // ⚠️ better: poll /user, but temporary timeout is okay
       setTimeout(() => {
         setSyncing(false);
-        // ⚠️ Do not force step transition — actual step will be determined via backend status
         console.log("⏱ Done syncing. Awaiting status re-evaluation.");
       }, 8000);
     }
