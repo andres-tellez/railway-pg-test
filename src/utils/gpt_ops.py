@@ -11,9 +11,18 @@ import re
 import json
 from datetime import datetime
 from typing import Dict, List
-from openai import OpenAI
 
-client = OpenAI()  # Uses OPENAI_API_KEY from env
+# Handle both old and new OpenAI API versions
+try:
+    from openai import OpenAI
+
+    client = OpenAI()  # Uses OPENAI_API_KEY from env
+except ImportError:
+    # Fallback for older openai versions
+    import openai
+
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+    client = None
 
 
 def parse_date_safe(date_str: str) -> datetime:
@@ -46,15 +55,34 @@ def get_gpt_response(prompt: str) -> str:
     Calls GPT with a generic coaching prompt. Returns plain text.
     """
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            temperature=0.7,
-            messages=[
-                {"role": "system", "content": "You are a helpful fitness assistant."},
-                {"role": "user", "content": prompt},
-            ],
-        )
-        return response.choices[0].message.content.strip()
+        if client is not None:
+            # New OpenAI API
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                temperature=0.7,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a helpful fitness assistant.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            return response.choices[0].message.content.strip()
+        else:
+            # Old OpenAI API
+            response = openai.ChatCompletion.create(
+                model="gpt-4o",
+                temperature=0.7,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a helpful fitness assistant.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            return response.choices[0].message.content.strip()
     except Exception as e:
         print("GPT API call failed:", e)
         return f"❌ GPT error: {e}"
@@ -96,30 +124,57 @@ def generate_training_plan(prompt: str) -> Dict:
     Expects and returns parsed JSON with mandatory workouts list.
     """
     try:
-        response = client.chat.completions.create(
-            model="gpt-4-1106-preview",
-            response_format={"type": "json_object"},  # ✅ enforce JSON
-            temperature=0.7,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a professional running coach. "
-                        "Always return a JSON object with fields:\n"
-                        "- plan_name (string)\n"
-                        "- notes (string)\n"
-                        "- workouts (non-empty list of objects)\n\n"
-                        "Each workout object must include:\n"
-                        "- date (YYYY-MM-DD)\n"
-                        "- miles (number ≥ 0)\n"
-                        "- workout_type (one of: Rest, Easy, Long Run, Tempo, Intervals)\n"
-                        "- intensity (string)\n"
-                        "- description (string)"
-                    ),
-                },
-                {"role": "user", "content": prompt},
-            ],
-        )
+        if client is not None:
+            # New OpenAI API
+            response = client.chat.completions.create(
+                model="gpt-4-1106-preview",
+                response_format={"type": "json_object"},  # ✅ enforce JSON
+                temperature=0.7,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a professional running coach. "
+                            "Always return a JSON object with fields:\n"
+                            "- plan_name (string)\n"
+                            "- notes (string)\n"
+                            "- workouts (non-empty list of objects)\n\n"
+                            "Each workout object must include:\n"
+                            "- date (YYYY-MM-DD)\n"
+                            "- miles (number ≥ 0)\n"
+                            "- workout_type (one of: Rest, Easy, Long Run, Tempo, Intervals)\n"
+                            "- intensity (string)\n"
+                            "- description (string)"
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
+        else:
+            # Old OpenAI API - note: no response_format support
+            response = openai.ChatCompletion.create(
+                model="gpt-4-1106-preview",
+                temperature=0.7,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a professional running coach. "
+                            "Always return a JSON object with fields:\n"
+                            "- plan_name (string)\n"
+                            "- notes (string)\n"
+                            "- workouts (non-empty list of objects)\n\n"
+                            "Each workout object must include:\n"
+                            "- date (YYYY-MM-DD)\n"
+                            "- miles (number ≥ 0)\n"
+                            "- workout_type (one of: Rest, Easy, Long Run, Tempo, Intervals)\n"
+                            "- intensity (string)\n"
+                            "- description (string)"
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
         raw = response.choices[0].message.content
 
         # 🔍 Debug log — raw GPT response
