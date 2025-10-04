@@ -38,6 +38,15 @@ def run_full_ingestion_and_enrichment(
         f"[Ingestion] run_full_ingestion_and_enrichment called for user_id={user_id}, athlete_id={athlete_id}"
     )
 
+    # 🔍 Debug: Log the max_activities value
+    logger.info(f"🔍 DEBUG - max_activities parameter: {max_activities}")
+    logger.info(
+        f"🔍 DEBUG - config.MAX_ACTIVITIES_TO_DOWNLOAD: {config.MAX_ACTIVITIES_TO_DOWNLOAD}"
+    )
+    logger.info(
+        f"🔍 DEBUG - Environment MAX_ACTIVITIES_TO_DOWNLOAD: {os.getenv('MAX_ACTIVITIES_TO_DOWNLOAD', 'NOT_SET')}"
+    )
+
     try:
         logger.info(
             f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()} "
@@ -109,11 +118,17 @@ def run_full_ingestion_and_enrichment(
             return {"synced": 0, "enriched": 0}
 
         logger.info(f"📥 Fetched {len(all_fetched)} activities")
+        logger.info(
+            f"🔍 DEBUG - All fetched activity types: {[a.get('type') for a in all_fetched[:10]]}"
+        )
 
         time.sleep(1)
 
         runs_only = [a for a in all_fetched if a.get("type") == "Run"]
         logger.info(f"🏃 Identified {len(runs_only)} runs")
+        logger.info(
+            f"🔍 DEBUG - Run activity IDs: {[a.get('id') for a in runs_only[:5]]}"
+        )
 
         if not runs_only:
             logger.info("ℹ️ No runs found in Strava account")
