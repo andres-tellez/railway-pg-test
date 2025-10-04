@@ -14,9 +14,17 @@ from src.services.training_plan_data_assembler import assemble_training_plan_dat
 from src.utils.gpt_ops import generate_training_plan
 from src.utils.training_plan_validation import validate_plan_json
 
-from openai import OpenAI
+# Handle both old and new OpenAI API versions
+try:
+    from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+except ImportError:
+    # Fallback for older openai versions
+    import openai
+
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+    client = None
 
 
 def generate_plan(
