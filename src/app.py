@@ -59,7 +59,8 @@ from src.routes.user_profile_routes import user_profile_bp
 from src.routes.user_identity_routes import identity_bp
 from src.routes.auth_me_routes import auth_me_bp
 from src.utils.auth0_jwt import requires_auth
-from src.routes.plan_routes import plan_bp
+from src.routes.training_plan_routes import training_plan_bp
+from src.db.models import Plan  # Update this import to match your structure
 
 
 def create_app(test_config=None):
@@ -116,7 +117,7 @@ def create_app(test_config=None):
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
     app.register_blueprint(user_profile_bp)
-    app.register_blueprint(plan_bp)
+    app.register_blueprint(training_plan_bp)
     app.register_blueprint(auth_me_bp)
 
     @app.route("/_debug/db-url")
@@ -172,8 +173,13 @@ def create_app(test_config=None):
     # ✅ CORS + Cookie debugging
     @app.after_request
     def apply_cors_and_debug(response):
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Origin"] = "https://app.smartcoach.dev"
+        request_origin = request.headers.get("Origin")
+        allowed_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",")]
+
+        if request_origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = request_origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+
         print("🔍 Set-Cookie header:", response.headers.get("Set-Cookie"), flush=True)
         return response
 

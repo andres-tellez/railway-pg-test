@@ -1,15 +1,22 @@
-import openai
-import os
-from datetime import datetime
+# @file gpt_ops.py
+# @component GPTOps
+# @description GPT logic for generating plans and answering questions
+# @features: Prompt formatting, GPT calls (plain + structured), JSON-safe plan generation
+# @integration-points: training_plan_service.py, ask_routes.py
+# @usage: Used to generate plans or answer user questions
+# @prerequisites: OPENAI_API_KEY set in .env.local
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+import os
+import re
+import json
+from datetime import datetime
+from typing import Dict, List
+from openai import OpenAI
+
+client = OpenAI()  # Uses OPENAI_API_KEY from env
 
 
 def parse_date_safe(date_str: str) -> datetime:
-    """
-    Parses a date string that may or may not include time.
-    Accepts formats like '2025-06-24' or '2025-06-24 13:45:00'
-    """
     for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
         try:
             return datetime.strptime(date_str, fmt)
@@ -18,11 +25,7 @@ def parse_date_safe(date_str: str) -> datetime:
     raise ValueError(f"Unsupported date format: {date_str}")
 
 
-def format_prompt(user_question: str, activities: list[dict]) -> str:
-    """
-    Format a prompt string for GPT using the user's question and a list of activity records.
-    Always returns structured prompt for coaching assistant, even if empty input.
-    """
+def format_prompt(user_question: str, activities: List[Dict]) -> str:
     prompt = "You are a smart coaching assistant helping a runner improve.\n\n"
     prompt += "ACTIVITIES:\n"
 
@@ -39,20 +42,103 @@ def format_prompt(user_question: str, activities: list[dict]) -> str:
 
 
 def get_gpt_response(prompt: str) -> str:
+    """
+    Calls GPT with a generic coaching prompt. Returns plain text.
+    """
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
+            temperature=0.7,
             messages=[
                 {"role": "system", "content": "You are a helpful fitness assistant."},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.7,
-            max_tokens=2000,
         )
-        return response["choices"][0]["message"]["content"].strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        import traceback
-
         print("GPT API call failed:", e)
-        traceback.print_exc()
         return f"❌ GPT error: {e}"
+
+
+def _extract_json_from_text(text: str) -> str:
+    """
+    Cleans GPT output and extracts valid JSON if wrapped in markdown or extra text.
+    """
+    if not text:
+        raise ValueError("Empty GPT response")
+
+    # Remove markdown fences ```json ... ```
+    cleaned = re.sub(r"^```json|```$", "", text.strip(), flags=re.MULTILINE).strip()
+
+    # Try direct parse
+    try:
+        json.loads(cleaned)
+        return cleaned
+    except Exception:
+        pass
+
+    # Fallback: extract first {...} block
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if match:
+        candidate = match.group(0)
+        try:
+            json.loads(candidate)
+            return candidate
+        except Exception:
+            pass
+
+    raise ValueError(f"Could not extract valid JSON from GPT response: {text[:200]}...")
+
+
+def generate_training_plan(prompt: str) -> Dict:
+    """
+    Calls GPT with a structured training plan prompt.
+    Expects and returns parsed JSON with mandatory workouts list.
+    """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4-1106-preview",
+            response_format={"type": "json_object"},  # ✅ enforce JSON
+            temperature=0.7,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a professional running coach. "
+                        "Always return a JSON object with fields:\n"
+                        "- plan_name (string)\n"
+                        "- notes (string)\n"
+                        "- workouts (non-empty list of objects)\n\n"
+                        "Each workout object must include:\n"
+                        "- date (YYYY-MM-DD)\n"
+                        "- miles (number ≥ 0)\n"
+                        "- workout_type (one of: Rest, Easy, Long Run, Tempo, Intervals)\n"
+                        "- intensity (string)\n"
+                        "- description (string)"
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+        )
+        raw = response.choices[0].message.content
+
+        # 🔍 Debug log — raw GPT response
+        print("\n================ RAW GPT RESPONSE ================\n")
+        print(raw)
+        print("\n=================================================\n")
+
+        # Extract and parse JSON
+        json_str = _extract_json_from_text(raw)
+        parsed = json.loads(json_str)
+
+        # 🔍 Debug log — parsed JSON
+        print("\n================ PARSED GPT JSON ================\n")
+        print(json.dumps(parsed, indent=2))
+        print("\n=================================================\n")
+
+        return parsed
+
+    except json.JSONDecodeError:
+        raise RuntimeError("GPT response could not be parsed as JSON.")
+    except Exception as e:
+        raise RuntimeError(f"GPT training plan generation failed: {e}")

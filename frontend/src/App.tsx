@@ -31,10 +31,14 @@ import { useAuth0 } from "@auth0/auth0-react";
 
 import OnboardingForm from "./pages/OnboardingForm";
 import PlanPage from "./pages/PlanPage";
+import MyPlan from "./pages/MyPlan";
 
 import LandingPage from "./pages/LandingPage";
 
 import PostOAuth from "./pages/PostOAuth"; // ✅ Adjust path if needed
+
+import HomeScreen from "./pages/HomeScreen";
+import AskGptMvpUI from "./pages/AskGptMvpUI";
 
 
 // ---------------------------
@@ -124,10 +128,42 @@ export default function App() {
           }
         />
         <Route
+          path="/plan/:id"
+          element={
+            <ProtectedRoute>
+              <PlanPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/plan"
           element={
             <ProtectedRoute>
               <PlanPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/plan/overview"
+          element={
+            <ProtectedRoute>
+              <MyPlan />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/home"
+          element={
+            <ProtectedRoute>
+              <HomeScreen />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ask"
+          element={
+            <ProtectedRoute>
+              <AskGptMvpUI />
             </ProtectedRoute>
           }
         />

@@ -17,41 +17,40 @@ const LandingPage: React.FC = () => {
   const hasPostedIdentity = useRef(false);
 
   useEffect(() => {
-  if (
-    isAuthenticated &&
-    !isLoading &&
-    !hasPostedIdentity.current &&
-    !syncing &&
-    !forceSyncing // 👈 Wait for spinner to finish before evaluating
-  ) {
-    hasPostedIdentity.current = true;
+    if (
+      isAuthenticated &&
+      !isLoading &&
+      !hasPostedIdentity.current &&
+      !syncing &&
+      !forceSyncing
+    ) {
+      hasPostedIdentity.current = true;
 
-    api
-      .post<{ user_id: string }>("/user/identity")
-      .then((res) => {
-        const newUserId = res.data.user_id;
-        setUserId(newUserId);
+      api
+        .post<{ user_id: string }>("/user/identity")
+        .then((res) => {
+          const newUserId = res.data.user_id;
+          setUserId(newUserId);
 
-        return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user");
-      })
-      .then((res) => {
-        const { hasOnboarded, hasStrava } = res.data;
-        console.log("📊 User status:", res.data);
+          return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user");
+        })
+        .then((res) => {
+          const { hasOnboarded, hasStrava } = res.data;
+          console.log("📊 User status:", res.data);
 
-        if (hasOnboarded) {
-          setStep(3);
-        } else if (hasStrava) {
-          setStep(2);
-        } else {
-          setStep(1);
-        }
-      })
-      .catch((err) =>
-        console.error("❌ Failed to fetch user status:", err)
-      );
-  }
-}, [isAuthenticated, isLoading, syncing, forceSyncing, api]);
-
+          if (hasOnboarded) {
+            setStep(3);
+          } else if (hasStrava) {
+            setStep(2);
+          } else {
+            setStep(1);
+          }
+        })
+        .catch((err) =>
+          console.error("❌ Failed to fetch user status:", err)
+        );
+    }
+  }, [isAuthenticated, isLoading, syncing, forceSyncing, api]);
 
   // ✅ Detect Strava redirect success
   useEffect(() => {
@@ -97,6 +96,36 @@ const LandingPage: React.FC = () => {
       userId
     )}`;
   };
+
+  const generatePlan = async () => {
+  if (!userId) {
+    console.error("❌ Cannot generate plan: no internal userId yet");
+    return;
+  }
+
+  try {
+    const raceDate = "2025-12-01";
+    const raceDistance = "Marathon";
+
+    console.log("📡 Sending generatePlan request...");
+
+    const res = await api.post<{ plan_id: number }>("/api/plan/generate", {
+      user_id: userId,
+      race_date: raceDate,
+      race_distance: raceDistance,
+    });
+
+    const planId = res.data.plan_id;
+    console.log("✅ Generated plan, navigating to:", `/plan/${planId}`);
+
+    //navigate(`/plan/${planId}`); // ⬅️ should redirect now
+    navigate('/plan/overview');
+    console.log("➡️ navigate() called!");
+  } catch (err) {
+    console.error("❌ Failed to generate plan:", err);
+  }
+};
+
 
   if (isLoading) return <div className="p-6">🔄 Loading auth…</div>;
   if (!isAuthenticated)
@@ -177,7 +206,6 @@ const LandingPage: React.FC = () => {
             </p>
           )}
         </div>
-
         {/* Step 3 */}
         <div
           className={`p-4 border rounded-lg ${
@@ -186,7 +214,9 @@ const LandingPage: React.FC = () => {
               : "bg-gray-100 opacity-50"
           }`}
           onClick={() => {
-            if (step === 3 && !forceSyncing) navigate("/plan");
+            if (step === 3 && !forceSyncing && userId) {
+              generatePlan(); // ⬅️ use the function
+            }
           }}
         >
           <h2 className="font-medium text-lg">Step 3: Generate Plan</h2>
@@ -203,6 +233,8 @@ const LandingPage: React.FC = () => {
             </p>
           )}
         </div>
+
+
       </div>
     </div>
   );

@@ -1,9 +1,12 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from src.utils.gpt_ops import format_prompt, get_gpt_response
 from src.db.db_session import get_session
 from src.db.dao.activity_dao import ActivityDAO
 from datetime import datetime, timedelta
 from src.utils.auth0_jwt import requires_auth
+from src.services.training_plan_data_assembler import assemble_training_plan_data
+from src.services.training_plan_service import build_training_plan_prompt
+import uuid
 
 ask_bp = Blueprint("ask", __name__)
 
@@ -23,68 +26,58 @@ def ask():
         return jsonify({"error": "Missing JSON payload"}), 400
 
     question = data.get("question")
-    athlete_id = data.get("athlete_id")
 
     if not isinstance(question, str) or not question.strip():
         print("Error: Invalid or missing 'question'")
         return jsonify({"error": "Invalid or missing 'question'"}), 400
 
-    try:
-        athlete_id = int(athlete_id)
-        if athlete_id <= 0:
-            raise ValueError
-    except (ValueError, TypeError):
-        print("Error: Invalid or missing 'athlete_id'")
-        return (
-            jsonify(
-                {
-                    "error": "Invalid or missing 'athlete_id' (must be a positive integer)"
-                }
-            ),
-            400,
-        )
-
     sanitized_question = " ".join(question.strip().split())
 
-    from datetime import date, timedelta
-
-    # Get start of current week (Monday)
-    today = date.today()
-    start_date = today - timedelta(days=today.weekday())
-
+    # Use the same data assembly process as training plans
     session = get_session()
     try:
-        activities = ActivityDAO.get_activities_by_athlete(session, athlete_id)
-        filtered = [
-            a
-            for a in activities
-            if a.start_date and start_date <= a.start_date.date() <= today
-        ]
+        # Get user_id from authenticated JWT token
+        user_id = g.user_id  # This comes from the @requires_auth decorator
 
-        activity_data = [
-            {
-                "start_date": a.start_date.strftime("%Y-%m-%d %H:%M:%S"),
-                "conv_distance": round(a.conv_distance, 2),
-                "duration": f"{round(a.moving_time / 60)} minutes",
-            }
-            for a in filtered
-        ]
+        # Assemble comprehensive training data using the same system as training plans
+        data_bundle = assemble_training_plan_data(session, user_id)
+        print(f"Data bundle keys: {list(data_bundle.keys())}")
+
+        # Build a coaching prompt using the user's question and their training data
+        coaching_prompt = f"""You are a smart running coach. A runner is asking you a question about their training.
+
+Please provide helpful, personalized advice based on their training history and profile.
+
+USER QUESTION:
+{sanitized_question}
+
+RUNNER PROFILE:
+{data_bundle.get('user_profile', {})}
+
+WEEKLY TRAINING SUMMARIES:
+{data_bundle.get('weekly_summaries', [])}
+
+RECENT ACTIVITIES:
+{data_bundle.get('activities', [])}
+
+Please provide a helpful, encouraging response that addresses their question specifically."""
+
+        print(f"Generated coaching prompt: {coaching_prompt[:200]}...")
+
+        gpt_response = get_gpt_response(coaching_prompt)
+        print(f"Full GPT Response: {gpt_response}")
+    except Exception as e:
+        print(f"❌ Error in GPT processing: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"GPT processing failed: {str(e)}"}), 500
     finally:
         session.close()
-
-    print(f"Activity data: {activity_data}")
-
-    prompt = format_prompt(sanitized_question, activity_data)
-    print(f"Generated prompt: {prompt}")
-
-    gpt_response = get_gpt_response(prompt)
-    print(f"Full GPT Response: {gpt_response}")
 
     return (
         jsonify(
             {
                 "message": "✅ GPT response generated",
-                "athlete_id": athlete_id,
                 "question": sanitized_question,
                 "response": gpt_response,
             }

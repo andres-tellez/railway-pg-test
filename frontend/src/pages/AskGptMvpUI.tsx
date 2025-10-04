@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 
 
 const API = import.meta.env.VITE_BACKEND_URL;
@@ -7,8 +8,7 @@ export default function AskGptMvpUI() {
   const [question, setQuestion] = useState("");
   const [response, setResponse] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const athleteId = 347085;
+  const { getAccessTokenSilently } = useAuth0();
 
   const handleAsk = async () => {
     if (!question.trim()) return;
@@ -16,12 +16,14 @@ export default function AskGptMvpUI() {
     setResponse("");
 
     try {
+      const token = await getAccessTokenSilently();
       const res = await fetch(`${API}/ask`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ question, athlete_id: athleteId }),
+        body: JSON.stringify({ question }),
       });
 
       const data = await res.json();

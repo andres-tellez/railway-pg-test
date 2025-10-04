@@ -70,3 +70,80 @@ def test_generate_plan_inserts_plan_and_workouts(
     assert len(workouts) == 2
     assert workouts[0].workout_type == "Easy Run"
     assert workouts[1].miles == 5.0
+
+
+from src.services.training_plan_service import build_training_plan_prompt
+
+
+@pytest.fixture
+def mock_data():
+    """Fixture: Fake data bundle returned by assemble_training_plan_data."""
+    return {
+        "user_profile": {
+            "runner_level": "Intermediate",
+            "main_goal": "Run a race",
+            "race_distance": "Marathon",
+            "race_date": "2025-10-03",
+            "training_days": ["Wed", "Fri"],
+            "height": "5ft 10in",
+            "weight": 161.0,
+            "motivation": ["Stress relief"],
+            "past_races": ["Marathon"],
+        },
+        "weekly_summaries": [
+            "Week of Sep 22: 2 runs, 11.87 miles, longest run 6.81mi, avg pace 6:25/mi, HR mixed Zones.",
+            "Week of Sep 15: 2 runs, 19.95 miles, longest run 13.94mi, avg pace 5:40/mi, HR mostly Zone 2.",
+        ],
+        "activities": [
+            {
+                "activity_date": "2025-09-25",
+                "activity_name": "Morning Run",
+                "distance": 6.81,
+                "avg_hr": 154.9,
+                "avg_speed": 9.44,  # mph
+                "splits": [
+                    {"split_time": "9:33"},
+                    {"split_time": "9:29"},
+                ],
+            },
+            {
+                "activity_date": "2025-09-22",
+                "activity_name": "Evening Run",
+                "distance": 5.06,
+                "avg_hr": 154.3,
+                "avg_speed": 9.26,
+                "splits": [],
+            },
+        ],
+    }
+
+
+def test_prompt_structure(mock_data):
+    """Ensure the generated prompt contains all required sections."""
+    prompt = build_training_plan_prompt(mock_data)
+
+    # Profile info
+    assert "Runner Profile:" in prompt
+    assert "Intermediate" in prompt
+    assert "Marathon" in prompt
+
+    # Weekly summaries
+    assert "Weekly Training Summaries:" in prompt
+    assert "Week of Sep 22" in prompt
+
+    # Activities
+    assert "Recent Activities:" in prompt
+    assert "Morning Run" in prompt
+    assert "Evening Run" in prompt
+    assert "Splits: 9:33, 9:29" in prompt
+
+
+def test_prompt_pace_format(mock_data):
+    """Ensure paces are correctly converted to min/mi."""
+    prompt = build_training_plan_prompt(mock_data)
+
+    # 9.44 mph ≈ 6.36 min/mi, formatted to 6.36
+    assert "pace 6.36 min/mi" in prompt
+
+    # 9.26 mph ≈ 6.48 min/mi
+    assert "pace 6.48 min/mi" in prompt
