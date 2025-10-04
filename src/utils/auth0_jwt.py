@@ -100,7 +100,7 @@ def verify_and_decode(token: str) -> dict:
 
     try:
         # Try to decode without audience validation first to see what we get
-        unverified_payload = jwt.decode(token, options={"verify_aud": False})
+        unverified_payload = jwt.decode(token, rsa_key, options={"verify_aud": False})
         print(
             f"🔍 JWT Debug - Token audience: {unverified_payload.get('aud')}",
             flush=True,
