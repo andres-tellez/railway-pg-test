@@ -27,7 +27,7 @@ def load_recent_activities(
             FROM v_activities_running_plan
             WHERE user_id = :user_id
             ORDER BY activity_date DESC
-            LIMIT 12
+            LIMIT 50
         """
         )
         activity_rows = (
@@ -39,7 +39,7 @@ def load_recent_activities(
             SELECT *
             FROM v_activities_running_plan
             ORDER BY activity_date DESC
-            LIMIT 12
+            LIMIT 50
         """
         )
         activity_rows = session.execute(activity_query).mappings().all()
