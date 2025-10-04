@@ -94,6 +94,23 @@ def verify_and_decode(token: str) -> dict:
     if rsa_key is None:
         raise Exception("Unable to find appropriate key")
 
+    # 🔍 Debug: Log expected vs actual audience
+    print(f"🔍 JWT Debug - Expected audience: {API_AUDIENCE}", flush=True)
+    print(f"🔍 JWT Debug - Expected issuer: https://{AUTH0_DOMAIN}/", flush=True)
+
+    try:
+        # Try to decode without audience validation first to see what we get
+        unverified_payload = jwt.decode(token, options={"verify_aud": False})
+        print(
+            f"🔍 JWT Debug - Token audience: {unverified_payload.get('aud')}",
+            flush=True,
+        )
+        print(
+            f"🔍 JWT Debug - Token issuer: {unverified_payload.get('iss')}", flush=True
+        )
+    except Exception as e:
+        print(f"🔍 JWT Debug - Could not decode unverified payload: {e}", flush=True)
+
     return jwt.decode(
         token,
         rsa_key,
