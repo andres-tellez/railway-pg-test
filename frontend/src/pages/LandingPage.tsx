@@ -154,12 +154,12 @@ const LandingPage: React.FC = () => {
         {/* Step 1 */}
         <div
           className={`p-4 border rounded-lg ${
-            step === 1
+            step === 1 || (step === 2 && !syncing && !forceSyncing)
               ? "bg-blue-50 border-blue-400 cursor-pointer"
               : "bg-gray-100 opacity-50"
           } ${!userId ? "opacity-50 cursor-not-allowed" : ""}`}
           onClick={() => {
-            if (step === 1 && userId && !syncing) {
+            if ((step === 1 || step === 2) && userId && !syncing && !forceSyncing) {
               connectStrava();
             }
           }}
@@ -175,7 +175,9 @@ const LandingPage: React.FC = () => {
           ) : (
             <p className="text-sm text-gray-600 mt-1">
               {userId
-                ? "Click to connect your Strava account"
+                ? step === 1
+                  ? "Click to connect your Strava account"
+                  : "Click to reconnect or sync Strava data"
                 : "Waiting for identity…"}
             </p>
           )}
