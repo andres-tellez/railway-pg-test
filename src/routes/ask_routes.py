@@ -46,14 +46,121 @@ def ask():
         # Convert string to UUID object as expected by assemble_training_plan_data
         user_id = uuid.UUID(user_id_str)
 
-        # Assemble comprehensive training data using the same system as training plans
-        data_bundle = assemble_training_plan_data(session, user_id)
-        print(f"Data bundle keys: {list(data_bundle.keys())}")
+        # Determine what type of data the user is asking about based on their question
+        question_lower = sanitized_question.lower()
+        
+        # Keywords that suggest they want training plan analysis
+        training_plan_keywords = [
+            'training plan', 'planned workouts', 'my plan', 'the plan', 
+            'week by week', 'monthly', 'schedule', 'upcoming', 'future',
+            'rate this plan', 'analyze this plan', 'how does this plan look'
+        ]
+        
+        # Keywords that suggest they want historical activity analysis
+        historical_keywords = [
+            'past', 'previous', 'historical', 'last week', 'last month',
+            'recent activities', 'strava', 'what i did', 'my runs',
+            'training history', 'past performance', 'previous workouts'
+        ]
+        
+        # Determine context
+        wants_training_plan = any(keyword in question_lower for keyword in training_plan_keywords)
+        wants_historical = any(keyword in question_lower for keyword in historical_keywords)
+        
+        # Default to training plan if no clear indication
+        if not wants_historical and not wants_training_plan:
+            wants_training_plan = True  # Default to training plan analysis
+        
+        coaching_prompt = ""
+        
+        if wants_training_plan:
+            # Load the user's generated training plan
+            from src.db.models.plans import Plan
+            from sqlalchemy.orm import joinedload
+            
+            plan = (
+                session.query(Plan)
+                .options(joinedload(Plan.workouts))
+                .filter_by(user_id=str(user_id))
+                .order_by(Plan.created_at.desc())
+                .first()
+            )
+            
+            if not plan:
+                return jsonify({"error": "No training plan found. Please generate a training plan first."}), 404
+            
+            # Get user profile for context
+            from src.db.models.user_profile import UserProfile
+            user_profile = session.query(UserProfile).filter_by(user_id=str(user_id)).first()
+            
+            # Build training plan data for analysis
+            workouts = sorted(plan.workouts, key=lambda w: w.date)
+            
+            # Group workouts by week for analysis
+            from collections import defaultdict
+            from datetime import datetime, timedelta
+            
+            weekly_data = defaultdict(list)
+            for workout in workouts:
+                # Get the Monday of the week for this workout
+                workout_date = workout.date
+                days_since_monday = workout_date.weekday()
+                week_start = workout_date - timedelta(days=days_since_monday)
+                week_key = week_start.strftime('%Y-%m-%d')
+                weekly_data[week_key].append(workout)
+            
+            # Build coaching prompt for training plan analysis
+            coaching_prompt = f"""You are an elite running coach with 20+ years of experience. A runner is asking you to analyze their TRAINING PLAN.
 
-        # Build a coaching prompt using the user's question and their training data
-        coaching_prompt = f"""You are a smart running coach. A runner is asking you a question about their training.
+TRAINING PLAN CONTEXT:
+- Race Date: {plan.race_date}
+- Race Distance: {plan.race_distance}
+- Plan Start: {workouts[0].date if workouts else 'N/A'}
+- Total Workouts: {len(workouts)}
+- Training Days: {user_profile.training_days if user_profile else 'Not specified'}
 
-Please provide helpful, personalized advice based on their training history and profile.
+USER QUESTION:
+{sanitized_question}
+
+WEEKLY TRAINING PLAN ANALYSIS:
+"""
+            
+            # Add weekly workout summaries
+            for week_start, week_workouts in sorted(weekly_data.items()):
+                total_miles = sum(w.miles for w in week_workouts)
+                long_run = max((w.miles for w in week_workouts), default=0)
+                workout_types = [w.workout_type for w in week_workouts]
+                
+                coaching_prompt += f"""
+Week of {week_start}:
+- Total Miles: {total_miles:.1f}
+- Longest Run: {long_run:.1f} miles
+- Workouts: {', '.join(workout_types)}
+- Workout Details:
+"""
+                for workout in week_workouts:
+                    coaching_prompt += f"  * {workout.date}: {workout.workout_type} - {workout.miles} miles"
+                    if workout.target_zone:
+                        coaching_prompt += f" ({workout.target_zone})"
+                    if workout.focus:
+                        coaching_prompt += f" - Focus: {workout.focus}"
+                    coaching_prompt += "\n"
+            
+            coaching_prompt += f"""
+RACE DAY: {plan.race_date}
+
+Please analyze this TRAINING PLAN week by week and provide expert coaching feedback. 
+Consider the runner's age (49), training days (Mon, Wed, Thu, Sat), and marathon goal.
+Focus on the generated training plan workouts and their structure.
+
+Please provide a helpful, encouraging response that addresses their question specifically."""
+        
+        else:
+            # Load historical activities for analysis
+            data_bundle = assemble_training_plan_data(session, user_id)
+            
+            # Build coaching prompt for historical analysis
+            coaching_prompt = f"""You are an elite running coach with 20+ years of experience. A runner is asking you to analyze their TRAINING HISTORY.
 
 USER QUESTION:
 {sanitized_question}
@@ -66,6 +173,9 @@ WEEKLY TRAINING SUMMARIES:
 
 RECENT ACTIVITIES:
 {data_bundle.get('activities', [])}
+
+Please analyze their HISTORICAL TRAINING DATA and provide expert coaching feedback. 
+Consider their past performance, training patterns, and areas for improvement.
 
 Please provide a helpful, encouraging response that addresses their question specifically."""
 
