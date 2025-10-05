@@ -11,8 +11,8 @@ import uuid
 ask_bp = Blueprint("ask", __name__)
 
 
-@requires_auth
 @ask_bp.route("/ask", methods=["POST"])
+@requires_auth
 def ask():
     if not request.is_json:
         print("Error: Content-Type is not JSON")
@@ -36,6 +36,10 @@ def ask():
     # Use the same data assembly process as training plans
     session = get_session()
     try:
+        # Debug: Check what's in g
+        print(f"🔍 Flask g object keys: {list(g.__dict__.keys())}")
+        print(f"🔍 Flask g.user_id: {getattr(g, 'user_id', 'NOT_SET')}")
+        
         # Get user_id from authenticated JWT token
         user_id_str = g.user_id  # This comes from the @requires_auth decorator
         
