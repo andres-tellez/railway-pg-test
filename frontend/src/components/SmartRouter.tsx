@@ -57,7 +57,7 @@ const SmartRouter: React.FC = () => {
     };
 
     checkUserState();
-  }, [isAuthenticated, authLoading, navigate, api]);
+  }, [isAuthenticated, authLoading]); // Remove navigate and api to prevent infinite loop
 
   if (authLoading || isCheckingUser) {
     return (

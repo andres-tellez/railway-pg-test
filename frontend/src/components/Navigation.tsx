@@ -31,7 +31,7 @@ const Navigation: React.FC = () => {
 
   // Fetch user state for smart navigation
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !userState) {
       api.get<{ hasOnboarded: boolean; hasStrava: boolean }>('/user')
         .then((res) => {
           setUserState(res.data);
@@ -40,7 +40,7 @@ const Navigation: React.FC = () => {
           console.error('Failed to fetch user state:', err);
         });
     }
-  }, [isAuthenticated, api]);
+  }, [isAuthenticated]); // Remove 'api' from dependencies to prevent infinite loop
 
   const handleLogout = () => {
     logout({ 
