@@ -41,9 +41,13 @@ def generate_plan_chunked(
         raise ValueError("No user profile found")
     
     # Debug: Print training days from database
-    training_days = data_bundle.get("user_profile", {}).get("training_days", [])
-    print(f"🔍 DEBUG: Training days loaded from database: {training_days}")
-    print(f"🔍 DEBUG: Training days type: {type(training_days)}")
+    training_days_raw = data_bundle.get("user_profile", {}).get("training_days", [])
+    print(f"🔍 DEBUG: Training days loaded from database: {training_days_raw}")
+    print(f"🔍 DEBUG: Training days type: {type(training_days_raw)}")
+    
+    # Convert enum objects to strings
+    training_days = [str(day) for day in training_days_raw] if training_days_raw else []
+    print(f"🔍 DEBUG: Training days converted to strings: {training_days}")
 
     start_date = datetime.today().date()
     total_days = (race_date - start_date).days
@@ -81,7 +85,7 @@ def generate_plan_chunked(
 
         # Build prompt for this chunk
         chunk_prompt = build_chunked_training_plan_prompt(
-            data_bundle, chunk_start_date, chunk_end_date, chunk_start_week, chunk_end_week, total_weeks
+            data_bundle, chunk_start_date, chunk_end_date, chunk_start_week, chunk_end_week, total_weeks, training_days
         )
 
         # Generate workouts for this chunk
@@ -260,7 +264,7 @@ def validate_plan_json(plan_json: dict, race_date: date, training_days: list[str
 
 def build_chunked_training_plan_prompt(
     data: dict, chunk_start_date: date, chunk_end_date: date,
-    chunk_start_week: int, chunk_end_week: int, total_weeks: int
+    chunk_start_week: int, chunk_end_week: int, total_weeks: int, training_days: list[str]
 ) -> str:
     """
     Build a prompt for generating a specific chunk of the training plan.
@@ -270,7 +274,6 @@ def build_chunked_training_plan_prompt(
     activities = data.get("activities", [])[:8]       # Limit activities for chunks
 
     # Runner profile section (concise)
-    training_days = user.get('training_days', [])
     print(f"🔍 DEBUG: Training days in prompt: {training_days}")
     print(f"🔍 DEBUG: Training days joined: {', '.join(training_days) if training_days else 'EMPTY'}")
     
