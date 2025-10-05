@@ -209,79 +209,92 @@ const MyPlan: React.FC = () => {
   const offset = getDay(startOfMonth(currentMonth));
 
   return (
-    <div className="w-full max-w-md mx-auto">
-      {/* Month Header */}
-      <div className="flex items-center justify-between px-4 mt-4">
-        <button
-          onClick={() =>
-            setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))
-          }
-          className="text-2xl"
-        >
-          ←
-        </button>
-        <h2 className="text-xl font-semibold">{format(currentMonth, 'MMMM yyyy')}</h2>
-        <button
-          onClick={() =>
-            setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))
-          }
-          className="text-2xl"
-        >
-          →
-        </button>
-      </div>
-
-      {/* Weekday Labels */}
-      <div className="grid grid-cols-7 gap-2 text-center text-sm text-gray-500 px-2 mt-6">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-          <div key={day}>{day}</div>
-        ))}
-      </div>
-
-      {/* Calendar Days */}
-      <div className="grid grid-cols-7 gap-2 text-center text-sm px-2 mt-2">
-        {Array.from({ length: offset }).map((_, idx) => (
-          <div key={`empty-${idx}`} />
-        ))}
-
-        {days.map((date) => {
-          const dateStr = format(date, 'yyyy-MM-dd');
-          const workout = workoutsByDate[dateStr];
-          const isSelected = selectedDate === dateStr;
-          const isTodayFlag = isToday(date);
-
-          return (
-            <div
-              key={dateStr}
-              className={`p-2 rounded-md cursor-pointer flex flex-col items-center justify-center
-                ${isSelected ? 'border-2 border-black' : 'border border-transparent'}
-                hover:bg-gray-100 transition`}
-              onClick={() => setSelectedDate(dateStr)}
+    <div className="w-full max-w-lg mx-auto">
+      {/* Modern Calendar Card */}
+      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        {/* Header */}
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+            {format(currentMonth, 'MMMM yyyy')}
+          </h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() =>
+                setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))
+              }
+              className="h-10 w-10 rounded-lg border border-gray-200 bg-transparent hover:bg-gray-50 hover:text-gray-900 flex items-center justify-center transition-colors"
             >
-              <div className="text-sm">{format(date, 'd')}</div>
-              {workout && (
-                <div
-                  className={`w-3 h-3 rounded-md mt-1 ${
-                    workout.type === 'RUN'
-                      ? 'bg-red-500'
-                      : workout.type === 'STRENGTH'
-                      ? 'bg-yellow-400'
-                      : 'bg-gray-300'
-                  }`}
-                />
-              )}
-              {isTodayFlag && <div className="w-1.5 h-1.5 bg-black rounded-full mt-1" />}
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <button
+              onClick={() =>
+                setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))
+              }
+              className="h-10 w-10 rounded-lg border border-gray-200 bg-transparent hover:bg-gray-50 hover:text-gray-900 flex items-center justify-center transition-colors"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Weekday headers */}
+        <div className="mb-4 grid grid-cols-7 gap-2">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+            <div key={day} className="text-center text-xs font-medium uppercase tracking-wider text-gray-500">
+              {day}
             </div>
-          );
-        })}
+          ))}
+        </div>
+
+        {/* Calendar grid */}
+        <div className="grid grid-cols-7 gap-3">
+          {Array.from({ length: offset }).map((_, idx) => (
+            <div key={`empty-${idx}`} />
+          ))}
+
+          {days.map((date) => {
+            const dateStr = format(date, 'yyyy-MM-dd');
+            const workout = workoutsByDate[dateStr];
+            const isSelected = selectedDate === dateStr;
+            const isTodayFlag = isToday(date);
+
+            return (
+              <button
+                key={dateStr}
+                onClick={() => setSelectedDate(dateStr)}
+                className={`relative aspect-square rounded-lg transition-all duration-200 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                  !workout && 'bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-gray-900'
+                } ${
+                  workout && 'bg-gray-800 text-white hover:bg-gray-700 shadow-sm'
+                } ${
+                  isSelected && 'ring-2 ring-blue-500 ring-offset-2 ring-offset-white shadow-md'
+                } ${
+                  isTodayFlag && !isSelected && 'ring-1 ring-blue-300'
+                }`}
+              >
+                <span
+                  className={`text-base font-semibold leading-none ${
+                    workout && 'text-white font-bold'
+                  } ${!workout && 'text-gray-500'}`}
+                >
+                  {format(date, 'd')}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Workout Details */}
-      <div className="mt-6 px-4 py-4 border-t bg-white">
+      <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         {selectedDate && workoutsByDate[selectedDate] ? (
           <WorkoutDetails workout={workoutsByDate[selectedDate]} />
         ) : (
-          <p className="text-sm text-gray-400">No workout scheduled for this day.</p>
+          <p className="text-sm text-gray-500">No workout scheduled for this day.</p>
         )}
       </div>
     </div>
