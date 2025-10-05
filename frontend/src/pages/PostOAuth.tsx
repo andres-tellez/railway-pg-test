@@ -88,7 +88,7 @@ const PostOAuth: React.FC = () => {
       clearTimeout(safety);
       ac.abort();
     };
-  }, [isLoading, isAuthenticated, getIdTokenClaims, api, navigate]);
+  }, [isLoading, isAuthenticated, getIdTokenClaims, navigate]); // Remove 'api' to prevent infinite loop
 
   if (readyToSync) {
     return (

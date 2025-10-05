@@ -50,7 +50,7 @@ const SetupPage: React.FC = () => {
           console.error("❌ Failed to fetch user status:", err)
         );
     }
-  }, [isAuthenticated, isLoading, syncing, forceSyncing, api]);
+  }, [isAuthenticated, isLoading, syncing, forceSyncing]); // Remove 'api' to prevent infinite loop
 
   // ✅ Detect Strava redirect success
   useEffect(() => {

@@ -68,7 +68,7 @@ const OnboardingForm: React.FC = () => {
       }
     })();
     return () => ac.abort();
-  }, [isAuthenticated, api, methods, navigate]);
+  }, [isAuthenticated, methods, navigate]); // Remove 'api' to prevent infinite loop
 
   const handleSubmit = async () => {
   setSaving(true);
