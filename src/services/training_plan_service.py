@@ -41,14 +41,9 @@ def generate_plan_chunked(
     if not data_bundle.get("user_profile"):
         raise ValueError("No user profile found")
     
-    # Debug: Print training days from database
-    training_days_raw = data_bundle.get("user_profile", {}).get("training_days", [])
-    print(f"🔍 DEBUG: Training days loaded from database: {training_days_raw}")
-    print(f"🔍 DEBUG: Training days type: {type(training_days_raw)}")
-    
     # Convert enum objects to strings
+    training_days_raw = data_bundle.get("user_profile", {}).get("training_days", [])
     training_days = [str(day) for day in training_days_raw] if training_days_raw else []
-    print(f"🔍 DEBUG: Training days converted to strings: {training_days}")
 
     start_date = datetime.today().date()
     total_days = (race_date - start_date).days
@@ -388,9 +383,6 @@ def build_chunked_training_plan_prompt(
     activities = data.get("activities", [])[:8]       # Limit activities for chunks
 
     # Runner profile section (concise)
-    print(f"🔍 DEBUG: Training days in prompt: {training_days}")
-    print(f"🔍 DEBUG: Training days joined: {', '.join(training_days) if training_days else 'EMPTY'}")
-    
     profile_section = [
         "Runner Profile:",
         f"- Level: {user.get('runner_level')}",
