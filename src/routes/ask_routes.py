@@ -37,7 +37,10 @@ def ask():
     session = get_session()
     try:
         # Get user_id from authenticated JWT token
-        user_id = g.user_id  # This comes from the @requires_auth decorator
+        user_id_str = g.user_id  # This comes from the @requires_auth decorator
+        
+        # Convert string to UUID object as expected by assemble_training_plan_data
+        user_id = uuid.UUID(user_id_str)
 
         # Assemble comprehensive training data using the same system as training plans
         data_bundle = assemble_training_plan_data(session, user_id)
