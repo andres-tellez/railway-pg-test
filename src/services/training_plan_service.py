@@ -12,7 +12,8 @@ from src.db.models.plan_workouts import PlanWorkout
 from src.services.gpt_client import call_gpt  # Reserved wrapper for OpenAI calls
 from src.services.training_plan_data_assembler import assemble_training_plan_data
 from src.utils.gpt_ops import generate_training_plan_chunk
-from src.utils.training_plan_validation import validate_plan_json
+# Note: Using local validate_plan_json function instead of imported one
+# The imported function is for old format with "weeks" structure
 
 # Handle both old and new OpenAI API versions
 try:
