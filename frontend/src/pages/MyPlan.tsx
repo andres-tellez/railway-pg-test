@@ -181,13 +181,41 @@ const MyPlan: React.FC = () => {
         });
         setWorkoutsByDate(mapped);
 
+        // Debug: Log workout date range
+        console.log(`📅 Training plan loaded: ${res.data.workouts.length} workouts`);
+        if (res.data.workouts.length > 0) {
+          const dates = res.data.workouts.map((w: any) => w.date).sort();
+          console.log(`📅 Date range: ${dates[0]} to ${dates[dates.length - 1]}`);
+          console.log(`📅 Race date: ${res.data.race_date}`);
+        }
+
         const today = format(new Date(), 'yyyy-MM-dd');
         if (mapped[today]) {
           setSelectedDate(today);
+          console.log(`📅 Selected today: ${today}`);
         } else if (res.data.workouts.length > 0) {
+          // Default to current month, but select the first workout if today has no workout
           const firstWorkoutDate = res.data.workouts[0].date;
           setSelectedDate(firstWorkoutDate);
-          setCurrentMonth(parseISO(firstWorkoutDate));
+          console.log(`📅 Selected first workout: ${firstWorkoutDate}`);
+
+          // Only change currentMonth if we're not in a month with workouts
+          const currentMonthStr = format(new Date(), 'yyyy-MM');
+          const firstWorkoutMonthStr = firstWorkoutDate.substring(0, 7);
+
+          if (currentMonthStr !== firstWorkoutMonthStr) {
+            // Check if current month has any workouts
+            const currentMonthHasWorkouts = res.data.workouts.some((w: any) =>
+              w.date.startsWith(currentMonthStr)
+            );
+
+            if (!currentMonthHasWorkouts) {
+              setCurrentMonth(parseISO(firstWorkoutDate));
+              console.log(`📅 Set current month to first workout month: ${firstWorkoutMonthStr}`);
+            } else {
+              console.log(`📅 Current month (${currentMonthStr}) has workouts, staying here`);
+            }
+          }
         } else {
           setSelectedDate(null);
         }
@@ -210,6 +238,18 @@ const MyPlan: React.FC = () => {
 
   return (
     <div className="w-full max-w-lg mx-auto">
+      {/* Plan Overview */}
+      {plan && (
+        <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-4">
+          <div className="text-sm text-blue-800">
+            <div className="font-semibold">Training Plan Overview</div>
+            <div>Race: {plan.race_date ? format(parseISO(plan.race_date), 'MMMM d, yyyy') : 'Not set'}</div>
+            <div>Duration: {plan.start_date ? format(parseISO(plan.start_date), 'MMM d') : 'Unknown'} to {plan.race_date ? format(parseISO(plan.race_date), 'MMM d, yyyy') : 'Unknown'}</div>
+            <div>Total Workouts: {Object.keys(workoutsByDate).length}</div>
+          </div>
+        </div>
+      )}
+
       {/* Modern Calendar Card */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         {/* Header */}
@@ -219,9 +259,11 @@ const MyPlan: React.FC = () => {
           </h2>
           <div className="flex gap-2">
             <button
-              onClick={() =>
-                setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() - 1)))
-              }
+              onClick={() => {
+                const newDate = new Date(currentMonth);
+                newDate.setMonth(newDate.getMonth() - 1);
+                setCurrentMonth(newDate);
+              }}
               className="h-10 w-10 rounded-lg border border-gray-200 bg-transparent hover:bg-gray-50 hover:text-gray-900 flex items-center justify-center transition-colors"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -229,9 +271,11 @@ const MyPlan: React.FC = () => {
               </svg>
             </button>
             <button
-              onClick={() =>
-                setCurrentMonth(new Date(currentMonth.setMonth(currentMonth.getMonth() + 1)))
-              }
+              onClick={() => {
+                const newDate = new Date(currentMonth);
+                newDate.setMonth(newDate.getMonth() + 1);
+                setCurrentMonth(newDate);
+              }}
               className="h-10 w-10 rounded-lg border border-gray-200 bg-transparent hover:bg-gray-50 hover:text-gray-900 flex items-center justify-center transition-colors"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
