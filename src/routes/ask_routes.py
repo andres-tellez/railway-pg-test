@@ -149,7 +149,10 @@ def ask():
             data_bundle = {
                 "user_profile": {
                     "runner_level": "Intermediate",
-                    "training_days": ["Mon", "Wed", "Thu", "Sat"] if not user_profile or not user_profile.training_days else user_profile.training_days.split(','),
+                    "training_days": ["Mon", "Wed", "Thu", "Sat"] if not user_profile or not user_profile.training_days else (
+                        user_profile.training_days if isinstance(user_profile.training_days, list) 
+                        else user_profile.training_days.split(',')
+                    ),
                     "main_goal": "Marathon training",
                     "race_distance": plan.race_distance or "Marathon",
                     "age": 49

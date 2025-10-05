@@ -11,7 +11,7 @@ from src.db.models.plans import Plan
 from src.db.models.plan_workouts import PlanWorkout
 from src.services.gpt_client import call_gpt  # Reserved wrapper for OpenAI calls
 from src.services.training_plan_data_assembler import assemble_training_plan_data
-from src.utils.gpt_ops import generate_training_plan, generate_training_plan_chunk
+from src.utils.gpt_ops import generate_training_plan_chunk
 from src.utils.training_plan_validation import validate_plan_json
 
 # Handle both old and new OpenAI API versions
@@ -39,6 +39,11 @@ def generate_plan_chunked(
     data_bundle = assemble_training_plan_data(session, user_id)
     if not data_bundle.get("user_profile"):
         raise ValueError("No user profile found")
+    
+    # Debug: Print training days from database
+    training_days = data_bundle.get("user_profile", {}).get("training_days", [])
+    print(f"🔍 DEBUG: Training days loaded from database: {training_days}")
+    print(f"🔍 DEBUG: Training days type: {type(training_days)}")
 
     start_date = datetime.today().date()
     total_days = (race_date - start_date).days
@@ -265,11 +270,15 @@ def build_chunked_training_plan_prompt(
     activities = data.get("activities", [])[:8]       # Limit activities for chunks
 
     # Runner profile section (concise)
+    training_days = user.get('training_days', [])
+    print(f"🔍 DEBUG: Training days in prompt: {training_days}")
+    print(f"🔍 DEBUG: Training days joined: {', '.join(training_days) if training_days else 'EMPTY'}")
+    
     profile_section = [
         "Runner Profile:",
         f"- Level: {user.get('runner_level')}",
         f"- Goal: {user.get('main_goal')} ({user.get('race_distance')})",
-        f"- Training days: {', '.join(user.get('training_days', []))}",
+        f"- Training days: {', '.join(training_days) if training_days else 'NOT SET'}",
         f"- Weight: {user.get('weight')} lbs",
     ]
     profile_text = "\n".join(filter(None, profile_section))
@@ -321,9 +330,16 @@ def build_chunked_training_plan_prompt(
         f"- Include proper recovery days - rest is when adaptation happens\n"
         f"- For marathon training: Long runs should be 20-30% of weekly mileage\n"
         f"- Progressive overload: Gradually increase volume OR intensity, never both simultaneously\n"
+        f"\n"
+        f"🚨 CRITICAL TRAINING DAYS CONSTRAINT 🚨\n"
+        f"ONLY schedule workouts on these specific days: {', '.join(training_days) if training_days else 'NOT SET'}\n"
+        f"DO NOT schedule any workouts on other days (Sun, Tue, Fri)\n"
+        f"Each week should have workouts on: {', '.join(training_days) if training_days else 'NOT SET'}\n"
+        f"Rest days should be scheduled on non-training days\n"
+        f"\n"
         f"- Return JSON with workouts array\n"
         f"- Each workout must include:\n"
-        f"  * date (YYYY-MM-DD)\n"
+        f"  * date (YYYY-MM-DD) - MUST be on training days only: {', '.join(training_days) if training_days else 'NOT SET'}\n"
         f"  * miles (number ≥ 0)\n"
         f"  * workout_type (one of: Rest, Easy, Long Run, Tempo, Intervals)\n"
         f"  * intensity (string)\n"
@@ -337,8 +353,7 @@ def build_chunked_training_plan_prompt(
         f"  * distance (string: '1 mile', '800m', '4 miles', etc.)\n"
         f"  * target_zone (string: 'Zone 2', 'Zone 4', etc.)\n"
         f"  * notes (string: 'Easy pace', 'Tempo pace', '90 sec rest', etc.)\n"
-        f"- Heart rate zones: Zone 1 (recovery), Zone 2-3 (easy), Zone 4 (hard), Zone 5 (very hard)\n"
-        f"- Training days: {', '.join(user.get('training_days', []))}"
+        f"- Heart rate zones: Zone 1 (recovery), Zone 2-3 (easy), Zone 4 (hard), Zone 5 (very hard)"
     )
 
     return "\n\n".join([
@@ -457,55 +472,6 @@ def build_training_plan_prompt(data: dict, start_date: date | None = None, race_
     )
 
 
-def fetch_validated_training_plan(
-    prompt: str, race_date: date = None, training_days: list[str] = None
-) -> dict:
-    """
-    Calls GPT to generate a training plan and ensures the result is schema-compliant.
-    Retries once with clarification if validation fails.
-
-    Args:
-        prompt (str): Structured prompt built from user data.
-        race_date (date): Target race date to enforce workout cutoff.
-        training_days (list[str]): List of valid training days (e.g., ["MON", "WED", ...])
-
-    Returns:
-        dict: Clean, validated training plan JSON.
-
-    Raises:
-        RuntimeError: If GPT response is invalid after retry.
-    """
-    # --- First attempt ---
-    plan = generate_training_plan(prompt)
-    try:
-        validate_plan_json(plan, race_date=race_date, training_days=training_days)
-        return plan
-    except PlanValidationError as e:
-        print("❌ GPT validation failed:", e)
-        print("Retrying with clarification...")
-
-    clarification = (
-        "\n\nNOTE: Your last response was invalid. "
-        "Please ensure:\n"
-        "- Dates are unique and ≤ race_date\n"
-        "- Only assign workouts on the user's allowed training days\n"
-        "- Include at least 1 rest day and 1 workout\n"
-        "- Only use types: Rest, Easy, Long Run, Tempo, Intervals\n"
-        "Respond ONLY with corrected JSON."
-    )
-
-    # --- Retry once ---
-    retry_prompt = prompt + clarification
-    plan_retry = generate_training_plan(retry_prompt)
-    try:
-        validate_plan_json(plan_retry, race_date=race_date, training_days=training_days)
-        return plan_retry
-    except PlanValidationError as e:
-        raise RuntimeError(f"GPT output failed validation after retry: {e}")
-
-
-from datetime import datetime
-import uuid
 
 
 def save_plan_to_db(plan_json: dict, user_id: str, session: Session) -> int:
