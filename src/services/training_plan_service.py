@@ -16,9 +16,9 @@ from src.utils.training_plan_validation import validate_plan_json
 
 # Handle both old and new OpenAI API versions
 try:
-    from openai import OpenAI
+from openai import OpenAI
 
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 except ImportError:
     # Fallback for older openai versions
     import openai
@@ -91,10 +91,15 @@ def generate_plan_chunked(
         # Generate workouts for this chunk
         try:
             chunk_workouts = generate_training_plan_chunk(chunk_prompt)
+            
+            # Validate chunk before adding to all_workouts
+            chunk_plan_json = {"workouts": chunk_workouts}
+            validate_plan_json(chunk_plan_json, race_date, training_days)
+            
             all_workouts.extend(chunk_workouts)
-            print(f"✅ Generated {len(chunk_workouts)} workouts for chunk {chunk_start_week//chunk_weeks + 1}")
+            print(f"✅ Generated and validated {len(chunk_workouts)} workouts for chunk {chunk_start_week//chunk_weeks + 1}")
         except Exception as e:
-            print(f"❌ Error generating chunk {chunk_start_week//chunk_weeks + 1}: {e}")
+            print(f"❌ Error generating or validating chunk {chunk_start_week//chunk_weeks + 1}: {e}")
             # Continue with next chunk
             continue
 
@@ -134,6 +139,10 @@ def generate_plan_chunked(
 
             workouts_data.append(workout_data)
 
+        # Final validation of the complete plan before saving
+        final_plan_json = {"workouts": list(unique_workouts.values())}
+        validate_plan_json(final_plan_json, race_date, training_days)
+        
         plan_workouts_dao.insert_batch(session, workouts_data)
         print(f"✅ Saved {len(workouts_data)} unique workouts to database")
 
@@ -211,14 +220,18 @@ def validate_plan_json(plan_json: dict, race_date: date, training_days: list[str
         raise PlanValidationError("Plan must include at least one Rest day")
 
     allowed_days = set(training_days)
+    print(f"🔍 VALIDATION: Allowed training days: {allowed_days}")
+    
     for w in workouts:
         workout_date = datetime.strptime(w["date"], "%Y-%m-%d").date()
         workout_day = workout_date.strftime("%a").upper()
+        
+        print(f"🔍 VALIDATION: Checking workout on {workout_date.strftime('%A')} ({w['date']}) - Type: {w['workout_type']}")
 
         if w["workout_type"] != "Rest" and workout_day not in allowed_days:
-            raise PlanValidationError(
-                f"Workout on invalid day: {workout_date.strftime('%A')} ({w['date']})"
-            )
+            error_msg = f"❌ TRAINING DAYS VIOLATION: Workout scheduled on {workout_date.strftime('%A')} ({w['date']}) but training days are: {', '.join(allowed_days)}"
+            print(error_msg)
+            raise PlanValidationError(error_msg)
 
     seen_dates = set()
     for w in workouts:
@@ -260,6 +273,106 @@ def validate_plan_json(plan_json: dict, race_date: date, training_days: list[str
             )
 
     print("✅ Validation passed\n")
+
+
+def quality_control_audit_plan(session: Session, user_id: uuid.UUID) -> dict:
+    """
+    Comprehensive quality control audit of a user's training plan.
+    
+    Returns:
+        dict: Audit results with violations and recommendations
+    """
+    from src.db.models.plans import Plan
+    from src.db.models.plan_workouts import PlanWorkout
+    from sqlalchemy.orm import joinedload
+    
+    print("🔍 Starting Quality Control Audit...")
+    
+    # Get user's training days
+    data_bundle = assemble_training_plan_data(session, user_id)
+    training_days_raw = data_bundle.get("user_profile", {}).get("training_days", [])
+    training_days = [str(day) for day in training_days_raw] if training_days_raw else []
+    
+    # Get the latest plan
+    plan = (
+        session.query(Plan)
+        .options(joinedload(Plan.workouts))
+        .filter_by(user_id=str(user_id))
+        .order_by(Plan.created_at.desc())
+        .first()
+    )
+    
+    if not plan:
+        return {"status": "no_plan", "message": "No training plan found"}
+    
+    workouts = sorted(plan.workouts, key=lambda w: w.date)
+    
+    # Audit results
+    violations = []
+    warnings = []
+    recommendations = []
+    
+    allowed_days = set(training_days)
+    print(f"🔍 AUDIT: Allowed training days: {allowed_days}")
+    
+    # Check each workout
+    for workout in workouts:
+        workout_day = workout.date.strftime("%a")
+        
+        # Check training days violation
+        if workout.workout_type != "Rest" and workout_day not in allowed_days:
+            violation = {
+                "date": str(workout.date),
+                "day": workout_day,
+                "type": "training_days_violation",
+                "workout_type": workout.workout_type,
+                "message": f"Workout on {workout_day} but training days are: {', '.join(allowed_days)}"
+            }
+            violations.append(violation)
+            print(f"❌ VIOLATION: {violation['message']}")
+    
+    # Generate recommendations
+    if violations:
+        recommendations.append("Regenerate the training plan to fix training days violations")
+        recommendations.append("Consider using stricter validation during plan generation")
+    
+    # Check for missing workouts on training days
+    from datetime import timedelta
+    start_date = workouts[0].date if workouts else plan.created_at.date()
+    end_date = workouts[-1].date if workouts else plan.race_date
+    
+    current_date = start_date
+    while current_date <= end_date:
+        day_name = current_date.strftime("%a")
+        if day_name in allowed_days:
+            # Check if there's a workout on this training day
+            has_workout = any(w.date == current_date for w in workouts)
+            if not has_workout:
+                warning = {
+                    "date": str(current_date),
+                    "day": day_name,
+                    "type": "missing_workout",
+                    "message": f"Missing workout on training day {day_name}"
+                }
+                warnings.append(warning)
+        current_date += timedelta(days=1)
+    
+    audit_result = {
+        "status": "completed",
+        "plan_id": plan.id,
+        "race_date": str(plan.race_date),
+        "total_workouts": len(workouts),
+        "training_days": training_days,
+        "violations": violations,
+        "warnings": warnings,
+        "recommendations": recommendations,
+        "violation_count": len(violations),
+        "warning_count": len(warnings)
+    }
+    
+    print(f"🔍 AUDIT COMPLETE: {len(violations)} violations, {len(warnings)} warnings")
+    
+    return audit_result
 
 
 def build_chunked_training_plan_prompt(

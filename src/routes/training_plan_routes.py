@@ -12,6 +12,7 @@ from src.services import training_plan_service
 from src.services.training_plan_service import (
     PlanValidationError,
     build_training_plan_prompt,
+    quality_control_audit_plan,
 )
 
 training_plan_bp = Blueprint("training_plan", __name__, url_prefix="/api/plan")
@@ -201,5 +202,21 @@ def debug_weekly_summaries():
         activities = load_recent_activities(session, user_id=user_id)
         summaries = summarize_weekly_training(activities)
         return jsonify({"summaries": summaries}), 200
+    finally:
+        session.close()
+
+
+@training_plan_bp.route("/audit", methods=["GET"])
+@requires_auth
+def audit_training_plan():
+    """
+    Quality control audit of the user's training plan.
+    """
+    user_id = uuid.UUID(g.user_id)
+    
+    session = get_session()
+    try:
+        audit_result = quality_control_audit_plan(session, user_id)
+        return jsonify(audit_result), 200
     finally:
         session.close()
