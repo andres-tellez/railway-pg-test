@@ -20,6 +20,18 @@ type Workout = {
   date: string;
   type: 'RUN' | 'REST' | 'STRENGTH';
   description: string;
+  // New structured fields
+  workout_type?: string;
+  miles?: number;
+  target_zone?: string;
+  target_hr?: string;
+  focus?: string;
+  segments?: Array<{
+    name: string;
+    distance: string;
+    target_zone: string;
+    notes: string;
+  }>;
 };
 
 type PlanResponse = {
@@ -34,6 +46,109 @@ const convertWorkoutType = (raw: string): Workout['type'] => {
   if (normalized.includes('rest')) return 'REST';
   if (normalized.includes('strength')) return 'STRENGTH';
   return 'RUN';
+};
+
+// Component to render structured workout data
+const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
+  // Simple workout (no segments) - use 3-line template
+  if (!workout.segments || workout.segments.length === 0) {
+    return (
+      <div className="space-y-3">
+        {/* Workout Header */}
+        <div className="font-semibold text-lg text-gray-900">
+          {workout.workout_type?.toUpperCase() || workout.type} - {workout.miles} MILES
+        </div>
+        
+        {/* Target Zone */}
+        {workout.target_zone && workout.target_hr && (
+          <div className="text-sm text-gray-800">
+            <span className="font-semibold">Target:</span> {workout.target_zone} ({workout.target_hr})
+          </div>
+        )}
+        
+        {/* Focus with bold emphasis */}
+        {workout.focus && (
+          <div className="text-sm text-gray-800">
+            <span className="font-semibold">Focus:</span> {workout.focus}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Complex workout (with segments) - use table format
+  return (
+    <div className="space-y-4">
+      {/* Workout Header */}
+      <div className="font-semibold text-lg text-gray-900">
+        {workout.workout_type?.toUpperCase() || workout.type} - {workout.miles} MILES
+      </div>
+      
+      {/* Target Zone */}
+      {workout.target_zone && workout.target_hr && (
+        <div className="text-sm text-gray-800">
+          <span className="font-semibold">Target:</span> {workout.target_zone} ({workout.target_hr})
+        </div>
+      )}
+      
+      {/* Focus with bold emphasis and extra spacing */}
+      {workout.focus && (
+        <div className="text-sm text-gray-800 pb-2">
+          <span className="font-semibold">Focus:</span> {workout.focus}
+        </div>
+      )}
+      
+        {/* Workout Structure Table */}
+        <div className="space-y-3">
+          <div className="text-sm font-semibold text-gray-700">
+            Workout Structure:
+          </div>
+          
+          <div className="bg-white border border-gray-300 rounded-lg shadow-sm overflow-hidden">
+            {/* Table Header */}
+            <div className="bg-gray-100 border-b border-gray-300">
+              <div className="grid grid-cols-4 gap-3 px-4 py-2 text-xs font-semibold text-gray-700">
+                <div>Segment</div>
+                <div>Distance</div>
+                <div>Target</div>
+                <div>Notes</div>
+              </div>
+            </div>
+            
+            {/* Table Rows */}
+            <div className="divide-y divide-gray-200">
+              {workout.segments.map((segment, index) => (
+                <div key={index} className="grid grid-cols-4 gap-3 px-4 py-2 hover:bg-gray-50 transition-colors items-center">
+                  <div className="text-xs font-medium text-gray-900">{segment.name}</div>
+                  <div className="text-xs text-gray-700">{convertDistanceToMiles(segment.distance)}</div>
+                  <div className="text-xs text-gray-700">{segment.target_zone}</div>
+                  <div className="text-xs text-gray-600">{segment.notes}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+    </div>
+  );
+};
+
+// Helper function to convert distances to miles for US users
+const convertDistanceToMiles = (distance: string): string => {
+  // If already in miles, return as-is
+  if (distance.includes('mile')) {
+    return distance;
+  }
+  
+  // Convert meters to miles
+  const metersMatch = distance.match(/(\d+)m/);
+  if (metersMatch) {
+    const meters = parseInt(metersMatch[1]);
+    const miles = meters * 0.000621371; // Convert meters to miles
+    return `${miles.toFixed(2)} miles`;
+  }
+  
+  // If no conversion needed, return original
+  return distance;
 };
 
 const MyPlan: React.FC = () => {
@@ -55,6 +170,13 @@ const MyPlan: React.FC = () => {
             date: w.date,
             type: convertWorkoutType(w.workout_type),
             description: w.description,
+            // Map new structured fields
+            workout_type: w.workout_type,
+            miles: w.miles,
+            target_zone: w.target_zone,
+            target_hr: w.target_hr,
+            focus: w.focus,
+            segments: w.segments,
           };
         });
         setWorkoutsByDate(mapped);
@@ -157,14 +279,7 @@ const MyPlan: React.FC = () => {
       {/* Workout Details */}
       <div className="mt-6 px-4 py-4 border-t bg-white">
         {selectedDate && workoutsByDate[selectedDate] ? (
-          <>
-            <h3 className="text-lg font-semibold mb-1">
-              {workoutsByDate[selectedDate].type}
-            </h3>
-            <p className="text-sm text-gray-700">
-              {workoutsByDate[selectedDate].description}
-            </p>
-          </>
+          <WorkoutDetails workout={workoutsByDate[selectedDate]} />
         ) : (
           <p className="text-sm text-gray-400">No workout scheduled for this day.</p>
         )}

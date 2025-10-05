@@ -104,15 +104,11 @@ const LandingPage: React.FC = () => {
   }
 
   try {
-    const raceDate = "2025-12-01";
-    const raceDistance = "Marathon";
-
     console.log("📡 Sending generatePlan request...");
 
     const res = await api.post<{ plan_id: number }>("/api/plan/generate", {
       user_id: userId,
-      race_date: raceDate,
-      race_distance: raceDistance,
+      // Race data will come from user_profile table
     });
 
     const planId = res.data.plan_id;

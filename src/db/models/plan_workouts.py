@@ -17,6 +17,11 @@ class PlanWorkout(Base):
     description = sa.Column(sa.Text, nullable=False)
     miles = sa.Column(sa.Float, nullable=False)
     intensity = sa.Column(sa.String, nullable=False)
+    # New structured fields
+    target_zone = sa.Column(sa.String, nullable=True)
+    target_hr = sa.Column(sa.String, nullable=True)
+    focus = sa.Column(sa.String, nullable=True)
+    segments = sa.Column(sa.JSON, nullable=True)  # JSON array for workout segments
     created_at = sa.Column(
         sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
     )

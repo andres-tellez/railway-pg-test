@@ -51,6 +51,10 @@ def get_plan_with_workouts(
                 "description": w.description,
                 "miles": w.miles,
                 "intensity": w.intensity,
+                "target_zone": w.target_zone,
+                "target_hr": w.target_hr,
+                "focus": w.focus,
+                "segments": w.segments,
             }
             for w in plan.workouts
         ],

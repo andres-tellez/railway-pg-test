@@ -61,6 +61,10 @@ def get_current_plan():
                             "intensity": w.intensity,
                             "description": w.description,
                             "miles": w.miles,
+                            "target_zone": w.target_zone,
+                            "target_hr": w.target_hr,
+                            "focus": w.focus,
+                            "segments": w.segments,
                         }
                         for w in workouts
                     ],
@@ -85,27 +89,38 @@ def get_plan_route(plan_id):
 @training_plan_bp.route("/generate", methods=["POST"])
 def generate_plan_route():
     data = request.get_json() or {}
-    race_date_str = data.get("race_date")
-    race_distance = data.get("race_distance")
     user_id_str = data.get("user_id")  # TEMP: will replace with Auth0 `g.user_id`
 
-    if not race_date_str or not race_distance or not user_id_str:
+    if not user_id_str:
         return (
-            jsonify({"error": "race_date, race_distance, and user_id are required"}),
+            jsonify({"error": "user_id is required"}),
             400,
         )
 
     try:
-        race_date = datetime.strptime(race_date_str, "%Y-%m-%d").date()
         user_id = uuid.UUID(user_id_str)
     except ValueError:
-        return jsonify({"error": "Invalid race_date or user_id format"}), 400
+        return jsonify({"error": "Invalid user_id format"}), 400
 
     session: Session = get_session()
     try:
+        # Get race data from user_profile instead of frontend
+        from src.db.models.user_profile import UserProfile
+        user_profile = session.query(UserProfile).filter_by(user_id=str(user_id)).first()
+        
+        if not user_profile:
+            return jsonify({"error": "User profile not found. Please complete your profile first."}), 404
+            
+        if not user_profile.race_date or not user_profile.race_distance:
+            return jsonify({"error": "Race date and distance not set in profile. Please update your profile first."}), 400
+            
+        race_date = datetime.strptime(user_profile.race_date, "%Y-%m-%d").date()
+        race_distance = user_profile.race_distance.value  # Convert enum to string
+        
         plan = training_plan_service.generate_plan(
             session, user_id, race_date, race_distance
         )
+        session.commit()  # Commit the transaction
         return jsonify({"plan_id": plan.id}), 201
 
     except ValueError:
