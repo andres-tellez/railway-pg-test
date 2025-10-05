@@ -3,7 +3,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "../utils/apiClient";
 import { useNavigate } from "react-router-dom";
 
-const LandingPage: React.FC = () => {
+const SetupPage: React.FC = () => {
   const { user, isAuthenticated, isLoading } = useAuth0();
   const api = useApiClient();
   const navigate = useNavigate();
@@ -128,25 +128,19 @@ const LandingPage: React.FC = () => {
     return <div className="p-6 text-red-600">❌ Not authenticated</div>;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-4 bg-gray-50">
-      {/* Profile */}
-      <div className="flex items-center gap-4 mt-8 mb-6">
-        {user?.picture ? (
-          <img
-            src={user.picture}
-            alt={user.name || "User"}
-            className="w-12 h-12 rounded-full border border-gray-300"
-          />
-        ) : (
-          <div className="w-12 h-12 rounded-full bg-gray-300" />
-        )}
-        <h1 className="text-2xl font-semibold text-gray-900">
-          {user?.name || "Runner"}
+    <div className="max-w-2xl mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          Welcome to SmartCoach
         </h1>
+        <p className="text-gray-600">
+          Let's get you set up with your personalized training plan
+        </p>
       </div>
 
       {/* Steps */}
-      <div className="w-full max-w-md space-y-6">
+      <div className="w-full max-w-md space-y-6 mx-auto">
         {/* Step 1 */}
         <div
           className={`p-4 border rounded-lg ${
@@ -238,4 +232,4 @@ const LandingPage: React.FC = () => {
   );
 };
 
-export default LandingPage;
+export default SetupPage;

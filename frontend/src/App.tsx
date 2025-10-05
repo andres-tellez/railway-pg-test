@@ -32,14 +32,14 @@ import { useAuth0 } from "@auth0/auth0-react";
 import OnboardingForm from "./pages/OnboardingForm";
 import PlanPage from "./pages/PlanPage";
 import MyPlan from "./pages/MyPlan";
-
-import LandingPage from "./pages/LandingPage";
-
-import PostOAuth from "./pages/PostOAuth"; // ✅ Adjust path if needed
-
+import SetupPage from "./pages/LandingPage";
+import PostOAuth from "./pages/PostOAuth";
 import HomeScreen from "./pages/HomeScreen";
 import AskGptMvpUI from "./pages/AskGptMvpUI";
+import WelcomePage from "./pages/WelcomePage";
 
+import Layout from "./components/Layout";
+import SmartRouter from "./components/SmartRouter";
 
 // ---------------------------
 // ProtectedRoute
@@ -47,52 +47,58 @@ import AskGptMvpUI from "./pages/AskGptMvpUI";
 function ProtectedRoute({ children }: { children: JSX.Element }) {
   const { isLoading, isAuthenticated } = useAuth0();
   if (isLoading) return <div className="p-6">🔄 Loading…</div>;
-  return isAuthenticated ? children : <Navigate to="/login" replace />;
+  return isAuthenticated ? children : <Navigate to="/welcome" replace />;
 }
 
 // ---------------------------
 // LoginPage
 // ---------------------------
 function LoginPage() {
-  const { loginWithRedirect, logout, isAuthenticated, isLoading, user } = useAuth0();
+  const { loginWithRedirect, isAuthenticated, isLoading } = useAuth0();
   const navigate = useNavigate();
 
   if (isLoading) return <div className="p-6">🔄 Loading…</div>;
 
+  // If already authenticated, redirect to smart router
+  if (isAuthenticated) {
+    navigate('/', { replace: true });
+    return null;
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-100 p-8">
-      <h1 className="text-3xl font-bold mb-6">Welcome to SmartCoach</h1>
-      {!isAuthenticated ? (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center p-8">
+      <div className="text-center max-w-md">
+        <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
+          <span className="text-white font-bold text-2xl">SC</span>
+        </div>
+        
+        <h1 className="text-3xl font-bold text-gray-900 mb-4">
+          Sign in to SmartCoach
+        </h1>
+        
+        <p className="text-gray-600 mb-8">
+          Connect with your account to access your personalized training plans and coaching.
+        </p>
+        
         <button
-          className="bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 transition"
+          className="w-full bg-blue-600 text-white px-6 py-4 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl"
           onClick={() =>
             loginWithRedirect({
               authorizationParams: {
-                redirect_uri: import.meta.env.VITE_AUTH0_REDIRECT_URI, // ✅ Match your AuthProvider
+                redirect_uri: import.meta.env.VITE_AUTH0_REDIRECT_URI,
                 audience: import.meta.env.VITE_AUTH0_AUDIENCE,
                 scope: "openid profile email offline_access",
               },
             })
           }
-
         >
           Sign In
         </button>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-green-600">
-            You're already logged in as <strong>{user?.email}</strong>
-          </p>
-          <button
-            className="bg-red-600 text-white px-6 py-3 rounded hover:bg-red-700 transition"
-            onClick={() =>
-              logout({ logoutParams: { returnTo: window.location.origin } })
-            }
-          >
-            Log Out
-          </button>
-        </div>
-      )}
+        
+        <p className="text-sm text-gray-500 mt-4">
+          Don't have an account? Sign in with Google or create one during the process.
+        </p>
+      </div>
     </div>
   );
 }
@@ -107,68 +113,93 @@ export default function App() {
   console.log("Auth0 Status →", { isLoading, isAuthenticated });
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Routes>
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <LandingPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/post-oauth" element={<PostOAuth />} />
-        <Route
-          path="/onboarding"
-          element={
-            <ProtectedRoute>
+    <Routes>
+      {/* Public Routes */}
+      <Route path="/welcome" element={<WelcomePage />} />
+      <Route path="/login" element={<LoginPage />} />
+      
+      {/* Smart Routing */}
+      <Route path="/" element={<SmartRouter />} />
+      
+      {/* Protected Routes with Layout */}
+      <Route
+        path="/setup"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <SetupPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/onboarding"
+        element={
+          <ProtectedRoute>
+            <Layout>
               <OnboardingForm />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/plan/:id"
-          element={
-            <ProtectedRoute>
-              <PlanPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/plan"
-          element={
-            <ProtectedRoute>
-              <PlanPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/plan/overview"
-          element={
-            <ProtectedRoute>
-              <MyPlan />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/home"
-          element={
-            <ProtectedRoute>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/home"
+        element={
+          <ProtectedRoute>
+            <Layout>
               <HomeScreen />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/ask"
-          element={
-            <ProtectedRoute>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/plan/overview"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <MyPlan />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/ask"
+        element={
+          <ProtectedRoute>
+            <Layout>
               <AskGptMvpUI />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </div>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      
+      {/* Legacy Routes - redirect to new structure */}
+      <Route
+        path="/plan/:id"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PlanPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/plan"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <PlanPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      
+      {/* Auth Callback */}
+      <Route path="/post-oauth" element={<PostOAuth />} />
+      
+      {/* Catch-all */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
