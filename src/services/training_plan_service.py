@@ -274,12 +274,28 @@ def build_chunked_training_plan_prompt(
     ]
     profile_text = "\n".join(filter(None, profile_section))
 
-    # Phase-specific instructions
+    # Phase-specific instructions with proper taper logic
     phase_instruction = ""
     if chunk_start_week < total_weeks * 0.4:
-        phase_instruction = "BASE BUILDING PHASE: Focus on easy runs, building endurance, some tempo work"
+        phase_instruction = (
+            "BASE BUILDING PHASE: Focus on aerobic base development through easy runs (Zone 2-3). "
+            "Build weekly mileage gradually (10% rule). Include 1-2 tempo runs per week at marathon pace. "
+            "Long runs should be 20-25% of weekly mileage. Priority: Volume over intensity."
+        )
     elif chunk_start_week < total_weeks * 0.8:
-        phase_instruction = "BUILD PHASE: Increase intensity, add intervals, longer tempo runs"
+        phase_instruction = (
+            "BUILD PHASE: Increase intensity while maintaining base. Add speed work: "
+            "intervals (5K-10K pace), longer tempo runs, hill work. Maintain 80/20 easy/hard ratio. "
+            "Peak long runs (20-22 miles for marathon). Focus on race-specific training."
+        )
+    elif chunk_end_week >= total_weeks - 1:
+        # Final week before race - strict taper
+        phase_instruction = (
+            "FINAL TAPER WEEK: Drastically reduce volume (30-50% of peak), easy runs only, "
+            "NO long runs, NO hard efforts, NO intervals, NO tempo runs. Focus on freshness and recovery. "
+            "Day before race should be REST or 1-2 mile easy shake-out only. "
+            "Maintain running frequency but reduce duration and intensity significantly."
+        )
     else:
         phase_instruction = "TAPER PHASE: Reduce volume, maintain intensity, prepare for race"
 
@@ -299,6 +315,12 @@ def build_chunked_training_plan_prompt(
         f"- DO NOT include any race simulations or mock races in this chunk\n"
         f"- DO NOT create large gaps between workouts (max 2-3 days between runs)\n"
         f"- Ensure consistent weekly training schedule throughout the period\n"
+        f"- Follow 80/20 rule: 80% easy runs (Zone 2-3), 20% hard efforts (Zone 4-5)\n"
+        f"- Apply 10% rule: Don't increase weekly mileage by more than 10% from previous week\n"
+        f"- Hard days hard, easy days easy - never consecutive hard days\n"
+        f"- Include proper recovery days - rest is when adaptation happens\n"
+        f"- For marathon training: Long runs should be 20-30% of weekly mileage\n"
+        f"- Progressive overload: Gradually increase volume OR intensity, never both simultaneously\n"
         f"- Return JSON with workouts array\n"
         f"- Each workout must include:\n"
         f"  * date (YYYY-MM-DD)\n"
