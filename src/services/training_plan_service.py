@@ -34,7 +34,7 @@ def generate_plan_chunked(
     Generate a training plan in chunks to avoid response length limits.
     """
     print(f"🏃‍♂️ Generating chunked training plan for {race_distance} on {race_date}")
-    
+
     # 1. Load runner data
     data_bundle = assemble_training_plan_data(session, user_id)
     if not data_bundle.get("user_profile"):
@@ -43,9 +43,9 @@ def generate_plan_chunked(
     start_date = datetime.today().date()
     total_days = (race_date - start_date).days
     total_weeks = total_days // 7
-    
+
     print(f"📅 Plan duration: {total_days} days ({total_weeks} weeks)")
-    
+
     # Create the plan record first
     plan_data = {
         "user_id": user_id,
@@ -56,7 +56,7 @@ def generate_plan_chunked(
     }
     plan = plans_dao.create_plan(session, plan_data)
     print(f"✅ Created plan ID: {plan.id}")
-    
+
     # Generate in chunks of 4-6 weeks
     chunk_weeks = 6
     all_workouts = []
@@ -91,7 +91,7 @@ def generate_plan_chunked(
             workout_date = datetime.strptime(w["date"], "%Y-%m-%d").date()
             if workout_date not in unique_workouts:
                 unique_workouts[workout_date] = w
-        
+
         workouts_data = []
         for w in unique_workouts.values():
             # Handle structured workout data
@@ -106,7 +106,7 @@ def generate_plan_chunked(
                 "focus": w.get("focus", ""),
                 "segments": w.get("segments"),  # JSON array or null
             }
-            
+
             # Keep description for backward compatibility, but prefer structured data
             if "description" in w:
                 workout_data["description"] = w["description"]
@@ -116,12 +116,12 @@ def generate_plan_chunked(
                 workout_data["description"] = " | ".join(segment_names) if segment_names else ""
             else:
                 workout_data["description"] = w.get("focus", "")
-            
+
             workouts_data.append(workout_data)
-        
+
         plan_workouts_dao.insert_batch(session, workouts_data)
         print(f"✅ Saved {len(workouts_data)} unique workouts to database")
-    
+
     return plan
 
 def generate_plan(
@@ -248,7 +248,7 @@ def validate_plan_json(plan_json: dict, race_date: date, training_days: list[str
 
 
 def build_chunked_training_plan_prompt(
-    data: dict, chunk_start_date: date, chunk_end_date: date, 
+    data: dict, chunk_start_date: date, chunk_end_date: date,
     chunk_start_week: int, chunk_end_week: int, total_weeks: int
 ) -> str:
     """
@@ -257,7 +257,7 @@ def build_chunked_training_plan_prompt(
     user = data.get("user_profile", {})
     summaries = data.get("weekly_summaries", [])[:6]  # Limit summaries for chunks
     activities = data.get("activities", [])[:8]       # Limit activities for chunks
-    
+
     # Runner profile section (concise)
     profile_section = [
         "Runner Profile:",
@@ -267,7 +267,7 @@ def build_chunked_training_plan_prompt(
         f"- Weight: {user.get('weight')} lbs",
     ]
     profile_text = "\n".join(filter(None, profile_section))
-    
+
     # Phase-specific instructions
     phase_instruction = ""
     if chunk_start_week < total_weeks * 0.4:
@@ -276,14 +276,14 @@ def build_chunked_training_plan_prompt(
         phase_instruction = "BUILD PHASE: Increase intensity, add intervals, longer tempo runs"
     else:
         phase_instruction = "TAPER PHASE: Reduce volume, maintain intensity, prepare for race"
-    
+
     # Recent activities (very concise)
     activity_lines = []
     for a in activities:
         pace = f"{60 / a['avg_speed']:.2f} min/mi" if a.get("avg_speed") else "N/A"
         activity_lines.append(f"- {a['activity_date']}: {a['distance']}mi, {pace}")
     activities_text = "Recent Activities:\n" + "\n".join(activity_lines)
-    
+
     # Schema for chunk with structured workout data
     schema_instructions = (
         f"\n\nGenerate training plan for weeks {chunk_start_week+1}-{chunk_end_week} "
@@ -308,7 +308,7 @@ def build_chunked_training_plan_prompt(
         f"- Heart rate zones: Zone 1 (recovery), Zone 2-3 (easy), Zone 4 (hard), Zone 5 (very hard)\n"
         f"- Training days: {', '.join(user.get('training_days', []))}"
     )
-    
+
     return "\n\n".join([
         profile_text,
         activities_text,
@@ -386,12 +386,12 @@ def build_training_plan_prompt(data: dict, start_date: date | None = None, race_
                 f"\n- The training plan starts on {start_date.strftime('%A, %B %d')}, "
                 "which is a non-training day. Assign a rest day on this day."
             )
-    
+
     # 🎯 CRITICAL: Add plan duration instructions
     if race_date and start_date:
         days_until_race = (race_date - start_date).days
         weeks_until_race = days_until_race // 7
-        
+
         schema_instructions += (
             f"\n\n🎯 CRITICAL: Generate FIRST 8 WEEKS of training plan from {start_date.strftime('%A, %B %d, %Y')} to {(start_date + timedelta(weeks=8)).strftime('%A, %B %d, %Y')}\n"
             f"- Generate ONLY the first 8 weeks (base building phase)\n"

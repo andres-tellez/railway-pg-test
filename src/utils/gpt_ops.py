@@ -116,7 +116,7 @@ def _extract_json_from_text(text: str) -> str:
             # Try to fix incomplete JSON
             print(f"⚠️ JSON parsing failed: {e}")
             print(f"⚠️ Attempting to fix incomplete JSON...")
-            
+
             # Try to complete the JSON by finding the last complete object
             fixed_json = _try_fix_incomplete_json(candidate)
             if fixed_json:
@@ -153,7 +153,7 @@ def _try_fix_incomplete_json(incomplete_json: str) -> str:
                     last_complete_pos = -1
                     brace_count = 0
                     in_workout_object = False
-                    
+
                     for i, char in enumerate(incomplete_json[bracket_start:], bracket_start):
                         if char == '{' and not in_workout_object:
                             # Start of a new workout object
@@ -168,13 +168,13 @@ def _try_fix_incomplete_json(incomplete_json: str) -> str:
                                 # End of complete workout object
                                 last_complete_pos = i + 1
                                 in_workout_object = False
-                    
+
                     if last_complete_pos > 0:
                         # Truncate at the last complete object and close arrays/objects
                         fixed = incomplete_json[:last_complete_pos] + ']}'
                         print(f"🔧 Fixed incomplete JSON by truncating at position {last_complete_pos}")
                         return fixed
-    
+
     return None
 
 def _simple_truncate_json(incomplete_json: str) -> str:
@@ -207,7 +207,7 @@ def _simple_truncate_json(incomplete_json: str) -> str:
                                     fixed = incomplete_json[:truncate_pos] + ']}'
                                     print(f"🔧 Simple truncation at position {truncate_pos}")
                                     return fixed
-                
+
                 # Fallback: if we can't find complete workouts, just truncate at a reasonable point
                 # Find the last complete workout by looking for the pattern
                 last_comma = incomplete_json.rfind(',')
@@ -273,7 +273,7 @@ def generate_training_plan_chunk(prompt: str) -> list:
         # Extract and parse JSON
         json_str = _extract_json_from_text(raw)
         parsed = json.loads(json_str)
-        
+
         # Return just the workouts array
         return parsed.get("workouts", [])
 

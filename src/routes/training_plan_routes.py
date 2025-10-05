@@ -107,16 +107,16 @@ def generate_plan_route():
         # Get race data from user_profile instead of frontend
         from src.db.models.user_profile import UserProfile
         user_profile = session.query(UserProfile).filter_by(user_id=str(user_id)).first()
-        
+
         if not user_profile:
             return jsonify({"error": "User profile not found. Please complete your profile first."}), 404
-            
+
         if not user_profile.race_date or not user_profile.race_distance:
             return jsonify({"error": "Race date and distance not set in profile. Please update your profile first."}), 400
-            
+
         race_date = datetime.strptime(user_profile.race_date, "%Y-%m-%d").date()
         race_distance = user_profile.race_distance.value  # Convert enum to string
-        
+
         plan = training_plan_service.generate_plan(
             session, user_id, race_date, race_distance
         )

@@ -58,14 +58,14 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
         <div className="font-semibold text-lg text-gray-900">
           {workout.workout_type?.toUpperCase() || workout.type} - {workout.miles} MILES
         </div>
-        
+
         {/* Target Zone */}
         {workout.target_zone && workout.target_hr && (
           <div className="text-sm text-gray-800">
             <span className="font-semibold">Target:</span> {workout.target_zone} ({workout.target_hr})
           </div>
         )}
-        
+
         {/* Focus with bold emphasis */}
         {workout.focus && (
           <div className="text-sm text-gray-800">
@@ -83,27 +83,27 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
       <div className="font-semibold text-lg text-gray-900">
         {workout.workout_type?.toUpperCase() || workout.type} - {workout.miles} MILES
       </div>
-      
+
       {/* Target Zone */}
       {workout.target_zone && workout.target_hr && (
         <div className="text-sm text-gray-800">
           <span className="font-semibold">Target:</span> {workout.target_zone} ({workout.target_hr})
         </div>
       )}
-      
+
       {/* Focus with bold emphasis and extra spacing */}
       {workout.focus && (
         <div className="text-sm text-gray-800 pb-2">
           <span className="font-semibold">Focus:</span> {workout.focus}
         </div>
       )}
-      
+
         {/* Workout Structure Table */}
         <div className="space-y-3">
           <div className="text-sm font-semibold text-gray-700">
             Workout Structure:
           </div>
-          
+
           <div className="bg-white border border-gray-300 rounded-lg shadow-sm overflow-hidden">
             {/* Table Header */}
             <div className="bg-gray-100 border-b border-gray-300">
@@ -114,7 +114,7 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
                 <div>Notes</div>
               </div>
             </div>
-            
+
             {/* Table Rows */}
             <div className="divide-y divide-gray-200">
               {workout.segments.map((segment, index) => (
@@ -138,7 +138,7 @@ const convertDistanceToMiles = (distance: string): string => {
   if (distance.includes('mile')) {
     return distance;
   }
-  
+
   // Convert meters to miles
   const metersMatch = distance.match(/(\d+)m/);
   if (metersMatch) {
@@ -146,7 +146,7 @@ const convertDistanceToMiles = (distance: string): string => {
     const miles = meters * 0.000621371; // Convert meters to miles
     return `${miles.toFixed(2)} miles`;
   }
-  
+
   // If no conversion needed, return original
   return distance;
 };
