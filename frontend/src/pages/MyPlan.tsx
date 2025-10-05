@@ -238,18 +238,6 @@ const MyPlan: React.FC = () => {
 
   return (
     <div className="w-full max-w-lg mx-auto">
-      {/* Plan Overview */}
-      {plan && (
-        <div className="mb-4 rounded-lg bg-blue-50 border border-blue-200 p-4">
-          <div className="text-sm text-blue-800">
-            <div className="font-semibold">Training Plan Overview</div>
-            <div>Race: {plan.race_date ? format(parseISO(plan.race_date), 'MMMM d, yyyy') : 'Not set'}</div>
-            <div>Duration: {plan.start_date ? format(parseISO(plan.start_date), 'MMM d') : 'Unknown'} to {plan.race_date ? format(parseISO(plan.race_date), 'MMM d, yyyy') : 'Unknown'}</div>
-            <div>Total Workouts: {Object.keys(workoutsByDate).length}</div>
-          </div>
-        </div>
-      )}
-
       {/* Modern Calendar Card */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         {/* Header */}

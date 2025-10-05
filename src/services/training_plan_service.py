@@ -42,9 +42,10 @@ def generate_plan_chunked(
 
     start_date = datetime.today().date()
     total_days = (race_date - start_date).days
-    total_weeks = total_days // 7
+    total_weeks = (total_days + 6) // 7  # Round up to ensure we cover the full duration
 
     print(f"📅 Plan duration: {total_days} days ({total_weeks} weeks)")
+    print(f"📅 From {start_date} to {race_date}")
 
     # Create the plan record first
     plan_data = {
@@ -57,14 +58,19 @@ def generate_plan_chunked(
     plan = plans_dao.create_plan(session, plan_data)
     print(f"✅ Created plan ID: {plan.id}")
 
-    # Generate in chunks of 4-6 weeks
-    chunk_weeks = 6
+    # Generate in smaller chunks with overlap to prevent gaps
+    chunk_weeks = 4  # Smaller chunks
     all_workouts = []
 
-    for chunk_start_week in range(0, total_weeks, chunk_weeks):
+    for chunk_start_week in range(0, total_weeks, chunk_weeks - 1):  # 1-week overlap
         chunk_end_week = min(chunk_start_week + chunk_weeks, total_weeks)
         chunk_start_date = start_date + timedelta(weeks=chunk_start_week)
-        chunk_end_date = start_date + timedelta(weeks=chunk_end_week)
+
+        # Ensure the last chunk goes up to (but not past) the race date
+        if chunk_end_week >= total_weeks:
+            chunk_end_date = race_date - timedelta(days=1)  # End day before race
+        else:
+            chunk_end_date = start_date + timedelta(weeks=chunk_end_week)
 
         print(f"📦 Generating chunk {chunk_start_week//chunk_weeks + 1}: weeks {chunk_start_week+1}-{chunk_end_week}")
 
@@ -289,6 +295,10 @@ def build_chunked_training_plan_prompt(
         f"\n\nGenerate training plan for weeks {chunk_start_week+1}-{chunk_end_week} "
         f"({chunk_start_date.strftime('%Y-%m-%d')} to {chunk_end_date.strftime('%Y-%m-%d')}):\n"
         f"- {phase_instruction}\n"
+        f"- IMPORTANT: This is a TRAINING plan leading to race on February 15, 2026\n"
+        f"- DO NOT include any race simulations or mock races in this chunk\n"
+        f"- DO NOT create large gaps between workouts (max 2-3 days between runs)\n"
+        f"- Ensure consistent weekly training schedule throughout the period\n"
         f"- Return JSON with workouts array\n"
         f"- Each workout must include:\n"
         f"  * date (YYYY-MM-DD)\n"
