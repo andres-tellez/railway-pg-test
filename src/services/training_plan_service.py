@@ -38,6 +38,12 @@ def generate_plan_with_b_plus_validation(
     # Assemble training data
     print("\nStep 1: Assembling training data...")
     data_bundle = assemble_training_plan_data(session, user_id)
+    if not data_bundle.get("user_profile"):
+        raise ValueError("No user profile found")
+
+    # Convert enum objects to strings
+    training_days_raw = data_bundle.get("user_profile", {}).get("training_days", [])
+    training_days = [str(day) for day in training_days_raw] if training_days_raw else []
 
     # DEBUG: Validate data bundle contents
     print(f"\n🔍 DEBUG: Data Bundle Validation:")
