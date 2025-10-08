@@ -4,7 +4,20 @@ from src.db.models.plan_workouts import PlanWorkout
 
 
 def insert_batch(session: Session, workouts: list[dict]) -> None:
-    session.bulk_insert_mappings(PlanWorkout, workouts)
+    """Insert multiple workouts in a batch operation."""
+    if not workouts:
+        return
+
+    try:
+        # Use bulk_insert_mappings for efficiency
+        session.bulk_insert_mappings(PlanWorkout, workouts)
+        # Flush to ensure the data is written to the database
+        session.flush()
+        print(f"✅ Successfully inserted {len(workouts)} workouts to database")
+    except Exception as e:
+        print(f"❌ Error inserting workouts: {e}")
+        session.rollback()
+        raise
 
 
 def list_by_plan(session: Session, plan_id: int) -> list[PlanWorkout]:

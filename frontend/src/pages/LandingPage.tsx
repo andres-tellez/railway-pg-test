@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "../utils/apiClient";
 import { useNavigate } from "react-router-dom";
+import SafetyWarningModal from "../components/SafetyWarningModal";
 
 const SetupPage: React.FC = () => {
   const { user, isAuthenticated, isLoading } = useAuth0();
@@ -13,6 +14,10 @@ const SetupPage: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
   const [forceSyncing, setForceSyncing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+
+  // Safety warning modal state
+  const [showSafetyModal, setShowSafetyModal] = useState(false);
+  const [safetyMessage, setSafetyMessage] = useState('');
 
   const hasPostedIdentity = useRef(false);
 
@@ -117,8 +122,20 @@ const SetupPage: React.FC = () => {
     //navigate(`/plan/${planId}`); // ⬅️ should redirect now
     navigate('/plan/overview');
     console.log("➡️ navigate() called!");
-  } catch (err) {
+  } catch (err: any) {
     console.error("❌ Failed to generate plan:", err);
+    if (err.response?.data?.error) {
+      const errorData = err.response.data;
+      // Check if this is a safety-related error
+      if (errorData.safety_blocked) {
+        setSafetyMessage(errorData.error);
+        setShowSafetyModal(true);
+      } else {
+        alert(errorData.error);
+      }
+    } else {
+      alert('Failed to generate training plan. Please try again.');
+    }
   }
 };
 
@@ -128,6 +145,7 @@ const SetupPage: React.FC = () => {
     return <div className="p-6 text-red-600">❌ Not authenticated</div>;
 
   return (
+    <>
     <div className="max-w-2xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="text-center mb-8">
@@ -229,6 +247,14 @@ const SetupPage: React.FC = () => {
 
       </div>
     </div>
+
+    {/* Safety Warning Modal */}
+    <SafetyWarningModal
+      isOpen={showSafetyModal}
+      onClose={() => setShowSafetyModal(false)}
+      message={safetyMessage}
+    />
+    </>
   );
 };
 

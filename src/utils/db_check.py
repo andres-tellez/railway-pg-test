@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-print("📡 Testing DATABASE_URL:", DATABASE_URL)
+print("Testing DATABASE_URL:", DATABASE_URL)
 
 # Create engine and attempt connection
 engine = create_engine(DATABASE_URL)
@@ -16,6 +16,6 @@ engine = create_engine(DATABASE_URL)
 try:
     with engine.connect() as conn:
         result = conn.execute(text("SELECT 1"))  # ✅ Use text() for SQLAlchemy 2.0+
-        print("✅ DB connection succeeded:", result.fetchone())
+        print("DB connection succeeded:", result.fetchone())
 except Exception as e:
-    print("❌ DB connection failed:", str(e))
+    print("DB connection failed:", str(e))

@@ -24,6 +24,30 @@ except ImportError:
     openai.api_key = os.getenv("OPENAI_API_KEY")
     client = None
 
+# Model configuration with cost-friendly defaults
+# Using gpt-4o for better constraint adherence in training plans
+DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+TRAINING_PLAN_MODEL = os.getenv("OPENAI_TRAINING_PLAN_MODEL", DEFAULT_MODEL)
+print(
+    f"🔧 OpenAI models => DEFAULT_MODEL={DEFAULT_MODEL}, TRAINING_PLAN_MODEL={TRAINING_PLAN_MODEL}"
+)
+
+# Removed unused DR_SARAH_CHEN_SYSTEM_PROMPT - now using JACK_DANIELS_SYSTEM_PROMPT
+
+# Jack Daniels methodology system prompt for training plan generation
+JACK_DANIELS_SYSTEM_PROMPT = """
+You are an expert running coach generating training plans strictly using the Jack Daniels Running Formula.
+
+Principles you MUST follow:
+- Long Run occurs on the weekend: prefer Saturday; if Saturday is not a training day, use Sunday. Do not schedule the Long Run on weekdays. No long run in race week
+- Respect the provided training days; schedule workouts only on those dates
+
+Output should follow the caller's instructions precisely.
+"""
+
+# Removed unused DR_SARAH_CHEN_TRAINING_PLAN_PROMPT and DR_SARAH_CHEN_REFINEMENT_PROMPT
+# Removed unused build_enhanced_refinement_prompt function
+
 
 def parse_date_safe(date_str: str) -> datetime:
     for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
@@ -50,42 +74,71 @@ def format_prompt(user_question: str, activities: List[Dict]) -> str:
     return prompt
 
 
-def get_gpt_response(prompt: str) -> str:
+def get_gpt_response(prompt: str, require_json: bool = True) -> str:
     """
     Calls GPT with a generic coaching prompt. Returns plain text.
+
+    Args:
+        prompt: The user prompt to send to GPT
+        require_json: If True, enforces JSON response format (default). Set to False for plain text responses.
     """
     try:
         if client is not None:
             # New OpenAI API
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                temperature=0.7,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a helpful fitness assistant.",
-                    },
+            call_params = {
+                "model": DEFAULT_MODEL,
+                "temperature": 0.25,
+                "messages": [
+                    {"role": "system", "content": JACK_DANIELS_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-            )
+            }
+            # Only add response_format if JSON is required
+            if require_json:
+                call_params["response_format"] = {"type": "json_object"}
+
+            response = client.chat.completions.create(**call_params)
+            # Token usage logging (new OpenAI client)
+            try:
+                usage = getattr(response, "usage", None)
+                if usage:
+                    print(
+                        f"🧮 Token usage (get_gpt_response): prompt={usage.prompt_tokens} completion={usage.completion_tokens} total={usage.total_tokens}"
+                    )
+            except Exception:
+                pass
             return response.choices[0].message.content.strip()
         else:
             # Old OpenAI API
             response = openai.ChatCompletion.create(
-                model="gpt-4o",
-                temperature=0.7,
+                model=DEFAULT_MODEL,
+                temperature=0.25,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a helpful fitness assistant.",
-                    },
+                    {"role": "system", "content": JACK_DANIELS_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
             )
+            # Token usage logging (legacy OpenAI client)
+            try:
+                usage = (
+                    response.get("usage")
+                    if isinstance(response, dict)
+                    else getattr(response, "usage", None)
+                )
+                if usage:
+                    print(
+                        f"🧮 Token usage (get_gpt_response): prompt={usage.get('prompt_tokens')} completion={usage.get('completion_tokens')} total={usage.get('total_tokens')}"
+                    )
+            except Exception:
+                pass
             return response.choices[0].message.content.strip()
     except Exception as e:
         print("GPT API call failed:", e)
         return f"❌ GPT error: {e}"
+
+
+# Removed unused get_expert_coaching_response function
+# Removed unused build_expert_coaching_prompt function
 
 
 def _extract_json_from_text(text: str) -> str:
@@ -138,31 +191,34 @@ def _extract_json_from_text(text: str) -> str:
 
     raise ValueError(f"Could not extract valid JSON from GPT response: {text[:200]}...")
 
+
 def _try_fix_incomplete_json(incomplete_json: str) -> str:
     """Try to fix incomplete JSON by finding where it was cut off."""
-    if not incomplete_json.strip().endswith('}'):
+    if not incomplete_json.strip().endswith("}"):
         # Find the last complete object in the workouts array
-        if '"workouts"' in incomplete_json and '[' in incomplete_json:
+        if '"workouts"' in incomplete_json and "[" in incomplete_json:
             # Find the workouts array
             workouts_start = incomplete_json.find('"workouts"')
             if workouts_start != -1:
                 # Find the opening bracket
-                bracket_start = incomplete_json.find('[', workouts_start)
+                bracket_start = incomplete_json.find("[", workouts_start)
                 if bracket_start != -1:
                     # Look for the last complete workout object
                     last_complete_pos = -1
                     brace_count = 0
                     in_workout_object = False
 
-                    for i, char in enumerate(incomplete_json[bracket_start:], bracket_start):
-                        if char == '{' and not in_workout_object:
+                    for i, char in enumerate(
+                        incomplete_json[bracket_start:], bracket_start
+                    ):
+                        if char == "{" and not in_workout_object:
                             # Start of a new workout object
                             brace_count = 1
                             in_workout_object = True
-                        elif char == '{' and in_workout_object:
+                        elif char == "{" and in_workout_object:
                             # Nested brace (like in description strings)
                             brace_count += 1
-                        elif char == '}' and in_workout_object:
+                        elif char == "}" and in_workout_object:
                             brace_count -= 1
                             if brace_count == 0:
                                 # End of complete workout object
@@ -171,11 +227,14 @@ def _try_fix_incomplete_json(incomplete_json: str) -> str:
 
                     if last_complete_pos > 0:
                         # Truncate at the last complete object and close arrays/objects
-                        fixed = incomplete_json[:last_complete_pos] + ']}'
-                        print(f"🔧 Fixed incomplete JSON by truncating at position {last_complete_pos}")
+                        fixed = incomplete_json[:last_complete_pos] + "]}"
+                        print(
+                            f"🔧 Fixed incomplete JSON by truncating at position {last_complete_pos}"
+                        )
                         return fixed
 
     return None
+
 
 def _simple_truncate_json(incomplete_json: str) -> str:
     """Simple approach: find the last complete workout and truncate there."""
@@ -184,7 +243,7 @@ def _simple_truncate_json(incomplete_json: str) -> str:
         workouts_start = incomplete_json.find('"workouts"')
         if workouts_start != -1:
             # Find the opening bracket
-            bracket_start = incomplete_json.find('[', workouts_start)
+            bracket_start = incomplete_json.find("[", workouts_start)
             if bracket_start != -1:
                 # Look for the last complete workout object
                 # Find the last occurrence of a complete workout pattern
@@ -192,215 +251,47 @@ def _simple_truncate_json(incomplete_json: str) -> str:
                 if last_complete_pattern != -1:
                     # Find the closing brace for this workout
                     # Start from the beginning of the workout object
-                    workout_start = incomplete_json.rfind('{', 0, last_complete_pattern)
+                    workout_start = incomplete_json.rfind("{", 0, last_complete_pattern)
                     if workout_start != -1:
                         brace_count = 0
                         for i in range(workout_start, len(incomplete_json)):
-                            if incomplete_json[i] == '{':
+                            if incomplete_json[i] == "{":
                                 brace_count += 1
-                            elif incomplete_json[i] == '}':
+                            elif incomplete_json[i] == "}":
                                 brace_count -= 1
                                 if brace_count == 0:
                                     # Found the end of the last complete workout
                                     truncate_pos = i + 1
                                     # Close the workouts array and main object
-                                    fixed = incomplete_json[:truncate_pos] + ']}'
-                                    print(f"🔧 Simple truncation at position {truncate_pos}")
+                                    fixed = incomplete_json[:truncate_pos] + "]}"
+                                    print(
+                                        f"🔧 Simple truncation at position {truncate_pos}"
+                                    )
                                     return fixed
 
                 # Fallback: if we can't find complete workouts, just truncate at a reasonable point
                 # Find the last complete workout by looking for the pattern
-                last_comma = incomplete_json.rfind(',')
+                last_comma = incomplete_json.rfind(",")
                 if last_comma != -1:
                     # Find the start of the last workout object
-                    last_brace = incomplete_json.rfind('{', 0, last_comma)
+                    last_brace = incomplete_json.rfind("{", 0, last_comma)
                     if last_brace != -1:
                         # Try to find the end of this workout
                         brace_count = 0
                         for i in range(last_brace, len(incomplete_json)):
-                            if incomplete_json[i] == '{':
+                            if incomplete_json[i] == "{":
                                 brace_count += 1
-                            elif incomplete_json[i] == '}':
+                            elif incomplete_json[i] == "}":
                                 brace_count -= 1
                                 if brace_count == 0:
                                     truncate_pos = i + 1
-                                    fixed = incomplete_json[:truncate_pos] + ']}'
-                                    print(f"🔧 Fallback truncation at position {truncate_pos}")
+                                    fixed = incomplete_json[:truncate_pos] + "]}"
+                                    print(
+                                        f"🔧 Fallback truncation at position {truncate_pos}"
+                                    )
                                     return fixed
     return None
 
 
-def generate_training_plan_chunk(prompt: str) -> list:
-    """
-    Generate a chunk of training plan workouts (just the workouts array).
-    """
-    try:
-        if client is not None:
-            # New OpenAI API
-            response = client.chat.completions.create(
-                model="gpt-4-1106-preview",
-                response_format={"type": "json_object"},
-                temperature=0.7,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an elite running coach with 20+ years of experience training runners from beginners to Olympic athletes. "
-                            "You hold certifications in exercise physiology, sports science, and have coached thousands of runners to successful race finishes.\n\n"
-
-                            "EXPERT KNOWLEDGE:\n"
-                            "- Training periodization: Base building → Build phase → Peak → Taper\n"
-                            "- 80/20 rule: 80% easy runs, 20% hard efforts\n"
-                            "- Progressive overload: Gradually increase volume/intensity\n"
-                            "- Recovery is when adaptation happens - rest days are crucial\n"
-                            "- Heart rate zones: Zone 1 (recovery), Zone 2 (aerobic base), Zone 3 (tempo), Zone 4 (threshold), Zone 5 (VO2 max)\n"
-                            "- Taper period: Reduce volume 30-50% while maintaining intensity\n"
-                            "- Final week: No long runs, no hard efforts, focus on freshness\n"
-                            "- Day before race: REST or 1-2 mile easy shake-out only\n\n"
-
-                            "TRAINING PRINCIPLES:\n"
-                            "- Never increase volume and intensity simultaneously\n"
-                            "- 10% rule: Don't increase weekly mileage by more than 10%\n"
-                            "- Hard days hard, easy days easy\n"
-                            "- Listen to the body - fatigue is a sign to back off\n"
-                            "- Race-specific training: Train for your target distance and pace\n\n"
-
-                            "Return a JSON object with a 'workouts' array containing scientifically-sound training plan workouts."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
-        else:
-            # Old OpenAI API
-            response = openai.ChatCompletion.create(
-                model="gpt-4-1106-preview",
-                temperature=0.7,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an elite running coach with 20+ years of experience training runners from beginners to Olympic athletes. "
-                            "You hold certifications in exercise physiology, sports science, and have coached thousands of runners to successful race finishes.\n\n"
-
-                            "EXPERT KNOWLEDGE:\n"
-                            "- Training periodization: Base building → Build phase → Peak → Taper\n"
-                            "- 80/20 rule: 80% easy runs, 20% hard efforts\n"
-                            "- Progressive overload: Gradually increase volume/intensity\n"
-                            "- Recovery is when adaptation happens - rest days are crucial\n"
-                            "- Heart rate zones: Zone 1 (recovery), Zone 2 (aerobic base), Zone 3 (tempo), Zone 4 (threshold), Zone 5 (VO2 max)\n"
-                            "- Taper period: Reduce volume 30-50% while maintaining intensity\n"
-                            "- Final week: No long runs, no hard efforts, focus on freshness\n"
-                            "- Day before race: REST or 1-2 mile easy shake-out only\n\n"
-
-                            "TRAINING PRINCIPLES:\n"
-                            "- Never increase volume and intensity simultaneously\n"
-                            "- 10% rule: Don't increase weekly mileage by more than 10%\n"
-                            "- Hard days hard, easy days easy\n"
-                            "- Listen to the body - fatigue is a sign to back off\n"
-                            "- Race-specific training: Train for your target distance and pace\n\n"
-
-                            "Return a JSON object with a 'workouts' array containing scientifically-sound training plan workouts."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
-        raw = response.choices[0].message.content
-
-        # Extract and parse JSON
-        json_str = _extract_json_from_text(raw)
-        parsed = json.loads(json_str)
-
-        # Return just the workouts array
-        return parsed.get("workouts", [])
-
-    except Exception as e:
-        print(f"❌ Error generating training plan chunk: {e}")
-        return []
-
-def generate_training_plan(prompt: str) -> Dict:
-    """
-    Calls GPT with a structured training plan prompt.
-    Expects and returns parsed JSON with mandatory workouts list.
-    """
-    try:
-        if client is not None:
-            # New OpenAI API
-            response = client.chat.completions.create(
-                model="gpt-4-1106-preview",
-                response_format={"type": "json_object"},  # ✅ enforce JSON
-                temperature=0.7,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a professional running coach. "
-                            "Always return a JSON object with fields:\n"
-                            "- plan_name (string)\n"
-                            "- notes (string)\n"
-                            "- workouts (non-empty list of objects)\n\n"
-                            "Each workout object must include:\n"
-                            "- date (YYYY-MM-DD)\n"
-                            "- miles (number ≥ 0)\n"
-                            "- workout_type (one of: Rest, Easy, Long Run, Tempo, Intervals)\n"
-                            "- intensity (string)\n"
-                            "- description (string)"
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
-        else:
-            # Old OpenAI API - note: no response_format support
-            response = openai.ChatCompletion.create(
-                model="gpt-4-1106-preview",
-                temperature=0.7,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a professional running coach. "
-                            "Always return a JSON object with fields:\n"
-                            "- plan_name (string)\n"
-                            "- notes (string)\n"
-                            "- workouts (non-empty list of objects)\n\n"
-                            "Each workout object must include:\n"
-                            "- date (YYYY-MM-DD)\n"
-                            "- miles (number ≥ 0)\n"
-                            "- workout_type (one of: Rest, Easy, Long Run, Tempo, Intervals)\n"
-                            "- intensity (string)\n"
-                            "- description (string)"
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-            )
-        raw = response.choices[0].message.content
-
-        # 🔍 Debug log — raw GPT response (truncated for readability)
-        print(f"\n================ RAW GPT RESPONSE ================")
-        print(f"Response length: {len(raw)} characters")
-        print(f"First 500 chars: {raw[:500]}...")
-        print("=================================================\n")
-
-        # Extract and parse JSON
-        json_str = _extract_json_from_text(raw)
-        parsed = json.loads(json_str)
-
-        # 🔍 Debug log — parsed JSON (summary only)
-        print(f"\n================ PARSED GPT JSON ================")
-        print(f"Plan name: {parsed.get('plan_name', 'N/A')}")
-        print(f"Workouts count: {len(parsed.get('workouts', []))}")
-        if parsed.get('workouts'):
-            first_workout = parsed['workouts'][0]
-            last_workout = parsed['workouts'][-1]
-            print(f"Date range: {first_workout.get('date')} to {last_workout.get('date')}")
-        print("=================================================\n")
-
-        return parsed
-
-    except json.JSONDecodeError:
-        raise RuntimeError("GPT response could not be parsed as JSON.")
-    except Exception as e:
-        raise RuntimeError(f"GPT training plan generation failed: {e}")
+# Removed unused generate_training_plan_chunk function (legacy)
+# Removed unused generate_plan_edits function (legacy)

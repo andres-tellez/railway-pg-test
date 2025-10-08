@@ -10,6 +10,8 @@ def _empty_list_to_none(val):
 
 
 def _enum_to_str_list(items):
+    # Note: This function may be redundant now that assemble_training_plan_data()
+    # handles normalization. Consider removing if no longer used elsewhere.
     return _empty_list_to_none([str(x).split(".")[-1] for x in items])
 
 
