@@ -9,15 +9,22 @@ from werkzeug.exceptions import HTTPException
 import uuid
 
 # Environment Setup
-raw_env_mode = os.environ.get("FLASK_ENV", "production")
-env_path = {
-    "local": ".env.local",
-    "staging": ".env.staging",
-    "production": ".env.prod",
-}.get(raw_env_mode, ".env")
-
-load_dotenv(env_path, override=True)
-print(f"[OK] Loaded environment file: {env_path}", flush=True)
+# Prioritize .env.local if it exists (for local development)
+env_local_path = Path(".env.local")
+if env_local_path.exists():
+    env_path = ".env.local"
+    os.environ["FLASK_ENV"] = "local"  # Set FLASK_ENV for consistency
+    load_dotenv(env_path, override=False)  # Don't override what run.py loaded
+    print(f"[OK] Using local environment file: {env_path}", flush=True)
+else:
+    # Fall back to FLASK_ENV logic for staging/production
+    raw_env_mode = os.environ.get("FLASK_ENV", "production")
+    env_path = {
+        "staging": ".env.staging",
+        "production": ".env.prod",
+    }.get(raw_env_mode, ".env.prod")
+    load_dotenv(env_path, override=True)
+    print(f"[OK] Loaded environment file: {env_path}", flush=True)
 
 # Patch for Railway proxy handling
 original_url = os.getenv("DATABASE_URL", "")
@@ -25,19 +32,21 @@ parsed = urlparse(original_url)
 if parsed.hostname and "proxy.rlwy.net" in parsed.hostname:
     os.environ["DATABASE_URL"] = original_url
     print(
-        "[OK] Patched DATABASE_URL using proxy.rlwy.net override for staging.", flush=True
+        "[OK] Patched DATABASE_URL using proxy.rlwy.net override for staging.",
+        flush=True,
     )
 else:
     print("[INFO] Using DATABASE_URL as-is", flush=True)
 
 print(
-    "[INFO] DATABASE_URL at runtime (from app.py):", os.getenv("DATABASE_URL"), flush=True
+    "[INFO] DATABASE_URL at runtime (from app.py):",
+    os.getenv("DATABASE_URL"),
+    flush=True,
 )
 print(
     f"[Startup] STRAVA_REDIRECT_URI raw from environment: '{os.getenv('STRAVA_REDIRECT_URI')}'",
     flush=True,
 )
-print(f"[OK] Loaded environment: {env_path}", flush=True)
 print(f"[INFO] STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
 # Debug Auth0 vars
@@ -167,7 +176,9 @@ def create_app(test_config=None):
             resp.headers["Access-Control-Allow-Origin"] = (
                 origin or "https://app.smartcoach.dev"
             )
-            resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-User-Id"
+            resp.headers["Access-Control-Allow-Headers"] = (
+                "Authorization, Content-Type, X-User-Id"
+            )
             resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
             resp.headers["Access-Control-Allow-Credentials"] = "true"
             return resp
@@ -182,7 +193,9 @@ def create_app(test_config=None):
             response.headers["Access-Control-Allow-Origin"] = request_origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
 
-        print("[DEBUG] Set-Cookie header:", response.headers.get("Set-Cookie"), flush=True)
+        print(
+            "[DEBUG] Set-Cookie header:", response.headers.get("Set-Cookie"), flush=True
+        )
         return response
 
     @app.route("/ping")
