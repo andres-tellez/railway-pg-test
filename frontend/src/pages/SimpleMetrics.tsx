@@ -257,7 +257,7 @@ export default function SimpleMetrics() {
 
         {/* Weekly Trends Header */}
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Weekly Trends (Test)</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Weekly Trends</h1>
           <div className="flex items-center gap-3">
             <label htmlFor="weeks-select" className="text-sm font-medium text-gray-700">
               Time Period:
