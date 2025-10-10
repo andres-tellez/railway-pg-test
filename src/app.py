@@ -8,7 +8,7 @@ from flask_session import Session
 from werkzeug.exceptions import HTTPException
 import uuid
 
-# 📦 Environment Setup
+# Environment Setup
 raw_env_mode = os.environ.get("FLASK_ENV", "production")
 env_path = {
     "local": ".env.local",
@@ -17,36 +17,36 @@ env_path = {
 }.get(raw_env_mode, ".env")
 
 load_dotenv(env_path, override=True)
-print(f"🔍 Loaded environment file: {env_path}", flush=True)
+print(f"[OK] Loaded environment file: {env_path}", flush=True)
 
-# ⛏️ Patch for Railway proxy handling
+# Patch for Railway proxy handling
 original_url = os.getenv("DATABASE_URL", "")
 parsed = urlparse(original_url)
 if parsed.hostname and "proxy.rlwy.net" in parsed.hostname:
     os.environ["DATABASE_URL"] = original_url
     print(
-        "✅ Patched DATABASE_URL using proxy.rlwy.net override for staging.", flush=True
+        "[OK] Patched DATABASE_URL using proxy.rlwy.net override for staging.", flush=True
     )
 else:
-    print("ℹ️ Using DATABASE_URL as-is", flush=True)
+    print("[INFO] Using DATABASE_URL as-is", flush=True)
 
 print(
-    "📦 DATABASE_URL at runtime (from app.py):", os.getenv("DATABASE_URL"), flush=True
+    "[INFO] DATABASE_URL at runtime (from app.py):", os.getenv("DATABASE_URL"), flush=True
 )
 print(
     f"[Startup] STRAVA_REDIRECT_URI raw from environment: '{os.getenv('STRAVA_REDIRECT_URI')}'",
     flush=True,
 )
-print(f"✅ Loaded environment: {env_path}", flush=True)
-print(f"📍 STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
+print(f"[OK] Loaded environment: {env_path}", flush=True)
+print(f"[INFO] STRAVA_REDIRECT_URI = {os.getenv('STRAVA_REDIRECT_URI')}", flush=True)
 
-# 🔑 Debug Auth0 vars
-print(f"🔑 AUTH0_DOMAIN={os.getenv('AUTH0_DOMAIN')}", flush=True)
-print(f"🔑 AUTH0_AUDIENCE={os.getenv('AUTH0_AUDIENCE')}", flush=True)
-print(f"🔑 AUTH0_ISSUER={os.getenv('AUTH0_ISSUER')}", flush=True)
-print(f"🔑 AUTH0_ALGORITHMS={os.getenv('AUTH0_ALGORITHMS')}", flush=True)
+# Debug Auth0 vars
+print(f"[INFO] AUTH0_DOMAIN={os.getenv('AUTH0_DOMAIN')}", flush=True)
+print(f"[INFO] AUTH0_AUDIENCE={os.getenv('AUTH0_AUDIENCE')}", flush=True)
+print(f"[INFO] AUTH0_ISSUER={os.getenv('AUTH0_ISSUER')}", flush=True)
+print(f"[INFO] AUTH0_ALGORITHMS={os.getenv('AUTH0_ALGORITHMS')}", flush=True)
 
-# 🌐 Flask Setup
+# Flask Setup
 from flask import Flask, request, jsonify, g, session
 from flask_cors import CORS
 from src.utils.config import config
@@ -59,6 +59,7 @@ from src.routes.user_profile_routes import user_profile_bp
 from src.routes.user_identity_routes import identity_bp
 from src.routes.auth_me_routes import auth_me_bp
 from src.utils.auth0_jwt import requires_auth
+from src.routes.metrics_routes import metrics_bp
 from src.routes.training_plan_routes import training_plan_bp
 from src.db.models import Plan  # Update this import to match your structure
 
@@ -69,20 +70,20 @@ def create_app(test_config=None):
 
     from src.db.db_session import db
 
-    # ✅ CORS setup
+    # CORS setup
     cors_origins = os.getenv("CORS_ORIGINS", "https://app.smartcoach.dev")
     origin_list = [o.strip().strip(";") for o in cors_origins.split(",") if o.strip()]
     CORS(
         app,
         origins=origin_list,
         supports_credentials=True,
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "X-User-Id"],
         expose_headers=["Content-Type", "Authorization"],
     )
-    print("🔬 Raw CORS_ORIGINS from env:", repr(cors_origins), flush=True)
-    print("🛂 Allowed CORS origins:", origin_list, flush=True)
+    print("[DEBUG] Raw CORS_ORIGINS from env:", repr(cors_origins), flush=True)
+    print("[DEBUG] Allowed CORS origins:", origin_list, flush=True)
 
-    # 🔐 Cookie/session handling
+    # Cookie/session handling
     app.config.update(
         SESSION_COOKIE_NAME="smartcoach_session",
         SESSION_COOKIE_SAMESITE="None",
@@ -92,7 +93,7 @@ def create_app(test_config=None):
         SESSION_COOKIE_DOMAIN=os.getenv("SESSION_COOKIE_DOMAIN"),
     )
 
-    # ✅ Required app config values
+    # Required app config values
     app.config.from_mapping(
         SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL"),
         CRON_SECRET_KEY=config.CRON_SECRET_KEY,
@@ -109,7 +110,7 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
-    # 🔗 Register Blueprints
+    # Register Blueprints
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(identity_bp, url_prefix="")
     app.register_blueprint(admin_bp, url_prefix="/admin")
@@ -117,6 +118,7 @@ def create_app(test_config=None):
     app.register_blueprint(health_bp)
     app.register_blueprint(ask_bp)
     app.register_blueprint(user_profile_bp)
+    app.register_blueprint(metrics_bp, url_prefix="/api/metrics")
     app.register_blueprint(training_plan_bp)
     app.register_blueprint(auth_me_bp)
 
@@ -129,9 +131,9 @@ def create_app(test_config=None):
     @app.route("/debug/session/set")
     def set_session_for_debug():
         session["debug"] = "value"
-        return "✅ Session set", 200
+        return "[OK] Session set", 200
 
-    # ✅ Global OPTIONS handler for preflight support
+    # Global OPTIONS handler for preflight support
     @app.before_request
     def log_request_details():
         origin = request.headers.get("Origin")
@@ -140,37 +142,37 @@ def create_app(test_config=None):
         user_agent = request.headers.get("User-Agent", "unknown")
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
 
-        print("🌐 Request Metadata:", flush=True)
-        print(f"  • ID: {request_id}", flush=True)
-        print(f"  • Method: {method}", flush=True)
-        print(f"  • Path: {path}", flush=True)
-        print(f"  • Origin: {origin}", flush=True)
-        print(f"  • User-Agent: {user_agent}", flush=True)
-        print("🍪 Request cookies:", request.cookies, flush=True)
+        print("[DEBUG] Request Metadata:", flush=True)
+        print(f"  - ID: {request_id}", flush=True)
+        print(f"  - Method: {method}", flush=True)
+        print(f"  - Path: {path}", flush=True)
+        print(f"  - Origin: {origin}", flush=True)
+        print(f"  - User-Agent: {user_agent}", flush=True)
+        print("[DEBUG] Request cookies:", request.cookies, flush=True)
 
         # Log auth header for debug
         if "Authorization" in request.headers:
             print(
-                "🔐 Authorization header present (len={}):".format(
+                "[DEBUG] Authorization header present (len={}):".format(
                     len(request.headers["Authorization"])
                 ),
                 flush=True,
             )
 
         if method == "OPTIONS":
-            print("🚦 Handling OPTIONS preflight", flush=True)
+            print("[DEBUG] Handling OPTIONS preflight", flush=True)
             resp = app.make_response("")
             resp.status_code = 204
-            # 🔥 Add CORS headers here
+            # Add CORS headers here
             resp.headers["Access-Control-Allow-Origin"] = (
                 origin or "https://app.smartcoach.dev"
             )
-            resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+            resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-User-Id"
             resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
             resp.headers["Access-Control-Allow-Credentials"] = "true"
             return resp
 
-    # ✅ CORS + Cookie debugging
+    # CORS + Cookie debugging
     @app.after_request
     def apply_cors_and_debug(response):
         request_origin = request.headers.get("Origin")
@@ -180,7 +182,7 @@ def create_app(test_config=None):
             response.headers["Access-Control-Allow-Origin"] = request_origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
 
-        print("🔍 Set-Cookie header:", response.headers.get("Set-Cookie"), flush=True)
+        print("[DEBUG] Set-Cookie header:", response.headers.get("Set-Cookie"), flush=True)
         return response
 
     @app.route("/ping")
@@ -282,7 +284,7 @@ def create_app(test_config=None):
     return app
 
 
-# 🔄 Entry point
+# Entry point
 app = create_app()
 
 if __name__ == "__main__":

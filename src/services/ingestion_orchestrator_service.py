@@ -40,7 +40,7 @@ def run_full_ingestion_and_enrichment(
 
     try:
         logger.info(
-            f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()} "
+            f"[CRON SYNC] Sync job started at {datetime.utcnow().isoformat()} "
             f"for user_id={user_id}, athlete_id={athlete_id}"
         )
 
@@ -77,9 +77,9 @@ def run_full_ingestion_and_enrichment(
                 return {"synced": 1, "enriched": 0}
 
         access_token = get_valid_token(session, athlete_id)
-        logger.info("✅ Access granted")
+        logger.info("Access granted")
 
-        time.sleep(1)  # ⏳ simulate auth step
+        time.sleep(1)  # simulate auth step
 
         after = after or int(
             (datetime.utcnow() - timedelta(days=lookback_days))
@@ -91,32 +91,32 @@ def run_full_ingestion_and_enrichment(
             .replace(hour=0, minute=0, second=0, microsecond=0)
             .timestamp()
         )
-        logger.info("📅 Prepared date window")
+        logger.info("Prepared date window")
 
-        time.sleep(1)  # ⏳ simulate compute window
+        time.sleep(1)  # simulate compute window
 
         service = ActivityIngestionService(session, athlete_id)
-        logger.info("📥 Fetching recent runs from Strava…")
+        logger.info("Fetching recent runs from Strava...")
 
-        time.sleep(2)  # ⏳ simulate network fetch
+        time.sleep(2)  # simulate network fetch
 
         try:
             all_fetched = service.client.get_activities(
                 after=after, before=before, per_page=per_page, limit=max_activities
             )
         except Exception as e:
-            logger.error(f"❌ Failed to fetch activities: {e}")
+            logger.error(f"Failed to fetch activities: {e}")
             return {"synced": 0, "enriched": 0}
 
-        logger.info(f"📥 Fetched {len(all_fetched)} activities")
+        logger.info(f"Fetched {len(all_fetched)} activities")
 
         time.sleep(1)
 
         runs_only = [a for a in all_fetched if a.get("type") == "Run"]
-        logger.info(f"🏃 Identified {len(runs_only)} runs")
+        logger.info(f"Identified {len(runs_only)} runs")
 
         if not runs_only:
-            logger.info("ℹ️ No runs found in Strava account")
+            logger.info("No runs found in Strava account")
             return {"synced": 0, "enriched": 0}
 
         fetched_ids = [int(a.get("id")) for a in runs_only if a.get("id")]
@@ -130,7 +130,7 @@ def run_full_ingestion_and_enrichment(
         new_activities = [a for a in runs_only if int(a.get("id")) not in existing_ids]
         for a in new_activities:
             a["activity_id"] = a.pop("id", None)
-            a["user_id"] = user_id  # ✅ store user_id (UUID) alongside activity
+            a["user_id"] = user_id  # store user_id (UUID) alongside activity
 
         # Deduplicate by activity_id
         dedup = {
@@ -138,7 +138,7 @@ def run_full_ingestion_and_enrichment(
         }
         unique_new_activities = list(dedup.values())
 
-        logger.info(f"💾 Saving {len(unique_new_activities)} new runs…")
+        logger.info(f"Saving {len(unique_new_activities)} new runs...")
 
         time.sleep(1)
 
@@ -146,31 +146,48 @@ def run_full_ingestion_and_enrichment(
             session, athlete_id, unique_new_activities, user_id=user_id
         )
 
-        logger.info(f"✅ Synced {inserted_count} new runs")
+        logger.info(f"Synced {inserted_count} new runs")
 
         time.sleep(1)
 
-        logger.info("⚙️ Enriching activities…")
+        logger.info("Enriching activities...")
 
-        time.sleep(2)  # ⏳ simulate enrichment step
+        time.sleep(2)  # simulate enrichment step
 
         try:
             enriched = (
                 run_enrichment_batch(session, athlete_id, batch_size=batch_size) or 0
             )
-            logger.info(f"✅ Enriched {enriched} activities")
+            logger.info(f"Enriched {enriched} activities")
         except Exception as e:
-            logger.error(f"❌ Enrichment failed: {e}")
+            logger.error(f"Enrichment failed: {e}")
             enriched = 0
 
+        # Refresh materialized view after successful ingestion
+        try:
+            from sqlalchemy import text
+            session.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_athlete_metrics;"))
+            session.commit()
+            logger.info("Refreshed materialized view for metrics")
+        except Exception as e:
+            logger.warning(f"Failed to refresh materialized view: {e}")
+        
+        # Invalidate metrics cache for this athlete after successful ingestion
+        try:
+            from src.services.metrics_cache_service import invalidate_athlete_cache
+            invalidate_athlete_cache(athlete_id)
+            logger.info(f"Invalidated metrics cache for athlete {athlete_id}")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache for athlete {athlete_id}: {e}")
+
         logger.info(
-            f"🏁 Finished ingestion. Synced={inserted_count}, Enriched={enriched}"
+            f"Finished ingestion. Synced={inserted_count}, Enriched={enriched}"
         )
         return {"synced": inserted_count, "enriched": enriched}
 
     except Exception as e:
         session.rollback()
-        logger.exception(f"❌ Ingestion failed: {e}")
+        logger.exception(f"Ingestion failed: {e}")
         return {"synced": 0, "enriched": 0}
     finally:
         session.close()

@@ -15,22 +15,22 @@ class StravaClient:
 
         headers = {"Authorization": f"Bearer {self.access_token}"}
 
-        print(f"📤 Strava Request: {method} {url}")
-        print(f"📤 Headers: {headers}")
+        print(f"Strava Request: {method} {url}")
+        print(f"Headers: {headers}")
         if "params" in kwargs:
-            print(f"📤 Params: {kwargs['params']}")
+            print(f"Params: {kwargs['params']}")
 
         for attempt in range(max_retries):
             response = requests.request(method, url, headers=headers, **kwargs)
 
             if response.status_code == 429:
-                print(f"⚠️ Rate limit hit (429). Backing off {backoff} seconds...")
+                print(f"Rate limit hit (429). Backing off {backoff} seconds...")
                 time.sleep(backoff)
                 backoff *= 2
                 continue
 
             if response.status_code == 401:
-                print(f"❌ Unauthorized! Token: {self.access_token}")
+                print(f"Unauthorized! Token: {self.access_token}")
 
             response.raise_for_status()
             return response.json()

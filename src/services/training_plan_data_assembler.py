@@ -119,16 +119,16 @@ def assess_data_quality(activities: list[dict]) -> dict:
             f"   • Filtered reasons: {invalid_reasons[:3]}..."
         )  # Show first 3 reasons
 
-    # Determine quality level
-    if days_since_last > 30:
+    # Determine quality level - prioritize using real data
+    if days_since_last > 60:  # More lenient: 60 days instead of 30
         quality = "STALE"
         use_fallbacks = True
         print(f"   ⚠️ STALE DATA: Last valid activity was {days_since_last} days ago")
-    elif activity_count < 5:
+    elif activity_count < 3:  # More lenient: 3 activities instead of 5
         quality = "INSUFFICIENT"
         use_fallbacks = True
         print(f"   ⚠️ INSUFFICIENT DATA: Only {activity_count} valid activities")
-    elif date_range < 14 and activity_count < 10:
+    elif date_range < 7 and activity_count < 5:  # More lenient: 7 days instead of 14
         quality = "INSUFFICIENT"
         use_fallbacks = True
         print(
@@ -610,8 +610,20 @@ def assemble_training_plan_data(session: Session, user_id: UUID) -> dict:
     else:
         print(f"  • No activities found!")
 
+    # DEBUG: Show date range of activities being used for weekly summaries
+    if activities:
+        dates = [a["activity_date"] for a in activities]
+        print(f"  🔍 DEBUG: Activities date range: {min(dates)} to {max(dates)}")
+        print(f"  🔍 DEBUG: Total activities for weekly summaries: {len(activities)}")
+    
     weekly_summaries = summarize_weekly_training(activities)
     print(f"  • Generated {len(weekly_summaries)} weekly summaries")
+    
+    # DEBUG: Show first few weekly summaries
+    if weekly_summaries:
+        print(f"  • First 3 weekly summaries:")
+        for i, summary in enumerate(weekly_summaries[:3]):
+            print(f"    [{i+1}] {summary}")
 
     user_profile = summarize_user_profile(session, user_id)
     print(

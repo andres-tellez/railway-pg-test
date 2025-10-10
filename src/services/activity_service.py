@@ -34,7 +34,7 @@ def log_strava_payload(activity_id, activity_json, zones_data, streams):
                 indent=2,
             )
     except Exception as e:  # pylint: disable=broad-exception-caught
-        log.warning("⚠️ Could not write debug payload for %s: %s", activity_id, e)
+        log.warning("Could not write debug payload for %s: %s", activity_id, e)
 
 
 def get_activities_to_enrich(session, athlete_id, limit):
@@ -72,7 +72,7 @@ def enrich_one_activity(session, access_token, activity_id):
                 break
 
             log.warning(
-                "⚠️ Missing required fields for activity %s, retry %d/%d...",
+                "Missing required fields for activity %s, retry %d/%d...",
                 activity_id,
                 attempt + 1,
                 retries,
@@ -80,7 +80,7 @@ def enrich_one_activity(session, access_token, activity_id):
             time.sleep(1)
         else:
             raise ValueError(
-                f"❌ Critical data missing after retries for activity {activity_id}: "
+                f"Critical data missing after retries for activity {activity_id}: "
                 f"{[(field, activity_json.get(field)) for field in required_fields]}"
             )
 
@@ -89,12 +89,12 @@ def enrich_one_activity(session, access_token, activity_id):
         missing_soft = [f for f in soft_fields if activity_json.get(f) is None]
         if missing_soft:
             log.warning(
-                "⚠️ Partial enrichment for activity %s — missing: %s",
+                "Partial enrichment for activity %s - missing: %s",
                 activity_id,
                 missing_soft,
             )
 
-        log.info("➡️ Enriching activity %s — %s", activity_id, activity_json.get("name"))
+        log.info("Enriching activity %s - %s", activity_id, activity_json.get("name"))
 
         hr_zone_pcts = extract_hr_zone_percentages(zones_data) or [0.0] * 5
         update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
@@ -102,11 +102,11 @@ def enrich_one_activity(session, access_token, activity_id):
         splits = build_mile_splits(activity_id, streams)
         if splits:
             upsert_splits(session, splits)
-            log.info("✅ Synced %d splits for activity %s", len(splits), activity_id)
+            log.info("Synced %d splits for activity %s", len(splits), activity_id)
 
         return True
     except Exception as e:  # pylint: disable=broad-exception-caught
-        log.error("🔥 Exception while enriching %s: %s", activity_id, e)
+        log.error("Exception while enriching %s: %s", activity_id, e)
         raise
 
 
@@ -133,14 +133,14 @@ def enrich_one_activity_with_refresh(session, athlete_id, activity_id, max_retri
 
             if enriched:
                 log.info(
-                    "✅ Enrichment succeeded on attempt %d for activity %s",
+                    "Enrichment succeeded on attempt %d for activity %s",
                     attempt,
                     activity_id,
                 )
                 return True
 
             log.warning(
-                "⚠️ Enrichment fields missing on attempt %d for %s. Retrying in 5s...",
+                "Enrichment fields missing on attempt %d for %s. Retrying in 5s...",
                 attempt,
                 activity_id,
             )
@@ -148,12 +148,12 @@ def enrich_one_activity_with_refresh(session, athlete_id, activity_id, max_retri
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             log.error(
-                "🔥 Enrichment error on attempt %d for %s: %s", attempt, activity_id, e
+                "Enrichment error on attempt %d for %s: %s", attempt, activity_id, e
             )
             time.sleep(1)
 
     log.error(
-        "❌ All retries failed — Activity %s has incomplete enrichment.", activity_id
+        "All retries failed - Activity %s has incomplete enrichment.", activity_id
     )
     raise RuntimeError(f"Enrichment failed for activity {activity_id}")
 
@@ -181,7 +181,7 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
 
     for key in ["average_heartrate", "max_speed", "suffer_score", "calories"]:
         if activity_json.get(key) is None:
-            log.warning("⚠️ %s missing from activity %s", key, activity_id)
+            log.warning("%s missing from activity %s", key, activity_id)
 
     params = {
         "activity_id": activity_id,
@@ -251,7 +251,7 @@ def extract_hr_zone_percentages(zones_data):
                 if total_time > 0:
                     return [round((t / total_time) * 100, 2) for t in times]
     except Exception as e:  # pylint: disable=broad-exception-caught
-        log.warning("⚠️ HR zone extraction failed: %s", e)
+        log.warning("HR zone extraction failed: %s", e)
     return [0.0] * 5
 
 
@@ -332,7 +332,7 @@ class ActivityIngestionService:
     def __init__(self, session, athlete_id, user_id=None):
         self.session = session
         self.athlete_id = athlete_id
-        self.user_id = user_id  # ✅ keep track of user_id
+        self.user_id = user_id  # keep track of user_id
         self._refresh_client()
 
     def _refresh_client(self):
@@ -351,7 +351,7 @@ class ActivityIngestionService:
             if not batch:
                 break
             results.extend(batch)
-            log.info(f"📥 Page {page} → {len(batch)} activities (total={len(results)})")
+            log.info(f"[INFO] Page {page} -> {len(batch)} activities (total={len(results)})")
             if limit and len(results) >= limit:
                 return results[:limit]
             page += 1
@@ -376,7 +376,7 @@ class ActivityIngestionService:
         if not all_activities:
             return 0
 
-        # ✅ inject user_id before saving
+        # inject user_id before saving
         for act in all_activities:
             act["user_id"] = self.user_id
 
@@ -393,7 +393,7 @@ class ActivityIngestionService:
         )
         activities = [a for a in activities if a.get("type") == "Run"]
 
-        # ✅ inject user_id before saving
+        # inject user_id before saving
         for act in activities:
             act["user_id"] = self.user_id
 
