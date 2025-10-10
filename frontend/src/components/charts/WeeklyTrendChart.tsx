@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ChartHelpTooltip from './ChartHelpTooltip';
 
 interface WeeklyTrendData {
   week: string;
@@ -22,9 +23,11 @@ interface WeeklyTrendChartProps {
   totalMiles?: number;
   avgWeeklyMiles?: number;
   hrZoneData?: WeeklyHRZoneData[];
+  showHeader?: boolean;
+  helpTooltip?: any;
 }
 
-export default function WeeklyTrendChart({ data, title = "Weekly Current Trends", totalMiles, avgWeeklyMiles, hrZoneData }: WeeklyTrendChartProps) {
+export default function WeeklyTrendChart({ data, title = "Weekly Current Trends", totalMiles, avgWeeklyMiles, hrZoneData, showHeader = true, helpTooltip }: WeeklyTrendChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
 
   // Memoize calculations for better performance
@@ -41,7 +44,7 @@ export default function WeeklyTrendChart({ data, title = "Weekly Current Trends"
   if (!chartData) {
     return (
       <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
-        <h3 className="text-xl font-bold text-gray-900 mb-4">{title}</h3>
+        {showHeader && <h3 className="text-xl font-bold text-gray-900 mb-4">{title}</h3>}
         <div className="text-center py-12 text-gray-400">
           <div className="text-5xl mb-4 opacity-50">📈</div>
           <p className="text-lg font-medium">No trend data available</p>
@@ -64,24 +67,19 @@ export default function WeeklyTrendChart({ data, title = "Weekly Current Trends"
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-xl font-bold text-gray-900">{title}</h3>
-        <span className="text-sm font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
-        </span>
-      </div>
+      {showHeader && (
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+          <span className="text-sm font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+          </span>
+        </div>
+      )}
 
       {/* Chart */}
-      <div className="mb-8">
-        <div className="flex justify-between items-center mb-4">
-          <h4 className="text-sm font-semibold text-gray-700">Weekly Distance</h4>
-          <div className="flex items-center space-x-4 text-sm text-gray-600">
-            {totalMiles && (
-              <span>Total: <span className="font-semibold text-blue-600">{Math.round(totalMiles)}</span></span>
-            )}
-            {avgWeeklyMiles && (
-              <span>Avg: <span className="font-semibold text-blue-600">{Math.round(avgWeeklyMiles)}</span></span>
-            )}
-          </div>
+      <div>
+        <div className="flex items-center gap-3 mb-6">
+          <h3 className="text-xl font-bold text-gray-900">Weekly Distance</h3>
+          {helpTooltip && <ChartHelpTooltip helpContent={helpTooltip} />}
         </div>
 
         <div className="relative">
@@ -93,11 +91,6 @@ export default function WeeklyTrendChart({ data, title = "Weekly Current Trends"
 
               return (
                 <div key={index} className="flex flex-col items-center justify-end flex-1 min-w-0 group">
-                  {isCurrentWeek && (
-                    <div className="text-sm font-bold text-gray-800 mb-2">
-                      {week.distance.toFixed(1)}
-                    </div>
-                  )}
                   <div
                     className={`w-full max-w-10 rounded-t-lg transition-all duration-75 cursor-pointer relative bg-gradient-to-t from-blue-500 to-blue-400 hover:from-blue-600 hover:to-blue-500 hover:scale-105 hover:shadow-lg ${isCurrentWeek ? 'ring-2 ring-blue-200 ring-opacity-50' : ''}`}
                     style={{
@@ -135,11 +128,30 @@ export default function WeeklyTrendChart({ data, title = "Weekly Current Trends"
             >
               <div className="flex flex-col items-center">
                 <div>
-                  {new Date(data[hoveredBar.index].week + 'T00:00:00').toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric'
-                  })}
+                  {(() => {
+                    try {
+                      const dateStr = data[hoveredBar.index].week;
+                      // Handle different date formats
+                      if (dateStr.includes('T')) {
+                        // Already has time component
+                        return new Date(dateStr).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        });
+                      } else {
+                        // Add time component to make it local time
+                        return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        });
+                      }
+                    } catch (error) {
+                      // Fallback if date parsing fails
+                      return data[hoveredBar.index].week;
+                    }
+                  })()}
                 </div>
                 <div className="text-blue-300">
                   {data[hoveredBar.index].distance.toFixed(1)} mi

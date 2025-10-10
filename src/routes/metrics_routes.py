@@ -56,7 +56,7 @@ Author: SmartCoach Development Team
 Last Updated: October 9, 2025
 """
 
-from flask import Blueprint, jsonify, g
+from flask import Blueprint, jsonify, g, request
 from datetime import datetime, timedelta
 from src.db.db_session import get_session
 from src.db.dao.activity_stats_dao import ActivityStatsDAO
@@ -346,7 +346,7 @@ def get_weekly_data_optimized(session, athlete_id):
     }
 
 
-def get_all_metrics_ultra_optimized(session, athlete_id):
+def get_all_metrics_ultra_optimized(session, athlete_id, weeks=8):
     """
     ULTRA-OPTIMIZED: Get ALL metrics from materialized view.
     This is the fastest possible approach - simple SELECT, all processing done by database.
@@ -402,7 +402,7 @@ def get_all_metrics_ultra_optimized(session, athlete_id):
     weekly_trends = []
     weekly_hr_zones = []
 
-    for week in weekly_data[:20]:  # Limit to 20 weeks
+    for week in weekly_data:  # Process all weeks (filtering done in frontend)
         # Format pace for this week
         avg_speed = week.get('avg_speed_mps')
         avg_pace_str = format_pace(avg_speed) if avg_speed else "0:00"
@@ -521,6 +521,9 @@ def get_all_metrics_combined():
         if not user_id:
             return jsonify({"error": "Could not resolve user ID"}), 404
 
+        # Always fetch all weeks - filtering done in frontend
+        # (Keep parameter for backward compatibility, but ignore it)
+
         # Get athlete_id for this user
         athlete_id = get_athlete_id_for_user(session, user_id)
 
@@ -535,21 +538,21 @@ def get_all_metrics_combined():
                 "weekly_hr_zones": []
             }), 200
 
-        # Check cache first
+        # Check cache first (single cache entry for all weeks)
         cache_key = _get_cache_key(athlete_id, "all_metrics_combined")
         cached_result = get_cached_metrics(cache_key)
         if cached_result is not None:
-            print(f"[CACHE HIT] All metrics for athlete {athlete_id}")
+            print(f"[CACHE HIT] All metrics for athlete {athlete_id} (all weeks)")
             return jsonify(cached_result), 200
 
-        print(f"[CACHE MISS] All metrics for athlete {athlete_id}")
+        print(f"[CACHE MISS] All metrics for athlete {athlete_id} (all weeks)")
 
         # Performance timing
         import time
         start_time = time.time()
 
-        # ULTRA-OPTIMIZED: Single massive query for everything
-        result = get_all_metrics_ultra_optimized(session, athlete_id)
+        # ULTRA-OPTIMIZED: Single massive query for everything (always all weeks)
+        result = get_all_metrics_ultra_optimized(session, athlete_id, 20)  # Always fetch all 20 weeks
 
         # Cache the result for 5 minutes
         set_cached_metrics(cache_key, result, ttl=300)

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { useApiClient } from "../utils/apiClient";
 import HeartRateZoneChart from "../components/charts/HeartRateZoneChart";
 import WeeklyTrendChart from "../components/charts/WeeklyTrendChart";
+import WeeklyPaceChart from "../components/charts/WeeklyPaceChart";
+import ChartHelpTooltip from "../components/charts/ChartHelpTooltip";
 
 interface MetricData {
   title: string;
@@ -60,6 +62,12 @@ export default function SimpleMetrics() {
   const [weeklyHRZones, setWeeklyHRZones] = useState<WeeklyHRZoneData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hoveredHRBar, setHoveredHRBar] = useState<{ index: number; x: number; y: number } | null>(null);
+  const [selectedWeeks, setSelectedWeeks] = useState<number>(8);
+  const [allWeeklyData, setAllWeeklyData] = useState<{
+    trends: WeeklyTrendData[];
+    hrZones: WeeklyHRZoneData[];
+  }>({ trends: [], hrZones: [] });
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -67,7 +75,7 @@ export default function SimpleMetrics() {
         console.log("📊 Fetching ALL metrics in single call...");
         const startTime = performance.now();
 
-        // Single API call for everything
+        // Single API call for everything (always fetch all 20 weeks)
         const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[]}>("/api/metrics/all-metrics");
 
         const loadTime = performance.now() - startTime;
@@ -103,8 +111,12 @@ export default function SimpleMetrics() {
 
         setMetrics(displayMetrics);
         setHrZones(data.hr_zones);
-        setWeeklyTrends(data.weekly_trends);
-        setWeeklyHRZones(data.weekly_hr_zones);
+
+        // Store all data for filtering
+        setAllWeeklyData({
+          trends: data.weekly_trends,
+          hrZones: data.weekly_hr_zones
+        });
 
       } catch (err) {
         console.error("Failed to fetch metrics:", err);
@@ -140,88 +152,332 @@ export default function SimpleMetrics() {
     };
 
     fetchMetrics();
-  }, []);
+  }, []); // Remove selectedWeeks dependency - only fetch once
+
+  // Compute filtered data based on selected weeks (instant filtering)
+  const filteredWeeklyTrends = allWeeklyData.trends.slice(0, selectedWeeks);
+  const filteredWeeklyHRZones = allWeeklyData.hrZones.slice(0, selectedWeeks);
+
+  // Debug logging
+  console.log(`📊 Data availability: ${allWeeklyData.trends.length} trends, ${allWeeklyData.hrZones.length} HR zones`);
+  console.log(`📊 Selected weeks: ${selectedWeeks}, Filtered: ${filteredWeeklyTrends.length} trends, ${filteredWeeklyHRZones.length} HR zones`);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">
-            Training Metrics
-          </h1>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="bg-white rounded-lg shadow-md p-6 border border-gray-200 animate-pulse"
-              >
-                <div className="h-4 bg-gray-200 rounded w-24 mb-4"></div>
-                <div className="h-12 bg-gray-200 rounded w-32 mb-4"></div>
-                <div className="h-4 bg-gray-200 rounded w-28"></div>
+          {/* Unified Weekly Trends Card Loading */}
+          <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100 animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-48 mb-6"></div>
+            <div className="space-y-8">
+              <div>
+                <div className="h-6 bg-gray-200 rounded w-32 mb-4"></div>
+                <div className="h-48 bg-gray-200 rounded"></div>
               </div>
-            ))}
+              <div>
+                <div className="h-6 bg-gray-200 rounded w-40 mb-4"></div>
+                <div className="h-48 bg-gray-200 rounded"></div>
+              </div>
+              <div>
+                <div className="h-6 bg-gray-200 rounded w-24 mb-4"></div>
+                <div className="h-48 bg-gray-200 rounded"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
+  // Help content for each section
+  const mileageHelpContent = {
+    title: "Weekly Mileage",
+    quickTip: "Think of mileage like a fitness savings account - every mile builds your endurance foundation!",
+    detailedExplanation: {
+      why: "Consistent weekly volume is the foundation of endurance training. It builds aerobic capacity and injury resistance.",
+      benefits: [
+        "Builds aerobic base and endurance",
+        "Improves running economy and efficiency",
+        "Reduces injury risk through gradual adaptation"
+      ],
+      tips: [
+        "Increase weekly mileage by 10-15% maximum",
+        "Include one longer run each week",
+        "Take recovery weeks every 3-4 weeks"
+      ]
+    }
+  };
+
+  const hrZoneHelpContent = {
+    title: "Heart Rate Zones",
+    quickTip: "HR zones are like gears in a car - each zone serves a different training purpose.",
+    detailedExplanation: {
+      why: "Different heart rate zones target different energy systems and adaptations for comprehensive fitness development.",
+      benefits: [
+        "Targets specific energy systems effectively",
+        "Prevents overtraining and burnout",
+        "Ensures balanced fitness development"
+      ],
+      tips: [
+        "Spend 80% of time in easy zones (1-2)",
+        "Use zones 4-5 for high-intensity sessions",
+        "Monitor zone distribution weekly"
+      ]
+    }
+  };
+
+  const paceHelpContent = {
+    title: "Pace Trends",
+    quickTip: "Getting faster at the same effort level shows your fitness is improving!",
+    detailedExplanation: {
+      why: "Pace progression indicates fitness gains. As you get stronger, you can run faster with the same effort.",
+      benefits: [
+        "Shows fitness improvements objectively",
+        "Helps set realistic race goals",
+        "Guides workout pace selection"
+      ],
+      tips: [
+        "Focus on easy run pace improvements first",
+        "Track trends over 4-6 weeks",
+        "Don't chase pace every run - effort matters more"
+      ]
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Training Metrics
-          </h1>
-          {error && (
+        {error && (
+          <div className="mb-6">
             <div className="text-sm text-red-600 bg-red-50 px-4 py-2 rounded-md">
               {error}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {metrics.map((metric, index) => (
-            <div
-              key={index}
-              className="bg-white rounded-lg shadow-md p-6 border border-gray-200 hover:shadow-lg transition-shadow"
+        {/* Weekly Trends Header */}
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Weekly Trends</h1>
+          <div className="flex items-center gap-3">
+            <label htmlFor="weeks-select" className="text-sm font-medium text-gray-700">
+              Time Period:
+            </label>
+            <select
+              id="weeks-select"
+              value={selectedWeeks}
+              onChange={(e) => setSelectedWeeks(Number(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
             >
-              <p className="text-sm text-gray-600 mb-2">{metric.title}</p>
-              <div className="flex items-baseline gap-2 mb-4">
-                <span className="text-4xl font-bold text-gray-900">
-                  {metric.value}
-                </span>
-                <span className="text-sm text-gray-500">{metric.unit}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`text-sm font-medium ${
-                    metric.isPositive ? "text-green-600" : "text-red-600"
-                  }`}
-                >
-                  {metric.change}
-                </span>
-                <span className="text-sm text-gray-500">vs last week</span>
-              </div>
-            </div>
-          ))}
+              <option value={4}>4 weeks</option>
+              <option value={8}>8 weeks</option>
+              <option value={16}>16 weeks</option>
+            </select>
+          </div>
         </div>
 
-        {/* Charts Section */}
-        <div className="mt-8 space-y-6">
-          {/* Weekly Trend Chart - Full Width */}
-          {weeklyTrends.length > 0 && (
+        {/* Charts without outer card */}
+        <div className="space-y-12">
+
+          {/* Mileage Section */}
+          {filteredWeeklyTrends.length > 0 && (
             <WeeklyTrendChart
-              data={weeklyTrends}
-              title="Weekly Running Trends"
-              totalMiles={weeklyTrends.reduce((sum, week) => sum + week.distance, 0)}
-              avgWeeklyMiles={weeklyTrends.reduce((sum, week) => sum + week.distance, 0) / weeklyTrends.length}
-              hrZoneData={weeklyHRZones}
+              data={filteredWeeklyTrends}
+              title=""
+              showHeader={false}
+              helpTooltip={mileageHelpContent}
             />
           )}
 
-        </div>
+          {/* HR Zones Section */}
+          {filteredWeeklyHRZones.length > 0 && (
+            <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
+              <div className="flex items-center gap-3 mb-6">
+                <h3 className="text-xl font-bold text-gray-900">HR Zones</h3>
+                <ChartHelpTooltip helpContent={hrZoneHelpContent} />
+              </div>
 
+              {/* HR Zone Chart */}
+              <div className="relative">
+                {/* Y-axis scale */}
+                <div className="relative mb-2">
+                  <div className="absolute left-0 top-0 h-32 flex flex-col justify-between text-xs text-gray-400">
+                    <span>100%</span>
+                    <span>75%</span>
+                    <span>50%</span>
+                    <span>25%</span>
+                    <span>0%</span>
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <div className="flex items-end space-x-1 h-48 bg-gradient-to-t from-gray-50 to-white p-6 rounded-xl border border-gray-100">
+                    {filteredWeeklyHRZones.map((week, index) => {
+                      const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
+                      const maxTotal = Math.max(...filteredWeeklyHRZones.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
+                      const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
+                      const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
+
+                      const zoneColors = {
+                        zone_1: '#3B82F6', // Blue - Recovery
+                        zone_2: '#10B981', // Green - Aerobic Base
+                        zone_3: '#F59E0B', // Orange - Tempo
+                        zone_4: '#EF4444', // Red - Threshold
+                        zone_5: '#8B5CF6'  // Purple - VO2 Max
+                      };
+
+                      return (
+                        <div key={index} className="flex flex-col items-center justify-end flex-1 min-w-0 group">
+                          <div
+                            className="w-full max-w-10 rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg overflow-hidden"
+                            style={{
+                              height: `${heightPixels}px`,
+                              minWidth: '12px',
+                              transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)'
+                            }}
+                            onMouseEnter={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              console.log('HR Zone hover:', weeklyHRZones[index]);
+                              setHoveredHRBar({
+                                index,
+                                x: rect.left + rect.width / 2,
+                                y: rect.top - 10
+                              });
+                            }}
+                            onMouseLeave={() => setHoveredHRBar(null)}
+                          >
+                            {/* Stacked zones from bottom to top */}
+                            <div
+                              className="absolute bottom-0 w-full"
+                              style={{
+                                height: `${(week.zone_1 / totalZones) * 100}%`,
+                                backgroundColor: zoneColors.zone_1,
+                                minHeight: week.zone_1 > 0 ? '2px' : '0px'
+                              }}
+                            />
+                            <div
+                              className="absolute w-full"
+                              style={{
+                                bottom: `${(week.zone_1 / totalZones) * 100}%`,
+                                height: `${(week.zone_2 / totalZones) * 100}%`,
+                                backgroundColor: zoneColors.zone_2,
+                                minHeight: week.zone_2 > 0 ? '2px' : '0px'
+                              }}
+                            />
+                            <div
+                              className="absolute w-full"
+                              style={{
+                                bottom: `${((week.zone_1 + week.zone_2) / totalZones) * 100}%`,
+                                height: `${(week.zone_3 / totalZones) * 100}%`,
+                                backgroundColor: zoneColors.zone_3,
+                                minHeight: week.zone_3 > 0 ? '2px' : '0px'
+                              }}
+                            />
+                            <div
+                              className="absolute w-full"
+                              style={{
+                                bottom: `${((week.zone_1 + week.zone_2 + week.zone_3) / totalZones) * 100}%`,
+                                height: `${(week.zone_4 / totalZones) * 100}%`,
+                                backgroundColor: zoneColors.zone_4,
+                                minHeight: week.zone_4 > 0 ? '2px' : '0px'
+                              }}
+                            />
+                            <div
+                              className="absolute w-full rounded-t-lg"
+                              style={{
+                                bottom: `${((week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4) / totalZones) * 100}%`,
+                                height: `${(week.zone_5 / totalZones) * 100}%`,
+                                backgroundColor: zoneColors.zone_5,
+                                minHeight: week.zone_5 > 0 ? '2px' : '0px'
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* HR Zone Tooltip */}
+                  {hoveredHRBar && (
+                    <div
+                      className="fixed z-50 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg pointer-events-none transition-all duration-100 ease-out transform"
+                      style={{
+                        left: `${hoveredHRBar.x}px`,
+                        top: `${hoveredHRBar.y}px`,
+                        transform: 'translateX(-50%) translateY(-100%)',
+                        opacity: hoveredHRBar ? 1 : 0,
+                        animation: 'fadeInUp 0.1s ease-out'
+                      }}
+                    >
+                      <div className="flex flex-col items-center">
+                        <div>
+                          {(() => {
+                            try {
+                              const dateStr = filteredWeeklyHRZones[hoveredHRBar.index].week;
+                              // Handle different date formats
+                              if (dateStr.includes('T')) {
+                                // Already has time component
+                                return new Date(dateStr).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric'
+                                });
+                              } else {
+                                // Add time component to make it local time
+                                return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric'
+                                });
+                              }
+                            } catch (error) {
+                              // Fallback if date parsing fails
+                              return filteredWeeklyHRZones[hoveredHRBar.index].week;
+                            }
+                          })()}
+                        </div>
+                        <div className="text-xs space-y-1 mt-1">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#3B82F6' }}></div>
+                            <span>Z1: {filteredWeeklyHRZones[hoveredHRBar.index].zone_1.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#10B981' }}></div>
+                            <span>Z2: {filteredWeeklyHRZones[hoveredHRBar.index].zone_2.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#F59E0B' }}></div>
+                            <span>Z3: {filteredWeeklyHRZones[hoveredHRBar.index].zone_3.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#EF4444' }}></div>
+                            <span>Z4: {filteredWeeklyHRZones[hoveredHRBar.index].zone_4.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#8B5CF6' }}></div>
+                            <span>Z5: {filteredWeeklyHRZones[hoveredHRBar.index].zone_5.toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Arrow pointing down */}
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-3 border-r-3 border-t-3 border-transparent border-t-gray-800"></div>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* Pace Section */}
+          {filteredWeeklyTrends.length > 0 && (
+            <WeeklyPaceChart
+              data={filteredWeeklyTrends}
+              title="Pace"
+              showHeader={true}
+              helpTooltip={paceHelpContent}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
