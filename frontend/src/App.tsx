@@ -38,6 +38,7 @@ import HomeScreen from "./pages/HomeScreen";
 import AskGptMvpUI from "./pages/AskGptMvpUI";
 import WelcomePage from "./pages/WelcomePage";
 import SimpleMetrics from "./pages/SimpleMetrics";
+import VO2Metrics from "./pages/VO2Metrics";
 
 import Layout from "./components/Layout";
 import SmartRouter from "./components/SmartRouter";
@@ -179,6 +180,16 @@ export default function App() {
           <ProtectedRoute>
             <Layout>
               <SimpleMetrics />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/vo2"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <VO2Metrics />
             </Layout>
           </ProtectedRoute>
         }

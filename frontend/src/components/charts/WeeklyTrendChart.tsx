@@ -77,9 +77,16 @@ export default function WeeklyTrendChart({ data, title = "Weekly Current Trends"
 
       {/* Chart */}
       <div>
-        <div className="flex items-center gap-3 mb-6">
-          <h3 className="text-xl font-bold text-gray-900">Weekly Distance</h3>
-          {helpTooltip && <ChartHelpTooltip helpContent={helpTooltip} />}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold text-gray-900">Weekly Distance</h3>
+            {helpTooltip && <ChartHelpTooltip helpContent={helpTooltip} />}
+          </div>
+          <div className="text-right">
+            <div className="text-lg text-gray-700">
+              Avg {chartData.avgWeekly.toFixed(1)} mi
+            </div>
+          </div>
         </div>
 
         <div className="relative">

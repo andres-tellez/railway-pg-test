@@ -1,189 +1,205 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import ChartHelpTooltip from './ChartHelpTooltip';
 
 interface WeeklyVO2Data {
   week: string;
   vo2_estimate: number | null;
-  qualifying_runs: number;
-  avg_run_score: number | null;
+  run_score: number | null;
 }
 
 interface WeeklyVO2ChartProps {
   data: WeeklyVO2Data[];
   title?: string;
+  showHeader?: boolean;
+  helpTooltip?: any;
 }
 
-const WeeklyVO2Chart: React.FC<WeeklyVO2ChartProps> = ({
+export default function WeeklyVO2Chart({
   data,
-  title = "VO2 Max Estimates"
-}) => {
+  title = "VO2 Max Estimate",
+  showHeader = true,
+  helpTooltip
+}: WeeklyVO2ChartProps) {
+  const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
+
+  // Memoize calculations for better performance
   const chartData = useMemo(() => {
-    if (!data || data.length === 0) {
-      return { maxVO2: 0, minVO2: 0, avgVO2: 0, validData: false };
-    }
+    if (!data || data.length === 0) return null;
 
-    const validData = data.filter(week => week.vo2_estimate !== null && week.vo2_estimate > 0);
+    // Filter out invalid VO2 data
+    const validVO2Data = data.filter(d => d.vo2_estimate !== null && d.vo2_estimate > 0);
+    if (validVO2Data.length === 0) return null;
 
-    if (validData.length === 0) {
-      return { maxVO2: 0, minVO2: 0, avgVO2: 0, validData: false };
-    }
-
-    const vo2Values = validData.map(week => week.vo2_estimate!);
+    const vo2Values = validVO2Data.map(d => d.vo2_estimate!);
     const maxVO2 = Math.max(...vo2Values);
     const minVO2 = Math.min(...vo2Values);
-    const avgVO2 = vo2Values.reduce((sum, val) => sum + val, 0) / vo2Values.length;
+    const avgVO2 = vo2Values.reduce((sum, vo2) => sum + vo2, 0) / vo2Values.length;
+
+    // Calculate VO2 range for normalization
+    const vo2Range = maxVO2 - minVO2;
 
     return {
       maxVO2,
       minVO2,
       avgVO2,
-      validData: true,
-      validDataCount: validData.length
+      vo2Range,
+      validVO2Data,
+      vo2Values
     };
   }, [data]);
 
-  const getBarHeight = useCallback((vo2_estimate: number | null) => {
-    if (!vo2_estimate || vo2_estimate <= 0 || !chartData.validData) {
-      return 20; // Minimum height for empty bars
-    }
-
-    const heightPercentage = (vo2_estimate / chartData.maxVO2) * 100;
-    return Math.max(heightPercentage * 1.2 + 20, 20); // Dynamic height with minimum
-  }, [chartData]);
-
-  const formatVO2Value = useCallback((value: number | null) => {
-    if (!value || value <= 0) return 'N/A';
-    return Math.round(value).toLocaleString();
-  }, []);
-
-  if (!chartData.validData) {
+  if (!chartData) {
     return (
-      <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100 relative">
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-3">
-            <h3 className="text-xl font-semibold text-gray-800">{title}</h3>
-            <ChartHelpTooltip helpContent={{
-              title: "VO2 Max Estimates",
-              quickTip: "Weekly fitness progression based on your best aerobic performance each week!",
-              detailedExplanation: {
-                why: "VO2 max estimates track your aerobic fitness improvements over time using your best runs.",
-                benefits: [
-                  "Shows fitness progression objectively",
-                  "Helps set realistic training goals",
-                  "Tracks aerobic capacity improvements"
-                ],
-                tips: [
-                  "Higher scores = better aerobic fitness",
-                  "Track trends over 4-6 weeks",
-                  "Consistency beats single great runs"
-                ]
-              }
-            }} />
-          </div>
-        </div>
-        <div className="flex items-center justify-center h-48 text-gray-500">
-          <p>No qualifying runs found for VO2 estimation</p>
+      <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+        {showHeader && <h3 className="text-xl font-bold text-gray-900 mb-4">{title}</h3>}
+        <div className="text-center py-12 text-gray-400">
+          <div className="text-5xl mb-4 opacity-50">💪</div>
+          <p className="text-lg font-medium">No VO2 Max data available</p>
+          <p className="text-sm mt-2">Complete qualifying runs (≥2 miles, ≥12 min) to see VO2 estimates</p>
         </div>
       </div>
     );
   }
 
-  const { maxVO2, avgVO2, validDataCount } = chartData;
+  const { maxVO2, minVO2, avgVO2, vo2Range } = chartData;
+
+  const helpContent = {
+    title: "VO2 Max Estimate",
+    quickTip: "Higher VO2 Max means your body can use oxygen more efficiently, which equals better endurance!",
+    detailedExplanation: {
+      why: "VO2 Max measures your cardiovascular fitness. It's the maximum oxygen your body can use during intense exercise.",
+      benefits: [
+        "Track fitness improvements over time",
+        "Predict race performance potential",
+        "Guide training intensity zones"
+      ],
+      tips: [
+        "Consistency matters more than single data points",
+        "Track trends over 4-8 weeks for meaningful insights",
+        "Higher isn't always better - focus on steady improvement"
+      ]
+    }
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100 relative">
-      <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-3">
-          <h3 className="text-xl font-semibold text-gray-800">{title}</h3>
-          <ChartHelpTooltip helpContent={{
-            title: "VO2 Max Estimates",
-            quickTip: "Weekly fitness progression based on your best aerobic performance each week!",
-            detailedExplanation: {
-              why: "VO2 max estimates track your aerobic fitness improvements over time using your best runs.",
-              benefits: [
-                "Shows fitness progression objectively",
-                "Helps set realistic training goals",
-                "Tracks aerobic capacity improvements"
-              ],
-              tips: [
-                "Higher scores = better aerobic fitness",
-                "Track trends over 4-6 weeks",
-                "Consistency beats single great runs"
-              ]
-            }
-          }} />
-        </div>
-        <div className="text-right">
-          <div className="text-sm text-gray-600">
-            <div className="flex gap-4">
-              <span>Max: <span className="font-medium text-blue-600">{formatVO2Value(maxVO2)}</span></span>
-              <span>Avg: <span className="font-medium text-blue-600">{formatVO2Value(avgVO2)}</span></span>
+      {showHeader && (
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+            {helpTooltip && <ChartHelpTooltip helpContent={helpTooltip} />}
+          </div>
+          <div className="text-right">
+            <div className="text-lg text-gray-700">
+              Avg {avgVO2.toFixed(1)} VO2
             </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="space-y-4">
-        {/* Chart Bars */}
-        <div className="flex items-end justify-between gap-1 h-48 px-2">
+      <div className="relative">
+        <div className="flex items-end space-x-1 h-48 bg-gradient-to-t from-gray-50 to-white p-6 rounded-xl border border-gray-100">
           {data.map((week, index) => {
+            const vo2Value = week.vo2_estimate;
+
+            // Skip rendering if no valid VO2 data
+            if (!vo2Value || vo2Value <= 0) {
+              return (
+                <div key={index} className="flex flex-col items-center justify-end flex-1 min-w-0 group">
+                  <div
+                    className="w-full max-w-10 rounded-t-lg bg-gray-200"
+                    style={{
+                      height: '40px',
+                      minWidth: '12px',
+                    }}
+                  />
+                </div>
+              );
+            }
+
+            // Normalize VO2 value to bar height
+            const normalizedVO2 = vo2Range > 0 ? (vo2Value - minVO2) / vo2Range : 0.5;
+            const heightPixels = Math.max(normalizedVO2 * 120 + 40, 40);
             const isCurrentWeek = index === 0;
-            const barHeight = getBarHeight(week.vo2_estimate);
-            const hasData = week.vo2_estimate !== null && week.vo2_estimate > 0;
 
             return (
-              <div key={week.week} className="flex-1 flex flex-col items-center group relative">
-                {/* VO2 Value Tooltip */}
-                {hasData && (
-                  <div className="absolute -top-12 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none whitespace-nowrap z-10 shadow-lg">
-                    <div className="text-center">
-                      <div className="font-medium">{week.week}</div>
-                      <div>VO2: {formatVO2Value(week.vo2_estimate)}</div>
-                      <div className="text-gray-300">{week.qualifying_runs} runs</div>
-                    </div>
-                    <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
-                  </div>
-                )}
-
-                {/* Bar */}
+              <div key={index} className="flex flex-col items-center justify-end flex-1 min-w-0 group">
                 <div
-                  className={`
-                    w-full rounded-t-lg transition-all duration-200 group-hover:shadow-md
-                    ${isCurrentWeek
-                      ? 'bg-gradient-to-t from-blue-600 to-blue-500 ring-2 ring-blue-300'
-                      : hasData
-                        ? 'bg-gradient-to-t from-blue-500 to-blue-400 hover:from-blue-600 hover:to-blue-500'
-                        : 'bg-gray-200'
-                    }
-                    ${isCurrentWeek ? 'min-h-8' : ''}
-                  `}
+                  className={`w-full max-w-10 rounded-t-lg transition-all duration-75 cursor-pointer relative bg-gradient-to-t from-blue-500 to-blue-400 hover:from-blue-600 hover:to-blue-500 hover:scale-105 hover:shadow-lg ${isCurrentWeek ? 'ring-2 ring-blue-200 ring-opacity-50' : ''}`}
                   style={{
-                    height: `${barHeight}px`,
-                    minHeight: hasData ? '20px' : '8px'
+                    height: `${heightPixels}px`,
+                    minWidth: '12px',
+                    boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)',
+                    transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)'
                   }}
+                  onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setHoveredBar({
+                      index,
+                      x: rect.left + rect.width / 2,
+                      y: rect.top - 10
+                    });
+                  }}
+                  onMouseLeave={() => setHoveredBar(null)}
                 />
-
-                {/* Week Label */}
-                <div className="text-xs text-gray-500 mt-2 text-center leading-tight">
-                  {week.week.split('-').slice(1).join('/')}
-                </div>
               </div>
             );
           })}
         </div>
 
-        {/* Stats Summary */}
-        <div className="flex justify-between items-center pt-4 border-t border-gray-100">
-          <div className="text-sm text-gray-600">
-            Based on {validDataCount} weeks with qualifying runs (≥2 miles, ≥12 min)
+        {/* Custom Tooltip */}
+        {hoveredBar && (
+          <div
+            className="fixed z-50 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg pointer-events-none transition-all duration-100 ease-out transform"
+            style={{
+              left: `${hoveredBar.x}px`,
+              top: `${hoveredBar.y}px`,
+              transform: 'translateX(-50%) translateY(-100%)',
+              opacity: hoveredBar ? 1 : 0,
+              animation: 'fadeInUp 0.1s ease-out'
+            }}
+          >
+            <div className="flex flex-col items-center">
+              <div>
+                {(() => {
+                  try {
+                    const dateStr = data[hoveredBar.index].week;
+                    // Handle different date formats
+                    if (dateStr.includes('T')) {
+                      // Already has time component
+                      return new Date(dateStr).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      });
+                    } else {
+                      // Add time component to make it local time
+                      return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      });
+                    }
+                  } catch (error) {
+                    // Fallback if date parsing fails
+                    return data[hoveredBar.index].week;
+                  }
+                })()}
+              </div>
+              <div className="text-blue-300">
+                VO2: {data[hoveredBar.index].vo2_estimate?.toFixed(1)}
+              </div>
+              {data[hoveredBar.index].run_score && (
+                <div className="text-blue-200 text-[10px]">
+                  Score: {data[hoveredBar.index].run_score?.toFixed(0)}
+                </div>
+              )}
+            </div>
+            {/* Arrow pointing down */}
+            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-3 border-r-3 border-t-3 border-transparent border-t-gray-800"></div>
           </div>
-          <div className="text-xs text-gray-500">
-            Higher scores = better aerobic fitness
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
-};
-
-export default WeeklyVO2Chart;
+}

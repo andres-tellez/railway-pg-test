@@ -368,7 +368,8 @@ def get_all_metrics_ultra_optimized(session, athlete_id, weeks=8):
             "average_pace": {"current": "0:00", "previous": "0:00", "change_pct": 0},
             "hr_zones": {"zone_1": 0.0, "zone_2": 0.0, "zone_3": 0.0, "zone_4": 0.0, "zone_5": 0.0},
             "weekly_trends": [],
-            "weekly_hr_zones": []
+            "weekly_hr_zones": [],
+            "weekly_vo2_estimates": []
         }
 
     # Extract pre-calculated dashboard metrics
@@ -398,9 +399,10 @@ def get_all_metrics_ultra_optimized(session, athlete_id, weeks=8):
     # The materialized view returns it as a list, not a JSON string
     weekly_data = result.weekly_data if result.weekly_data else []
 
-    # Process weekly trends and HR zones
+    # Process weekly trends, HR zones, and VO2 estimates
     weekly_trends = []
     weekly_hr_zones = []
+    weekly_vo2_estimates = []
 
     for week in weekly_data:  # Process all weeks (filtering done in frontend)
         # Format pace for this week
@@ -431,6 +433,13 @@ def get_all_metrics_ultra_optimized(session, athlete_id, weeks=8):
                 "zone_1": 0.0, "zone_2": 0.0, "zone_3": 0.0, "zone_4": 0.0, "zone_5": 0.0
             })
 
+        # Extract VO2 estimates (pre-calculated in materialized view)
+        weekly_vo2_estimates.append({
+            "week": week['week'],
+            "vo2_estimate": week.get('vo2_estimate'),
+            "run_score": float(week.get('best_run_score')) if week.get('best_run_score') else None
+        })
+
     return {
         "weekly_distance": {
             "current": current_distance,
@@ -449,7 +458,8 @@ def get_all_metrics_ultra_optimized(session, athlete_id, weeks=8):
         },
         "hr_zones": hr_zones,
         "weekly_trends": weekly_trends,
-        "weekly_hr_zones": weekly_hr_zones
+        "weekly_hr_zones": weekly_hr_zones,
+        "weekly_vo2_estimates": weekly_vo2_estimates
     }
 
 
@@ -535,7 +545,8 @@ def get_all_metrics_combined():
                 "weekly_runs": {"current": 0, "previous": 0, "change_pct": 0},
                 "hr_zones": {"zone_1": 0, "zone_2": 0, "zone_3": 0, "zone_4": 0, "zone_5": 0},
                 "weekly_trends": [],
-                "weekly_hr_zones": []
+                "weekly_hr_zones": [],
+                "weekly_vo2_estimates": []
             }), 200
 
         # Check cache first (single cache entry for all weeks)

@@ -108,9 +108,16 @@ export default function WeeklyPaceChart({
   return (
     <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100 relative">
       {showHeader && (
-        <div className="flex items-center gap-3 mb-6">
-          <h3 className="text-xl font-bold text-gray-900">{title}</h3>
-          {helpTooltip && <ChartHelpTooltip helpContent={helpTooltip} />}
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+            {helpTooltip && <ChartHelpTooltip helpContent={helpTooltip} />}
+          </div>
+          <div className="text-right">
+            <div className="text-lg text-gray-700">
+              Avg {chartData.avgPace.toFixed(1)} min/mi
+            </div>
+          </div>
         </div>
       )}
 

@@ -3,6 +3,7 @@ import { useApiClient } from "../utils/apiClient";
 import HeartRateZoneChart from "../components/charts/HeartRateZoneChart";
 import WeeklyTrendChart from "../components/charts/WeeklyTrendChart";
 import WeeklyPaceChart from "../components/charts/WeeklyPaceChart";
+import WeeklyVO2Chart from "../components/charts/WeeklyVO2Chart";
 import ChartHelpTooltip from "../components/charts/ChartHelpTooltip";
 
 interface MetricData {
@@ -54,12 +55,19 @@ interface WeeklyHRZoneData {
   zone_5: number;
 }
 
+interface WeeklyVO2Data {
+  week: string;
+  vo2_estimate: number | null;
+  run_score: number | null;
+}
+
 export default function SimpleMetrics() {
   const api = useApiClient();
   const [metrics, setMetrics] = useState<MetricData[]>([]);
   const [hrZones, setHrZones] = useState<any>(null);
   const [weeklyTrends, setWeeklyTrends] = useState<WeeklyTrendData[]>([]);
   const [weeklyHRZones, setWeeklyHRZones] = useState<WeeklyHRZoneData[]>([]);
+  const [weeklyVO2, setWeeklyVO2] = useState<WeeklyVO2Data[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredHRBar, setHoveredHRBar] = useState<{ index: number; x: number; y: number } | null>(null);
@@ -67,7 +75,8 @@ export default function SimpleMetrics() {
   const [allWeeklyData, setAllWeeklyData] = useState<{
     trends: WeeklyTrendData[];
     hrZones: WeeklyHRZoneData[];
-  }>({ trends: [], hrZones: [] });
+    vo2: WeeklyVO2Data[];
+  }>({ trends: [], hrZones: [], vo2: [] });
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -76,7 +85,7 @@ export default function SimpleMetrics() {
         const startTime = performance.now();
 
         // Single API call for everything (always fetch all 20 weeks)
-        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[]}>("/api/metrics/all-metrics");
+        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_vo2_estimates: WeeklyVO2Data[]}>("/api/metrics/all-metrics");
 
         const loadTime = performance.now() - startTime;
         console.log(`📊 All metrics loaded in ${loadTime.toFixed(0)}ms`);
@@ -115,7 +124,8 @@ export default function SimpleMetrics() {
         // Store all data for filtering
         setAllWeeklyData({
           trends: data.weekly_trends,
-          hrZones: data.weekly_hr_zones
+          hrZones: data.weekly_hr_zones,
+          vo2: data.weekly_vo2_estimates || []
         });
 
       } catch (err) {
@@ -157,10 +167,11 @@ export default function SimpleMetrics() {
   // Compute filtered data based on selected weeks (instant filtering)
   const filteredWeeklyTrends = allWeeklyData.trends.slice(0, selectedWeeks);
   const filteredWeeklyHRZones = allWeeklyData.hrZones.slice(0, selectedWeeks);
+  const filteredWeeklyVO2 = allWeeklyData.vo2.slice(0, selectedWeeks);
 
   // Debug logging
-  console.log(`📊 Data availability: ${allWeeklyData.trends.length} trends, ${allWeeklyData.hrZones.length} HR zones`);
-  console.log(`📊 Selected weeks: ${selectedWeeks}, Filtered: ${filteredWeeklyTrends.length} trends, ${filteredWeeklyHRZones.length} HR zones`);
+  console.log(`📊 Data availability: ${allWeeklyData.trends.length} trends, ${allWeeklyData.hrZones.length} HR zones, ${allWeeklyData.vo2.length} VO2`);
+  console.log(`📊 Selected weeks: ${selectedWeeks}, Filtered: ${filteredWeeklyTrends.length} trends, ${filteredWeeklyHRZones.length} HR zones, ${filteredWeeklyVO2.length} VO2`);
 
   if (loading) {
     return (
@@ -240,6 +251,24 @@ export default function SimpleMetrics() {
         "Focus on easy run pace improvements first",
         "Track trends over 4-6 weeks",
         "Don't chase pace every run - effort matters more"
+      ]
+    }
+  };
+
+  const vo2HelpContent = {
+    title: "VO2 Max Estimate",
+    quickTip: "Higher VO2 Max means your body can use oxygen more efficiently, which equals better endurance!",
+    detailedExplanation: {
+      why: "VO2 Max measures your cardiovascular fitness. It's the maximum oxygen your body can use during intense exercise.",
+      benefits: [
+        "Track fitness improvements over time",
+        "Predict race performance potential",
+        "Guide training intensity zones"
+      ],
+      tips: [
+        "Consistency matters more than single data points",
+        "Track trends over 4-8 weeks for meaningful insights",
+        "Higher isn't always better - focus on steady improvement"
       ]
     }
   };
@@ -475,6 +504,16 @@ export default function SimpleMetrics() {
               title="Pace"
               showHeader={true}
               helpTooltip={paceHelpContent}
+            />
+          )}
+
+          {/* VO2 Max Section */}
+          {filteredWeeklyVO2.length > 0 && (
+            <WeeklyVO2Chart
+              data={filteredWeeklyVO2}
+              title="VO2 Max Estimate"
+              showHeader={true}
+              helpTooltip={vo2HelpContent}
             />
           )}
         </div>
