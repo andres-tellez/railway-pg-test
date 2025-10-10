@@ -63,6 +63,11 @@ export default function SimpleMetrics() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredHRBar, setHoveredHRBar] = useState<{ index: number; x: number; y: number } | null>(null);
+  const [selectedWeeks, setSelectedWeeks] = useState<number>(8);
+  const [allWeeklyData, setAllWeeklyData] = useState<{
+    trends: WeeklyTrendData[];
+    hrZones: WeeklyHRZoneData[];
+  }>({ trends: [], hrZones: [] });
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -70,7 +75,7 @@ export default function SimpleMetrics() {
         console.log("📊 Fetching ALL metrics in single call...");
         const startTime = performance.now();
 
-        // Single API call for everything
+        // Single API call for everything (always fetch all 20 weeks)
         const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[]}>("/api/metrics/all-metrics");
 
         const loadTime = performance.now() - startTime;
@@ -106,8 +111,12 @@ export default function SimpleMetrics() {
 
         setMetrics(displayMetrics);
         setHrZones(data.hr_zones);
-        setWeeklyTrends(data.weekly_trends);
-        setWeeklyHRZones(data.weekly_hr_zones);
+
+        // Store all data for filtering
+        setAllWeeklyData({
+          trends: data.weekly_trends,
+          hrZones: data.weekly_hr_zones
+        });
 
       } catch (err) {
         console.error("Failed to fetch metrics:", err);
@@ -143,7 +152,15 @@ export default function SimpleMetrics() {
     };
 
     fetchMetrics();
-  }, []);
+  }, []); // Remove selectedWeeks dependency - only fetch once
+
+  // Compute filtered data based on selected weeks (instant filtering)
+  const filteredWeeklyTrends = allWeeklyData.trends.slice(0, selectedWeeks);
+  const filteredWeeklyHRZones = allWeeklyData.hrZones.slice(0, selectedWeeks);
+
+  // Debug logging
+  console.log(`📊 Data availability: ${allWeeklyData.trends.length} trends, ${allWeeklyData.hrZones.length} HR zones`);
+  console.log(`📊 Selected weeks: ${selectedWeeks}, Filtered: ${filteredWeeklyTrends.length} trends, ${filteredWeeklyHRZones.length} HR zones`);
 
   if (loading) {
     return (
@@ -239,17 +256,32 @@ export default function SimpleMetrics() {
         )}
 
         {/* Weekly Trends Header */}
-        <div className="mb-8">
+        <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Weekly Trends</h1>
+          <div className="flex items-center gap-3">
+            <label htmlFor="weeks-select" className="text-sm font-medium text-gray-700">
+              Time Period:
+            </label>
+            <select
+              id="weeks-select"
+              value={selectedWeeks}
+              onChange={(e) => setSelectedWeeks(Number(e.target.value))}
+              className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            >
+              <option value={4}>4 weeks</option>
+              <option value={8}>8 weeks</option>
+              <option value={16}>16 weeks</option>
+            </select>
+          </div>
         </div>
 
         {/* Charts without outer card */}
         <div className="space-y-12">
 
           {/* Mileage Section */}
-          {weeklyTrends.length > 0 && (
+          {filteredWeeklyTrends.length > 0 && (
             <WeeklyTrendChart
-              data={weeklyTrends}
+              data={filteredWeeklyTrends}
               title=""
               showHeader={false}
               helpTooltip={mileageHelpContent}
@@ -257,7 +289,7 @@ export default function SimpleMetrics() {
           )}
 
           {/* HR Zones Section */}
-          {weeklyHRZones.length > 0 && (
+          {filteredWeeklyHRZones.length > 0 && (
             <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
               <div className="flex items-center gap-3 mb-6">
                 <h3 className="text-xl font-bold text-gray-900">HR Zones</h3>
@@ -279,9 +311,9 @@ export default function SimpleMetrics() {
 
                 <div className="relative">
                   <div className="flex items-end space-x-1 h-48 bg-gradient-to-t from-gray-50 to-white p-6 rounded-xl border border-gray-100">
-                    {weeklyHRZones.map((week, index) => {
+                    {filteredWeeklyHRZones.map((week, index) => {
                       const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
-                      const maxTotal = Math.max(...weeklyHRZones.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
+                      const maxTotal = Math.max(...filteredWeeklyHRZones.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
                       const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
                       const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
 
@@ -380,7 +412,7 @@ export default function SimpleMetrics() {
                         <div>
                           {(() => {
                             try {
-                              const dateStr = weeklyHRZones[hoveredHRBar.index].week;
+                              const dateStr = filteredWeeklyHRZones[hoveredHRBar.index].week;
                               // Handle different date formats
                               if (dateStr.includes('T')) {
                                 // Already has time component
@@ -399,30 +431,30 @@ export default function SimpleMetrics() {
                               }
                             } catch (error) {
                               // Fallback if date parsing fails
-                              return weeklyHRZones[hoveredHRBar.index].week;
+                              return filteredWeeklyHRZones[hoveredHRBar.index].week;
                             }
                           })()}
                         </div>
                         <div className="text-xs space-y-1 mt-1">
                           <div className="flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#3B82F6' }}></div>
-                            <span>Z1: {weeklyHRZones[hoveredHRBar.index].zone_1.toFixed(1)}%</span>
+                            <span>Z1: {filteredWeeklyHRZones[hoveredHRBar.index].zone_1.toFixed(1)}%</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#10B981' }}></div>
-                            <span>Z2: {weeklyHRZones[hoveredHRBar.index].zone_2.toFixed(1)}%</span>
+                            <span>Z2: {filteredWeeklyHRZones[hoveredHRBar.index].zone_2.toFixed(1)}%</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#F59E0B' }}></div>
-                            <span>Z3: {weeklyHRZones[hoveredHRBar.index].zone_3.toFixed(1)}%</span>
+                            <span>Z3: {filteredWeeklyHRZones[hoveredHRBar.index].zone_3.toFixed(1)}%</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#EF4444' }}></div>
-                            <span>Z4: {weeklyHRZones[hoveredHRBar.index].zone_4.toFixed(1)}%</span>
+                            <span>Z4: {filteredWeeklyHRZones[hoveredHRBar.index].zone_4.toFixed(1)}%</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#8B5CF6' }}></div>
-                            <span>Z5: {weeklyHRZones[hoveredHRBar.index].zone_5.toFixed(1)}%</span>
+                            <span>Z5: {filteredWeeklyHRZones[hoveredHRBar.index].zone_5.toFixed(1)}%</span>
                           </div>
                         </div>
                       </div>
@@ -437,9 +469,9 @@ export default function SimpleMetrics() {
           )}
 
           {/* Pace Section */}
-          {weeklyTrends.length > 0 && (
+          {filteredWeeklyTrends.length > 0 && (
             <WeeklyPaceChart
-              data={weeklyTrends}
+              data={filteredWeeklyTrends}
               title="Pace"
               showHeader={true}
               helpTooltip={paceHelpContent}
