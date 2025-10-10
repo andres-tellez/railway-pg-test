@@ -164,20 +164,6 @@ def strava_callback_get():
     return redirect(f"{frontend_redirect}?strava=connected")
 
 
-@auth_bp.route("/trigger-ingest/<int:athlete_id>", methods=["POST"])
-def trigger_ingest(athlete_id):
-    """Manually trigger ingestion for an athlete (admin/dev use)."""
-    try:
-        print(f"[Ingestion] Triggered ingestion for athlete {athlete_id}", flush=True)
-        # 🚨 Always pass None so ingestion creates its own fresh session
-        result = run_full_ingestion_and_enrichment(None, athlete_id)
-        print(f"[Ingestion] Result: {result}", flush=True)
-        return jsonify(result), 200
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
 @auth_bp.route("/strava/callback", methods=["POST"])
 def strava_callback_post():
     """

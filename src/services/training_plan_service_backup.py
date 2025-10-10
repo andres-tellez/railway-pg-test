@@ -1,4 +1,4 @@
-# src/services/training_plan_service.py
+﻿# src/services/training_plan_service.py
 # Clean implementation with Jack Daniels Running Formula strategy
 
 import os
@@ -46,17 +46,17 @@ def generate_plan_with_b_plus_validation(
     training_days = [str(day) for day in training_days_raw] if training_days_raw else []
 
     # DEBUG: Validate data bundle contents
-    print(f"\n?? DEBUG: Data Bundle Validation:")
+    print(f"\n🔍 DEBUG: Data Bundle Validation:")
     print(
-        f"  � data_bundle keys: {list(data_bundle.keys()) if data_bundle else 'None'}"
+        f"  • data_bundle keys: {list(data_bundle.keys()) if data_bundle else 'None'}"
     )
     for key, value in data_bundle.items():
         if isinstance(value, list):
-            print(f"  � {key}: list with {len(value)} items")
+            print(f"  • {key}: list with {len(value)} items")
         elif isinstance(value, dict):
-            print(f"  � {key}: dict with {len(value)} keys")
+            print(f"  • {key}: dict with {len(value)} keys")
         else:
-            print(f"  � {key}: {value}")
+            print(f"  • {key}: {value}")
 
     # Check if plan generation is safe
     quality_assessment = data_bundle.get("quality_assessment", {})
@@ -67,7 +67,7 @@ def generate_plan_with_b_plus_validation(
         user_message = marathon_safety.get(
             "user_message", "Plan creation blocked for safety reasons"
         )
-        print(f"\n? PLAN CREATION BLOCKED:")
+        print(f"\n❌ PLAN CREATION BLOCKED:")
         print(f"   {user_message}")
         raise ValueError(user_message)
 
@@ -75,19 +75,13 @@ def generate_plan_with_b_plus_validation(
     if not quality_assessment.get("can_generate_plan", True):
         critical_issues = quality_assessment.get("critical_issues", [])
         error_msg = "Cannot generate training plan: " + "; ".join(critical_issues)
-        print(f"\n? SAFETY CHECK FAILED:")
+        print(f"\n❌ SAFETY CHECK FAILED:")
         print(f"   {error_msg}")
         raise ValueError(error_msg)
 
     # Extract training days
     training_days = _parse_training_days(data_bundle.get("user_profile", {}))
     print(f"Training Days: {', '.join(training_days)} ({len(training_days)} days/week)")
-
-    # DEBUG: Show training days being used
-    print(f"\n🔍 TRAINING DAYS DEBUG:")
-    print(f"   • Raw training_days from profile: {data_bundle.get('user_profile', {}).get('training_days', [])}")
-    print(f"   • Parsed training_days: {training_days}")
-    print(f"   • Training days count: {len(training_days)}")
 
     # Calculate plan duration
     start_date = datetime.today().date()
@@ -108,7 +102,7 @@ def generate_plan_with_b_plus_validation(
         session, user_id, race_date, race_distance, workouts, data_bundle
     )
 
-    print(f"\n? Plan generated successfully!")
+    print(f"\n✅ Plan generated successfully!")
     print(f"Plan ID: {plan.id}")
 
     return plan
@@ -167,13 +161,13 @@ def _create_dummy_plan_structure(
         # Simple logic: weekend = long run, others = easy run
         if date_obj.weekday() in [5, 6]:  # Saturday or Sunday
             workout_type = "Long Run"
-            miles = 10.0  # Generic starting point - GPT will adjust based on user's base mileage
+            miles = 12.0
             intensity = "Moderate"
             target_zone = "Zone 2-3"
             focus = "Endurance"
         else:
             workout_type = "Easy"
-            miles = 4.0  # Generic starting point - GPT will adjust based on user's base mileage
+            miles = 5.0
             intensity = "Low"
             target_zone = "Zone 1-2"
             focus = "Base Building"
@@ -195,153 +189,43 @@ def _build_compact_jack_daniels_prompt(
     user_data: dict, plan_structure: list[dict]
 ) -> str:
     """
-    Build optimized Jack Daniels prompt for single GPT call to generate complete plan.
+    Build compact Jack Daniels prompt for single GPT call approach.
     """
     import json
 
-    # Extract clean values from user_data
-    profile = user_data.get("user_profile", {})
-    activities = user_data.get("activities", [])
-    weekly_summaries = user_data.get("weekly_summaries", [])
-    base_mileage = user_data.get("base_mileage", 0)
-    hr_zones = user_data.get("heart_rate_zones", {})
+    # Format user data for GPT
+    user_data_json = json.dumps(user_data, indent=2)
 
-    # Build clean runner profile summary
-    runner_profile = f"""RUNNER PROFILE:
-- Age: {profile.get('age', 'Unknown')}
-- Experience: {str(profile.get('runner_level', 'Intermediate')).split('.')[-1]}
-- Weight: {profile.get('weight', 'Unknown')} lbs
-- Height: {profile.get('height', 'Unknown')}
-- Main Goal: {str(profile.get('main_goal', 'Complete race')).split('.')[-1]}
-- Past Races: {', '.join([str(r).split('.')[-1] for r in profile.get('past_races', [])])}
-- Longest Run: {profile.get('longest_run', 'Unknown')} miles"""
+    # Format plan structure for GPT
+    plan_structure_json = json.dumps(plan_structure, indent=2)
 
-    # Show recent training history with pace and HR zones (last 8 activities = ~2 weeks)
-    recent_activities = activities[:8]
-    activity_list = []
-    for act in recent_activities:
-        date = act.get('activity_date', 'Unknown')
-        distance = act.get('distance', 0)
-        avg_speed = act.get('avg_speed', 0)
-        avg_hr = act.get('avg_hr', 0)
-        pace = f"{int(60/avg_speed)}:{int((60/avg_speed % 1) * 60):02d}/mi" if avg_speed > 0 else "N/A"
-        hr_zone = "Z1" if avg_hr < 124 else "Z2" if avg_hr < 142 else "Z3" if avg_hr < 159 else "Z4"  # Approximate zones for 177 max HR
-        activity_list.append(f"{date}: {distance:.1f}mi @ {pace} ({avg_hr:.0f}bpm, {hr_zone})")
+    prompt = f"""You are an expert running coach using Jack Daniels methodology. Revise this training plan structure with proper mileage and progression.
 
-    activity_summary = f"RECENT RUNS: {' | '.join(activity_list)}"
+USER DATA:
+{user_data_json}
 
-    # Build weekly summary (most recent 6 weeks, date + mileage + avg pace + HR zones)
-    weekly_list = []
-    for week in weekly_summaries[:6]:  # First 6 = most recent
-        if isinstance(week, str) and "miles" in week:
-            # Parse string format: "Week of Oct 06: 1 runs, 6.75 miles, longest run 6.75mi, avg pace 6:11/mi, HR mixed Zones."
-            import re
-            date_match = re.search(r"Week of (\w+ \d+)", week)
-            miles_match = re.search(r"(\d+\.?\d*)\s*miles", week)
-            pace_match = re.search(r"avg pace (\d+:\d+)/mi", week)
-            hr_match = re.search(r"HR (mostly Zone \d+|mixed Zones)", week)
-            if date_match and miles_match and pace_match:
-                date = date_match.group(1)
-                miles = miles_match.group(1)
-                pace = pace_match.group(1)
-                hr_info = hr_match.group(1) if hr_match else "Z2"
-                weekly_list.append(f"{date}: {miles}mi @ {pace}/mi ({hr_info})")
-        elif isinstance(week, dict):
-            # Dict format
-            date = week.get('week_start', 'Unknown')
-            miles = week.get('total_miles', 0)
-            pace = week.get('avg_pace', 'N/A')
-            hr_zones = week.get('hr_zones', 'Z2')
-            weekly_list.append(f"{date}: {miles:.1f}mi @ {pace}/mi ({hr_zones})")
-
-    weekly_summary = f"RECENT WEEKLY INSIGHTS: {' | '.join(weekly_list)}" if weekly_list else "RECENT WEEKLY INSIGHTS: No data"
-
-    # Build heart rate zones (compact format)
-    hr_summary = f"HR ZONES: MaxHR={hr_zones.get('max_hr', 170)}bpm | Z1-2=Easy | Z3=Threshold | Z4=Hard"
-
-    prompt = f"""You are an expert running coach using Jack Daniels methodology. Create a complete marathon training plan.
-
-{runner_profile}
-
-Format: Date | Distance | Avg Pace | HR Zone
-{activity_summary}
-
-{weekly_summary}
-CURRENT BASE MILEAGE: {base_mileage:.1f} miles/week
-{hr_summary}
-
-TRAINING SCHEDULE:
-- Total workouts: {len(plan_structure)}
-- Start date: {plan_structure[0]['date']}
-- Race date: {plan_structure[-1]['date']} (this is race day - use "Race Day" workout type)
-- Training days: {', '.join(profile.get('training_days', []))}
+TRAINING PLAN STRUCTURE:
+{plan_structure_json}
 
 JACK DANIELS RULES:
-- Long runs: 1 per week (weekend), 25-30% weekly mileage @ Zone 2-3, cap at 22 mi
-- Easy runs: 15-20% weekly mileage @ Zone 1-2
-- Threshold runs: 8-12% weekly mileage @ Zone 3-4
-- Progression: Max +10% weekly mileage increase per week
-- TAPER: Final 3 weeks reduce long-run to 60%, 40%, 20% of peak long-run distance"""
+- Long runs: 1/week, MUST be on weekends (Sat/Sun), 25-30% of weekly mileage, Zone 2-3, cap at Beginner=18mi/Intermediate=20-22mi/Advanced=24mi
+- Every 2-3 weeks: marathon-pace finish (last 4-6mi @ Zone 3)
+- Taper: reduce to 60%, 40%, 20% of peak over final 3 weeks
+- Recovery: 10% of weekly mileage @ Z1-2
+- Easy: 15-20% of weekly mileage @ Z1-2
+- Threshold: 8-12% of weekly mileage @ Z3-4
+- Progression: max +10% weekly mileage increase
+- Round miles to nearest 0.5
 
-    prompt += f"""
-
-CRITICAL: Return ALL {len(plan_structure)} workouts as a JSON array.
-
-Return ONLY a JSON array (no explanation), one workout per date above:
-[
-  {{"date": "{plan_structure[0]['date']}", "workout_type": "Easy", "miles": 5.0, "target_zone": "Zone 1-2", "intensity": "Low", "description": "Recovery run", "focus": "Active recovery"}},
-  {{"date": "{plan_structure[1]['date']}", "workout_type": "Easy", "miles": 4.0, "target_zone": "Zone 1-2", "intensity": "Low", "description": "Easy run", "focus": "Aerobic base"}},
-  ... (continue for all {len(plan_structure)} dates) ...
-  {{"date": "{plan_structure[-1]['date']}", "workout_type": "Race Day", "miles": 26.2, "target_zone": "Zone 3-4", "intensity": "High", "description": "Marathon race", "focus": "Race execution"}}
-]"""
+OUTPUT: Complete revised plan as JSON array with fields: date, workout_type, miles, target_zone, intensity, description, focus"""
 
     return prompt
-
-
-def _generate_jack_daniels_plan_chunked(
-    data_bundle: dict, race_date: date, race_distance: str, training_days: list[str]
-) -> list[dict]:
-    """Generate Jack Daniels training plan using chunked approach to avoid token limits."""
-    from datetime import datetime, date
-    from src.utils.gpt_ops import get_gpt_response
-
-    user = data_bundle.get("user_profile", {})
-    start_date = datetime.today().date()
-
-    print(f"\n🔧 CHUNKED JACK DANIELS PLAN GENERATION")
-    print("=" * 60)
-
-    # Create dummy plan structure
-    print("\nStep 1: Creating dummy plan structure...")
-    dummy_plan = _create_dummy_plan_structure(start_date, race_date, training_days)
-    print(f"Created {len(dummy_plan)} dummy workouts")
-
-    # Split into chunks of 7 workouts (roughly 2 weeks each)
-    chunk_size = 7
-    chunks = [dummy_plan[i:i + chunk_size] for i in range(0, len(dummy_plan), chunk_size)]
-    print(f"Split into {len(chunks)} chunks of ~{chunk_size} workouts each")
-
-    all_workouts = []
-
-    for chunk_idx, chunk in enumerate(chunks):
-        print(f"\n🔄 Processing chunk {chunk_idx + 1}/{len(chunks)} ({len(chunk)} workouts)...")
-
-        # Generate workouts for this chunk
-        chunk_workouts = _generate_jack_daniels_plan(
-            data_bundle, race_date, race_distance, training_days, chunk, chunk_idx, len(chunks)
-        )
-
-        all_workouts.extend(chunk_workouts)
-        print(f"✅ Chunk {chunk_idx + 1} complete: {len(chunk_workouts)} workouts")
-
-    print(f"\n🎉 All chunks complete! Generated {len(all_workouts)} total workouts")
-    return all_workouts
 
 
 def _generate_jack_daniels_plan(
     data_bundle: dict, race_date: date, race_distance: str, training_days: list[str]
 ) -> list[dict]:
-    """Generate complete Jack Daniels training plan in a single GPT call."""
+    """Generate Jack Daniels training plan using single GPT call approach."""
     from datetime import datetime, date
     from src.utils.gpt_ops import get_gpt_response
 
@@ -351,204 +235,554 @@ def _generate_jack_daniels_plan(
 
     start_date = datetime.today().date()
 
-    print(f"\n🔧 JACK DANIELS PLAN GENERATION (SINGLE GPT CALL)")
+    print(f"\n🔍 SINGLE GPT CALL JACK DANIELS PLAN GENERATION")
     print("=" * 60)
 
-    # Create full dummy plan structure
+    # Step 3: Create dummy plan structure
     print("\nStep 3: Creating dummy plan structure...")
-    print(f"🔍 DEBUG - training_days parameter: {training_days}")
-    print(f"🔍 DEBUG - user profile training_days: {user.get('training_days', 'MISSING')}")
     dummy_plan = _create_dummy_plan_structure(start_date, race_date, training_days)
     print(f"Created {len(dummy_plan)} dummy workouts")
-
-    # DEBUG: Show first few dummy workouts
-    print(f"\n🔍 DUMMY PLAN SAMPLE (first 5 workouts):")
-    for i, workout in enumerate(dummy_plan[:5]):
-        print(f"   [{i+1}] {workout['date']} ({workout['workout_type']}) - {workout['miles']} mi")
 
     # Step 4: GPT revises entire plan with Jack Daniels methodology
     print("\nStep 4: GPT revising plan with Jack Daniels methodology...")
 
     # Prepare user data for GPT
-    # IMPORTANT: Update user profile with normalized training_days to match dummy plan dates
-    user_with_normalized_days = user.copy()
-    user_with_normalized_days['training_days'] = training_days  # Use normalized days (MON, TUE, etc.)
-
-    # DEBUG: Check data quality before base mileage calculation
-    data_quality = data_bundle.get("quality_assessment", {}).get("data_quality", {})
-    print(f"\n🔍 DEBUG: Base Mileage Calculation Input:")
-    print(f"  • Weekly summaries count: {len(weekly_summaries)}")
-    print(f"  • Data quality: {data_quality.get('quality', 'UNKNOWN')} ({data_quality.get('reason', 'No reason')})")
-    print(f"  • Use fallbacks: {data_quality.get('use_fallbacks', 'NOT SET')}")
-
-    # Use the same 6 weeks for base mileage calculation that will be shown in the prompt
-    weekly_summaries_for_calculation = weekly_summaries[:6] if len(weekly_summaries) >= 6 else weekly_summaries
-    print(f"  • Using {len(weekly_summaries_for_calculation)} weeks for base mileage calculation (same as prompt display)")
-
-    base_mileage = _calculate_base_mileage(
-        weekly_summaries_for_calculation,
-        str(user.get("runner_level", "Intermediate")).lower(),
-        data_quality
-    )
-    print(f"  • Calculated base mileage: {base_mileage} miles/week")
-
     user_data = {
-        "user_profile": user_with_normalized_days,
+        "user_profile": user,
         "activities": activities[:10],  # Limit to recent activities
         "weekly_summaries": weekly_summaries,
-        "base_mileage": base_mileage,
+        "base_mileage": _calculate_base_mileage(
+            weekly_summaries,
+            str(user.get("runner_level", "Intermediate")).lower(),
+            data_bundle.get("quality_assessment", {}).get("data_quality", {})
+        ),
         "heart_rate_zones": _calculate_user_heart_rate_zones(user, activities)
     }
 
-    # DEBUG: Validate user data - VERIFY ACTUAL DATA vs FALLBACK
-    print(f"\n🔍 USER DATA VALIDATION (Actual vs Fallback):")
-    profile = user_data.get('user_profile', {})
-    print(f"   • Age: {profile.get('age', 'FALLBACK')} (from age_group: {profile.get('age_group', 'NONE')})")
-    print(f"   • Runner Level: {profile.get('runner_level', 'FALLBACK')}")
-    print(f"   • Weight: {profile.get('weight', 'FALLBACK')} lbs")
-    print(f"   • Height: {profile.get('height', 'FALLBACK')}")
-    print(f"   • Training Days: {profile.get('training_days', 'FALLBACK')}")
-    print(f"   • Main Goal: {profile.get('main_goal', 'FALLBACK')}")
-    print(f"   • Past Races: {profile.get('past_races', 'FALLBACK')}")
-    print(f"   • Longest Run: {profile.get('longest_run', 'FALLBACK')} miles")
-    print(f"   • Activities (last 3): {[{act.get('activity_date'): act.get('distance')} for act in user_data.get('activities', [])[:3]]}")
-    print(f"   • Weekly Summaries: {len(user_data.get('weekly_summaries', []))} weeks")
-    print(f"   • Base Mileage: {user_data.get('base_mileage', 'FALLBACK'):.1f} mi/week")
-    print(f"   • Heart Rate Max: {user_data.get('heart_rate_zones', {}).get('max_hr', 'FALLBACK')} bpm")
-
-    # Build compact prompt (without chunk parameters - generate full plan)
+    # Build compact prompt
     prompt = _build_compact_jack_daniels_prompt(user_data, dummy_plan)
     print(f"Prompt length: ~{len(prompt)} characters")
 
-    # DEBUG: Show first 1000 chars of prompt
-    print(f"\n🔍 PROMPT (first 1000 chars):")
-    print(prompt[:1000])
-    print(f"...")
-
-    # Show complete prompt in terminal
-    print(f"\n📝 COMPLETE GPT PROMPT:")
-    print("=" * 80)
-    print(prompt)
-    print("=" * 80)
-
-    # Log complete prompt to Flask logs
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"COMPLETE GPT PROMPT:\n{prompt}")
-
     # Get GPT response
     try:
-        print(f"\n🔍 SENDING TO GPT...")
-        response = get_gpt_response(prompt, require_json=False)  # Allow plain text response
-        print(f"✅ GPT response received ({len(response)} characters)")
-
-        # DEBUG: Show GPT response
-        print(f"\n🔍 GPT RESPONSE (first 500 chars):")
-        print(response[:500])
-        print(f"...")
-        print(f"\n🔍 GPT RESPONSE (last 500 chars):")
-        print(response[-500:])
-
-        # Log complete GPT response to Flask logs
-        logger.info(f"COMPLETE GPT RESPONSE:\n{response}")
+        response = get_gpt_response(prompt)
+        print(f"GPT response received ({len(response)} characters)")
 
         # Parse response
-        print(f"\n🔍 PARSING GPT RESPONSE...")
         workouts = _parse_gpt_workout_response(response, training_days, start_date, race_date)
-        print(f"✅ Parsed {len(workouts)} workouts")
+        print(f"Parsed {len(workouts)} workouts")
 
-        if len(workouts) == 0:
-            raise ValueError("GPT returned 0 workouts - parsing failed")
-
-        # Validate GPT followed the rules
-        print(f"\n🔍 VALIDATING PLAN...")
-        _validate_plan_rules(workouts, training_days)
-
-        print(f"✅ GPT plan generation successful!")
         return workouts
 
     except Exception as e:
         print(f"GPT generation failed: {e}")
-        print("❌ CRITICAL ERROR: GPT plan generation failed")
-        raise RuntimeError(f"Failed to generate training plan: {e}") from e
+        print("Using dummy plan as fallback")
+        return dummy_plan
 
+    # Calculate all training dates upfront
+    training_dates = _calculate_training_dates(start_date, race_date, training_days)
+    print(
+        f"Calculated {len(training_dates)} training dates across {len(set([w for w, d in training_dates]))} weeks"
+    )
 
-def _validate_plan_rules(workouts: list[dict], training_days: list[str]) -> None:
-    """Validate that GPT followed the training plan rules."""
-    from datetime import datetime, timedelta
+    # DEBUG: Show first 10 training dates with day of week
+    print(f"\n🔍 DEBUG: First 10 training dates:")
+    for i, (week, d) in enumerate(training_dates[:10]):
+        day_name = d.strftime("%A")
+        print(f"   {i+1}. Week {week}: {d} ({day_name})")
 
-    print(f"\n🔍 PLAN VALIDATION:")
-
-    # Group workouts by week
+    # Group dates by week
     weeks = {}
-    for workout in workouts:
-        # Handle both string and date objects
-        if isinstance(workout["date"], str):
-            workout_date = datetime.strptime(workout["date"], "%Y-%m-%d").date()
-        else:
-            workout_date = workout["date"]  # Already a date object
-        week_start = workout_date - timedelta(days=workout_date.weekday())
-        week_key = week_start.strftime("%Y-%m-%d")
+    for week_num, date_obj in training_dates:
+        if week_num not in weeks:
+            weeks[week_num] = []
+        weeks[week_num].append(date_obj)
 
-        if week_key not in weeks:
-            weeks[week_key] = []
-        weeks[week_key].append(workout)
+    print(f"Week breakdown: {[(week, len(dates)) for week, dates in weeks.items()]}")
 
-    # Check progression
-    print(f"   📊 WEEKLY PROGRESSION:")
-    for i, (week_key, week_workouts) in enumerate(sorted(weeks.items()), 1):
-        total_miles = sum(float(w["miles"]) for w in week_workouts)
-        sat_workout = None
-        for w in week_workouts:
-            if isinstance(w["date"], str):
-                workout_date = datetime.strptime(w["date"], "%Y-%m-%d").date()
+    # Extract key variables (simplified)
+    age = user.get("age", 35)
+    runner_level = str(user.get("runner_level", "Intermediate")).lower()
+
+    # Get data quality assessment
+    data_quality = data_bundle.get("quality_assessment", {}).get("data_quality", {})
+    recent_mileage = _calculate_base_mileage(
+        weekly_summaries, runner_level, data_quality
+    )
+    longest_run = user.get("longest_run", 10.0)  # Use database value, fallback to 10.0
+
+    # Debug output to verify fixes
+    print(f"\n🔍 VALIDATION - KEY VALUES:")
+    print(f"   Age: {age} (from age_group: {user.get('age_group')})")
+    print(f"   Weight: {user.get('weight')}")
+    print(f"   Longest run: {longest_run} (from database: {user.get('longest_run')})")
+    print(f"   Runner level: {runner_level}")
+
+    # Calculate personalized heart rate zones from user data
+    heart_rate_zones = _calculate_user_heart_rate_zones(user, activities)
+
+    # Use calculated max HR instead of outdated 180-age formula
+    estimated_threshold_hr = heart_rate_zones["max_hr"]
+    total_weeks = len(weeks)
+
+    # OPTIMIZATION: Calculate these values ONCE and reuse across all weeks
+    progression_rate = _calculate_dynamic_progression_rate(user, total_weeks)
+
+    # Build activity context ONCE and reuse (compressed 2-line format)
+    recent_activities_context = ""
+    if activities and len(activities) > 0:
+        recent_activities_context = "\n\nRecent Runs (Last 5):\n"
+
+        # Line 1: Distances
+        distances = []
+        hrs = []
+        for activity in activities[:5]:
+            activity_date = activity.get("activity_date", "Unknown date")
+            if isinstance(activity_date, str):
+                # Parse and format as MM/DD
+                try:
+                    date_obj = datetime.strptime(activity_date, "%Y-%m-%d")
+                    date_str = date_obj.strftime("%m/%d")
+                except:
+                    date_str = activity_date[-5:]  # Last 5 chars (MM-DD)
             else:
-                workout_date = w["date"]
-            if workout_date.weekday() == 5:  # Saturday
-                sat_workout = w
+                date_str = str(activity_date)[-5:]
+
+            distance = activity.get("distance", 0)
+            avg_hr = activity.get("avg_hr", 0)
+            distances.append(f"{date_str}:{distance:.1f}mi")
+            hrs.append(f"{date_str}:{int(avg_hr)}bpm")
+
+        recent_activities_context += f"Distance: {' | '.join(distances)}\n"
+        recent_activities_context += f"Avg HR: {' | '.join(hrs)}"
+
+    # VALIDATION: Show all calculated values with fallback indicators
+    print(f"\n🔍 VALIDATION - OPTIMIZED VALUES:")
+
+    # Age validation
+    age_source = "✅ DATABASE" if user.get("age_group") else "⚠️ FALLBACK (default 35)"
+    print(f"   Age: {age} (from age_group: {user.get('age_group')}) - {age_source}")
+
+    # Weight validation
+    weight_source = "✅ DATABASE" if user.get("weight") else "⚠️ FALLBACK (default 70)"
+    print(f"   Weight: {user.get('weight')} - {weight_source}")
+
+    # Longest run validation
+    longest_run_db = user.get("longest_run")
+    longest_run_source = (
+        "✅ DATABASE" if longest_run_db else "⚠️ FALLBACK (calculated from activities)"
+    )
+    print(
+        f"   Longest run: {longest_run:.1f} (DB: {longest_run_db}) - {longest_run_source}"
+    )
+
+    # Runner level validation
+    runner_level_source = (
+        "✅ DATABASE"
+        if user.get("runner_level")
+        else "⚠️ FALLBACK (default Intermediate)"
+    )
+    print(f"   Runner level: {runner_level} - {runner_level_source}")
+
+    # Heart rate validation
+    hr_method = heart_rate_zones["method"]
+    hr_source = (
+        "✅ YOUR ACTIVITY DATA"
+        if hr_method == "from_activities"
+        else "⚠️ FALLBACK (220-age formula)"
+    )
+    print(f"   Heart Rate: max_hr={estimated_threshold_hr} ({hr_method}) - {hr_source}")
+
+    # Progression rate validation
+    print(f"   Progression rate: {progression_rate:.1%} (calculated ONCE)")
+
+    # Activity context validation
+    activity_source = (
+        "✅ YOUR ACTIVITY DATA" if len(activities) > 0 else "⚠️ NO ACTIVITIES FOUND"
+    )
+    print(f"   Activity context: {len(activities)} activities - {activity_source}")
+
+    # Weekly mileage validation
+    mileage_source = (
+        "✅ YOUR ACTIVITY DATA"
+        if weekly_summaries
+        else "⚠️ FALLBACK (based on runner level)"
+    )
+    print(f"   Weekly mileage base: {recent_mileage:.1f} mi/week - {mileage_source}")
+
+    # SUMMARY: Data source overview
+    print(f"\n📊 DATA SOURCE SUMMARY:")
+    print(
+        f"   ✅ Using YOUR data: {sum(1 for s in [age_source, weight_source, longest_run_source, runner_level_source, hr_source, activity_source, mileage_source] if '✅' in s)} fields"
+    )
+    print(
+        f"   ⚠️ Using fallbacks: {sum(1 for s in [age_source, weight_source, longest_run_source, runner_level_source, hr_source, activity_source, mileage_source] if '⚠️' in s)} fields"
+    )
+
+    # STEP 1: Create dummy plan (no GPT calls)
+    print("\n📋 STEP 1: Creating dummy plan (no GPT calls)")
+    # Group training dates by calendar month (YYYY-MM)
+    month_to_dates: dict[str, list[tuple[int, date]]] = {}
+    for w, d in training_dates:
+        key = d.strftime("%Y-%m")
+        month_to_dates.setdefault(key, []).append((w, d))
+
+    all_workouts = []
+    month1_workouts = []  # Store Month 1 for duplication
+
+    for month_idx, month_key in enumerate(sorted(month_to_dates.keys())):
+        month_items = sorted(month_to_dates[month_key], key=lambda x: x[1])
+        expected_dates = [d for _, d in month_items]
+
+        if month_idx == 0:
+            # Create dummy Month 1 data
+            print(f"\n📅 Creating dummy Month {month_key} ({len(month_items)} dates)")
+            dummy_workouts = []
+            for d in expected_dates:
+                weekday = d.weekday()
+                if weekday == 5:  # Saturday
+                    workout_type = "Long Run"
+                    miles = 10.0
+                    intensity = "Moderate"
+                    target_zone = "Zone 1-2"
+                    focus = "Endurance"
+                elif weekday == 2:  # Wednesday
+                    workout_type = "Threshold"
+                    miles = 5.0
+                    intensity = "High"
+                    target_zone = "Zone 3"
+                    focus = "Speed"
+                else:  # Monday, Thursday
+                    workout_type = "Easy Run"
+                    miles = 4.0
+                    intensity = "Low"
+                    target_zone = "Zone 1-2"
+                    focus = "Base Building"
+
+                dummy_workouts.append(
+                    {
+                        "date": d,
+                        "workout_type": workout_type,
+                        "description": f"Dummy {workout_type.lower()}",
+                        "miles": miles,
+                        "intensity": intensity,
+                        "target_zone": target_zone,
+                        "target_hr": "",
+                        "focus": focus,
+                    }
+                )
+
+            all_workouts.extend(dummy_workouts)
+            month1_workouts = dummy_workouts
+            print(f"   Month {month_key}: {len(dummy_workouts)} dummy workouts created")
+        else:
+            # DUPLICATE MONTH 1 WORKOUTS FOR REMAINING MONTHS (by day-of-week)
+            print(
+                f"\n📅 Duplicating Month 1 data for {month_key} ({len(month_items)} dates)"
+            )
+            duplicated_workouts = []
+
+            # Build a map of Month 1 workouts by day-of-week (0=Mon, 6=Sun)
+            month1_by_weekday = {}
+            for workout in month1_workouts:
+                workout_date = workout.get("date")
+                if workout_date:
+                    weekday = workout_date.weekday()
+                    if weekday not in month1_by_weekday:
+                        month1_by_weekday[weekday] = []
+                    month1_by_weekday[weekday].append(workout)
+
+            # Match target dates to source workouts by same day-of-week
+            for target_date in expected_dates:
+                target_weekday = target_date.weekday()
+
+                # Find a matching workout from Month 1 with same weekday
+                if (
+                    target_weekday in month1_by_weekday
+                    and len(month1_by_weekday[target_weekday]) > 0
+                ):
+                    source_workout = month1_by_weekday[target_weekday][
+                        0
+                    ]  # Use first occurrence
+                else:
+                    # Fallback if no match (shouldn't happen with same training days)
+                    source_workout = month1_workouts[0] if month1_workouts else {}
+
+                duplicated_workouts.append(
+                    {
+                        "date": target_date,
+                        "workout_type": source_workout.get("workout_type", "Easy Run"),
+                        "description": source_workout.get("description", ""),
+                        "miles": source_workout.get("miles", 4.0),
+                        "intensity": source_workout.get("intensity", "Low"),
+                        "target_zone": source_workout.get("target_zone", "Zone 1-2"),
+                        "target_hr": source_workout.get("target_hr", ""),
+                        "focus": source_workout.get("focus", "Base Building"),
+                    }
+                )
+
+            print(
+                f"   Month {month_key}: {len(duplicated_workouts)} workouts (duplicated by weekday from Month 1)"
+            )
+            all_workouts.extend(duplicated_workouts)
+    if all_workouts:
+        print(f"\n✅ Total generated (test mode): {len(all_workouts)} workouts")
+
+        # STEP 1: Create dummy plan (already done above)
+        print(f"\n📋 STEP 1: Dummy plan created with {len(all_workouts)} workouts")
+
+        # STEP 2: Generate full plan with taper constraints
+        print(f"\n🔄 STEP 2: Generating full plan with complete context...")
+        try:
+            # Calculate weekly mileage targets
+            weekly_mileage_targets = _calculate_weekly_mileage_targets(
+                weeks, recent_mileage, race_date
+            )
+            print(f"   📊 Weekly mileage targets: {weekly_mileage_targets}")
+
+            full_plan_prompt = _build_full_plan_prompt_with_constraints(
+                all_workouts,
+                user,
+                race_date,
+                activities,
+                training_days,
+                start_date,
+                weekly_mileage_targets,
+            )
+            print(f"   Full plan prompt size: {len(full_plan_prompt)} characters")
+
+            # LOG THE EXACT PROMPT SENT TO GPT
+            print(f"\n{'='*80}")
+            print(f"📝 EXACT PROMPT SENT TO GPT:")
+            print(f"{'='*80}")
+            print(full_plan_prompt)
+            print(f"{'='*80}\n")
+
+            response = get_gpt_response(full_plan_prompt)
+            full_plan_workouts = _parse_gpt_workout_response(
+                response, training_days, start_date, race_date
+            )
+
+            if full_plan_workouts and len(full_plan_workouts) > 0:
+                print(
+                    f"   ✅ Generated full plan with {len(full_plan_workouts)} workouts"
+                )
+
+                # VALIDATE TAPER CONSTRAINT (hardcoded safety check)
+                print(f"\n🛡️ Validating taper constraint...")
+                taper_threshold = race_date - timedelta(days=14)
+                violations = []
+                for w in full_plan_workouts:
+                    if "Long Run" in w.get("workout_type", ""):
+                        workout_date = w.get("date")
+                        miles = w.get("miles", 0)
+                        if (
+                            workout_date
+                            and workout_date >= taper_threshold
+                            and workout_date < race_date
+                        ):
+                            if miles > 12:
+                                violations.append(
+                                    f"{workout_date}: {miles}mi (should be ≤12mi)"
+                                )
+                                print(
+                                    f"   ⚠️ TAPER VIOLATION: {workout_date} has {miles}mi long run (within 14 days of race)"
+                                )
+                        if workout_date == race_date:
+                            if "Long Run" in w.get("workout_type", ""):
+                                violations.append(
+                                    f"{workout_date}: Race day has Long Run scheduled (should be race)"
+                                )
+                                print(
+                                    f"   ⚠️ RACE DAY VIOLATION: {workout_date} has Long Run scheduled"
+                                )
+
+                if violations:
+                    print(
+                        f"   ❌ Taper constraint violated! {len(violations)} issues found."
+                    )
+                    for v in violations:
+                        print(f"      • {v}")
+
+                    # AUTO-FIX: Cap long runs within taper period to 12 miles
+                    print(f"\n   🔧 Auto-fixing taper violations...")
+                    fixed_count = 0
+                    for w in full_plan_workouts:
+                        if "Long Run" in w.get("workout_type", ""):
+                            workout_date = w.get("date")
+                            miles = w.get("miles", 0)
+                            if (
+                                workout_date
+                                and workout_date >= taper_threshold
+                                and workout_date < race_date
+                            ):
+                                if miles > 12:
+                                    print(
+                                        f"      • {workout_date}: {miles}mi → 12mi (capped)"
+                                    )
+                                    w["miles"] = 12.0
+                                    w["description"] = (
+                                        f"Long Run (tapered to 12mi for race prep)"
+                                    )
+                                    fixed_count += 1
+                            if workout_date == race_date:
+                                if "Long Run" in w.get("workout_type", ""):
+                                    print(
+                                        f"      • {workout_date}: Removed Long Run on race day"
+                                    )
+                                    w["workout_type"] = "Recovery"
+                                    w["miles"] = 3.0
+                                    w["description"] = (
+                                        "Light recovery run or race day prep"
+                                    )
+                                    fixed_count += 1
+                    print(f"   ✅ Fixed {fixed_count} taper violations")
+                else:
+                    print(
+                        f"   ✅ Taper constraint validated: All long runs properly tapered"
+                    )
+
+                # OUTPUT PLAN TO LOGS
+                print(f"\n📋 GENERATED PLAN:")
+                print("=" * 80)
+                for w in sorted(full_plan_workouts, key=lambda x: x.get("date")):
+                    print(
+                        f"{w['date']}: {w['workout_type']:15} {w.get('miles', 0):5.1f}mi - {w.get('description', '')}"
+                    )
+                print("=" * 80)
+
+            else:
+                print(f"   ⚠️ Full plan generation failed, using dummy plan")
+                full_plan_workouts = all_workouts
+        except Exception as e:
+            print(f"   ❌ Full plan generation failed: {e}, using dummy plan")
+            full_plan_workouts = all_workouts
+
+        print(f"\n✅ Plan generation complete, ready to save to database")
+
+        # STEP 3: Generate segments for all workouts
+        full_plan_workouts = _generate_workout_segments(full_plan_workouts)
+
+        return full_plan_workouts
+
+    # Generate workouts week by week (fallback)
+    all_workouts = []
+    prior_weeks_summary: list[dict] = []
+
+    for week_num in sorted(weeks.keys()):
+        week_dates = sorted(weeks[week_num])
+        print(f"\n📅 Generating Week {week_num}: {len(week_dates)} workouts")
+        print(f"   Dates: {[d.strftime('%Y-%m-%d (%a)') for d in week_dates]}")
+
+        # Determine explicit weekend long run date (Sat preferred, else Sun)
+        weekend_lr_date = None
+        for d in week_dates:
+            if d.weekday() == 5:  # Saturday
+                weekend_lr_date = d
                 break
-        sat_miles = float(sat_workout["miles"]) if sat_workout else 0
+        if weekend_lr_date is None:
+            for d in week_dates:
+                if d.weekday() == 6:  # Sunday
+                    weekend_lr_date = d
+                    break
 
-        print(f"      Week {i}: {total_miles:.1f}mi total, Long Run: {sat_miles:.1f}mi")
+        # Build week-specific prompt with history and explicit LR date
+        prompt = _build_week_prompt(
+            week_num,
+            week_dates,
+            user,
+            recent_mileage,
+            longest_run,
+            estimated_threshold_hr,
+            total_weeks,
+            heart_rate_zones,
+            progression_rate,
+            recent_activities_context,
+            prior_weeks_summary=prior_weeks_summary,
+            weekend_lr_date=weekend_lr_date,
+        )
 
-    # Check Saturday long run progression
-    sat_workouts = []
-    for w in workouts:
-        if isinstance(w["date"], str):
-            workout_date = datetime.strptime(w["date"], "%Y-%m-%d").date()
-        else:
-            workout_date = w["date"]
-        if workout_date.weekday() == 5:  # Saturday
-            sat_workouts.append(w)
-    sat_miles = [float(w["miles"]) for w in sat_workouts]
+        print(f"   Prompt length: ~{len(prompt)} characters")
+        # DEBUG: Save prompt to file
+        try:
+            os.makedirs("debug_dumps", exist_ok=True)
+            prompt_path = os.path.join("debug_dumps", f"week_{week_num:02d}_prompt.txt")
+            with open(prompt_path, "w", encoding="utf-8") as f:
+                f.write(prompt)
+        except Exception as _e:
+            print(f"   ⚠️ Could not write prompt debug file: {_e}")
 
-    print(f"   📈 LONG RUN PROGRESSION: {[f'{miles:.1f}mi' for miles in sat_miles]}")
+        # Get GPT response for this week
+        try:
+            response = get_gpt_response(prompt)
+            # DEBUG: Save raw response
+            try:
+                resp_path = os.path.join(
+                    "debug_dumps", f"week_{week_num:02d}_response.txt"
+                )
+                with open(resp_path, "w", encoding="utf-8") as f:
+                    f.write(response if isinstance(response, str) else str(response))
+            except Exception as _e:
+                print(f"   ⚠️ Could not write response debug file: {_e}")
+            week_workouts = _parse_gpt_workout_response(
+                response, training_days, start_date, race_date
+            )
 
-    # Check if progression makes sense
-    if len(sat_miles) >= 3:
-        peak_miles = max(sat_miles)
-        taper_start = sat_miles[-3:] if len(sat_miles) >= 3 else sat_miles[-2:]
+            print(f"   Generated {len(week_workouts)} workouts")
+            all_workouts.extend(week_workouts)
 
-        if all(miles <= peak_miles * 0.7 for miles in taper_start):
-            print(f"   ✅ Good taper progression")
-        else:
-            print(f"   ⚠️ Taper might be too aggressive or missing")
+            # DEBUG: Summarize LR placement for this week
+            try:
+                dates_set = {d for d in week_dates}
+                has_sat = any(d.weekday() == 5 for d in week_dates)
+                has_sun = any(d.weekday() == 6 for d in week_dates)
+                week_items = [w for w in week_workouts if w.get("date") in dates_set]
+                lrs = [
+                    w
+                    for w in week_items
+                    if str(w.get("workout_type", "")).strip().lower() == "long run"
+                ]
+                lr_info = "none"
+                if lrs:
+                    lr_date = lrs[0].get("date")
+                    lr_info = f"{lr_date.strftime('%Y-%m-%d (%a)')}"
+                print(
+                    f"   🧪 LR debug → has_sat={has_sat} has_sun={has_sun} lr={lr_info}"
+                )
+            except Exception as _e:
+                print(f"   ⚠️ LR debug failed: {_e}")
 
-    # Check back-to-back long run rule (no two > 20mi back-to-back)
-    violations = []
-    for i in range(len(sat_miles) - 1):
-        if sat_miles[i] > 20 and sat_miles[i + 1] > 20:
-            violations.append(f"Weeks {i+1}-{i+2}: Both {sat_miles[i]:.1f}mi and {sat_miles[i+1]:.1f}mi > 20mi")
+            # Update prior weeks summary for next iteration
+            try:
+                total_miles = round(
+                    sum(float(w.get("miles", 0) or 0) for w in week_workouts), 1
+                )
+                lr_miles = None
+                for w in week_workouts:
+                    if str(w.get("workout_type", "")).strip().lower() == "long run":
+                        lr_miles = float(w.get("miles", 0) or 0)
+                        break
+                prior_weeks_summary.append(
+                    {
+                        "week": week_num,
+                        "total_miles": total_miles,
+                        "long_run_miles": lr_miles,
+                    }
+                )
+            except Exception as _e:
+                print(f"   ⚠️ Could not update history summary: {_e}")
 
-    if violations:
-        print(f"   🚨 BACK-TO-BACK VIOLATIONS:")
-        for violation in violations:
-            print(f"      {violation}")
-    else:
-        print(f"   ✅ No back-to-back long runs > 20mi")
+        except Exception as e:
+            print(f"   ❌ Error generating week {week_num}: {e}")
+            # Generate fallback workouts for this week
+            fallback_workouts = _generate_fallback_week_workouts(
+                week_num, week_dates, recent_mileage, longest_run
+            )
+            all_workouts.extend(fallback_workouts)
+            print(f"   🔄 Generated {len(fallback_workouts)} fallback workouts")
 
-    print(f"   📅 Training days: {', '.join(training_days)}")
-    print(f"   🏃 Total workouts: {len(workouts)}")
+    print(f"\n✅ Total generated: {len(all_workouts)} workouts")
+    return all_workouts
 
 
 def _calculate_user_heart_rate_zones(user_profile: dict, activities: list) -> dict:
@@ -557,7 +791,7 @@ def _calculate_user_heart_rate_zones(user_profile: dict, activities: list) -> di
     max_hr_from_activities = None
     if activities:
         # Get the highest max heart rate from recent activities
-        print(f"\n?? HEART RATE DEBUG:")
+        print(f"\n🔍 HEART RATE DEBUG:")
         print(f"   Activities loaded: {len(activities)}")
 
         # DEBUG: Show first 5 activities' max_hr values before filtering
@@ -635,13 +869,13 @@ def _calculate_base_mileage(
 
     if use_fallbacks:
         print(
-            f"   ?? Base mileage: Using fallback (data quality: {data_quality.get('quality', 'UNKNOWN')})"
+            f"   📊 Base mileage: Using fallback (data quality: {data_quality.get('quality', 'UNKNOWN')})"
         )
 
         # Enhanced fallback strategy based on data quality and runner level
         if valid_activity_count == 0:
             # No valid data - very conservative fallback
-            print(f"   ?? Base mileage: NO VALID DATA - using minimal fallback")
+            print(f"   📊 Base mileage: NO VALID DATA - using minimal fallback")
             if "beginner" in runner_level:
                 return 8  # Very conservative for beginners with no data
             elif "advanced" in runner_level:
@@ -651,62 +885,54 @@ def _calculate_base_mileage(
         elif valid_activity_count < 5:
             # Very little data - conservative fallback
             print(
-                f"   ?? Base mileage: MINIMAL DATA ({valid_activity_count} activities) - using conservative fallback"
+                f"   📊 Base mileage: MINIMAL DATA ({valid_activity_count} activities) - using conservative fallback"
             )
             if "beginner" in runner_level:
-                return 20  # Low end of beginner range
+                return 12
             elif "advanced" in runner_level:
-                return 50  # Low end of advanced range
+                return 20
             else:
-                return 35  # Low end of intermediate range
+                return 16
         else:
-            # Some data but quality issues - standard fallback (mid-range)
+            # Some data but quality issues - standard fallback
             if "beginner" in runner_level:
-                return 25  # Mid-range for beginner (20-30)
+                return 15
             elif "advanced" in runner_level:
-                return 60  # Mid-range for advanced (50-70+)
+                return 35
             else:
-                return 40  # Mid-range for intermediate (35-50)
+                return 25
 
-    # Use actual data - LAST 4-6 weeks for accurate current fitness (Jack Daniels best practice)
+    # Use actual data - ALL available weeks for good quality data
     if weekly_summaries:
-        # Take most recent 4-6 weeks (prefer 6 if available)
-        weeks_to_use = weekly_summaries[-6:] if len(weekly_summaries) >= 6 else weekly_summaries[-4:]
-        print(f"   ?? Base mileage: Using last {len(weeks_to_use)} weeks of data (standard 4-6 week window)")
+        weeks_to_use = weekly_summaries
+        print(f"   📊 Base mileage: Using {len(weeks_to_use)} weeks of data")
 
-        # Parse mileage from summaries (dict or string format)
-        weekly_mileages = []
+        # Parse mileage from string summaries
+        total_mileage = 0
+        count = 0
 
         for summary in weeks_to_use:
-            if isinstance(summary, dict):
-                # Dict format: get total_miles directly
-                miles = summary.get('total_miles', 0)
-                if miles > 0:
-                    weekly_mileages.append(miles)
-            elif isinstance(summary, str) and "miles" in summary:
-                # String format: extract mileage like "15.2 miles"
+            if isinstance(summary, str) and "miles" in summary:
+                # Extract mileage from string like "15.2 miles"
                 import re
+
                 miles_match = re.search(r"(\d+\.?\d*)\s*miles", summary)
                 if miles_match:
-                    weekly_mileages.append(float(miles_match.group(1)))
+                    total_mileage += float(miles_match.group(1))
+                    count += 1
 
-        if weekly_mileages:
-            # Calculate average and round to nearest 5 miles (standard practice)
-            avg_mileage = sum(weekly_mileages) / len(weekly_mileages)
-            rounded_base = round(avg_mileage / 5) * 5  # Round to nearest 5
-            print(f"   ?? Base mileage calculation: {weekly_mileages} → avg={avg_mileage:.1f} → rounded={rounded_base}")
-            return max(rounded_base, 10)  # Minimum 10 miles/week
-        else:
-            print(f"   ?? Base mileage: No valid mileage data found in {len(weeks_to_use)} weekly summaries")
+        if count > 0:
+            recent_mileage = total_mileage / count
+            return max(recent_mileage, 10)  # Minimum 10 miles/week
 
     # Final fallback - should rarely reach here
-    print(f"   ?? Base mileage: Using final fallback (no weekly summaries)")
+    print(f"   📊 Base mileage: Using final fallback (no weekly summaries)")
     if "beginner" in runner_level:
-        return 25  # Mid-range for beginner (20-30 mi/week)
+        return 15
     elif "advanced" in runner_level:
-        return 60  # Mid-range for advanced (50-70+ mi/week)
+        return 35
     else:
-        return 40  # Mid-range for intermediate (35-50 mi/week)
+        return 25
 
 
 # REMOVED: _find_longest_recent_run() - duplicate calculation eliminated
@@ -725,11 +951,6 @@ def _calculate_training_dates(
     """
     from datetime import timedelta
 
-    print(f"\n🔍 _calculate_training_dates DEBUG:")
-    print(f"   • start_date: {start_date}")
-    print(f"   • race_date: {race_date}")
-    print(f"   • training_days: {training_days}")
-
     # Day name to number mapping
     day_mapping = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
 
@@ -740,9 +961,6 @@ def _calculate_training_dates(
     # Calculate total weeks
     total_days = (race_date - week_start).days
     total_weeks = max(1, (total_days + 6) // 7)
-
-    print(f"   • week_start: {week_start}")
-    print(f"   • total_weeks: {total_weeks}")
 
     training_dates = []
     current_week_start = week_start
@@ -894,7 +1112,7 @@ def _build_week_prompt(
                 history_lines
             )
 
-    # Derive a Long Run target from weekly mileage (bounded 8�20mi)
+    # Derive a Long Run target from weekly mileage (bounded 8–20mi)
     lr_target = round(max(8.0, min(20.0, weekly_mileage * 0.27)), 1)
     lr_target_min = round(max(8.0, lr_target * 0.9), 1)
     lr_target_max = round(min(20.0, lr_target * 1.1), 1)
@@ -918,14 +1136,14 @@ HR ZONES: Z1-2:{heart_rate_zones['zone_1_2']} | Z3:{heart_rate_zones['zone_3']} 
 
 WEEK {week_num} RULES:
 - {"Start easy, build base" if week_num == 1 else "Continue progression"}
-- Weekend Long Run (ENFORCED): Schedule exactly ONE Long Run on the weekend � use Saturday if Saturday is one of this week�s training days; otherwise use Sunday. Do NOT place the Long Run on a weekday. If it is race week, there is NO Long Run.
-- Keep at least 48�72 hours between hard sessions (the Long Run and any Threshold/Intervals/Marathon-Pace session are considered hard).
+- Weekend Long Run (ENFORCED): Schedule exactly ONE Long Run on the weekend — use Saturday if Saturday is one of this week’s training days; otherwise use Sunday. Do NOT place the Long Run on a weekday. If it is race week, there is NO Long Run.
+- Keep at least 48–72 hours between hard sessions (the Long Run and any Threshold/Intervals/Marathon-Pace session are considered hard).
 - {"Follow {progression_rate:.1%} increase rule" if week_num > 1 else "Start at base mileage"}
 - Never back-to-back hard workouts
 
 EXPLICIT TARGETS FOR THIS WEEK:
 - Weekly mileage target: ~{weekly_mileage:.1f} miles
-- Long Run target: {(weekend_lr_date.strftime('%Y-%m-%d') if weekend_lr_date else 'WEEKEND DATE')} � {lr_target:.1f} miles (acceptable range {lr_target_min}-{lr_target_max})
+- Long Run target: {(weekend_lr_date.strftime('%Y-%m-%d') if weekend_lr_date else 'WEEKEND DATE')} ≈ {lr_target:.1f} miles (acceptable range {lr_target_min}-{lr_target_max})
 
 HARD CONSTRAINTS:
 - Exactly one workout with workout_type = "Long Run" this week and it MUST be on {(weekend_lr_date.strftime('%Y-%m-%d') if weekend_lr_date else 'the weekend date provided')}. No other day may be "Long Run".
@@ -1034,7 +1252,7 @@ def _build_single_pass_prompt(
 RUNNER: {user['age']}yo, {user['weight']}lbs, {runner_level_display}, {recent_mileage:.1f}mi/week base
 RACE: {race_date} (Marathon)
 TRAINING DATES (fixed): {dates_list}
-TARGET STRATEGY: Use Jack Daniels methodology. Ensure coherent long run progression with periodic cutbacks and a 2�3 week taper. Exactly one weekend Long Run per week (Sat preferred, else Sun). No Long Run in race week.
+TARGET STRATEGY: Use Jack Daniels methodology. Ensure coherent long run progression with periodic cutbacks and a 2–3 week taper. Exactly one weekend Long Run per week (Sat preferred, else Sun). No Long Run in race week.
 
 HR ZONES: Z1-2:{heart_rate_zones['zone_1_2']} | Z3:{heart_rate_zones['zone_3']} | Z4:{heart_rate_zones['zone_4']} | Z5:{heart_rate_zones['zone_5']}{recent_activities_context}
 {history_block}
@@ -1148,7 +1366,7 @@ def _build_full_plan_prompt_with_constraints(
     ]
 
     # Add EXACT dates from dummy data - show ALL dates
-    lines.append("\n??? TRAINING DATES (use ONLY these exact dates):")
+    lines.append("\n🗓️ TRAINING DATES (use ONLY these exact dates):")
     for w in sorted(dummy_workouts, key=lambda x: x.get("date")):
         day_name = w.get("date").strftime("%A")
         lines.append(f"{w.get('date')} ({day_name})")
@@ -1159,7 +1377,7 @@ def _build_full_plan_prompt_with_constraints(
 
     # Add weekly mileage targets
     if weekly_mileage_targets:
-        lines.append("\n?? WEEKLY MILEAGE TARGETS:")
+        lines.append("\n📊 WEEKLY MILEAGE TARGETS:")
         for week_num in sorted(weekly_mileage_targets.keys()):
             mileage = weekly_mileage_targets[week_num]
             lines.append(f"Week {week_num}: {mileage:.1f} miles")
@@ -1180,12 +1398,12 @@ def _build_full_plan_prompt_with_constraints(
     )
     lines.append("- Peak long run: 18-22 miles, occurring 3 weeks before race")
 
-    lines.append("\n?? MILEAGE DISTRIBUTION (% of weekly mileage):")
+    lines.append("\n📏 MILEAGE DISTRIBUTION (% of weekly mileage):")
     lines.append("- Recovery runs: ~10% of weekly mileage @ Zone 1-2")
     lines.append("- Easy runs:")
-    lines.append("  � Base building phase: 15-20% of weekly mileage @ Zone 1-2")
-    lines.append("  � Peak phase: 20-25% of weekly mileage @ Zone 1-2")
-    lines.append("  � Taper phase: 10-15% of weekly mileage @ Zone 1-2")
+    lines.append("  • Base building phase: 15-20% of weekly mileage @ Zone 1-2")
+    lines.append("  • Peak phase: 20-25% of weekly mileage @ Zone 1-2")
+    lines.append("  • Taper phase: 10-15% of weekly mileage @ Zone 1-2")
     lines.append(
         "- Threshold runs: 8-12% of weekly mileage @ Zone 3-4 (continuous or intervals)"
     )
@@ -1195,9 +1413,9 @@ def _build_full_plan_prompt_with_constraints(
     )
     lines.append("- Maintain proper recovery spacing between hard sessions")
 
-    lines.append(f"\n??? CRITICAL TAPER CONSTRAINT (NON-NEGOTIABLE):")
+    lines.append(f"\n🛡️ CRITICAL TAPER CONSTRAINT (NON-NEGOTIABLE):")
     lines.append(
-        f"- Any long run on or after {taper_threshold} (14 days before race) MUST be =12 miles"
+        f"- Any long run on or after {taper_threshold} (14 days before race) MUST be ≤12 miles"
     )
     lines.append(f"- Taper period: {taper_threshold} to {race_date}")
     lines.append(
@@ -1207,7 +1425,7 @@ def _build_full_plan_prompt_with_constraints(
     # Instructions for full plan generation
     lines.append("\nGenerate a complete Jack Daniels marathon training plan.")
     lines.append(
-        "Apply proper progression, tapering (=12mi within 14 days of race), and workout distribution."
+        "Apply proper progression, tapering (≤12mi within 14 days of race), and workout distribution."
     )
     lines.append("\nOutput format (json):")
     lines.append("{")
@@ -1283,84 +1501,38 @@ def _parse_gpt_workout_response(
 ) -> list[dict]:
     """Parse GPT response into workout list."""
     try:
-        # Extract JSON from response (could be array or object)
-        # Try array first [ ... ]
-        array_start = response.find("[")
-        array_end = response.rfind("]") + 1
-
-        # Try object { ... }
-        obj_start = response.find("{")
-        obj_end = response.rfind("}") + 1
-
-        json_str = None
-        is_array = False
-
-        # Determine which format GPT used
-        if array_start != -1 and (obj_start == -1 or array_start < obj_start):
-            json_str = response[array_start:array_end]
-            is_array = True
-            print(f"   📋 Detected JSON array format")
-        elif obj_start != -1:
-            json_str = response[obj_start:obj_end]
-            print(f"   📋 Detected JSON object format")
-        else:
+        # Extract JSON from response
+        start_idx = response.find("{")
+        end_idx = response.rfind("}") + 1
+        if start_idx == -1 or end_idx == 0:
             raise ValueError("No JSON found in response")
 
+        json_str = response[start_idx:end_idx]
         data = json.loads(json_str)
 
-        # Handle both array and object formats
-        if is_array:
-            workout_list = data
-        else:
-            # Try different possible keys: "workouts", "plan", "training_plan", or treat as single workout
-            workout_list = data.get("workouts") or data.get("plan") or data.get("training_plan")
-            if workout_list is None:
-                # If it's a single workout object, wrap it in a list
-                if "date" in data and "workout_type" in data:
-                    workout_list = [data]
-                else:
-                    workout_list = []
-
-        print(f"   📊 Found {len(workout_list)} workouts in GPT response")
-
-        if len(workout_list) == 0:
-            raise ValueError(f"No workouts found in GPT response. Response format: {type(data)}")
-
         workouts = []
-        for i, workout in enumerate(workout_list):
-            try:
-                workout_date = datetime.strptime(workout["date"], "%Y-%m-%d").date()
-                miles_value = float(workout.get("miles", 0))
+        for workout in data.get("workouts", []):
+            workout_date = datetime.strptime(workout["date"], "%Y-%m-%d").date()
 
-                print(f"   Workout {i+1}: {workout_date} - {workout.get('workout_type', 'Unknown')} - {miles_value}mi")
+            # Validate workout is within plan timeframe
+            if start_date <= workout_date <= race_date:
+                workouts.append(
+                    {
+                        "date": workout_date,
+                        "workout_type": workout.get("workout_type", "Easy Run"),
+                        "description": workout.get("description", ""),
+                        "miles": float(workout.get("miles", 0)),
+                        "intensity": workout.get("intensity", "Low"),
+                        "target_zone": workout.get("target_zone", ""),
+                        "target_hr": workout.get("target_hr", ""),
+                        "focus": workout.get("focus", "Base Building"),
+                    }
+                )
 
-                # Validate workout is within plan timeframe
-                if start_date <= workout_date <= race_date:
-                    workouts.append(
-                        {
-                            "date": workout_date,
-                            "workout_type": workout.get("workout_type", "Easy Run"),
-                            "description": workout.get("description", ""),
-                            "miles": miles_value,
-                            "intensity": workout.get("intensity", "Low"),
-                            "target_zone": workout.get("target_zone", ""),
-                            "target_hr": workout.get("target_hr", ""),
-                            "focus": workout.get("focus", "Base Building"),
-                        }
-                    )
-                else:
-                    print(f"   ⚠️ Skipped workout {i+1}: outside date range ({workout_date})")
-            except Exception as workout_error:
-                print(f"   ❌ Failed to parse workout {i+1}: {workout_error}")
-                print(f"   📄 Workout data: {workout}")
-
-        print(f"   ✅ Successfully parsed {len(workouts)} valid workouts")
         return workouts
-
     except Exception as e:
-        print(f"   ❌ Failed to parse GPT response: {e}")
-        print(f"   📄 Response preview: {response[:500]}...")
-        raise ValueError(f"GPT response parsing failed: {e}") from e
+        print(f"Failed to parse GPT response: {e}")
+        return []
 
 
 def _parse_month_response(
@@ -1410,7 +1582,7 @@ def _generate_workout_segments(workouts: list[dict]) -> list[dict]:
     """Generate workout segments (warmup/main/cooldown) for all workouts in a separate GPT call."""
     from src.utils.gpt_ops import get_gpt_response
 
-    print(f"\n?? STEP 3: Generating workout segments for {len(workouts)} workouts...")
+    print(f"\n🔄 STEP 3: Generating workout segments for {len(workouts)} workouts...")
 
     # Build prompt with all workouts
     lines = [
@@ -1490,11 +1662,11 @@ def _generate_workout_segments(workouts: list[dict]) -> list[dict]:
                 workout_copy["segments"] = {}
             updated_workouts.append(workout_copy)
 
-        print(f"   ? Generated segments for {len(segments_map)} workouts")
+        print(f"   ✅ Generated segments for {len(segments_map)} workouts")
         return updated_workouts
 
     except Exception as e:
-        print(f"   ?? Failed to generate segments: {e}")
+        print(f"   ⚠️ Failed to generate segments: {e}")
         print(f"   Continuing without segments...")
         # Return workouts with empty segments
         return [{**w, "segments": {}} for w in workouts]
@@ -1520,7 +1692,7 @@ def _save_plan_to_database(
             risk_level = marathon_safety.get("risk_level", "UNKNOWN")
             user_message = marathon_safety.get("user_message", "")
             if user_message:
-                safety_info = f"\n\n?? SAFETY WARNING: {user_message}"
+                safety_info = f"\n\n⚠️ SAFETY WARNING: {user_message}"
 
     # Create plan record
     plan_data = {

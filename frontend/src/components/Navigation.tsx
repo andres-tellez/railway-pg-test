@@ -2,7 +2,7 @@
  * @file Navigation.tsx
  * @component Navigation
  * @description Top navigation bar with smart navigation based on user state
- * 
+ *
  * @features:
  * - Logo and app name
  * - Smart navigation links based on user completion status
@@ -21,7 +21,7 @@ const Navigation: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const api = useApiClient();
-  
+
   const [userState, setUserState] = useState<{
     hasOnboarded: boolean;
     hasStrava: boolean;
@@ -43,10 +43,10 @@ const Navigation: React.FC = () => {
   }, [isAuthenticated]); // Remove 'api' from dependencies to prevent infinite loop
 
   const handleLogout = () => {
-    logout({ 
-      logoutParams: { 
-        returnTo: window.location.origin 
-      } 
+    logout({
+      logoutParams: {
+        returnTo: window.location.origin
+      }
     });
   };
 
@@ -63,6 +63,7 @@ const Navigation: React.FC = () => {
       navItems.push(
         { label: 'Dashboard', path: '/home', icon: '🏠' },
         { label: 'My Plan', path: '/plan/overview', icon: '📅' },
+        { label: 'Metrics', path: '/metrics', icon: '📊' },
         { label: 'Ask Coach', path: '/ask', icon: '💬' }
       );
     } else if (userState.hasStrava) {
@@ -88,8 +89,8 @@ const Navigation: React.FC = () => {
         <div className="flex justify-between items-center h-16">
           {/* Logo and App Name */}
           <div className="flex items-center">
-            <Link 
-              to={userState?.hasOnboarded ? '/home' : '/'} 
+            <Link
+              to={userState?.hasOnboarded ? '/home' : '/'}
               className="flex items-center space-x-2"
             >
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -141,10 +142,10 @@ const Navigation: React.FC = () => {
               <span className="hidden md:block text-sm font-medium text-gray-700">
                 {user?.name || 'User'}
               </span>
-              <svg 
-                className="w-4 h-4 text-gray-400" 
-                fill="none" 
-                stroke="currentColor" 
+              <svg
+                className="w-4 h-4 text-gray-400"
+                fill="none"
+                stroke="currentColor"
                 viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

@@ -29,7 +29,7 @@ except ImportError:
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 TRAINING_PLAN_MODEL = os.getenv("OPENAI_TRAINING_PLAN_MODEL", DEFAULT_MODEL)
 print(
-    f"🔧 OpenAI models => DEFAULT_MODEL={DEFAULT_MODEL}, TRAINING_PLAN_MODEL={TRAINING_PLAN_MODEL}"
+    f"[INFO] OpenAI models => DEFAULT_MODEL={DEFAULT_MODEL}, TRAINING_PLAN_MODEL={TRAINING_PLAN_MODEL}"
 )
 
 # Removed unused DR_SARAH_CHEN_SYSTEM_PROMPT - now using JACK_DANIELS_SYSTEM_PROMPT
@@ -88,6 +88,7 @@ def get_gpt_response(prompt: str, require_json: bool = True) -> str:
             call_params = {
                 "model": DEFAULT_MODEL,
                 "temperature": 0.25,
+                "timeout": 60.0,  # 60 second timeout
                 "messages": [
                     {"role": "system", "content": JACK_DANIELS_SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
@@ -103,11 +104,20 @@ def get_gpt_response(prompt: str, require_json: bool = True) -> str:
                 usage = getattr(response, "usage", None)
                 if usage:
                     print(
-                        f"🧮 Token usage (get_gpt_response): prompt={usage.prompt_tokens} completion={usage.completion_tokens} total={usage.total_tokens}"
+                        f"[DEBUG] Token usage (get_gpt_response): prompt={usage.prompt_tokens} completion={usage.completion_tokens} total={usage.total_tokens}"
                     )
             except Exception:
                 pass
-            return response.choices[0].message.content.strip()
+
+            # Check if response is valid
+            if not response or not response.choices:
+                raise ValueError("Empty response from GPT API")
+
+            content = response.choices[0].message.content
+            if content is None:
+                raise ValueError("GPT returned None content - possibly hit token limit")
+
+            return content.strip()
         else:
             # Old OpenAI API
             response = openai.ChatCompletion.create(
@@ -127,14 +137,23 @@ def get_gpt_response(prompt: str, require_json: bool = True) -> str:
                 )
                 if usage:
                     print(
-                        f"🧮 Token usage (get_gpt_response): prompt={usage.get('prompt_tokens')} completion={usage.get('completion_tokens')} total={usage.get('total_tokens')}"
+                        f"[DEBUG] Token usage (get_gpt_response): prompt={usage.get('prompt_tokens')} completion={usage.get('completion_tokens')} total={usage.get('total_tokens')}"
                     )
             except Exception:
                 pass
-            return response.choices[0].message.content.strip()
+
+            # Check if response is valid
+            if not response or not response.get("choices"):
+                raise ValueError("Empty response from GPT API")
+
+            content = response["choices"][0]["message"]["content"]
+            if content is None:
+                raise ValueError("GPT returned None content - possibly hit token limit")
+
+            return content.strip()
     except Exception as e:
         print("GPT API call failed:", e)
-        return f"❌ GPT error: {e}"
+        return f"[ERROR] GPT error: {e}"
 
 
 # Removed unused get_expert_coaching_response function
@@ -167,24 +186,24 @@ def _extract_json_from_text(text: str) -> str:
             return candidate
         except json.JSONDecodeError as e:
             # Try to fix incomplete JSON
-            print(f"⚠️ JSON parsing failed: {e}")
-            print(f"⚠️ Attempting to fix incomplete JSON...")
+            print(f"[WARNING] JSON parsing failed: {e}")
+            print(f"[WARNING] Attempting to fix incomplete JSON...")
 
             # Try to complete the JSON by finding the last complete object
             fixed_json = _try_fix_incomplete_json(candidate)
             if fixed_json:
                 try:
                     json.loads(fixed_json)
-                    print("✅ Successfully fixed incomplete JSON")
+                    print("[SUCCESS] Successfully fixed incomplete JSON")
                     return fixed_json
                 except json.JSONDecodeError as fix_error:
-                    print(f"❌ Could not fix incomplete JSON: {fix_error}")
+                    print(f"[ERROR] Could not fix incomplete JSON: {fix_error}")
                     # Try a simpler approach - just truncate at the last complete workout
                     simple_fix = _simple_truncate_json(candidate)
                     if simple_fix:
                         try:
                             json.loads(simple_fix)
-                            print("✅ Successfully fixed with simple truncation")
+                            print("[SUCCESS] Successfully fixed with simple truncation")
                             return simple_fix
                         except json.JSONDecodeError:
                             pass
@@ -229,7 +248,7 @@ def _try_fix_incomplete_json(incomplete_json: str) -> str:
                         # Truncate at the last complete object and close arrays/objects
                         fixed = incomplete_json[:last_complete_pos] + "]}"
                         print(
-                            f"🔧 Fixed incomplete JSON by truncating at position {last_complete_pos}"
+                            f"[DEBUG] Fixed incomplete JSON by truncating at position {last_complete_pos}"
                         )
                         return fixed
 
@@ -265,7 +284,7 @@ def _simple_truncate_json(incomplete_json: str) -> str:
                                     # Close the workouts array and main object
                                     fixed = incomplete_json[:truncate_pos] + "]}"
                                     print(
-                                        f"🔧 Simple truncation at position {truncate_pos}"
+                                        f"[DEBUG] Simple truncation at position {truncate_pos}"
                                     )
                                     return fixed
 
@@ -287,7 +306,7 @@ def _simple_truncate_json(incomplete_json: str) -> str:
                                     truncate_pos = i + 1
                                     fixed = incomplete_json[:truncate_pos] + "]}"
                                     print(
-                                        f"🔧 Fallback truncation at position {truncate_pos}"
+                                        f"[DEBUG] Fallback truncation at position {truncate_pos}"
                                     )
                                     return fixed
     return None

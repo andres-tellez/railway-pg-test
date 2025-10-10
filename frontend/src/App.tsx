@@ -37,6 +37,7 @@ import PostOAuth from "./pages/PostOAuth";
 import HomeScreen from "./pages/HomeScreen";
 import AskGptMvpUI from "./pages/AskGptMvpUI";
 import WelcomePage from "./pages/WelcomePage";
+import SimpleMetrics from "./pages/SimpleMetrics";
 
 import Layout from "./components/Layout";
 import SmartRouter from "./components/SmartRouter";
@@ -71,15 +72,15 @@ function LoginPage() {
         <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
           <span className="text-white font-bold text-2xl">SC</span>
         </div>
-        
+
         <h1 className="text-3xl font-bold text-gray-900 mb-4">
           Sign in to SmartCoach
         </h1>
-        
+
         <p className="text-gray-600 mb-8">
           Connect with your account to access your personalized training plans and coaching.
         </p>
-        
+
         <button
           className="w-full bg-blue-600 text-white px-6 py-4 rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl"
           onClick={() =>
@@ -94,7 +95,7 @@ function LoginPage() {
         >
           Sign In
         </button>
-        
+
         <p className="text-sm text-gray-500 mt-4">
           Don't have an account? Sign in with Google or create one during the process.
         </p>
@@ -117,10 +118,10 @@ export default function App() {
       {/* Public Routes */}
       <Route path="/welcome" element={<WelcomePage />} />
       <Route path="/login" element={<LoginPage />} />
-      
+
       {/* Smart Routing */}
       <Route path="/" element={<SmartRouter />} />
-      
+
       {/* Protected Routes with Layout */}
       <Route
         path="/setup"
@@ -172,7 +173,17 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      
+      <Route
+        path="/metrics"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <SimpleMetrics />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
       {/* Legacy Routes - redirect to new structure */}
       <Route
         path="/plan/:id"
@@ -194,10 +205,10 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      
+
       {/* Auth Callback */}
       <Route path="/post-oauth" element={<PostOAuth />} />
-      
+
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

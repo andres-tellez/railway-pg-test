@@ -35,34 +35,34 @@ class ActivityDAO:
         """
 
         if not activities:
-            logger.warning("⚠️ No activities provided to upsert.")
+            logger.warning("[WARNING] No activities provided to upsert.")
             return 0
 
         try:
             uid = uuid.UUID(str(user_id))
         except Exception as e:
-            logger.error(f"❌ Invalid user_id (not UUID): {user_id} | {e}")
+            logger.error(f"Invalid user_id (not UUID): {user_id} | {e}")
             return 0
 
         logger.info(
-            f"📦 Preparing to upsert {len(activities)} activities for athlete={athlete_id}, user_id={uid}"
+            f"[INFO] Preparing to upsert {len(activities)} activities for athlete={athlete_id}, user_id={uid}"
         )
 
         rows = []
         for act in activities:
             logger.debug(
-                f"🔎 Processing candidate: {act.get('activity_id') or act.get('id')}"
+                f"[DEBUG] Processing candidate: {act.get('activity_id') or act.get('id')}"
             )
 
-            # ✅ Ensure it's a 'Run'
+            # Ensure it's a 'Run'
             if act.get("type") != "Run":
-                logger.debug(f"⏭️ Skipping non-Run activity type={act.get('type')}")
+                logger.debug(f"[SKIP] Skipping non-Run activity type={act.get('type')}")
                 continue
 
             name = (act.get("name") or "").lower()
             is_treadmill = "treadmill" in name
 
-            # ✅ Required fields check
+            # Required fields check
             required_fields = [
                 "activity_id",
                 "start_date",
@@ -76,11 +76,11 @@ class ActivityDAO:
             missing = [f for f in required_fields if not act.get(f)]
             if missing:
                 logger.error(
-                    f"❌ Skipping activity {act.get('activity_id')} due to missing: {missing}"
+                    f"[ERROR] Skipping activity {act.get('activity_id')} due to missing: {missing}"
                 )
                 continue
 
-            # 🔄 Metric conversions
+            # Metric conversions
             conv_input = {
                 "distance": act.get("distance"),
                 "elevation": act.get("total_elevation_gain"),
@@ -131,11 +131,11 @@ class ActivityDAO:
             rows.append(row)
 
         if not rows:
-            logger.warning("⚠️ No valid rows prepared for upsert.")
+            logger.warning("[WARNING] No valid rows prepared for upsert.")
             return 0
 
-        logger.info(f"🚀 Upserting {len(rows)} activities into database...")
-        logger.debug(f"📝 Example row: {rows[0]}")
+        logger.info(f"[INFO] Upserting {len(rows)} activities into database...")
+        logger.debug(f"[DEBUG] Example row: {rows[0]}")
 
         try:
             stmt = insert(Activity).values(rows)
@@ -152,11 +152,11 @@ class ActivityDAO:
 
             result = session.execute(stmt)
             session.commit()
-            logger.info(f"✅ Successfully upserted {result.rowcount} activities")
+            logger.info(f"[SUCCESS] Successfully upserted {result.rowcount} activities")
             return result.rowcount
         except Exception as e:
             session.rollback()
-            logger.error(f"❌ Upsert failed: {e}")
+            logger.error(f"[ERROR] Upsert failed: {e}")
             return 0
 
     @staticmethod
