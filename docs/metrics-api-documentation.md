@@ -78,10 +78,10 @@ curl -X GET https://api.smartcoach.app/api/metrics/dashboard \
 1. **`activities`** - Main activity records from Strava
    - Contains distance, pace, heart rate, timestamps
    - Filtered by activity type = "Run"
-   
+
 2. **`user_athletes`** - Maps user_id to athlete_id
    - Links Auth0 users to Strava athletes
-   
+
 3. **`splits`** - Lap/mile split data (future use)
    - Not currently used in dashboard metrics
 
@@ -305,7 +305,6 @@ curl -X GET http://localhost:5000/api/metrics/dashboard \
 
 ---
 
-**Last Updated:** October 9, 2025  
-**API Version:** 1.0  
+**Last Updated:** October 9, 2025
+**API Version:** 1.0
 **Author:** SmartCoach Development Team
-

@@ -82,7 +82,7 @@ def generate_plan_with_b_plus_validation(
     # Extract training days
     training_days = _parse_training_days(data_bundle.get("user_profile", {}))
     print(f"Training Days: {', '.join(training_days)} ({len(training_days)} days/week)")
-    
+
     # DEBUG: Show training days being used
     print(f"\n🔍 TRAINING DAYS DEBUG:")
     print(f"   • Raw training_days from profile: {data_bundle.get('user_profile', {}).get('training_days', [])}")
@@ -157,10 +157,10 @@ def _create_dummy_plan_structure(
     This provides the structure for GPT to revise with proper Jack Daniels methodology.
     """
     from datetime import timedelta
-    
+
     # Calculate all training dates
     training_dates = _calculate_training_dates(start_date, race_date, training_days)
-    
+
     # Create simple dummy workouts with generic mileage
     dummy_workouts = []
     for _, date_obj in training_dates:
@@ -177,7 +177,7 @@ def _create_dummy_plan_structure(
             intensity = "Low"
             target_zone = "Zone 1-2"
             focus = "Base Building"
-        
+
         dummy_workouts.append({
             "date": date_obj.strftime("%Y-%m-%d"),
             "workout_type": workout_type,
@@ -187,7 +187,7 @@ def _create_dummy_plan_structure(
             "description": f"{workout_type} run for base building",
             "focus": focus
         })
-    
+
     return dummy_workouts
 
 
@@ -198,14 +198,14 @@ def _build_compact_jack_daniels_prompt(
     Build optimized Jack Daniels prompt for single GPT call to generate complete plan.
     """
     import json
-    
+
     # Extract clean values from user_data
     profile = user_data.get("user_profile", {})
     activities = user_data.get("activities", [])
     weekly_summaries = user_data.get("weekly_summaries", [])
     base_mileage = user_data.get("base_mileage", 0)
     hr_zones = user_data.get("heart_rate_zones", {})
-    
+
     # Build clean runner profile summary
     runner_profile = f"""RUNNER PROFILE:
 - Age: {profile.get('age', 'Unknown')}
@@ -227,9 +227,9 @@ def _build_compact_jack_daniels_prompt(
         pace = f"{int(60/avg_speed)}:{int((60/avg_speed % 1) * 60):02d}/mi" if avg_speed > 0 else "N/A"
         hr_zone = "Z1" if avg_hr < 124 else "Z2" if avg_hr < 142 else "Z3" if avg_hr < 159 else "Z4"  # Approximate zones for 177 max HR
         activity_list.append(f"{date}: {distance:.1f}mi @ {pace} ({avg_hr:.0f}bpm, {hr_zone})")
-    
+
     activity_summary = f"RECENT RUNS: {' | '.join(activity_list)}"
-    
+
     # Build weekly summary (most recent 6 weeks, date + mileage + avg pace + HR zones)
     weekly_list = []
     for week in weekly_summaries[:6]:  # First 6 = most recent
@@ -253,9 +253,9 @@ def _build_compact_jack_daniels_prompt(
             pace = week.get('avg_pace', 'N/A')
             hr_zones = week.get('hr_zones', 'Z2')
             weekly_list.append(f"{date}: {miles:.1f}mi @ {pace}/mi ({hr_zones})")
-    
+
     weekly_summary = f"RECENT WEEKLY INSIGHTS: {' | '.join(weekly_list)}" if weekly_list else "RECENT WEEKLY INSIGHTS: No data"
-    
+
     # Build heart rate zones (compact format)
     hr_summary = f"HR ZONES: MaxHR={hr_zones.get('max_hr', 170)}bpm | Z1-2=Easy | Z3=Threshold | Z4=Hard"
 
@@ -282,7 +282,7 @@ JACK DANIELS RULES:
 - Threshold runs: 8-12% weekly mileage @ Zone 3-4
 - Progression: Max +10% weekly mileage increase per week
 - TAPER: Final 3 weeks reduce long-run to 60%, 40%, 20% of peak long-run distance"""
-    
+
     prompt += f"""
 
 CRITICAL: Return ALL {len(plan_structure)} workouts as a JSON array.
@@ -294,7 +294,7 @@ Return ONLY a JSON array (no explanation), one workout per date above:
   ... (continue for all {len(plan_structure)} dates) ...
   {{"date": "{plan_structure[-1]['date']}", "workout_type": "Race Day", "miles": 26.2, "target_zone": "Zone 3-4", "intensity": "High", "description": "Marathon race", "focus": "Race execution"}}
 ]"""
-    
+
     return prompt
 
 
@@ -322,15 +322,15 @@ def _generate_jack_daniels_plan_chunked(
     print(f"Split into {len(chunks)} chunks of ~{chunk_size} workouts each")
 
     all_workouts = []
-    
+
     for chunk_idx, chunk in enumerate(chunks):
         print(f"\n🔄 Processing chunk {chunk_idx + 1}/{len(chunks)} ({len(chunk)} workouts)...")
-        
+
         # Generate workouts for this chunk
         chunk_workouts = _generate_jack_daniels_plan(
             data_bundle, race_date, race_distance, training_days, chunk, chunk_idx, len(chunks)
         )
-        
+
         all_workouts.extend(chunk_workouts)
         print(f"✅ Chunk {chunk_idx + 1} complete: {len(chunk_workouts)} workouts")
 
@@ -360,7 +360,7 @@ def _generate_jack_daniels_plan(
     print(f"🔍 DEBUG - user profile training_days: {user.get('training_days', 'MISSING')}")
     dummy_plan = _create_dummy_plan_structure(start_date, race_date, training_days)
     print(f"Created {len(dummy_plan)} dummy workouts")
-    
+
     # DEBUG: Show first few dummy workouts
     print(f"\n🔍 DUMMY PLAN SAMPLE (first 5 workouts):")
     for i, workout in enumerate(dummy_plan[:5]):
@@ -368,30 +368,30 @@ def _generate_jack_daniels_plan(
 
     # Step 4: GPT revises entire plan with Jack Daniels methodology
     print("\nStep 4: GPT revising plan with Jack Daniels methodology...")
-    
+
     # Prepare user data for GPT
     # IMPORTANT: Update user profile with normalized training_days to match dummy plan dates
     user_with_normalized_days = user.copy()
     user_with_normalized_days['training_days'] = training_days  # Use normalized days (MON, TUE, etc.)
-    
+
     # DEBUG: Check data quality before base mileage calculation
     data_quality = data_bundle.get("quality_assessment", {}).get("data_quality", {})
     print(f"\n🔍 DEBUG: Base Mileage Calculation Input:")
     print(f"  • Weekly summaries count: {len(weekly_summaries)}")
     print(f"  • Data quality: {data_quality.get('quality', 'UNKNOWN')} ({data_quality.get('reason', 'No reason')})")
     print(f"  • Use fallbacks: {data_quality.get('use_fallbacks', 'NOT SET')}")
-    
+
     # Use the same 6 weeks for base mileage calculation that will be shown in the prompt
     weekly_summaries_for_calculation = weekly_summaries[:6] if len(weekly_summaries) >= 6 else weekly_summaries
     print(f"  • Using {len(weekly_summaries_for_calculation)} weeks for base mileage calculation (same as prompt display)")
-    
+
     base_mileage = _calculate_base_mileage(
-        weekly_summaries_for_calculation, 
+        weekly_summaries_for_calculation,
         str(user.get("runner_level", "Intermediate")).lower(),
         data_quality
     )
     print(f"  • Calculated base mileage: {base_mileage} miles/week")
-    
+
     user_data = {
         "user_profile": user_with_normalized_days,
         "activities": activities[:10],  # Limit to recent activities
@@ -399,7 +399,7 @@ def _generate_jack_daniels_plan(
         "base_mileage": base_mileage,
         "heart_rate_zones": _calculate_user_heart_rate_zones(user, activities)
     }
-    
+
     # DEBUG: Validate user data - VERIFY ACTUAL DATA vs FALLBACK
     print(f"\n🔍 USER DATA VALIDATION (Actual vs Fallback):")
     profile = user_data.get('user_profile', {})
@@ -415,58 +415,58 @@ def _generate_jack_daniels_plan(
     print(f"   • Weekly Summaries: {len(user_data.get('weekly_summaries', []))} weeks")
     print(f"   • Base Mileage: {user_data.get('base_mileage', 'FALLBACK'):.1f} mi/week")
     print(f"   • Heart Rate Max: {user_data.get('heart_rate_zones', {}).get('max_hr', 'FALLBACK')} bpm")
-    
+
     # Build compact prompt (without chunk parameters - generate full plan)
     prompt = _build_compact_jack_daniels_prompt(user_data, dummy_plan)
     print(f"Prompt length: ~{len(prompt)} characters")
-    
+
     # DEBUG: Show first 1000 chars of prompt
     print(f"\n🔍 PROMPT (first 1000 chars):")
     print(prompt[:1000])
     print(f"...")
-    
+
     # Show complete prompt in terminal
     print(f"\n📝 COMPLETE GPT PROMPT:")
     print("=" * 80)
     print(prompt)
     print("=" * 80)
-    
+
     # Log complete prompt to Flask logs
     import logging
     logger = logging.getLogger(__name__)
     logger.info(f"COMPLETE GPT PROMPT:\n{prompt}")
-    
+
     # Get GPT response
     try:
         print(f"\n🔍 SENDING TO GPT...")
         response = get_gpt_response(prompt, require_json=False)  # Allow plain text response
         print(f"✅ GPT response received ({len(response)} characters)")
-        
+
         # DEBUG: Show GPT response
         print(f"\n🔍 GPT RESPONSE (first 500 chars):")
         print(response[:500])
         print(f"...")
         print(f"\n🔍 GPT RESPONSE (last 500 chars):")
         print(response[-500:])
-        
+
         # Log complete GPT response to Flask logs
         logger.info(f"COMPLETE GPT RESPONSE:\n{response}")
-        
+
         # Parse response
         print(f"\n🔍 PARSING GPT RESPONSE...")
         workouts = _parse_gpt_workout_response(response, training_days, start_date, race_date)
         print(f"✅ Parsed {len(workouts)} workouts")
-        
+
         if len(workouts) == 0:
             raise ValueError("GPT returned 0 workouts - parsing failed")
-        
+
         # Validate GPT followed the rules
         print(f"\n🔍 VALIDATING PLAN...")
         _validate_plan_rules(workouts, training_days)
-        
+
         print(f"✅ GPT plan generation successful!")
         return workouts
-        
+
     except Exception as e:
         print(f"GPT generation failed: {e}")
         print("❌ CRITICAL ERROR: GPT plan generation failed")
@@ -476,9 +476,9 @@ def _generate_jack_daniels_plan(
 def _validate_plan_rules(workouts: list[dict], training_days: list[str]) -> None:
     """Validate that GPT followed the training plan rules."""
     from datetime import datetime, timedelta
-    
+
     print(f"\n🔍 PLAN VALIDATION:")
-    
+
     # Group workouts by week
     weeks = {}
     for workout in workouts:
@@ -489,11 +489,11 @@ def _validate_plan_rules(workouts: list[dict], training_days: list[str]) -> None
             workout_date = workout["date"]  # Already a date object
         week_start = workout_date - timedelta(days=workout_date.weekday())
         week_key = week_start.strftime("%Y-%m-%d")
-        
+
         if week_key not in weeks:
             weeks[week_key] = []
         weeks[week_key].append(workout)
-    
+
     # Check progression
     print(f"   📊 WEEKLY PROGRESSION:")
     for i, (week_key, week_workouts) in enumerate(sorted(weeks.items()), 1):
@@ -508,9 +508,9 @@ def _validate_plan_rules(workouts: list[dict], training_days: list[str]) -> None
                 sat_workout = w
                 break
         sat_miles = float(sat_workout["miles"]) if sat_workout else 0
-        
+
         print(f"      Week {i}: {total_miles:.1f}mi total, Long Run: {sat_miles:.1f}mi")
-    
+
     # Check Saturday long run progression
     sat_workouts = []
     for w in workouts:
@@ -521,32 +521,32 @@ def _validate_plan_rules(workouts: list[dict], training_days: list[str]) -> None
         if workout_date.weekday() == 5:  # Saturday
             sat_workouts.append(w)
     sat_miles = [float(w["miles"]) for w in sat_workouts]
-    
+
     print(f"   📈 LONG RUN PROGRESSION: {[f'{miles:.1f}mi' for miles in sat_miles]}")
-    
+
     # Check if progression makes sense
     if len(sat_miles) >= 3:
         peak_miles = max(sat_miles)
         taper_start = sat_miles[-3:] if len(sat_miles) >= 3 else sat_miles[-2:]
-        
+
         if all(miles <= peak_miles * 0.7 for miles in taper_start):
             print(f"   ✅ Good taper progression")
         else:
             print(f"   ⚠️ Taper might be too aggressive or missing")
-    
+
     # Check back-to-back long run rule (no two > 20mi back-to-back)
     violations = []
     for i in range(len(sat_miles) - 1):
         if sat_miles[i] > 20 and sat_miles[i + 1] > 20:
             violations.append(f"Weeks {i+1}-{i+2}: Both {sat_miles[i]:.1f}mi and {sat_miles[i+1]:.1f}mi > 20mi")
-    
+
     if violations:
         print(f"   🚨 BACK-TO-BACK VIOLATIONS:")
         for violation in violations:
             print(f"      {violation}")
     else:
         print(f"   ✅ No back-to-back long runs > 20mi")
-    
+
     print(f"   📅 Training days: {', '.join(training_days)}")
     print(f"   🏃 Total workouts: {len(workouts)}")
 
@@ -676,7 +676,7 @@ def _calculate_base_mileage(
 
         # Parse mileage from summaries (dict or string format)
         weekly_mileages = []
-        
+
         for summary in weeks_to_use:
             if isinstance(summary, dict):
                 # Dict format: get total_miles directly
@@ -740,7 +740,7 @@ def _calculate_training_dates(
     # Calculate total weeks
     total_days = (race_date - week_start).days
     total_weeks = max(1, (total_days + 6) // 7)
-    
+
     print(f"   • week_start: {week_start}")
     print(f"   • total_weeks: {total_weeks}")
 
@@ -1287,14 +1287,14 @@ def _parse_gpt_workout_response(
         # Try array first [ ... ]
         array_start = response.find("[")
         array_end = response.rfind("]") + 1
-        
+
         # Try object { ... }
         obj_start = response.find("{")
         obj_end = response.rfind("}") + 1
-        
+
         json_str = None
         is_array = False
-        
+
         # Determine which format GPT used
         if array_start != -1 and (obj_start == -1 or array_start < obj_start):
             json_str = response[array_start:array_end]
@@ -1307,7 +1307,7 @@ def _parse_gpt_workout_response(
             raise ValueError("No JSON found in response")
 
         data = json.loads(json_str)
-        
+
         # Handle both array and object formats
         if is_array:
             workout_list = data
@@ -1320,7 +1320,7 @@ def _parse_gpt_workout_response(
                     workout_list = [data]
                 else:
                     workout_list = []
-        
+
         print(f"   📊 Found {len(workout_list)} workouts in GPT response")
 
         if len(workout_list) == 0:
@@ -1331,7 +1331,7 @@ def _parse_gpt_workout_response(
             try:
                 workout_date = datetime.strptime(workout["date"], "%Y-%m-%d").date()
                 miles_value = float(workout.get("miles", 0))
-                
+
                 print(f"   Workout {i+1}: {workout_date} - {workout.get('workout_type', 'Unknown')} - {miles_value}mi")
 
                 # Validate workout is within plan timeframe
@@ -1356,7 +1356,7 @@ def _parse_gpt_workout_response(
 
         print(f"   ✅ Successfully parsed {len(workouts)} valid workouts")
         return workouts
-        
+
     except Exception as e:
         print(f"   ❌ Failed to parse GPT response: {e}")
         print(f"   📄 Response preview: {response[:500]}...")

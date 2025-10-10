@@ -474,65 +474,65 @@ def get_readiness_assessment():
     """
     Standalone endpoint to test the athlete readiness assessment module.
     This computes and logs the readiness metrics without generating a plan.
-    
+
     For testing: Pass user_id as query param or header X-User-Id
     """
     # Handle CORS preflight
     if request.method == "OPTIONS":
         print("🔍 CORS preflight request for readiness-assessment")
         return "", 200
-    
+
     print("🏃 GET request to readiness-assessment endpoint")
     from src.services.athlete_readiness_assessment import assess_runner_readiness
     from src.services.training_plan_data_assembler import assemble_training_plan_data
-    
+
     # Get user_id from query param, header, or g (if authenticated)
     user_id_str = request.args.get('user_id') or request.headers.get('X-User-Id') or getattr(g, 'user_id', None)
     print(f"🔍 Received user_id: {user_id_str}")
     print(f"🔍 Request headers: {dict(request.headers)}")
-    
+
     if not user_id_str:
         print("❌ No user_id found")
         return jsonify({"error": "user_id required (query param or X-User-Id header)"}), 400
-    
+
     try:
         user_id = uuid.UUID(str(user_id_str))
         print(f"✅ Valid user_id: {user_id}")
     except (ValueError, AttributeError):
         print(f"❌ Invalid user_id format: {user_id_str}")
         return jsonify({"error": "Invalid user_id format"}), 400
-    
+
     with get_session() as session:
         try:
             # Load user data (same as plan generation)
             data_bundle = assemble_training_plan_data(session, user_id)
-            
+
             user_profile = data_bundle.get('user_profile', {})
             race_date_str = user_profile.get('race_date')
-            
+
             if not race_date_str:
                 return jsonify({"error": "No race date set in user profile"}), 400
-            
+
             # Parse race date
             if isinstance(race_date_str, str):
                 race_date = datetime.strptime(race_date_str, '%Y-%m-%d').date()
             else:
                 race_date = race_date_str
-            
+
             # Run readiness assessment
             readiness = assess_runner_readiness(
                 activities=data_bundle.get('activities', []),
                 user_profile=user_profile,
                 race_date=race_date
             )
-            
+
             # Return the assessment
             return jsonify({
                 "success": True,
                 "readiness_assessment": readiness,
                 "message": "Check server logs for detailed readiness assessment output"
             }), 200
-            
+
         except Exception as e:
             print(f"❌ Error in readiness assessment: {str(e)}")
             import traceback
@@ -546,64 +546,64 @@ def get_training_profile():
     """
     Standalone endpoint to test the training profile normalization (Stage 2).
     This converts readiness assessment into Jack Daniels plan parameters.
-    
+
     For testing: Pass user_id as query param or header X-User-Id
     """
     # Handle CORS preflight
     if request.method == "OPTIONS":
         print("🔍 CORS preflight request for training-profile")
         return "", 200
-    
+
     print("🏗️ GET request to training-profile endpoint")
     from src.services.athlete_readiness_assessment import assess_runner_readiness
     from src.services.training_profile_normalizer import normalize_training_profile
     from src.services.training_plan_data_assembler import assemble_training_plan_data
-    
+
     # Get user_id from query param, header, or g (if authenticated)
     user_id_str = request.args.get('user_id') or request.headers.get('X-User-Id') or getattr(g, 'user_id', None)
     print(f"🔍 Received user_id: {user_id_str}")
-    
+
     if not user_id_str:
         print("❌ No user_id found")
         return jsonify({"error": "user_id required (query param or X-User-Id header)"}), 400
-    
+
     try:
         user_id = uuid.UUID(str(user_id_str))
         print(f"✅ Valid user_id: {user_id}")
     except (ValueError, AttributeError):
         print(f"❌ Invalid user_id format: {user_id_str}")
         return jsonify({"error": "Invalid user_id format"}), 400
-    
+
     with get_session() as session:
         try:
             # Load user data (same as plan generation)
             data_bundle = assemble_training_plan_data(session, user_id)
-            
+
             user_profile = data_bundle.get('user_profile', {})
             race_date_str = user_profile.get('race_date')
-            
+
             if not race_date_str:
                 return jsonify({"error": "No race date set in user profile"}), 400
-            
+
             # Parse race date
             if isinstance(race_date_str, str):
                 race_date = datetime.strptime(race_date_str, '%Y-%m-%d').date()
             else:
                 race_date = race_date_str
-            
+
             # Stage 1: Run readiness assessment
             readiness_result = assess_runner_readiness(
                 activities=data_bundle.get('activities', []),
                 user_profile=user_profile,
                 race_date=race_date
             )
-            
+
             # Stage 2: Normalize training profile
             training_profile = normalize_training_profile(
                 readiness=readiness_result.get('summary', readiness_result),
                 user_profile=user_profile
             )
-            
+
             # Return both stages
             return jsonify({
                 "success": True,
@@ -611,7 +611,7 @@ def get_training_profile():
                 "stage2_training_profile": training_profile,
                 "message": "Check server logs for detailed Stage 1 & 2 output"
             }), 200
-            
+
         except Exception as e:
             print(f"❌ Error in training profile normalization: {str(e)}")
             import traceback
@@ -688,78 +688,78 @@ def get_structured_plan():
     """
     Standalone endpoint to test the structured plan generation (Stage 3).
     This creates a week-by-week training plan using Stage 1 & 2 results.
-    
+
     For testing: Pass user_id as query param or header X-User-Id
     """
     # Handle CORS preflight
     if request.method == "OPTIONS":
         print("🔍 CORS preflight request for structured-plan")
         return "", 200
-    
+
     print("🏗️ GET request to structured-plan endpoint")
     from src.services.athlete_readiness_assessment import assess_runner_readiness
     from src.services.training_profile_normalizer import normalize_training_profile
     from src.services.training_plan_builder import build_training_plan
     from src.services.training_plan_data_assembler import assemble_training_plan_data
-    
+
     # Get user_id from query param, header, or g (if authenticated)
     user_id_str = request.args.get('user_id') or request.headers.get('X-User-Id') or getattr(g, 'user_id', None)
     print(f"🔍 Received user_id: {user_id_str}")
-    
+
     if not user_id_str:
         print("❌ No user_id found")
         return jsonify({"error": "user_id required (query param or X-User-Id header)"}), 400
-    
+
     try:
         user_id = uuid.UUID(str(user_id_str))
         print(f"✅ Valid user_id: {user_id}")
     except (ValueError, AttributeError):
         print(f"❌ Invalid user_id format: {user_id_str}")
         return jsonify({"error": "Invalid user_id format"}), 400
-    
+
     with get_session() as session:
         try:
             # Load user data (same as plan generation)
             data_bundle = assemble_training_plan_data(session, user_id)
-            
+
             user_profile = data_bundle.get('user_profile', {})
             race_date_str = user_profile.get('race_date')
-            
+
             if not race_date_str:
                 return jsonify({"error": "No race date set in user profile"}), 400
-            
+
             # Parse race date
             if isinstance(race_date_str, str):
                 race_date = datetime.strptime(race_date_str, '%Y-%m-%d').date()
             else:
                 race_date = race_date_str
-            
+
             # Stage 1: Run readiness assessment
             readiness_result = assess_runner_readiness(
                 activities=data_bundle.get('activities', []),
                 user_profile=user_profile,
                 race_date=race_date
             )
-            
+
             # Stage 2: Normalize training profile
             training_profile = normalize_training_profile(
                 readiness=readiness_result.get('summary', readiness_result),
                 user_profile=user_profile
             )
-            
+
             # Stage 3: Build structured plan
             start_date = datetime.today().date()
             training_days = [str(day) for day in user_profile.get('training_days', ['MON', 'WED', 'FRI', 'SAT'])]
-            
+
             # Standard heart rate zones
             zones = {
                 "easy": "Z1-2",
-                "thresh": "Z3", 
+                "thresh": "Z3",
                 "marathon": "Z3",
                 "vo2": "Z4",
                 "rep": "Z4-5"
             }
-            
+
             structured_plan = build_training_plan(
                 normalized=training_profile,
                 start_date=start_date,
@@ -767,10 +767,10 @@ def get_structured_plan():
                 training_days=training_days,
                 zones=zones
             )
-            
+
             # Stage 4: Add pace and HR zone mapping
             from src.services.pace_zone_mapper import map_pace_zones, estimate_vdot_from_race_time
-            
+
             # Estimate VDOT if not available
             if not user_profile.get('vdot'):
                 # Try to estimate from past race times or use default
@@ -780,15 +780,15 @@ def get_structured_plan():
                     user_profile['vdot'] = estimate_vdot_from_race_time("marathon", "4:00:00")  # placeholder
                 else:
                     user_profile['vdot'] = 45  # default
-            
+
             # Add max HR if not available
             if not user_profile.get('max_hr'):
                 user_profile['max_hr'] = 220 - user_profile.get('age', 35)
-            
+
             # Map paces and zones to the structured plan
             enriched_plan = map_pace_zones(structured_plan["weeks"], user_profile)
             structured_plan["weeks"] = enriched_plan
-            
+
             # Return all four stages
             return jsonify({
                 "success": True,
@@ -797,7 +797,7 @@ def get_structured_plan():
                 "stage3_4_structured_plan": structured_plan,
                 "message": "Check server logs for detailed Stage 1, 2, 3 & 4 output"
             }), 200
-            
+
         except Exception as e:
             print(f"❌ Error in structured plan generation: {str(e)}")
             import traceback
@@ -816,16 +816,16 @@ def get_gpt_plan_generation():
         user_id = request.headers.get('X-User-Id')
         if not user_id:
             return jsonify({"error": "user_id required (X-User-Id header)"}), 400
-        
+
         # Get race details from request body
         data = request.get_json() or {}
         race_date = data.get('race_date', '2025-12-07')
         race_distance = data.get('race_distance', 'Marathon')
-        
+
         print(f"\n📅 GPT Plan Generation request for user: {user_id}")
         print(f"  • Race Date: {race_date}")
         print(f"  • Race Distance: {race_distance}")
-        
+
         # Hardcoded prompt for now (as requested)
         prompt = """You are an expert marathon coach applying the Jack Daniels methodology.
 
@@ -845,10 +845,10 @@ CRITICAL: Generate EXACTLY 8 weeks of training data in a valid JSON array (no co
 }
 
 Timeline:
-- Start Date: 2025-10-08  
-- Race Date: 2025-12-07  
-- Race Type: Marathon (26.2 mi)  
-- Training Days: MON, WED, THU, SAT  
+- Start Date: 2025-10-08
+- Race Date: 2025-12-07
+- Race Type: Marathon (26.2 mi)
+- Training Days: MON, WED, THU, SAT
 
 Return ONLY this structure:
 
@@ -878,60 +878,60 @@ Return ONLY this structure:
 ### RULES
 
 1️⃣ **Mileage Progression**
-- Start = base_mileage (15–16 mi).  
-- Ramp ≤ 5 % / week (±1 mi tolerance).  
-- Recovery week every 3 weeks (-20 %).  
-- Peak ≤ target_weekly_mileage (≈ 35 mi).  
-- Taper = 80 % → 60 % → 40 % of peak.  
+- Start = base_mileage (15–16 mi).
+- Ramp ≤ 5 % / week (±1 mi tolerance).
+- Recovery week every 3 weeks (-20 %).
+- Peak ≤ target_weekly_mileage (≈ 35 mi).
+- Taper = 80 % → 60 % → 40 % of peak.
 
 2️⃣ **Long Runs**
-- 1 × per week (SAT).  
-- 25–30 % of weekly mileage, rounded to nearest 0.5 mi.  
-- Zone = Z2-3.  
-- Cap = long_run_cap (12 mi).  
-- Long run must be largest run of week.  
+- 1 × per week (SAT).
+- 25–30 % of weekly mileage, rounded to nearest 0.5 mi.
+- Zone = Z2-3.
+- Cap = long_run_cap (12 mi).
+- Long run must be largest run of week.
 
 3️⃣ **Threshold Runs**
-- Exactly 1 × per week (WED).  
-- 8–12 % of weekly mileage (3–5 mi typical).  
-- Zone = Z3-4.  
-- Never day before or after Long run.  
+- Exactly 1 × per week (WED).
+- 8–12 % of weekly mileage (3–5 mi typical).
+- Zone = Z3-4.
+- Never day before or after Long run.
 
 4️⃣ **Easy Runs**
-- Fill remaining mileage.  
-- Each Easy run 5–7 mi.  
-- Zone = Z1-2.  
-- Two Easy days per week (MON & THU).  
+- Fill remaining mileage.
+- Each Easy run 5–7 mi.
+- Zone = Z1-2.
+- Two Easy days per week (MON & THU).
 
 5️⃣ **Phases**
-- Weeks 1–3 = Quality-Phase  
-- Weeks 4–6 = Race-Specific  
-- Weeks 7–8 = Taper  
-- Week 8 includes Race Day (26.2 mi Z3-4).  
+- Weeks 1–3 = Quality-Phase
+- Weeks 4–6 = Race-Specific
+- Weeks 7–8 = Taper
+- Week 8 includes Race Day (26.2 mi Z3-4).
 
 6️⃣ **Safety and Consistency**
-- Long-run ratio ≤ 0.35 of weekly.  
-- No week-to-week drop > 20 % except taper.  
-- All distances end in .0 or .5 mi (no decimals).  
+- Long-run ratio ≤ 0.35 of weekly.
+- No week-to-week drop > 20 % except taper.
+- All distances end in .0 or .5 mi (no decimals).
 
 7️⃣ **Validation Checks**
-- Sum(workouts) ≈ total_miles ± 1 mi.  
-- Each week's long run ≥ any Easy run.  
-- Threshold run ≈ 8–12 % of week total.  
+- Sum(workouts) ≈ total_miles ± 1 mi.
+- Each week's long run ≥ any Easy run.
+- Threshold run ≈ 8–12 % of week total.
 
 ---
 
-CRITICAL: Produce exactly 8 weeks of valid JSON matching all rules.  
+CRITICAL: Produce exactly 8 weeks of valid JSON matching all rules.
 If the output risks truncation, return weeks 1–4 first, then weeks 5–8."""
 
         print("🤖 Calling GPT for plan generation...")
-        
+
         # Call GPT with the prompt
         response = get_gpt_response(prompt, require_json=True)
-        
+
         if not response:
             return jsonify({"error": "GPT returned no response"}), 500
-        
+
         # Parse the JSON response from GPT
         try:
             parsed_response = json.loads(response)
@@ -939,18 +939,18 @@ If the output risks truncation, return weeks 1–4 first, then weeks 5–8."""
             print(f"❌ Failed to parse GPT JSON response: {e}")
             print(f"Raw response: {response}")
             return jsonify({"error": "Failed to parse GPT response"}), 500
-        
+
         print(f"✅ GPT plan generation complete")
         print(f"📊 Response: {parsed_response}")
-        
+
         # Convert GPT response to database format and save
         try:
             # Import the four-stage generator to use its database saving logic
             from src.services.four_stage_plan_generator import convert_gpt_response_to_database_format, save_plan_to_database
-            
+
             # Convert GPT single week response to multiple weeks for database
             database_workouts = convert_gpt_response_to_database_format(parsed_response, race_date, race_distance)
-            
+
             # Save to database
             plan_id = save_plan_to_database(
                 user_id=user_id,
@@ -960,9 +960,9 @@ If the output risks truncation, return weeks 1–4 first, then weeks 5–8."""
                 plan_name=f"GPT Generated Plan - {race_distance}",
                 plan_description="Training plan generated by GPT using Jack Daniels methodology"
             )
-            
+
             print(f"✅ GPT plan saved to database with ID: {plan_id}")
-            
+
             return jsonify({
                 "success": True,
                 "plan_id": plan_id,
@@ -971,7 +971,7 @@ If the output risks truncation, return weeks 1–4 first, then weeks 5–8."""
                 "race_distance": race_distance,
                 "message": "GPT training plan generated and saved successfully!"
             })
-            
+
         except Exception as db_error:
             print(f"❌ Error saving GPT plan to database: {str(db_error)}")
             # Return the plan data anyway for display
@@ -981,7 +981,7 @@ If the output risks truncation, return weeks 1–4 first, then weeks 5–8."""
                 "user_id": user_id,
                 "error": f"Plan generated but failed to save to database: {str(db_error)}"
             })
-        
+
     except Exception as e:
         print(f"❌ Error in plan generation: {str(e)}")
         import traceback
@@ -999,9 +999,9 @@ def get_gpt_profile_normalization():
         user_id = request.headers.get('X-User-Id')
         if not user_id:
             return jsonify({"error": "user_id required (X-User-Id header)"}), 400
-        
+
         print(f"\n📊 GPT Profile Normalization request for user: {user_id}")
-        
+
         # Hardcoded prompt for now (as requested)
         prompt = """You are a certified running coach and exercise physiologist specializing in the Jack Daniels methodology.
 
@@ -1075,13 +1075,13 @@ Additional context:
 Analyze this data and return ONLY the JSON object with normalized training parameters."""
 
         print("🤖 Calling GPT for profile normalization...")
-        
+
         # Call GPT with the prompt
         response = get_gpt_response(prompt, require_json=True)
-        
+
         if not response:
             return jsonify({"error": "GPT returned no response"}), 500
-        
+
         # Parse the JSON response from GPT
         try:
             parsed_response = json.loads(response)
@@ -1089,16 +1089,16 @@ Analyze this data and return ONLY the JSON object with normalized training param
             print(f"❌ Failed to parse GPT JSON response: {e}")
             print(f"Raw response: {response}")
             return jsonify({"error": "Failed to parse GPT response"}), 500
-        
+
         print(f"✅ GPT profile normalization complete")
         print(f"📊 Response: {parsed_response}")
-        
+
         return jsonify({
             "success": True,
             "normalized_profile": parsed_response,
             "user_id": user_id
         })
-        
+
     except Exception as e:
         print(f"❌ Error in profile normalization: {str(e)}")
         import traceback
@@ -1116,9 +1116,9 @@ def get_vdot_estimation():
         user_id = request.headers.get('X-User-Id')
         if not user_id:
             return jsonify({"error": "user_id required (X-User-Id header)"}), 400
-        
+
         print(f"\n🏃 GPT VDOT Estimation request for user: {user_id}")
-        
+
         # Hardcoded prompt for now (as requested)
         prompt = """You are a certified running coach using Jack Daniels methodology.
 
@@ -1185,13 +1185,13 @@ Sep 01 | 26.5 mi @ 6:06/mi (mostly Z2)
 Analyze this data and return ONLY the JSON object."""
 
         print("🤖 Calling GPT for VDOT estimation...")
-        
+
         # Call GPT with the prompt
         response = get_gpt_response(prompt, require_json=True)
-        
+
         if not response:
             return jsonify({"error": "GPT returned no response"}), 500
-        
+
         # Parse the JSON response from GPT
         try:
             parsed_response = json.loads(response)
@@ -1199,16 +1199,16 @@ Analyze this data and return ONLY the JSON object."""
             print(f"❌ Failed to parse GPT JSON response: {e}")
             print(f"Raw response: {response}")
             return jsonify({"error": "Failed to parse GPT response"}), 500
-        
+
         print(f"✅ GPT VDOT estimation complete")
         print(f"📊 Response: {parsed_response}")
-        
+
         return jsonify({
             "success": True,
             "vdot_estimation": parsed_response,
             "user_id": user_id
         })
-        
+
     except Exception as e:
         print(f"❌ Error in VDOT estimation: {str(e)}")
         import traceback

@@ -150,4 +150,3 @@ The metrics page now:
 - ✅ Auto-refreshes after activity sync
 
 **User Experience**: Near-instant page load with smooth, responsive UI.
-

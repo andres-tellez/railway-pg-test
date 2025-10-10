@@ -50,12 +50,12 @@ const [loading, setLoading] = useState(false);
     try {
       const token = await getAccessTokenSilently();
       const user_id = localStorage.getItem("user_id");
-      
+
       console.log("🔍 Frontend Debug:");
       console.log("  • API URL:", `${API}/api/plan/readiness-assessment`);
       console.log("  • User ID:", user_id);
       console.log("  • Token length:", token?.length || 0);
-      
+
       if (!user_id) {
         setReadinessData({ error: "User ID not found. Please refresh the page and try again." });
         return;
@@ -75,7 +75,7 @@ const [loading, setLoading] = useState(false);
 
       const data = await res.json();
       console.log("📡 Response data:", data);
-      
+
       if (data.success) {
         // Handle new structure with summary/debug split
         const assessment = data.readiness_assessment;
@@ -105,11 +105,11 @@ const [loading, setLoading] = useState(false);
     try {
       const token = await getAccessTokenSilently();
       const user_id = localStorage.getItem("user_id");
-      
+
       console.log("🔍 Frontend Debug (Stage 2):");
       console.log("  • API URL:", `${API}/api/plan/training-profile`);
       console.log("  • User ID:", user_id);
-      
+
       if (!user_id) {
         setTrainingProfileData({ error: "User ID not found. Please refresh the page and try again." });
         return;
@@ -127,7 +127,7 @@ const [loading, setLoading] = useState(false);
       console.log("📡 Response status:", res.status);
       const data = await res.json();
       console.log("📡 Stage 2 Response data:", data);
-      
+
       if (data.success) {
         setTrainingProfileData({
           stage1: data.stage1_readiness,
@@ -151,11 +151,11 @@ const [loading, setLoading] = useState(false);
     try {
       const token = await getAccessTokenSilently();
       const user_id = localStorage.getItem("user_id");
-      
+
       console.log("🔍 Frontend Debug (Stage 3):");
       console.log("  • API URL:", `${API}/api/plan/structured-plan`);
       console.log("  • User ID:", user_id);
-      
+
       if (!user_id) {
         setStructuredPlanData({ error: "User ID not found. Please refresh the page and try again." });
         return;
@@ -173,7 +173,7 @@ const [loading, setLoading] = useState(false);
       console.log("📡 Response status:", res.status);
       const data = await res.json();
       console.log("📡 Stage 3 Response data:", data);
-      
+
       if (data.success) {
         setStructuredPlanData({
           stage1: data.stage1_readiness,
@@ -198,11 +198,11 @@ const [loading, setLoading] = useState(false);
     try {
       const token = await getAccessTokenSilently();
       const user_id = localStorage.getItem("user_id");
-      
+
       console.log("🚀 Frontend Debug (Four-Stage Plan):");
       console.log("  • API URL:", `${API}/api/plan/four-stage-plan`);
       console.log("  • User ID:", user_id);
-      
+
       if (!user_id) {
         setFourStagePlanData({ error: "User ID not found. Please refresh the page and try again." });
         return;
@@ -211,7 +211,7 @@ const [loading, setLoading] = useState(false);
       // Get race date from user profile or use a default
       const raceDate = "2025-12-07"; // You could make this dynamic
       const raceDistance = "Marathon";
-      
+
       console.log("📡 Making Four-Stage Plan request...");
       const res = await fetch(`${API}/api/plan/four-stage-plan`, {
         method: "POST",
@@ -229,7 +229,7 @@ const [loading, setLoading] = useState(false);
       console.log("📡 Response status:", res.status);
       const data = await res.json();
       console.log("📡 Four-Stage Plan Response data:", data);
-      
+
       if (data.success) {
         setFourStagePlanData(data);
         // Optionally redirect to the plan view
@@ -252,15 +252,15 @@ const [loading, setLoading] = useState(false);
   const handleVdotEstimation = async () => {
     setLoading(true);
     setVdotEstimationData(null);
-    
+
     try {
       const token = await getAccessTokenSilently();
       const user_id = localStorage.getItem("user_id");
-      
+
       console.log("🏃 VDOT Estimation request details:");
       console.log("  • API URL:", `${API}/api/plan/vdot-estimation`);
       console.log("  • User ID:", user_id);
-      
+
       if (!user_id) {
         setVdotEstimationData({ error: "User ID not found. Please refresh the page and try again." });
         return;
@@ -278,7 +278,7 @@ const [loading, setLoading] = useState(false);
       console.log("📡 Response status:", res.status);
       const data = await res.json();
       console.log("📡 VDOT Estimation Response data:", data);
-      
+
       if (data.success) {
         setVdotEstimationData(data);
       } else {
@@ -295,15 +295,15 @@ const [loading, setLoading] = useState(false);
   const handleGptProfileNormalization = async () => {
     setLoading(true);
     setGptProfileNormalizationData(null);
-    
+
     try {
       const token = await getAccessTokenSilently();
       const user_id = localStorage.getItem("user_id");
-      
+
       console.log("📊 GPT Profile Normalization request details:");
       console.log("  • API URL:", `${API}/api/plan/gpt-profile-normalization`);
       console.log("  • User ID:", user_id);
-      
+
       if (!user_id) {
         setGptProfileNormalizationData({ error: "User ID not found. Please refresh the page and try again." });
         return;
@@ -321,7 +321,7 @@ const [loading, setLoading] = useState(false);
       console.log("📡 Response status:", res.status);
       const data = await res.json();
       console.log("📡 GPT Profile Normalization Response data:", data);
-      
+
       if (data.success) {
         setGptProfileNormalizationData(data);
       } else {
@@ -338,15 +338,15 @@ const [loading, setLoading] = useState(false);
   const handleGptPlanGeneration = async () => {
     setLoading(true);
     setGptPlanGenerationData(null);
-    
+
     try {
       const token = await getAccessTokenSilently();
       const user_id = localStorage.getItem("user_id");
-      
+
       console.log("📅 GPT Plan Generation request details:");
       console.log("  • API URL:", `${API}/api/plan/gpt-plan-generation`);
       console.log("  • User ID:", user_id);
-      
+
       if (!user_id) {
         setGptPlanGenerationData({ error: "User ID not found. Please refresh the page and try again." });
         return;
@@ -373,7 +373,7 @@ const [loading, setLoading] = useState(false);
       console.log("📡 Response status:", res.status);
       const data = await res.json();
       console.log("📡 GPT Plan Generation Response data:", data);
-      
+
       if (data.success) {
         setGptPlanGenerationData(data);
         // Redirect to plan view if plan was saved
@@ -542,7 +542,7 @@ const [loading, setLoading] = useState(false);
                     <p><strong>Peak:</strong> {Math.max(...(structuredPlanData.stage3_4?.weeks?.map((w: any) => w.total_miles) || [0]))} mi</p>
                   </div>
                 </div>
-                
+
                 <div className="border-t border-orange-200 pt-2">
                   <h4 className="font-semibold mb-2">🏃 Pace-Aware Weekly Plan:</h4>
                   <div className="max-h-64 overflow-y-auto space-y-2">
@@ -574,7 +574,7 @@ const [loading, setLoading] = useState(false);
                     )}
                   </div>
                 </div>
-                
+
                 <p className="text-xs text-gray-500 mt-2">✅ Complete pace-aware plan with VDOT-based targets and Strava HR zones</p>
               </div>
             )}
@@ -613,8 +613,8 @@ const [loading, setLoading] = useState(false);
                     <p>💡 The plan includes pace targets, HR zones, and structured workout segments.</p>
                     <p className="mt-2">🔄 Redirecting you to your plan overview...</p>
                   </div>
-                  <a 
-                    href="/plan/overview" 
+                  <a
+                    href="/plan/overview"
                     className="mt-3 block text-center bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700"
                   >
                     View My Training Plan →
@@ -749,8 +749,8 @@ const [loading, setLoading] = useState(false);
                   <p>💡 The plan includes progressive mileage, proper taper, and structured workouts.</p>
                   <p className="mt-2">🔄 Redirecting you to your plan overview...</p>
                 </div>
-                <a 
-                  href="/plan/overview" 
+                <a
+                  href="/plan/overview"
                   className="mt-3 block text-center bg-indigo-600 text-white px-4 py-2 rounded text-sm hover:bg-indigo-700"
                 >
                   View My GPT Training Plan →

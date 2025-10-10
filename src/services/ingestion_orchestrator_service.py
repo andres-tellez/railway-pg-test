@@ -171,7 +171,7 @@ def run_full_ingestion_and_enrichment(
             logger.info("Refreshed materialized view for metrics")
         except Exception as e:
             logger.warning(f"Failed to refresh materialized view: {e}")
-        
+
         # Invalidate metrics cache for this athlete after successful ingestion
         try:
             from src.services.metrics_cache_service import invalidate_athlete_cache

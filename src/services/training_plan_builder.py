@@ -37,7 +37,7 @@ def build_training_plan(
     print("\n" + "=" * 60)
     print("TRAINING PLAN BUILDER (Stage 3)")
     print("=" * 60)
-    
+
     weeks_total = max(1, math.ceil((race_date - start_date).days / 7))
     phase = normalized["phase"]  # "Base-Build" | "Quality-Phase" | "Race-Specific"
     target_weekly = normalized["target_weekly_mileage"]
@@ -46,7 +46,7 @@ def build_training_plan(
     easy_ratio = normalized["easy_run_ratio"]
     th_per_week = normalized["threshold_sessions_per_week"]
     recw_freq = normalized.get("recovery_week_frequency", 3)
-    
+
     print(f"\nPlan Parameters:")
     print(f"  • Phase: {phase}")
     print(f"  • Duration: {weeks_total} weeks")
@@ -65,7 +65,7 @@ def build_training_plan(
         recovery_every=recw_freq,
         taper_weeks=derive_taper_weeks(weeks_total),   # e.g., last 2–3 weeks taper
     )
-    
+
     print(f"\nWeekly Mileage Progression:")
     for i, miles in enumerate(week_miles, 1):
         print(f"  • Week {i}: {miles} mi")
@@ -77,16 +77,16 @@ def build_training_plan(
         current_longest=normalized.get("longest_run", 0),
         taper_weeks=derive_taper_weeks(weeks_total),
     )
-    
+
     print(f"\nProgressive Long-Run Schedule:")
     for i, long_mi in enumerate(long_run_schedule, 1):
         print(f"  • Week {i}: {long_mi} mi")
-    
+
     # 1.6) Compute weekly mileage progression using Stage 2 target and ramp limit
     # Start from base mileage and ramp toward Stage 2 target
     base_mileage = normalized.get("base_mileage", 15)
     week_miles = []
-    
+
     for w_idx in range(weeks_total):
         # Apply ramp limit to progress from base toward target
         if w_idx == 0:
@@ -94,9 +94,9 @@ def build_training_plan(
         else:
             # Progressive ramp: base * (1 + ramp_limit * week_index)
             week_total = min(target_weekly, base_mileage * (1 + ramp_limit * w_idx))
-        
+
         week_miles.append(round(week_total, 1))
-    
+
     print(f"\nWeekly Mileage Progression (base → target):")
     for i, (total, long_mi) in enumerate(zip(week_miles, long_run_schedule), 1):
         print(f"  • Week {i}: {total} mi (long = {long_mi} mi, {long_mi/total*100:.0f}%)")
@@ -168,7 +168,7 @@ def compute_progressive_long_runs(weeks_total: int, long_run_cap: float, current
     - Weeks 2-N: Gradually ramps up using exponential progression to reach peak
     - Peak: 1.45x the long_run_cap (allows progression beyond the "safe" cap)
     - Taper weeks: Reduces to 60%, 40%, 20% of peak
-    
+
     Example for 9 weeks with cap=11.1, current=13.9:
     Week 1: 11.0 mi (max(80% of 13.9, 80% of 11.1))
     Week 2: 11.7 mi
@@ -182,22 +182,22 @@ def compute_progressive_long_runs(weeks_total: int, long_run_cap: float, current
     """
     if weeks_total < 1:
         return []
-    
+
     # Calculate starting point: higher of 80% current longest or 80% cap
     start_long = max(0.8 * current_longest, 0.8 * long_run_cap) if current_longest > 0 else 0.8 * long_run_cap
-    
+
     # Peak is 1.45x the cap to allow proper progression
     peak_long = long_run_cap * 1.45
-    
+
     # Calculate ramp factor for exponential growth (excludes taper weeks)
     build_weeks = max(weeks_total - 3, 1)  # 3 weeks of taper
     if build_weeks > 1 and start_long < peak_long:
         ramp_factor = (peak_long / start_long) ** (1 / (build_weeks - 1))
     else:
         ramp_factor = 1.0
-    
+
     long_runs = []
-    
+
     for week in range(weeks_total):
         if week >= weeks_total - 3:
             # Taper: 60%, 40%, 20% of peak
@@ -207,7 +207,7 @@ def compute_progressive_long_runs(weeks_total: int, long_run_cap: float, current
         else:
             # Build phase: exponential progression
             long_runs.append(round(start_long * (ramp_factor ** week), 1))
-    
+
     return long_runs
 
 
@@ -307,7 +307,7 @@ def phase_intensity_mix(phase: str, is_taper: bool, easy_ratio: float, th_per_we
 def allocate_week_mileage(total_miles: float, long_cap: float, mix: Dict[str, float], progressive_long_run: float = 0) -> Dict[str, float]:
     """
     Allocate weekly mileage across workout types using progressive long-run schedule.
-    
+
     Args:
         total_miles: Total weekly mileage target
         long_cap: Maximum allowed long-run distance
@@ -316,7 +316,7 @@ def allocate_week_mileage(total_miles: float, long_cap: float, mix: Dict[str, fl
     """
     # Use the progressive long-run value (already calculated with proper ramping)
     long_mi = progressive_long_run if progressive_long_run > 0 else min(round(total_miles * mix["long_share"], 1), long_cap)
-    
+
     remain = max(total_miles - long_mi, 0)
 
     # split the remainder by (easy/threshold/marathon/vo2/reps) proportions
@@ -350,7 +350,7 @@ def build_week_schedule(week_start: date, training_days: List[str], allocations:
     """
     days = []
     day_map = weekday_map(week_start)  # {"MON": date(...), ...}
-    
+
     print(f"  Building schedule for week starting {week_start}")
     print(f"  Available training days: {training_days}")
     print(f"  Allocations: {allocations}")
@@ -370,7 +370,7 @@ def build_week_schedule(week_start: date, training_days: List[str], allocations:
         # Prefer mid-week days (TUE, WED, THU) for quality work
         mid_week_days = [d for d in quality_slots if d in ["TUE", "WED", "THU"]]
         q_day = mid_week_days[0] if mid_week_days else quality_slots[0]
-        
+
         # Build a composite session from available quality buckets
         session = quality_session_blocks(allocations, zones, phase)
         days.append({"date": day_map[q_day].isoformat(), **session})
@@ -379,15 +379,15 @@ def build_week_schedule(week_start: date, training_days: List[str], allocations:
     # 3) Fill remaining with easy/recovery to hit totals
     used_days = [long_day] + ([q_day] if q_miles > 0 and quality_slots else [])
     remaining_slots = [d for d in training_days if d not in used_days]
-    
+
     easy_total = allocations["easy"]
-    
+
     # Target 3 easy runs per week for better distribution (JD principle)
     n_easy_runs = 3  # Always create 3 easy runs per week
-    
+
     # Split easy miles into multiple runs (4-6 mi each is ideal)
     per_easy = round_to_half(easy_total / n_easy_runs)
-    
+
     # Cap each easy run at 6 miles (JD principle for easy runs)
     if per_easy > 6.0:
         per_easy = 6.0
@@ -404,11 +404,11 @@ def build_week_schedule(week_start: date, training_days: List[str], allocations:
             else:
                 # Cycle through all training days if we need more slots
                 day = training_days[i % len(training_days)]
-            
+
             # Make sure we don't double-book a day
             day_date = weekday_map(week_start)[day]
             if not any(d.get("date") == day_date.isoformat() for d in days):
-                days.append(make_workout(day_date, "Easy", per_easy, zones["easy"], 
+                days.append(make_workout(day_date, "Easy", per_easy, zones["easy"],
                                          notes=f"Easy aerobic run #{i+1} - conversational pace"))
                 print(f"  Easy run #{i+1} ({per_easy} mi) scheduled for {day}")
 
@@ -425,10 +425,10 @@ def weekday_map(week_start: date) -> Dict[str, date]:
     # Calculate the offset to get to Monday (0 = Monday, 6 = Sunday)
     days_to_monday = week_start.weekday()  # 0=Monday, 1=Tuesday, ..., 6=Sunday
     monday_of_week = week_start - timedelta(days=days_to_monday)
-    
+
     # Map each day of the week starting from Monday
-    return { 
-        day: monday_of_week + timedelta(days=i) 
+    return {
+        day: monday_of_week + timedelta(days=i)
         for i, day in enumerate(["MON","TUE","WED","THU","FRI","SAT","SUN"])
     }
 

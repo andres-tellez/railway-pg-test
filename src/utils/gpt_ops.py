@@ -108,15 +108,15 @@ def get_gpt_response(prompt: str, require_json: bool = True) -> str:
                     )
             except Exception:
                 pass
-            
+
             # Check if response is valid
             if not response or not response.choices:
                 raise ValueError("Empty response from GPT API")
-            
+
             content = response.choices[0].message.content
             if content is None:
                 raise ValueError("GPT returned None content - possibly hit token limit")
-            
+
             return content.strip()
         else:
             # Old OpenAI API
@@ -141,15 +141,15 @@ def get_gpt_response(prompt: str, require_json: bool = True) -> str:
                     )
             except Exception:
                 pass
-            
+
             # Check if response is valid
             if not response or not response.get("choices"):
                 raise ValueError("Empty response from GPT API")
-            
+
             content = response["choices"][0]["message"]["content"]
             if content is None:
                 raise ValueError("GPT returned None content - possibly hit token limit")
-            
+
             return content.strip()
     except Exception as e:
         print("GPT API call failed:", e)

@@ -66,14 +66,14 @@ export default function SimpleMetrics() {
       try {
         console.log("📊 Fetching ALL metrics in single call...");
         const startTime = performance.now();
-        
+
         // Single API call for everything
         const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[]}>("/api/metrics/all-metrics");
-        
+
         const loadTime = performance.now() - startTime;
         console.log(`📊 All metrics loaded in ${loadTime.toFixed(0)}ms`);
         console.log("📊 Complete response:", response.data);
-        
+
         const data = response.data;
 
         // Transform API data to display format
@@ -109,7 +109,7 @@ export default function SimpleMetrics() {
       } catch (err) {
         console.error("Failed to fetch metrics:", err);
         setError("Failed to load metrics. Please try again.");
-        
+
         // Fallback to placeholder data on error
         setMetrics([
           {
@@ -211,8 +211,8 @@ export default function SimpleMetrics() {
         <div className="mt-8 space-y-6">
           {/* Weekly Trend Chart - Full Width */}
           {weeklyTrends.length > 0 && (
-            <WeeklyTrendChart 
-              data={weeklyTrends} 
+            <WeeklyTrendChart
+              data={weeklyTrends}
               title="Weekly Running Trends"
               totalMiles={weeklyTrends.reduce((sum, week) => sum + week.distance, 0)}
               avgWeeklyMiles={weeklyTrends.reduce((sum, week) => sum + week.distance, 0) / weeklyTrends.length}
@@ -226,4 +226,3 @@ export default function SimpleMetrics() {
     </div>
   );
 }
-

@@ -151,10 +151,10 @@ def _create_dummy_plan_structure(
     This provides the structure for GPT to revise with proper Jack Daniels methodology.
     """
     from datetime import timedelta
-    
+
     # Calculate all training dates
     training_dates = _calculate_training_dates(start_date, race_date, training_days)
-    
+
     # Create simple dummy workouts with generic mileage
     dummy_workouts = []
     for _, date_obj in training_dates:
@@ -171,7 +171,7 @@ def _create_dummy_plan_structure(
             intensity = "Low"
             target_zone = "Zone 1-2"
             focus = "Base Building"
-        
+
         dummy_workouts.append({
             "date": date_obj.strftime("%Y-%m-%d"),
             "workout_type": workout_type,
@@ -181,7 +181,7 @@ def _create_dummy_plan_structure(
             "description": f"{workout_type} run for base building",
             "focus": focus
         })
-    
+
     return dummy_workouts
 
 
@@ -192,13 +192,13 @@ def _build_compact_jack_daniels_prompt(
     Build compact Jack Daniels prompt for single GPT call approach.
     """
     import json
-    
+
     # Format user data for GPT
     user_data_json = json.dumps(user_data, indent=2)
-    
+
     # Format plan structure for GPT
     plan_structure_json = json.dumps(plan_structure, indent=2)
-    
+
     prompt = f"""You are an expert running coach using Jack Daniels methodology. Revise this training plan structure with proper mileage and progression.
 
 USER DATA:
@@ -212,13 +212,13 @@ JACK DANIELS RULES:
 - Every 2-3 weeks: marathon-pace finish (last 4-6mi @ Zone 3)
 - Taper: reduce to 60%, 40%, 20% of peak over final 3 weeks
 - Recovery: 10% of weekly mileage @ Z1-2
-- Easy: 15-20% of weekly mileage @ Z1-2  
+- Easy: 15-20% of weekly mileage @ Z1-2
 - Threshold: 8-12% of weekly mileage @ Z3-4
 - Progression: max +10% weekly mileage increase
 - Round miles to nearest 0.5
 
 OUTPUT: Complete revised plan as JSON array with fields: date, workout_type, miles, target_zone, intensity, description, focus"""
-    
+
     return prompt
 
 
@@ -245,35 +245,35 @@ def _generate_jack_daniels_plan(
 
     # Step 4: GPT revises entire plan with Jack Daniels methodology
     print("\nStep 4: GPT revising plan with Jack Daniels methodology...")
-    
+
     # Prepare user data for GPT
     user_data = {
         "user_profile": user,
         "activities": activities[:10],  # Limit to recent activities
         "weekly_summaries": weekly_summaries,
         "base_mileage": _calculate_base_mileage(
-            weekly_summaries, 
+            weekly_summaries,
             str(user.get("runner_level", "Intermediate")).lower(),
             data_bundle.get("quality_assessment", {}).get("data_quality", {})
         ),
         "heart_rate_zones": _calculate_user_heart_rate_zones(user, activities)
     }
-    
+
     # Build compact prompt
     prompt = _build_compact_jack_daniels_prompt(user_data, dummy_plan)
     print(f"Prompt length: ~{len(prompt)} characters")
-    
+
     # Get GPT response
     try:
         response = get_gpt_response(prompt)
         print(f"GPT response received ({len(response)} characters)")
-        
+
         # Parse response
         workouts = _parse_gpt_workout_response(response, training_days, start_date, race_date)
         print(f"Parsed {len(workouts)} workouts")
-        
+
         return workouts
-        
+
     except Exception as e:
         print(f"GPT generation failed: {e}")
         print("Using dummy plan as fallback")

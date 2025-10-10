@@ -29,7 +29,7 @@ export default function HeartRateZoneChart({ hrZones, title = "Heart Rate Zone D
   return (
     <div className="bg-white rounded-lg shadow-md p-6 border border-gray-200">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">{title}</h3>
-      
+
       {!hasData ? (
         <div className="text-center py-8 text-gray-500">
           <div className="text-4xl mb-2">💓</div>

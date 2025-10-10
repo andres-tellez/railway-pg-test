@@ -22,7 +22,7 @@ VDOT_TO_PACE = {
 }
 
 def map_pace_zones(
-    weekly_plan: List[Dict[str, Any]], 
+    weekly_plan: List[Dict[str, Any]],
     user_profile: Dict[str, Any]
 ) -> List[Dict[str, Any]]:
     """
@@ -31,21 +31,21 @@ def map_pace_zones(
     print("\n" + "=" * 60)
     print("STAGE 4: PACE & ZONE MAPPING")
     print("=" * 60)
-    
+
     # Extract user fitness data
     vdot = int(user_profile.get("vdot", 45))  # default mid-level
     max_hr = user_profile.get("max_hr", 177)
     age = user_profile.get("age", 35)
-    
+
     # Use calculated max HR if not available
     if not max_hr or max_hr == 0:
         max_hr = 220 - age  # rough estimate
-    
+
     print(f"\nUser Fitness Profile:")
     print(f"  • VDOT: {vdot}")
     print(f"  • Max HR: {max_hr} bpm")
     print(f"  • Age: {age}")
-    
+
     # Standard Strava HR zones
     hr_zones = {
         "Z1": (0.50, 0.60),   # Recovery
@@ -54,20 +54,20 @@ def map_pace_zones(
         "Z4": (0.85, 0.95),   # VO2 Max
         "Z5": (0.95, 1.00),   # Neuromuscular
     }
-    
+
     # Get pace ranges for user's VDOT
     pace_dict = VDOT_TO_PACE.get(vdot, VDOT_TO_PACE[45])
-    
+
     print(f"\nPace Targets (VDOT {vdot}):")
     print(f"  • Easy: {pace_dict['Easy'][0]:.2f}–{pace_dict['Easy'][1]:.2f} min/mi")
     print(f"  • Threshold: {pace_dict['Threshold'][0]:.2f}–{pace_dict['Threshold'][1]:.2f} min/mi")
     print(f"  • Long: {pace_dict['Long'][0]:.2f}–{pace_dict['Long'][1]:.2f} min/mi")
-    
+
     enriched_plan = []
 
     for week in weekly_plan:
         print(f"\nWeek {week.get('week_number', week.get('week', 'Unknown'))}: {week.get('total_miles', 0)} mi")
-        
+
         enriched_sessions = []
 
         # Process each day in the week
@@ -77,41 +77,41 @@ def map_pace_zones(
             print(f"    • {day.get('workout_type', 'Unknown')}: {day.get('distance_mi', 0)} mi")
             workout_type = day.get('workout_type', 'Easy')
             distance_mi = day.get('distance_mi', 0)
-            
+
             if distance_mi <= 0:
                 continue
-                
+
             # Map workout type to pace and HR zones
             if workout_type in ["Threshold", "Tempo"]:
                 pace_lo, pace_hi = pace_dict["Threshold"]
                 hr_lo, hr_hi = hr_zones["Z3"]
                 zone_desc = "Z3"
                 description = "Threshold/tempo pace - comfortably hard effort"
-                
+
             elif workout_type == "Marathon":
                 pace_lo, pace_hi = pace_dict["Marathon"]
                 hr_lo, hr_hi = hr_zones["Z3"]
                 zone_desc = "Z3"
                 description = "Marathon race pace - sustainable for 26.2 miles"
-                
+
             elif workout_type in ["VO2", "Intervals", "Repetitions"]:
                 pace_lo, pace_hi = pace_dict["Threshold"]  # Use threshold as base, will be adjusted
                 hr_lo, hr_hi = hr_zones["Z4"]
                 zone_desc = "Z4"
                 description = "VO2 max intervals - hard but controlled effort"
-                
+
             elif workout_type == "Long":
                 pace_lo, pace_hi = pace_dict["Long"]
                 hr_lo, hr_hi = hr_zones["Z2"]
                 zone_desc = "Z2"
                 description = "Long aerobic run - steady conversational pace"
-                
+
             elif workout_type == "Race":
                 pace_lo, pace_hi = pace_dict["Marathon"]
                 hr_lo, hr_hi = hr_zones["Z4"]
                 zone_desc = "Race"
                 description = "Race day - trust your training and pacing"
-                
+
             else:  # Easy, Recovery
                 pace_lo, pace_hi = pace_dict["Easy"]
                 hr_lo, hr_hi = hr_zones["Z2"]
@@ -121,16 +121,16 @@ def map_pace_zones(
             # Calculate HR ranges
             hr_min = int(hr_lo * max_hr)
             hr_max = int(hr_hi * max_hr)
-            
+
             # Format pace as MM:SS
             pace_min_lo = int(pace_lo)
             pace_sec_lo = int((pace_lo - pace_min_lo) * 60)
             pace_min_hi = int(pace_hi)
             pace_sec_hi = int((pace_hi - pace_min_hi) * 60)
-            
+
             pace_range = f"{pace_min_lo}:{pace_sec_lo:02d}–{pace_min_hi}:{pace_sec_hi:02d}/mi"
             hr_range = f"{zone_desc} ({hr_min}–{hr_max} bpm)"
-            
+
             enriched_session = {
                 "date": day.get('date'),
                 "workout_type": workout_type,
@@ -140,7 +140,7 @@ def map_pace_zones(
                 "description": description,
                 "notes": day.get('notes', '')
             }
-            
+
             enriched_sessions.append(enriched_session)
             print(f"  • {workout_type}: {distance_mi} mi @ {pace_range} ({hr_range})")
 
@@ -174,7 +174,7 @@ def estimate_vdot_from_race_time(race_distance: str, race_time: str) -> int:
             total_minutes = minutes + seconds / 60
         else:
             return 45  # default
-        
+
         # Rough VDOT estimation based on race distance
         if race_distance.lower() in ['marathon', '26.2']:
             # Marathon VDOT estimation (simplified)
@@ -203,6 +203,6 @@ def estimate_vdot_from_race_time(race_distance: str, race_time: str) -> int:
         else:
             # Default for other distances
             return 45
-            
+
     except:
         return 45  # default fallback

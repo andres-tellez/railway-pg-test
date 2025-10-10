@@ -615,10 +615,10 @@ def assemble_training_plan_data(session: Session, user_id: UUID) -> dict:
         dates = [a["activity_date"] for a in activities]
         print(f"  🔍 DEBUG: Activities date range: {min(dates)} to {max(dates)}")
         print(f"  🔍 DEBUG: Total activities for weekly summaries: {len(activities)}")
-    
+
     weekly_summaries = summarize_weekly_training(activities)
     print(f"  • Generated {len(weekly_summaries)} weekly summaries")
-    
+
     # DEBUG: Show first few weekly summaries
     if weekly_summaries:
         print(f"  • First 3 weekly summaries:")

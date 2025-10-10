@@ -356,7 +356,7 @@ POST /api/activities/enrich/batch?athlete_id=347085&batch=30
 ## 🐛 Troubleshooting
 
 ### **Problem: Activities not showing in metrics**
-**Solution:** 
+**Solution:**
 1. Check if activities exist: `SELECT COUNT(*) FROM activities WHERE athlete_id = X`
 2. Run enrichment batch to add missing HR zones
 3. Verify date range matches your query
@@ -402,6 +402,5 @@ POST /api/activities/enrich/batch?athlete_id=347085&batch=30
 
 ---
 
-**Last Updated:** October 9, 2025  
+**Last Updated:** October 9, 2025
 **Author:** SmartCoach Development Team
-
