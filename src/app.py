@@ -70,6 +70,7 @@ from src.routes.auth_me_routes import auth_me_bp
 from src.utils.auth0_jwt import requires_auth
 from src.routes.metrics_routes import metrics_bp
 from src.routes.training_plan_routes import training_plan_bp
+from src.routes.webhook_routes import webhook_bp
 from src.db.models import Plan  # Update this import to match your structure
 
 
@@ -130,6 +131,7 @@ def create_app(test_config=None):
     app.register_blueprint(metrics_bp, url_prefix="/api/metrics")
     app.register_blueprint(training_plan_bp)
     app.register_blueprint(auth_me_bp)
+    app.register_blueprint(webhook_bp, url_prefix="/webhooks")
 
     @app.route("/_debug/db-url")
     def debug_db_url():
