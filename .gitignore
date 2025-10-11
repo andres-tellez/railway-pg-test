@@ -50,3 +50,8 @@ test_failures.txt
 frontend/dist/
 
 node_modules/
+
+# Railway CLI and deployment files
+.railway/
+railway.json
+.railwayignore

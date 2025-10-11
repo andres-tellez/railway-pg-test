@@ -89,8 +89,27 @@ if __name__ == "__main__":
             traceback.print_exc()
         sys.exit(0)
 
-    # Local run
-    port = int(os.environ.get("PORT", config.PORT or 8080))
+    # Local run - automatically handle Railway interference
+    railway_port = os.environ.get("PORT")
+    if railway_port and railway_port != "5000":
+        print(
+            f"[INFO] Railway CLI detected (PORT={railway_port}) - auto-fixing for local development",
+            flush=True,
+        )
+        # Clear Railway environment variables that might interfere
+        railway_vars = [
+            "PORT",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_NAME",
+            "RAILWAY_ENVIRONMENT",
+        ]
+        for var in railway_vars:
+            if var in os.environ:
+                del os.environ[var]
+        print(f"[INFO] Cleared Railway environment variables", flush=True)
+
+    port = 5000
+    print(f"[INFO] Starting backend on port {port} for local development", flush=True)
 
     config_db_url = app.config.get("DATABASE_URL") or config.DATABASE_URL
     print("[DEBUG] ENV DATABASE_URL =", config.DATABASE_URL, flush=True)
@@ -126,11 +145,26 @@ if __name__ == "__main__":
     key_file = os.path.join(os.getcwd(), "localhost-key.pem")
     if os.path.exists(cert_file) and os.path.exists(key_file):
         print(
-            f"[INFO] Running with HTTPS using mkcert: {cert_file}, {key_file}", flush=True
+            f"[INFO] Running with HTTPS using mkcert: {cert_file}, {key_file}",
+            flush=True,
         )
-        ssl_context = (cert_file, key_file)
+        try:
+            import ssl
+
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ssl_context.load_cert_chain(cert_file, key_file)
+            print("[INFO] SSL context created successfully", flush=True)
+        except Exception as e:
+            print(
+                f"[WARNING] Failed to create SSL context: {e}, falling back to tuple format",
+                flush=True,
+            )
+            ssl_context = (cert_file, key_file)
     else:
-        print("[WARNING] No mkcert certs found, running without HTTPS (HTTP only)", flush=True)
+        print(
+            "[WARNING] No mkcert certs found, running without HTTPS (HTTP only)",
+            flush=True,
+        )
         ssl_context = None
 
     print(f"[INFO] Starting app locally on 0.0.0.0:{port}", flush=True)
