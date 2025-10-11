@@ -1,28 +1,41 @@
 # src/scripts/run_staging_cron.py
 
+"""
+run_staging_cron.py
+
+Fixed cron script that fetches yesterday + today UTC to catch missed activities.
+This addresses timezone issues where runs might be missed.
+"""
+
 import argparse
 from datetime import datetime, timedelta
+from sqlalchemy import text
+
 from src.db.db_session import get_session
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
 )
-from sqlalchemy import text
 
 
 def main():
+    """Run ingestion for all athletes with fixed timezone handling."""
     parser = argparse.ArgumentParser(description="Run ingestion for all athletes")
     parser.add_argument("--batch_size", type=int, default=10)
     parser.add_argument("--per_page", type=int, default=200)
     args = parser.parse_args()
 
-    # Get UTC midnight range for yesterday
-    yesterday = datetime.utcnow().date() - timedelta(days=1)
-    after = int(datetime.combine(yesterday, datetime.min.time()).timestamp())
-    before = int(
-        datetime.combine(yesterday + timedelta(days=1), datetime.min.time()).timestamp()
-    )
+    # Get UTC midnight range for yesterday AND today (to catch missed activities)
+    today_utc = datetime.utcnow().date()
+    yesterday_utc = today_utc - timedelta(days=1)
 
-    print(f"🕐 Targeting activities from: {yesterday.isoformat()} (UTC)")
+    # Fetch both yesterday and today to catch any missed activities
+    after = int(datetime.combine(yesterday_utc, datetime.min.time()).timestamp())
+    before = int(datetime.combine(today_utc + timedelta(days=1), datetime.min.time()).timestamp())
+
+    print(
+        f"🕐 Targeting activities from: {yesterday_utc.isoformat()} to "
+        f"{today_utc.isoformat()} (UTC)"
+    )
     print(f"🔍 after: {after} | before: {before}")
 
     session = get_session()
