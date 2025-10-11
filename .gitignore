@@ -55,3 +55,6 @@ node_modules/
 .railway/
 railway.json
 .railwayignore
+
+# SSL certificates (local development)
+*.pem
