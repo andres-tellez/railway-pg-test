@@ -165,6 +165,10 @@ if __name__ == "__main__":
             "[WARNING] No mkcert certs found, running without HTTPS (HTTP only)",
             flush=True,
         )
+        print(
+            "[INFO] To enable HTTPS, run: .\\setup_https_certificates.ps1",
+            flush=True,
+        )
         ssl_context = None
 
     print(f"[INFO] Starting app locally on 0.0.0.0:{port}", flush=True)
