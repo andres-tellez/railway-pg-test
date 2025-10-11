@@ -6,16 +6,22 @@ Simply run the backend - it will automatically handle Railway interference:
 python run.py
 ```
 
+## First Time Setup (Required)
+**You MUST run this once to set up HTTPS certificates:**
+```powershell
+.\setup_https_certificates.ps1
+```
+
+## When You Switch Branches
+**Every time you switch branches or clone the repo, run:**
+```powershell
+.\setup_https_certificates.ps1
+```
+
 ## Optional: Use the Local Development Script
 For extra safety (automatically checks certificates and clears processes):
 ```powershell
 .\start-local.ps1
-```
-
-## First Time Setup
-If you haven't set up HTTPS certificates yet:
-```powershell
-.\setup_https_certificates.ps1
 ```
 
 ## Common Issues
