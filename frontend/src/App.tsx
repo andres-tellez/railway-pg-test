@@ -39,6 +39,7 @@ import AskGptMvpUI from "./pages/AskGptMvpUI";
 import WelcomePage from "./pages/WelcomePage";
 import SimpleMetrics from "./pages/SimpleMetrics";
 import VO2Metrics from "./pages/VO2Metrics";
+import LongestRuns from "./pages/LongestRuns";
 
 import Layout from "./components/Layout";
 import SmartRouter from "./components/SmartRouter";
@@ -190,6 +191,16 @@ export default function App() {
           <ProtectedRoute>
             <Layout>
               <VO2Metrics />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/longest-runs"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <LongestRuns />
             </Layout>
           </ProtectedRoute>
         }

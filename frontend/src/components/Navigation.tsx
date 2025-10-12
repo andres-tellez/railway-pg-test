@@ -64,6 +64,7 @@ const Navigation: React.FC = () => {
         { label: 'Dashboard', path: '/home', icon: '🏠' },
         { label: 'My Plan', path: '/plan/overview', icon: '📅' },
         { label: 'Metrics', path: '/metrics', icon: '📊' },
+        { label: 'Longest Runs', path: '/longest-runs', icon: '🏃' },
         { label: 'Ask Coach', path: '/ask', icon: '💬' }
       );
     } else if (userState.hasStrava) {
