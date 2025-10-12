@@ -161,17 +161,35 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
 
   const { maxDistance, barColors } = chartData;
 
+  // Helper function to format date as M/D
+  const formatDate = (dateString: string) => {
+    try {
+      const dateStr = dateString;
+      let date;
+      if (dateStr.includes('T')) {
+        date = new Date(dateStr);
+      } else {
+        date = new Date(dateStr + 'T00:00:00');
+      }
+      const month = date.getMonth() + 1; // getMonth() is 0-indexed
+      const day = date.getDate();
+      return `${month}/${day}`;
+    } catch (error) {
+      return dateString; // fallback to original string if parsing fails
+    }
+  };
+
   // Helper function to get bar color classes
                 const getBarColorClasses = (colorType: string, isCurrentWeek: boolean) => {
                 const baseClasses = 'w-full rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg';
                 const currentWeekRing = isCurrentWeek ? 'ring-2 ring-opacity-50' : '';
 
                 if (colorType === 'significant_drop') {
-                  return `${baseClasses} bg-gradient-to-t from-red-500 to-red-400 hover:from-red-600 hover:to-red-500 ${currentWeekRing} ring-red-200`;
+                  return `${baseClasses} bg-red-500 ${currentWeekRing} ring-red-200`;
                 }
 
                 // Default: blue for normal
-                return `${baseClasses} bg-gradient-to-t from-blue-500 to-blue-400 hover:from-blue-600 hover:to-blue-500 ${currentWeekRing} ring-blue-200`;
+                return `${baseClasses} bg-blue-500 ${currentWeekRing} ring-blue-200`;
               };
 
   // Zone colors (defined outside the map for reuse)
@@ -201,13 +219,14 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
           <div className="flex items-end space-x-1 h-48 bg-gradient-to-t from-gray-100 to-gray-50 p-6 rounded-xl">
             {data.map((week, index) => {
               const heightPercentage = maxDistance > 0 ? (week.distance / maxDistance) : 0;
-              const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
+              const heightPixels = heightPercentage * 140;
               const isCurrentWeek = index === 0;
 
               // Get goal for this week from training plan data
               const goalMiles = findGoalForWeek(week.week);
               const goalHeightPercentage = goalMiles && maxDistance > 0 ? (goalMiles / maxDistance) : 0;
-              const goalHeightPixels = Math.max(goalHeightPercentage * 120 + 40, 40);
+              // Make goal height proportional to the actual bar height
+              const goalHeightPixels = goalMiles ? (goalMiles / week.distance) * heightPixels : 0;
 
               const exceededGoal = goalMiles ? week.distance >= goalMiles : false;
 
@@ -300,6 +319,13 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
                         {goalMiles} mi
                       </div>
                     )}
+                  </div>
+
+                  {/* Date Label */}
+                  <div className="mt-2 text-center">
+                    <div className="text-xs text-gray-500">
+                      {formatDate(week.week)}
+                    </div>
                   </div>
                 </div>
               );

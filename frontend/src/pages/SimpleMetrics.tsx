@@ -4,6 +4,7 @@ import HeartRateZoneChart from "../components/charts/HeartRateZoneChart";
 import WeeklyTrendChart from "../components/charts/WeeklyTrendChart";
 import WeeklyPaceChart from "../components/charts/WeeklyPaceChart";
 import WeeklyVO2Chart from "../components/charts/WeeklyVO2Chart";
+import LongestRunsChart from "../components/charts/LongestRunsChart";
 import ChartHelpTooltip from "../components/charts/ChartHelpTooltip";
 
 interface MetricData {
@@ -66,6 +67,22 @@ interface WeeklyGoalData {
   goal_miles: number;
 }
 
+interface LongestRunData {
+  week_start: string;
+  activity_id: number;
+  name: string;
+  date: string;
+  distance: number;
+  pace: string;
+  duration: string;
+  heart_rate_zones: any;
+  is_personal_record: boolean;
+  is_significant_drop: boolean;
+  trend: 'improving' | 'declining' | 'stable';
+  change_pct: number;
+  prev_week_distance: number | null;
+}
+
 export default function SimpleMetrics() {
   const api = useApiClient();
   const [metrics, setMetrics] = useState<MetricData[]>([]);
@@ -74,6 +91,7 @@ export default function SimpleMetrics() {
   const [weeklyHRZones, setWeeklyHRZones] = useState<WeeklyHRZoneData[]>([]);
   const [weeklyVO2, setWeeklyVO2] = useState<WeeklyVO2Data[]>([]);
   const [weeklyGoals, setWeeklyGoals] = useState<WeeklyGoalData[]>([]);
+  const [longestRuns, setLongestRuns] = useState<LongestRunData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredHRBar, setHoveredHRBar] = useState<{ index: number; x: number; y: number } | null>(null);
@@ -89,7 +107,8 @@ export default function SimpleMetrics() {
     hrZones: WeeklyHRZoneData[];
     vo2: WeeklyVO2Data[];
     goals: WeeklyGoalData[];
-  }>({ trends: [], hrZones: [], vo2: [], goals: [] });
+    longestRuns: LongestRunData[];
+  }>({ trends: [], hrZones: [], vo2: [], goals: [], longestRuns: [] });
 
   // Handle window resize to update default weeks
   useEffect(() => {
@@ -115,7 +134,7 @@ export default function SimpleMetrics() {
         const startTime = performance.now();
 
         // Single API call for everything (always fetch all 20 weeks)
-        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_vo2_estimates: WeeklyVO2Data[], weekly_goals: WeeklyGoalData[]}>("/api/metrics/all-metrics");
+        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_vo2_estimates: WeeklyVO2Data[], weekly_goals: WeeklyGoalData[], longest_runs: LongestRunData[]}>("/api/metrics/all-metrics");
 
         const loadTime = performance.now() - startTime;
         console.log(`📊 All metrics loaded in ${loadTime.toFixed(0)}ms`);
@@ -156,7 +175,8 @@ export default function SimpleMetrics() {
           trends: data.weekly_trends,
           hrZones: data.weekly_hr_zones,
           vo2: data.weekly_vo2_estimates || [],
-          goals: data.weekly_goals || []
+          goals: data.weekly_goals || [],
+          longestRuns: data.longest_runs || []
         });
 
       } catch (err) {
@@ -200,6 +220,7 @@ export default function SimpleMetrics() {
   const filteredWeeklyHRZones = allWeeklyData.hrZones.slice(0, selectedWeeks);
   const filteredWeeklyVO2 = allWeeklyData.vo2.slice(0, selectedWeeks);
   const filteredWeeklyGoals = allWeeklyData.goals.slice(0, selectedWeeks);
+  const filteredLongestRuns = allWeeklyData.longestRuns.slice(0, selectedWeeks);
 
   // Debug logging
   console.log(`📊 Data availability: ${allWeeklyData.trends.length} trends, ${allWeeklyData.hrZones.length} HR zones, ${allWeeklyData.vo2.length} VO2`);
@@ -349,9 +370,18 @@ export default function SimpleMetrics() {
             <WeeklyTrendChart
               data={filteredWeeklyTrends}
               weeklyGoals={filteredWeeklyGoals}
-              title="Weekly Distance - Plan vs Actual"
+              title="Total Mi. - Actual vs Plan"
               showHeader={true}
               helpTooltip={mileageHelpContent}
+            />
+          )}
+
+          {/* Longest Runs Section */}
+          {filteredLongestRuns.length > 0 && (
+            <LongestRunsChart
+              data={filteredLongestRuns}
+              title="Longest Runs"
+              showHeader={true}
             />
           )}
 

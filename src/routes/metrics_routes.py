@@ -119,6 +119,12 @@ def get_all_metrics_ultra_optimized(session, athlete_id, weeks=8):
         {"athlete_id": athlete_id},
     ).first()
 
+    # Get longest runs data from materialized view
+    longest_runs_result = session.execute(
+        text("SELECT * FROM mv_longest_runs WHERE athlete_id = :athlete_id"),
+        {"athlete_id": athlete_id},
+    ).first()
+
     if not result:
         # No data for this athlete, return empty metrics
         return {
@@ -136,6 +142,7 @@ def get_all_metrics_ultra_optimized(session, athlete_id, weeks=8):
             "weekly_hr_zones": [],
             "weekly_vo2_estimates": [],
             "weekly_goals": [],  # NEW: Include empty weekly_goals
+            "longest_runs": [],  # NEW: Include empty longest_runs
         }
 
     # Extract pre-calculated dashboard metrics
@@ -234,6 +241,39 @@ def get_all_metrics_ultra_optimized(session, athlete_id, weeks=8):
             }
         )
 
+    # Process longest runs data (from mv_longest_runs materialized view)
+    longest_runs = []
+    if longest_runs_result and longest_runs_result.weekly_runs:
+        weekly_runs = longest_runs_result.weekly_runs
+        # Filter to requested number of weeks
+        filtered_runs = (
+            weekly_runs[:weeks] if weeks and weeks < len(weekly_runs) else weekly_runs
+        )
+
+        # Format data (only formatting, no calculations - already done by database)
+        for run in filtered_runs:
+            longest_runs.append(
+                {
+                    "week_start": run["week_start"],
+                    "activity_id": run["activity_id"],
+                    "name": run["name"],
+                    "date": run["date"],
+                    "distance": float(run["distance"]),
+                    "pace": format_pace(run["average_speed"]),
+                    "duration": format_duration(run["moving_time"]),
+                    "heart_rate_zones": run["heart_rate_zones"],
+                    "is_personal_record": run["is_personal_record"],
+                    "is_significant_drop": run["is_significant_drop"],
+                    "trend": run["trend"],
+                    "change_pct": float(run["change_pct"]),
+                    "prev_week_distance": (
+                        float(run["prev_week_distance"])
+                        if run["prev_week_distance"]
+                        else None
+                    ),
+                }
+            )
+
     return {
         "weekly_distance": {
             "current": current_distance,
@@ -255,6 +295,7 @@ def get_all_metrics_ultra_optimized(session, athlete_id, weeks=8):
         "weekly_hr_zones": weekly_hr_zones,
         "weekly_vo2_estimates": weekly_vo2_estimates,
         "weekly_goals": weekly_goals,  # NEW: Include weekly_goals from materialized view
+        "longest_runs": longest_runs,  # NEW: Include longest_runs from materialized view
     }
 
 
@@ -302,6 +343,20 @@ def format_pace(avg_speed_mps: float) -> str:
     seconds = int(seconds_per_mile % 60)
 
     return f"{minutes}:{seconds:02d}"
+
+
+def format_duration(seconds: int) -> str:
+    """Format duration in seconds to HH:MM:SS or MM:SS"""
+    if not seconds:
+        return "0:00:00"
+
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
 
 
 @metrics_bp.route("/all-metrics", methods=["GET"])
