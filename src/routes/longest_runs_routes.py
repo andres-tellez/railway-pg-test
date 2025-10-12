@@ -133,15 +133,10 @@ def get_longest_runs_ultra_optimized(session, athlete_id: int, weeks: int = 8):
             "runs": [],
             "summary": {
                 "total_weeks": 0,
-                "max_distance": 0.0,
-                "latest_pr_date": None,
                 "pr_count": 0,
                 "drop_count": 0,
                 "improving_weeks": 0,
-                "avg_distance": 0.0,
-                "overall_improvement_pct": 0.0,
             },
-            "insights": ["Not enough data to generate insights"],
         }
 
     # Extract weekly runs (pre-aggregated by database)
@@ -180,77 +175,12 @@ def get_longest_runs_ultra_optimized(session, athlete_id: int, weeks: int = 8):
     # Extract summary stats (pre-calculated by database)
     summary = {
         "total_weeks": int(result.total_weeks),
-        "max_distance": float(result.max_distance),
-        "latest_pr_date": result.latest_pr_date,
         "pr_count": int(result.pr_count),
         "drop_count": int(result.drop_count),
         "improving_weeks": int(result.improving_weeks),
-        "avg_distance": float(result.avg_distance),
-        "overall_improvement_pct": (
-            float(result.overall_improvement_pct)
-            if result.overall_improvement_pct
-            else 0.0
-        ),
     }
 
-    # Generate dynamic insights (only thing done in Python)
-    insights = generate_insights(summary, filtered_runs)
-
-    return {"runs": formatted_runs, "summary": summary, "insights": insights}
-
-
-def generate_insights(summary: dict, runs: list) -> list:
-    """Generate dynamic insights based on actual data"""
-    insights = []
-
-    if summary["total_weeks"] < 2:
-        return ["Not enough data to generate insights. Keep running!"]
-
-    # Overall improvement
-    improvement_pct = summary["overall_improvement_pct"]
-    if improvement_pct > 5:
-        insights.append(
-            f"Your longest runs have improved {improvement_pct:.1f}% over {summary['total_weeks']} weeks"
-        )
-    elif improvement_pct < -5:
-        insights.append(
-            f"Your longest runs have decreased {abs(improvement_pct):.1f}% over {summary['total_weeks']} weeks"
-        )
-    else:
-        insights.append(
-            f"Your longest runs have remained stable over {summary['total_weeks']} weeks"
-        )
-
-    # Personal records
-    if summary["pr_count"] > 0:
-        insights.append(
-            f"🎉 You set {summary['pr_count']} new personal record{'s' if summary['pr_count'] > 1 else ''}!"
-        )
-
-    # Significant drops
-    if summary["drop_count"] > 0:
-        insights.append(
-            f"⚠️ {summary['drop_count']} week{'s' if summary['drop_count'] > 1 else ''} showed significant drops - consider recovery"
-        )
-
-    # Consistency
-    total_comparisons = summary["total_weeks"] - 1
-    if total_comparisons > 0:
-        improvement_rate = (summary["improving_weeks"] / total_comparisons) * 100
-        if improvement_rate >= 60:
-            insights.append(
-                f"Consistent progress - longest run increased {summary['improving_weeks']} of {total_comparisons} weeks"
-            )
-        elif improvement_rate <= 30:
-            insights.append(
-                "Mixed progress - consider focusing on gradual distance increases"
-            )
-
-    # Average distance context
-    if summary["avg_distance"] > 0:
-        insights.append(f"Average longest run: {summary['avg_distance']:.1f} miles")
-
-    return insights
+    return {"runs": formatted_runs, "summary": summary}
 
 
 @longest_runs_bp.route("/data", methods=["GET"])
@@ -289,7 +219,6 @@ def get_longest_runs_data():
                         "error": "No Strava connection found",
                         "runs": [],
                         "summary": {},
-                        "insights": [],
                     }
                 ),
                 200,

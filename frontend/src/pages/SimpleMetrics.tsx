@@ -61,6 +61,11 @@ interface WeeklyVO2Data {
   run_score: number | null;
 }
 
+interface WeeklyGoalData {
+  week: string;
+  goal_miles: number;
+}
+
 export default function SimpleMetrics() {
   const api = useApiClient();
   const [metrics, setMetrics] = useState<MetricData[]>([]);
@@ -68,6 +73,7 @@ export default function SimpleMetrics() {
   const [weeklyTrends, setWeeklyTrends] = useState<WeeklyTrendData[]>([]);
   const [weeklyHRZones, setWeeklyHRZones] = useState<WeeklyHRZoneData[]>([]);
   const [weeklyVO2, setWeeklyVO2] = useState<WeeklyVO2Data[]>([]);
+  const [weeklyGoals, setWeeklyGoals] = useState<WeeklyGoalData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredHRBar, setHoveredHRBar] = useState<{ index: number; x: number; y: number } | null>(null);
@@ -76,7 +82,8 @@ export default function SimpleMetrics() {
     trends: WeeklyTrendData[];
     hrZones: WeeklyHRZoneData[];
     vo2: WeeklyVO2Data[];
-  }>({ trends: [], hrZones: [], vo2: [] });
+    goals: WeeklyGoalData[];
+  }>({ trends: [], hrZones: [], vo2: [], goals: [] });
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -85,7 +92,7 @@ export default function SimpleMetrics() {
         const startTime = performance.now();
 
         // Single API call for everything (always fetch all 20 weeks)
-        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_vo2_estimates: WeeklyVO2Data[]}>("/api/metrics/all-metrics");
+        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_vo2_estimates: WeeklyVO2Data[], weekly_goals: WeeklyGoalData[]}>("/api/metrics/all-metrics");
 
         const loadTime = performance.now() - startTime;
         console.log(`📊 All metrics loaded in ${loadTime.toFixed(0)}ms`);
@@ -125,7 +132,8 @@ export default function SimpleMetrics() {
         setAllWeeklyData({
           trends: data.weekly_trends,
           hrZones: data.weekly_hr_zones,
-          vo2: data.weekly_vo2_estimates || []
+          vo2: data.weekly_vo2_estimates || [],
+          goals: data.weekly_goals || []
         });
 
       } catch (err) {
@@ -168,6 +176,7 @@ export default function SimpleMetrics() {
   const filteredWeeklyTrends = allWeeklyData.trends.slice(0, selectedWeeks);
   const filteredWeeklyHRZones = allWeeklyData.hrZones.slice(0, selectedWeeks);
   const filteredWeeklyVO2 = allWeeklyData.vo2.slice(0, selectedWeeks);
+  const filteredWeeklyGoals = allWeeklyData.goals.slice(0, selectedWeeks);
 
   // Debug logging
   console.log(`📊 Data availability: ${allWeeklyData.trends.length} trends, ${allWeeklyData.hrZones.length} HR zones, ${allWeeklyData.vo2.length} VO2`);
@@ -311,8 +320,9 @@ export default function SimpleMetrics() {
           {filteredWeeklyTrends.length > 0 && (
             <WeeklyTrendChart
               data={filteredWeeklyTrends}
-              title=""
-              showHeader={false}
+              weeklyGoals={filteredWeeklyGoals}
+              title="Weekly Distance - Plan vs Actual"
+              showHeader={true}
               helpTooltip={mileageHelpContent}
             />
           )}

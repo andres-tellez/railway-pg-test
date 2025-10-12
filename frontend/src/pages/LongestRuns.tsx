@@ -63,12 +63,6 @@ export default function LongestRuns() {
     return "bg-blue-500 hover:bg-blue-600";
   };
 
-  // Get trend icon
-  const getTrendIcon = (trend: string): string => {
-    if (trend === "improving") return "↗️";
-    if (trend === "declining") return "↘️";
-    return "→";
-  };
 
   // Format date to display format
   const formatDate = (dateStr: string): string => {
@@ -138,30 +132,6 @@ export default function LongestRuns() {
           </div>
         </div>
 
-        {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-4 border border-gray-700">
-            <div className="text-gray-400 text-sm mb-1">Personal Record</div>
-            <div className="text-2xl font-bold text-white">{runsData.summary.max_distance.toFixed(1)} mi</div>
-          </div>
-
-          <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-4 border border-gray-700">
-            <div className="text-gray-400 text-sm mb-1">Average Longest Run</div>
-            <div className="text-2xl font-bold text-white">{runsData.summary.avg_distance.toFixed(1)} mi</div>
-          </div>
-
-          <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-4 border border-gray-700">
-            <div className="text-gray-400 text-sm mb-1">Improvement Rate</div>
-            <div className={`text-2xl font-bold ${runsData.summary.overall_improvement_pct >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {runsData.summary.overall_improvement_pct >= 0 ? '+' : ''}{runsData.summary.overall_improvement_pct.toFixed(1)}%
-            </div>
-          </div>
-
-          <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-4 border border-gray-700">
-            <div className="text-gray-400 text-sm mb-1">Personal Records</div>
-            <div className="text-2xl font-bold text-white">{runsData.summary.pr_count}</div>
-          </div>
-        </div>
 
         {/* Chart */}
         <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6 border border-gray-700">
@@ -183,9 +153,16 @@ export default function LongestRuns() {
                   <div className="w-4 h-4 bg-blue-500 rounded"></div>
                   <span>Normal</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 relative group">
                   <div className="w-4 h-4 bg-red-500 rounded"></div>
                   <span>Significant Drop</span>
+                  <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-72 bg-gray-900 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                    <strong>Significant Drop:</strong> Red bars indicate concerning patterns:<br/>
+                    • Two consecutive weeks dropping &gt;20% and &gt;10%<br/>
+                    • Single week dropping &gt;30%<br/>
+                    <br/>
+                    <em>Note: Intentional recovery/taper weeks are filtered out</em>
+                  </div>
                 </div>
               </div>
 
@@ -218,19 +195,11 @@ export default function LongestRuns() {
                         <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-white text-sm font-semibold whitespace-nowrap">
                           {run.distance.toFixed(1)}
                         </div>
-
-                        {/* Trend Arrow */}
-                        <div className="absolute -top-10 left-1/2 transform -translate-x-1/2 text-xl">
-                          {getTrendIcon(run.trend)}
-                        </div>
                       </div>
                     </div>
 
                     {/* Labels */}
                     <div className="mt-2 text-center">
-                      <div className="text-xs text-gray-400 font-medium">
-                        {formatWeekLabel(run.week_start, index)}
-                      </div>
                       <div className="text-xs text-gray-500">
                         {formatDate(run.date)}
                       </div>
@@ -300,18 +269,6 @@ export default function LongestRuns() {
           )}
         </div>
 
-        {/* Insights */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-6 border border-gray-700">
-          <h2 className="text-xl font-semibold text-white mb-4">Insights</h2>
-          <div className="space-y-2">
-            {runsData.insights.map((insight, index) => (
-              <div key={index} className="flex items-start gap-3 text-gray-300">
-                <div className="text-blue-500 mt-1">•</div>
-                <div>{insight}</div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );

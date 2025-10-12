@@ -17,28 +17,133 @@ interface WeeklyHRZoneData {
   zone_5: number;
 }
 
+interface WeeklyGoalData {
+  week: string;
+  goal_miles: number;
+}
+
 interface WeeklyTrendChartProps {
   data: WeeklyTrendData[];
+  weeklyGoals?: WeeklyGoalData[];
   title?: string;
-  totalMiles?: number;
-  avgWeeklyMiles?: number;
   hrZoneData?: WeeklyHRZoneData[];
   showHeader?: boolean;
   helpTooltip?: any;
 }
 
-export default function WeeklyTrendChart({ data, title = "Weekly Current Trends", totalMiles, avgWeeklyMiles, hrZoneData, showHeader = true, helpTooltip }: WeeklyTrendChartProps) {
+export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Weekly Distance - Plan vs Actual", hrZoneData, showHeader = true, helpTooltip }: WeeklyTrendChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
+
+  // Helper function to find goal for a specific week
+  const findGoalForWeek = (week: string): number | null => {
+    // Extract just the date part (YYYY-MM-DD) from the week string
+    const dateOnly = week.split('T')[0];
+
+    console.log(`[DEBUG] Looking for goal for week ${week} (dateOnly: ${dateOnly})`);
+    console.log(`[DEBUG] Available goals:`, weeklyGoals.map(g => ({ week: g.week, goal_miles: g.goal_miles })));
+
+    // Try exact match first
+    let goal = weeklyGoals.find(g => g.week === dateOnly);
+
+    if (!goal) {
+      // If no exact match, try to find goal by matching the week pattern
+      // The issue is that goals might be in 2026 while trends are in 2025
+      // Try converting 2026 dates to 2025 dates by subtracting 1 year
+      const goalWithAdjustedYear = weeklyGoals.find(g => {
+        if (g.week && g.week.includes('2026')) {
+          const adjustedDate = g.week.replace('2026', '2025');
+          console.log(`[DEBUG] Trying 2026->2025: ${g.week} -> ${adjustedDate} vs ${dateOnly}`);
+          return adjustedDate === dateOnly;
+        }
+        return false;
+      });
+
+      if (goalWithAdjustedYear) {
+        goal = goalWithAdjustedYear;
+        console.log(`[DEBUG] Found goal with year adjustment: ${goal.week} -> matches ${dateOnly}`);
+      }
+    }
+
+    // If still no match, try the reverse - convert 2025 trend dates to 2026 to match goals
+    if (!goal) {
+      const goalWithReverseAdjustment = weeklyGoals.find(g => {
+        if (g.week && g.week.includes('2026') && dateOnly.includes('2025')) {
+          const trendDateTo2026 = dateOnly.replace('2025', '2026');
+          const goalDateOnly = g.week.split('T')[0];
+          console.log(`[DEBUG] Trying reverse 2025->2026: ${dateOnly} -> ${trendDateTo2026} vs ${goalDateOnly}`);
+          return goalDateOnly === trendDateTo2026;
+        }
+        return false;
+      });
+
+      if (goalWithReverseAdjustment) {
+        goal = goalWithReverseAdjustment;
+        console.log(`[DEBUG] Found goal with reverse adjustment: ${goal.week} -> matches ${dateOnly}`);
+      }
+    }
+
+    // If still no match, try to match by array position
+    // This handles cases where the goals and trends are in the same order but different years
+    if (!goal && weeklyGoals.length > 0) {
+      console.log(`[DEBUG] No year adjustment match found, trying position-based matching`);
+
+      // Find the index of the current week in the trends data
+      const trendIndex = data.findIndex(trend => trend.week === week);
+      console.log(`[DEBUG] Trend index: ${trendIndex}, Weekly goals length: ${weeklyGoals.length}`);
+
+      if (trendIndex >= 0 && trendIndex < weeklyGoals.length) {
+        goal = weeklyGoals[trendIndex];
+        console.log(`[DEBUG] Found goal by position: index ${trendIndex} -> ${goal.week} (${goal.goal_miles} miles)`);
+      } else {
+        console.log(`[DEBUG] Position-based matching failed: trendIndex=${trendIndex}, goalsLength=${weeklyGoals.length}`);
+      }
+    }
+
+    console.log(`[DEBUG] Final goal match:`, goal);
+    return goal ? goal.goal_miles : null;
+  };
+
+  // Debug logging
+  console.log(`[DEBUG] WeeklyTrendChart received weeklyGoals:`, weeklyGoals);
+  console.log(`[DEBUG] First few weeklyGoals:`, weeklyGoals.slice(0, 3));
+  console.log(`[DEBUG] Weekly trends data:`, data);
+  console.log(`[DEBUG] First few weekly trends:`, data.slice(0, 3));
 
   // Memoize calculations for better performance
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return null;
 
     const maxDistance = Math.max(...data.map(d => d.distance), 1);
-    const totalDistance = data.reduce((sum, week) => sum + week.distance, 0);
-    const avgWeekly = totalDistance / data.length;
 
-    return { maxDistance, totalDistance, avgWeekly };
+    // Calculate bar colors based on significant drop logic
+    const barColors = data.map((week, index) => {
+      if (index === data.length - 1) return 'normal'; // Oldest week, no comparison
+
+      const currentDistance = week.distance;
+      const prevDistance = data[index + 1].distance;
+
+      if (prevDistance === 0) return 'normal'; // Avoid division by zero
+
+      const dropPct = ((prevDistance - currentDistance) / prevDistance) * 100;
+
+      // RED FLAG Logic:
+      // 1. Single dramatic drop (>40%)
+      if (dropPct > 40) return 'significant_drop';
+
+      // 2. Two consecutive drops (current >30% AND previous >15%)
+      if (dropPct > 30 && index < data.length - 2) {
+        const prevPrevDistance = data[index + 2].distance;
+        if (prevPrevDistance > 0) {
+          const prevDropPct = ((prevPrevDistance - prevDistance) / prevPrevDistance) * 100;
+          if (prevDropPct > 15) return 'significant_drop';
+        }
+      }
+
+      // Everything else is normal (blue)
+      return 'normal';
+    });
+
+    return { maxDistance, barColors };
   }, [data]);
 
   if (!chartData) {
@@ -54,7 +159,20 @@ export default function WeeklyTrendChart({ data, title = "Weekly Current Trends"
     );
   }
 
-  const { maxDistance, totalDistance, avgWeekly } = chartData;
+  const { maxDistance, barColors } = chartData;
+
+  // Helper function to get bar color classes
+                const getBarColorClasses = (colorType: string, isCurrentWeek: boolean) => {
+                const baseClasses = 'w-full rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg';
+                const currentWeekRing = isCurrentWeek ? 'ring-2 ring-opacity-50' : '';
+
+                if (colorType === 'significant_drop') {
+                  return `${baseClasses} bg-gradient-to-t from-red-500 to-red-400 hover:from-red-600 hover:to-red-500 ${currentWeekRing} ring-red-200`;
+                }
+
+                // Default: blue for normal
+                return `${baseClasses} bg-gradient-to-t from-blue-500 to-blue-400 hover:from-blue-600 hover:to-blue-500 ${currentWeekRing} ring-blue-200`;
+              };
 
   // Zone colors (defined outside the map for reuse)
   const zoneColors = {
@@ -69,41 +187,50 @@ export default function WeeklyTrendChart({ data, title = "Weekly Current Trends"
     <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
       {showHeader && (
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-gray-900">{title}</h3>
-          <span className="text-sm font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
-          </span>
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+            {helpTooltip && <ChartHelpTooltip helpContent={helpTooltip} />}
+          </div>
         </div>
       )}
 
       {/* Chart */}
       <div>
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <h3 className="text-xl font-bold text-gray-900">Weekly Distance</h3>
-            {helpTooltip && <ChartHelpTooltip helpContent={helpTooltip} />}
-          </div>
-          <div className="text-right">
-            <div className="text-lg text-gray-700">
-              Avg {chartData.avgWeekly.toFixed(1)} mi
-            </div>
-          </div>
-        </div>
 
         <div className="relative">
-          <div className="flex items-end space-x-1 h-48 bg-gradient-to-t from-gray-50 to-white p-6 rounded-xl border border-gray-100">
+          <div className="flex items-end space-x-1 h-48 bg-gradient-to-t from-gray-100 to-gray-50 p-6 rounded-xl">
             {data.map((week, index) => {
               const heightPercentage = maxDistance > 0 ? (week.distance / maxDistance) : 0;
               const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
               const isCurrentWeek = index === 0;
 
+              // Get goal for this week from training plan data
+              const goalMiles = findGoalForWeek(week.week);
+              const goalHeightPercentage = goalMiles && maxDistance > 0 ? (goalMiles / maxDistance) : 0;
+              const goalHeightPixels = Math.max(goalHeightPercentage * 120 + 40, 40);
+
+              const exceededGoal = goalMiles ? week.distance >= goalMiles : false;
+
+              const barColor = barColors[index];
+              const colorClasses = getBarColorClasses(barColor, isCurrentWeek);
+
+              // Debug logging for each bar
+              if (goalMiles) {
+                console.log(`[DEBUG] Bar ${index} (${week.week}): goal=${goalMiles}, actual=${week.distance}, exceeded=${exceededGoal}`);
+              }
+
               return (
-                <div key={index} className="flex flex-col items-center justify-end flex-1 min-w-0 group">
+                <div key={index} className="flex flex-col items-center justify-end flex-1 min-w-0 group relative">
+                  {/* Actual Bar */}
                   <div
-                    className={`w-full max-w-10 rounded-t-lg transition-all duration-75 cursor-pointer relative bg-gradient-to-t from-blue-500 to-blue-400 hover:from-blue-600 hover:to-blue-500 hover:scale-105 hover:shadow-lg ${isCurrentWeek ? 'ring-2 ring-blue-200 ring-opacity-50' : ''}`}
+                    className={colorClasses}
                     style={{
                       height: `${heightPixels}px`,
-                      minWidth: '12px',
-                      boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)',
+                      boxShadow: barColor === 'significant_drop'
+                        ? '0 2px 8px rgba(239, 68, 68, 0.3)'
+                        : exceededGoal
+                        ? '0 2px 8px rgba(34, 197, 94, 0.3)'
+                        : '0 2px 8px rgba(59, 130, 246, 0.2)',
                       transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)'
                     }}
                     onMouseEnter={(e) => {
@@ -115,7 +242,65 @@ export default function WeeklyTrendChart({ data, title = "Weekly Current Trends"
                       });
                     }}
                     onMouseLeave={() => setHoveredBar(null)}
-                  />
+                  >
+                    {/* Distance Label */}
+                    <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-sm font-semibold whitespace-nowrap text-gray-700">
+                      {week.distance.toFixed(1)}
+                    </div>
+
+                    {/* OPTION 2: Subtle Goal Zone with Better Visual Hierarchy */}
+                    {/* Very light black opaque shade from goal line to bottom - only render if goal exists and is within bar */}
+                    {goalMiles && goalHeightPixels > 0 && goalHeightPixels <= heightPixels && (
+                      <div
+                        className="absolute left-0 right-0"
+                        style={{
+                          bottom: '0px',
+                          height: `${goalHeightPixels}px`,
+                          background: 'rgba(0, 0, 0, 0.25)', // Darker black opaque shade below the line
+                          zIndex: 1
+                        }}
+                      />
+                    )}
+
+                    {/* Gradient goal line - darkest at top, fades to transparent at bottom - only render if goal exists */}
+                    {goalMiles && goalHeightPixels > 0 && goalHeightPixels <= heightPixels && (
+                      <div
+                        className="absolute left-0 right-0 z-10"
+                        style={{
+                          bottom: `${goalHeightPixels}px`,
+                          height: '10px',
+                          background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0.4), rgba(0,0,0,0.25))',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                          zIndex: 10
+                        }}
+                      />
+                    )}
+
+                    {/* Goal Target Line (when goal is above bar) */}
+                    {goalMiles && goalHeightPixels > heightPixels && (
+                      <div
+                        className="absolute left-0 right-0 border-t-3 border-dashed border-gray-700 z-10"
+                        style={{
+                          bottom: `${goalHeightPixels}px`,
+                          transform: 'translateY(-2px)',
+                          boxShadow: '0 0 6px rgba(0,0,0,0.3)',
+                          zIndex: 10
+                        }}
+                      />
+                    )}
+
+                    {/* OPTION B: No Background, Just Text - Centered between bottom of bar and goal line */}
+                    {goalMiles && (
+                      <div className="absolute left-1/2 transform -translate-x-1/2 text-sm font-normal text-white"
+                           style={{
+                             bottom: `${goalHeightPixels / 2}px`,
+                             textShadow: '1px 1px 2px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.8)',
+                             zIndex: 15
+                           }}>
+                        {goalMiles} mi
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -168,6 +353,40 @@ export default function WeeklyTrendChart({ data, title = "Weekly Current Trends"
               <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-3 border-r-3 border-t-3 border-transparent border-t-gray-800"></div>
             </div>
           )}
+        </div>
+
+        {/* Legend positioned below bars on the right */}
+        <div className="flex justify-end mt-4">
+          <div className="flex gap-6 text-sm text-gray-600">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-blue-400 rounded"></div>
+              <span>Actual</span>
+            </div>
+            <div className="flex items-center gap-2 relative group">
+              <div className="w-4 h-4 bg-blue-600 rounded border-2 border-black"></div>
+              <span>Plan</span>
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-80 bg-gray-900 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                <strong>Training Plan Goal:</strong> Progressive weekly mileage targets from your training plan.<br/>
+                <br/>
+                • <strong>Green distance labels</strong> = Goal achieved or exceeded<br/>
+                • <strong>Gray distance labels</strong> = Goal not met<br/>
+                • <strong>Dashed line</strong> = Your target for that week<br/>
+                <br/>
+                <em>Goals progress based on your training phase (base building, peak, taper, etc.)</em>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 relative group">
+              <div className="w-4 h-4 bg-red-500 rounded"></div>
+              <span>Significant Drop</span>
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-72 bg-gray-900 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                <strong>Significant Drop:</strong> Red flags indicate concerning patterns:<br/>
+                • Two consecutive weeks dropping &gt;30% and &gt;15%<br/>
+                • Single week dropping &gt;40%<br/>
+                <br/>
+                <em>Note: Intentional race tapers (single-week drops) typically won't trigger this</em>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

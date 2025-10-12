@@ -75,11 +75,19 @@ week_comparisons AS (
             WHEN rd.week_max_distance >= atm.all_time_max_distance THEN true
             ELSE false
         END AS is_personal_record,
-        -- Pre-calculate is_significant_drop (>20% drop from previous week)
+        -- Pre-calculate is_significant_drop (smart taper detection)
+        -- RED flag if: (1) >20% drop AND previous week also dropped >10%, OR (2) single week >30% drop
         CASE
             WHEN LAG(rd.week_max_distance) OVER (PARTITION BY rd.athlete_id ORDER BY rd.week_start) IS NOT NULL
-                 AND rd.week_max_distance < (LAG(rd.week_max_distance) OVER (PARTITION BY rd.athlete_id ORDER BY rd.week_start) * 0.8)
                  AND rd.week_max_distance >= 1.0  -- Only flag if run is at least 1 mile
+                 AND (
+                     -- Pattern 1: Two consecutive drops (20% + 10%)
+                     (rd.week_max_distance < (LAG(rd.week_max_distance) OVER (PARTITION BY rd.athlete_id ORDER BY rd.week_start) * 0.8)
+                      AND LAG(rd.week_max_distance) OVER (PARTITION BY rd.athlete_id ORDER BY rd.week_start)
+                          < (LAG(rd.week_max_distance, 2) OVER (PARTITION BY rd.athlete_id ORDER BY rd.week_start) * 0.9))
+                     -- Pattern 2: Single dramatic drop (>30%)
+                     OR rd.week_max_distance < (LAG(rd.week_max_distance) OVER (PARTITION BY rd.athlete_id ORDER BY rd.week_start) * 0.7)
+                 )
             THEN true
             ELSE false
         END AS is_significant_drop,
@@ -131,33 +139,21 @@ aggregated_data AS (
 ),
 summary_stats AS (
     SELECT
-        athlete_id,
+        wc.athlete_id,
         COUNT(*) AS total_weeks,
-        ROUND(MAX(distance_miles)::numeric, 2) AS max_distance,
-        MAX(week_start) FILTER (WHERE is_personal_record = true) AS latest_pr_date,
-        COUNT(*) FILTER (WHERE is_personal_record = true) AS pr_count,
-        COUNT(*) FILTER (WHERE is_significant_drop = true) AS drop_count,
-        COUNT(*) FILTER (WHERE trend = 'improving') AS improving_weeks,
-        ROUND(AVG(distance_miles)::numeric, 2) AS avg_distance,
-        -- Calculate overall improvement (first week vs last week)
-        ROUND(((MAX(distance_miles) FILTER (WHERE week_start = (SELECT MAX(week_start) FROM week_comparisons wc2 WHERE wc2.athlete_id = week_comparisons.athlete_id))
-                - MAX(distance_miles) FILTER (WHERE week_start = (SELECT MIN(week_start) FROM week_comparisons wc2 WHERE wc2.athlete_id = week_comparisons.athlete_id)))
-               / NULLIF(MAX(distance_miles) FILTER (WHERE week_start = (SELECT MIN(week_start) FROM week_comparisons wc2 WHERE wc2.athlete_id = week_comparisons.athlete_id)), 0)
-               * 100)::numeric, 1) AS overall_improvement_pct
-    FROM week_comparisons
-    GROUP BY athlete_id
+        COUNT(*) FILTER (WHERE wc.is_personal_record = true) AS pr_count,
+        COUNT(*) FILTER (WHERE wc.is_significant_drop = true) AS drop_count,
+        COUNT(*) FILTER (WHERE wc.trend = 'improving') AS improving_weeks
+    FROM week_comparisons wc
+    GROUP BY wc.athlete_id
 )
 SELECT
     ad.athlete_id,
     ad.weekly_runs,
     ss.total_weeks,
-    ss.max_distance,
-    ss.latest_pr_date,
     ss.pr_count,
     ss.drop_count,
-    ss.improving_weeks,
-    ss.avg_distance,
-    ss.overall_improvement_pct
+    ss.improving_weeks
 FROM aggregated_data ad
 INNER JOIN summary_stats ss ON ad.athlete_id = ss.athlete_id;
 

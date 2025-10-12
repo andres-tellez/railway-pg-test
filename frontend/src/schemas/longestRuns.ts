@@ -27,19 +27,14 @@ export interface LongestRunData {
 
 export interface LongestRunsSummary {
   total_weeks: number;
-  max_distance: number;
-  latest_pr_date: string | null;
   pr_count: number;
   drop_count: number;
   improving_weeks: number;
-  avg_distance: number;
-  overall_improvement_pct: number;
 }
 
 export interface LongestRunsResponse {
   runs: LongestRunData[];
   summary: LongestRunsSummary;
-  insights: string[];
 }
 
 export interface LongestRunsConfig {
