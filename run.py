@@ -141,8 +141,19 @@ if __name__ == "__main__":
         traceback.print_exc()
 
     # HTTPS support via mkcert (localhost.pem / localhost-key.pem)
-    cert_file = os.path.join(os.getcwd(), "localhost.pem")
-    key_file = os.path.join(os.getcwd(), "localhost-key.pem")
+    # Try local directory first, then fall back to user's home directory for persistence
+    local_cert_file = os.path.join(os.getcwd(), "localhost.pem")
+    local_key_file = os.path.join(os.getcwd(), "localhost-key.pem")
+
+    # Check if certificates exist in project directory
+    if os.path.exists(local_cert_file) and os.path.exists(local_key_file):
+        cert_file = local_cert_file
+        key_file = local_key_file
+    else:
+        # Try user's home directory for persistent certificates
+        home_dir = os.path.expanduser("~")
+        cert_file = os.path.join(home_dir, "smartcoach-localhost.pem")
+        key_file = os.path.join(home_dir, "smartcoach-localhost-key.pem")
     if os.path.exists(cert_file) and os.path.exists(key_file):
         print(
             f"[INFO] Running with HTTPS using mkcert: {cert_file}, {key_file}",
