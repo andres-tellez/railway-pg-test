@@ -309,48 +309,92 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
           {/* Custom Tooltip */}
           {hoveredBar && (
             <div
-              className="fixed z-50 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg pointer-events-none transition-all duration-100 ease-out transform"
+              className="fixed z-50 bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-600 rounded-lg p-3 shadow-2xl pointer-events-none backdrop-blur-sm"
               style={{
                 left: `${hoveredBar.x}px`,
                 top: `${hoveredBar.y}px`,
-                transform: 'translateX(-50%) translateY(-100%)',
-                opacity: hoveredBar ? 1 : 0,
-                animation: 'fadeInUp 0.1s ease-out'
+                transform: 'translate(-50%, -100%)',
+                minWidth: '180px',
+                backdropFilter: 'blur(8px)',
               }}
             >
-              <div className="flex flex-col items-center">
-                <div>
-                  {(() => {
-                    try {
-                      const dateStr = data[hoveredBar.index].week;
-                      // Handle different date formats
-                      if (dateStr.includes('T')) {
-                        // Already has time component
-                        return new Date(dateStr).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        });
-                      } else {
-                        // Add time component to make it local time
-                        return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        });
-                      }
-                    } catch (error) {
-                      // Fallback if date parsing fails
-                      return data[hoveredBar.index].week;
-                    }
-                  })()}
-                </div>
-                <div className="text-blue-300">
-                  {data[hoveredBar.index].distance.toFixed(1)} mi
-                </div>
-              </div>
-              {/* Arrow pointing down */}
-              <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-3 border-r-3 border-t-3 border-transparent border-t-gray-800"></div>
+              {(() => {
+                const week = data[hoveredBar.index];
+                const goalMiles = findGoalForWeek(week.week);
+                const prevWeek = data[hoveredBar.index + 1];
+                const changePct = prevWeek ? ((week.distance - prevWeek.distance) / prevWeek.distance) * 100 : null;
+                const exceededGoal = goalMiles ? week.distance >= goalMiles : null;
+
+                return (
+                  <>
+                    <div className="text-white font-bold text-sm mb-2 text-center bg-gray-700/30 rounded px-2 py-1">
+                      Wk of {(() => {
+                        try {
+                          const dateStr = week.week;
+                          if (dateStr.includes('T')) {
+                            return new Date(dateStr).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric'
+                            });
+                          } else {
+                            return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric'
+                            });
+                          }
+                        } catch (error) {
+                          return week.week;
+                        }
+                      })()}
+                    </div>
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-300">Actual:</span>
+                        <span className="text-white font-semibold">{week.distance.toFixed(1)} mi</span>
+                      </div>
+                      {goalMiles && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-300">Goal:</span>
+                          <span className="text-white font-semibold">{goalMiles.toFixed(1)} mi</span>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-300">Runs:</span>
+                        <span className="text-white font-semibold">{week.runs}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-300">Pace:</span>
+                        <span className="text-white font-semibold">{week.avgPace}</span>
+                      </div>
+                      {changePct !== null && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-300">vs Last:</span>
+                          <span className={`font-bold text-sm ${changePct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {changePct >= 0 ? '+' : ''}{changePct.toFixed(1)}%
+                          </span>
+                        </div>
+                      )}
+                      {exceededGoal !== null && exceededGoal && (
+                        <div className="mt-2 pt-2 border-t border-gray-600 text-green-400 font-bold text-center text-sm bg-green-900/20 rounded px-2 py-1">
+                          🎯 Goal Achieved!
+                        </div>
+                      )}
+                      {exceededGoal !== null && !exceededGoal && (
+                        <div className="mt-2 pt-2 border-t border-gray-600 text-orange-400 font-semibold text-center text-sm bg-orange-900/20 rounded px-2 py-1">
+                          Goal: {goalMiles?.toFixed(1)} mi
+                        </div>
+                      )}
+                      {barColors[hoveredBar.index] === 'significant_drop' && (
+                        <div className="mt-2 pt-2 border-t border-gray-600 text-red-400 font-bold text-center text-sm bg-red-900/20 rounded px-2 py-1">
+                          ⚠️ Significant Drop
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>

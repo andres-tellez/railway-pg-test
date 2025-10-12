@@ -77,13 +77,36 @@ export default function SimpleMetrics() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredHRBar, setHoveredHRBar] = useState<{ index: number; x: number; y: number } | null>(null);
-  const [selectedWeeks, setSelectedWeeks] = useState<number>(8);
+  // Set default based on screen size - 8 for desktop, 4 for mobile
+  const [selectedWeeks, setSelectedWeeks] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768 ? 8 : 4;
+    }
+    return 8; // fallback for SSR
+  });
   const [allWeeklyData, setAllWeeklyData] = useState<{
     trends: WeeklyTrendData[];
     hrZones: WeeklyHRZoneData[];
     vo2: WeeklyVO2Data[];
     goals: WeeklyGoalData[];
   }>({ trends: [], hrZones: [], vo2: [], goals: [] });
+
+  // Handle window resize to update default weeks
+  useEffect(() => {
+    const handleResize = () => {
+      if (typeof window !== 'undefined') {
+        const isMobile = window.innerWidth < 768;
+        const newDefault = isMobile ? 4 : 8;
+        // Only update if current selection is the old default
+        if (selectedWeeks === (isMobile ? 8 : 4)) {
+          setSelectedWeeks(newDefault);
+        }
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [selectedWeeks]);
 
   useEffect(() => {
     const fetchMetrics = async () => {
@@ -294,22 +317,27 @@ export default function SimpleMetrics() {
         )}
 
         {/* Weekly Trends Header */}
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Weekly Trends</h1>
-          <div className="flex items-center gap-3">
-            <label htmlFor="weeks-select" className="text-sm font-medium text-gray-700">
-              Time Period:
-            </label>
-            <select
-              id="weeks-select"
-              value={selectedWeeks}
-              onChange={(e) => setSelectedWeeks(Number(e.target.value))}
-              className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-            >
-              <option value={4}>4 weeks</option>
-              <option value={8}>8 weeks</option>
-              <option value={16}>16 weeks</option>
-            </select>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Weekly Trends</h1>
+            <p className="text-gray-400">Track your training progress over time</p>
+          </div>
+
+          {/* Time Period Selector */}
+          <div className="flex gap-2">
+            {[4, 8, 16].map((weeks) => (
+              <button
+                key={weeks}
+                onClick={() => setSelectedWeeks(weeks)}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  selectedWeeks === weeks
+                    ? "bg-gray-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {weeks}w
+              </button>
+            ))}
           </div>
         </div>
 
