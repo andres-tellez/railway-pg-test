@@ -25,11 +25,11 @@ import enum
 class WebhookEventStatus(enum.Enum):
     """Status of webhook event processing"""
 
-    PENDING = "PENDING"  # Received but not yet processed
-    PROCESSING = "PROCESSING"  # Currently being processed
-    COMPLETED = "COMPLETED"  # Successfully processed
-    FAILED = "FAILED"  # Processing failed
-    IGNORED = "IGNORED"  # Event type we don't care about
+    PENDING = "pending"  # Received but not yet processed
+    PROCESSING = "processing"  # Currently being processed
+    COMPLETED = "completed"  # Successfully processed
+    FAILED = "failed"  # Processing failed
+    IGNORED = "ignored"  # Event type we don't care about
 
 
 class WebhookEvent(Base):
