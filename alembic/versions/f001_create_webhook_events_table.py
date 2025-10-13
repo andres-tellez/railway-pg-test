@@ -1,7 +1,7 @@
 """create webhook_events table
 
 Revision ID: f001
-Revises: e55a924cbe7e
+Revises: 66e2d9242637
 Create Date: 2025-10-11
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = 'f001'
-down_revision = 'e55a924cbe7e'
+down_revision = '66e2d9242637'
 branch_labels = None
 depends_on = None
 
