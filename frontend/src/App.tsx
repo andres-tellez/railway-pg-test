@@ -177,7 +177,7 @@ export default function App() {
         }
       />
       <Route
-        path="/metrics"
+        path="/metrics-original"
         element={
           <ProtectedRoute>
             <Layout>
@@ -187,7 +187,7 @@ export default function App() {
         }
       />
       <Route
-        path="/metrics-copy"
+        path="/metrics"
         element={
           <ProtectedRoute>
             <Layout>
