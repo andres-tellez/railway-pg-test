@@ -1,9 +1,10 @@
 name: Staging Strava Ingestion (Cron)
 
 on:
-  schedule:
-    - cron: "0 */6 * * *"
-  workflow_dispatch:
+  # Disabled - replaced by real-time webhooks
+  # schedule:
+  #   - cron: "0 */6 * * *"
+  workflow_dispatch:  # Keep manual trigger as backup
 
 jobs:
   staging-ingestion:
