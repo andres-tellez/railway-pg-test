@@ -1,4 +1,7 @@
 import React, { useMemo, useState } from 'react';
+import { getChartContainerStyle } from '../../hooks/useChartStyles';
+import { calculateChartContainerHeight } from '../../utils/chartHelpers';
+import { CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
 
 interface WeeklyHRZoneData {
   week: string;
@@ -74,30 +77,17 @@ export default function WeeklyHeartRateChart({ data, title = "Weekly Heart Rate 
 
         <div className="relative">
           {(() => {
-            // Calculate the actual tallest bar height in pixels
-            const tallestBarHeight = data.reduce((max, week) => {
-              const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
-              const maxTotal = Math.max(...data.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
-              const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
-              const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
-              return Math.max(max, heightPixels);
-            }, 0);
+            const maxTotal = Math.max(...data.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
 
-            // Add more padding above the tallest bar so numbers appear well within background
-            const totalHeight = tallestBarHeight + 80;
+            // Calculate the total height needed for the chart container
+            const totalHeight = calculateChartContainerHeight(data, (week) => {
+              const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
+              const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
+              return Math.max(heightPercentage * 120 + 40, 40);
+            }, CHART_LAYOUT.NUMBER_PADDING_TOP);
 
             return (
-              <div
-                style={{
-                  height: `${totalHeight}px`,
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  gap: '0.25rem',
-                  padding: '1.5rem',
-                  borderRadius: '0.75rem',
-                  background: 'linear-gradient(to top, rgb(243 244 246), rgb(249 250 251))'
-                }}
-              >
+              <div style={getChartContainerStyle(totalHeight)}>
                 {data.map((week, index) => {
                   const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
                   // Use same height calculation as WeeklyTrendChart
@@ -106,16 +96,9 @@ export default function WeeklyHeartRateChart({ data, title = "Weekly Heart Rate 
                   const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
 
               return (
-                <div key={index} style={{
-                  flex: '1 1 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                  minWidth: 0
-                }}>
+                <div key={index} className={CHART_BASE_CLASSES.BAR_CONTAINER}>
                   <div
-                    className="w-full max-w-10 rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg overflow-hidden"
+                    className={`${CHART_BASE_CLASSES.BAR} overflow-hidden`}
                   style={{
                     height: `${heightPixels}px`,
                     minWidth: '12px',
@@ -202,7 +185,7 @@ export default function WeeklyHeartRateChart({ data, title = "Weekly Heart Rate 
                 animation: 'fadeInUp 0.1s ease-out'
               }}
             >
-              <div className="flex flex-col items-center">
+              <div className={CHART_BASE_CLASSES.TOOLTIP_CONTAINER}>
                 <div>
                   {new Date(data[hoveredBar.index].week + 'T00:00:00').toLocaleDateString('en-US', {
                     month: 'short',

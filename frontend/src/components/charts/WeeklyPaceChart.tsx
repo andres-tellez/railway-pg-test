@@ -1,5 +1,8 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import ChartHelpTooltip from './ChartHelpTooltip';
+import { useStaticBarStyle, getNumberDisplayClasses, getChartContainerStyle } from '../../hooks/useChartStyles';
+import { calculateChartContainerHeight, calculateBarHeight } from '../../utils/chartHelpers';
+import { CHART_LAYOUT, CHART_SHADOWS, CHART_BASE_CLASSES } from '../../utils/chartUtils';
 
 interface WeeklyPaceData {
   week: string;
@@ -26,6 +29,9 @@ export default function WeeklyPaceChart({
   helpTooltip
 }: WeeklyPaceChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
+
+  // Use shared memoized static style hook
+  const staticBarStyle = useStaticBarStyle();
 
   // Memoized utility functions for better performance
   const parsePaceToMinutes = useCallback((paceString: string): number => {
@@ -145,43 +151,24 @@ export default function WeeklyPaceChart({
 
       <div className="relative">
         {(() => {
-          // Calculate the actual tallest bar height in pixels
-          const tallestBarHeight = data.reduce((max, week) => {
+          // Calculate the total height needed for the chart container
+          const totalHeight = calculateChartContainerHeight(data, (week) => {
             const paceInMinutes = parsePaceToMinutes(week.avgPace);
-            const heightPercentage = maxPace > 0 ? (paceInMinutes / maxPace) : 0;
-            const heightPixels = heightPercentage * 140;
-            return Math.max(max, heightPixels);
-          }, 0);
-
-          // Add more padding above the tallest bar so numbers appear well within background
-          const totalHeight = tallestBarHeight + 80;
+            // For pace, we want faster paces (lower numbers) to be higher bars
+            // So we invert the calculation: (maxPace - currentPace) / paceRange
+            const normalizedPace = chartData.paceRange > 0 ? (maxPace - paceInMinutes) / chartData.paceRange : 0.5;
+            return calculateBarHeight(normalizedPace, 1.0); // Use 1.0 as max since normalizedPace is already 0-1
+          }, CHART_LAYOUT.NUMBER_PADDING_TOP);
 
           return (
-            <div
-              style={{
-                height: `${totalHeight}px`,
-                display: 'flex',
-                alignItems: 'flex-end',
-                gap: '0.25rem',
-                padding: '1.5rem',
-                borderRadius: '0.75rem',
-                background: 'linear-gradient(to top, rgb(243 244 246), rgb(249 250 251))'
-              }}
-            >
+            <div style={getChartContainerStyle(totalHeight)}>
               {data.map((week, index) => {
                 const paceInMinutes = parsePaceToMinutes(week.avgPace);
 
             // Skip rendering if no valid pace data
             if (paceInMinutes <= 0) {
               return (
-                <div key={index} style={{
-                  flex: '1 1 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                  minWidth: 0
-                }}>
+                <div key={index} className={CHART_BASE_CLASSES.BAR_CONTAINER}>
                   <div
                     style={{
                       height: '40px',
@@ -202,35 +189,22 @@ export default function WeeklyPaceChart({
             // For pace, we want faster paces (lower numbers) to be higher bars
             // So we invert the calculation: (maxPace - currentPace) / paceRange
             const normalizedPace = paceRange > 0 ? (maxPace - paceInMinutes) / paceRange : 0.5;
-            const heightPixels = Math.max(normalizedPace * 120 + 40, 40);
+            const heightPixels = calculateBarHeight(normalizedPace, 1.0);
             const isCurrentWeek = index === 0;
 
             return (
-              <div key={index} style={{
-                flex: '1 1 0',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                minWidth: 0
-              }}>
+              <div key={index} className={CHART_BASE_CLASSES.BAR_CONTAINER}>
                 {/* Pace value above bar */}
-                <div className="text-xs font-semibold text-gray-700 mb-1">
+                <div className={getNumberDisplayClasses('medium')}>
                   {minutesToPaceString(paceInMinutes)}
                 </div>
 
                 <div
-                  className=""
+                  className="w-full rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg bg-blue-500"
                   style={{
+                    ...staticBarStyle,
                     height: `${heightPixels}px`,
-                    width: '100%',
-                    borderRadius: '0.5rem 0.5rem 0 0',
-                    background: 'linear-gradient(to top, rgb(59 130 246), rgb(96 165 250))',
-                    transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)'
+                    boxShadow: CHART_SHADOWS.BLUE
                   }}
                   onMouseEnter={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
@@ -266,7 +240,7 @@ export default function WeeklyPaceChart({
               animation: 'fadeInUp 0.1s ease-out'
             }}
           >
-            <div className="flex flex-col items-center">
+            <div className={CHART_BASE_CLASSES.TOOLTIP_CONTAINER}>
               <div>
                 {(() => {
                   try {
