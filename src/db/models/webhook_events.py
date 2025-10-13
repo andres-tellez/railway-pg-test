@@ -8,7 +8,15 @@ received from Strava. Processing happens asynchronously to ensure fast
 webhook response times.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, JSON, Enum as SQLEnum
+from sqlalchemy import (
+    Column,
+    Integer,
+    BigInteger,
+    String,
+    DateTime,
+    JSON,
+    Enum as SQLEnum,
+)
 from sqlalchemy.sql import func
 from src.db.models.base import Base
 import enum
@@ -17,11 +25,11 @@ import enum
 class WebhookEventStatus(enum.Enum):
     """Status of webhook event processing"""
 
-    PENDING = "pending"  # Received but not yet processed
-    PROCESSING = "processing"  # Currently being processed
-    COMPLETED = "completed"  # Successfully processed
-    FAILED = "failed"  # Processing failed
-    IGNORED = "ignored"  # Event type we don't care about
+    PENDING = "PENDING"  # Received but not yet processed
+    PROCESSING = "PROCESSING"  # Currently being processed
+    COMPLETED = "COMPLETED"  # Successfully processed
+    FAILED = "FAILED"  # Processing failed
+    IGNORED = "IGNORED"  # Event type we don't care about
 
 
 class WebhookEvent(Base):
@@ -44,13 +52,13 @@ class WebhookEvent(Base):
 
     # Strava event data
     object_type = Column(String, nullable=False)  # "activity" or "athlete"
-    object_id = Column(Integer, nullable=False)  # activity_id or athlete_id
+    object_id = Column(BigInteger, nullable=False)  # activity_id or athlete_id
     aspect_type = Column(String, nullable=False)  # "create", "update", "delete"
-    owner_id = Column(Integer, nullable=False)  # athlete_id who owns the object
-    subscription_id = Column(Integer)  # Strava subscription ID
+    owner_id = Column(BigInteger, nullable=False)  # athlete_id who owns the object
+    subscription_id = Column(BigInteger)  # Strava subscription ID
 
     # Event metadata
-    event_time = Column(Integer)  # Unix timestamp from Strava
+    event_time = Column(BigInteger)  # Unix timestamp from Strava
     updates = Column(JSON)  # Additional data (e.g., {"title": true} for updates)
 
     # Processing status
