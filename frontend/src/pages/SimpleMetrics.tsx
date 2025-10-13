@@ -370,7 +370,7 @@ export default function SimpleMetrics() {
             <WeeklyTrendChart
               data={filteredWeeklyTrends}
               weeklyGoals={filteredWeeklyGoals}
-              title="Total Mi. - Actual vs Plan"
+              title="Total Miles - Actual vs Plan"
               showHeader={true}
               helpTooltip={mileageHelpContent}
             />
@@ -380,6 +380,7 @@ export default function SimpleMetrics() {
           {filteredLongestRuns.length > 0 && (
             <LongestRunsChart
               data={filteredLongestRuns}
+              weeklyGoals={filteredWeeklyGoals}
               title="Longest Runs"
               showHeader={true}
             />
@@ -407,12 +408,36 @@ export default function SimpleMetrics() {
                 </div>
 
                 <div className="relative">
-                  <div className="flex items-end space-x-1 h-48 bg-gradient-to-t from-gray-50 to-white p-6 rounded-xl border border-gray-100">
-                    {filteredWeeklyHRZones.map((week, index) => {
+                  {(() => {
+                    // Calculate the actual tallest bar height in pixels
+                    const tallestBarHeight = filteredWeeklyHRZones.reduce((max, week) => {
                       const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
                       const maxTotal = Math.max(...filteredWeeklyHRZones.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
                       const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
                       const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
+                      return Math.max(max, heightPixels);
+                    }, 0);
+
+                    // Add more padding above the tallest bar so numbers appear well within background
+                    const totalHeight = tallestBarHeight + 80;
+
+                    return (
+                      <div
+                        style={{
+                          height: `${totalHeight}px`,
+                          display: 'flex',
+                          alignItems: 'flex-end',
+                          gap: '0.25rem',
+                          padding: '1.5rem',
+                          borderRadius: '0.75rem',
+                          background: 'linear-gradient(to top, rgb(243 244 246), rgb(249 250 251))'
+                        }}
+                      >
+                        {filteredWeeklyHRZones.map((week, index) => {
+                          const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
+                          const maxTotal = Math.max(...filteredWeeklyHRZones.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
+                          const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
+                          const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
 
                       const zoneColors = {
                         zone_1: '#3B82F6', // Blue - Recovery
@@ -423,13 +448,24 @@ export default function SimpleMetrics() {
                       };
 
                       return (
-                        <div key={index} className="flex flex-col items-center justify-end flex-1 min-w-0 group">
+                        <div key={index} style={{
+                          flex: '1 1 0',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'flex-end',
+                          minWidth: 0
+                        }}>
                           <div
-                            className="w-full max-w-10 rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg overflow-hidden"
+                            className=""
                             style={{
                               height: `${heightPixels}px`,
-                              minWidth: '12px',
-                              transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)'
+                              width: '100%',
+                              borderRadius: '0.5rem 0.5rem 0 0',
+                              transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)',
+                              cursor: 'pointer',
+                              position: 'relative',
+                              overflow: 'hidden'
                             }}
                             onMouseEnter={(e) => {
                               const rect = e.currentTarget.getBoundingClientRect();
@@ -491,7 +527,9 @@ export default function SimpleMetrics() {
                         </div>
                       );
                     })}
-                  </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* HR Zone Tooltip */}
                   {hoveredHRBar && (

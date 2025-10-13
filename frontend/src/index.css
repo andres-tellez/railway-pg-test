@@ -1,5 +1,34 @@
 /* index.css */
 
-
-
 @import "tailwindcss";
+
+/* Dynamic Chart Background - Reusable class for all charts */
+.chart-background {
+  background: linear-gradient(to top, rgb(243 244 246), rgb(249 250 251));
+  padding-top: 80px;
+}
+
+/* Chart container with dynamic height - to be set via inline styles */
+.chart-container {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.25rem;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+}
+
+/* Consistent bar styling for all charts - matches Total Miles - Actual vs Plan */
+.chart-bar {
+  width: 100% !important;
+  max-width: 2.5rem !important; /* max-w-10 equivalent */
+  border-radius: 0.5rem 0.5rem 0 0 !important; /* rounded-t-lg */
+  transition: all 0.075s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  cursor: pointer !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.chart-bar:hover {
+  transform: scale(1.05) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}

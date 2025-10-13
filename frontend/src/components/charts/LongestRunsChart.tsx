@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 
 interface LongestRunData {
   week_start: string;
@@ -16,17 +16,86 @@ interface LongestRunData {
   prev_week_distance: number | null;
 }
 
+interface WeeklyGoalData {
+  week: string;
+  goal_miles: number;
+}
+
 interface LongestRunsChartProps {
   data: LongestRunData[];
   title?: string;
   showHeader?: boolean;
+  weeklyGoals?: WeeklyGoalData[]; // Same pattern as WeeklyTrendChart
 }
 
-export default function LongestRunsChart({ data, title = "Weekly Longest Runs", showHeader = true }: LongestRunsChartProps) {
+export default function LongestRunsChart({ data, weeklyGoals = [], title = "Weekly Longest Runs", showHeader = true }: LongestRunsChartProps) {
   const [hoveredRun, setHoveredRun] = useState<{ index: number; x: number; y: number } | null>(null);
 
-  // Find max distance for scaling
-  const maxDistance = Math.max(...data.map((run) => run.distance), 1);
+  // Helper function to find goal for a specific week (same pattern as WeeklyTrendChart)
+  const findGoalForWeek = (week: string): number | null => {
+    console.log(`[LongestRuns] Looking for goal for week: ${week}`);
+    console.log(`[LongestRuns] Available goals:`, weeklyGoals.map(g => ({ week: g.week, goal_miles: g.goal_miles })));
+
+    // Extract just the date part (YYYY-MM-DD) from the week string
+    const dateOnly = week.split('T')[0];
+
+    // Try exact match first - compare both full week string and date-only
+    let goal = weeklyGoals.find(g => g.week === week || g.week === dateOnly || g.week.split('T')[0] === dateOnly);
+
+    if (goal) {
+      console.log(`[LongestRuns] Found exact match: ${goal.goal_miles} miles for ${week}`);
+      return goal.goal_miles;
+    }
+
+    // If no exact match, try to find the closest week using date comparison
+    const runDate = new Date(week);
+    let closestGoal = null;
+    let smallestDiff = Infinity;
+
+    for (const g of weeklyGoals) {
+      const goalDate = new Date(g.week);
+      const diff = Math.abs(runDate.getTime() - goalDate.getTime());
+
+      if (diff < smallestDiff) {
+        smallestDiff = diff;
+        closestGoal = g;
+      }
+    }
+
+    // Only return if the closest goal is within 1 day (much stricter)
+    const result = closestGoal && smallestDiff <= 1 * 24 * 60 * 60 * 1000 ? closestGoal.goal_miles : null;
+    console.log(`[LongestRuns] Closest goal result: ${result} miles (diff: ${smallestDiff / (24 * 60 * 60 * 1000)} days)`);
+    return result;
+  };
+
+  // Optimized chart data calculation (same pattern as WeeklyTrendChart)
+  const chartData = useMemo(() => {
+    if (!data || data.length === 0) return null;
+
+    const maxDistance = Math.max(...data.map((run) => run.distance), 1);
+
+    // Calculate bar colors based on data
+    const barColors = data.map((run) => {
+      if (run.is_personal_record) return 'personal_record';
+      if (run.is_significant_drop) return 'significant_drop';
+      return 'normal';
+    });
+
+    return { maxDistance, barColors };
+  }, [data]);
+
+  if (!chartData) {
+    return (
+      <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
+        {showHeader && <h3 className="text-xl font-bold text-gray-900">{title}</h3>}
+        <div className="text-center text-gray-400 py-12">
+          No runs found for the selected time period
+        </div>
+      </div>
+    );
+  }
+
+  const { maxDistance, barColors } = chartData;
 
   // Calculate height in pixels (same as WeeklyTrendChart)
   const calculateHeight = (distance: number) => {
@@ -45,9 +114,9 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
     }
   };
 
-  const getRunColor = (run: LongestRunData) => {
-    if (run.is_personal_record) return "bg-green-500";
-    if (run.is_significant_drop) return "bg-red-500";
+  const getRunColor = (colorType: string) => {
+    if (colorType === 'personal_record') return "bg-green-500";
+    if (colorType === 'significant_drop') return "bg-red-500";
     return "bg-blue-500";
   };
 
@@ -85,21 +154,58 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
       ) : (
         <div>
           {/* Bar Chart */}
-          <div className="flex items-end space-x-1 h-48 bg-gradient-to-t from-gray-100 to-gray-50 p-6 rounded-xl">
-            {data.map((run, index) => {
+          {(() => {
+            // Calculate the actual tallest bar height in pixels
+            const tallestBarHeight = data.reduce((max, run) => {
               const heightPixels = calculateHeight(run.distance);
+              return Math.max(max, heightPixels);
+            }, 0);
+
+            // Add more padding above the tallest bar so numbers appear well within background
+            const totalHeight = tallestBarHeight + 80;
+
+            return (
+              <div
+                style={{
+                  height: `${totalHeight}px`,
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  gap: '0.25rem',
+                  padding: '1.5rem',
+                  borderRadius: '0.75rem',
+                  background: 'linear-gradient(to top, rgb(243 244 246), rgb(249 250 251))'
+                }}
+              >
+                {data.map((run, index) => {
+                  const heightPixels = calculateHeight(run.distance);
+              const goalMiles = findGoalForWeek(run.week_start);
+              const goalHeightPixels = goalMiles ? (goalMiles / run.distance) * heightPixels : 0;
+              const exceededGoal = goalMiles ? run.distance >= goalMiles : false;
+              const barColor = barColors[index];
 
               return (
               <div
                 key={run.activity_id}
-                className="flex flex-col items-center justify-end flex-1 min-w-0 group relative"
+                style={{
+                  flex: '1 1 0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'flex-end',
+                  minWidth: 0
+                }}
               >
                 {/* Bar */}
                 <div
-                  className={`w-full ${getRunColor(run)} rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg`}
+                  className={`${getRunColor(barColor)}`}
                   style={{
                     height: `${heightPixels}px`,
-                    transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)'
+                    width: '100%',
+                    borderRadius: '0.5rem 0.5rem 0 0',
+                    transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    overflow: 'hidden'
                   }}
                   onMouseEnter={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
@@ -115,6 +221,59 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
                   <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-gray-700 text-sm font-semibold whitespace-nowrap">
                     {run.distance.toFixed(1)}
                   </div>
+
+                  {/* OPTION 2: Subtle Goal Zone with Better Visual Hierarchy (same as WeeklyTrendChart) */}
+                  {/* Very light black opaque shade from goal line to bottom - only render if goal exists and is within bar */}
+                  {goalMiles && goalHeightPixels > 0 && goalHeightPixels <= heightPixels && (
+                    <div
+                      className="absolute left-0 right-0"
+                      style={{
+                        bottom: '0px',
+                        height: `${goalHeightPixels}px`,
+                        background: 'rgba(0, 0, 0, 0.25)', // Darker black opaque shade below the line
+                        zIndex: 1
+                      }}
+                    />
+                  )}
+
+                  {/* Gradient goal line - darkest at top, fades to transparent at bottom - only render if goal exists */}
+                  {goalMiles && goalHeightPixels > 0 && goalHeightPixels <= heightPixels && (
+                    <div
+                      className="absolute left-0 right-0 z-10"
+                      style={{
+                        bottom: `${goalHeightPixels}px`,
+                        height: '10px',
+                        background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0.4), rgba(0,0,0,0.25))',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        zIndex: 10
+                      }}
+                    />
+                  )}
+
+                  {/* Goal Target Line (when goal is above bar) */}
+                  {goalMiles && goalHeightPixels > heightPixels && (
+                    <div
+                      className="absolute left-0 right-0 border-t-3 border-dashed border-gray-700 z-10"
+                      style={{
+                        bottom: `${goalHeightPixels}px`,
+                        transform: 'translateY(-2px)',
+                        boxShadow: '0 0 6px rgba(0,0,0,0.3)',
+                        zIndex: 10
+                      }}
+                    />
+                  )}
+
+                  {/* Goal Label */}
+                  {goalMiles && (
+                    <div className="absolute left-1/2 transform -translate-x-1/2 text-sm font-normal text-white"
+                         style={{
+                           bottom: `${goalHeightPixels / 2}px`,
+                           textShadow: '1px 1px 2px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.8)',
+                           zIndex: 15
+                         }}>
+                      {goalMiles} mi
+                    </div>
+                  )}
                 </div>
 
                 {/* Labels */}
@@ -126,7 +285,9 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
               </div>
               );
             })}
-          </div>
+              </div>
+            );
+          })()}
 
           {/* Hover Tooltip */}
           {hoveredRun !== null && (
@@ -209,12 +370,16 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
           <div className="flex justify-end mt-4">
             <div className="flex gap-6 text-sm text-gray-600">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-green-500 rounded"></div>
-                <span>Personal Record</span>
+                <div className="w-4 h-4 bg-blue-500 rounded"></div>
+                <span>Actual</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                <span>Normal</span>
+                <div className="w-4 h-4 bg-blue-600 rounded border-2 border-black"></div>
+                <span>Plan</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-green-500 rounded"></div>
+                <span>Personal Record</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 bg-red-500 rounded"></div>

@@ -98,19 +98,52 @@ export default function WeeklyVO2Chart({
       )}
 
       <div className="relative">
-        <div className="flex items-end space-x-1 h-48 bg-gradient-to-t from-gray-50 to-white p-6 rounded-xl border border-gray-100">
-          {data.map((week, index) => {
+        {(() => {
+          // Calculate the actual tallest bar height in pixels
+          const tallestBarHeight = data.reduce((max, week) => {
             const vo2Value = week.vo2_estimate;
+            if (!vo2Value || vo2Value <= 0 || !chartData) return max;
+
+            const heightPercentage = chartData.vo2Range > 0 ? ((vo2Value - chartData.minVO2) / chartData.vo2Range) : 0;
+            const heightPixels = heightPercentage * 140;
+            return Math.max(max, heightPixels);
+          }, 0);
+
+          // Add more padding above the tallest bar so numbers appear well within background
+          const totalHeight = tallestBarHeight + 80;
+
+          return (
+            <div
+              style={{
+                height: `${totalHeight}px`,
+                display: 'flex',
+                alignItems: 'flex-end',
+                gap: '0.25rem',
+                padding: '1.5rem',
+                borderRadius: '0.75rem',
+                background: 'linear-gradient(to top, rgb(243 244 246), rgb(249 250 251))'
+              }}
+            >
+              {data.map((week, index) => {
+                const vo2Value = week.vo2_estimate;
 
             // Skip rendering if no valid VO2 data
             if (!vo2Value || vo2Value <= 0) {
               return (
-                <div key={index} className="flex flex-col items-center justify-end flex-1 min-w-0 group">
+                <div key={index} style={{
+                flex: '1 1 0',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                minWidth: 0
+              }}>
                   <div
-                    className="w-full max-w-10 rounded-t-lg bg-gray-200"
                     style={{
                       height: '40px',
-                      minWidth: '12px',
+                      width: '100%',
+                      borderRadius: '0.5rem 0.5rem 0 0',
+                      backgroundColor: 'rgb(229 231 235)'
                     }}
                   />
                 </div>
@@ -123,14 +156,26 @@ export default function WeeklyVO2Chart({
             const isCurrentWeek = index === 0;
 
             return (
-              <div key={index} className="flex flex-col items-center justify-end flex-1 min-w-0 group">
+              <div key={index} style={{
+                flex: '1 1 0',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                minWidth: 0
+              }}>
                 <div
-                  className={`w-full max-w-10 rounded-t-lg transition-all duration-75 cursor-pointer relative bg-gradient-to-t from-blue-500 to-blue-400 hover:from-blue-600 hover:to-blue-500 hover:scale-105 hover:shadow-lg ${isCurrentWeek ? 'ring-2 ring-blue-200 ring-opacity-50' : ''}`}
+                  className=""
                   style={{
                     height: `${heightPixels}px`,
-                    minWidth: '12px',
-                    boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)',
-                    transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)'
+                    width: '100%',
+                    borderRadius: '0.5rem 0.5rem 0 0',
+                    background: 'linear-gradient(to top, rgb(59 130 246), rgb(96 165 250))',
+                    transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)',
+                    cursor: 'pointer',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    boxShadow: '0 2px 8px rgba(59, 130, 246, 0.2)'
                   }}
                   onMouseEnter={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
@@ -145,7 +190,9 @@ export default function WeeklyVO2Chart({
               </div>
             );
           })}
-        </div>
+            </div>
+          );
+        })()}
 
         {/* Custom Tooltip */}
         {hoveredBar && (
