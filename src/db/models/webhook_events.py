@@ -8,7 +8,15 @@ received from Strava. Processing happens asynchronously to ensure fast
 webhook response times.
 """
 
-from sqlalchemy import Column, Integer, BigInteger, String, DateTime, JSON, Enum as SQLEnum
+from sqlalchemy import (
+    Column,
+    Integer,
+    BigInteger,
+    String,
+    DateTime,
+    JSON,
+    Enum as SQLEnum,
+)
 from sqlalchemy.sql import func
 from src.db.models.base import Base
 import enum
@@ -17,11 +25,11 @@ import enum
 class WebhookEventStatus(enum.Enum):
     """Status of webhook event processing"""
 
-    PENDING = "pending"  # Received but not yet processed
-    PROCESSING = "processing"  # Currently being processed
-    COMPLETED = "completed"  # Successfully processed
-    FAILED = "failed"  # Processing failed
-    IGNORED = "ignored"  # Event type we don't care about
+    PENDING = "PENDING"  # Received but not yet processed
+    PROCESSING = "PROCESSING"  # Currently being processed
+    COMPLETED = "COMPLETED"  # Successfully processed
+    FAILED = "FAILED"  # Processing failed
+    IGNORED = "IGNORED"  # Event type we don't care about
 
 
 class WebhookEvent(Base):

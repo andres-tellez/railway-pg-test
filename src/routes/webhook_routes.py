@@ -134,7 +134,7 @@ def receive_webhook():
                 subscription_id=event_data.get("subscription_id"),
                 event_time=event_data.get("event_time"),
                 updates=event_data.get("updates", {}),
-                status=WebhookEventStatus.PENDING.value,
+                status=WebhookEventStatus.PENDING,
             )
 
             session.add(webhook_event)
