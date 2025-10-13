@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useApiClient } from "../utils/apiClient";
 import HeartRateZoneChart from "../components/charts/HeartRateZoneChart";
-import WeeklyTrendChart from "../components/charts/WeeklyTrendChart";
+import TotalMilesActualVsPlanChart from "../components/charts/TotalMilesActualVsPlanChart";
 import WeeklyPaceChart from "../components/charts/WeeklyPaceChart";
 import WeeklyVO2Chart from "../components/charts/WeeklyVO2Chart";
 import LongestRunsChart from "../components/charts/LongestRunsChart";
@@ -367,7 +367,7 @@ export default function SimpleMetrics() {
 
           {/* Mileage Section */}
           {filteredWeeklyTrends.length > 0 && (
-            <WeeklyTrendChart
+            <TotalMilesActualVsPlanChart
               data={filteredWeeklyTrends}
               weeklyGoals={filteredWeeklyGoals}
               title="Total Miles - Actual vs Plan"
