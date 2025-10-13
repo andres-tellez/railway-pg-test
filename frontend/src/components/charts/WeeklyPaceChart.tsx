@@ -46,6 +46,28 @@ export default function WeeklyPaceChart({
     return `${wholeMinutes}:${seconds.toString().padStart(2, '0')}`;
   }, []);
 
+  // Helper function to format dates as M/D
+  const formatDate = useCallback((dateStr: string): string => {
+    try {
+      let date: Date;
+      if (dateStr.includes('T')) {
+        date = new Date(dateStr);
+      } else {
+        date = new Date(dateStr + 'T00:00:00');
+      }
+
+      if (isNaN(date.getTime())) {
+        return dateStr;
+      }
+
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      return `${month}/${day}`;
+    } catch (error) {
+      return dateStr;
+    }
+  }, []);
+
   // Memoize calculations for better performance
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return null;
@@ -115,7 +137,7 @@ export default function WeeklyPaceChart({
           </div>
           <div className="text-right">
             <div className="text-lg text-gray-700">
-              Avg {chartData.avgPace.toFixed(1)} min/mi
+              Units: min/mi
             </div>
           </div>
         </div>
@@ -168,6 +190,11 @@ export default function WeeklyPaceChart({
                       backgroundColor: 'rgb(229 231 235)'
                     }}
                   />
+
+                  {/* Date below bar */}
+                  <div className="text-xs text-gray-500 mt-1">
+                    {formatDate(week.week)}
+                  </div>
                 </div>
               );
             }
@@ -187,6 +214,11 @@ export default function WeeklyPaceChart({
                 justifyContent: 'flex-end',
                 minWidth: 0
               }}>
+                {/* Pace value above bar */}
+                <div className="text-xs font-semibold text-gray-700 mb-1">
+                  {minutesToPaceString(paceInMinutes)}
+                </div>
+
                 <div
                   className=""
                   style={{
@@ -210,6 +242,11 @@ export default function WeeklyPaceChart({
                   }}
                   onMouseLeave={() => setHoveredBar(null)}
                 />
+
+                {/* Date below bar */}
+                <div className="text-xs text-gray-500 mt-1">
+                  {formatDate(week.week)}
+                </div>
               </div>
             );
           })}

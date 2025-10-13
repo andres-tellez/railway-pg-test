@@ -142,8 +142,13 @@ export default function LongestRunsChart({ data, weeklyGoals = [], title = "Week
   return (
     <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
       {showHeader && (
-        <div className="mb-6">
+        <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+          <div className="text-right">
+            <div className="text-lg text-gray-700">
+              Units: mi
+            </div>
+          </div>
         </div>
       )}
 
@@ -195,6 +200,11 @@ export default function LongestRunsChart({ data, weeklyGoals = [], title = "Week
                   minWidth: 0
                 }}
               >
+                {/* Distance number above bar */}
+                <div className="text-xs font-semibold text-gray-700 mb-1">
+                  {run.distance.toFixed(0)}
+                </div>
+
                 {/* Bar */}
                 <div
                   className={`${getRunColor(barColor)}`}
@@ -217,10 +227,6 @@ export default function LongestRunsChart({ data, weeklyGoals = [], title = "Week
                   }}
                   onMouseLeave={() => setHoveredRun(null)}
                 >
-                  {/* Distance Label */}
-                  <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-gray-700 text-sm font-semibold whitespace-nowrap">
-                    {run.distance.toFixed(1)}
-                  </div>
 
                   {/* OPTION 2: Subtle Goal Zone with Better Visual Hierarchy (same as WeeklyTrendChart) */}
                   {/* Very light black opaque shade from goal line to bottom - only render if goal exists and is within bar */}

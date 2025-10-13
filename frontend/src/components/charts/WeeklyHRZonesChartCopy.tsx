@@ -22,6 +22,28 @@ export default function WeeklyHRZonesChart({
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
 
   // Zone colors (defined outside the map for reuse)
+  // Helper function to format dates as M/D
+  const formatDate = (dateStr: string): string => {
+    try {
+      let date: Date;
+      if (dateStr.includes('T')) {
+        date = new Date(dateStr);
+      } else {
+        date = new Date(dateStr + 'T00:00:00');
+      }
+
+      if (isNaN(date.getTime())) {
+        return dateStr;
+      }
+
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      return `${month}/${day}`;
+    } catch (error) {
+      return dateStr;
+    }
+  };
+
   const zoneColors = {
     zone_1: '#3B82F6', // Blue - Recovery
     zone_2: '#10B981', // Green - Aerobic Base
@@ -112,14 +134,10 @@ export default function WeeklyHRZonesChart({
 
           return (
             <div
+              className="chart-container chart-background"
               style={{
                 height: `${totalHeight}px`,
-                display: 'flex',
-                alignItems: 'flex-end',
-                gap: '0.25rem',
-                padding: '1.5rem',
-                borderRadius: '0.75rem',
-                background: 'linear-gradient(to top, rgb(243 244 246), rgb(249 250 251))'
+                paddingTop: '80px'
               }}
             >
               {data.map((week, index) => {
@@ -136,23 +154,19 @@ export default function WeeklyHRZonesChart({
                 justifyContent: 'flex-end',
                 minWidth: 0
               }}>
+                {/* The stacked bar */}
                 <div
-                  className=""
+                  className="chart-bar"
                   style={{
                     height: `${heightPixels}px`,
-                    width: '100%',
-                    borderRadius: '0.5rem 0.5rem 0 0',
-                    transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    overflow: 'hidden'
+                    minWidth: '12px'
                   }}
                   onMouseEnter={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     setHoveredBar({
                       index,
                       x: rect.left + rect.width / 2,
-                      y: rect.top - 10
+                      y: rect.top
                     });
                   }}
                   onMouseLeave={() => setHoveredBar(null)}
@@ -212,6 +226,11 @@ export default function WeeklyHRZonesChart({
                       minHeight: week.zone_5 > 0 ? '2px' : '0px'
                     }}
                   />
+                </div>
+
+                {/* Date below bar */}
+                <div className="text-xs text-gray-500 mt-1">
+                  {formatDate(week.week)}
                 </div>
               </div>
             );

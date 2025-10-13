@@ -22,6 +22,28 @@ export default function WeeklyVO2Chart({
 }: WeeklyVO2ChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
 
+  // Helper function to format dates as M/D
+  const formatDate = useCallback((dateStr: string): string => {
+    try {
+      let date: Date;
+      if (dateStr.includes('T')) {
+        date = new Date(dateStr);
+      } else {
+        date = new Date(dateStr + 'T00:00:00');
+      }
+
+      if (isNaN(date.getTime())) {
+        return dateStr;
+      }
+
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      return `${month}/${day}`;
+    } catch (error) {
+      return dateStr;
+    }
+  }, []);
+
   // Memoize calculations for better performance
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return null;
@@ -91,7 +113,7 @@ export default function WeeklyVO2Chart({
           </div>
           <div className="text-right">
             <div className="text-lg text-gray-700">
-              Avg {avgVO2.toFixed(1)} VO2
+              Units: VO2
             </div>
           </div>
         </div>
@@ -164,6 +186,11 @@ export default function WeeklyVO2Chart({
                 justifyContent: 'flex-end',
                 minWidth: 0
               }}>
+                {/* VO2 value above bar */}
+                <div className="text-xs font-semibold text-gray-700 mb-1">
+                  {vo2Value.toFixed(0)}
+                </div>
+
                 <div
                   className=""
                   style={{
@@ -187,6 +214,11 @@ export default function WeeklyVO2Chart({
                   }}
                   onMouseLeave={() => setHoveredBar(null)}
                 />
+
+                {/* Date below bar */}
+                <div className="text-xs text-gray-500 mt-1">
+                  {formatDate(week.week)}
+                </div>
               </div>
             );
           })}

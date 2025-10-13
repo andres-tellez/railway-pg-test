@@ -38,6 +38,7 @@ import HomeScreen from "./pages/HomeScreen";
 import AskGptMvpUI from "./pages/AskGptMvpUI";
 import WelcomePage from "./pages/WelcomePage";
 import SimpleMetrics from "./pages/SimpleMetrics";
+import SimpleMetricsCopy from "./pages/SimpleMetricsCopy";
 import VO2Metrics from "./pages/VO2Metrics";
 import LongestRuns from "./pages/LongestRuns";
 
@@ -181,6 +182,16 @@ export default function App() {
           <ProtectedRoute>
             <Layout>
               <SimpleMetrics />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/metrics-copy"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <SimpleMetricsCopy />
             </Layout>
           </ProtectedRoute>
         }

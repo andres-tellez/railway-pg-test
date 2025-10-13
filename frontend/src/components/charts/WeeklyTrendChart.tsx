@@ -209,6 +209,11 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
             <h3 className="text-xl font-bold text-gray-900">{title}</h3>
             {helpTooltip && <ChartHelpTooltip helpContent={helpTooltip} />}
           </div>
+          <div className="text-right">
+            <div className="text-lg text-gray-700">
+              Units: mi
+            </div>
+          </div>
         </div>
       )}
 
