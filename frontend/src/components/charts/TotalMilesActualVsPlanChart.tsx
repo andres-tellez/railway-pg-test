@@ -22,7 +22,7 @@ interface WeeklyGoalData {
   goal_miles: number;
 }
 
-interface WeeklyTrendChartProps {
+interface TotalMilesActualVsPlanChartProps {
   data: WeeklyTrendData[];
   weeklyGoals?: WeeklyGoalData[];
   title?: string;
@@ -31,89 +31,47 @@ interface WeeklyTrendChartProps {
   helpTooltip?: any;
 }
 
-export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Weekly Distance - Plan vs Actual", hrZoneData, showHeader = true, helpTooltip }: WeeklyTrendChartProps) {
+export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], title = "Total Miles - Actual vs Plan", hrZoneData, showHeader = true, helpTooltip }: TotalMilesActualVsPlanChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
 
-  // Helper function to find goal for a specific week
-  const findGoalForWeek = (week: string): number | null => {
-    // Extract just the date part (YYYY-MM-DD) from the week string
-    const dateOnly = week.split('T')[0];
-
-    console.log(`[DEBUG] Looking for goal for week ${week} (dateOnly: ${dateOnly})`);
-    console.log(`[DEBUG] Available goals:`, weeklyGoals.map(g => ({ week: g.week, goal_miles: g.goal_miles })));
-
-    // Try exact match first
-    let goal = weeklyGoals.find(g => g.week === dateOnly);
-
-    if (!goal) {
-      // If no exact match, try to find goal by matching the week pattern
-      // The issue is that goals might be in 2026 while trends are in 2025
-      // Try converting 2026 dates to 2025 dates by subtracting 1 year
-      const goalWithAdjustedYear = weeklyGoals.find(g => {
-        if (g.week && g.week.includes('2026')) {
-          const adjustedDate = g.week.replace('2026', '2025');
-          console.log(`[DEBUG] Trying 2026->2025: ${g.week} -> ${adjustedDate} vs ${dateOnly}`);
-          return adjustedDate === dateOnly;
-        }
-        return false;
-      });
-
-      if (goalWithAdjustedYear) {
-        goal = goalWithAdjustedYear;
-        console.log(`[DEBUG] Found goal with year adjustment: ${goal.week} -> matches ${dateOnly}`);
-      }
+  // Helper function to get bar shadow based on conditions
+  const getBarShadow = (barColor: string, index: number, exceededPlanned: boolean): string => {
+    // Special case: no red shadow for week 1
+    if (barColor === 'significant_drop' && index !== 0) {
+      return '0 2px 8px rgba(239, 68, 68, 0.3)'; // Red shadow
     }
 
-    // If still no match, try the reverse - convert 2025 trend dates to 2026 to match goals
-    if (!goal) {
-      const goalWithReverseAdjustment = weeklyGoals.find(g => {
-        if (g.week && g.week.includes('2026') && dateOnly.includes('2025')) {
-          const trendDateTo2026 = dateOnly.replace('2025', '2026');
-          const goalDateOnly = g.week.split('T')[0];
-          console.log(`[DEBUG] Trying reverse 2025->2026: ${dateOnly} -> ${trendDateTo2026} vs ${goalDateOnly}`);
-          return goalDateOnly === trendDateTo2026;
-        }
-        return false;
-      });
-
-      if (goalWithReverseAdjustment) {
-        goal = goalWithReverseAdjustment;
-        console.log(`[DEBUG] Found goal with reverse adjustment: ${goal.week} -> matches ${dateOnly}`);
-      }
+    if (exceededPlanned) {
+      return '0 2px 8px rgba(34, 197, 94, 0.3)'; // Green shadow
     }
 
-    // If still no match, try to match by array position
-    // This handles cases where the goals and trends are in the same order but different years
-    if (!goal && weeklyGoals.length > 0) {
-      console.log(`[DEBUG] No year adjustment match found, trying position-based matching`);
+    return '0 2px 8px rgba(59, 130, 246, 0.2)'; // Blue shadow (default)
+  };
 
-      // Find the index of the current week in the trends data
-      const trendIndex = data.findIndex(trend => trend.week === week);
-      console.log(`[DEBUG] Trend index: ${trendIndex}, Weekly goals length: ${weeklyGoals.length}`);
-
-      if (trendIndex >= 0 && trendIndex < weeklyGoals.length) {
-        goal = weeklyGoals[trendIndex];
-        console.log(`[DEBUG] Found goal by position: index ${trendIndex} -> ${goal.week} (${goal.goal_miles} miles)`);
-      } else {
-        console.log(`[DEBUG] Position-based matching failed: trendIndex=${trendIndex}, goalsLength=${weeklyGoals.length}`);
-      }
-    }
-
-    console.log(`[DEBUG] Final goal match:`, goal);
+  // Helper function to find planned total miles for a specific week
+  const findPlannedTotalMilesForWeek = (week: string): number | null => {
+    // Simple direct matching - all formats are already YYYY-MM-DD
+    const goal = weeklyGoals.find(g => g.week === week);
     return goal ? goal.goal_miles : null;
   };
 
-  // Debug logging
-  console.log(`[DEBUG] WeeklyTrendChart received weeklyGoals:`, weeklyGoals);
-  console.log(`[DEBUG] First few weeklyGoals:`, weeklyGoals.slice(0, 3));
-  console.log(`[DEBUG] Weekly trends data:`, data);
-  console.log(`[DEBUG] First few weekly trends:`, data.slice(0, 3));
+  // Memoize static style properties to avoid recreating objects on every render
+  const staticBarStyle = useMemo(() => ({
+    transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)'
+  }), []);
+
 
   // Memoize calculations for better performance
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return null;
 
-    const maxDistance = Math.max(...data.map(d => d.distance), 1);
+    // Calculate chart maximum from both actual AND planned miles (whichever is taller)
+    const allActualMiles = data.map(d => d.distance);
+    const allPlannedMiles = data.map(d => {
+      const planned = findPlannedTotalMilesForWeek(d.week);
+      return planned || 0;
+    });
+    const maxDistance = Math.max(...allActualMiles, ...allPlannedMiles, 1);
 
     // Calculate bar colors based on significant drop logic
     const barColors = data.map((week, index) => {
@@ -143,8 +101,28 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
       return 'normal';
     });
 
-    return { maxDistance, barColors };
-  }, [data]);
+    // Pre-calculate all bar data to avoid calculations in render loop
+    const barData = data.map((week, index) => {
+      const heightPixels = (week.distance / maxDistance) * 140;
+      const isCurrentWeek = index === 0;
+      const plannedTotalMiles = findPlannedTotalMilesForWeek(week.week);
+      const plannedTotalMilesHeightPixels = plannedTotalMiles ?
+        (plannedTotalMiles / maxDistance) * 140 : 0;
+      const exceededPlannedTotalMiles = plannedTotalMiles ? week.distance >= plannedTotalMiles : false;
+      const barColor = barColors[index];
+
+      return {
+        heightPixels,
+        isCurrentWeek,
+        plannedTotalMiles,
+        plannedTotalMilesHeightPixels,
+        exceededPlannedTotalMiles,
+        barColor
+      };
+    });
+
+    return { maxDistance, barColors, barData };
+  }, [data, weeklyGoals]);
 
   if (!chartData) {
     return (
@@ -179,10 +157,15 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
     }
   };
 
-  // Helper function to get bar color classes
-                const getBarColorClasses = (colorType: string, isCurrentWeek: boolean) => {
+  // Helper function to get actual total miles bar color classes
+                const getActualTotalMilesBarColorClasses = (colorType: string, isCurrentWeek: boolean) => {
                 const baseClasses = 'w-full rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg';
                 const currentWeekRing = isCurrentWeek ? 'ring-2 ring-opacity-50' : '';
+
+                // Current week is always grey
+                if (isCurrentWeek) {
+                  return `${baseClasses} bg-gray-500 ${currentWeekRing} ring-gray-200`;
+                }
 
                 if (colorType === 'significant_drop') {
                   return `${baseClasses} bg-red-500 ${currentWeekRing} ring-red-200`;
@@ -245,25 +228,9 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
                 }}
               >
                 {data.map((week, index) => {
-                  const heightPercentage = maxDistance > 0 ? (week.distance / maxDistance) : 0;
-                  const heightPixels = heightPercentage * 140;
-              const isCurrentWeek = index === 0;
+                  const barInfo = chartData.barData[index];
+                  const colorClasses = getActualTotalMilesBarColorClasses(barInfo.barColor, barInfo.isCurrentWeek);
 
-              // Get goal for this week from training plan data
-              const goalMiles = findGoalForWeek(week.week);
-              const goalHeightPercentage = goalMiles && maxDistance > 0 ? (goalMiles / maxDistance) : 0;
-              // Make goal height proportional to the actual bar height
-              const goalHeightPixels = goalMiles ? (goalMiles / week.distance) * heightPixels : 0;
-
-              const exceededGoal = goalMiles ? week.distance >= goalMiles : false;
-
-              const barColor = barColors[index];
-              const colorClasses = getBarColorClasses(barColor, isCurrentWeek);
-
-              // Debug logging for each bar
-              if (goalMiles) {
-                console.log(`[DEBUG] Bar ${index} (${week.week}): goal=${goalMiles}, actual=${week.distance}, exceeded=${exceededGoal}`);
-              }
 
               return (
                 <div key={index} style={{
@@ -278,13 +245,9 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
                   <div
                     className={colorClasses}
                     style={{
-                      height: `${heightPixels}px`,
-                      boxShadow: barColor === 'significant_drop'
-                        ? '0 2px 8px rgba(239, 68, 68, 0.3)'
-                        : exceededGoal
-                        ? '0 2px 8px rgba(34, 197, 94, 0.3)'
-                        : '0 2px 8px rgba(59, 130, 246, 0.2)',
-                      transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)'
+                      ...staticBarStyle,
+                      height: `${barInfo.heightPixels}px`,
+                      boxShadow: getBarShadow(barInfo.barColor, index, barInfo.exceededPlannedTotalMiles)
                     }}
                     onMouseEnter={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect();
@@ -301,58 +264,19 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
                       {week.distance.toFixed(1)}
                     </div>
 
-                    {/* OPTION 2: Subtle Goal Zone with Better Visual Hierarchy */}
-                    {/* Very light black opaque shade from goal line to bottom - only render if goal exists and is within bar */}
-                    {goalMiles && goalHeightPixels > 0 && goalHeightPixels <= heightPixels && (
+                    {/* PLANNED MILES: Shaded area represents planned miles proportionally to chart maximum */}
+                    {barInfo.plannedTotalMiles && (
                       <div
                         className="absolute left-0 right-0"
                         style={{
                           bottom: '0px',
-                          height: `${goalHeightPixels}px`,
-                          background: 'rgba(0, 0, 0, 0.25)', // Darker black opaque shade below the line
+                          height: `${barInfo.plannedTotalMilesHeightPixels}px`,
+                          background: 'rgba(0, 0, 0, 0.25)', // Darker overlay shows planned miles
                           zIndex: 1
                         }}
                       />
                     )}
 
-                    {/* Gradient goal line - darkest at top, fades to transparent at bottom - only render if goal exists */}
-                    {goalMiles && goalHeightPixels > 0 && goalHeightPixels <= heightPixels && (
-                      <div
-                        className="absolute left-0 right-0 z-10"
-                        style={{
-                          bottom: `${goalHeightPixels}px`,
-                          height: '10px',
-                          background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0.4), rgba(0,0,0,0.25))',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                          zIndex: 10
-                        }}
-                      />
-                    )}
-
-                    {/* Goal Target Line (when goal is above bar) */}
-                    {goalMiles && goalHeightPixels > heightPixels && (
-                      <div
-                        className="absolute left-0 right-0 border-t-3 border-dashed border-gray-700 z-10"
-                        style={{
-                          bottom: `${goalHeightPixels}px`,
-                          transform: 'translateY(-2px)',
-                          boxShadow: '0 0 6px rgba(0,0,0,0.3)',
-                          zIndex: 10
-                        }}
-                      />
-                    )}
-
-                    {/* OPTION B: No Background, Just Text - Centered between bottom of bar and goal line */}
-                    {goalMiles && (
-                      <div className="absolute left-1/2 transform -translate-x-1/2 text-sm font-normal text-white"
-                           style={{
-                             bottom: `${goalHeightPixels / 2}px`,
-                             textShadow: '1px 1px 2px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.8)',
-                             zIndex: 15
-                           }}>
-                        {goalMiles} mi
-                      </div>
-                    )}
                   </div>
 
                   {/* Date Label */}
@@ -382,10 +306,9 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
             >
               {(() => {
                 const week = data[hoveredBar.index];
-                const goalMiles = findGoalForWeek(week.week);
+                const barInfo = chartData.barData[hoveredBar.index];
                 const prevWeek = data[hoveredBar.index + 1];
                 const changePct = prevWeek ? ((week.distance - prevWeek.distance) / prevWeek.distance) * 100 : null;
-                const exceededGoal = goalMiles ? week.distance >= goalMiles : null;
 
                 return (
                   <>
@@ -416,10 +339,10 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
                         <span className="text-gray-300">Actual:</span>
                         <span className="text-white font-semibold">{week.distance.toFixed(1)} mi</span>
                       </div>
-                      {goalMiles && (
+                      {barInfo.plannedTotalMiles && (
                         <div className="flex items-center justify-between">
-                          <span className="text-gray-300">Goal:</span>
-                          <span className="text-white font-semibold">{goalMiles.toFixed(1)} mi</span>
+                          <span className="text-gray-300">Planned:</span>
+                          <span className="text-white font-semibold">{barInfo.plannedTotalMiles.toFixed(1)}</span>
                         </div>
                       )}
                       <div className="flex items-center justify-between">
@@ -438,17 +361,17 @@ export default function WeeklyTrendChart({ data, weeklyGoals = [], title = "Week
                           </span>
                         </div>
                       )}
-                      {exceededGoal !== null && exceededGoal && (
+                      {barInfo.exceededPlannedTotalMiles && (
                         <div className="mt-2 pt-2 border-t border-gray-600 text-green-400 font-bold text-center text-sm bg-green-900/20 rounded px-2 py-1">
                           🎯 Goal Achieved!
                         </div>
                       )}
-                      {exceededGoal !== null && !exceededGoal && (
+                      {barInfo.plannedTotalMiles && !barInfo.exceededPlannedTotalMiles && (
                         <div className="mt-2 pt-2 border-t border-gray-600 text-orange-400 font-semibold text-center text-sm bg-orange-900/20 rounded px-2 py-1">
-                          Goal: {goalMiles?.toFixed(1)} mi
+                          Planned: {barInfo.plannedTotalMiles.toFixed(1)}
                         </div>
                       )}
-                      {barColors[hoveredBar.index] === 'significant_drop' && (
+                      {barInfo.barColor === 'significant_drop' && (
                         <div className="mt-2 pt-2 border-t border-gray-600 text-red-400 font-bold text-center text-sm bg-red-900/20 rounded px-2 py-1">
                           ⚠️ Significant Drop
                         </div>
