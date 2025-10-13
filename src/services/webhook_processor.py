@@ -54,12 +54,12 @@ def process_webhook_event(session: Session, event_id: int):
             logger.warning(f"⚠️ Event {event_id} not found")
             return False
 
-        if event.status != WebhookEventStatus.PENDING:
+        if event.status != WebhookEventStatus.PENDING.value:
             logger.info(f"ℹ️ Event {event_id} already processed (status={event.status})")
             return False
 
         # Mark as processing
-        event.status = WebhookEventStatus.PROCESSING
+        event.status = WebhookEventStatus.PROCESSING.value
         session.commit()
 
         logger.info(
@@ -76,17 +76,17 @@ def process_webhook_event(session: Session, event_id: int):
             logger.warning(
                 f"⚠️ Unknown object_type: {event.object_type}, ignoring event"
             )
-            event.status = WebhookEventStatus.IGNORED
+            event.status = WebhookEventStatus.IGNORED.value
             session.commit()
             return False
 
         # Update event status
         if success:
-            event.status = WebhookEventStatus.COMPLETED
+            event.status = WebhookEventStatus.COMPLETED.value
             event.processed_at = datetime.utcnow()
             logger.info(f"✅ Event {event_id} processed successfully")
         else:
-            event.status = WebhookEventStatus.FAILED
+            event.status = WebhookEventStatus.FAILED.value
             event.retry_count += 1
             logger.error(f"❌ Event {event_id} processing failed")
 
@@ -102,7 +102,7 @@ def process_webhook_event(session: Session, event_id: int):
         try:
             event = session.query(WebhookEvent).filter_by(id=event_id).first()
             if event:
-                event.status = WebhookEventStatus.FAILED
+                event.status = WebhookEventStatus.FAILED.value
                 event.error_message = str(e)
                 event.retry_count += 1
                 session.commit()
@@ -140,7 +140,7 @@ def _process_activity_event(session: Session, event: WebhookEvent) -> bool:
             logger.warning(
                 f"⚠️ No user mapping found for athlete {athlete_id}, ignoring event"
             )
-            event.status = WebhookEventStatus.IGNORED
+            event.status = WebhookEventStatus.IGNORED.value
             event.error_message = "No user mapping found"
             return False
 
@@ -158,7 +158,7 @@ def _process_activity_event(session: Session, event: WebhookEvent) -> bool:
             return _handle_activity_delete(session, activity_id, event)
         else:
             logger.warning(f"⚠️ Unknown aspect_type: {aspect_type}")
-            event.status = WebhookEventStatus.IGNORED
+            event.status = WebhookEventStatus.IGNORED.value
             return False
 
     except Exception as e:
@@ -211,7 +211,7 @@ def _handle_activity_create(
             logger.info(
                 f"ℹ️ Activity {activity_id} is not a run (type={activity_data.get('type')}), ignoring"
             )
-            event.status = WebhookEventStatus.IGNORED
+            event.status = WebhookEventStatus.IGNORED.value
             return False
 
         # Prepare activity data
@@ -258,7 +258,7 @@ def _handle_activity_update(
 
     # For now, we'll ignore update events
     # You can implement this later if you want to keep activities up-to-date
-    event.status = WebhookEventStatus.IGNORED
+    event.status = WebhookEventStatus.IGNORED.value
     event.error_message = "Update events not yet implemented"
 
     return True
@@ -277,7 +277,7 @@ def _handle_activity_delete(
 
     # For now, we'll ignore delete events
     # You can implement soft delete later if needed
-    event.status = WebhookEventStatus.IGNORED
+    event.status = WebhookEventStatus.IGNORED.value
     event.error_message = "Delete events not yet implemented"
 
     return True
@@ -293,7 +293,7 @@ def _process_athlete_event(session: Session, event: WebhookEvent) -> bool:
         f"ℹ️ Athlete event: {event.aspect_type} for athlete {event.owner_id} - ignoring"
     )
 
-    event.status = WebhookEventStatus.IGNORED
+    event.status = WebhookEventStatus.IGNORED.value
     event.error_message = "Athlete events not currently processed"
 
     return True
@@ -315,7 +315,7 @@ def retry_failed_events(session: Session, max_retries: int = 3):
     failed_events = (
         session.query(WebhookEvent)
         .filter(
-            WebhookEvent.status == WebhookEventStatus.FAILED,
+            WebhookEvent.status == WebhookEventStatus.FAILED.value,
             WebhookEvent.retry_count < max_retries,
         )
         .all()
@@ -326,7 +326,7 @@ def retry_failed_events(session: Session, max_retries: int = 3):
     retried = 0
     for event in failed_events:
         # Reset to pending so it can be reprocessed
-        event.status = WebhookEventStatus.PENDING
+        event.status = WebhookEventStatus.PENDING.value
         session.commit()
 
         # Try processing again
