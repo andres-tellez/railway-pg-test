@@ -341,7 +341,6 @@ export default function SimpleMetrics() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Weekly Trends</h1>
-            <p className="text-gray-400">Track your training progress over time</p>
           </div>
 
           {/* Time Period Selector */}

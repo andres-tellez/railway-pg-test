@@ -31,3 +31,12 @@
   transform: scale(1.05) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
 }
+
+/* Hide scrollbar for horizontal scrolling tabs */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Safari and Chrome */
+}
