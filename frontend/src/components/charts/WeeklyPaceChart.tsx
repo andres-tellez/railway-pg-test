@@ -3,6 +3,7 @@ import ChartHelpTooltip from './ChartHelpTooltip';
 import { useStaticBarStyle, getNumberDisplayClasses, getChartContainerStyle } from '../../hooks/useChartStyles';
 import { calculateChartContainerHeight, calculateBarHeight } from '../../utils/chartHelpers';
 import { CHART_LAYOUT, CHART_SHADOWS, CHART_BASE_CLASSES } from '../../utils/chartUtils';
+import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
 
 interface WeeklyPaceData {
   week: string;
@@ -29,6 +30,9 @@ export default function WeeklyPaceChart({
   helpTooltip
 }: WeeklyPaceChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
+
+  // Centralized tooltip behavior - hide on scroll
+  useScrollHideTooltip(hoveredBar !== null, () => setHoveredBar(null));
 
   // Use shared memoized static style hook
   const staticBarStyle = useStaticBarStyle();
@@ -200,7 +204,7 @@ export default function WeeklyPaceChart({
                 </div>
 
                 <div
-                  className="w-full rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg bg-blue-500"
+                  className={`${CHART_BASE_CLASSES.BAR} bg-blue-500`}
                   style={{
                     ...staticBarStyle,
                     height: `${heightPixels}px`,

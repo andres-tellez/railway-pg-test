@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { getChartContainerStyle } from '../../hooks/useChartStyles';
 import { calculateChartContainerHeight } from '../../utils/chartHelpers';
 import { CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
+import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
 
 interface WeeklyHRZoneData {
   week: string;
@@ -19,6 +20,9 @@ interface WeeklyHeartRateChartProps {
 
 export default function WeeklyHeartRateChart({ data, title = "Weekly Heart Rate Zones" }: WeeklyHeartRateChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
+
+  // Centralized tooltip behavior - hide on scroll
+  useScrollHideTooltip(hoveredBar !== null, () => setHoveredBar(null));
 
   // Memoize calculations for better performance
   const chartData = useMemo(() => {

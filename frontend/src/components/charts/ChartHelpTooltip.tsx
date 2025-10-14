@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef } from 'react';
+import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
 
 interface HelpContent {
   title: string;
@@ -34,6 +35,9 @@ export default function ChartHelpTooltip({
     y: 0
   });
   const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Centralized tooltip behavior - hide on scroll
+  useScrollHideTooltip(isExpanded, () => setIsExpanded(false));
 
 
   return (

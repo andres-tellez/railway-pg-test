@@ -35,7 +35,7 @@ export const CHART_SHADOWS = {
 
 export const CHART_BASE_CLASSES = {
   /** Base classes for all chart bars */
-  BAR: 'w-full rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg',
+  BAR: 'w-full rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg hover:brightness-75',
   /** Base classes for bar containers (individual bar wrapper) */
   BAR_CONTAINER: 'flex flex-col items-center justify-end flex-1 min-w-0',
   /** Base classes for tooltip containers */
@@ -127,3 +127,41 @@ export const CHART_NUMBER_FORMATTING = {
     PERCENTAGE: 'font-semibold'
   }
 } as const;
+
+// ============================================================================
+// CHART TOOLTIP BEHAVIOR
+// ============================================================================
+
+/**
+ * Adds scroll event listeners to hide tooltips when scrolling
+ * This prevents tooltips from staying visible in the wrong position during scroll
+ *
+ * @param isTooltipVisible - Whether the tooltip is currently visible
+ * @param hideTooltip - Function to call to hide the tooltip
+ * @returns Cleanup function to remove event listeners
+ */
+export const setupScrollHideTooltip = (
+  isTooltipVisible: boolean,
+  hideTooltip: () => void
+): (() => void) => {
+  if (!isTooltipVisible) {
+    return () => {}; // Return empty cleanup function if tooltip not visible
+  }
+
+  const handleScroll = () => {
+    hideTooltip();
+  };
+
+  // Listen to scroll events on the window
+  window.addEventListener('scroll', handleScroll, { passive: true });
+
+  // Also listen to scroll events on any scrollable containers
+  // This catches both window scroll and container scroll
+  document.addEventListener('scroll', handleScroll, { passive: true, capture: true });
+
+  // Return cleanup function
+  return () => {
+    window.removeEventListener('scroll', handleScroll);
+    document.removeEventListener('scroll', handleScroll, { capture: true });
+  };
+};
