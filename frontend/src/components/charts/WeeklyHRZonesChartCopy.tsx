@@ -55,7 +55,7 @@ export default function WeeklyHRZonesChart({
     zone_1: '#3B82F6', // Blue - Recovery
     zone_2: '#10B981', // Green - Aerobic Base
     zone_3: '#F59E0B', // Orange - Tempo
-    zone_4: '#EF4444', // Red - Threshold
+    zone_4: '#DC2626', // Red - Threshold
     zone_5: '#8B5CF6'  // Purple - VO2 Max
   };
 
@@ -263,7 +263,7 @@ export default function WeeklyHRZonesChart({
                   <span>Z3: {data[hoveredBar.index].zone_3.toFixed(1)}%</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#EF4444' }}></div>
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#DC2626' }}></div>
                   <span>Z4: {data[hoveredBar.index].zone_4.toFixed(1)}%</span>
                 </div>
                 <div className="flex items-center gap-2">

@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import ChartHelpTooltip from './ChartHelpTooltip';
+import ChartTooltip from './ChartTooltip';
 import { useStaticBarStyle, getNumberDisplayClasses, getChartContainerStyle } from '../../hooks/useChartStyles';
 import { CHART_LAYOUT, CHART_SHADOWS, CHART_BASE_CLASSES } from '../../utils/chartUtils';
 import { formatChartNumber, calculateChartContainerHeight } from '../../utils/chartHelpers';
@@ -9,6 +10,8 @@ interface WeeklyVO2Data {
   week: string;
   vo2_estimate: number | null;
   run_score: number | null;
+  runs?: number;
+  distance?: number;
 }
 
 interface WeeklyVO2ChartProps {
@@ -31,6 +34,14 @@ export default function WeeklyVO2Chart({
 
   // Use shared memoized static style hook
   const staticBarStyle = useStaticBarStyle();
+
+  // Helper function to determine fitness level context
+  const getFitnessLevel = useCallback((vo2: number): string => {
+    if (vo2 >= 50) return 'Excellent';
+    if (vo2 >= 40) return 'Good';
+    if (vo2 >= 30) return 'Fair';
+    return 'Needs Improvement';
+  }, []);
 
   // Helper function to format dates as M/D
   const formatDate = useCallback((dateStr: string): string => {
@@ -203,58 +214,37 @@ export default function WeeklyVO2Chart({
           );
         })()}
 
-        {/* Custom Tooltip */}
-        {hoveredBar && (
-          <div
-            className="fixed z-50 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg pointer-events-none transition-all duration-100 ease-out transform"
-            style={{
-              left: `${hoveredBar.x}px`,
-              top: `${hoveredBar.y}px`,
-              transform: 'translateX(-50%) translateY(-100%)',
-              opacity: hoveredBar ? 1 : 0,
-              animation: 'fadeInUp 0.1s ease-out'
-            }}
-          >
-            <div className={CHART_BASE_CLASSES.TOOLTIP_CONTAINER}>
-              <div>
-                {(() => {
-                  try {
-                    const dateStr = data[hoveredBar.index].week;
-                    // Handle different date formats
-                    if (dateStr.includes('T')) {
-                      // Already has time component
-                      return new Date(dateStr).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      });
-                    } else {
-                      // Add time component to make it local time
-                      return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      });
-                    }
-                  } catch (error) {
-                    // Fallback if date parsing fails
-                    return data[hoveredBar.index].week;
-                  }
-                })()}
+        {/* Centralized Tooltip */}
+        <ChartTooltip
+          isVisible={hoveredBar !== null}
+          position={hoveredBar ? { x: hoveredBar.x, y: hoveredBar.y } : { x: 0, y: 0 }}
+          data={{
+            week: hoveredBar ? data[hoveredBar.index].week : '',
+            value: hoveredBar ? (data[hoveredBar.index].vo2_estimate || 0) : 0,
+            unit: 'VO2',
+            runs: hoveredBar ? data[hoveredBar.index].runs : undefined,
+            distance: hoveredBar ? data[hoveredBar.index].distance : undefined,
+            trend: hoveredBar && hoveredBar.index < data.length - 1 && data[hoveredBar.index].vo2_estimate && data[hoveredBar.index + 1].vo2_estimate ?
+              (data[hoveredBar.index].vo2_estimate > data[hoveredBar.index + 1].vo2_estimate ? 'improving' :
+               data[hoveredBar.index].vo2_estimate < data[hoveredBar.index + 1].vo2_estimate ? 'declining' : 'stable') :
+              undefined,
+            changePct: hoveredBar && hoveredBar.index < data.length - 1 && data[hoveredBar.index].vo2_estimate && data[hoveredBar.index + 1].vo2_estimate ?
+              ((data[hoveredBar.index].vo2_estimate - data[hoveredBar.index + 1].vo2_estimate) / data[hoveredBar.index + 1].vo2_estimate) * 100 :
+              undefined,
+            additionalInfo: hoveredBar && data[hoveredBar.index].vo2_estimate ? (
+              <div className="flex items-center justify-between">
+                <span className="text-gray-300 font-medium">Fitness Level:</span>
+                <span className={`font-semibold ${
+                  data[hoveredBar.index].vo2_estimate >= 50 ? 'text-green-400' :
+                  data[hoveredBar.index].vo2_estimate >= 40 ? 'text-blue-400' :
+                  data[hoveredBar.index].vo2_estimate >= 30 ? 'text-yellow-400' : 'text-red-400'
+                }`}>
+                  {getFitnessLevel(data[hoveredBar.index].vo2_estimate)}
+                </span>
               </div>
-              <div className="text-blue-300">
-                VO2: {data[hoveredBar.index].vo2_estimate ? formatChartNumber(data[hoveredBar.index].vo2_estimate, 'vo2') : 'N/A'}
-              </div>
-              {data[hoveredBar.index].run_score && (
-                <div className="text-blue-200 text-[10px]">
-                  Score: {formatChartNumber(data[hoveredBar.index].run_score, 'score')}
-                </div>
-              )}
-            </div>
-            {/* Arrow pointing down */}
-            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-3 border-r-3 border-t-3 border-transparent border-t-gray-800"></div>
-          </div>
-        )}
+            ) : undefined
+          }}
+        />
       </div>
     </div>
   );

@@ -63,7 +63,7 @@ export const getBarColorClasses = (colorType: string, isCurrentWeek: boolean): s
     case 'personal_record':
       return `${baseClasses} bg-green-500 ${currentWeekRing}`;
     case 'significant_drop':
-      return `${baseClasses} bg-red-500 ${currentWeekRing}`;
+      return `${baseClasses} bg-red-600 ${currentWeekRing}`;
     default:
       return `${baseClasses} bg-blue-500 ${currentWeekRing}`;
   }

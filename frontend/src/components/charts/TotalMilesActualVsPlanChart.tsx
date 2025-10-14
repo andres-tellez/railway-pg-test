@@ -48,8 +48,16 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
 
   // Helper function to find planned total miles for a specific week
   const findPlannedTotalMilesForWeek = (week: string): number | null => {
-    // Simple direct matching - all formats are already YYYY-MM-DD
-    const goal = weeklyGoals.find(g => g.week === week);
+    // Handle both date formats: '2025-10-06' and '2025-10-06T00:00:00'
+    const goal = weeklyGoals.find(g => {
+      const goalWeek = g.week;
+      // Direct match
+      if (goalWeek === week) return true;
+      // Match date part only (handle datetime format)
+      if (week.includes('T') && goalWeek === week.split('T')[0]) return true;
+      if (goalWeek.includes('T') && week === goalWeek.split('T')[0]) return true;
+      return false;
+    });
     return goal ? goal.goal_miles : null;
   };
 
@@ -160,7 +168,7 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
 
     // All weeks use their respective colors based on performance
     if (colorType === 'personal_record') return `${baseClasses} bg-green-500 ${currentWeekRing} ring-green-200`;
-    if (colorType === 'significant_drop') return `${baseClasses} bg-red-500 ${currentWeekRing} ring-red-200`;
+    if (colorType === 'significant_drop') return `${baseClasses} bg-red-600 ${currentWeekRing} ring-red-200`;
     return `${baseClasses} bg-blue-500 ${currentWeekRing} ring-blue-200`;
   };
 
@@ -169,7 +177,7 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
     zone_1: '#3B82F6', // Blue - Recovery
     zone_2: '#10B981', // Green - Aerobic Base
     zone_3: '#F59E0B', // Orange - Tempo
-    zone_4: '#EF4444', // Red - Threshold
+    zone_4: '#DC2626', // Red - Threshold
     zone_5: '#8B5CF6'  // Purple - VO2 Max
   };
 
@@ -360,20 +368,7 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
               <span>Actual</span>
             </div>
             <div className="flex items-center gap-2 relative group">
-              <div className="w-4 h-4 bg-blue-600 rounded border-2 border-black"></div>
-              <span>Plan</span>
-              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-80 bg-gray-900 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                <strong>Training Plan Goal:</strong> Progressive weekly mileage targets from your training plan.<br/>
-                <br/>
-                • <strong>Green distance labels</strong> = Goal achieved or exceeded<br/>
-                • <strong>Gray distance labels</strong> = Goal not met<br/>
-                • <strong>Dashed line</strong> = Your target for that week<br/>
-                <br/>
-                <em>Goals progress based on your training phase (base building, peak, taper, etc.)</em>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 relative group">
-              <div className="w-4 h-4 bg-red-500 rounded"></div>
+              <div className="w-4 h-4 bg-red-600 rounded"></div>
               <span>Significant Drop</span>
               <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-72 bg-gray-900 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                 <strong>Significant Drop:</strong> Red flags indicate concerning patterns:<br/>
@@ -535,7 +530,7 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                       <span>Z3: {hrZoneData[hoveredBar.index].zone_3.toFixed(1)}%</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#EF4444' }}></div>
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#DC2626' }}></div>
                       <span>Z4: {hrZoneData[hoveredBar.index].zone_4.toFixed(1)}%</span>
                     </div>
                     <div className="flex items-center gap-2">
