@@ -40,6 +40,7 @@ import WelcomePage from "./pages/WelcomePage";
 import SimpleMetrics from "./pages/SimpleMetrics";
 import SimpleMetricsCopy from "./pages/SimpleMetricsCopy";
 import VO2Metrics from "./pages/VO2Metrics";
+import GYRMetricsDemo from "./pages/GYRMetricsDemo";
 
 import Layout from "./components/Layout";
 import SmartRouter from "./components/SmartRouter";
@@ -201,6 +202,16 @@ export default function App() {
           <ProtectedRoute>
             <Layout>
               <VO2Metrics />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/gyr-demo"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <GYRMetricsDemo />
             </Layout>
           </ProtectedRoute>
         }
