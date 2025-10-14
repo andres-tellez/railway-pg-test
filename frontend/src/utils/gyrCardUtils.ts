@@ -19,7 +19,7 @@ export const GYR_CARD_TEMPLATE = {
 
   // Timeline elements
   timelineBars: "flex items-center justify-center gap-3",
-  bar: "rounded-sm transition-all duration-200 hover:opacity-80 hover:scale-105 hover:shadow-md cursor-pointer",
+  bar: "rounded-sm transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg hover:brightness-75",
   barSize: { width: '24px', height: '64px' },
 
   // Legend elements
@@ -45,9 +45,9 @@ export const GYR_CARD_SIZES = {
 // ============================================================================
 
 export const GYR_STATUS_COLORS = {
-  green: 'bg-emerald-400',
+  green: 'bg-green-500',
   yellow: 'bg-amber-400',
-  red: 'bg-red-400',
+  red: 'bg-red-600',
   gray: 'bg-gray-200'
 } as const;
 
@@ -62,12 +62,6 @@ export const getStatusColor = (status: 'green' | 'yellow' | 'red' | 'gray'): str
 // HELPER FUNCTIONS
 // ============================================================================
 
-/**
- * Generate tooltip text for a timeline bar
- */
-export const generateBarTooltip = (score: { value: number; date: string; status: string }, index: number): string => {
-  return `Week ${index + 1}: ${score.date} - ${score.value}% (${score.status})`;
-};
 
 /**
  * Get the combined card classes with size variant

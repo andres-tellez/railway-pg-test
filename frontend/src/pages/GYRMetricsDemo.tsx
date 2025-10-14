@@ -104,6 +104,7 @@ export default function GYRMetricsDemo() {
             greenCriteria={gyrData.totalRuns.criteria.green}
             yellowCriteria={gyrData.totalRuns.criteria.yellow}
             redCriteria={gyrData.totalRuns.criteria.red}
+            metricType="totalRuns"
           />
           <GYRMetricCard
             title="Weekly Pace"
@@ -111,6 +112,7 @@ export default function GYRMetricsDemo() {
             greenCriteria={gyrData.weeklyPace.criteria.green}
             yellowCriteria={gyrData.weeklyPace.criteria.yellow}
             redCriteria={gyrData.weeklyPace.criteria.red}
+            metricType="weeklyPace"
           />
           <GYRMetricCard
             title="Weekly HR Zones"
@@ -118,6 +120,7 @@ export default function GYRMetricsDemo() {
             greenCriteria={gyrData.weeklyHRZones.criteria.green}
             yellowCriteria={gyrData.weeklyHRZones.criteria.yellow}
             redCriteria={gyrData.weeklyHRZones.criteria.red}
+            metricType="weeklyHRZones"
           />
         </div>
       </div>

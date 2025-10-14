@@ -78,9 +78,9 @@ class GYRMetricsService:
             "totalRuns": {
                 "historicalScores": total_runs_scores,
                 "criteria": {
-                    "green": "90–110% of plan",
-                    "yellow": "70–90% or 110–130%",
-                    "red": "<70% or >130%",
+                    "green": "90–110% of planned miles",
+                    "yellow": "70–90% or 110–130% of plan",
+                    "red": "<70% or >130% of plan",
                 },
             },
             "weeklyPace": {
@@ -94,9 +94,9 @@ class GYRMetricsService:
             "weeklyHRZones": {
                 "historicalScores": weekly_hr_zones_scores,
                 "criteria": {
-                    "green": "75–85% of time in Z1–Z2",
-                    "yellow": "65–75% or 85–90%",
-                    "red": "<65% or >90%",
+                    "green": "75–85% easy runs (perfect 80/20)",
+                    "yellow": "65–75% or 85–90% easy runs",
+                    "red": "<65% or >90% easy runs",
                 },
             },
         }
@@ -127,23 +127,21 @@ class GYRMetricsService:
             week_normalized = normalize_week_date(week)
 
             actual_runs = trend.get("runs", 0)
+            actual_miles = trend.get("distance", 0)  # Get actual miles run
 
             # Only the first (most recent) week should have GYR status
-            if i == 0:  # First week (most recent)
-                # Find planned runs (estimate: 1 run per 7-8 miles of planned distance)
+            if i == 0:  # First week (previous week - leftmost bar)
+                # Get planned miles from training plan for this week
                 planned_miles = goals_by_week.get(week_normalized, 0)
-                planned_runs = (
-                    max(1, round(planned_miles / 7.5)) if planned_miles > 0 else 0
-                )
 
-                # Calculate percentage of plan completion
-                if planned_runs > 0:
-                    completion_pct = (actual_runs / planned_runs) * 100
+                # Calculate percentage of plan completion (miles vs miles)
+                if planned_miles > 0:
+                    completion_pct = (actual_miles / planned_miles) * 100
                 else:
                     completion_pct = 0
 
                 # Determine status based on plan completion
-                if actual_runs == 0:
+                if actual_miles == 0:
                     status = "gray"
                 elif 90 <= completion_pct <= 110:
                     status = "green"
@@ -155,7 +153,7 @@ class GYRMetricsService:
                 # All other weeks (historical) should be gray
                 status = "gray"
                 completion_pct = 0
-                planned_runs = 0
+                planned_miles = 0
 
             scores.append(
                 {
@@ -163,7 +161,8 @@ class GYRMetricsService:
                     "date": week_normalized,  # Use normalized date for consistency
                     "status": status,
                     "actual_runs": actual_runs,
-                    "planned_runs": planned_runs,
+                    "actual_miles": round(actual_miles, 1),
+                    "planned_miles": round(planned_miles, 1) if i == 0 else 0,
                 }
             )
 
