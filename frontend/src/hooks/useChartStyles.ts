@@ -58,19 +58,14 @@ export const getBarColorClasses = (colorType: string, isCurrentWeek: boolean): s
   const baseClasses = CHART_BASE_CLASSES.BAR;
   const currentWeekRing = isCurrentWeek ? `${CHART_BASE_CLASSES.CURRENT_WEEK_RING} ${CHART_BASE_CLASSES.CURRENT_WEEK_RING_COLOR}` : '';
 
-  // Current week is always grey
-  if (isCurrentWeek) {
-    return `${baseClasses} bg-gray-500 ${currentWeekRing}`;
-  }
-
-  // Other weeks use their respective colors
+  // All weeks use their respective colors based on performance
   switch (colorType) {
     case 'personal_record':
-      return `${baseClasses} bg-green-500`;
+      return `${baseClasses} bg-green-500 ${currentWeekRing}`;
     case 'significant_drop':
-      return `${baseClasses} bg-red-500`;
+      return `${baseClasses} bg-red-500 ${currentWeekRing}`;
     default:
-      return `${baseClasses} bg-blue-500`;
+      return `${baseClasses} bg-blue-500 ${currentWeekRing}`;
   }
 };
 

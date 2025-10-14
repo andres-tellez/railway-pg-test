@@ -116,7 +116,7 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
     ULTRA-OPTIMIZED: Get ALL metrics from materialized view.
     This is the fastest possible approach - simple SELECT, all processing done by database.
     Query time: ~5-10ms (vs ~100ms with CASE statements)
-    
+
     For current week, shows PLANNED miles from training plan instead of actual miles.
     """
     # Single simple query to materialized view
@@ -153,7 +153,7 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
 
     # Extract pre-calculated dashboard metrics
     current_distance = round(result.current_distance or 0, 1)
-    
+
     previous_distance = round(result.previous_distance or 0, 1)
     current_runs = int(result.current_runs or 0)
     previous_runs = int(result.previous_runs or 0)
@@ -183,6 +183,13 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
     # The materialized view returns it as a list, not a JSON string
     weekly_data = result.weekly_data if result.weekly_data else []
 
+    # FIXED: Move current week to end, keep previous week as leftmost bar
+    # Materialized view orders by DESC (current week first), but we want previous week first
+    if weekly_data and len(weekly_data) > 1:
+        # Move the first element (current week) to the end
+        current_week = weekly_data.pop(0)
+        weekly_data.append(current_week)
+
     # Parse weekly_goals from JSON string (if it's a string) or use as-is (if already parsed)
     import json
 
@@ -190,38 +197,43 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
         weekly_goals = json.loads(result.weekly_goals) if result.weekly_goals else []
     else:
         weekly_goals = result.weekly_goals if result.weekly_goals else []
-    
+
     # For current week, update weekly_goals with planned miles from training plan
     if user_id and weekly_data:
         planned_miles = get_planned_miles_for_current_week(session, user_id)
         if planned_miles > 0 and weekly_data:
             # Find current week in weekly_data
             from datetime import datetime, timedelta
+
             today = datetime.now().date()
             days_since_monday = today.weekday()
             current_week_start = today - timedelta(days=days_since_monday)
             current_week_str = current_week_start.isoformat()
-            
+
             # Update current week goal (handle both date formats)
             goal_found = False
             for goal in weekly_goals:
-                goal_week = goal.get('week', '')
+                goal_week = goal.get("week", "")
                 # Check both formats: '2025-10-13' and '2025-10-13T00:00:00'
-                if (goal_week == current_week_str or 
-                    goal_week.startswith(current_week_str + 'T')):
-                    goal['goal_miles'] = planned_miles
+                if goal_week == current_week_str or goal_week.startswith(
+                    current_week_str + "T"
+                ):
+                    goal["goal_miles"] = planned_miles
                     goal_found = True
                     logger.info(f"📊 Updated existing goal: {goal}")
                     break
-            
+
             if not goal_found:
-                weekly_goals.append({
-                    'week': current_week_str,
-                    'goal_miles': planned_miles
-                })
-                logger.info(f"📊 Added new goal: week={current_week_str}, goal_miles={planned_miles}")
-            
-            logger.info(f"📊 Updated weekly_goals with planned miles for current week: {planned_miles}")
+                weekly_goals.append(
+                    {"week": current_week_str, "goal_miles": planned_miles}
+                )
+                logger.info(
+                    f"📊 Added new goal: week={current_week_str}, goal_miles={planned_miles}"
+                )
+
+            logger.info(
+                f"📊 Updated weekly_goals with planned miles for current week: {planned_miles}"
+            )
 
     # Process weekly trends, HR zones, and VO2 estimates
     weekly_trends = []
@@ -291,6 +303,12 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
         filtered_runs = (
             weekly_runs[:weeks] if weeks and weeks < len(weekly_runs) else weekly_runs
         )
+
+        # FIXED: Move current week to end, keep previous week as leftmost bar (same as other charts)
+        if filtered_runs and len(filtered_runs) > 1:
+            # Move the first element (current week) to the end
+            current_week_run = filtered_runs.pop(0)
+            filtered_runs.append(current_week_run)
 
         # Format data (only formatting, no calculations - already done by database)
         for run in filtered_runs:
@@ -485,7 +503,9 @@ def get_all_metrics_combined():
 
         # ULTRA-OPTIMIZED: Single query to materialized view (now includes weekly_goals)
         # Pass user_id to enable planned miles calculation for current week
-        result = get_all_metrics_ultra_optimized(session, athlete_id, user_id=user_id, weeks=20)
+        result = get_all_metrics_ultra_optimized(
+            session, athlete_id, user_id=user_id, weeks=20
+        )
 
         weekly_goals = result.get("weekly_goals", [])
         print(f"[DEBUG] Weekly goals for user {user_id}: {weekly_goals}")
