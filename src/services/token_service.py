@@ -172,7 +172,7 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
     logger.info(
         f"[store_tokens_from_callback] ✅ Finished storing tokens for user_id={user_id}, athlete_id={strava_athlete_id}"
     )
-    return strava_athlete_id
+    return strava_athlete_id, user_id
 
 
 def exchange_code_for_token(code, redirect_uri=None):
