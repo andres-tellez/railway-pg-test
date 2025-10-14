@@ -1,5 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import ChartHelpTooltip from './ChartHelpTooltip';
+import { getChartContainerStyle, getNumberDisplayClasses } from '../../hooks/useChartStyles';
+import { calculateChartContainerHeight, formatChartNumber, calculateBarHeight } from '../../utils/chartHelpers';
+import { CHART_LAYOUT } from '../../utils/chartUtils';
 
 interface WeeklyDistanceData {
   week: string;
@@ -85,17 +88,23 @@ export default function WeeklyDistanceChart({
       </div>
 
       <div className="relative">
-        <div className="flex items-end space-x-1 h-48 bg-gradient-to-t from-gray-50 to-white p-6 rounded-xl border border-gray-100">
-          {data.map((week, index) => {
-            const heightPercentage = maxDistance > 0 ? (week.distance / maxDistance) : 0;
-            const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
-            const isCurrentWeek = index === 0;
+        {(() => {
+          // Calculate the total height needed for the chart container
+          const totalHeight = calculateChartContainerHeight(data, (week) => {
+            return calculateBarHeight(week.distance, maxDistance);
+          }, CHART_LAYOUT.NUMBER_PADDING_TOP);
+
+          return (
+            <div style={getChartContainerStyle(totalHeight)}>
+              {data.map((week, index) => {
+                const heightPixels = calculateBarHeight(week.distance, maxDistance);
+                const isCurrentWeek = index === 0;
 
             return (
               <div key={index} className="flex flex-col items-center justify-end flex-1 min-w-0 group">
                 {isCurrentWeek && (
-                  <div className="text-sm font-bold text-gray-800 mb-2">
-                    {week.distance.toFixed(1)}
+                  <div className={getNumberDisplayClasses('medium')}>
+                    {formatChartNumber(week.distance, 'distance')}
                   </div>
                 )}
                 <div
@@ -119,7 +128,9 @@ export default function WeeklyDistanceChart({
               </div>
             );
           })}
-        </div>
+            </div>
+          );
+        })()}
 
         {/* Custom Tooltip */}
         {hoveredBar && (
@@ -133,7 +144,7 @@ export default function WeeklyDistanceChart({
               animation: 'fadeInUp 0.1s ease-out'
             }}
           >
-            <div className="flex flex-col items-center">
+            <div className={CHART_BASE_CLASSES.TOOLTIP_CONTAINER}>
               <div>
                 {new Date(data[hoveredBar.index].week + 'T00:00:00').toLocaleDateString('en-US', {
                   month: 'short',

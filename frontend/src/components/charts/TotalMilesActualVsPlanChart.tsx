@@ -1,5 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import ChartHelpTooltip from './ChartHelpTooltip';
+import { useStaticBarStyle, useBarColorClasses, getChartContainerStyle, getNumberDisplayClasses } from '../../hooks/useChartStyles';
+import { getBarShadow, calculateChartContainerHeight, formatChartNumber, calculateBarHeight } from '../../utils/chartHelpers';
+import { CHART_SHADOWS, CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
 
 interface WeeklyTrendData {
   week: string;
@@ -34,18 +37,9 @@ interface TotalMilesActualVsPlanChartProps {
 export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], title = "Total Miles - Actual vs Plan", hrZoneData, showHeader = true, helpTooltip }: TotalMilesActualVsPlanChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
 
-  // Helper function to get bar shadow based on conditions
-  const getBarShadow = (barColor: string, index: number, exceededPlanned: boolean): string => {
-    // Special case: no red shadow for week 1
-    if (barColor === 'significant_drop' && index !== 0) {
-      return '0 2px 8px rgba(239, 68, 68, 0.3)'; // Red shadow
-    }
-
-    if (exceededPlanned) {
-      return '0 2px 8px rgba(34, 197, 94, 0.3)'; // Green shadow
-    }
-
-    return '0 2px 8px rgba(59, 130, 246, 0.2)'; // Blue shadow (default)
+  // Use shared getBarShadow function with exceededPlanned option
+  const getBarShadowForTotalMiles = (barColor: string, index: number, exceededPlanned: boolean): string => {
+    return getBarShadow(barColor, index, { exceededGoal: exceededPlanned });
   };
 
   // Helper function to find planned total miles for a specific week
@@ -55,10 +49,8 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
     return goal ? goal.goal_miles : null;
   };
 
-  // Memoize static style properties to avoid recreating objects on every render
-  const staticBarStyle = useMemo(() => ({
-    transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)'
-  }), []);
+  // Use shared memoized static style hook
+  const staticBarStyle = useStaticBarStyle();
 
 
   // Memoize calculations for better performance
@@ -103,11 +95,11 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
 
     // Pre-calculate all bar data to avoid calculations in render loop
     const barData = data.map((week, index) => {
-      const heightPixels = (week.distance / maxDistance) * 140;
+      const heightPixels = calculateBarHeight(week.distance, maxDistance);
       const isCurrentWeek = index === 0;
       const plannedTotalMiles = findPlannedTotalMilesForWeek(week.week);
       const plannedTotalMilesHeightPixels = plannedTotalMiles ?
-        (plannedTotalMiles / maxDistance) * 140 : 0;
+        calculateBarHeight(plannedTotalMiles, maxDistance) : 0;
       const exceededPlannedTotalMiles = plannedTotalMiles ? week.distance >= plannedTotalMiles : false;
       const barColor = barColors[index];
 
@@ -157,23 +149,21 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
     }
   };
 
-  // Helper function to get actual total miles bar color classes
-                const getActualTotalMilesBarColorClasses = (colorType: string, isCurrentWeek: boolean) => {
-                const baseClasses = 'w-full rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg';
-                const currentWeekRing = isCurrentWeek ? 'ring-2 ring-opacity-50' : '';
+  // Helper function to get actual total miles bar color classes (using shared logic)
+  const getActualTotalMilesBarColorClasses = (colorType: string, isCurrentWeek: boolean) => {
+    const baseClasses = 'w-full rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg';
+    const currentWeekRing = isCurrentWeek ? 'ring-2 ring-opacity-50' : '';
 
-                // Current week is always grey
-                if (isCurrentWeek) {
-                  return `${baseClasses} bg-gray-500 ${currentWeekRing} ring-gray-200`;
-                }
+    // Current week is always grey
+    if (isCurrentWeek) {
+      return `${baseClasses} bg-gray-500 ${currentWeekRing} ring-gray-200`;
+    }
 
-                if (colorType === 'significant_drop') {
-                  return `${baseClasses} bg-red-500 ${currentWeekRing} ring-red-200`;
-                }
-
-                // Default: blue for normal
-                return `${baseClasses} bg-blue-500 ${currentWeekRing} ring-blue-200`;
-              };
+    // Other weeks use their respective colors
+    if (colorType === 'personal_record') return `${baseClasses} bg-green-500`;
+    if (colorType === 'significant_drop') return `${baseClasses} bg-red-500`;
+    return `${baseClasses} bg-blue-500`;
+  };
 
   // Zone colors (defined outside the map for reuse)
   const zoneColors = {
@@ -205,49 +195,32 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
 
         <div className="relative">
           {(() => {
-            // Calculate the actual tallest bar height in pixels
-            const tallestBarHeight = data.reduce((max, week) => {
-              const heightPercentage = maxDistance > 0 ? (week.distance / maxDistance) : 0;
-              const heightPixels = heightPercentage * 140;
-              return Math.max(max, heightPixels);
-            }, 0);
-
-            // Add more padding above the tallest bar so numbers appear well within background
-            const totalHeight = tallestBarHeight + 80;
+            // Calculate the total height needed for the chart container
+            const totalHeight = calculateChartContainerHeight(data, (week) => {
+              return calculateBarHeight(week.distance, maxDistance);
+            }, CHART_LAYOUT.NUMBER_PADDING_TOP);
 
             return (
-              <div
-                style={{
-                  height: `${totalHeight}px`,
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  gap: '0.25rem',
-                  padding: '1.5rem',
-                  borderRadius: '0.75rem',
-                  background: 'linear-gradient(to top, rgb(243 244 246), rgb(249 250 251))'
-                }}
-              >
+              <div style={getChartContainerStyle(totalHeight)}>
                 {data.map((week, index) => {
                   const barInfo = chartData.barData[index];
                   const colorClasses = getActualTotalMilesBarColorClasses(barInfo.barColor, barInfo.isCurrentWeek);
 
 
               return (
-                <div key={index} style={{
-                  flex: '1 1 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                  minWidth: 0
-                }}>
+                <div key={index} className={CHART_BASE_CLASSES.BAR_CONTAINER}>
+                  {/* Distance Label */}
+                  <div className={getNumberDisplayClasses('medium')}>
+                    {formatChartNumber(week.distance, 'distance')}
+                  </div>
+
                   {/* Actual Bar */}
                   <div
                     className={colorClasses}
                     style={{
                       ...staticBarStyle,
                       height: `${barInfo.heightPixels}px`,
-                      boxShadow: getBarShadow(barInfo.barColor, index, barInfo.exceededPlannedTotalMiles)
+                      boxShadow: getBarShadowForTotalMiles(barInfo.barColor, index, barInfo.exceededPlannedTotalMiles)
                     }}
                     onMouseEnter={(e) => {
                       const rect = e.currentTarget.getBoundingClientRect();
@@ -259,10 +232,6 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                     }}
                     onMouseLeave={() => setHoveredBar(null)}
                   >
-                    {/* Distance Label */}
-                    <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-sm font-semibold whitespace-nowrap text-gray-700">
-                      {week.distance.toFixed(1)}
-                    </div>
 
                     {/* PLANNED MILES: Shaded area represents planned miles proportionally to chart maximum */}
                     {barInfo.plannedTotalMiles && (
@@ -545,7 +514,7 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                   animation: 'fadeInUp 0.1s ease-out'
                 }}
               >
-                <div className="flex flex-col items-center">
+                <div className={CHART_BASE_CLASSES.TOOLTIP_CONTAINER}>
                   <div>
                     {new Date(hrZoneData[hoveredBar.index].week + 'T00:00:00').toLocaleDateString('en-US', {
                       month: 'short',

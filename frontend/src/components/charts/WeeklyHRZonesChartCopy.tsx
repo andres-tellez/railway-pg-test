@@ -1,5 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import ChartHelpTooltip from './ChartHelpTooltip';
+import { getChartContainerStyle } from '../../hooks/useChartStyles';
+import { calculateChartContainerHeight } from '../../utils/chartHelpers';
+import { CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
 
 interface WeeklyHRZoneData {
   week: string;
@@ -121,39 +124,22 @@ export default function WeeklyHRZonesChart({
 
       <div className="relative">
         {(() => {
-          // Calculate the actual tallest bar height in pixels
-          const tallestBarHeight = data.reduce((max, week) => {
+          // Calculate the total height needed for the chart container
+          const totalHeight = calculateChartContainerHeight(data, (week) => {
             const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
             const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
-            const heightPixels = heightPercentage * 140;
-            return Math.max(max, heightPixels);
-          }, 0);
-
-          // Add more padding above the tallest bar so numbers appear well within background
-          const totalHeight = tallestBarHeight + 80;
+            return heightPercentage * CHART_LAYOUT.MAX_HEIGHT_PX;
+          }, CHART_LAYOUT.NUMBER_PADDING_TOP);
 
           return (
-            <div
-              className="chart-container chart-background"
-              style={{
-                height: `${totalHeight}px`,
-                paddingTop: '80px'
-              }}
-            >
+            <div style={getChartContainerStyle(totalHeight)}>
               {data.map((week, index) => {
                 const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
                 const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
             const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
 
             return (
-              <div key={index} style={{
-                flex: '1 1 0',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                minWidth: 0
-              }}>
+              <div key={index} className={CHART_BASE_CLASSES.BAR_CONTAINER}>
                 {/* The stacked bar */}
                 <div
                   className="chart-bar"
@@ -251,7 +237,7 @@ export default function WeeklyHRZonesChart({
               animation: 'fadeInUp 0.1s ease-out'
             }}
           >
-            <div className="flex flex-col items-center">
+            <div className={CHART_BASE_CLASSES.TOOLTIP_CONTAINER}>
               <div>
                 {new Date(data[hoveredBar.index].week + 'T00:00:00').toLocaleDateString('en-US', {
                   month: 'short',

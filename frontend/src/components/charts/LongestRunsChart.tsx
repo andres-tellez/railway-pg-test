@@ -1,4 +1,7 @@
 import React, { useState, useMemo } from "react";
+import { useStaticBarStyle, getBarColorClasses, getNumberDisplayClasses, getChartContainerStyle } from '../../hooks/useChartStyles';
+import { getBarShadow, formatChartNumber, calculateChartContainerHeight, calculateBarHeight } from '../../utils/chartHelpers';
+import { CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
 
 interface LongestRunData {
   week_start: string;
@@ -16,63 +19,21 @@ interface LongestRunData {
   prev_week_distance: number | null;
 }
 
-interface WeeklyGoalData {
-  week: string;
-  goal_miles: number;
-}
-
 interface LongestRunsChartProps {
   data: LongestRunData[];
   title?: string;
   showHeader?: boolean;
-  weeklyGoals?: WeeklyGoalData[]; // Same pattern as WeeklyTrendChart
 }
 
-export default function LongestRunsChart({ data, weeklyGoals = [], title = "Weekly Longest Runs", showHeader = true }: LongestRunsChartProps) {
+export default function LongestRunsChart({ data, title = "Weekly Longest Runs", showHeader = true }: LongestRunsChartProps) {
   const [hoveredRun, setHoveredRun] = useState<{ index: number; x: number; y: number } | null>(null);
 
-  // Helper function to find goal for a specific week (same pattern as WeeklyTrendChart)
-  const findGoalForWeek = (week: string): number | null => {
-    console.log(`[LongestRuns] Looking for goal for week: ${week}`);
-    console.log(`[LongestRuns] Available goals:`, weeklyGoals.map(g => ({ week: g.week, goal_miles: g.goal_miles })));
-
-    // Extract just the date part (YYYY-MM-DD) from the week string
-    const dateOnly = week.split('T')[0];
-
-    // Try exact match first - compare both full week string and date-only
-    let goal = weeklyGoals.find(g => g.week === week || g.week === dateOnly || g.week.split('T')[0] === dateOnly);
-
-    if (goal) {
-      console.log(`[LongestRuns] Found exact match: ${goal.goal_miles} miles for ${week}`);
-      return goal.goal_miles;
-    }
-
-    // If no exact match, try to find the closest week using date comparison
-    const runDate = new Date(week);
-    let closestGoal = null;
-    let smallestDiff = Infinity;
-
-    for (const g of weeklyGoals) {
-      const goalDate = new Date(g.week);
-      const diff = Math.abs(runDate.getTime() - goalDate.getTime());
-
-      if (diff < smallestDiff) {
-        smallestDiff = diff;
-        closestGoal = g;
-      }
-    }
-
-    // Only return if the closest goal is within 1 day (much stricter)
-    const result = closestGoal && smallestDiff <= 1 * 24 * 60 * 60 * 1000 ? closestGoal.goal_miles : null;
-    console.log(`[LongestRuns] Closest goal result: ${result} miles (diff: ${smallestDiff / (24 * 60 * 60 * 1000)} days)`);
-    return result;
-  };
-
-  // Optimized chart data calculation (same pattern as WeeklyTrendChart)
+  // Optimized chart data calculation (simplified - focus on longest runs only)
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return null;
 
-    const maxDistance = Math.max(...data.map((run) => run.distance), 1);
+    // Calculate chart maximum from actual distances only
+    const maxDistance = Math.max(...data.map(run => run.distance));
 
     // Calculate bar colors based on data
     const barColors = data.map((run) => {
@@ -81,7 +42,20 @@ export default function LongestRunsChart({ data, weeklyGoals = [], title = "Week
       return 'normal';
     });
 
-    return { maxDistance, barColors };
+    // Pre-calculate all bar data to avoid calculations in render loop
+    const barData = data.map((run, index) => {
+      const heightPixels = calculateBarHeight(run.distance, maxDistance);
+      const isCurrentWeek = index === 0;
+      const barColor = barColors[index];
+
+      return {
+        heightPixels,
+        isCurrentWeek,
+        barColor
+      };
+    });
+
+    return { maxDistance, barColors, barData };
   }, [data]);
 
   if (!chartData) {
@@ -95,12 +69,14 @@ export default function LongestRunsChart({ data, weeklyGoals = [], title = "Week
     );
   }
 
-  const { maxDistance, barColors } = chartData;
+  const { maxDistance, barColors, barData } = chartData;
 
-  // Calculate height in pixels (same as WeeklyTrendChart)
+  // Use shared memoized static style hook
+  const staticBarStyle = useStaticBarStyle();
+
+  // Calculate height in pixels (centralized approach)
   const calculateHeight = (distance: number) => {
-    const heightPercentage = maxDistance > 0 ? (distance / maxDistance) : 0;
-    return heightPercentage * 140;
+    return calculateBarHeight(distance, maxDistance);
   };
 
   const formatDate = (dateString: string) => {
@@ -114,10 +90,12 @@ export default function LongestRunsChart({ data, weeklyGoals = [], title = "Week
     }
   };
 
-  const getRunColor = (colorType: string) => {
-    if (colorType === 'personal_record') return "bg-green-500";
-    if (colorType === 'significant_drop') return "bg-red-500";
-    return "bg-blue-500";
+  // Use shared bar color classes function
+  const getRunColorClasses = getBarColorClasses;
+
+  // Use shared getBarShadow function
+  const getBarShadowForLongestRuns = (barColor: string, index: number): string => {
+    return getBarShadow(barColor, index);
   };
 
   const getTrendIcon = (trend: string) => {
@@ -160,62 +138,33 @@ export default function LongestRunsChart({ data, weeklyGoals = [], title = "Week
         <div>
           {/* Bar Chart */}
           {(() => {
-            // Calculate the actual tallest bar height in pixels
-            const tallestBarHeight = data.reduce((max, run) => {
-              const heightPixels = calculateHeight(run.distance);
-              return Math.max(max, heightPixels);
-            }, 0);
-
-            // Add more padding above the tallest bar so numbers appear well within background
-            const totalHeight = tallestBarHeight + 80;
+            // Calculate the total height needed for the chart container
+            const totalHeight = calculateChartContainerHeight(data, (run) => calculateHeight(run.distance), CHART_LAYOUT.NUMBER_PADDING_TOP);
 
             return (
-              <div
-                style={{
-                  height: `${totalHeight}px`,
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  gap: '0.25rem',
-                  padding: '1.5rem',
-                  borderRadius: '0.75rem',
-                  background: 'linear-gradient(to top, rgb(243 244 246), rgb(249 250 251))'
-                }}
-              >
+              <div style={getChartContainerStyle(totalHeight)}>
                 {data.map((run, index) => {
-                  const heightPixels = calculateHeight(run.distance);
-              const goalMiles = findGoalForWeek(run.week_start);
-              const goalHeightPixels = goalMiles ? (goalMiles / run.distance) * heightPixels : 0;
-              const exceededGoal = goalMiles ? run.distance >= goalMiles : false;
-              const barColor = barColors[index];
+                  const barInfo = barData[index];
+                  const { heightPixels, isCurrentWeek, barColor } = barInfo;
+                  const colorClasses = getRunColorClasses(barColor, isCurrentWeek);
 
               return (
               <div
                 key={run.activity_id}
-                style={{
-                  flex: '1 1 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                  minWidth: 0
-                }}
+                className={CHART_BASE_CLASSES.BAR_CONTAINER}
               >
                 {/* Distance number above bar */}
-                <div className="text-xs font-semibold text-gray-700 mb-1">
-                  {run.distance.toFixed(0)}
+                <div className={getNumberDisplayClasses('medium')}>
+                  {formatChartNumber(run.distance, 'distance')}
                 </div>
 
                 {/* Bar */}
                 <div
-                  className={`${getRunColor(barColor)}`}
+                  className={colorClasses}
                   style={{
+                    ...staticBarStyle,
                     height: `${heightPixels}px`,
-                    width: '100%',
-                    borderRadius: '0.5rem 0.5rem 0 0',
-                    transition: 'all 0.075s cubic-bezier(0.4, 0, 0.2, 1)',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    overflow: 'hidden'
+                    boxShadow: getBarShadowForLongestRuns(barColor, index)
                   }}
                   onMouseEnter={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
@@ -227,59 +176,6 @@ export default function LongestRunsChart({ data, weeklyGoals = [], title = "Week
                   }}
                   onMouseLeave={() => setHoveredRun(null)}
                 >
-
-                  {/* OPTION 2: Subtle Goal Zone with Better Visual Hierarchy (same as WeeklyTrendChart) */}
-                  {/* Very light black opaque shade from goal line to bottom - only render if goal exists and is within bar */}
-                  {goalMiles && goalHeightPixels > 0 && goalHeightPixels <= heightPixels && (
-                    <div
-                      className="absolute left-0 right-0"
-                      style={{
-                        bottom: '0px',
-                        height: `${goalHeightPixels}px`,
-                        background: 'rgba(0, 0, 0, 0.25)', // Darker black opaque shade below the line
-                        zIndex: 1
-                      }}
-                    />
-                  )}
-
-                  {/* Gradient goal line - darkest at top, fades to transparent at bottom - only render if goal exists */}
-                  {goalMiles && goalHeightPixels > 0 && goalHeightPixels <= heightPixels && (
-                    <div
-                      className="absolute left-0 right-0 z-10"
-                      style={{
-                        bottom: `${goalHeightPixels}px`,
-                        height: '10px',
-                        background: 'linear-gradient(to bottom, rgba(0,0,0,0.8), rgba(0,0,0,0.4), rgba(0,0,0,0.25))',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                        zIndex: 10
-                      }}
-                    />
-                  )}
-
-                  {/* Goal Target Line (when goal is above bar) */}
-                  {goalMiles && goalHeightPixels > heightPixels && (
-                    <div
-                      className="absolute left-0 right-0 border-t-3 border-dashed border-gray-700 z-10"
-                      style={{
-                        bottom: `${goalHeightPixels}px`,
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 0 6px rgba(0,0,0,0.3)',
-                        zIndex: 10
-                      }}
-                    />
-                  )}
-
-                  {/* Goal Label */}
-                  {goalMiles && (
-                    <div className="absolute left-1/2 transform -translate-x-1/2 text-sm font-normal text-white"
-                         style={{
-                           bottom: `${goalHeightPixels / 2}px`,
-                           textShadow: '1px 1px 2px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.8)',
-                           zIndex: 15
-                         }}>
-                      {goalMiles} mi
-                    </div>
-                  )}
                 </div>
 
                 {/* Labels */}
