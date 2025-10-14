@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useStaticBarStyle, getBarColorClasses, getNumberDisplayClasses, getChartContainerStyle } from '../../hooks/useChartStyles';
 import { getBarShadow, formatChartNumber, calculateChartContainerHeight, calculateBarHeight } from '../../utils/chartHelpers';
 import { CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
+import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
 
 interface LongestRunData {
   week_start: string;
@@ -27,6 +28,9 @@ interface LongestRunsChartProps {
 
 export default function LongestRunsChart({ data, title = "Weekly Longest Runs", showHeader = true }: LongestRunsChartProps) {
   const [hoveredRun, setHoveredRun] = useState<{ index: number; x: number; y: number } | null>(null);
+
+  // Centralized tooltip behavior - hide on scroll
+  useScrollHideTooltip(hoveredRun !== null, () => setHoveredRun(null));
 
   // Optimized chart data calculation (simplified - focus on longest runs only)
   const chartData = useMemo(() => {
@@ -161,11 +165,6 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
                 {/* Bar */}
                 <div
                   className={colorClasses}
-                  style={{
-                    ...staticBarStyle,
-                    height: `${heightPixels}px`,
-                    boxShadow: getBarShadowForLongestRuns(barColor, index)
-                  }}
                   onMouseEnter={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     setHoveredRun({
@@ -175,6 +174,10 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
                     });
                   }}
                   onMouseLeave={() => setHoveredRun(null)}
+                  style={{
+                    ...staticBarStyle,
+                    height: `${heightPixels}px`
+                  }}
                 >
                 </div>
 

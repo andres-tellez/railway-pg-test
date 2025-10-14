@@ -3,6 +3,7 @@ import ChartHelpTooltip from './ChartHelpTooltip';
 import { useStaticBarStyle, useBarColorClasses, getChartContainerStyle, getNumberDisplayClasses } from '../../hooks/useChartStyles';
 import { getBarShadow, calculateChartContainerHeight, formatChartNumber, calculateBarHeight } from '../../utils/chartHelpers';
 import { CHART_SHADOWS, CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
+import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
 
 interface WeeklyTrendData {
   week: string;
@@ -36,6 +37,9 @@ interface TotalMilesActualVsPlanChartProps {
 
 export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], title = "Total Miles - Actual vs Plan", hrZoneData, showHeader = true, helpTooltip }: TotalMilesActualVsPlanChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
+
+  // Centralized tooltip behavior - hide on scroll
+  useScrollHideTooltip(hoveredBar !== null, () => setHoveredBar(null));
 
   // Use shared getBarShadow function with exceededPlanned option
   const getBarShadowForTotalMiles = (barColor: string, index: number, exceededPlanned: boolean): string => {
@@ -151,7 +155,7 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
 
   // Helper function to get actual total miles bar color classes (using shared logic)
   const getActualTotalMilesBarColorClasses = (colorType: string, isCurrentWeek: boolean) => {
-    const baseClasses = 'w-full rounded-t-lg transition-all duration-75 cursor-pointer relative hover:scale-105 hover:shadow-lg';
+    const baseClasses = CHART_BASE_CLASSES.BAR;
     const currentWeekRing = isCurrentWeek ? 'ring-2 ring-opacity-50' : '';
 
     // Current week is always grey

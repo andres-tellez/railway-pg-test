@@ -3,6 +3,7 @@ import ChartHelpTooltip from './ChartHelpTooltip';
 import { getChartContainerStyle } from '../../hooks/useChartStyles';
 import { calculateChartContainerHeight } from '../../utils/chartHelpers';
 import { CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
+import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
 
 interface WeeklyHRZoneData {
   week: string;
@@ -23,6 +24,9 @@ export default function WeeklyHRZonesChart({
   title = "HR Zones"
 }: WeeklyHRZonesChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
+
+  // Centralized tooltip behavior - hide on scroll
+  useScrollHideTooltip(hoveredBar !== null, () => setHoveredBar(null));
 
   // Zone colors (defined outside the map for reuse)
   // Helper function to format dates as M/D

@@ -3,6 +3,7 @@ import ChartHelpTooltip from './ChartHelpTooltip';
 import { getChartContainerStyle, getNumberDisplayClasses } from '../../hooks/useChartStyles';
 import { calculateChartContainerHeight, formatChartNumber, calculateBarHeight } from '../../utils/chartHelpers';
 import { CHART_LAYOUT } from '../../utils/chartUtils';
+import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
 
 interface WeeklyDistanceData {
   week: string;
@@ -25,6 +26,9 @@ export default function WeeklyDistanceChart({
   avgWeeklyMiles
 }: WeeklyDistanceChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
+
+  // Centralized tooltip behavior - hide on scroll
+  useScrollHideTooltip(hoveredBar !== null, () => setHoveredBar(null));
 
   // Memoize calculations for better performance
   const chartData = useMemo(() => {
