@@ -198,25 +198,26 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
     else:
         weekly_goals = result.weekly_goals if result.weekly_goals else []
 
-    # For current week, update weekly_goals with planned miles from training plan
+    # For previous week (leftmost bar), update weekly_goals with planned miles from training plan
     if user_id and weekly_data:
         planned_miles = get_planned_miles_for_current_week(session, user_id)
         if planned_miles > 0 and weekly_data:
-            # Find current week in weekly_data
+            # Find previous week in weekly_data (now the leftmost bar)
             from datetime import datetime, timedelta
 
             today = datetime.now().date()
             days_since_monday = today.weekday()
             current_week_start = today - timedelta(days=days_since_monday)
-            current_week_str = current_week_start.isoformat()
+            previous_week_start = current_week_start - timedelta(days=7)
+            previous_week_str = previous_week_start.isoformat()
 
-            # Update current week goal (handle both date formats)
+            # Update previous week goal (handle both date formats)
             goal_found = False
             for goal in weekly_goals:
                 goal_week = goal.get("week", "")
-                # Check both formats: '2025-10-13' and '2025-10-13T00:00:00'
-                if goal_week == current_week_str or goal_week.startswith(
-                    current_week_str + "T"
+                # Check both formats: '2025-10-06' and '2025-10-06T00:00:00'
+                if goal_week == previous_week_str or goal_week.startswith(
+                    previous_week_str + "T"
                 ):
                     goal["goal_miles"] = planned_miles
                     goal_found = True
@@ -225,14 +226,14 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
 
             if not goal_found:
                 weekly_goals.append(
-                    {"week": current_week_str, "goal_miles": planned_miles}
+                    {"week": previous_week_str, "goal_miles": planned_miles}
                 )
                 logger.info(
-                    f"📊 Added new goal: week={current_week_str}, goal_miles={planned_miles}"
+                    f"📊 Added new goal: week={previous_week_str}, goal_miles={planned_miles}"
                 )
 
             logger.info(
-                f"📊 Updated weekly_goals with planned miles for current week: {planned_miles}"
+                f"📊 Updated weekly_goals with planned miles for previous week: {planned_miles}"
             )
 
     # Process weekly trends, HR zones, and VO2 estimates

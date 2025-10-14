@@ -3,6 +3,7 @@ import { useStaticBarStyle, getBarColorClasses, getNumberDisplayClasses, getChar
 import { getBarShadow, formatChartNumber, calculateChartContainerHeight, calculateBarHeight } from '../../utils/chartHelpers';
 import { CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
 import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
+import ChartTooltip from './ChartTooltip';
 
 interface LongestRunData {
   week_start: string;
@@ -102,24 +103,6 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
     return getBarShadow(barColor, index);
   };
 
-  const getTrendIcon = (trend: string) => {
-    if (trend === 'improving') return '↑';
-    if (trend === 'declining') return '↓';
-    return '→';
-  };
-
-  const formatHeartRateZones = (zones: any) => {
-    if (!zones) return null;
-    return (
-      <div className="space-y-1">
-        {zones.zone_1 > 0 && <div className="flex justify-between"><span>Zone 1:</span><span>{zones.zone_1}%</span></div>}
-        {zones.zone_2 > 0 && <div className="flex justify-between"><span>Zone 2:</span><span>{zones.zone_2}%</span></div>}
-        {zones.zone_3 > 0 && <div className="flex justify-between"><span>Zone 3:</span><span>{zones.zone_3}%</span></div>}
-        {zones.zone_4 > 0 && <div className="flex justify-between"><span>Zone 4:</span><span>{zones.zone_4}%</span></div>}
-        {zones.zone_5 > 0 && <div className="flex justify-between"><span>Zone 5:</span><span>{zones.zone_5}%</span></div>}
-      </div>
-    );
-  };
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
@@ -184,7 +167,7 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
                 {/* Labels */}
                 <div className="mt-2 text-center">
                   <div className="text-xs text-gray-500">
-                    {formatDate(run.date)}
+                    {formatDate(run.week_start)}
                   </div>
                 </div>
               </div>
@@ -194,82 +177,23 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
             );
           })()}
 
-          {/* Hover Tooltip */}
-          {hoveredRun !== null && (
-            <div
-              className="fixed z-50 bg-gradient-to-br from-gray-800 to-gray-900 border border-gray-600 rounded-lg p-3 shadow-2xl pointer-events-none backdrop-blur-sm"
-              style={{
-                left: `${hoveredRun.x}px`,
-                top: `${hoveredRun.y}px`,
-                transform: "translate(-50%, -100%)",
-                minWidth: "180px",
-                backdropFilter: 'blur(8px)',
-              }}
-            >
-              {(() => {
-                const run = data[hoveredRun.index];
-                return (
-                  <>
-                    {/* Date Header */}
-                    <div className="text-sm font-bold text-blue-400 mb-2 pb-2 border-b border-gray-600">
-                      Wk of {formatDate(run.week_start)}
-                    </div>
-
-                    {/* Run Name */}
-                    <div className="text-white font-semibold mb-2 text-sm">
-                      {run.name}
-                    </div>
-
-                    {/* Stats */}
-                    <div className="space-y-1 text-xs text-gray-300">
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-400">Distance:</span>
-                        <span className="text-white font-semibold">{run.distance.toFixed(2)} mi</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-400">Pace:</span>
-                        <span className="text-white font-semibold">{run.pace}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-400">Duration:</span>
-                        <span className="text-white font-semibold">{run.duration}</span>
-                      </div>
-
-                      {/* Trend Info */}
-                      {run.prev_week_distance && (
-                        <div className="flex items-center gap-1 pt-1 border-t border-gray-700">
-                          <span className="text-gray-400">vs Last Week:</span>
-                          <span className={`font-semibold ${run.change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {getTrendIcon(run.trend)} {run.change_pct >= 0 ? '+' : ''}{run.change_pct.toFixed(1)}%
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Special Badges */}
-                      {run.is_personal_record && (
-                        <div className="pt-1 border-t border-gray-700">
-                          <span className="text-green-400 font-semibold">🏆 Personal Record!</span>
-                        </div>
-                      )}
-                      {run.is_significant_drop && (
-                        <div className="pt-1 border-t border-gray-700">
-                          <span className="text-red-400 font-semibold">⚠️ Significant Drop</span>
-                        </div>
-                      )}
-
-                      {/* Heart Rate Zones */}
-                      {run.heart_rate_zones && (
-                        <div className="pt-2 border-t border-gray-700">
-                          <div className="text-gray-400 mb-1">HR Zones:</div>
-                          {formatHeartRateZones(run.heart_rate_zones)}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          )}
+          {/* Centralized Tooltip */}
+          <ChartTooltip
+            isVisible={hoveredRun !== null}
+            position={hoveredRun ? { x: hoveredRun.x, y: hoveredRun.y } : { x: 0, y: 0 }}
+            data={{
+              week: hoveredRun ? data[hoveredRun.index].week_start : '',
+              runName: hoveredRun ? data[hoveredRun.index].name : undefined,
+              runDistance: hoveredRun ? data[hoveredRun.index].distance : undefined,
+              runPace: hoveredRun ? data[hoveredRun.index].pace : undefined,
+              runDuration: hoveredRun ? data[hoveredRun.index].duration : undefined,
+              runHRZones: hoveredRun ? data[hoveredRun.index].heart_rate_zones : undefined,
+              isPersonalRecord: hoveredRun ? data[hoveredRun.index].is_personal_record : undefined,
+              isSignificantDrop: hoveredRun ? data[hoveredRun.index].is_significant_drop : undefined,
+              prevWeekDistance: hoveredRun ? data[hoveredRun.index].prev_week_distance : undefined,
+              prevWeekPace: hoveredRun && hoveredRun.index < data.length - 1 ? data[hoveredRun.index + 1].pace : undefined
+            }}
+          />
 
           {/* Legend positioned below bars on the right */}
           <div className="flex justify-end mt-4">
@@ -279,15 +203,7 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
                 <span>Actual</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-blue-600 rounded border-2 border-black"></div>
-                <span>Plan</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-green-500 rounded"></div>
-                <span>Personal Record</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-red-500 rounded"></div>
+                <div className="w-4 h-4 bg-red-600 rounded"></div>
                 <span>Significant Drop</span>
               </div>
             </div>

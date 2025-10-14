@@ -141,9 +141,10 @@ export const formatWeekString = (weekString: string): string => {
   try {
     const dateStr = weekString;
     const date = new Date(dateStr);
-    const month = date.getMonth() + 1;
+    const month = date.toLocaleDateString('en-US', { month: 'short' });
     const day = date.getDate();
-    return `Wk of ${month}/${day}`;
+    const year = date.getFullYear();
+    return `Wk of ${month} ${day}, ${year}`;
   } catch (error) {
     return weekString; // fallback to original string
   }

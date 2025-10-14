@@ -55,7 +55,7 @@ export const CHART_COLORS = {
   BACKGROUND: {
     NORMAL: 'bg-blue-500',
     PERSONAL_RECORD: 'bg-green-500',
-    SIGNIFICANT_DROP: 'bg-red-500',
+    SIGNIFICANT_DROP: 'bg-red-600',
     CURRENT_WEEK: 'bg-gray-500'
   },
   /** Text colors for different states */

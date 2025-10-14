@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import ChartHelpTooltip from './ChartHelpTooltip';
+import ChartTooltip from './ChartTooltip';
 import { useStaticBarStyle, getNumberDisplayClasses, getChartContainerStyle } from '../../hooks/useChartStyles';
 import { calculateChartContainerHeight, calculateBarHeight } from '../../utils/chartHelpers';
 import { CHART_LAYOUT, CHART_SHADOWS, CHART_BASE_CLASSES } from '../../utils/chartUtils';
@@ -232,53 +233,24 @@ export default function WeeklyPaceChart({
           );
         })()}
 
-        {/* Custom Tooltip */}
-        {hoveredBar && (
-          <div
-            className="fixed z-50 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg pointer-events-none transition-all duration-100 ease-out transform"
-            style={{
-              left: `${hoveredBar.x}px`,
-              top: `${hoveredBar.y}px`,
-              transform: 'translateX(-50%) translateY(-100%)',
-              opacity: hoveredBar ? 1 : 0,
-              animation: 'fadeInUp 0.1s ease-out'
-            }}
-          >
-            <div className={CHART_BASE_CLASSES.TOOLTIP_CONTAINER}>
-              <div>
-                {(() => {
-                  try {
-                    const dateStr = data[hoveredBar.index].week;
-                    // Handle different date formats
-                    if (dateStr.includes('T')) {
-                      // Already has time component
-                      return new Date(dateStr).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      });
-                    } else {
-                      // Add time component to make it local time
-                      return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      });
-                    }
-                  } catch (error) {
-                    // Fallback if date parsing fails
-                    return data[hoveredBar.index].week;
-                  }
-                })()}
-              </div>
-              <div className="text-blue-300">
-                {data[hoveredBar.index].avgPace} min/mi
-              </div>
-            </div>
-            {/* Arrow pointing down */}
-            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-3 border-r-3 border-t-3 border-transparent border-t-gray-800"></div>
-          </div>
-        )}
+        {/* Centralized Tooltip */}
+        <ChartTooltip
+          isVisible={hoveredBar !== null}
+          position={hoveredBar ? { x: hoveredBar.x, y: hoveredBar.y } : { x: 0, y: 0 }}
+          data={{
+            week: hoveredBar ? data[hoveredBar.index].week : '',
+            value: hoveredBar ? parsePaceToMinutes(data[hoveredBar.index].avgPace) : 0,
+            unit: 'min/mi',
+            runs: hoveredBar ? data[hoveredBar.index].runs : undefined,
+            distance: hoveredBar ? data[hoveredBar.index].distance : undefined,
+            trend: hoveredBar && hoveredBar.index < data.length - 1 ?
+              (parsePaceToMinutes(data[hoveredBar.index].avgPace) < parsePaceToMinutes(data[hoveredBar.index + 1].avgPace) ? 'improving' : 'declining') :
+              undefined,
+            changePct: hoveredBar && hoveredBar.index < data.length - 1 ?
+              ((parsePaceToMinutes(data[hoveredBar.index].avgPace) - parsePaceToMinutes(data[hoveredBar.index + 1].avgPace)) / parsePaceToMinutes(data[hoveredBar.index + 1].avgPace)) * 100 :
+              undefined
+          }}
+        />
       </div>
     </div>
   );

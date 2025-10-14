@@ -19,7 +19,7 @@ export default function HeartRateZoneChart({ hrZones, title = "Heart Rate Zone D
     { zone: 'Zone 1', percentage: hrZones.zone_1, color: '#3B82F6', description: 'Recovery' },
     { zone: 'Zone 2', percentage: hrZones.zone_2, color: '#10B981', description: 'Aerobic Base' },
     { zone: 'Zone 3', percentage: hrZones.zone_3, color: '#F59E0B', description: 'Tempo' },
-    { zone: 'Zone 4', percentage: hrZones.zone_4, color: '#EF4444', description: 'Threshold' },
+    { zone: 'Zone 4', percentage: hrZones.zone_4, color: '#DC2626', description: 'Threshold' },
     { zone: 'Zone 5', percentage: hrZones.zone_5, color: '#8B5CF6', description: 'VO2 Max' }
   ];
 

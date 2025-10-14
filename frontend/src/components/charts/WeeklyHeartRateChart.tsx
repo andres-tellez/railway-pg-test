@@ -49,7 +49,7 @@ export default function WeeklyHeartRateChart({ data, title = "Weekly Heart Rate 
     zone_1: '#3B82F6', // Blue - Recovery
     zone_2: '#10B981', // Green - Aerobic Base
     zone_3: '#F59E0B', // Orange - Tempo
-    zone_4: '#EF4444', // Red - Threshold
+    zone_4: '#DC2626', // Red - Threshold
     zone_5: '#8B5CF6'  // Purple - VO2 Max
   };
 
