@@ -72,6 +72,7 @@ from src.routes.metrics_routes import metrics_bp
 from src.routes.training_plan_routes import training_plan_bp
 from src.routes.webhook_routes import webhook_bp
 from src.routes.longest_runs_routes import longest_runs_bp
+from src.routes.gyr_metrics_routes import gyr_metrics_bp
 from src.db.models import Plan  # Update this import to match your structure
 
 
@@ -131,6 +132,7 @@ def create_app(test_config=None):
     app.register_blueprint(user_profile_bp)
     app.register_blueprint(metrics_bp, url_prefix="/api/metrics")
     app.register_blueprint(longest_runs_bp, url_prefix="/api/longest-runs")
+    app.register_blueprint(gyr_metrics_bp, url_prefix="/api/gyr-metrics")
     app.register_blueprint(training_plan_bp)
     app.register_blueprint(auth_me_bp)
     app.register_blueprint(webhook_bp, url_prefix="/webhooks")

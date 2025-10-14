@@ -158,15 +158,10 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
     const baseClasses = CHART_BASE_CLASSES.BAR;
     const currentWeekRing = isCurrentWeek ? 'ring-2 ring-opacity-50' : '';
 
-    // Current week is always grey
-    if (isCurrentWeek) {
-      return `${baseClasses} bg-gray-500 ${currentWeekRing} ring-gray-200`;
-    }
-
-    // Other weeks use their respective colors
-    if (colorType === 'personal_record') return `${baseClasses} bg-green-500`;
-    if (colorType === 'significant_drop') return `${baseClasses} bg-red-500`;
-    return `${baseClasses} bg-blue-500`;
+    // All weeks use their respective colors based on performance
+    if (colorType === 'personal_record') return `${baseClasses} bg-green-500 ${currentWeekRing} ring-green-200`;
+    if (colorType === 'significant_drop') return `${baseClasses} bg-red-500 ${currentWeekRing} ring-red-200`;
+    return `${baseClasses} bg-blue-500 ${currentWeekRing} ring-blue-200`;
   };
 
   // Zone colors (defined outside the map for reuse)

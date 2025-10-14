@@ -34,7 +34,7 @@ def get_planned_miles_for_current_week(session, user_id):
         week_start = today - timedelta(days=days_since_monday)
         week_end = week_start + timedelta(days=6)  # Sunday
 
-        logger.info(f"📅 Calculating planned miles for week {week_start} to {week_end}")
+        logger.info(f" Calculating planned miles for week {week_start} to {week_end}")
 
         # Get the user's most recent plan
         plan_result = session.execute(
@@ -73,7 +73,7 @@ def get_planned_miles_for_current_week(session, user_id):
         total_planned_miles = sum(workout[0] for workout in workouts_result)
 
         logger.info(
-            f"📊 Found {len(workouts_result)} planned workouts totaling {total_planned_miles} miles"
+            f" Found {len(workouts_result)} planned workouts totaling {total_planned_miles} miles"
         )
 
         return float(total_planned_miles)
@@ -101,7 +101,7 @@ def get_planned_miles_for_week(session, user_id, target_date):
         week_start = target_date - timedelta(days=days_since_monday)
         week_end = week_start + timedelta(days=6)  # Sunday
 
-        logger.info(f"📅 Calculating planned miles for week {week_start} to {week_end}")
+        logger.info(f" Calculating planned miles for week {week_start} to {week_end}")
 
         # Get the user's most recent plan
         plan_result = session.execute(
@@ -184,7 +184,7 @@ def get_weekly_planned_miles_history(session, user_id, weeks=20):
         # Reverse to get chronological order (oldest first)
         weekly_data.reverse()
 
-        logger.info(f"📊 Generated {len(weekly_data)} weeks of planned miles data")
+        logger.info(f" Generated {len(weekly_data)} weeks of planned miles data")
 
         return weekly_data
 

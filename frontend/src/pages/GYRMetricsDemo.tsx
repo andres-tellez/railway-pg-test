@@ -1,54 +1,123 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useApiClient } from '../utils/apiClient';
 import GYRMetricCard from '../components/cards/GYRMetricCard';
 
-export default function GYRMetricsDemo() {
-  // Mock data for Weekly Total Runs - Last 8 weeks (most recent first)
-  const weeklyTotalRunsScores = [
-    { value: 85, date: '2024-06-11', status: 'yellow' as const }, // This week
-    { value: 72, date: '2024-06-04', status: 'red' as const },    // 1 week ago
-    { value: 0, date: '2024-05-28', status: 'gray' as const },   // 2 weeks ago
-    { value: 65, date: '2024-05-21', status: 'red' as const },   // 3 weeks ago
-    { value: 88, date: '2024-05-14', status: 'yellow' as const }, // 4 weeks ago
-    { value: 93, date: '2024-05-07', status: 'green' as const }, // 5 weeks ago
-    { value: 86, date: '2024-04-30', status: 'yellow' as const }, // 6 weeks ago
-    { value: 82, date: '2024-04-23', status: 'yellow' as const }  // 7 weeks ago (8 weeks ago)
-  ];
+interface GYRScore {
+  value: number;
+  date: string;
+  status: 'green' | 'yellow' | 'red' | 'gray';
+}
 
-  // Mock data for Weekly Pace - Last 8 weeks (most recent first)
-  const weeklyPaceScores = [
-    { value: 95, date: '2024-06-11', status: 'green' as const }, // This week
-    { value: 88, date: '2024-06-04', status: 'yellow' as const }, // 1 week ago
-    { value: 92, date: '2024-05-28', status: 'green' as const }, // 2 weeks ago
-    { value: 85, date: '2024-05-21', status: 'yellow' as const }, // 3 weeks ago
-    { value: 78, date: '2024-05-14', status: 'red' as const },   // 4 weeks ago
-    { value: 91, date: '2024-05-07', status: 'green' as const }, // 5 weeks ago
-    { value: 87, date: '2024-04-30', status: 'yellow' as const }, // 6 weeks ago
-    { value: 83, date: '2024-04-23', status: 'yellow' as const }  // 7 weeks ago
-  ];
+interface GYRMetricData {
+  historicalScores: GYRScore[];
+  criteria: {
+    green: string;
+    yellow: string;
+    red: string;
+  };
+}
+
+interface GYRScoresResponse {
+  totalRuns: GYRMetricData;
+  weeklyPace: GYRMetricData;
+  weeklyHRZones: GYRMetricData;
+}
+
+export default function GYRMetricsDemo() {
+  const apiClient = useApiClient();
+  const [gyrData, setGyrData] = useState<GYRScoresResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchGYRScores = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const response = await apiClient.get('/api/gyr-metrics/scores', {
+          params: { weeks: 8 }
+        });
+
+        console.log('🎯 GYR Scores loaded:', response.data);
+        setGyrData(response.data);
+      } catch (err) {
+        console.error('❌ Error fetching GYR scores:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load GYR scores');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchGYRScores();
+  }, []); // Remove apiClient dependency to prevent infinite loop
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading GYR metrics...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-500 text-xl mb-2">⚠️</div>
+          <p className="text-gray-900 font-semibold mb-2">Failed to load GYR metrics</p>
+          <p className="text-gray-600">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // No data state
+  if (!gyrData) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600">No GYR data available</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">GYR Metrics Demo</h1>
-          <p className="text-gray-600">Green/Yellow/Red logic for training metrics</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">GYR Metrics</h1>
+          <p className="text-gray-600">Real-time training performance indicators</p>
         </div>
 
-        {/* Two Cards Demo */}
+        {/* Three Cards with Real Data */}
         <div className="flex gap-6 justify-center">
           <GYRMetricCard
             title="Total Runs"
-            historicalScores={weeklyTotalRunsScores}
-            greenCriteria="90–110% of plan"
-            yellowCriteria="70–90% or 110–130%"
-            redCriteria="<70% or >130%"
+            historicalScores={gyrData.totalRuns.historicalScores}
+            greenCriteria={gyrData.totalRuns.criteria.green}
+            yellowCriteria={gyrData.totalRuns.criteria.yellow}
+            redCriteria={gyrData.totalRuns.criteria.red}
           />
           <GYRMetricCard
             title="Weekly Pace"
-            historicalScores={weeklyPaceScores}
-            greenCriteria="Same or faster"
-            yellowCriteria="Up to 10s/mi slower"
-            redCriteria=">10s/mi slower"
+            historicalScores={gyrData.weeklyPace.historicalScores}
+            greenCriteria={gyrData.weeklyPace.criteria.green}
+            yellowCriteria={gyrData.weeklyPace.criteria.yellow}
+            redCriteria={gyrData.weeklyPace.criteria.red}
+          />
+          <GYRMetricCard
+            title="Weekly HR Zones"
+            historicalScores={gyrData.weeklyHRZones.historicalScores}
+            greenCriteria={gyrData.weeklyHRZones.criteria.green}
+            yellowCriteria={gyrData.weeklyHRZones.criteria.yellow}
+            redCriteria={gyrData.weeklyHRZones.criteria.red}
           />
         </div>
       </div>
