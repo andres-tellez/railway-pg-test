@@ -78,26 +78,41 @@ def fetch_single_activity(activity_id):
         if not athlete_id:
             # Try to get athlete_id from authenticated user
             from flask import g
+
             user_id = getattr(g, "user_id", None)
             if user_id:
-                mapping = session.query(UserAthleteLink).filter_by(user_id=user_id).first()
+                mapping = (
+                    session.query(UserAthleteLink).filter_by(user_id=user_id).first()
+                )
                 if mapping:
                     athlete_id = mapping.athlete_id
-                    logger.info(f"✅ Auto-detected athlete_id={athlete_id} for user_id={user_id}")
+                    logger.info(
+                        f"✅ Auto-detected athlete_id={athlete_id} for user_id={user_id}"
+                    )
 
         if not athlete_id:
-            return jsonify({
-                "status": "error",
-                "message": "athlete_id required (pass as query param or authenticate)"
-            }), 400
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "athlete_id required (pass as query param or authenticate)",
+                    }
+                ),
+                400,
+            )
 
         # Get valid Strava access token
         access_token = get_valid_token(session, athlete_id)
         if not access_token:
-            return jsonify({
-                "status": "error",
-                "message": f"No valid token for athlete {athlete_id}"
-            }), 401
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": f"No valid token for athlete {athlete_id}",
+                    }
+                ),
+                401,
+            )
 
         # Fetch activity from Strava (webhook-style!)
         logger.info(f"📥 Fetching activity {activity_id} from Strava API...")
@@ -105,28 +120,47 @@ def fetch_single_activity(activity_id):
         activity_data = client.get_activity(activity_id)
 
         if not activity_data:
-            return jsonify({
-                "status": "error",
-                "message": f"Failed to fetch activity {activity_id} from Strava"
-            }), 404
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": f"Failed to fetch activity {activity_id} from Strava",
+                    }
+                ),
+                404,
+            )
 
         # Check if it's a run
         activity_type = activity_data.get("type")
         if activity_type != "Run":
-            logger.info(f"ℹ️ Activity {activity_id} is type '{activity_type}', not a run")
-            return jsonify({
-                "status": "skipped",
-                "message": f"Activity is type '{activity_type}', not a run",
-                "activity_type": activity_type
-            }), 200
+            logger.info(
+                f"ℹ️ Activity {activity_id} is type '{activity_type}', not a run"
+            )
+            return (
+                jsonify(
+                    {
+                        "status": "skipped",
+                        "message": f"Activity is type '{activity_type}', not a run",
+                        "activity_type": activity_type,
+                    }
+                ),
+                200,
+            )
 
         # Get user_id for this athlete
-        mapping = session.query(UserAthleteLink).filter_by(athlete_id=athlete_id).first()
+        mapping = (
+            session.query(UserAthleteLink).filter_by(athlete_id=athlete_id).first()
+        )
         if not mapping:
-            return jsonify({
-                "status": "error",
-                "message": f"No user mapping found for athlete {athlete_id}"
-            }), 404
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": f"No user mapping found for athlete {athlete_id}",
+                    }
+                ),
+                404,
+            )
 
         user_id = mapping.user_id
 
@@ -140,29 +174,114 @@ def fetch_single_activity(activity_id):
 
         if inserted > 0:
             logger.info(f"✅ Successfully stored activity {activity_id}")
-            return jsonify({
-                "status": "success",
-                "message": f"Activity {activity_id} fetched and stored",
-                "activity_id": activity_id,
-                "activity_type": activity_type,
-                "name": activity_data.get("name"),
-                "distance": activity_data.get("distance"),
-                "moving_time": activity_data.get("moving_time")
-            }), 200
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": f"Activity {activity_id} fetched and stored",
+                        "activity_id": activity_id,
+                        "activity_type": activity_type,
+                        "name": activity_data.get("name"),
+                        "distance": activity_data.get("distance"),
+                        "moving_time": activity_data.get("moving_time"),
+                    }
+                ),
+                200,
+            )
         else:
             logger.warning(f"⚠️ Activity {activity_id} not inserted (may already exist)")
-            return jsonify({
-                "status": "success",
-                "message": f"Activity {activity_id} already exists",
-                "activity_id": activity_id
-            }), 200
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": f"Activity {activity_id} already exists",
+                        "activity_id": activity_id,
+                    }
+                ),
+                200,
+            )
 
     except Exception as e:
         logger.exception(f"❌ Failed to fetch activity {activity_id}")
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
     finally:
         session.close()
+
+
+@admin_bp.route("/athletes")
+def get_athletes():
+    """Get list of all athletes for admin dropdown."""
+    session = get_session()
+    try:
+        athletes = session.query(UserAthleteLink).all()
+        athlete_list = [
+            {
+                "athlete_id": athlete.athlete_id,
+                "user_id": str(athlete.user_id),
+                "display_name": f"Athlete {athlete.athlete_id}",
+            }
+            for athlete in athletes
+        ]
+        return jsonify({"athletes": athlete_list}), 200
+    except Exception as e:
+        logger.exception(f"❌ Failed to fetch athletes")
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        session.close()
+
+
+@admin_bp.route("/sync-activities", methods=["POST"])
+def sync_activities():
+    """Sync activities for a specific athlete in a date range."""
+    try:
+        data = request.get_json()
+        athlete_id = data.get("athlete_id")
+        start_date = data.get("start_date")  # YYYY-MM-DD format
+        end_date = data.get("end_date")  # YYYY-MM-DD format
+
+        if not athlete_id or not start_date or not end_date:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Missing required fields: athlete_id, start_date, end_date",
+                    }
+                ),
+                400,
+            )
+
+        # Convert dates to Unix timestamps
+        from datetime import datetime
+
+        start_timestamp = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
+        end_timestamp = int(datetime.strptime(end_date, "%Y-%m-%d").timestamp())
+
+        logger.info(
+            f"🔄 Syncing activities for athlete {athlete_id} from {start_date} to {end_date}"
+        )
+
+        # Call the existing function with date range
+        result = run_full_ingestion_and_enrichment(
+            _unused_session=None,
+            athlete_id=athlete_id,
+            after=start_timestamp,
+            before=end_timestamp,
+            max_activities=None,  # Use env var setting
+        )
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "result": result,
+                    "athlete_id": athlete_id,
+                    "date_range": f"{start_date} to {end_date}",
+                }
+            ),
+            200,
+        )
+
+    except Exception as e:
+        logger.exception(f"❌ Failed to sync activities")
+        return jsonify({"status": "error", "message": str(e)}), 500

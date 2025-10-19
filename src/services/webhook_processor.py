@@ -24,7 +24,10 @@ Supported Events:
 from src.db.models.webhook_events import WebhookEvent, WebhookEventStatus
 from src.db.models.user_athletes import UserAthleteLink
 from src.db.models.activities import Activity
-from src.services.activity_service import ActivityIngestionService
+from src.services.activity_service import (
+    ActivityIngestionService,
+    enrich_one_activity_with_refresh,
+)
 from src.db.dao.activity_dao import ActivityDAO
 from src.services.strava_access_service import StravaClient
 from src.services.token_service import get_valid_token
@@ -94,9 +97,7 @@ def process_webhook_event(session: Session, event_id: int):
         return success
 
     except Exception as e:
-        logger.error(
-            f"❌ Exception processing event {event_id}: {e}", exc_info=True
-        )
+        logger.error(f"❌ Exception processing event {event_id}: {e}", exc_info=True)
 
         # Update event with error
         try:
@@ -180,19 +181,13 @@ def _handle_activity_create(
     This is the main webhook event we care about!
     """
     try:
-        logger.info(
-            f"📥 Fetching new activity {activity_id} for athlete {athlete_id}"
-        )
+        logger.info(f"📥 Fetching new activity {activity_id} for athlete {athlete_id}")
 
         # Check if activity already exists
-        existing = (
-            session.query(Activity).filter_by(activity_id=activity_id).first()
-        )
+        existing = session.query(Activity).filter_by(activity_id=activity_id).first()
 
         if existing:
-            logger.info(
-                f"ℹ️ Activity {activity_id} already exists, skipping fetch"
-            )
+            logger.info(f"ℹ️ Activity {activity_id} already exists, skipping fetch")
             return True
 
         # Get valid Strava access token
@@ -228,8 +223,14 @@ def _handle_activity_create(
                 f"✅ Successfully stored activity {activity_id} for athlete {athlete_id}"
             )
 
-            # TODO: Trigger enrichment in background (optional)
-            # This could fetch streams, HR zones, splits, etc.
+            # Trigger enrichment for the newly stored activity
+            try:
+                logger.info(f"🔄 Starting enrichment for activity {activity_id}")
+                enrich_one_activity_with_refresh(session, athlete_id, activity_id)
+                logger.info(f"✅ Successfully enriched activity {activity_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to enrich activity {activity_id}: {e}")
+                # Don't fail the webhook if enrichment fails - activity is still stored
 
             return True
         else:

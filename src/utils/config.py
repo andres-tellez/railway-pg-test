@@ -37,6 +37,7 @@ class Config:
     # ===== Business Rules =====
     MIN_ACTIVITIES_REQUIRED = int(os.getenv("MIN_ACTIVITIES_REQUIRED", 1))
     MAX_ACTIVITIES_TO_DOWNLOAD = int(os.getenv("MAX_ACTIVITIES_TO_DOWNLOAD", 50))
+    STRAVA_PER_PAGE = int(os.getenv("STRAVA_PER_PAGE", 200))  # Strava API limit is 200
 
 
 # Export single instance for import convenience

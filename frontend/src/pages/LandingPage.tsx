@@ -3,6 +3,9 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "../utils/apiClient";
 import { useNavigate } from "react-router-dom";
 import SafetyWarningModal from "../components/SafetyWarningModal";
+import StravaConnectButton from "../components/StravaConnectButton";
+import StravaAttribution from "../components/StravaAttribution";
+import StravaConsentModal from "../components/StravaConsentModal";
 
 const SetupPage: React.FC = () => {
   const { user, isAuthenticated, isLoading } = useAuth0();
@@ -18,6 +21,9 @@ const SetupPage: React.FC = () => {
   // Safety warning modal state
   const [showSafetyModal, setShowSafetyModal] = useState(false);
   const [safetyMessage, setSafetyMessage] = useState('');
+
+  // Consent modal state
+  const [showConsentModal, setShowConsentModal] = useState(false);
 
   const hasPostedIdentity = useRef(false);
 
@@ -88,6 +94,20 @@ const SetupPage: React.FC = () => {
     }
   }, []);
 
+  const handleConnectClick = () => {
+    // Show consent modal instead of directly connecting
+    setShowConsentModal(true);
+  };
+
+  const handleConsentAccept = () => {
+    setShowConsentModal(false);
+    connectStrava();
+  };
+
+  const handleConsentDecline = () => {
+    setShowConsentModal(false);
+  };
+
   const connectStrava = () => {
     if (!userId) {
       console.error("❌ Cannot connect Strava: no internal userId yet");
@@ -96,6 +116,11 @@ const SetupPage: React.FC = () => {
 
     const apiBase = import.meta.env.VITE_BACKEND_URL;
     setSyncing(true);
+
+    // Log consent timestamp (you can also send this to backend)
+    const consentTimestamp = new Date().toISOString();
+    console.log("✅ User consent granted at:", consentTimestamp);
+    localStorage.setItem('strava_consent_timestamp', consentTimestamp);
 
     window.location.href = `${apiBase}/auth/strava-login?user_id=${encodeURIComponent(
       userId
@@ -181,13 +206,20 @@ const SetupPage: React.FC = () => {
               </p>
             </div>
           ) : (
-            <p className="text-sm text-gray-600 mt-1">
-              {userId
-                ? step === 1
-                  ? "Click to connect your Strava account"
-                  : "Click to reconnect or sync Strava data"
-                : "Waiting for identity…"}
-            </p>
+            <div className="mt-4 flex flex-col items-center">
+              <StravaConnectButton
+                onClick={handleConnectClick}
+                disabled={!userId || syncing || forceSyncing}
+              />
+              <StravaAttribution className="mt-2" />
+              <p className="text-sm text-gray-600 mt-1 text-center">
+                {userId
+                  ? step === 1
+                    ? "Connect your Strava account to get started"
+                    : "Reconnect or sync Strava data"
+                  : "Waiting for identity…"}
+              </p>
+            </div>
           )}
         </div>
 
@@ -254,6 +286,14 @@ const SetupPage: React.FC = () => {
       onClose={() => setShowSafetyModal(false)}
       message={safetyMessage}
     />
+
+    {/* Strava Consent Modal */}
+    {showConsentModal && (
+      <StravaConsentModal
+        onAccept={handleConsentAccept}
+        onDecline={handleConsentDecline}
+      />
+    )}
     </>
   );
 };

@@ -50,9 +50,9 @@ def run_full_ingestion_and_enrichment(
         time.sleep(2)
         # -------------------------
 
-        max_activities = max_activities or 200
-        batch_size = batch_size or min(200, 50)
-        per_page = per_page or min(200, 50)
+        max_activities = max_activities or config.MAX_ACTIVITIES_TO_DOWNLOAD
+        batch_size = batch_size or min(config.MAX_ACTIVITIES_TO_DOWNLOAD, 50)
+        per_page = per_page or min(config.MAX_ACTIVITIES_TO_DOWNLOAD, 50)
 
         # Token handling
         tokens = get_tokens_sa(session, athlete_id)
@@ -166,7 +166,10 @@ def run_full_ingestion_and_enrichment(
         # Refresh materialized view after successful ingestion
         try:
             from sqlalchemy import text
-            session.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_athlete_metrics;"))
+
+            session.execute(
+                text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_athlete_metrics;")
+            )
             session.commit()
             logger.info("Refreshed materialized view for metrics")
         except Exception as e:
@@ -175,14 +178,13 @@ def run_full_ingestion_and_enrichment(
         # Invalidate metrics cache for this athlete after successful ingestion
         try:
             from src.services.metrics_cache_service import invalidate_athlete_cache
+
             invalidate_athlete_cache(athlete_id)
             logger.info(f"Invalidated metrics cache for athlete {athlete_id}")
         except Exception as e:
             logger.warning(f"Failed to invalidate cache for athlete {athlete_id}: {e}")
 
-        logger.info(
-            f"Finished ingestion. Synced={inserted_count}, Enriched={enriched}"
-        )
+        logger.info(f"Finished ingestion. Synced={inserted_count}, Enriched={enriched}")
         return {"synced": inserted_count, "enriched": enriched}
 
     except Exception as e:

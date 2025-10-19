@@ -58,9 +58,9 @@ class StravaClient:
         if limit is None:
             limit = config.MAX_ACTIVITIES_TO_DOWNLOAD
 
-        # Default per_page = min(limit, 200) (Strava caps at 200)
+        # Default per_page = min(limit, STRAVA_PER_PAGE) (Strava caps at 200)
         if per_page is None:
-            per_page = min(limit, 200)
+            per_page = min(limit, config.STRAVA_PER_PAGE)
 
         while len(all_activities) < limit:
             params = {

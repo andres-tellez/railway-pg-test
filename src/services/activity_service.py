@@ -13,6 +13,7 @@ from src.services.token_service import get_valid_token
 from src.db.dao.split_dao import upsert_splits
 from src.db.dao.activity_dao import ActivityDAO
 from src.services.strava_access_service import StravaClient
+from src.utils.config import config
 from src.utils.logger import get_logger
 from src.utils.conversions import convert_metrics
 from src.db.models.activities import Activity
@@ -339,26 +340,31 @@ class ActivityIngestionService:
         access_token = get_valid_token(self.session, self.athlete_id)
         self.client = StravaClient(access_token)
 
-    def fetch_all_activities(self, after=None, before=None, per_page=200, limit=None):
+    def fetch_all_activities(self, after=None, before=None, per_page=None, limit=None):
         """Fetch all activities from Strava with pagination."""
         self._refresh_client()
         page = 1
         results = []
         while True:
             batch = self.client.get_activities(
-                after=after, before=before, per_page=per_page, page=page
+                after=after,
+                before=before,
+                per_page=per_page or config.STRAVA_PER_PAGE,
+                page=page,
             )
             if not batch:
                 break
             results.extend(batch)
-            log.info(f"[INFO] Page {page} -> {len(batch)} activities (total={len(results)})")
+            log.info(
+                f"[INFO] Page {page} -> {len(batch)} activities (total={len(results)})"
+            )
             if limit and len(results) >= limit:
                 return results[:limit]
             page += 1
         return results
 
     def ingest_full_history(
-        self, lookback_days=None, max_activities=None, per_page=200, dry_run=False
+        self, lookback_days=None, max_activities=None, per_page=None, dry_run=False
     ):
         after = (
             int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
@@ -366,7 +372,9 @@ class ActivityIngestionService:
             else None
         )
         all_activities = self.fetch_all_activities(
-            after=after, per_page=per_page, limit=max_activities
+            after=after,
+            per_page=per_page or config.STRAVA_PER_PAGE,
+            limit=max_activities,
         )
         all_activities = [a for a in all_activities if a.get("type") == "Run"]
 
@@ -383,13 +391,16 @@ class ActivityIngestionService:
         ActivityDAO.upsert_activities(self.session, self.athlete_id, all_activities)
         return len(all_activities)
 
-    def ingest_between(self, start_date, end_date, max_activities=None, per_page=200):
+    def ingest_between(self, start_date, end_date, max_activities=None, per_page=None):
         """Ingest activities between date range."""
         self._refresh_client()
         after = int(start_date.timestamp())
         before = int(end_date.timestamp())
         activities = self.client.get_activities(
-            after=after, before=before, per_page=per_page, limit=max_activities
+            after=after,
+            before=before,
+            per_page=per_page or config.STRAVA_PER_PAGE,
+            limit=max_activities,
         )
         activities = [a for a in activities if a.get("type") == "Run"]
 

@@ -42,6 +42,9 @@ import SimpleMetricsCopy from "./pages/SimpleMetricsCopy";
 import VO2Metrics from "./pages/VO2Metrics";
 import GYRMetricsDemo from "./pages/GYRMetricsDemo";
 import Metrics from "./pages/Metrics";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
+import Admin from "./pages/Admin";
 
 import Layout from "./components/Layout";
 import SmartRouter from "./components/SmartRouter";
@@ -122,6 +125,8 @@ export default function App() {
       {/* Public Routes */}
       <Route path="/welcome" element={<WelcomePage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+      <Route path="/terms-of-service" element={<TermsOfService />} />
 
       {/* Smart Routing */}
       <Route path="/" element={<SmartRouter />} />
@@ -245,6 +250,18 @@ export default function App() {
           <ProtectedRoute>
             <Layout>
               <PlanPage />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Admin Routes */}
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <Admin />
             </Layout>
           </ProtectedRoute>
         }
