@@ -24,7 +24,6 @@ from src.db.models.user_identity import UserIdentity
 from src.db.models.user_profile import UserProfile
 from src.db.models.user_athletes import UserAthleteLink
 from src.db.models.activities import Activity
-from src.db.models.plans import Plan
 from src.db.models.tokens import Token
 
 user_data_bp = Blueprint("user_data", __name__)
@@ -129,25 +128,9 @@ def export_user_data():
             for act in activities
         ]
 
-        # 5. Training Plans
-        plans = session.query(Plan).filter_by(user_id=internal_user_id).all()
-        export_data["data"]["training_plans"] = [
-            {
-                "plan_id": plan.id,
-                "plan_name": plan.plan_name,
-                "notes": plan.notes,
-                "start_date": plan.start_date.isoformat() if plan.start_date else None,
-                "race_date": plan.race_date.isoformat() if plan.race_date else None,
-                "race_distance": plan.race_distance,
-                "created_at": plan.created_at.isoformat() if plan.created_at else None,
-            }
-            for plan in plans
-        ]
-
         # Count totals
         export_data["summary"] = {
             "total_activities": len(activities),
-            "total_plans": len(plans),
             "total_strava_connections": len(athlete_links),
         }
 
@@ -333,7 +316,6 @@ def get_data_summary():
         activities_count = (
             session.query(Activity).filter_by(user_id=internal_user_id).count()
         )
-        plans_count = session.query(Plan).filter_by(user_id=internal_user_id).count()
         athlete_links_count = (
             session.query(UserAthleteLink).filter_by(user_id=internal_user_id).count()
         )
@@ -353,7 +335,6 @@ def get_data_summary():
                     "user_id": str(internal_user_id),
                     "data_stored": {
                         "activities": activities_count,
-                        "training_plans": plans_count,
                         "strava_connections": athlete_links_count,
                         "has_profile": has_profile,
                         "has_identity": has_identity,
