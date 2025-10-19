@@ -49,9 +49,8 @@ const PrivacyPolicy: React.FC = () => {
             <h2 className="text-2xl font-semibold text-gray-900 mb-3">3. How We Use Your Information</h2>
             <p>We use the collected information for the following purposes:</p>
             <ul className="list-disc pl-6 mt-2 space-y-1">
-              <li><strong>Training Plan Generation:</strong> Creating personalized marathon training plans based on your activity history and fitness level</li>
               <li><strong>Performance Analysis:</strong> Analyzing your running metrics to provide insights and recommendations</li>
-              <li><strong>Progress Tracking:</strong> Monitoring your training progress and plan adherence</li>
+              <li><strong>Progress Tracking:</strong> Monitoring your training progress and performance</li>
               <li><strong>Service Improvement:</strong> Improving SmartCoach features and user experience</li>
               <li><strong>Authentication:</strong> Maintaining your account security</li>
             </ul>
@@ -68,7 +67,7 @@ const PrivacyPolicy: React.FC = () => {
             <h3 className="text-xl font-semibold text-gray-800 mb-2 mt-4">4.2 Limited Sharing</h3>
             <p>We only share your information in the following limited circumstances:</p>
             <ul className="list-disc pl-6 mt-2 space-y-1">
-              <li><strong>Service Providers:</strong> We use OpenAI's GPT API to generate training plans. Your data is used only as input and is not used to train AI models.</li>
+              <li><strong>Service Providers:</strong> We use OpenAI's GPT API for analysis and insights. Your data is used only as input and is not used to train AI models.</li>
               <li><strong>Authentication:</strong> Auth0 for secure account management</li>
               <li><strong>Legal Requirements:</strong> When required by law or to protect our rights</li>
             </ul>
@@ -125,7 +124,7 @@ const PrivacyPolicy: React.FC = () => {
             </p>
             <ul className="list-disc pl-6 mt-2 space-y-1">
               <li>Strava activity data</li>
-              <li>Training plans and preferences</li>
+              <li>Training preferences</li>
               <li>Profile information</li>
               <li>Account credentials</li>
             </ul>

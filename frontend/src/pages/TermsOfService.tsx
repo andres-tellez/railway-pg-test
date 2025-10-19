@@ -26,7 +26,6 @@ const TermsOfService: React.FC = () => {
             </p>
             <ul className="list-disc pl-6 mt-2 space-y-1">
               <li>Integrates with Strava to analyze your running activities</li>
-              <li>Generates customized marathon training plans using Jack Daniels Running Formula</li>
               <li>Provides performance metrics and training insights</li>
               <li>Tracks your progress toward race goals</li>
             </ul>
@@ -119,7 +118,7 @@ const TermsOfService: React.FC = () => {
             </ul>
 
             <p className="mt-3 font-semibold">
-              Use SmartCoach training plans at your own risk. Listen to your body and seek professional guidance when needed.
+              Use SmartCoach at your own risk. Listen to your body and seek professional guidance when needed.
             </p>
           </section>
 
@@ -227,7 +226,7 @@ const TermsOfService: React.FC = () => {
             <ul className="list-disc pl-6 mt-2 space-y-1">
               <li>Implied warranties of merchantability, fitness for a particular purpose, and non-infringement</li>
               <li>Warranties that the Service will be error-free, secure, or uninterrupted</li>
-              <li>Warranties regarding the accuracy, reliability, or completeness of training plans or data</li>
+              <li>Warranties regarding the accuracy, reliability, or completeness of data or recommendations</li>
             </ul>
           </section>
 
@@ -247,7 +246,7 @@ const TermsOfService: React.FC = () => {
               <li>Your use or inability to use the Service</li>
               <li>Training injuries or health issues</li>
               <li>Unauthorized access to your data</li>
-              <li>Errors or omissions in training plans</li>
+              <li>Errors or omissions in recommendations</li>
               <li>Third-party services (Strava, Auth0, OpenAI)</li>
             </ul>
 
@@ -268,7 +267,7 @@ const TermsOfService: React.FC = () => {
               <li>Your use or misuse of the Service</li>
               <li>Your violation of these Terms</li>
               <li>Your violation of any third-party rights</li>
-              <li>Any injuries or damages resulting from following training plans</li>
+              <li>Any injuries or damages resulting from following recommendations</li>
             </ul>
           </section>
 

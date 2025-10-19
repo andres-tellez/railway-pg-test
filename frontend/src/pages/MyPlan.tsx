@@ -15,8 +15,6 @@ import {
   parseISO,
 } from 'date-fns';
 import { useApiClient } from '@/utils/apiClient';
-import PlanQualityModal from '@/components/PlanQualityModal';
-import SafetyWarningModal from '@/components/SafetyWarningModal';
 
 type Workout = {
   date: string;
@@ -170,14 +168,6 @@ const MyPlan: React.FC = () => {
   const [workoutsByDate, setWorkoutsByDate] = useState<Record<string, Workout>>({});
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  // Plan generation and quality modal state
-  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
-  const [showQualityModal, setShowQualityModal] = useState(false);
-  const [planQuality, setPlanQuality] = useState<any>(null);
-
-  // Safety warning modal state
-  const [showSafetyModal, setShowSafetyModal] = useState(false);
-  const [safetyMessage, setSafetyMessage] = useState('');
 
   useEffect(() => {
     const fetchPlan = async () => {
@@ -237,68 +227,6 @@ const MyPlan: React.FC = () => {
     fetchPlan();
   }, []); // ✅ 'api' is stable, no need to include in deps
 
-  const generateNewPlan = async () => {
-    setIsGeneratingPlan(true);
-    try {
-      console.log('🔍 Checking plan safety...');
-
-      // First, check if it's safe to generate a plan
-      const safetyResponse = await api.post('/api/plan/safety-check', {
-        user_id: '347085' // TODO: Get from auth context
-      });
-
-      const safetyData = safetyResponse.data;
-      console.log('Safety check result:', safetyData);
-
-      // If plan creation is blocked, show modal and stop
-      if (safetyData.block_plan_creation) {
-        setSafetyMessage(safetyData.user_message);
-        setShowSafetyModal(true);
-        return;
-      }
-
-      // If there's a warning but plan creation is allowed, show warning modal
-      if (safetyData.show_popup && safetyData.user_message) {
-        setSafetyMessage(`${safetyData.user_message}\n\nDo you want to proceed with plan generation?`);
-        setShowSafetyModal(true);
-        // Note: We'll handle the proceed logic in the modal
-        return;
-      }
-
-      console.log('🚀 Generating new training plan...');
-      const response = await api.post('/api/plan/generate', {
-        user_id: '347085' // TODO: Get from auth context
-      });
-
-      console.log('✅ Plan generated successfully:', response.data);
-
-      // Show quality modal if quality data is available
-      if (response.data.quality) {
-        setPlanQuality(response.data.quality);
-        setShowQualityModal(true);
-      }
-
-      // Refresh the plan data
-      window.location.reload(); // Simple refresh for now
-
-    } catch (error: any) {
-      console.error('❌ Failed to generate plan:', error);
-      if (error.response?.data?.error) {
-        const errorData = error.response.data;
-        // Check if this is a safety-related error
-        if (errorData.safety_blocked) {
-          setSafetyMessage(errorData.error);
-          setShowSafetyModal(true);
-        } else {
-          alert(errorData.error);
-        }
-      } else {
-        alert('Failed to generate training plan. Please try again.');
-      }
-    } finally {
-      setIsGeneratingPlan(false);
-    }
-  };
 
   const days = eachDayOfInterval({
     start: startOfMonth(currentMonth),
@@ -422,37 +350,6 @@ const MyPlan: React.FC = () => {
         </div>
       </div>
 
-      {/* Plan Generation Section */}
-      {!plan && (
-        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="text-center">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Training Plan Found</h3>
-            <p className="text-gray-600 mb-4">Generate your personalized training plan to get started.</p>
-            <button
-              onClick={generateNewPlan}
-              disabled={isGeneratingPlan}
-              className="bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2 mx-auto"
-            >
-              {isGeneratingPlan ? (
-                <>
-                  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Generating Plan...
-                </>
-              ) : (
-                <>
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Generate Training Plan
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Workout Details */}
       {plan && (
@@ -465,19 +362,6 @@ const MyPlan: React.FC = () => {
         </div>
       )}
 
-      {/* Quality Modal */}
-      <PlanQualityModal
-        quality={planQuality}
-        isOpen={showQualityModal}
-        onClose={() => setShowQualityModal(false)}
-      />
-
-      {/* Safety Warning Modal */}
-      <SafetyWarningModal
-        isOpen={showSafetyModal}
-        onClose={() => setShowSafetyModal(false)}
-        message={safetyMessage}
-      />
     </div>
   );
 };

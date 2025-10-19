@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "../utils/apiClient";
 import { useNavigate } from "react-router-dom";
-import SafetyWarningModal from "../components/SafetyWarningModal";
 import StravaConnectButton from "../components/StravaConnectButton";
 import StravaAttribution from "../components/StravaAttribution";
 import StravaConsentModal from "../components/StravaConsentModal";
@@ -18,9 +17,6 @@ const SetupPage: React.FC = () => {
   const [forceSyncing, setForceSyncing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
-  // Safety warning modal state
-  const [showSafetyModal, setShowSafetyModal] = useState(false);
-  const [safetyMessage, setSafetyMessage] = useState('');
 
   // Consent modal state
   const [showConsentModal, setShowConsentModal] = useState(false);
@@ -127,42 +123,6 @@ const SetupPage: React.FC = () => {
     )}`;
   };
 
-  const generatePlan = async () => {
-  if (!userId) {
-    console.error("❌ Cannot generate plan: no internal userId yet");
-    return;
-  }
-
-  try {
-    console.log("📡 Sending generatePlan request...");
-
-    const res = await api.post<{ plan_id: number }>("/api/plan/generate", {
-      user_id: userId,
-      // Race data will come from user_profile table
-    });
-
-    const planId = res.data.plan_id;
-    console.log("✅ Generated plan, navigating to:", `/plan/${planId}`);
-
-    //navigate(`/plan/${planId}`); // ⬅️ should redirect now
-    navigate('/plan/overview');
-    console.log("➡️ navigate() called!");
-  } catch (err: any) {
-    console.error("❌ Failed to generate plan:", err);
-    if (err.response?.data?.error) {
-      const errorData = err.response.data;
-      // Check if this is a safety-related error
-      if (errorData.safety_blocked) {
-        setSafetyMessage(errorData.error);
-        setShowSafetyModal(true);
-      } else {
-        alert(errorData.error);
-      }
-    } else {
-      alert('Failed to generate training plan. Please try again.');
-    }
-  }
-};
 
 
   if (isLoading) return <div className="p-6">🔄 Loading auth…</div>;
@@ -248,44 +208,11 @@ const SetupPage: React.FC = () => {
             </p>
           )}
         </div>
-        {/* Step 3 */}
-        <div
-          className={`p-4 border rounded-lg ${
-            step === 3
-              ? "bg-blue-50 border-blue-400 cursor-pointer"
-              : "bg-gray-100 opacity-50"
-          }`}
-          onClick={() => {
-            if (step === 3 && !forceSyncing && userId) {
-              generatePlan(); // ⬅️ use the function
-            }
-          }}
-        >
-          <h2 className="font-medium text-lg">Step 3: Generate Plan</h2>
-          {forceSyncing ? (
-            <div className="mt-4 flex flex-col items-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <p className="text-sm text-gray-600 mt-2">
-                Syncing your Strava data…
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-600 mt-1">
-              Build your personalized running plan
-            </p>
-          )}
-        </div>
 
 
       </div>
     </div>
 
-    {/* Safety Warning Modal */}
-    <SafetyWarningModal
-      isOpen={showSafetyModal}
-      onClose={() => setShowSafetyModal(false)}
-      message={safetyMessage}
-    />
 
     {/* Strava Consent Modal */}
     {showConsentModal && (
