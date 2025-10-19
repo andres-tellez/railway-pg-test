@@ -23,31 +23,30 @@ import json
 _metrics_cache: Dict[str, Dict[str, Any]] = {}
 CACHE_TTL_SECONDS = 300  # 5 minutes
 
+
 def _get_cache_key(athlete_id: int, cache_type: str, **kwargs) -> str:
     """Generate a unique cache key for the given parameters."""
-    key_data = {
-        'athlete_id': athlete_id,
-        'cache_type': cache_type,
-        **kwargs
-    }
+    key_data = {"athlete_id": athlete_id, "cache_type": cache_type, **kwargs}
     key_str = json.dumps(key_data, sort_keys=True)
     return hashlib.md5(key_str.encode()).hexdigest()
+
 
 def _is_cache_valid(cache_entry: Dict[str, Any]) -> bool:
     """Check if cache entry is still valid based on TTL."""
     if not cache_entry:
         return False
 
-    created_at = cache_entry.get('created_at', 0)
-    ttl = cache_entry.get('ttl', CACHE_TTL_SECONDS)
+    created_at = cache_entry.get("created_at", 0)
+    ttl = cache_entry.get("ttl", CACHE_TTL_SECONDS)
     return time.time() - created_at < ttl
+
 
 def get_cached_metrics(cache_key: str) -> Optional[Any]:
     """Retrieve metrics from cache if valid."""
     cache_entry = _metrics_cache.get(cache_key)
 
     if cache_entry and _is_cache_valid(cache_entry):
-        return cache_entry['data']
+        return cache_entry["data"]
 
     # Remove expired entry
     if cache_entry:
@@ -55,13 +54,11 @@ def get_cached_metrics(cache_key: str) -> Optional[Any]:
 
     return None
 
+
 def set_cached_metrics(cache_key: str, data: Any, ttl: int = CACHE_TTL_SECONDS) -> None:
     """Store metrics in cache with TTL."""
-    _metrics_cache[cache_key] = {
-        'data': data,
-        'created_at': time.time(),
-        'ttl': ttl
-    }
+    _metrics_cache[cache_key] = {"data": data, "created_at": time.time(), "ttl": ttl}
+
 
 def invalidate_athlete_cache(athlete_id: int) -> None:
     """Invalidate all cache entries for a specific athlete."""
@@ -73,8 +70,10 @@ def invalidate_athlete_cache(athlete_id: int) -> None:
     for key in keys_to_remove:
         del _metrics_cache[key]
 
+
 def cache_metrics(cache_type: str, ttl: int = CACHE_TTL_SECONDS):
     """Decorator to cache metrics function results."""
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -82,8 +81,8 @@ def cache_metrics(cache_type: str, ttl: int = CACHE_TTL_SECONDS):
             athlete_id = None
             if args:
                 athlete_id = args[0] if isinstance(args[0], int) else None
-            elif 'athlete_id' in kwargs:
-                athlete_id = kwargs['athlete_id']
+            elif "athlete_id" in kwargs:
+                athlete_id = kwargs["athlete_id"]
 
             if not athlete_id:
                 return func(*args, **kwargs)
@@ -107,23 +106,36 @@ def cache_metrics(cache_type: str, ttl: int = CACHE_TTL_SECONDS):
             return result
 
         return wrapper
+
     return decorator
+
 
 def get_cache_stats() -> Dict[str, Any]:
     """Get cache statistics for monitoring."""
     total_entries = len(_metrics_cache)
-    valid_entries = sum(1 for entry in _metrics_cache.values() if _is_cache_valid(entry))
+    valid_entries = sum(
+        1 for entry in _metrics_cache.values() if _is_cache_valid(entry)
+    )
     expired_entries = total_entries - valid_entries
 
     return {
-        'total_entries': total_entries,
-        'valid_entries': valid_entries,
-        'expired_entries': expired_entries,
-        'cache_hit_ratio': 'N/A',  # Would need hit/miss counters
-        'memory_usage_mb': sum(len(str(entry)) for entry in _metrics_cache.values()) / 1024 / 1024
+        "total_entries": total_entries,
+        "valid_entries": valid_entries,
+        "expired_entries": expired_entries,
+        "cache_hit_ratio": "N/A",  # Would need hit/miss counters
+        "memory_usage_mb": sum(len(str(entry)) for entry in _metrics_cache.values())
+        / 1024
+        / 1024,
     }
+
 
 def clear_cache() -> None:
     """Clear all cache entries."""
     _metrics_cache.clear()
     print("[CACHE] All cache entries cleared")
+
+
+def invalidate_all_caches() -> None:
+    """Invalidate all cache entries for all athletes."""
+    _metrics_cache.clear()
+    print("[CACHE] All cache entries invalidated for all athletes")
