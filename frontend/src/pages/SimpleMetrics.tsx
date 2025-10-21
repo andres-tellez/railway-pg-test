@@ -222,6 +222,24 @@ export default function SimpleMetrics() {
   const filteredWeeklyGoals = allWeeklyData.goals.slice(0, selectedWeeks);
   const filteredLongestRuns = allWeeklyData.longestRuns.slice(0, selectedWeeks);
 
+  // Helper function to format date as M/D (same as other charts)
+  const formatDate = (dateString: string) => {
+    try {
+      const dateStr = dateString;
+      let date;
+      if (dateStr.includes('T')) {
+        date = new Date(dateStr);
+      } else {
+        date = new Date(dateStr + 'T00:00:00');
+      }
+      const month = date.getMonth() + 1; // getMonth() is 0-indexed
+      const day = date.getDate();
+      return `${month}/${day}`;
+    } catch (error) {
+      return dateString; // fallback to original string if parsing fails
+    }
+  };
+
   // Debug logging
   console.log(`📊 Data availability: ${allWeeklyData.trends.length} trends, ${allWeeklyData.hrZones.length} HR zones, ${allWeeklyData.vo2.length} VO2`);
   console.log(`📊 Selected weeks: ${selectedWeeks}, Filtered: ${filteredWeeklyTrends.length} trends, ${filteredWeeklyHRZones.length} HR zones, ${filteredWeeklyVO2.length} VO2`);
@@ -522,6 +540,13 @@ export default function SimpleMetrics() {
                                 minHeight: week.zone_5 > 0 ? '2px' : '0px'
                               }}
                             />
+                          </div>
+
+                          {/* Date Label */}
+                          <div className="mt-2 text-center">
+                            <div className="text-xs text-gray-500">
+                              {formatDate(week.week)}
+                            </div>
                           </div>
                         </div>
                       );
