@@ -7,10 +7,11 @@ Leverages existing metrics infrastructure (materialized views, caching) for perf
 
 GYR Logic:
 ---------
-1. Total Runs: Compare actual runs vs planned runs from training plan
-   - Green: 90-110% of plan OR 4-6 runs if no plan
-   - Yellow: 70-90% or 110-130% of plan
-   - Red: <70% or >130% of plan
+1. Total Runs: Compare actual miles vs planned miles from training plan
+   - Green: 90-110% of planned miles
+   - Yellow: 70-90% or 110-130% of planned miles
+   - Red: <70% or >130% of planned miles
+   - Gray: No planned data for comparison
 
 2. Weekly Pace: Compare current pace to 3-week rolling average
    - Green: Same or faster than avg
@@ -23,14 +24,13 @@ GYR Logic:
    - Red: <65% or >90%
 
 Author: SmartCoach Development Team
-Last Updated: October 14, 2025
+Last Updated: October 21, 2025
 """
 
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List
 from sqlalchemy.orm import Session
 from src.utils.logger import get_logger
-from src.utils.date_helpers import normalize_week_date, get_current_week_start
+from src.utils.date_helpers import normalize_week_date
 
 logger = get_logger(__name__)
 
@@ -129,31 +129,29 @@ class GYRMetricsService:
             actual_runs = trend.get("runs", 0)
             actual_miles = trend.get("distance", 0)  # Get actual miles run
 
-            # Only the first (most recent) week should have GYR status
-            if i == 0:  # First week (previous week - leftmost bar)
-                # Get planned miles from training plan for this week
-                planned_miles = goals_by_week.get(week_normalized, 0)
+            # Get planned miles from training plan for this week
+            planned_miles = goals_by_week.get(week_normalized, 0)
 
-                # Calculate percentage of plan completion (miles vs miles)
-                if planned_miles > 0:
-                    completion_pct = (actual_miles / planned_miles) * 100
-                else:
-                    completion_pct = 0
+            # Calculate percentage of plan completion (miles vs miles)
+            if planned_miles > 0:
+                completion_pct = (actual_miles / planned_miles) * 100
+            else:
+                completion_pct = 0
 
-                # Determine status based on plan completion
-                if actual_miles == 0:
-                    status = "gray"
-                elif 90 <= completion_pct <= 110:
+            # Determine status based on plan completion
+            if actual_miles == 0:
+                status = "gray"
+            elif planned_miles > 0:
+                # Has plan - use plan-based criteria
+                if 90 <= completion_pct <= 110:
                     status = "green"
                 elif (70 <= completion_pct < 90) or (110 < completion_pct <= 130):
                     status = "yellow"
                 else:
                     status = "red"
             else:
-                # All other weeks (historical) should be gray
+                # No plan - show as gray
                 status = "gray"
-                completion_pct = 0
-                planned_miles = 0
 
             scores.append(
                 {
@@ -162,7 +160,7 @@ class GYRMetricsService:
                     "status": status,
                     "actual_runs": actual_runs,
                     "actual_miles": round(actual_miles, 1),
-                    "planned_miles": round(planned_miles, 1) if i == 0 else 0,
+                    "planned_miles": round(planned_miles, 1),
                 }
             )
 
@@ -186,7 +184,7 @@ class GYRMetricsService:
         scores = []
 
         # Calculate rolling 3-week average for each week
-        for i, trend in enumerate(weekly_trends[:weeks]):
+        for i, trend in enumerate(weekly_trends[:weeks]):  # Limit to requested weeks
             week = trend.get("week", "")
             week_normalized = normalize_week_date(week)
             current_pace_str = trend.get("avgPace", "0:00")
@@ -268,7 +266,7 @@ class GYRMetricsService:
 
         scores = []
 
-        for hr_week in weekly_hr_zones[:weeks]:
+        for hr_week in weekly_hr_zones[:weeks]:  # Limit to requested weeks
             week = hr_week.get("week", "")
             week_normalized = normalize_week_date(week)
             zone_1 = hr_week.get("zone_1", 0)
