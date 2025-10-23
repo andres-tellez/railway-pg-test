@@ -32,6 +32,12 @@ class SimpleConversationService:
             if planned_workouts:
                 context_parts.append(planned_workouts)
 
+        # Load race information from plans
+        if self._check_consent([DataCategory.PERFORMANCE_DATA]):
+            race_info = self._get_race_information()
+            if race_info:
+                context_parts.append(race_info)
+
         # Always load user profile if available
         if self._check_consent([DataCategory.PERFORMANCE_DATA]):
             profile = self._get_user_profile()
@@ -205,10 +211,170 @@ class SimpleConversationService:
             self.session.rollback()
             return ""
 
+    def _get_race_information(self) -> str:
+        """Get race information from plans table"""
+        try:
+            # Get the most recent active plan
+            plan = self.session.execute(
+                text(
+                    """
+                    SELECT
+                        plan_name,
+                        race_date,
+                        race_distance,
+                        notes,
+                        created_at
+                    FROM plans
+                    WHERE user_id = :user_id
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """
+                ),
+                {"user_id": self.user_id},
+            ).fetchone()
+
+            if not plan:
+                return ""
+
+            context = "TRAINING PLAN & RACE INFORMATION:\n"
+            context += f"**Plan Name:** {plan.plan_name}\n"
+
+            if plan.race_date and plan.race_distance:
+                # Calculate days until race
+                try:
+                    from datetime import datetime
+
+                    race_date = datetime.strptime(
+                        str(plan.race_date), "%Y-%m-%d"
+                    ).date()
+                    ct_tz = pytz.timezone("America/Chicago")
+                    today_ct = datetime.now(ct_tz).date()
+                    days_until_race = (race_date - today_ct).days
+
+                    context += (
+                        f"**Target Race:** {plan.race_distance} on {plan.race_date}\n"
+                    )
+                    if days_until_race > 0:
+                        context += f"**Days Until Race:** {days_until_race} days\n"
+                    elif days_until_race == 0:
+                        context += f"**Race Day:** TODAY! (Race Day)\n"
+                    else:
+                        context += f"**Race Status:** Completed {abs(days_until_race)} days ago\n"
+                except:
+                    context += (
+                        f"**Target Race:** {plan.race_distance} on {plan.race_date}\n"
+                    )
+
+            if plan.notes:
+                context += f"**Plan Notes:** {plan.notes}\n"
+
+            context += f"**Plan Created:** {plan.created_at.strftime('%B %d, %Y')}\n"
+
+            return context
+
+        except Exception as e:
+            print(f"Error loading race information: {e}")
+            self.session.rollback()
+            return ""
+
     def _get_user_profile(self) -> str:
-        """Get user profile information"""
-        # User profiles table doesn't exist yet, skip for now
-        return ""
+        """Get user profile and race information"""
+        try:
+            # Get user profile information
+            profile = self.session.execute(
+                text(
+                    """
+                    SELECT
+                        runner_level,
+                        race_history,
+                        race_date,
+                        race_distance,
+                        past_races,
+                        height_feet,
+                        height_inches,
+                        weight,
+                        training_days,
+                        main_goal,
+                        motivation,
+                        age_group,
+                        longest_run,
+                        run_preference
+                    FROM user_profile
+                    WHERE user_id = :user_id
+                """
+                ),
+                {"user_id": self.user_id},
+            ).fetchone()
+
+            if not profile:
+                return ""
+
+            context = "USER PROFILE & RACE INFORMATION:\n"
+
+            # Race information
+            if profile.race_date and profile.race_distance:
+                context += (
+                    f"**Target Race:** {profile.race_distance} on {profile.race_date}\n"
+                )
+                context += (
+                    f"**Race History:** {'Yes' if profile.race_history else 'No'}\n"
+                )
+            if profile.past_races:
+                # Handle array formatting properly
+                past_races_str = (
+                    ", ".join(profile.past_races)
+                    if isinstance(profile.past_races, list)
+                    else str(profile.past_races)
+                )
+                context += f"**Past Races:** {past_races_str}\n"
+            else:
+                context += "**Target Race:** No specific race planned\n"
+
+            # Physical stats
+            if profile.height_feet and profile.height_inches and profile.weight:
+                context += f"**Physical Stats:** {profile.height_feet}'{profile.height_inches}\", {profile.weight} lbs\n"
+
+            # Training information
+            if profile.training_days:
+                # Handle array formatting properly
+                training_days_str = (
+                    ", ".join(profile.training_days)
+                    if isinstance(profile.training_days, list)
+                    else str(profile.training_days)
+                )
+                context += f"**Training Days:** {training_days_str}\n"
+
+            if profile.longest_run:
+                context += f"**Longest Run:** {profile.longest_run} miles\n"
+
+            # Goals and motivation
+            if profile.main_goal:
+                context += f"**Main Goal:** {profile.main_goal}\n"
+
+            if profile.motivation:
+                # Handle array formatting properly
+                motivation_str = (
+                    ", ".join(profile.motivation)
+                    if isinstance(profile.motivation, list)
+                    else str(profile.motivation)
+                )
+                context += f"**Motivation:** {motivation_str}\n"
+
+            if profile.age_group:
+                context += f"**Age Group:** {profile.age_group}\n"
+
+            if profile.run_preference:
+                context += f"**Run Preference:** {profile.run_preference}\n"
+
+            if profile.runner_level:
+                context += f"**Runner Level:** {profile.runner_level}\n"
+
+            return context
+
+        except Exception as e:
+            print(f"Error loading user profile: {e}")
+            self.session.rollback()
+            return ""
 
     def _get_conversation_history(self) -> str:
         """Get recent conversation history"""
