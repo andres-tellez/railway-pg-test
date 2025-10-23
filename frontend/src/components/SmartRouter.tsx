@@ -2,7 +2,7 @@
  * @file SmartRouter.tsx
  * @component SmartRouter
  * @description Smart routing component that redirects users based on their completion status
- * 
+ *
  * @features:
  * - Checks user authentication status
  * - Checks user onboarding completion
@@ -14,6 +14,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useNavigate } from 'react-router-dom';
 import { useApiClient } from '../utils/apiClient';
+import { useAuthSetup } from '../hooks/useAuthSetup';
 
 const SmartRouter: React.FC = () => {
   const { isAuthenticated, isLoading: authLoading } = useAuth0();

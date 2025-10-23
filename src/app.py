@@ -74,6 +74,7 @@ from src.routes.webhook_routes import webhook_bp
 from src.routes.longest_runs_routes import longest_runs_bp
 from src.routes.gyr_metrics_routes import gyr_metrics_bp
 from src.routes.plan_routes import plan_bp
+from src.routes.conversation_routes import conversation_bp
 
 
 def create_app(test_config=None):
@@ -137,6 +138,7 @@ def create_app(test_config=None):
     app.register_blueprint(plan_bp)
     app.register_blueprint(auth_me_bp)
     app.register_blueprint(webhook_bp, url_prefix="/webhooks")
+    app.register_blueprint(conversation_bp, url_prefix="/api")
 
     @app.route("/_debug/db-url")
     def debug_db_url():
@@ -165,6 +167,15 @@ def create_app(test_config=None):
         print(f"  - Origin: {origin}", flush=True)
         print(f"  - User-Agent: {user_agent}", flush=True)
         print("[DEBUG] Request cookies:", request.cookies, flush=True)
+
+        # Special logging for conversations endpoint
+        if path == "/api/conversations":
+            print(f"[CONVERSATIONS] Request received: {method} {path}", flush=True)
+            auth_header = request.headers.get("Authorization", "")
+            print(
+                f"[CONVERSATIONS] Authorization header present: {bool(auth_header)}, length: {len(auth_header)}",
+                flush=True,
+            )
 
         # Log auth header for debug
         if "Authorization" in request.headers:

@@ -2,45 +2,28 @@ import React, { useState, useEffect, useRef } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "../utils/apiClient";
 import { useNavigate } from "react-router-dom";
+import { useAuthSetup } from "../hooks/useAuthSetup";
 import StravaConnectButton from "../components/StravaConnectButton";
 import StravaAttribution from "../components/StravaAttribution";
 import StravaConsentModal from "../components/StravaConsentModal";
 
 const SetupPage: React.FC = () => {
-  const { user, isAuthenticated, isLoading } = useAuth0();
+  const { user } = useAuth0();
   const api = useApiClient();
   const navigate = useNavigate();
+  const { isReady, userId, error: authError } = useAuthSetup();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [pendingStep, setPendingStep] = useState<1 | 2 | 3 | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [forceSyncing, setForceSyncing] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-
 
   // Consent modal state
   const [showConsentModal, setShowConsentModal] = useState(false);
 
-  const hasPostedIdentity = useRef(false);
-
   useEffect(() => {
-    if (
-      isAuthenticated &&
-      !isLoading &&
-      !hasPostedIdentity.current &&
-      !syncing &&
-      !forceSyncing
-    ) {
-      hasPostedIdentity.current = true;
-
-      api
-        .post<{ user_id: string }>("/user/identity")
-        .then((res) => {
-          const newUserId = res.data.user_id;
-          setUserId(newUserId);
-
-          return api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user");
-        })
+    if (isReady && userId) {
+      api.get<{ hasOnboarded: boolean; hasStrava: boolean }>("/user")
         .then((res) => {
           const { hasOnboarded, hasStrava } = res.data;
           console.log("📊 User status:", res.data);
@@ -57,7 +40,7 @@ const SetupPage: React.FC = () => {
           console.error("❌ Failed to fetch user status:", err)
         );
     }
-  }, [isAuthenticated, isLoading, syncing, forceSyncing]); // Remove 'api' to prevent infinite loop
+  }, [isReady, userId, api]); // Use the centralized auth setup
 
   // ✅ Detect Strava redirect success
   useEffect(() => {

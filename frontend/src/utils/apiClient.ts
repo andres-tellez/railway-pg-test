@@ -39,6 +39,9 @@ export function useApiClient() {
       if (token) {
         (config.headers ??= {});
         (config.headers as any).Authorization = `Bearer ${token}`;
+        console.log("🔑 API Request - Authorization header attached:", config.url);
+      } else {
+        console.warn("⚠️ API Request - No token available:", config.url);
       }
       return config;
     } catch (err: any) {

@@ -107,6 +107,10 @@ def requires_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         auth = request.headers.get("Authorization", "")
+        print(
+            f"[requires_auth] {request.path} - Authorization present={bool(auth)} len={len(auth)}",
+            flush=True,
+        )
         if DEBUG_AUTH:
             print(
                 f"[requires_auth] Authorization present={bool(auth)} len={len(auth)}",
@@ -114,6 +118,10 @@ def requires_auth(fn):
             )
 
         if not auth.startswith("Bearer "):
+            print(
+                f"[requires_auth] {request.path} - Missing/invalid Authorization header",
+                flush=True,
+            )
             if DEBUG_AUTH:
                 print(
                     "[requires_auth] Missing/invalid Authorization header", flush=True

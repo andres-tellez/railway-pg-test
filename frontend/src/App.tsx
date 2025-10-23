@@ -36,6 +36,7 @@ import SetupPage from "./pages/LandingPage";
 import PostOAuth from "./pages/PostOAuth";
 import HomeScreen from "./pages/HomeScreen";
 import AskGptMvpUI from "./pages/AskGptMvpUI";
+import AuthTestPage from "./pages/AuthTestPage";
 import WelcomePage from "./pages/WelcomePage";
 import SimpleMetrics from "./pages/SimpleMetrics";
 import SimpleMetricsCopy from "./pages/SimpleMetricsCopy";
@@ -178,6 +179,16 @@ export default function App() {
           <ProtectedRoute>
             <Layout>
               <AskGptMvpUI />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/test"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <AuthTestPage />
             </Layout>
           </ProtectedRoute>
         }
