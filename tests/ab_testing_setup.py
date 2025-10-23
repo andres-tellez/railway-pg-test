@@ -21,17 +21,16 @@ class ABTestingManager:
         self,
         test_name: str,
         variants: Dict[str, Any],
-        traffic_split: Dict[str, float] = None
+        traffic_split: Dict[str, float] = None,
     ):
         """Register a new A/B test"""
         if traffic_split is None:
             # Default to 50/50 split
-            traffic_split = {variant: 1.0/len(variants) for variant in variants.keys()}
+            traffic_split = {
+                variant: 1.0 / len(variants) for variant in variants.keys()
+            }
 
-        self.tests[test_name] = {
-            "variants": variants,
-            "traffic_split": traffic_split
-        }
+        self.tests[test_name] = {"variants": variants, "traffic_split": traffic_split}
 
         print(f"✅ Registered A/B test: {test_name}")
         print(f"   Variants: {list(variants.keys())}")
@@ -80,14 +79,16 @@ class ABTestingManager:
 ab_manager = ABTestingManager()
 
 
-def ab_test(test_name: str, variants: Dict[str, Any], traffic_split: Dict[str, float] = None):
+def ab_test(
+    test_name: str, variants: Dict[str, Any], traffic_split: Dict[str, float] = None
+):
     """Decorator for A/B testing different implementations"""
 
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Get user ID from request context
-            user_id = getattr(g, 'user_id', None) or request.headers.get('X-User-Id')
+            user_id = getattr(g, "user_id", None) or request.headers.get("X-User-Id")
 
             # Register test if not already registered
             if test_name not in ab_manager.tests:
@@ -97,11 +98,16 @@ def ab_test(test_name: str, variants: Dict[str, Any], traffic_split: Dict[str, f
             variant = ab_manager.get_variant(test_name, str(user_id))
 
             # Record the variant assignment
-            ab_manager.record_result(test_name, variant, "assignment", {
-                "user_id": user_id,
-                "timestamp": request.headers.get('X-Request-ID', 'unknown'),
-                "endpoint": request.endpoint
-            })
+            ab_manager.record_result(
+                test_name,
+                variant,
+                "assignment",
+                {
+                    "user_id": user_id,
+                    "timestamp": request.headers.get("X-Request-ID", "unknown"),
+                    "endpoint": request.endpoint,
+                },
+            )
 
             # Execute the appropriate variant
             start_time = time.time()
@@ -114,7 +120,9 @@ def ab_test(test_name: str, variants: Dict[str, Any], traffic_split: Dict[str, f
 
                 # Record success metrics
                 end_time = time.time()
-                ab_manager.record_result(test_name, variant, "response_time", end_time - start_time)
+                ab_manager.record_result(
+                    test_name, variant, "response_time", end_time - start_time
+                )
                 ab_manager.record_result(test_name, variant, "success", True)
 
                 return result
@@ -126,6 +134,7 @@ def ab_test(test_name: str, variants: Dict[str, Any], traffic_split: Dict[str, f
                 raise
 
         return wrapper
+
     return decorator
 
 
@@ -145,14 +154,8 @@ def setup_ask_endpoint_ab_test():
 
     ab_manager.register_test(
         "ask_endpoint_v2",
-        {
-            "old": old_implementation,
-            "new": new_implementation
-        },
-        {
-            "old": 0.5,  # 50% traffic
-            "new": 0.5   # 50% traffic
-        }
+        {"old": old_implementation, "new": new_implementation},
+        {"old": 0.5, "new": 0.5},  # 50% traffic  # 50% traffic
     )
 
 
@@ -161,22 +164,16 @@ def setup_frontend_ab_test():
 
     ab_manager.register_test(
         "frontend_ask_ui",
-        {
-            "original": "original_ask_component",
-            "improved": "improved_ask_component"
-        },
-        {
-            "original": 0.3,  # 30% traffic
-            "improved": 0.7   # 70% traffic
-        }
+        {"original": "original_ask_component", "improved": "improved_ask_component"},
+        {"original": 0.3, "improved": 0.7},  # 30% traffic  # 70% traffic
     )
 
 
 def generate_ab_report():
     """Generate A/B testing report"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("📊 A/B TESTING REPORT")
-    print("="*60)
+    print("=" * 60)
 
     for test_name, test_data in ab_manager.tests.items():
         print(f"\n🧪 Test: {test_name}")
@@ -191,11 +188,15 @@ def generate_ab_report():
                 print(f"     {variant}:")
 
                 if "response_time" in metrics:
-                    avg_time = sum(metrics["response_time"]) / len(metrics["response_time"])
+                    avg_time = sum(metrics["response_time"]) / len(
+                        metrics["response_time"]
+                    )
                     print(f"       Avg Response Time: {avg_time:.3f}s")
 
                 if "success" in metrics:
-                    success_rate = sum(metrics["success"]) / len(metrics["success"]) * 100
+                    success_rate = (
+                        sum(metrics["success"]) / len(metrics["success"]) * 100
+                    )
                     print(f"       Success Rate: {success_rate:.1f}%")
 
                 if "assignment" in metrics:
@@ -203,7 +204,7 @@ def generate_ab_report():
 
         print("-" * 40)
 
-    print("="*60)
+    print("=" * 60)
 
 
 # Usage example for Flask routes
@@ -211,9 +212,8 @@ def example_ask_route_ab_test():
     """Example of how to use A/B testing in a Flask route"""
 
     def old_ask_logic():
-        """Original ask endpoint logic"""
-        from src.routes.ask_routes import ask
-        return ask()
+        """Original ask endpoint logic - REMOVED"""
+        return {"error": "Old ask endpoint removed - use conversation system"}
 
     def new_ask_logic():
         """New ask endpoint logic with improvements"""
@@ -222,14 +222,8 @@ def example_ask_route_ab_test():
 
     @ab_test(
         "ask_endpoint_improvement",
-        {
-            "old": old_ask_logic,
-            "new": new_ask_logic
-        },
-        {
-            "old": 0.5,
-            "new": 0.5
-        }
+        {"old": old_ask_logic, "new": new_ask_logic},
+        {"old": 0.5, "new": 0.5},
     )
     def ask_route():
         """A/B tested ask route"""

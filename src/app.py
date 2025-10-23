@@ -63,7 +63,8 @@ from src.routes.admin_routes import admin_bp
 from src.routes.auth_routes import auth_bp
 from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
-from src.routes.ask_routes import ask_bp
+
+# Removed ask_routes - using conversation system instead
 from src.routes.user_profile_routes import user_profile_bp
 from src.routes.user_identity_routes import identity_bp
 from src.routes.auth_me_routes import auth_me_bp
@@ -129,7 +130,7 @@ def create_app(test_config=None):
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(activity_bp, url_prefix="/api/activities")
     app.register_blueprint(health_bp)
-    app.register_blueprint(ask_bp)
+    # Removed ask_bp - using conversation system instead
     app.register_blueprint(user_profile_bp)
     app.register_blueprint(user_data_bp, url_prefix="/api")
     app.register_blueprint(metrics_bp, url_prefix="/api/metrics")

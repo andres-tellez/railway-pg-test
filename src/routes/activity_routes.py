@@ -124,23 +124,7 @@ def activities_status():
         session.close()
 
 
-# -------- Deprecated Sync Route --------
-@activity_bp.post("/sync")
-@requires_auth
-def activities_sync():
-    """
-    ⚠️ Deprecated: Old sync endpoint.
-    Use `/api/progress/ingest` for real-time SSE-driven sync instead.
-    """
-    return (
-        jsonify(
-            {
-                "ok": False,
-                "error": "Deprecated endpoint. Please use /api/progress/ingest instead.",
-            }
-        ),
-        410,
-    )
+# Deprecated sync route removed - use /api/progress/ingest instead
 
 
 # -------- Enrichment routes --------

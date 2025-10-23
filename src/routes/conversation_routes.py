@@ -6,7 +6,7 @@ from src.db.db_session import get_session
 from src.db.models.conversations import Conversation, ConversationMessage
 from src.utils.gpt_ops import get_conversation_response
 from src.utils.auth0_jwt import requires_auth
-from src.services.conversation_context_service import ConversationContextService
+from src.services.simple_conversation_service import SimpleConversationService
 
 # from src.compliance.ai_transparency import AITransparency
 
@@ -31,7 +31,7 @@ conversation_bp = Blueprint("conversation", __name__)
 
 JACK_DANIELS_COACH_SYSTEM_PROMPT = """You are a personalized running coach expert in the Jack Daniels Running Formula methodology.
 
-Your role is to provide personalized coaching advice based on the runner's profile, training history, and current plan. Use the Jack Daniels principles:
+Your role is to provide personalized coaching advice based on the runner's profile, training history, and recent activities. Use the Jack Daniels principles:
 - VDOT-based training intensities
 - Proper progression and periodization
 - Quality over quantity
@@ -39,7 +39,28 @@ Your role is to provide personalized coaching advice based on the runner's profi
 - Long run progression (build 2-3 weeks, then 1 cutback week)
 - Taper principles (2-3 weeks before race)
 
-Provide practical, evidence-based advice that considers the runner's experience level, goals, and recent performance. Keep responses concise and actionable."""
+**CRITICAL: Data Accuracy Requirements:**
+- ONLY reference workouts that are explicitly listed in the PLANNED WORKOUTS section
+- If a day shows "NO WORKOUT PLANNED", that means NO RUN is scheduled for that day
+- NEVER assume or hallucinate workouts that are not explicitly listed
+- If you see "Sunday: NO WORKOUT PLANNED", the answer is NO - there is no Sunday run
+- Do NOT make up or infer workouts based on patterns or assumptions
+
+**Format your responses using Markdown** to make them clear and easy to read:
+- Use **bold** for important points
+- Use bullet points and numbered lists
+- Create tables for training schedules or comparisons
+- Use code blocks for specific pace calculations
+- Use headers (##, ###) to organize sections
+- Use blockquotes for key principles or quotes
+
+**Data Analysis Guidelines:**
+- Always reference the user's actual running data when available
+- Provide specific insights based on their recent activities
+- Use their actual pace, heart rate, and distance data for analysis
+- Give personalized recommendations based on their training patterns
+
+Provide practical, evidence-based advice that considers the runner's experience level, goals, and recent performance. Make responses comprehensive but well-organized."""
 
 
 @conversation_bp.route("/conversations", methods=["GET"])
@@ -204,9 +225,10 @@ def send_message(conversation_id):
                 "..." if len(message) > 50 else ""
             )
 
-        # Get context using fast context service
-        context_service = ConversationContextService(session, user_id)
-        context = context_service.get_context(message.strip(), conversation_id)
+        # Get comprehensive context using simplified service
+        context_service = SimpleConversationService(user_id)
+        context = context_service.get_context(message.strip())
+        context_service.close()
 
         # Build GPT messages
         gpt_messages = build_gpt_messages(
@@ -249,13 +271,8 @@ def send_message(conversation_id):
                     "message_id": str(user_msg.id),
                     "response_time": response_time,
                     "context_used": {
-                        "user_profile": bool(context.get("user_profile")),
-                        "training_plan": bool(context.get("training_plan")),
-                        "activities": len(context.get("activities", "")),
-                        "splits": len(context.get("splits", "")),
-                        "conversation_history": len(
-                            context.get("conversation_history", [])
-                        ),
+                        "context_loaded": bool(context),
+                        "context_length": len(context) if context else 0,
                     },
                 }
             ),
@@ -304,24 +321,16 @@ def delete_conversation(conversation_id):
 
 
 def build_gpt_messages(
-    context: dict, conversation_history: list, current_message: str
+    context: str, conversation_history: list, current_message: str
 ) -> list:
     """Build GPT messages with context and conversation history."""
 
     # Build system message with context
     system_content = JACK_DANIELS_COACH_SYSTEM_PROMPT
 
-    if context.get("user_profile"):
-        system_content += f"\n\n{context['user_profile']}"
-
-    if context.get("training_plan"):
-        system_content += f"\n\n{context['training_plan']}"
-
-    if context.get("activities"):
-        system_content += f"\n\n{context['activities']}"
-
-    if context.get("splits"):
-        system_content += f"\n\n{context['splits']}"
+    # Add context if provided (now a string from simplified service)
+    if context:
+        system_content += f"\n\n{context}"
 
     messages = [{"role": "system", "content": system_content}]
 

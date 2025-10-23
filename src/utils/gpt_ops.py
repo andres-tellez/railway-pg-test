@@ -2,7 +2,7 @@
 # @component GPTOps
 # @description GPT logic for generating plans and answering questions
 # @features: Prompt formatting, GPT calls (plain + structured), JSON-safe plan generation
-# @integration-points: training_plan_service.py, ask_routes.py
+# @integration-points: training_plan_service.py, conversation_routes.py
 # @usage: Used to generate plans or answer user questions
 # @prerequisites: OPENAI_API_KEY set in .env.local
 
@@ -92,7 +92,7 @@ def get_conversation_response(messages: List[Dict], require_json: bool = False) 
                 "temperature": 0.7,  # Slightly higher for more natural conversation
                 "timeout": 30.0,  # Reduced timeout for faster response
                 "messages": messages,
-                "max_tokens": 500,  # Limit response length for faster generation
+                "max_tokens": 800,  # Increased for more comprehensive responses
             }
             # Only add response_format if JSON is required
             if require_json:
@@ -124,7 +124,7 @@ def get_conversation_response(messages: List[Dict], require_json: bool = False) 
                 model=CONVERSATION_MODEL,
                 temperature=0.7,
                 messages=messages,
-                max_tokens=500,  # Limit response length
+                max_tokens=800,  # Increased for more comprehensive responses
             )
             # Token usage logging (legacy)
             try:
