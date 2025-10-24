@@ -2,14 +2,18 @@
 
 import time
 import re
+import logging
 from flask import Blueprint, request, jsonify, g
 from src.db.db_session import get_session
 from src.db.models.conversations import Conversation, ConversationMessage
 from src.utils.gpt_ops import get_conversation_response
-from src.utils.auth0_jwt import requires_auth
+
+# from src.utils.auth0_jwt import requires_auth  # No longer needed - using manual auth
 from src.services.strategic_conversation_service import StrategicConversationService
 
 # from src.compliance.ai_transparency import AITransparency
+
+logger = logging.getLogger(__name__)
 
 
 # Temporary simplified AI transparency
@@ -32,76 +36,78 @@ import uuid
 conversation_bp = Blueprint("conversation", __name__)
 
 
-TRAINING_PLAN_COACH_SYSTEM_PROMPT = """You are an expert running coach specializing in strategic training plan evaluation and optimization.
+TRAINING_PLAN_COACH_SYSTEM_PROMPT = """You are an expert running coach. Analyze the training data provided and answer questions about the user's training progress, performance, and goals."""
 
-**Your Role:**
-- Analyze training plans using strategic coaching metrics and periodization principles
-- Evaluate training load ratios, intensity distribution, and completion rates
-- Provide specific, actionable feedback based on Jack Daniels principles
-- Assess pace consistency, easy run percentages, and race preparation timing
-- Connect individual performance data to broader training strategy
+# TRAINING_PLAN_COACH_SYSTEM_PROMPT = """You are an expert running coach specializing in strategic training plan evaluation and optimization.
 
-**Strategic Data Available:**
-- Weekly insights with training load ratios and completion rates
-- Easy run percentage analysis (80%+ ideal for proper recovery)
-- Pace consistency metrics (lower standard deviation = better)
-- Weeks until race for proper periodization timing
-- Planned vs actual volume comparisons
-- Historical performance data and upcoming workouts
-- Recent longest runs with detailed metrics
-- Heart rate trending analysis
-- Performance metrics and training progress
+# **Your Role:**
+# - Analyze training plans using strategic coaching metrics and periodization principles
+# - Evaluate training load ratios, intensity distribution, and completion rates
+# - Provide specific, actionable feedback based on Jack Daniels principles
+# - Assess pace consistency, easy run percentages, and race preparation timing
+# - Connect individual performance data to broader training strategy
 
-**Strategic Analysis Framework:**
-1. **Training Load Analysis**: Volume completion rates and progression
-2. **Intensity Distribution**: Easy run percentage and hard/easy balance
-3. **Performance Consistency**: Pace consistency and workout completion rates
-4. **Periodization Timing**: Weeks until race and training phase appropriateness
-5. **Recovery Balance**: Rest days, easy runs, and recovery indicators
-6. **Performance Progression**: Connect individual runs to training goals
+# **Strategic Data Available:**
+# - Weekly insights with training load ratios and completion rates
+# - Easy run percentage analysis (80%+ ideal for proper recovery)
+# - Pace consistency metrics (lower standard deviation = better)
+# - Weeks until race for proper periodization timing
+# - Planned vs actual volume comparisons
+# - Historical performance data and upcoming workouts
+# - Recent longest runs with detailed metrics
+# - Heart rate trending analysis
+# - Performance metrics and training progress
 
-**Clarification Protocol:**
-When questions are ambiguous or could have multiple interpretations, ALWAYS ask clarifying questions:
+# **Strategic Analysis Framework:**
+# 1. **Training Load Analysis**: Volume completion rates and progression
+# 2. **Intensity Distribution**: Easy run percentage and hard/easy balance
+# 3. **Performance Consistency**: Pace consistency and workout completion rates
+# 4. **Periodization Timing**: Weeks until race and training phase appropriateness
+# 5. **Recovery Balance**: Rest days, easy runs, and recovery indicators
+# 6. **Performance Progression**: Connect individual runs to training goals
 
-**Time Period Ambiguity:**
-- "Recently" → Ask: "Do you mean this week, last week, this month, or last 30 days?"
-- "Lately" → Ask: "What time period are you interested in?"
-- "How am I doing?" → Ask: "Are you asking about this week, this month, or overall progress?"
+# **Clarification Protocol:**
+# When questions are ambiguous or could have multiple interpretations, ALWAYS ask clarifying questions:
 
-**Performance Ambiguity:**
-- "My pace" → Ask: "Are you asking about your average pace, race pace, or easy run pace?"
-- "My heart rate" → Ask: "Do you want to know your average HR, max HR, or HR zones?"
-- "My training" → Ask: "Are you asking about volume, intensity, consistency, or overall progress?"
+# **Time Period Ambiguity:**
+# - "Recently" → Ask: "Do you mean this week, last week, this month, or last 30 days?"
+# - "Lately" → Ask: "What time period are you interested in?"
+# - "How am I doing?" → Ask: "Are you asking about this week, this month, or overall progress?"
 
-**Analysis Ambiguity:**
-- "Am I ready?" → Ask: "Ready for what? Your next race, increased volume, or harder workouts?"
-- "How's my progress?" → Ask: "Are you asking about pace improvement, distance progression, or overall fitness?"
+# **Performance Ambiguity:**
+# - "My pace" → Ask: "Are you asking about your average pace, race pace, or easy run pace?"
+# - "My heart rate" → Ask: "Do you want to know your average HR, max HR, or HR zones?"
+# - "My training" → Ask: "Are you asking about volume, intensity, consistency, or overall progress?"
 
-**Response Format:**
-- Use **bold** for key strategic findings
-- Reference specific metrics (training load %, easy run %, etc.)
-- Provide concrete recommendations based on data
-- Use tables for metric comparisons
-- Focus on actionable periodization advice
-- Connect individual performance to broader training strategy
-- Ask clarifying questions when ambiguous
+# **Analysis Ambiguity:**
+# - "Am I ready?" → Ask: "Ready for what? Your next race, increased volume, or harder workouts?"
+# - "How's my progress?" → Ask: "Are you asking about pace improvement, distance progression, or overall fitness?"
 
-**Critical Requirements:**
-- Base analysis on the strategic coaching metrics provided
-- Reference specific percentages and ratios from the data
-- Provide periodization recommendations based on weeks until race
-- Consider training load ratios and completion rates
-- Focus on intensity distribution and recovery balance
-- Connect individual runs to training goals and race preparation
-- Always ask clarifying questions when requests are ambiguous
-- Never guess what the user means - always clarify first
+# **Response Format:**
+# - Use **bold** for key strategic findings
+# - Reference specific metrics (training load %, easy run %, etc.)
+# - Provide concrete recommendations based on data
+# - Use tables for metric comparisons
+# - Focus on actionable periodization advice
+# - Connect individual performance to broader training strategy
+# - Ask clarifying questions when ambiguous
 
-**Example Clarification Responses:**
-- "I'd be happy to analyze your longest run! To give you the most relevant insights, could you clarify: Are you asking about your longest run this week, this month, or in the last 30 days?"
-- "I can help with your pace analysis! To provide the most useful feedback, are you interested in your average training pace, your race pace, or your easy run pace?"
-- "I'd love to assess your training progress! To give you targeted insights, are you asking about your volume progression, pace improvement, or overall fitness gains?"
+# **Critical Requirements:**
+# - Base analysis on the strategic coaching metrics provided
+# - Reference specific percentages and ratios from the data
+# - Provide periodization recommendations based on weeks until race
+# - Consider training load ratios and completion rates
+# - Focus on intensity distribution and recovery balance
+# - Connect individual runs to training goals and race preparation
+# - Always ask clarifying questions when requests are ambiguous
+# - Never guess what the user means - always clarify first
 
-Be thorough, strategic, and data-driven in your coaching analysis. Always clarify ambiguous requests before providing analysis."""
+# **Example Clarification Responses:**
+# - "I'd be happy to analyze your longest run! To give you the most relevant insights, could you clarify: Are you asking about your longest run this week, this month, or in the last 30 days?"
+# - "I can help with your pace analysis! To provide the most useful feedback, are you interested in your average training pace, your race pace, or your easy run pace?"
+# - "I'd love to assess your training progress! To give you targeted insights, are you asking about your volume progression, pace improvement, or overall fitness gains?"
+
+# Be thorough, strategic, and data-driven in your coaching analysis. Always clarify ambiguous requests before providing analysis."""
 
 
 def validate_user_query(query):
@@ -129,16 +135,34 @@ def validate_user_query(query):
 
 
 @conversation_bp.route("/conversations", methods=["GET"])
-@requires_auth
 def get_conversations():
     """Get all conversations for the current user."""
-    print(
-        f"[CONVERSATION] get_conversations called, user_id from g: {getattr(g, 'user_id', 'NOT SET')}"
-    )
+    # Manual authentication - follow the same pattern as the working /user endpoint
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return jsonify({"error": "unauthorized", "reason": "no_bearer"}), 401
+
+    token = auth.split(" ", 1)[1]
+    try:
+        from src.utils.auth0_jwt import verify_and_decode
+
+        claims = verify_and_decode(token)
+    except Exception as e:
+        return jsonify({"error": "unauthorized", "reason": str(e)}), 401
+
+    sub = claims.get("sub")
+    if not sub:
+        return jsonify({"error": "missing_sub"}), 400
+
+    from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
+
+    user_id = resolve_user_id_from_auth_provider(sub)
+    if not user_id:
+        return jsonify({"error": "User ID could not be resolved"}), 404
+
     session = get_session()
     try:
-        user_id = g.user_id
-        logger.info(f"[CONVERSATION] user_id resolved: {user_id}")
+        print(f"[CONVERSATION] user_id resolved: {user_id}", flush=True)
 
         conversations = (
             session.query(Conversation)
@@ -146,6 +170,8 @@ def get_conversations():
             .order_by(Conversation.updated_at.desc())
             .all()
         )
+
+        print(f"[CONVERSATION] Found {len(conversations)} conversations", flush=True)
 
         result = []
         for conv in conversations:
@@ -162,19 +188,43 @@ def get_conversations():
         return jsonify({"conversations": result}), 200
 
     except Exception as e:
-        logger.info(f"❌ Error fetching conversations: {e}")
+        print(f"❌ Error fetching conversations: {e}", flush=True)
+        import traceback
+
+        traceback.print_exc()
         return jsonify({"error": f"Failed to fetch conversations: {str(e)}"}), 500
     finally:
         session.close()
 
 
 @conversation_bp.route("/conversations", methods=["POST"])
-@requires_auth
 def create_conversation():
     """Create a new conversation."""
+    # Manual authentication - follow the same pattern as the working /user endpoint
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return jsonify({"error": "unauthorized", "reason": "no_bearer"}), 401
+
+    token = auth.split(" ", 1)[1]
+    try:
+        from src.utils.auth0_jwt import verify_and_decode
+
+        claims = verify_and_decode(token)
+    except Exception as e:
+        return jsonify({"error": "unauthorized", "reason": str(e)}), 401
+
+    sub = claims.get("sub")
+    if not sub:
+        return jsonify({"error": "missing_sub"}), 400
+
+    from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
+
+    user_id = resolve_user_id_from_auth_provider(sub)
+    if not user_id:
+        return jsonify({"error": "User ID could not be resolved"}), 404
+
     session = get_session()
     try:
-        user_id = g.user_id
 
         conversation = Conversation(user_id=user_id, title="New Conversation")
 
@@ -201,12 +251,33 @@ def create_conversation():
 
 
 @conversation_bp.route("/conversations/<conversation_id>", methods=["GET"])
-@requires_auth
 def get_conversation(conversation_id):
     """Get a specific conversation with its messages."""
+    # Manual authentication - follow the same pattern as the working /user endpoint
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return jsonify({"error": "unauthorized", "reason": "no_bearer"}), 401
+
+    token = auth.split(" ", 1)[1]
+    try:
+        from src.utils.auth0_jwt import verify_and_decode
+
+        claims = verify_and_decode(token)
+    except Exception as e:
+        return jsonify({"error": "unauthorized", "reason": str(e)}), 401
+
+    sub = claims.get("sub")
+    if not sub:
+        return jsonify({"error": "missing_sub"}), 400
+
+    from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
+
+    user_id = resolve_user_id_from_auth_provider(sub)
+    if not user_id:
+        return jsonify({"error": "User ID could not be resolved"}), 404
+
     session = get_session()
     try:
-        user_id = g.user_id
 
         conversation = (
             session.query(Conversation)
@@ -249,7 +320,6 @@ def get_conversation(conversation_id):
 
 
 @conversation_bp.route("/conversations/<conversation_id>/messages", methods=["POST"])
-@requires_auth
 def send_message(conversation_id):
     """Send a message in a conversation and get a fast response."""
     if not request.is_json:
@@ -263,9 +333,31 @@ def send_message(conversation_id):
     if not isinstance(message, str) or not message.strip():
         return jsonify({"error": "Invalid or missing 'message'"}), 400
 
+    # Manual authentication - follow the same pattern as the working /user endpoint
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return jsonify({"error": "unauthorized", "reason": "no_bearer"}), 401
+
+    token = auth.split(" ", 1)[1]
+    try:
+        from src.utils.auth0_jwt import verify_and_decode
+
+        claims = verify_and_decode(token)
+    except Exception as e:
+        return jsonify({"error": "unauthorized", "reason": str(e)}), 401
+
+    sub = claims.get("sub")
+    if not sub:
+        return jsonify({"error": "missing_sub"}), 400
+
+    from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
+
+    user_id = resolve_user_id_from_auth_provider(sub)
+    if not user_id:
+        return jsonify({"error": "User ID could not be resolved"}), 404
+
     session = get_session()
     try:
-        user_id = g.user_id
         start_time = time.time()
 
         # Get the conversation
@@ -358,12 +450,33 @@ def send_message(conversation_id):
 
 
 @conversation_bp.route("/conversations/<conversation_id>", methods=["DELETE"])
-@requires_auth
 def delete_conversation(conversation_id):
     """Delete a conversation."""
+    # Manual authentication - follow the same pattern as the working /user endpoint
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return jsonify({"error": "unauthorized", "reason": "no_bearer"}), 401
+
+    token = auth.split(" ", 1)[1]
+    try:
+        from src.utils.auth0_jwt import verify_and_decode
+
+        claims = verify_and_decode(token)
+    except Exception as e:
+        return jsonify({"error": "unauthorized", "reason": str(e)}), 401
+
+    sub = claims.get("sub")
+    if not sub:
+        return jsonify({"error": "missing_sub"}), 400
+
+    from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
+
+    user_id = resolve_user_id_from_auth_provider(sub)
+    if not user_id:
+        return jsonify({"error": "User ID could not be resolved"}), 404
+
     session = get_session()
     try:
-        user_id = g.user_id
 
         conversation = (
             session.query(Conversation)
@@ -388,16 +501,20 @@ def delete_conversation(conversation_id):
 
 
 def build_gpt_messages(
-    context: str, conversation_history: list, current_message: str
+    context: dict, conversation_history: list, current_message: str
 ) -> list:
     """Build GPT messages with context and conversation history."""
 
     # Build system message with context
     system_content = TRAINING_PLAN_COACH_SYSTEM_PROMPT
 
-    # Add context if provided (now a string from simplified service)
+    # Add context if provided (now a dict from simplified service)
     if context:
-        system_content += f"\n\n{context}"
+        import json
+
+        context_json = json.dumps(context, indent=2)
+        system_content += f"\n\n**Training Data:**\n{context_json}"
+        print(f"[DEBUG] Context data: {context}", flush=True)
 
     messages = [{"role": "system", "content": system_content}]
 
