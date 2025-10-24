@@ -33,8 +33,6 @@ print(
     f"[INFO] OpenAI models => DEFAULT_MODEL={DEFAULT_MODEL}, TRAINING_PLAN_MODEL={TRAINING_PLAN_MODEL}, CONVERSATION_MODEL={CONVERSATION_MODEL}"
 )
 
-# Removed unused DR_SARAH_CHEN_SYSTEM_PROMPT - now using JACK_DANIELS_SYSTEM_PROMPT
-
 # Jack Daniels methodology system prompt for training plan generation
 JACK_DANIELS_SYSTEM_PROMPT = """
 You are an expert running coach generating training plans strictly using the Jack Daniels Running Formula.
@@ -46,9 +44,6 @@ Principles you MUST follow:
 Output should follow the caller's instructions precisely.
 """
 
-# Removed unused DR_SARAH_CHEN_TRAINING_PLAN_PROMPT and DR_SARAH_CHEN_REFINEMENT_PROMPT
-# Removed unused build_enhanced_refinement_prompt function
-
 
 def parse_date_safe(date_str: str) -> datetime:
     for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
@@ -59,42 +54,21 @@ def parse_date_safe(date_str: str) -> datetime:
     raise ValueError(f"Unsupported date format: {date_str}")
 
 
-def format_prompt(user_question: str, activities: List[Dict]) -> str:
-    prompt = "You are a smart coaching assistant helping a runner improve.\n\n"
-    prompt += "ACTIVITIES:\n"
-
-    if not activities:
-        prompt += "[No activities available]\n"
-    else:
-        for i, a in enumerate(activities, start=1):
-            prompt += f"[{i}] date: {a['date']}, distance_km: {a['distance_km']}, duration_min: {a['duration_min']}\n"
-
-    prompt += "\nUSER QUESTION:\n"
-    prompt += user_question.strip()
-
-    return prompt
-
-
 def get_conversation_response(
     messages: List[Dict], require_json: bool = False, question: str = None
 ) -> str:
     """
     Calls GPT with conversation history for chat-like interactions.
-    Uses smart model selection based on question complexity for cost optimization.
+    Uses our new strategic conversation service approach.
 
     Args:
         messages: List of message dictionaries with 'role' and 'content'
         require_json: If True, enforces JSON response format
-        question: The user's question for smart model selection
+        question: The user's question (unused in new system)
     """
     try:
-        # Smart model selection based on question complexity
-        selected_model = CONVERSATION_MODEL  # Default fallback
-        if question:
-            from src.utils.smart_model_selector import smart_selector
-
-            selected_model, reasoning, metadata = smart_selector.select_model(question)
-            print(f"[INFO] Smart model selection: {selected_model} - {reasoning}")
+        # Use our new system - always use GPT-3.5-turbo for conversations
+        selected_model = CONVERSATION_MODEL
 
         if client is not None:
             # New OpenAI API with optimized parameters
@@ -291,10 +265,6 @@ def get_gpt_response(prompt: str, require_json: bool = True) -> str:
         return f"[ERROR] GPT error: {e}"
 
 
-# Removed unused get_expert_coaching_response function
-# Removed unused build_expert_coaching_prompt function
-
-
 def _extract_json_from_text(text: str) -> str:
     """
     Cleans GPT output and extracts valid JSON if wrapped in markdown or extra text.
@@ -445,7 +415,3 @@ def _simple_truncate_json(incomplete_json: str) -> str:
                                     )
                                     return fixed
     return None
-
-
-# Removed unused generate_training_plan_chunk function (legacy)
-# Removed unused generate_plan_edits function (legacy)

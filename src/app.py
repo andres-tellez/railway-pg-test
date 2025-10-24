@@ -170,13 +170,20 @@ def create_app(test_config=None):
         print("[DEBUG] Request cookies:", request.cookies, flush=True)
 
         # Special logging for conversations endpoint
-        if path == "/api/conversations":
+        if path.startswith("/api/conversations"):
             print(f"[CONVERSATIONS] Request received: {method} {path}", flush=True)
             auth_header = request.headers.get("Authorization", "")
             print(
                 f"[CONVERSATIONS] Authorization header present: {bool(auth_header)}, length: {len(auth_header)}",
                 flush=True,
             )
+
+        # Log ALL requests to see what's happening
+        if path.startswith("/api/"):
+            print(f"[API_REQUEST] {method} {path}", flush=True)
+
+        # Log ALL requests to see what's happening
+        print(f"[ALL_REQUESTS] {method} {path}", flush=True)
 
         # Log auth header for debug
         if "Authorization" in request.headers:
