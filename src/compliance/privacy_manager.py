@@ -85,7 +85,7 @@ class PrivacyManager:
         activities = session.execute(
             text(
                 """
-            SELECT * FROM v_activities_running_plan
+            SELECT * FROM v_completed_activities
             WHERE user_id = :user_id
             ORDER BY start_date DESC
         """

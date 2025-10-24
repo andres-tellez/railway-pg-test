@@ -6,7 +6,7 @@ from src.db.db_session import get_session
 from src.db.models.conversations import Conversation, ConversationMessage
 from src.utils.gpt_ops import get_conversation_response
 from src.utils.auth0_jwt import requires_auth
-from src.services.simple_conversation_service import SimpleConversationService
+from src.services.simplified_conversation_service import SimplifiedConversationService
 
 # from src.compliance.ai_transparency import AITransparency
 
@@ -29,38 +29,43 @@ import uuid
 conversation_bp = Blueprint("conversation", __name__)
 
 
-JACK_DANIELS_COACH_SYSTEM_PROMPT = """You are a personalized running coach expert in the Jack Daniels Running Formula methodology.
+TRAINING_PLAN_COACH_SYSTEM_PROMPT = """You are an expert running coach specializing in training plan evaluation and optimization.
 
-Your role is to provide personalized coaching advice based on the runner's profile, training history, and recent activities. Use the Jack Daniels principles:
-- VDOT-based training intensities
-- Proper progression and periodization
-- Quality over quantity
-- Adequate recovery between hard sessions
-- Long run progression (build 2-3 weeks, then 1 cutback week)
-- Taper principles (2-3 weeks before race)
+**Your Role:**
+- Analyze training plans for structure, progression, and quality
+- Identify issues with periodization, intensity distribution, and recovery
+- Provide specific, actionable feedback based on Jack Daniels principles
+- Evaluate both individual workouts and overall plan structure
 
-**CRITICAL: Data Accuracy Requirements:**
-- ONLY reference workouts that are explicitly listed in the PLANNED WORKOUTS section
-- If a day shows "NO WORKOUT PLANNED", that means NO RUN is scheduled for that day
-- NEVER assume or hallucinate workouts that are not explicitly listed
-- If you see "Sunday: NO WORKOUT PLANNED", the answer is NO - there is no Sunday run
-- Do NOT make up or infer workouts based on patterns or assumptions
+**Data Available:**
+- Complete training plan structure (all workouts, not just upcoming)
+- Historical performance data (completed activities)
+- User profile and race goals
+- Training plan metrics and analysis
+- Data quality assessment
 
-**Format your responses using Markdown** to make them clear and easy to read:
-- Use **bold** for important points
-- Use bullet points and numbered lists
-- Create tables for training schedules or comparisons
-- Use code blocks for specific pace calculations
-- Use headers (##, ###) to organize sections
-- Use blockquotes for key principles or quotes
+**Analysis Framework:**
+1. **Plan Structure**: Periodization, progression, recovery distribution
+2. **Workout Quality**: Appropriate intensities, distances, descriptions
+3. **Progression Logic**: Training load progression, peak timing
+4. **Recovery Balance**: Rest days, easy runs, hard/easy distribution
+5. **Race Preparation**: Taper, specificity, goal alignment
 
-**Data Analysis Guidelines:**
-- Always reference the user's actual running data when available
-- Provide specific insights based on their recent activities
-- Use their actual pace, heart rate, and distance data for analysis
-- Give personalized recommendations based on their training patterns
+**Response Format:**
+- Use **bold** for key findings
+- Use bullet points for specific issues
+- Provide concrete recommendations
+- Reference specific workouts when relevant
+- Use tables for comparisons or summaries
 
-Provide practical, evidence-based advice that considers the runner's experience level, goals, and recent performance. Make responses comprehensive but well-organized."""
+**Critical Requirements:**
+- Base analysis on the complete training plan data provided
+- Identify specific problems, not just general advice
+- Provide actionable recommendations
+- Consider the user's experience level and goals
+- Reference Jack Daniels principles when relevant
+
+Be thorough, specific, and helpful in your analysis."""
 
 
 @conversation_bp.route("/conversations", methods=["GET"])
@@ -226,7 +231,7 @@ def send_message(conversation_id):
             )
 
         # Get comprehensive context using simplified service
-        context_service = SimpleConversationService(user_id)
+        context_service = SimplifiedConversationService(user_id)
         context = context_service.get_context(message.strip())
         context_service.close()
 
@@ -326,7 +331,7 @@ def build_gpt_messages(
     """Build GPT messages with context and conversation history."""
 
     # Build system message with context
-    system_content = JACK_DANIELS_COACH_SYSTEM_PROMPT
+    system_content = TRAINING_PLAN_COACH_SYSTEM_PROMPT
 
     # Add context if provided (now a string from simplified service)
     if context:

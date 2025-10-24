@@ -5,14 +5,16 @@ from sqlalchemy import text
 from src.db.db_session import get_session
 from src.compliance.consent_manager import ConsentManager
 from src.compliance.data_classification import DataCategory
+from src.utils.data_quality_validator import DataQualityValidator
 
 
 class SimpleConversationService:
-    """Simplified conversation service that loads comprehensive recent data"""
+    """Enhanced conversation service with comprehensive training plan context"""
 
     def __init__(self, user_id: str):
         self.user_id = user_id
         self.session = get_session()
+        self.validator = DataQualityValidator(self.session)
 
     def get_context(self, message_content: str) -> str:
         """Get comprehensive context for any conversation"""
@@ -26,29 +28,22 @@ class SimpleConversationService:
             if activities:
                 context_parts.append(activities)
 
-        # Load planned workouts (next 7 days) for training plan context
+        # Load comprehensive training plan context
         if self._check_consent([DataCategory.PERFORMANCE_DATA]):
-            planned_workouts = self._get_planned_workouts()
-            if planned_workouts:
-                context_parts.append(planned_workouts)
+            training_plan = self._get_comprehensive_training_plan()
+            if training_plan:
+                context_parts.append(training_plan)
 
-        # Load race information from plans
-        if self._check_consent([DataCategory.PERFORMANCE_DATA]):
-            race_info = self._get_race_information()
-            if race_info:
-                context_parts.append(race_info)
-
-        # Always load user profile if available
+        # Load user profile if available
         if self._check_consent([DataCategory.PERFORMANCE_DATA]):
             profile = self._get_user_profile()
             if profile:
                 context_parts.append(profile)
 
-        # Load conversation history if consent given
-        if self._check_consent([DataCategory.CONVERSATION_DATA]):
-            history = self._get_conversation_history()
-            if history:
-                context_parts.append(history)
+        # Add data quality context
+        data_quality = self._get_data_quality_context()
+        if data_quality:
+            context_parts.append(data_quality)
 
         return "\n\n".join(context_parts) if context_parts else ""
 
@@ -70,8 +65,9 @@ class SimpleConversationService:
                         distance,
                         moving_time,
                         avg_speed,
-                        avg_hr
-                    FROM v_activities_running_plan
+                        avg_hr,
+                        elevation
+                    FROM v_completed_activities
                     WHERE user_id = :user_id
                     AND activity_date::date >= CURRENT_DATE - INTERVAL '30 days'
                     ORDER BY activity_date DESC
@@ -84,7 +80,9 @@ class SimpleConversationService:
             if not activities:
                 return ""
 
-            context = "RECENT RUNNING ACTIVITIES (Last 30 Days):\n"
+            context = "RECENT COMPLETED ACTIVITIES (Last 30 Days):\n"
+            context += "=" * 50 + "\n"
+
             for activity in activities:
                 # Format date nicely
                 try:
@@ -98,12 +96,14 @@ class SimpleConversationService:
                 except:
                     date_str = str(activity.activity_date)
 
-                context += f"- {date_str}: {activity.activity_name}\n"
+                context += f"• {date_str}: {activity.activity_name}\n"
                 context += f"  Distance: {activity.distance:.2f}mi, Time: {activity.moving_time}\n"
                 context += f"  Pace: {activity.avg_speed:.2f} mph"
                 if activity.avg_hr:
                     context += f", Avg HR: {activity.avg_hr:.0f} bpm"
-                context += "\n"
+                if activity.elevation:
+                    context += f", Elevation: {activity.elevation:.0f}ft"
+                context += "\n\n"
 
             return context
 
@@ -112,19 +112,45 @@ class SimpleConversationService:
             self.session.rollback()
             return ""
 
-    def _get_planned_workouts(self) -> str:
-        """Get planned workouts (next 7 days)"""
+    def _get_comprehensive_training_plan(self) -> str:
+        """Get comprehensive training plan context (not just 7 days)"""
         try:
-            # Use local timezone instead of database CURRENT_DATE
             from datetime import datetime, timezone
             import pytz
+            from collections import defaultdict
 
             # Get current date in CT timezone
             ct_tz = pytz.timezone("America/Chicago")
             now_ct = datetime.now(ct_tz)
             today_ct = now_ct.date()
 
-            planned_workouts = self.session.execute(
+            # Get the active training plan
+            active_plan = self.session.execute(
+                text(
+                    """
+                    SELECT
+                        p.id,
+                        p.plan_name,
+                        p.race_date,
+                        p.race_distance,
+                        p.notes,
+                        COUNT(pw.id) as total_workouts
+                    FROM plans p
+                    LEFT JOIN plan_workouts pw ON p.id = pw.plan_id
+                    WHERE p.user_id = :user_id
+                    GROUP BY p.id, p.plan_name, p.race_date, p.race_distance
+                    ORDER BY p.created_at DESC
+                    LIMIT 1
+                """
+                ),
+                {"user_id": self.user_id},
+            ).fetchone()
+
+            if not active_plan:
+                return ""
+
+            # Get all workouts for the active plan
+            all_workouts = self.session.execute(
                 text(
                     """
                     SELECT
@@ -133,81 +159,133 @@ class SimpleConversationService:
                         pw.description,
                         pw.miles,
                         pw.intensity,
-                        pw.target_zone
+                        pw.target_zone,
+                        pw.target_hr,
+                        pw.focus,
+                        pw.segments
                     FROM plan_workouts pw
-                    JOIN plans p ON pw.plan_id = p.id
-                    WHERE p.user_id = :user_id
-                    AND pw.date >= :today_date
-                    AND pw.date <= :today_date + INTERVAL '7 days'
+                    WHERE pw.plan_id = :plan_id
                     ORDER BY pw.date ASC
                 """
                 ),
-                {"user_id": self.user_id, "today_date": today_ct},
+                {"plan_id": active_plan.id},
             ).fetchall()
 
-            if not planned_workouts:
+            if not all_workouts:
                 return ""
 
-            context = "PLANNED WORKOUTS (Next 7 Days):\n"
+            # Build comprehensive training plan context
+            context = "TRAINING PLAN ANALYSIS:\n"
+            context += "=" * 50 + "\n"
+            context += f"Plan Name: {active_plan.plan_name}\n"
+            context += f"Total Workouts: {active_plan.total_workouts}\n"
 
-            # Create a set of days with workouts for easy checking
-            workout_days = set()
-            for workout in planned_workouts:
+            if active_plan.race_date and active_plan.race_distance:
+                context += f"Target Race: {active_plan.race_distance} on {active_plan.race_date}\n"
+
+                # Calculate days until race
+                try:
+                    race_date = datetime.strptime(
+                        str(active_plan.race_date), "%Y-%m-%d"
+                    ).date()
+                    days_until_race = (race_date - today_ct).days
+                    context += f"Days Until Race: {days_until_race}\n"
+                except:
+                    pass
+
+            if active_plan.notes:
+                context += f"Plan Notes: {active_plan.notes}\n"
+
+            context += "\n" + "=" * 50 + "\n"
+            context += "FULL TRAINING PLAN STRUCTURE:\n"
+            context += "=" * 50 + "\n"
+
+            # Group workouts by week for better structure analysis
+            workouts_by_week = defaultdict(list)
+            for workout in all_workouts:
                 try:
                     workout_date = datetime.strptime(
                         str(workout.date), "%Y-%m-%d"
                     ).date()
-                    workout_days.add(workout_date)
+                    week_start = workout_date - timedelta(days=workout_date.weekday())
+                    workouts_by_week[week_start].append(workout)
                 except:
-                    pass
+                    continue
 
-            # List all days in the next 7 days and mark which have workouts
-            from datetime import timedelta
+            # Display training plan by weeks
+            for week_start in sorted(workouts_by_week.keys()):
+                week_end = week_start + timedelta(days=6)
+                context += f"\nWeek of {week_start.strftime('%B %d')} - {week_end.strftime('%B %d')}:\n"
+                context += "-" * 40 + "\n"
 
-            for i in range(7):
-                check_date = today_ct + timedelta(days=i)
-                day_name = check_date.strftime("%A")
+                for workout in workouts_by_week[week_start]:
+                    workout_date = datetime.strptime(
+                        str(workout.date), "%Y-%m-%d"
+                    ).date()
+                    day_name = workout_date.strftime("%A")
 
-                if check_date in workout_days:
-                    # Find the workout for this day
-                    workout = next(
-                        (w for w in planned_workouts if str(w.date) == str(check_date)),
-                        None,
-                    )
-                    if workout:
-                        if i == 0:
-                            date_str = "Today"
-                        elif i == 1:
-                            date_str = "Tomorrow"
-                        else:
-                            date_str = f"{day_name}, {check_date.strftime('%B %d')} (in {i} days)"
-
-                        context += f"- {date_str}: {workout.workout_type} - {workout.miles}mi\n"
-                        context += f"  Description: {workout.description}\n"
-                        context += f"  Intensity: {workout.intensity}"
-                        if workout.target_zone:
-                            context += f", Target Zone: {workout.target_zone}"
-                        context += "\n"
-                else:
-                    # No workout planned for this day
-                    if i == 0:
-                        date_str = "Today"
-                    elif i == 1:
-                        date_str = "Tomorrow"
-                    else:
-                        date_str = (
-                            f"{day_name}, {check_date.strftime('%B %d')} (in {i} days)"
+                    # Mark if this is upcoming
+                    if workout_date >= today_ct:
+                        upcoming = (
+                            " (UPCOMING)" if workout_date > today_ct else " (TODAY)"
                         )
+                    else:
+                        upcoming = " (PAST)"
 
-                    context += f"- {date_str}: NO WORKOUT PLANNED\n"
+                    context += (
+                        f"  {day_name} {workout_date.strftime('%m/%d')}{upcoming}:\n"
+                    )
+                    context += f"    Type: {workout.workout_type}\n"
+                    context += f"    Distance: {workout.miles} miles\n"
+                    context += f"    Intensity: {workout.intensity}\n"
+                    context += f"    Description: {workout.description}\n"
 
-            # Add explicit summary to prevent hallucination
-            context += "\n**IMPORTANT: Only the days listed above with specific workouts have runs planned. Days marked 'NO WORKOUT PLANNED' have NO runs scheduled.**\n"
+                    if workout.target_zone:
+                        context += f"    Target Zone: {workout.target_zone}\n"
+                    if workout.target_hr:
+                        context += f"    Target HR: {workout.target_hr}\n"
+                    if workout.focus:
+                        context += f"    Focus: {workout.focus}\n"
+                    if workout.segments:
+                        context += f"    Segments: {workout.segments}\n"
+                    context += "\n"
+
+            # Add training plan analysis context
+            context += "\n" + "=" * 50 + "\n"
+            context += "TRAINING PLAN METRICS:\n"
+            context += "=" * 50 + "\n"
+
+            # Calculate some basic metrics for the GPT
+            total_miles = sum(w.miles for w in all_workouts if w.miles)
+            avg_weekly_miles = total_miles / max(len(workouts_by_week), 1)
+
+            context += f"Total Plan Distance: {total_miles:.1f} miles\n"
+            context += f"Average Weekly Distance: {avg_weekly_miles:.1f} miles\n"
+            context += f"Total Workouts: {len(all_workouts)}\n"
+            context += f"Total Weeks: {len(workouts_by_week)}\n"
+
+            # Count workout types
+            workout_types = {}
+            for workout in all_workouts:
+                workout_types[workout.workout_type] = (
+                    workout_types.get(workout.workout_type, 0) + 1
+                )
+
+            context += f"Workout Types: {dict(workout_types)}\n"
+
+            # Count intensity distribution
+            intensity_dist = {}
+            for workout in all_workouts:
+                intensity_dist[workout.intensity] = (
+                    intensity_dist.get(workout.intensity, 0) + 1
+                )
+
+            context += f"Intensity Distribution: {dict(intensity_dist)}\n"
 
             return context
 
         except Exception as e:
-            print(f"Error loading planned workouts: {e}")
+            print(f"Error loading training plan: {e}")
             self.session.rollback()
             return ""
 
@@ -405,6 +483,45 @@ class SimpleConversationService:
         except Exception as e:
             print(f"Error loading conversation history: {e}")
             self.session.rollback()
+            return ""
+
+    def _get_data_quality_context(self) -> str:
+        """Get data quality context for GPT"""
+        try:
+            plan_quality = self.validator.validate_training_plan_data(self.user_id)
+            activity_quality = self.validator.validate_activity_data(self.user_id)
+
+            context = "DATA QUALITY ASSESSMENT:\n"
+            context += "=" * 50 + "\n"
+
+            # Training plan quality
+            if plan_quality["plan_exists"]:
+                context += f"Training Plan: {plan_quality['plan_name']}\n"
+                context += f"Workouts: {plan_quality['workouts_count']}\n"
+                context += f"Quality Score: {plan_quality['plan_quality_score']:.1f}%\n"
+
+                if plan_quality["issues"]:
+                    context += f"Issues: {', '.join(plan_quality['issues'])}\n"
+                else:
+                    context += "No data quality issues detected\n"
+            else:
+                context += "No training plan found\n"
+
+            # Activity data quality
+            context += f"\nRecent Activities: {activity_quality['activities_count']}\n"
+            context += (
+                f"Data Quality Score: {activity_quality['data_quality_score']:.1f}%\n"
+            )
+
+            if activity_quality["issues"]:
+                context += f"Issues: {', '.join(activity_quality['issues'])}\n"
+            else:
+                context += "No data quality issues detected\n"
+
+            return context
+
+        except Exception as e:
+            print(f"Error loading data quality context: {e}")
             return ""
 
     def close(self):

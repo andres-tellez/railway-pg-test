@@ -8,18 +8,22 @@ class ConversationConfig:
     """Centralized configuration for conversation system - highly tweakable"""
 
     # GPT Model Configuration
-    GPT_MODEL = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-3.5-turbo")
-    GPT_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
-    GPT_MAX_TOKENS = int(os.getenv("OPENAI_MAX_TOKENS", "500"))
+    GPT_MODEL = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4")  # Upgraded to GPT-4
+    GPT_TEMPERATURE = float(
+        os.getenv("OPENAI_TEMPERATURE", "0.3")
+    )  # Lower for more focused responses
+    GPT_MAX_TOKENS = int(
+        os.getenv("OPENAI_MAX_TOKENS", "2000")
+    )  # Increased for detailed analysis
     GPT_TIMEOUT = int(os.getenv("OPENAI_TIMEOUT", "30"))
 
-    # Context Limits (simplified for comprehensive loading)
+    # Context Limits (optimized for comprehensive training plan analysis)
     CONTEXT_LIMITS = {
         "max_conversation_history": int(os.getenv("MAX_CONVERSATION_HISTORY", "10")),
-        "max_activities": int(
-            os.getenv("MAX_ACTIVITIES", "20")
-        ),  # Increased for comprehensive loading
-        "max_context_tokens": int(os.getenv("MAX_CONTEXT_TOKENS", "2000")),
+        "max_activities": int(os.getenv("MAX_ACTIVITIES", "20")),
+        "max_context_tokens": int(
+            os.getenv("MAX_CONTEXT_TOKENS", "4000")
+        ),  # Increased for full plan
     }
 
     # Context Triggers - REMOVED: Using comprehensive data loading instead
@@ -39,9 +43,10 @@ class ConversationConfig:
         "data_retention_days": int(os.getenv("DATA_RETENTION_DAYS", "730")),  # 2 years
     }
 
-    # Database View Names (simplified)
+    # Database View Names (updated with accurate names)
     DATABASE_VIEWS = {
-        "activities": "v_activities_running_plan",
+        "activities": "v_completed_activities",  # Renamed from v_activities_running_plan
+        "splits": "v_activity_splits",  # Renamed from v_splits_running_plan
     }
 
     @classmethod
