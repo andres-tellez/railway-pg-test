@@ -300,8 +300,10 @@ def send_message(conversation_id):
             context, conversation.messages, message.strip()
         )
 
-        # Get GPT response (fast)
-        gpt_response = get_conversation_response(gpt_messages, require_json=False)
+        # Get GPT response with smart model selection
+        gpt_response = get_conversation_response(
+            gpt_messages, require_json=False, question=message.strip()
+        )
 
         # Add transparency if enabled
         if ConversationConfig.COMPLIANCE["enable_transparency"]:

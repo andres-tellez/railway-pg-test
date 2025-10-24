@@ -75,20 +75,31 @@ def format_prompt(user_question: str, activities: List[Dict]) -> str:
     return prompt
 
 
-def get_conversation_response(messages: List[Dict], require_json: bool = False) -> str:
+def get_conversation_response(
+    messages: List[Dict], require_json: bool = False, question: str = None
+) -> str:
     """
     Calls GPT with conversation history for chat-like interactions.
-    Uses GPT-3.5-turbo for cost efficiency with optimized parameters.
+    Uses smart model selection based on question complexity for cost optimization.
 
     Args:
         messages: List of message dictionaries with 'role' and 'content'
         require_json: If True, enforces JSON response format
+        question: The user's question for smart model selection
     """
     try:
+        # Smart model selection based on question complexity
+        selected_model = CONVERSATION_MODEL  # Default fallback
+        if question:
+            from src.utils.smart_model_selector import smart_selector
+
+            selected_model, reasoning, metadata = smart_selector.select_model(question)
+            print(f"[INFO] Smart model selection: {selected_model} - {reasoning}")
+
         if client is not None:
             # New OpenAI API with optimized parameters
             call_params = {
-                "model": CONVERSATION_MODEL,
+                "model": selected_model,
                 "temperature": 0.7,  # Slightly higher for more natural conversation
                 "timeout": 30.0,  # Reduced timeout for faster response
                 "messages": messages,

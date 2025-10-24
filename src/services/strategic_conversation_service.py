@@ -35,7 +35,333 @@ class StrategicConversationService:
             logger.debug(f" Query: {query[:100]}...")
             if params:
                 logger.debug(f" Params: {params}")
+            # Rollback the transaction to allow subsequent queries to work
+            try:
+                self.session.rollback()
+            except:
+                pass
             return []
+
+    def _calculate_performance_metrics(self):
+        """Calculate 90-day performance metrics from weekly insights"""
+        try:
+            # Get 90 days of weekly insights
+            query = """
+                SELECT
+                    actual_avg_pace,
+                    actual_avg_hr,
+                    actual_total_miles,
+                    actual_workout_count,
+                    actual_long_run_miles
+                FROM v_weekly_insights
+                WHERE user_id = :user_id
+                AND week_start::date >= CURRENT_DATE - INTERVAL '90 days'
+                ORDER BY week_start
+            """
+            results = self._safe_execute_query(query, {"user_id": self.user_id})
+
+            if not results:
+                return None
+
+            # Calculate 90-day metrics
+            total_miles = sum(float(row.actual_total_miles or 0) for row in results)
+            total_runs = sum(int(row.actual_workout_count or 0) for row in results)
+            avg_pace = (
+                sum(float(row.actual_avg_pace or 0) for row in results) / len(results)
+                if results
+                else 0
+            )
+            avg_hr = (
+                sum(float(row.actual_avg_hr or 0) for row in results) / len(results)
+                if results
+                else 0
+            )
+            longest_run = (
+                max(float(row.actual_long_run_miles or 0) for row in results)
+                if results
+                else 0
+            )
+
+            # Calculate pace improvement (first 30 days vs last 30 days)
+            first_half = results[: len(results) // 2] if len(results) > 1 else results
+            second_half = results[len(results) // 2 :] if len(results) > 1 else results
+
+            first_half_pace = (
+                sum(float(row.actual_avg_pace or 0) for row in first_half)
+                / len(first_half)
+                if first_half
+                else 0
+            )
+            second_half_pace = (
+                sum(float(row.actual_avg_pace or 0) for row in second_half)
+                / len(second_half)
+                if second_half
+                else 0
+            )
+            pace_improvement = (
+                second_half_pace - first_half_pace if first_half and second_half else 0
+            )
+
+            # Calculate consistency score (lower standard deviation = more consistent)
+            paces = [
+                float(row.actual_avg_pace) for row in results if row.actual_avg_pace
+            ]
+            pace_consistency = (
+                100 - (sum((p - avg_pace) ** 2 for p in paces) / len(paces)) ** 0.5
+                if len(paces) > 1
+                else 100
+            )
+
+            return f"""
+PERFORMANCE METRICS (90-day):
+- Average Pace: {avg_pace:.2f} mph
+- Average Heart Rate: {avg_hr:.1f} bpm
+- Total Distance: {total_miles:.1f} miles
+- Total Runs: {total_runs} runs
+- Longest Run: {longest_run:.1f} miles
+- Pace Improvement: {pace_improvement:+.2f} mph
+- Consistency Score: {pace_consistency:.1f}%
+"""
+        except Exception as e:
+            logger.error(f"Error calculating performance metrics: {e}")
+            return None
+
+    def _calculate_race_preparation(self):
+        """Calculate race preparation metrics from weekly insights and plans"""
+        try:
+            # Get race info from plans table
+            race_query = """
+                SELECT race_date, race_distance, plan_name
+                FROM plans
+                WHERE user_id = :user_id
+                AND race_date IS NOT NULL
+                AND race_date >= CURRENT_DATE
+                ORDER BY race_date
+                LIMIT 1
+            """
+            race_results = self._safe_execute_query(
+                race_query, {"user_id": self.user_id}
+            )
+
+            if not race_results:
+                return None
+
+            race_info = race_results[0]
+            race_date = race_info.race_date
+            # Handle race distance - could be a number or text like "Marathon"
+            try:
+                race_distance = (
+                    float(race_info.race_distance) if race_info.race_distance else 0
+                )
+            except (ValueError, TypeError):
+                # If it's text like "Marathon", use a default distance
+                if (
+                    race_info.race_distance
+                    and "marathon" in race_info.race_distance.lower()
+                ):
+                    race_distance = 26.2
+                elif (
+                    race_info.race_distance
+                    and "half" in race_info.race_distance.lower()
+                ):
+                    race_distance = 13.1
+                elif (
+                    race_info.race_distance and "5k" in race_info.race_distance.lower()
+                ):
+                    race_distance = 3.1
+                elif (
+                    race_info.race_distance and "10k" in race_info.race_distance.lower()
+                ):
+                    race_distance = 6.2
+                else:
+                    race_distance = 0
+            days_until_race = (race_date - datetime.now().date()).days
+
+            # Determine training phase
+            if days_until_race > 84:
+                training_phase = "Base Building"
+            elif days_until_race > 42:
+                training_phase = "Build Phase"
+            elif days_until_race > 14:
+                training_phase = "Peak Phase"
+            else:
+                training_phase = "Taper Phase"
+
+            # Get recent training data for readiness assessment
+            recent_query = """
+                SELECT
+                    actual_total_miles,
+                    training_load_ratio,
+                    workout_completion_rate
+                FROM v_weekly_insights
+                WHERE user_id = :user_id
+                AND week_start::date >= CURRENT_DATE - INTERVAL '4 weeks'
+                ORDER BY week_start DESC
+                LIMIT 4
+            """
+            recent_results = self._safe_execute_query(
+                recent_query, {"user_id": self.user_id}
+            )
+
+            if recent_results:
+                avg_weekly_miles = sum(
+                    row.actual_total_miles or 0 for row in recent_results
+                ) / len(recent_results)
+                avg_load_ratio = sum(
+                    row.training_load_ratio or 0 for row in recent_results
+                ) / len(recent_results)
+                avg_completion = sum(
+                    row.workout_completion_rate or 0 for row in recent_results
+                ) / len(recent_results)
+
+                # Calculate readiness score (0-100)
+                readiness_score = min(
+                    100,
+                    (
+                        avg_load_ratio * 30
+                        + avg_completion * 40
+                        + min(avg_weekly_miles / (race_distance * 0.3), 1) * 30
+                    ),
+                )
+
+                # Recommended weekly mileage based on race distance
+                if race_distance <= 5:
+                    recommended_mileage = race_distance * 3
+                elif race_distance <= 13.1:
+                    recommended_mileage = race_distance * 2.5
+                elif race_distance <= 26.2:
+                    recommended_mileage = race_distance * 2
+                else:
+                    recommended_mileage = race_distance * 1.5
+            else:
+                readiness_score = 0
+                recommended_mileage = race_distance * 2
+
+            return f"""
+RACE PREPARATION:
+- Race: {race_info.plan_name} ({race_distance:.1f} miles)
+- Race Date: {race_date}
+- Days Until Race: {days_until_race}
+- Training Phase: {training_phase}
+- Readiness Score: {readiness_score:.1f}/100
+- Recommended Weekly Mileage: {recommended_mileage:.1f} miles
+- Current Weekly Average: {avg_weekly_miles:.1f} miles
+"""
+        except Exception as e:
+            logger.error(f"Error calculating race preparation: {e}")
+            return None
+
+    def _calculate_recent_longest_runs(self):
+        """Calculate recent longest runs from completed activities"""
+        try:
+            query = """
+                SELECT
+                    activity_date,
+                    activity_name,
+                    distance,
+                    avg_speed,
+                    avg_hr
+                FROM v_completed_activities
+                WHERE user_id = :user_id
+                AND activity_date::date >= CURRENT_DATE - INTERVAL '30 days'
+                AND distance > 0
+                ORDER BY distance DESC
+                LIMIT 5
+            """
+            results = self._safe_execute_query(query, {"user_id": self.user_id})
+
+            if not results:
+                return None
+
+            context = "RECENT LONGEST RUNS:\n"
+            for i, run in enumerate(results, 1):
+                context += f"{i}. {run.activity_date}: {run.activity_name} - {run.distance:.1f}mi, {run.avg_speed:.1f} mph, {run.avg_hr or 0:.0f} bpm\n"
+
+            return context
+        except Exception as e:
+            logger.error(f"Error calculating recent longest runs: {e}")
+            return None
+
+    def _calculate_training_progress(self):
+        """Calculate training progress trends from weekly insights"""
+        try:
+            query = """
+                SELECT
+                    week_start,
+                    actual_total_miles,
+                    actual_workout_count,
+                    actual_avg_pace,
+                    training_load_ratio
+                FROM v_weekly_insights
+                WHERE user_id = :user_id
+                AND week_start::date >= CURRENT_DATE - INTERVAL '12 weeks'
+                ORDER BY week_start
+            """
+            results = self._safe_execute_query(query, {"user_id": self.user_id})
+
+            if len(results) < 2:
+                return None
+
+            # Calculate trends
+            recent_weeks = results[-4:] if len(results) >= 4 else results
+            older_weeks = (
+                results[:-4] if len(results) >= 8 else results[: len(results) // 2]
+            )
+
+            recent_avg_miles = sum(
+                float(row.actual_total_miles or 0) for row in recent_weeks
+            ) / len(recent_weeks)
+            older_avg_miles = (
+                sum(float(row.actual_total_miles or 0) for row in older_weeks)
+                / len(older_weeks)
+                if older_weeks
+                else recent_avg_miles
+            )
+
+            recent_avg_pace = sum(
+                float(row.actual_avg_pace or 0) for row in recent_weeks
+            ) / len(recent_weeks)
+            older_avg_pace = (
+                sum(float(row.actual_avg_pace or 0) for row in older_weeks)
+                / len(older_weeks)
+                if older_weeks
+                else recent_avg_pace
+            )
+
+            distance_trend = (
+                "increasing" if recent_avg_miles > older_avg_miles else "decreasing"
+            )
+            pace_trend = (
+                "improving" if recent_avg_pace > older_avg_pace else "declining"
+            )
+
+            # Calculate consistency
+            weekly_miles = [float(row.actual_total_miles or 0) for row in results]
+            consistency = (
+                100
+                - (
+                    sum(
+                        (m - sum(weekly_miles) / len(weekly_miles)) ** 2
+                        for m in weekly_miles
+                    )
+                    / len(weekly_miles)
+                )
+                ** 0.5
+                if len(weekly_miles) > 1
+                else 100
+            )
+
+            return f"""
+TRAINING PROGRESS (12-week trends):
+- Distance Trend: {distance_trend} ({recent_avg_miles:.1f} vs {older_avg_miles:.1f} miles/week)
+- Pace Trend: {pace_trend} ({recent_avg_pace:.2f} vs {older_avg_pace:.2f} mph)
+- Consistency: {consistency:.1f}%
+- Recent Weekly Average: {recent_avg_miles:.1f} miles
+- Recent Pace Average: {recent_avg_pace:.2f} mph
+"""
+        except Exception as e:
+            logger.error(f"Error calculating training progress: {e}")
+            return None
 
     def get_context(self, message_content: str) -> str:
         """Get comprehensive context using strategic views"""
@@ -73,27 +399,27 @@ class StrategicConversationService:
             if heart_rate_trends:
                 context_parts.append(heart_rate_trends)
 
-        # Add recent longest runs
+        # Add recent longest runs (calculated from completed activities)
         if self._check_consent([DataCategory.PERFORMANCE_DATA]):
-            recent_longest_runs = self._get_recent_longest_runs()
+            recent_longest_runs = self._calculate_recent_longest_runs()
             if recent_longest_runs:
                 context_parts.append(recent_longest_runs)
 
-        # Add performance metrics
+        # Add performance metrics (calculated from weekly insights)
         if self._check_consent([DataCategory.PERFORMANCE_DATA]):
-            performance_metrics = self._get_performance_metrics()
+            performance_metrics = self._calculate_performance_metrics()
             if performance_metrics:
                 context_parts.append(performance_metrics)
 
-        # Add training progress
+        # Add training progress (calculated from weekly insights)
         if self._check_consent([DataCategory.PERFORMANCE_DATA]):
-            training_progress = self._get_training_progress()
+            training_progress = self._calculate_training_progress()
             if training_progress:
                 context_parts.append(training_progress)
 
-        # Add race preparation
+        # Add race preparation (calculated from weekly insights + plans)
         if self._check_consent([DataCategory.PERFORMANCE_DATA]):
-            race_preparation = self._get_race_preparation()
+            race_preparation = self._calculate_race_preparation()
             if race_preparation:
                 context_parts.append(race_preparation)
 
@@ -380,185 +706,13 @@ class StrategicConversationService:
             logger.info(f"Error loading heart rate trends: {e}")
             return ""
 
-    def _get_recent_longest_runs(self) -> str:
-        """Get recent longest runs data"""
-        try:
-            longest_runs = self.session.execute(
-                text(
-                    """
-                    SELECT
-                        start_date,
-                        activity_name,
-                        distance_miles,
-                        avg_pace_mph,
-                        avg_hr,
-                        conv_moving_time
-                    FROM v_recent_longest_runs
-                    WHERE user_id = :user_id
-                    ORDER BY distance_miles DESC, start_date DESC
-                    LIMIT 5
-                """
-                ),
-                {"user_id": self.user_id},
-            ).fetchall()
+    # _get_recent_longest_runs removed - now using _calculate_recent_longest_runs
 
-            if not longest_runs:
-                return ""
+    # _get_performance_metrics removed - now using _calculate_performance_metrics
 
-            context = "RECENT LONGEST RUNS:\n"
-            context += "=" * 40 + "\n"
+    # _get_training_progress removed - now using _calculate_training_progress
 
-            for run in longest_runs:
-                context += f"{run.start_date}: {run.activity_name}\n"
-                context += f"  Distance: {run.distance_miles} miles\n"
-                context += f"  Pace: {run.avg_pace_mph} mph\n"
-                if run.avg_hr and run.avg_hr > 0:
-                    context += f"  Heart Rate: {run.avg_hr} bpm\n"
-                context += f"  Time: {run.conv_moving_time}\n\n"
-
-            context += "=" * 40 + "\n"
-            return context
-        except Exception as e:
-            logger.info(f"Error loading recent longest runs: {e}")
-            return ""
-
-    def _get_performance_metrics(self) -> str:
-        """Get comprehensive performance metrics"""
-        try:
-            metrics = self.session.execute(
-                text(
-                    """
-                    SELECT
-                        total_activities,
-                        avg_distance_per_run,
-                        longest_run_miles,
-                        avg_pace_mph,
-                        fastest_pace_mph,
-                        avg_heart_rate,
-                        pace_consistency,
-                        hr_consistency,
-                        total_miles,
-                        total_elevation_gain
-                    FROM v_performance_metrics
-                    WHERE user_id = :user_id
-                """
-                ),
-                {"user_id": self.user_id},
-            ).fetchone()
-
-            if not metrics:
-                return ""
-
-            context = "PERFORMANCE METRICS (Last 90 Days):\n"
-            context += "=" * 50 + "\n"
-            context += f"Total Activities: {metrics.total_activities}\n"
-            context += f"Average Distance: {metrics.avg_distance_per_run} miles\n"
-            context += f"Longest Run: {metrics.longest_run_miles} miles\n"
-            context += f"Average Pace: {metrics.avg_pace_mph} mph\n"
-            context += f"Fastest Pace: {metrics.fastest_pace_mph} mph\n"
-            context += f"Average Heart Rate: {metrics.avg_heart_rate} bpm\n"
-            context += (
-                f"Pace Consistency: {metrics.pace_consistency} (lower = better)\n"
-            )
-            context += f"HR Consistency: {metrics.hr_consistency} (lower = better)\n"
-            context += f"Total Miles: {metrics.total_miles}\n"
-            context += f"Total Elevation: {metrics.total_elevation_gain} ft\n"
-            context += "=" * 50 + "\n"
-            return context
-        except Exception as e:
-            logger.info(f"Error loading performance metrics: {e}")
-            return ""
-
-    def _get_training_progress(self) -> str:
-        """Get training progress trends"""
-        try:
-            progress = self.session.execute(
-                text(
-                    """
-                    SELECT
-                        week_start,
-                        weekly_workouts,
-                        weekly_miles,
-                        weekly_avg_pace,
-                        weekly_avg_hr,
-                        miles_change,
-                        pace_change,
-                        hr_change
-                    FROM v_training_progress
-                    WHERE user_id = 'ddc21831-1b01-4cfc-82db-7632ab2cfba1'
-                    ORDER BY week_start DESC
-                    LIMIT 8
-                """
-                ),
-                {"user_id": self.user_id},
-            ).fetchall()
-
-            if not progress:
-                return ""
-
-            context = "TRAINING PROGRESS TRENDS:\n"
-            context += "=" * 50 + "\n"
-
-            for week in progress:
-                miles_change = (
-                    f" ({week.miles_change:+} mi)" if week.miles_change else ""
-                )
-                pace_change = f" ({week.pace_change:+} mph)" if week.pace_change else ""
-                hr_change = f" ({week.hr_change:+} bpm)" if week.hr_change else ""
-
-                context += f"Week {week.week_start}:\n"
-                context += f"  Workouts: {week.weekly_workouts}\n"
-                context += f"  Miles: {week.weekly_miles}{miles_change}\n"
-                context += f"  Pace: {week.weekly_avg_pace} mph{pace_change}\n"
-                context += f"  HR: {week.weekly_avg_hr} bpm{hr_change}\n\n"
-
-            context += "=" * 50 + "\n"
-            return context
-        except Exception as e:
-            logger.info(f"Error loading training progress: {e}")
-            return ""
-
-    def _get_race_preparation(self) -> str:
-        """Get race preparation analysis"""
-        try:
-            race_info = self.session.execute(
-                text(
-                    """
-                    SELECT
-                        plan_name,
-                        race_date,
-                        race_distance,
-                        days_until_race,
-                        weeks_until_race,
-                        avg_recent_distance,
-                        avg_recent_pace,
-                        longest_recent_run,
-                        recent_workouts,
-                        training_phase
-                    FROM v_race_preparation
-                """
-                )
-            ).fetchone()
-
-            if not race_info:
-                return ""
-
-            context = "RACE PREPARATION ANALYSIS:\n"
-            context += "=" * 50 + "\n"
-            context += f"Race: {race_info.race_distance} on {race_info.race_date}\n"
-            context += f"Days Until Race: {race_info.days_until_race}\n"
-            context += f"Weeks Until Race: {race_info.weeks_until_race}\n"
-            context += f"Training Phase: {race_info.training_phase}\n"
-            context += f"Recent Performance (30 days):\n"
-            context += f"  Average Distance: {race_info.avg_recent_distance} miles\n"
-            context += f"  Average Pace: {race_info.avg_recent_pace} mph\n"
-            context += f"  Longest Run: {race_info.longest_recent_run} miles\n"
-            context += f"  Workouts: {race_info.recent_workouts}\n"
-            context += "=" * 50 + "\n"
-            return context
-        except Exception as e:
-            logger.info(f"Error loading race preparation: {e}")
-            return ""
+    # _get_race_preparation removed - now using _calculate_race_preparation
 
     def close(self):
         """Close the database session"""
