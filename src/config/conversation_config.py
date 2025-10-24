@@ -45,8 +45,8 @@ class ConversationConfig:
 
     # Database View Names (updated with accurate names)
     DATABASE_VIEWS = {
-        "activities": "v_completed_activities",  # Renamed from v_activities_running_plan
-        "splits": "v_activity_splits",  # Renamed from v_splits_running_plan
+        "activities": "v_completed_activities",  # Renamed from v_completed_activities
+        "splits": "v_completed_activity_splits",  # Renamed from v_completed_activity_splits
     }
 
     @classmethod

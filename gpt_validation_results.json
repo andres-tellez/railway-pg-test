@@ -1,0 +1,1500 @@
+{
+  "test_summary": {
+    "total_tests": 50,
+    "passed_tests": 26,
+    "failed_tests": 24,
+    "pass_rate": 52.0,
+    "test_date": "2025-10-23T20:47:29.507171"
+  },
+  "test_results": [
+    {
+      "question": "What is my training load ratio this week?",
+      "response": "I don't have access to your specific training data at the moment as there is no training plan or recent activities provided. If you can share your recent training details, I can calculate your training load ratio for the week and provide a comprehensive analysis of your current training status.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [
+          "training load"
+        ],
+        "data_indicators": [
+          "week",
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week"
+        ],
+        "summary": "Found 1 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:16.749958"
+    },
+    {
+      "question": "How is my easy run percentage looking?",
+      "response": "I don't have access to your specific data at the moment. If you can provide me with the easy run percentage from your recent activities or training plan, I can analyze it for you.",
+      "validation": {
+        "passed": false,
+        "score": 50.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [
+          "easy run"
+        ],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training"
+        ],
+        "summary": "Found 1 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:18.811341"
+    },
+    {
+      "question": "What's my workout completion rate?",
+      "response": "I'm unable to provide your specific workout completion rate at this time as there is no training plan or recent activity data available for analysis. For a comprehensive evaluation of your workout completion rate and training progress, it would be beneficial to input your training plan and activities for detailed analysis. If you have any data to share, please provide it for a more insightful coaching assessment.",
+      "validation": {
+        "passed": false,
+        "score": 50.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [
+          "completion rate"
+        ],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training"
+        ],
+        "summary": "Found 1 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:21.241303"
+    },
+    {
+      "question": "How consistent is my pace?",
+      "response": "I see that there is no specific data available for pace consistency or recent activities to evaluate your pace consistency. In order to provide an analysis of your pace consistency, we would need access to your recent running data, including pace variations, standard deviations, and trends over time. This information is crucial for assessing your pace consistency and making recommendations for improvement. If you can provide more detailed data on your recent activities, I can offer a more comprehensive analysis of your pace consistency.",
+      "validation": {
+        "passed": false,
+        "score": 50.0,
+        "issues": [
+          "Insufficient data-driven language",
+          "Response doesn't address the specific question",
+          "Insufficient context awareness"
+        ],
+        "strategic_metrics": [
+          "pace consistency",
+          "pace"
+        ],
+        "data_indicators": [
+          "pace"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "improve"
+        ],
+        "context_indicators": [
+          "data"
+        ],
+        "summary": "Found 2 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:23.535452"
+    },
+    {
+      "question": "How many weeks until my race?",
+      "response": "I don't have access to your specific race schedule or training plan to determine the exact number of weeks until your race. If you provide me with the race date, I can help you with the periodization and training plan optimization based on the weeks remaining until the event.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "week",
+          "plan"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "plan",
+          "training",
+          "week",
+          "race"
+        ],
+        "summary": "Found 0 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:27.351713"
+    },
+    {
+      "question": "What does my training plan look like?",
+      "response": "I'm unable to access your specific training plan or recent activities at the moment. To provide a detailed analysis and recommendations, I would need access to your training data, including your planned workouts, completed activities, and any relevant historical performance data. \n\nOnce you provide me with access to your training plan and recent activities, I can offer a comprehensive evaluation based on strategic coaching metrics and periodization principles. Let me know how I can assist you further with your training plan analysis.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [
+          "planned"
+        ],
+        "data_indicators": [
+          "plan",
+          "planned"
+        ],
+        "coaching_indicators": [
+          "recommend"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:29.460936"
+    },
+    {
+      "question": "What workouts do I have coming up?",
+      "response": "I don't have access to your upcoming workouts or training plan at the moment. If you can provide me with your training schedule or any specific details about your upcoming workouts, I can help you analyze and optimize them for better performance.",
+      "validation": {
+        "passed": false,
+        "score": 50.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 0 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:32.382912"
+    },
+    {
+      "question": "What's my race goal and when is it?",
+      "response": "I can't provide specific details on your race goal or date as there is no training plan or recent activity data available for analysis. To provide targeted insights and recommendations, I would need access to your training plan, recent activities, and race details. Please provide the necessary information for a comprehensive analysis.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "target"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "race"
+        ],
+        "summary": "Found 0 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:34.485324"
+    },
+    {
+      "question": "How many total miles is my plan?",
+      "response": "I'm unable to calculate the total miles in your plan as there is no training plan data available for analysis. If you provide me with your training plan details or recent activities, I can help you analyze and optimize your plan for better performance.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [
+          "miles"
+        ],
+        "data_indicators": [
+          "miles",
+          "plan"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:36.182566"
+    },
+    {
+      "question": "What's the structure of my weekly training?",
+      "response": "I don't have access to your specific training plan or recent activities at the moment, so I cannot provide a detailed analysis of your current weekly training structure. However, I can offer you some general guidance on how to structure your weekly training for optimal performance:\n\n1. **Distribution of Intensity**: Ensure that your weekly training includes a good balance of easy runs, moderate efforts, and hard workouts. Typically, easy runs should make up around 80% of your total weekly volume, with the remaining 20% dedicated to higher intensity sessions like intervals, tempo runs, and long runs.\n\n2. **Progressive Overload**: Gradually increase your training volume and intensity to stimulate adaptation and improvement while also allowing for adequate recovery. Avoid sudden spikes in mileage or intensity that could lead to overtraining or injury.\n\n3. **Specificity**: Tailor your training to match the demands of your goal race. Include workouts that mimic the race conditions in terms of distance, terrain, and intensity to prepare your body for the challenge ahead.\n\n4. **Rest and Recovery**: Incorporate rest days and easy recovery runs into your weekly schedule to allow your body to repair and adapt to the training stimulus. Adequate rest is crucial for performance gains and injury prevention.\n\n5. **Periodization**: Plan your training in phases leading up to your goal race, with each phase focusing on different aspects of fitness (e.g., base building, speed development, tapering). Adjust the volume and intensity of your training as you progress through these phases.\n\nIf you can provide me with more specific data on your training plan and recent activities, I can offer a more tailored analysis and suggestions for optimizing your weekly training structure.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "easy run",
+          "volume"
+        ],
+        "data_indicators": [
+          "%",
+          "week",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "should",
+          "suggest",
+          "focus",
+          "improve",
+          "adjust"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 2 strategic metrics, 5 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:39.679626"
+    },
+    {
+      "question": "How am I performing compared to my plan?",
+      "response": "I don't have access to your specific training plan or recent activities to provide a direct comparison. However, if you can provide me with the details of your training plan and recent activities, I can offer a detailed analysis of your performance relative to the plan. This will allow me to evaluate your progress, adherence to the plan, and provide specific recommendations for optimization.",
+      "validation": {
+        "passed": false,
+        "score": 40.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language",
+          "Response doesn't address the specific question"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend"
+        ],
+        "context_indicators": [
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 0 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:41.485459"
+    },
+    {
+      "question": "What's my average pace this week?",
+      "response": "I don't have access to your current week's data or activities. If you provide me with the relevant running data from this week, I can help analyze your average pace and provide insights based on that information.",
+      "validation": {
+        "passed": false,
+        "score": 55.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Missing coaching recommendations",
+          "Insufficient context awareness"
+        ],
+        "strategic_metrics": [
+          "pace"
+        ],
+        "data_indicators": [
+          "pace",
+          "week"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "week"
+        ],
+        "summary": "Found 1 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:43.281055"
+    },
+    {
+      "question": "How is my heart rate during runs?",
+      "response": "I don't have access to real-time heart rate data for your runs. However, if you provide me with historical heart rate data or any heart rate trends, I can incorporate that information into a more comprehensive analysis of your training plan and performance. Let me know if you have any heart rate data you'd like to discuss or analyze.",
+      "validation": {
+        "passed": false,
+        "score": 50.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 0 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:45.412061"
+    },
+    {
+      "question": "What's my longest run recently?",
+      "response": "I don't have access to your specific training data, including your recent activities or training plan. If you can provide me with information on your recent activities or training plan, I can analyze your longest run and provide insights based on that data.",
+      "validation": {
+        "passed": false,
+        "score": 50.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training"
+        ],
+        "summary": "Found 0 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:47.438618"
+    },
+    {
+      "question": "How many miles did I run this week?",
+      "response": "I don't have access to your recent activities or training plan to provide you with the exact mileage you ran this week. If you can provide me with your recent activities or training plan, I can analyze your running data and provide you with detailed insights and recommendations.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "week",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week"
+        ],
+        "summary": "Found 0 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:50.362788"
+    },
+    {
+      "question": "What phase of training am I in?",
+      "response": "Based on the data provided, there is no specific training plan or recent activities available for analysis. Therefore, without this information, it is not possible to determine the current phase of training you are in. \n\nTo provide accurate guidance on your training phase and optimization strategies, it would be beneficial to have access to your training plan, recent activities, and performance data. This information is essential for evaluating your current status, progress, and determining the appropriate phase of training for you. \n\nIf you can provide more detailed data or specific training information, I would be able to offer a more tailored analysis of your training phase and provide recommendations for optimization.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 0 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:52.442271"
+    },
+    {
+      "question": "Should I be building base or doing speed work?",
+      "response": "Given the lack of specific training plan or recent activities data, I recommend a balanced approach to your training that includes both base building and speed work. \n\n**Strategic Approach:**\n1. **Base Building**: Prioritize building a solid aerobic foundation through consistent easy runs and gradually increasing volume. Aim for at least 80% of your total training volume to be at an easy pace to enhance aerobic development and reduce injury risk.\n2. **Speed Work**: Incorporate structured speed sessions such as intervals, tempo runs, or fartleks to improve your anaerobic capacity and running economy. Begin with shorter intervals and gradually progress to longer, race-specific efforts as you build fitness.\n\n**Recommendations:**\n- Start with a base-building phase focusing on easy runs to establish a strong aerobic foundation.\n- Introduce speed work gradually to improve your speed and race performance.\n- Monitor your progress by tracking pace consistency, easy run percentages, and training load ratios.\n\nWithout specific data, it's important to listen to your body, adjust your training based on how you feel, and gradually increase the intensity as you progress towards your goal.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "training load",
+          "easy run",
+          "pace consistency",
+          "volume",
+          "pace"
+        ],
+        "data_indicators": [
+          "%",
+          "pace",
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "focus",
+          "improve",
+          "adjust"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 5 strategic metrics, 4 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:55.051540"
+    },
+    {
+      "question": "How should I adjust my training for the remaining weeks?",
+      "response": "Since there is no specific training plan or recent activities available for analysis, I recommend focusing on general principles to guide your training adjustments based on the weeks until your race.\n\n**General Training Adjustment Recommendations:**\n\n1. **Focus on Specificity**: As the race approaches, prioritize workouts that mimic the demands of the race distance and terrain.\n\n2. **Tapering**: Begin tapering 1-3 weeks before the race to allow for optimal recovery and peak performance on race day.\n\n3. **Maintain Consistency**: Even without specific data, aim to maintain consistency in your training by balancing hard workouts with adequate recovery.\n\n4. **Recovery Emphasis**: Ensure you incorporate enough rest days and easy runs to allow for proper recovery and adaptation to training stress.\n\n5. **Race Preparation**: Plan your final long run and any race-specific workouts with enough time for recovery before the race.\n\n6. **Nutrition and Hydration**: Pay attention to your nutrition and hydration, especially as the race day approaches, to optimize performance and recovery.\n\n7. **Mental Preparation**: Use the remaining weeks to focus on mental preparation, visualization, and race strategy to enhance performance on race day.\n\nWithout specific data to analyze, these general recommendations can help guide your training adjustments for the upcoming race. If you have any specific training data or questions, feel free to provide them for a more detailed and tailored analysis.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [
+          "easy run"
+        ],
+        "data_indicators": [
+          "week",
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "focus",
+          "adjust"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 3 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:45:59.054052"
+    },
+    {
+      "question": "Am I in the right training phase for my race date?",
+      "response": "**Analysis of Training Phase Appropriateness:**\n\n**No training plan or recent activities were found, making it challenging to assess the current training phase appropriateness.** \n\nFor optimal race preparation, it is crucial to have a structured training plan aligned with the race date. Without specific data on your current training phase, it is recommended to ensure that your training plan incorporates a periodized approach leading up to the race. \n\nIf you provide additional details or data on your training plan, I can offer more tailored recommendations on whether you are in the right training phase for your race date.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "recommend"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "race"
+        ],
+        "summary": "Found 0 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:00.904379"
+    },
+    {
+      "question": "What should my focus be right now?",
+      "response": "Since there is no specific training plan or recent activity data available for analysis, I recommend focusing on establishing a structured training plan that aligns with your upcoming race goals. Here are some general strategic recommendations to consider:\n\n1. **Training Plan Development**:\n   - Develop a periodized training plan that includes appropriate phases such as base building, specific preparation, and tapering.\n   - Incorporate a mix of easy runs, long runs, speed workouts, and recovery days to optimize performance and prevent overtraining.\n\n2. **Intensity Distribution**:\n   - Aim for an easy run percentage of at least 80% in your overall training volume to promote proper recovery and reduce the risk of injury.\n   - Ensure a balanced distribution of hard and easy workouts to maintain a healthy training load and avoid burnout.\n\n3. **Performance Consistency**:\n   - Prioritize pace consistency in your workouts to improve overall performance and gauge your fitness progress effectively.\n   - Focus on completing your scheduled workouts to build endurance, speed, and mental toughness leading up to your race.\n\n4. **Periodization Timing**:\n   - Consider the number of weeks until your race to plan your training phases effectively. Allocate time for base building, speed work, and tapering based on your race date.\n\n5. **Recovery Balance**:\n   - Incorporate rest days and easy runs strategically to allow for adequate recovery between hard workouts and prevent overtraining.\n   - Pay attention to recovery indicators such as sleep quality, nutrition, and overall fatigue levels to optimize training adaptations.\n\nIn summary, your current focus should be on creating a well-structured training plan that emphasizes periodization, intensity distribution, performance consistency, and recovery balance. Once you have a plan in place, you can track your progress, adjust as needed, and prepare effectively for your upcoming race.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "training load",
+          "easy run",
+          "pace consistency",
+          "volume",
+          "pace"
+        ],
+        "data_indicators": [
+          "%",
+          "pace",
+          "week",
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "should",
+          "recommend",
+          "focus",
+          "improve",
+          "adjust"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 5 strategic metrics, 5 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:06.204041"
+    },
+    {
+      "question": "How should I prepare for my race?",
+      "response": "Given the absence of specific training plan or recent activities data, I would recommend outlining a generic preparation strategy based on typical best practices. \n\n**General Race Preparation Strategy:**\n\n1. **Focus on Specificity**: As the race approaches, prioritize workouts that simulate race conditions in terms of distance, intensity, and terrain.\n\n2. **Tapering**: Begin tapering your training load gradually in the weeks leading up to the race to ensure optimal performance on race day.\n\n3. **Nutrition and Hydration**: Pay close attention to your nutrition and hydration leading up to the race to ensure you are properly fueled and hydrated.\n\n4. **Rest and Recovery**: Ensure you are getting adequate rest and recovery to allow your body to adapt and be fresh for race day.\n\n5. **Mental Preparation**: Visualize your race, set realistic goals, and mentally prepare yourself for the challenges and excitement of race day.\n\nWhile these are general guidelines, having specific training data would allow for a more tailored and data-driven race preparation plan.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [
+          "training load"
+        ],
+        "data_indicators": [
+          "week",
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "focus"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:09.371205"
+    },
+    {
+      "question": "What should I do in the final weeks?",
+      "response": "Given the absence of specific training plan and recent activities data, I recommend a general approach for the final weeks leading up to your race. Here are some key recommendations based on typical best practices:\n\n1. **Tapering Strategy**:\n   - Start tapering your training volume gradually, reducing overall mileage while maintaining intensity.\n   - Focus on maintaining the quality of your workouts rather than pushing for high volume.\n\n2. **Intensity Distribution**:\n   - Increase the focus on race-specific intensity workouts, such as intervals at goal race pace.\n   - Ensure that the majority of your remaining workouts are at an easy pace to allow for recovery and readiness.\n\n3. **Recovery Balance**:\n   - Prioritize rest and recovery, incorporating more rest days into your schedule as you taper.\n   - Pay close attention to any signs of fatigue or injury and address them promptly.\n\n4. **Race Preparation**:\n   - Simulate race conditions in your key workouts, including race-day nutrition, pacing strategies, and mental preparation.\n   - Practice your race-day routine, including pre-race meals, hydration, and warm-up.\n\n5. **Mindset and Confidence**:\n   - Visualize your race day success and build confidence in your training and preparation.\n   - Stay positive and trust in the tapering process to allow your body to fully recover and be ready for peak performance on race day.\n\nWhile these recommendations provide a general guideline, it is essential to tailor your final weeks based on your specific race distance, fitness level, and goals. If you have any historical training data or specific upcoming races, feel free to provide more details for a more tailored and data-driven approach.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "volume",
+          "pace"
+        ],
+        "data_indicators": [
+          "pace",
+          "week",
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "focus"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 2 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:13.986326"
+    },
+    {
+      "question": "How should I taper before my race?",
+      "response": "Given the lack of specific training plan and recent activities data, I will provide general tapering recommendations based on typical tapering principles. Tapering is a crucial phase before a race to allow for optimal recovery, peak performance, and freshness on race day. Here is a general tapering strategy you can consider:\n\n1. **Duration**: Tapering typically lasts 1-3 weeks, depending on the race distance. For shorter races like a 5k, a 1-week taper may be sufficient, while for longer races like a marathon, a 2-3 week taper is more common.\n\n2. **Volume Reduction**: Gradually reduce your training volume during the taper period. Aim to maintain intensity but reduce overall mileage. For example, in the final week before the race, you may reduce your volume to around 60-70% of your peak training volume.\n\n3. **Intensity Maintenance**: While reducing volume, maintain the intensity of your workouts. Keep some race-pace efforts or intervals to stay sharp without inducing additional fatigue.\n\n4. **Easy Runs**: Increase the proportion of easy runs during the taper. Aim for 80% or more of your runs to be easy-paced to facilitate recovery and glycogen replenishment.\n\n5. **Rest Days**: Incorporate more rest days into your taper period. This allows your body to fully recover and adapt to the training stimulus.\n\n6. **Race Simulation**: Consider incorporating a race simulation workout during the taper period. This can help you practice pacing, nutrition strategies, and mental preparation for the race day.\n\n7. **Nutrition and Hydration**: Pay close attention to your nutrition and hydration during the taper. Focus on consuming high-quality carbohydrates, adequate protein, and staying well-hydrated to optimize performance.\n\n8. **Sleep and Recovery**: Prioritize quality sleep and recovery activities like stretching, foam rolling, and light massage during the taper period to ensure your body is in top condition for the race.\n\nRemember, tapering is highly individualized, so it's essential to adjust based on how your body responds to the reduced training load. Listen to your body, trust your training, and arrive at the race start line feeling fresh and ready to perform at your best.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "training load",
+          "easy run",
+          "volume",
+          "pace"
+        ],
+        "data_indicators": [
+          "%",
+          "pace",
+          "week",
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "focus",
+          "adjust"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 4 strategic metrics, 3 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:18.129196"
+    },
+    {
+      "question": "What pace should I target for my race?",
+      "response": "Since there is no specific training plan or recent activity data available, I recommend establishing a target race pace based on your most recent race performance or time trial results. This would provide a current reference point for setting pace goals for your upcoming race. If you have any recent race data or time trial results, feel free to share them for a more accurate pace recommendation.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [
+          "pace"
+        ],
+        "data_indicators": [
+          "pace",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "target"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:19.900579"
+    },
+    {
+      "question": "What's my race strategy?",
+      "response": "Given that there is no specific training plan or recent activities available for analysis, it is challenging to provide a detailed race strategy without understanding your current fitness level, recent performance metrics, and training progress. \n\nTo develop an effective race strategy, it is essential to consider the following factors:\n1. **Fitness Level**: Assess your current fitness level based on recent activities or performance data.\n2. **Goal Race**: Identify the distance and type of race you are preparing for (5k, 10k, half marathon, marathon, etc.).\n3. **Race Conditions**: Consider the terrain, weather, and course profile of the upcoming race.\n4. **Pacing Strategy**: Develop a pacing plan based on your fitness level, race distance, and goal time.\n5. **Nutrition and Hydration**: Plan your pre-race and race nutrition strategy to optimize performance.\n6. **Mental Preparation**: Implement mental strategies to stay focused and motivated during the race.\n\nIf you can provide more specific details about your upcoming race, training history, and goals, I can offer a more tailored race strategy to help you achieve your desired performance.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "focus"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 0 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:23.943420"
+    },
+    {
+      "question": "How complete is my training data?",
+      "response": "The training data provided is currently incomplete, as there is no training plan or recent activities available for analysis. In order to conduct a thorough evaluation of your training progress and provide strategic coaching recommendations, it is essential to have access to your training plan, recent activities, and historical performance data. Having this information will enable a more in-depth analysis of your training load, intensity distribution, performance consistency, periodization timing, and recovery balance. If you can provide the necessary data, I can offer detailed insights and actionable recommendations to optimize your training plan effectively.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language"
+        ],
+        "strategic_metrics": [
+          "training load"
+        ],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:26.584916"
+    },
+    {
+      "question": "Are there any gaps in my data?",
+      "response": "Yes, based on the data provided, there are significant gaps in the information necessary for a comprehensive training plan evaluation. The absence of a specific training plan, recent activities, and quality scores limits the ability to conduct a detailed analysis of your training progress, performance trends, and optimization opportunities. To provide more tailored and actionable recommendations, having access to a structured training plan, recent workout data, and quality scores would be crucial. This missing information hinders the ability to assess training load progression, intensity distribution, performance consistency, periodization timing, and recovery balance effectively. If you can provide more detailed data on your training history, upcoming races, recent activities, and quality scores, a more in-depth analysis and personalized recommendations can be offered to enhance your training plan.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language"
+        ],
+        "strategic_metrics": [
+          "training load"
+        ],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:28.736679"
+    },
+    {
+      "question": "How accurate is my training information?",
+      "response": "Based on the data provided, there is no specific training plan or recent activity information available for analysis. As a result, the accuracy of the training information cannot be assessed at this time. To provide a comprehensive evaluation and recommendations, it would be beneficial to have access to detailed training plans, recent workout data, and performance metrics. This would enable a more accurate analysis of your training progress, performance trends, and areas for improvement. If you are able to provide additional training data, I can offer a more detailed assessment of your training information and provide tailored recommendations for your training optimization.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "improve"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 0 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:30.685576"
+    },
+    {
+      "question": "What data quality issues do I have?",
+      "response": "Based on the data provided, there are significant data quality issues present:\n\n1. **No Training Plan Found**:\n   - The absence of a specific training plan hinders the ability to assess the structured progression, intensity distribution, and periodization of the athlete's workouts.\n  \n2. **No Recent Activities Found**:\n   - The lack of recent activity data limits the evaluation of the athlete's performance, pace consistency, completion rates, and overall training status.\n\n3. **Quality Score: 0.0%**:\n   - The quality score of 0.0% reflects the absence of any training plan or recent activity data, indicating a complete lack of input for analysis.\n\nDue to the absence of training plan details and recent activity data, a comprehensive evaluation of the athlete's training progress, performance metrics, and periodization effectiveness cannot be conducted effectively. To provide tailored coaching insights and recommendations, it is essential to gather detailed training data and performance metrics for analysis.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "completion rate",
+          "pace consistency",
+          "pace"
+        ],
+        "data_indicators": [
+          "%",
+          "pace",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 3 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:33.062004"
+    },
+    {
+      "question": "Is my training plan data reliable?",
+      "response": "Based on the data provided, it appears that there is no specific training plan or recent activities available for analysis. As a result, the quality score for both the training plan and recent activities is 0.0%, and there are no specific issues identified other than the absence of data.\n\nWithout access to a training plan or recent activity details, it is challenging to conduct a comprehensive analysis of your training progress, performance metrics, and strategic coaching insights. For a more accurate evaluation and actionable recommendations, it would be beneficial to provide detailed training plan information and recent activities data for a thorough assessment.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "%",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 0 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:35.788044"
+    },
+    {
+      "question": "What's my average weekly mileage?",
+      "response": "I don't have access to your specific training data at the moment. If you provide me with your recent training logs or activities, I can calculate your average weekly mileage for you.",
+      "validation": {
+        "passed": false,
+        "score": 50.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "week"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "training",
+          "week"
+        ],
+        "summary": "Found 0 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:37.351027"
+    },
+    {
+      "question": "How much faster am I getting?",
+      "response": "I see that there is currently no training plan or recent activity data available for analysis. In order to assess how much faster you are getting, it's crucial to have access to your recent workout data, historical performance metrics, and training plan details. This information is necessary to track improvements in pace, endurance, and overall performance over time.\n\nOnce you provide your recent activities and any training plans you have been following, I can analyze the data to evaluate your progress and provide insights on your improvements. Feel free to share any specific goals or races you are training for so that I can offer tailored recommendations to help you get faster effectively.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [
+          "pace"
+        ],
+        "data_indicators": [
+          "pace",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "improve"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:40.597096"
+    },
+    {
+      "question": "What's my improvement rate?",
+      "response": "I'm unable to provide an improvement rate without access to your recent training data or activities. For a comprehensive analysis of your improvement rate, I would need information on your recent activities, race performances, and training progress. If you can provide specific data on your recent workouts, race times, or any performance metrics, I can offer a detailed assessment of your improvement rate.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [],
+        "coaching_indicators": [
+          "improve"
+        ],
+        "context_indicators": [
+          "data",
+          "training",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 0 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:42.644714"
+    },
+    {
+      "question": "How many hours do I train per week?",
+      "response": "I don't have access to your specific training data at the moment, so I can't provide an accurate estimate of the number of hours you train per week. If you can provide me with your recent training data, including the number of workouts and their durations, I can calculate your average training hours per week and provide you with more detailed insights.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "week",
+          "ratio"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "training",
+          "week"
+        ],
+        "summary": "Found 0 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:44.490917"
+    },
+    {
+      "question": "What's my training load progression?",
+      "response": "I don't have access to your specific training plan or recent activities to provide a detailed analysis of your training load progression. If you can provide me with your recent activities or training plan data, I can analyze your training load progression and provide insights on how it aligns with your goals and race timeline.",
+      "validation": {
+        "passed": false,
+        "score": 50.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language",
+          "Missing coaching recommendations"
+        ],
+        "strategic_metrics": [
+          "training load"
+        ],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "race"
+        ],
+        "summary": "Found 1 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:46.079016"
+    },
+    {
+      "question": "How does this week compare to last week?",
+      "response": "I don't have access to specific data for this week or last week, as there are no training plans or recent activities provided for analysis. To provide a comparison between two weeks, I would need detailed information on the training load, intensity distribution, performance metrics, and any other relevant data for both weeks. If you can provide the necessary details, I'd be happy to analyze and compare the two weeks to give you valuable insights and recommendations.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [
+          "training load"
+        ],
+        "data_indicators": [
+          "week",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:48.284516"
+    },
+    {
+      "question": "Am I improving compared to last month?",
+      "response": "Based on the data provided, there are no recent activities or training plan available for analysis. In order to assess your improvement compared to last month, it is essential to have access to your recent activities and training plan data. If you can provide this information, I will be able to conduct a detailed analysis to evaluate your progress and provide actionable insights for improvement.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [
+          "improve"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training"
+        ],
+        "summary": "Found 0 strategic metrics, 1 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:50.388521"
+    },
+    {
+      "question": "How do I compare to my plan?",
+      "response": "I see that there is no training plan or recent activities available for analysis at the moment. To provide a comprehensive comparison, I would need access to your training plan and recent activities data. Once you have the information available, feel free to share it for a detailed evaluation and comparison.",
+      "validation": {
+        "passed": false,
+        "score": 25.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language",
+          "Missing coaching recommendations",
+          "Response doesn't address the specific question"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training"
+        ],
+        "summary": "Found 0 strategic metrics, 0 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:51.932643"
+    },
+    {
+      "question": "What's different about this training block?",
+      "response": "It appears that there is no specific training plan or recent activity data available for analysis. Without this information, it is challenging to provide a detailed comparison or evaluation of the current training block compared to previous ones. \n\nTo optimize your training for the upcoming race or goal, it would be beneficial to track and provide specific training data such as volume completion rates, intensity distribution, pace consistency, and recovery indicators. This information is crucial for a comprehensive analysis and tailored recommendations to enhance your performance. \n\nIf you can provide more detailed training data or upcoming race details, I can offer a more targeted analysis and recommendations to help you achieve your goals effectively.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "completion rate",
+          "pace consistency",
+          "volume",
+          "pace"
+        ],
+        "data_indicators": [
+          "pace",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "target"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 4 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:54.017260"
+    },
+    {
+      "question": "How does my current fitness compare to my goal?",
+      "response": "Based on the data provided, there is no specific training plan or recent activity information available for analysis. To assess your current fitness level compared to your goal, it is crucial to have detailed insights into your recent training history, performance metrics, and upcoming race goals.\n\nTo provide a comprehensive evaluation of your current fitness level and compare it to your goal, I would need access to your recent training data, including volume completed, intensity distribution, pace consistency, and upcoming race details. This information would enable me to analyze your progress, identify strengths and areas for improvement, and tailor specific recommendations to optimize your training plan towards achieving your goal.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "pace consistency",
+          "volume",
+          "pace"
+        ],
+        "data_indicators": [
+          "pace",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "improve"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 3 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:46:56.704520"
+    },
+    {
+      "question": "What should I do to improve my training?",
+      "response": "Since there is no specific training plan or recent activities provided for analysis, I recommend focusing on general principles to improve your training. Here are some actionable steps you can take based on common best practices:\n\n1. **Establish Clear Goals**: Define your specific running goals, whether it's improving speed, increasing endurance, or aiming for a specific race distance.\n\n2. **Create a Structured Training Plan**: Develop a well-rounded training program that includes a mix of easy runs, tempo runs, interval training, and long runs based on your goals and fitness level.\n\n3. **Prioritize Recovery**: Make sure to incorporate rest days, easy runs, and adequate sleep to allow your body to recover and adapt to the training stress.\n\n4. **Focus on Consistency**: Consistent training over time is key to improvement. Aim to gradually increase your weekly mileage and intensity while listening to your body to prevent overtraining.\n\n5. **Monitor Progress**: Keep track of your workouts, performance metrics, and how you feel during training to identify patterns and make adjustments as needed.\n\n6. **Seek Professional Guidance**: Consider consulting with a running coach or expert to tailor a training plan specifically for your goals, fitness level, and schedule.\n\nBy following these general guidelines and incorporating structured training, recovery, consistency, monitoring, and seeking expert advice, you can enhance your training and maximize your performance potential.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [
+          "easy run"
+        ],
+        "data_indicators": [
+          "week",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "focus",
+          "improve",
+          "adjust"
+        ],
+        "context_indicators": [
+          "plan",
+          "training",
+          "week",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 4 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:47:00.037678"
+    },
+    {
+      "question": "How can I get faster?",
+      "response": "To help you get faster, we would typically start by analyzing your current training data, recent activities, and upcoming race goals. Since we don't have access to your specific training plan or recent activities at the moment, I can provide some general strategic advice to improve your speed:\n\n1. **Focus on Speed Workouts**: Incorporate interval training, tempo runs, and strides into your weekly routine to improve your running speed and efficiency.\n\n2. **Increase Training Volume**: Gradually increase your overall training volume to build endurance and improve your speed over longer distances.\n\n3. **Prioritize Recovery**: Ensure you have a balance between hard workouts and easy runs to allow for proper recovery and adaptation.\n\n4. **Work on Running Form**: Consider working with a coach to improve your running mechanics, which can help you become more efficient and faster.\n\n5. **Set Specific Goals**: Define clear and achievable goals for your speed improvement, whether it's a target pace for a race or a specific time goal for a workout.\n\nOnce you have access to your training data, we can provide more specific and data-driven recommendations tailored to your current fitness level and goals.",
+      "validation": {
+        "passed": true,
+        "score": 75.0,
+        "issues": [
+          "Response doesn't address the specific question"
+        ],
+        "strategic_metrics": [
+          "easy run",
+          "volume",
+          "pace"
+        ],
+        "data_indicators": [
+          "pace",
+          "week",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "focus",
+          "improve",
+          "target"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week",
+          "race"
+        ],
+        "summary": "Found 3 strategic metrics, 4 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:47:02.762010"
+    },
+    {
+      "question": "What's wrong with my current approach?",
+      "response": "Based on the available data, there are a few key issues with your current approach to training:\n\n1. **Lack of Training Plan**: The most significant issue is the absence of a structured training plan. Without a clear plan outlining your weekly workouts, volume progression, and intensity distribution, it's challenging to optimize your training for peak performance.\n\n2. **No Recent Activities**: The lack of recent activity data makes it difficult to assess your current fitness level, progress, and areas for improvement. Monitoring and analyzing recent workouts are crucial for making informed training decisions.\n\n3. **Data Quality Score**: The data quality score is currently at 0.0%, indicating a complete absence of training plan and recent activity data. This severely limits the ability to provide specific, tailored recommendations for improvement.\n\nIn order to enhance your training approach and maximize performance gains, it's essential to establish a structured training plan, track and analyze your activities regularly, and ensure data quality for more accurate coaching insights. By addressing these key areas, you can make more informed decisions to optimize your training and achieve your performance goals.",
+      "validation": {
+        "passed": true,
+        "score": 80.0,
+        "issues": [
+          "Insufficient strategic metrics references"
+        ],
+        "strategic_metrics": [
+          "volume"
+        ],
+        "data_indicators": [
+          "%",
+          "week",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "improve"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week",
+          "performance"
+        ],
+        "summary": "Found 1 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:47:06.173246"
+    },
+    {
+      "question": "How should I adjust my training?",
+      "response": "Since there is no training plan or recent activity data available for analysis, I recommend the following general guidelines to adjust your training based on typical scenarios:\n\n1. **Periodization Planning**: Determine the weeks until your next race to align your training phases appropriately. For example, if you have 12 weeks until your race, consider a structured periodization plan with base building, specific preparation, and tapering phases.\n\n2. **Volume Progression**: Gradually increase your weekly mileage by no more than 10% to prevent injury and adapt to higher training loads. Monitor completion rates to ensure you're consistently hitting your prescribed volume targets.\n\n3. **Intensity Distribution**: Aim for an easy run percentage of 80% or more in your training to facilitate recovery and build aerobic endurance. Balance hard workouts with sufficient easy days to avoid overtraining.\n\n4. **Performance Consistency**: Focus on maintaining pace consistency by minimizing standard deviations in your workout paces. Consistent execution of workouts can lead to improved performance outcomes.\n\n5. **Recovery Balance**: Incorporate rest days, active recovery sessions, and proper nutrition to support your training. Listen to your body for signs of fatigue or overtraining and adjust your schedule accordingly.\n\nUtilize these general recommendations as a starting point for adjusting your training plan. If you have specific data from your training history or upcoming races, feel free to provide that information for a more tailored analysis and personalized recommendations.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "training load",
+          "easy run",
+          "completion rate",
+          "pace consistency",
+          "volume",
+          "pace"
+        ],
+        "data_indicators": [
+          "%",
+          "pace",
+          "week",
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "focus",
+          "improve",
+          "adjust",
+          "target"
+        ],
+        "context_indicators": [
+          "data",
+          "plan",
+          "training",
+          "week",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 6 strategic metrics, 5 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:47:09.567051"
+    },
+    {
+      "question": "What should I focus on this week?",
+      "response": "Given the absence of specific training plan details or recent activities, I recommend focusing on general principles to maintain fitness and readiness for upcoming races or training cycles:\n\n1. **Maintain Easy Run Percentage**: Aim to keep at least 80% of your weekly mileage at an easy pace to support recovery and aerobic development.\n   \n2. **Active Recovery**: Incorporate light cross-training, mobility work, or yoga to aid in recovery without adding significant training load.\n   \n3. **Nutrition and Hydration**: Ensure proper fueling and hydration to support overall health and recovery.\n   \n4. **Mental Preparation**: Visualize successful race scenarios, set goals, and work on mental strategies to enhance race-day performance.\n\nWhile these recommendations are general in nature, they can help you stay on track and prepare for future training cycles or races. If you have specific upcoming goals or races, feel free to provide more details for a more tailored approach.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "training load",
+          "easy run",
+          "pace"
+        ],
+        "data_indicators": [
+          "%",
+          "pace",
+          "week",
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "focus"
+        ],
+        "context_indicators": [
+          "plan",
+          "training",
+          "week",
+          "race",
+          "performance"
+        ],
+        "summary": "Found 3 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:47:12.956956"
+    },
+    {
+      "question": "What if I miss a workout?",
+      "response": "If you miss a workout, it's important not to panic or try to make up for it by overloading yourself with extra volume or intensity. Instead, consider the following strategic approach:\n\n1. **Assess the Impact**: Understand the reason for missing the workout. If it was due to fatigue, illness, or other valid reasons, it's crucial to prioritize recovery and avoid pushing too hard to compensate.\n\n2. **Adjust the Plan**: Depending on the type of workout missed (easy run, speed workout, long run), you may need to adjust the upcoming schedule. If it was a key workout, consider rescheduling it later in the week if it won't compromise recovery or future sessions.\n\n3. **Maintain Balance**: Avoid the temptation to cram all missed workouts into the remaining days of the week. This can lead to overtraining and increased injury risk. Instead, focus on maintaining a balanced approach to training.\n\n4. **Focus on Recovery**: Use the missed workout as an opportunity to prioritize recovery. Ensure you get adequate rest, hydration, and nutrition to support your training adaptation and avoid setbacks.\n\n5. **Stay Positive**: Remember that consistency over time is key to progress in running. One missed workout is unlikely to derail your entire training cycle. Stay positive, learn from the experience, and focus on the next opportunity to train effectively.\n\nIf you encounter recurrent issues with missed workouts, it may be beneficial to reassess your training plan, recovery strategies, and overall workload to ensure sustainable progress towards your goals.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "easy run",
+          "volume"
+        ],
+        "data_indicators": [
+          "week",
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "focus",
+          "adjust"
+        ],
+        "context_indicators": [
+          "plan",
+          "training",
+          "week"
+        ],
+        "summary": "Found 2 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:47:16.629486"
+    },
+    {
+      "question": "How should I handle bad weather?",
+      "response": "Handling bad weather is an important aspect of training as it can significantly impact your workouts and overall progress. Here are some strategies to consider when dealing with bad weather conditions:\n\n1. **Indoor Alternatives**: Utilize indoor facilities such as a treadmill, indoor track, or stationary bike when outdoor conditions are unsafe or too extreme for training.\n\n2. **Adapt Workouts**: Modify your workout based on the weather. For example, if it's too hot, consider shifting your run to early morning or late evening when temperatures are cooler.\n\n3. **Focus on Safety**: Safety should always be a top priority. If conditions are dangerous (e.g., thunderstorms, icy roads), it's better to skip the workout or opt for a safer alternative.\n\n4. **Mental Toughness Training**: Embrace the challenge of training in adverse conditions as it can help build mental toughness and resilience, which are valuable skills for race day.\n\n5. **Proper Gear**: Invest in proper gear for different weather conditions, such as moisture-wicking clothing for rain or cold-weather gear for winter training.\n\n6. **Flexibility**: Be flexible with your training schedule. If you miss a workout due to weather, don't try to make up for it by overloading yourself in the following days. Adjust your plan accordingly.\n\n7. **Cross-Training**: Use bad weather days as an opportunity to engage in cross-training activities that complement your running, such as swimming, cycling, or strength training.\n\nRemember, it's important to prioritize safety and adaptability when facing challenging weather conditions during training.",
+      "validation": {
+        "passed": false,
+        "score": 65.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language"
+        ],
+        "strategic_metrics": [],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [
+          "should",
+          "focus",
+          "adjust"
+        ],
+        "context_indicators": [
+          "plan",
+          "training",
+          "race"
+        ],
+        "summary": "Found 0 strategic metrics, 3 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:47:19.697575"
+    },
+    {
+      "question": "What if I'm feeling tired?",
+      "response": "If you're feeling tired without a specific training plan or recent activities available for analysis, it's crucial to address this issue to prevent overtraining and potential injury. Here are some general guidelines to consider when feeling tired:\n\n1. **Listen to Your Body**: Pay attention to how you feel during your workouts and throughout the day. If you consistently feel fatigued or lack energy, it may be a sign that you need to adjust your training load or incorporate more rest days.\n\n2. **Prioritize Recovery**: Ensure you are getting adequate sleep, nutrition, and hydration to support your training and recovery. Recovery plays a crucial role in performance improvement.\n\n3. **Modify Intensity**: If you have been doing high-intensity workouts, consider incorporating more easy runs or lower-intensity sessions to allow your body to recover.\n\n4. **Consult a Coach**: If possible, seek guidance from a running coach or healthcare professional to evaluate your training history, lifestyle factors, and overall health to provide personalized recommendations.\n\nRemember, it's essential to prioritize your well-being and recovery to maintain a sustainable and effective training routine.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "training load",
+          "easy run"
+        ],
+        "data_indicators": [
+          "plan",
+          "ratio"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "improve",
+          "adjust"
+        ],
+        "context_indicators": [
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 2 strategic metrics, 3 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:47:23.236085"
+    },
+    {
+      "question": "How do I adjust for travel?",
+      "response": "When adjusting your training plan for travel, it's essential to consider the impact on your overall training load, intensity distribution, and recovery balance. Here are some strategic recommendations to help you navigate training during travel:\n\n1. **Plan Ahead**: Try to schedule your harder workouts before your travel dates to ensure you get quality sessions in before any disruptions.\n\n2. **Flexibility**: Be prepared to adjust your training schedule based on your travel itinerary. It's okay to swap workout days or modify the intensity if needed.\n\n3. **Easy Runs**: Utilize easy runs during travel to maintain fitness without adding too much stress. Aim for at least 80% easy runs to prioritize recovery during this period.\n\n4. **Consistency**: Focus on pace consistency during your runs, even if they are in unfamiliar locations. This can help maintain fitness levels and prevent any significant detraining effects.\n\n5. **Recovery**: Travel can be physically and mentally taxing, so be sure to prioritize recovery. Incorporate additional rest days if needed and listen to your body for signs of fatigue.\n\n6. **Adaptation**: Understand that training during travel may not be optimal, and that's okay. The goal is to maintain fitness and consistency rather than pushing for peak performance.\n\nBy being proactive, flexible, and mindful of recovery, you can navigate training during travel effectively while minimizing disruptions to your overall progress.",
+      "validation": {
+        "passed": true,
+        "score": 100.0,
+        "issues": [],
+        "strategic_metrics": [
+          "training load",
+          "easy run",
+          "pace consistency",
+          "pace"
+        ],
+        "data_indicators": [
+          "%",
+          "pace",
+          "plan"
+        ],
+        "coaching_indicators": [
+          "recommend",
+          "focus",
+          "adjust"
+        ],
+        "context_indicators": [
+          "plan",
+          "training",
+          "performance"
+        ],
+        "summary": "Found 4 strategic metrics, 3 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:47:25.951351"
+    },
+    {
+      "question": "What if I get injured?",
+      "response": "If you get injured, it's crucial to prioritize your recovery and rehabilitation to ensure a safe return to training. Here's a general guideline on how to handle injuries in your training plan:\n\n1. **Immediate Response**: \n   - Consult with a healthcare professional for an accurate diagnosis and treatment plan.\n   - Follow their advice regarding rest, rehabilitation exercises, and any necessary modifications to your training.\n\n2. **Recovery Phase**:\n   - Focus on injury-specific rehab exercises to aid in healing and prevent further complications.\n   - Maintain general fitness with low-impact activities like swimming or cycling if approved by your healthcare provider.\n\n3. **Gradual Return to Training**:\n   - Once cleared by your healthcare provider, start with light, low-impact activities to gauge your body's response.\n   - Slowly reintegrate running with shorter distances and lower intensity to monitor any pain or discomfort.\n\n4. **Monitoring and Adjustments**:\n   - Pay close attention to any signs of recurring pain or discomfort during and after workouts.\n   - Adjust your training plan as needed, such as reducing volume or intensity to prevent re-injury.\n\n5. **Long-Term Prevention**:\n   - Address the root cause of the injury through strength training, mobility work, and proper form.\n   - Listen to your body's signals and prioritize rest and recovery to avoid overtraining and future injuries.\n\nRemember, patience and consistency in your recovery process are key to coming back stronger and minimizing the risk of future injuries. Always seek guidance from healthcare professionals for personalized care tailored to your specific injury.",
+      "validation": {
+        "passed": false,
+        "score": 30.0,
+        "issues": [
+          "Insufficient strategic metrics references",
+          "Insufficient data-driven language",
+          "Response doesn't address the specific question",
+          "Insufficient context awareness"
+        ],
+        "strategic_metrics": [
+          "volume"
+        ],
+        "data_indicators": [
+          "plan"
+        ],
+        "coaching_indicators": [
+          "focus",
+          "adjust"
+        ],
+        "context_indicators": [
+          "plan",
+          "training"
+        ],
+        "summary": "Found 1 strategic metrics, 2 coaching terms"
+      },
+      "timestamp": "2025-10-23T20:47:29.006666"
+    }
+  ]
+}
