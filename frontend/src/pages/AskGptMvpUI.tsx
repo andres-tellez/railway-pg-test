@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useApiClient } from "../utils/apiClient";
 import { useAuthSetup } from "../hooks/useAuthSetup";
+import { AuthGuard } from "../components/AuthGuard";
 import RichMessage from "../components/RichMessage";
 
 interface Message {
@@ -166,31 +167,8 @@ export default function AskGptMvpUI() {
 
 
 
-  // Show loading state while authentication is being set up
-  if (!isReady) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p>Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error state if authentication failed
-  if (authError) {
-    return (
-      <div className="h-screen flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-500 mb-4">Error: {authError}</p>
-          <p>Please refresh the page.</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
+    <AuthGuard>
     <div className="flex flex-col" style={{ height: 'calc(100vh - 200px)' }}>
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4">
@@ -250,5 +228,6 @@ export default function AskGptMvpUI() {
         </div>
       </div>
     </div>
+    </AuthGuard>
   );
 }

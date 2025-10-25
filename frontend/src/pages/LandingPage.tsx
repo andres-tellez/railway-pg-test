@@ -1,17 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "../utils/apiClient";
 import { useNavigate } from "react-router-dom";
 import { useAuthSetup } from "../hooks/useAuthSetup";
+import { AuthGuard } from "../components/AuthGuard";
 import StravaConnectButton from "../components/StravaConnectButton";
 import StravaAttribution from "../components/StravaAttribution";
 import StravaConsentModal from "../components/StravaConsentModal";
 
 const SetupPage: React.FC = () => {
-  const { user } = useAuth0();
   const api = useApiClient();
   const navigate = useNavigate();
-  const { isReady, userId, error: authError } = useAuthSetup();
+  const { isReady, userId } = useAuthSetup();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [pendingStep, setPendingStep] = useState<1 | 2 | 3 | null>(null);
@@ -108,11 +107,8 @@ const SetupPage: React.FC = () => {
 
 
 
-  if (isLoading) return <div className="p-6">🔄 Loading auth…</div>;
-  if (!isAuthenticated)
-    return <div className="p-6 text-red-600">❌ Not authenticated</div>;
-
   return (
+    <AuthGuard>
     <>
     <div className="max-w-2xl mx-auto px-4 py-8">
       {/* Header */}
@@ -205,6 +201,7 @@ const SetupPage: React.FC = () => {
       />
     )}
     </>
+    </AuthGuard>
   );
 };
 

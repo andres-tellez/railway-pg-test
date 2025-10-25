@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useApiClient } from "../utils/apiClient";
+import { useAuthSetup } from "../hooks/useAuthSetup";
+import { AuthGuard } from "../components/AuthGuard";
 import HeartRateZoneChart from "../components/charts/HeartRateZoneChart";
 import TotalMilesActualVsPlanChart from "../components/charts/TotalMilesActualVsPlanChart";
 import WeeklyPaceChart from "../components/charts/WeeklyPaceChart";
@@ -84,6 +86,7 @@ interface LongestRunData {
 }
 
 export default function SimpleMetrics() {
+  const { isReady, userId } = useAuthSetup(); // ✅ Centralized auth
   const api = useApiClient();
   const [metrics, setMetrics] = useState<MetricData[]>([]);
   const [hrZones, setHrZones] = useState<any>(null);
@@ -128,6 +131,8 @@ export default function SimpleMetrics() {
   }, [selectedWeeks]);
 
   useEffect(() => {
+    if (!isReady || !userId) return; // ✅ Wait for auth setup
+
     const fetchMetrics = async () => {
       try {
         console.log("📊 Fetching ALL metrics in single call...");
@@ -213,7 +218,7 @@ export default function SimpleMetrics() {
     };
 
     fetchMetrics();
-  }, []); // Remove selectedWeeks dependency - only fetch once
+  }, [isReady, userId, api]); // ✅ Depend on auth setup
 
   // Compute filtered data based on selected weeks (instant filtering)
   const filteredWeeklyTrends = allWeeklyData.trends.slice(0, selectedWeeks);
@@ -345,116 +350,116 @@ export default function SimpleMetrics() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        {error && (
-          <div className="mb-6">
-            <div className="text-sm text-red-600 bg-red-50 px-4 py-2 rounded-md">
-              {error}
+    <AuthGuard>
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          {error && (
+            <div className="mb-6">
+              <div className="text-sm text-red-600 bg-red-50 px-4 py-2 rounded-md">
+                {error}
+              </div>
+            </div>
+          )}
+
+          {/* Weekly Trends Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Weekly Trends</h1>
+            </div>
+
+            {/* Time Period Selector */}
+            <div className="flex gap-2">
+              {[4, 8, 16].map((weeks) => (
+                <button
+                  key={weeks}
+                  onClick={() => setSelectedWeeks(weeks)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    selectedWeeks === weeks
+                      ? "bg-gray-600 text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {weeks}w
+                </button>
+              ))}
             </div>
           </div>
-        )}
 
-        {/* Weekly Trends Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Weekly Trends</h1>
-          </div>
+          {/* Charts without outer card */}
+          <div className="space-y-12">
 
-          {/* Time Period Selector */}
-          <div className="flex gap-2">
-            {[4, 8, 16].map((weeks) => (
-              <button
-                key={weeks}
-                onClick={() => setSelectedWeeks(weeks)}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  selectedWeeks === weeks
-                    ? "bg-gray-600 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                {weeks}w
-              </button>
-            ))}
-          </div>
-        </div>
+            {/* Mileage Section */}
+            {filteredWeeklyTrends.length > 0 && (
+              <TotalMilesActualVsPlanChart
+                data={filteredWeeklyTrends}
+                weeklyGoals={filteredWeeklyGoals}
+                title="Total Miles - Actual vs Plan"
+                showHeader={true}
+                helpTooltip={mileageHelpContent}
+              />
+            )}
 
-        {/* Charts without outer card */}
-        <div className="space-y-12">
+            {/* Longest Runs Section */}
+            {filteredLongestRuns.length > 0 && (
+              <LongestRunsChart
+                data={filteredLongestRuns}
+                title="Longest Runs"
+                showHeader={true}
+              />
+            )}
 
-          {/* Mileage Section */}
-          {filteredWeeklyTrends.length > 0 && (
-            <TotalMilesActualVsPlanChart
-              data={filteredWeeklyTrends}
-              weeklyGoals={filteredWeeklyGoals}
-              title="Total Miles - Actual vs Plan"
-              showHeader={true}
-              helpTooltip={mileageHelpContent}
-            />
-          )}
-
-          {/* Longest Runs Section */}
-          {filteredLongestRuns.length > 0 && (
-            <LongestRunsChart
-              data={filteredLongestRuns}
-              weeklyGoals={filteredWeeklyGoals}
-              title="Longest Runs"
-              showHeader={true}
-            />
-          )}
-
-          {/* HR Zones Section */}
-          {filteredWeeklyHRZones.length > 0 && (
-            <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
-              <div className="flex items-center gap-3 mb-6">
-                <h3 className="text-xl font-bold text-gray-900">HR Zones</h3>
-                <ChartHelpTooltip helpContent={hrZoneHelpContent} />
-              </div>
-
-              {/* HR Zone Chart */}
-              <div className="relative">
-                {/* Y-axis scale */}
-                <div className="relative mb-2">
-                  <div className="absolute left-0 top-0 h-32 flex flex-col justify-between text-xs text-gray-400">
-                    <span>100%</span>
-                    <span>75%</span>
-                    <span>50%</span>
-                    <span>25%</span>
-                    <span>0%</span>
-                  </div>
+            {/* HR Zones Section */}
+            {filteredWeeklyHRZones.length > 0 && (
+              <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
+                <div className="flex items-center gap-3 mb-6">
+                  <h3 className="text-xl font-bold text-gray-900">HR Zones</h3>
+                  <ChartHelpTooltip helpContent={hrZoneHelpContent} />
                 </div>
 
+                {/* HR Zone Chart */}
                 <div className="relative">
-                  {(() => {
-                    // Calculate the actual tallest bar height in pixels
-                    const tallestBarHeight = filteredWeeklyHRZones.reduce((max, week) => {
-                      const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
-                      const maxTotal = Math.max(...filteredWeeklyHRZones.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
-                      const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
-                      const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
-                      return Math.max(max, heightPixels);
-                    }, 0);
+                  {/* Y-axis scale */}
+                  <div className="relative mb-2">
+                    <div className="absolute left-0 top-0 h-32 flex flex-col justify-between text-xs text-gray-400">
+                      <span>100%</span>
+                      <span>75%</span>
+                      <span>50%</span>
+                      <span>25%</span>
+                      <span>0%</span>
+                    </div>
+                  </div>
 
-                    // Add more padding above the tallest bar so numbers appear well within background
-                    const totalHeight = tallestBarHeight + 80;
+                  <div className="relative">
+                    {(() => {
+                      // Calculate the actual tallest bar height in pixels
+                      const tallestBarHeight = filteredWeeklyHRZones.reduce((max, week) => {
+                        const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
+                        const maxTotal = Math.max(...filteredWeeklyHRZones.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
+                        const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
+                        const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
+                        return Math.max(max, heightPixels);
+                      }, 0);
 
-                    return (
-                      <div
-                        style={{
-                          height: `${totalHeight}px`,
-                          display: 'flex',
-                          alignItems: 'flex-end',
-                          gap: '0.25rem',
-                          padding: '1.5rem',
-                          borderRadius: '0.75rem',
-                          background: 'linear-gradient(to top, rgb(243 244 246), rgb(249 250 251))'
-                        }}
-                      >
-                        {filteredWeeklyHRZones.map((week, index) => {
-                          const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
-                          const maxTotal = Math.max(...filteredWeeklyHRZones.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
-                          const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
-                          const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
+                      // Add more padding above the tallest bar so numbers appear well within background
+                      const totalHeight = tallestBarHeight + 80;
+
+                      return (
+                        <div
+                          style={{
+                            height: `${totalHeight}px`,
+                            display: 'flex',
+                            alignItems: 'flex-end',
+                            gap: '0.25rem',
+                            padding: '1.5rem',
+                            borderRadius: '0.75rem',
+                            background: 'linear-gradient(to top, rgb(243 244 246), rgb(249 250 251))'
+                          }}
+                        >
+                          {filteredWeeklyHRZones.map((week, index) => {
+                            const totalZones = week.zone_1 + week.zone_2 + week.zone_3 + week.zone_4 + week.zone_5;
+                            const maxTotal = Math.max(...filteredWeeklyHRZones.map(w => w.zone_1 + w.zone_2 + w.zone_3 + w.zone_4 + w.zone_5));
+                            const heightPercentage = maxTotal > 0 ? (totalZones / maxTotal) : 0;
+                            const heightPixels = Math.max(heightPercentage * 120 + 40, 40);
 
                       const zoneColors = {
                         zone_1: '#3B82F6', // Blue - Recovery
@@ -551,9 +556,10 @@ export default function SimpleMetrics() {
                         </div>
                       );
                     })}
-                      </div>
-                    );
-                  })()}
+                  </div>
+                );
+              })()}
+                </div>
 
                   {/* HR Zone Tooltip */}
                   {hoveredHRBar && (
@@ -624,38 +630,38 @@ export default function SimpleMetrics() {
                 </div>
 
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Pace Section */}
-          {filteredWeeklyTrends.length > 0 && (
-            <WeeklyPaceChart
-              data={filteredWeeklyTrends}
-              title="Pace"
-              showHeader={true}
-              helpTooltip={paceHelpContent}
-            />
-          )}
+            {/* Pace Section */}
+            {filteredWeeklyTrends.length > 0 && (
+              <WeeklyPaceChart
+                data={filteredWeeklyTrends}
+                title="Pace"
+                showHeader={true}
+                helpTooltip={paceHelpContent}
+              />
+            )}
 
-          {/* VO2 Max Section */}
-          {filteredWeeklyVO2.length > 0 && (
-            <WeeklyVO2Chart
-              data={filteredWeeklyVO2.map(vo2 => {
-                // Find matching weekly trend data to get runs and distance
-                const matchingTrend = filteredWeeklyTrends.find(trend => trend.week === vo2.week);
-                return {
-                  ...vo2,
-                  runs: matchingTrend?.runs,
-                  distance: matchingTrend?.distance
-                };
-              })}
-              title="VO2 Max Estimate"
-              showHeader={true}
-              helpTooltip={vo2HelpContent}
-            />
-          )}
+            {/* VO2 Max Section */}
+            {filteredWeeklyVO2.length > 0 && (
+              <WeeklyVO2Chart
+                data={filteredWeeklyVO2.map(vo2 => {
+                  // Find matching weekly trend data to get runs and distance
+                  const matchingTrend = filteredWeeklyTrends.find(trend => trend.week === vo2.week);
+                  return {
+                    ...vo2,
+                    runs: matchingTrend?.runs,
+                    distance: matchingTrend?.distance
+                  };
+                })}
+                title="VO2 Max Estimate"
+                showHeader={true}
+                helpTooltip={vo2HelpContent}
+              />
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </AuthGuard>
   );
 }

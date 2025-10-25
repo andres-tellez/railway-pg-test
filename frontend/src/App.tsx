@@ -2,11 +2,10 @@
  * @file App.tsx
  * @component App
  * @description Top-level React app component defining all frontend routes using React Router.
- *              Applies protected routing logic to enforce Auth0-based authentication.
+ *              Uses AuthGuard for authentication (handled within each page component).
  *
  * @features:
  * - Public and protected route declarations
- * - Custom `ProtectedRoute` wrapper for authenticated-only pages
  * - Dedicated login page using Auth0 loginWithRedirect
  * - Default route redirection for unknown paths
  *
@@ -17,7 +16,7 @@
  * @usage:
  * - Rendered as the root React app component inside `main.tsx`
  * - Mounts routes like `/`, `/login`, `/welcome`, `/onboarding`, and `/plan`
- * - Protects sensitive routes using `ProtectedRoute`
+ * - Individual pages handle authentication via AuthGuard component
  *
  * @prerequisites:
  * - App must be wrapped in `<Auth0Provider>` (in `main.tsx`)
@@ -39,8 +38,6 @@ import AskGptMvpUI from "./pages/AskGptMvpUI";
 import AuthTestPage from "./pages/AuthTestPage";
 import WelcomePage from "./pages/WelcomePage";
 import SimpleMetrics from "./pages/SimpleMetrics";
-import SimpleMetricsCopy from "./pages/SimpleMetricsCopy";
-import VO2Metrics from "./pages/VO2Metrics";
 import GYRMetricsDemo from "./pages/GYRMetricsDemo";
 import Metrics from "./pages/Metrics";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
@@ -49,15 +46,6 @@ import Admin from "./pages/Admin";
 
 import Layout from "./components/Layout";
 import SmartRouter from "./components/SmartRouter";
-
-// ---------------------------
-// ProtectedRoute
-// ---------------------------
-function ProtectedRoute({ children }: { children: JSX.Element }) {
-  const { isLoading, isAuthenticated } = useAuth0();
-  if (isLoading) return <div className="p-6">🔄 Loading…</div>;
-  return isAuthenticated ? children : <Navigate to="/welcome" replace />;
-}
 
 // ---------------------------
 // LoginPage
@@ -132,137 +120,87 @@ export default function App() {
       {/* Smart Routing */}
       <Route path="/" element={<SmartRouter />} />
 
-      {/* Protected Routes with Layout */}
+      {/* Protected Routes with Layout - AuthGuard is handled within each page */}
       <Route
         path="/setup"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <SetupPage />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <SetupPage />
+          </Layout>
         }
       />
       <Route
         path="/onboarding"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <OnboardingForm />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <OnboardingForm />
+          </Layout>
         }
       />
       <Route
         path="/home"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <HomeScreen />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <HomeScreen />
+          </Layout>
         }
       />
       <Route
         path="/plan/overview"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <MyPlan />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <MyPlan />
+          </Layout>
         }
       />
       <Route
         path="/ask"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <AskGptMvpUI />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <AskGptMvpUI />
+          </Layout>
         }
       />
       <Route
         path="/test"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <AuthTestPage />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/metrics-original"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <SimpleMetrics />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <AuthTestPage />
+          </Layout>
         }
       />
       <Route
         path="/metrics"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <Metrics />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/metrics-old"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <SimpleMetricsCopy />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/vo2"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <VO2Metrics />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <Metrics />
+          </Layout>
         }
       />
       <Route
         path="/gyr-demo"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <GYRMetricsDemo />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <GYRMetricsDemo />
+          </Layout>
         }
       />
 
-      {/* Legacy Routes - redirect to new structure */}
+      {/* Legacy Routes */}
       <Route
         path="/plan/:id"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <PlanPage />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <PlanPage />
+          </Layout>
         }
       />
       <Route
         path="/plan"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <PlanPage />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <PlanPage />
+          </Layout>
         }
       />
 
@@ -270,11 +208,9 @@ export default function App() {
       <Route
         path="/admin"
         element={
-          <ProtectedRoute>
-            <Layout>
-              <Admin />
-            </Layout>
-          </ProtectedRoute>
+          <Layout>
+            <Admin />
+          </Layout>
         }
       />
 

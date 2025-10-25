@@ -1,6 +1,7 @@
 // frontend/src/pages/AuthTestPage.tsx
 import React from "react";
 import { useAuthSetup } from "../hooks/useAuthSetup";
+import { AuthGuard } from "../components/AuthGuard";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "../utils/apiClient";
 
@@ -10,6 +11,7 @@ const AuthTestPage: React.FC = () => {
   const api = useApiClient();
 
   return (
+    <AuthGuard>
     <div className="max-w-4xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-lg p-6">
         <h1 className="text-2xl font-bold mb-6">🔐 Authentication Test Page</h1>
@@ -75,6 +77,7 @@ const AuthTestPage: React.FC = () => {
         </div>
       </div>
     </div>
+    </AuthGuard>
   );
 };
 

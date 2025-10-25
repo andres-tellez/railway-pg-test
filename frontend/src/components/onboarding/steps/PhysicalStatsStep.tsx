@@ -1,13 +1,32 @@
 import { useFormContext } from 'react-hook-form';
 import { OnboardingFormData } from '../../../schemas/onboardingSchema';
+import { AgeGroups, AgeGroupLabels } from '../../../schemas/onboardingSchema';
 
 export default function PhysicalStatsStep() {
-  const { register } = useFormContext<OnboardingFormData>();
+  const { register, formState: { errors } } = useFormContext<OnboardingFormData>();
 
   return (
     <div className="space-y-6">
       <div>
-        <label className="block font-semibold">Your height:</label>
+        <label className="block font-semibold mb-2">Your age group:</label>
+        <select
+          {...register('ageGroup')}
+          className="w-full border p-2 rounded"
+        >
+          <option value="">Select age group</option>
+          {AgeGroups.map((ageGroup) => (
+            <option key={ageGroup} value={ageGroup}>
+              {AgeGroupLabels[ageGroup]}
+            </option>
+          ))}
+        </select>
+        {errors.ageGroup && (
+          <p className="text-red-500 text-sm mt-1">{errors.ageGroup.message}</p>
+        )}
+      </div>
+
+      <div>
+        <label className="block font-semibold mb-2">Your height:</label>
         <div className="flex gap-4">
           <input
             type="number"
@@ -26,41 +45,27 @@ export default function PhysicalStatsStep() {
             className="border p-2 rounded w-1/3"
           />
         </div>
+        {errors.height && (
+          <p className="text-red-500 text-sm mt-1">{errors.height.message}</p>
+        )}
       </div>
 
       <div>
-        <label className="block font-semibold">Your weight (lbs):</label>
+        <label className="block font-semibold mb-2">Your weight (lbs):</label>
         <input
           type="number"
           min={80}
           max={400}
           step={1}
           {...register('weight', { valueAsNumber: true })}
-          className="mt-1 border p-2 w-full rounded"
+          className="w-full border p-2 rounded"
         />
-      </div>
-
-      <div>
-        <label className="block font-semibold">Your age group:</label>
-        <select {...register('ageGroup')} className="mt-1 border p-2 w-full rounded">
-          <option value="">Select age group</option>
-          <option value="Under 18">Under 18</option>
-          <option value="18-24">18-24</option>
-          <option value="25-34">25-34</option>
-          <option value="35-44">35-44</option>
-          <option value="45-54">45-54</option>
-          <option value="55+">55+</option>
-        </select>
-      </div>
-
-      <div>
-        <label className="block font-semibold">Longest run ever (miles):</label>
-        <input
-          type="number"
-          min={0}
-          step={1}
-          className="mt-1 border p-2 w-full rounded"
-        />
+        <p className="text-sm text-gray-600 mt-1">
+          Optional - helps us provide more personalized recommendations
+        </p>
+        {errors.weight && (
+          <p className="text-red-500 text-sm mt-1">{errors.weight.message}</p>
+        )}
       </div>
     </div>
   );

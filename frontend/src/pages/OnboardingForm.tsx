@@ -1,28 +1,27 @@
 // src/pages/OnboardingForm.tsx
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth0 } from "@auth0/auth0-react";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import { onboardingSchema, OnboardingFormData } from "@/schemas/onboardingSchema";
 import { useApiClient } from "@/utils/apiClient";
-import RaceGoalStep from "@/components/onboarding/steps/RaceGoalStep";
+import { useAuthSetup } from "@/hooks/useAuthSetup";
+import { AuthGuard } from "@/components/AuthGuard";
+import MarathonGoalStep from "@/components/onboarding/steps/MarathonGoalStep";
+import RaceDetailsStep from "@/components/onboarding/steps/RaceDetailsStep";
 import TrainingDaysStep from "@/components/onboarding/steps/TrainingDaysStep";
 import PhysicalStatsStep from "@/components/onboarding/steps/PhysicalStatsStep";
-import RunPreferencesStep from "@/components/onboarding/steps/RunPreferencesStep";
-import RunnerLevelStep from "@/components/onboarding/steps/RunnerLevelStep";
 
 const steps = [
-  { title: "Runner Level", Component: RunnerLevelStep },
-  { title: "Goals", Component: RaceGoalStep },
-  { title: "Preferences", Component: RunPreferencesStep },
+  { title: "Marathon Goal", Component: MarathonGoalStep },
+  { title: "Race Details", Component: RaceDetailsStep },
   { title: "Training Days", Component: TrainingDaysStep },
   { title: "Physical Stats", Component: PhysicalStatsStep },
 ];
 
 const OnboardingForm: React.FC = () => {
-  const { isAuthenticated } = useAuth0();
+  const { isReady, userId } = useAuthSetup(); // ✅ Centralized auth (AuthGuard handles the rest)
   const api = useApiClient();
   const navigate = useNavigate();
   const ran = useRef(false);
@@ -49,7 +48,7 @@ const OnboardingForm: React.FC = () => {
 
   // Preload onboarding state if user already submitted it
   useEffect(() => {
-    if (!isAuthenticated || ran.current) return;
+    if (!isReady || !userId || ran.current) return; // ✅ Wait for auth setup
     ran.current = true;
 
     const ac = new AbortController();
@@ -68,7 +67,7 @@ const OnboardingForm: React.FC = () => {
       }
     })();
     return () => ac.abort();
-  }, [isAuthenticated, methods, navigate]); // Remove 'api' to prevent infinite loop
+  }, [isReady, userId, methods, navigate, api]); // ✅ Depend on isReady and userId
 
   const handleSubmit = async () => {
   setSaving(true);
@@ -82,12 +81,12 @@ const OnboardingForm: React.FC = () => {
       pastRaces: values.pastRaces ?? [],
     };
 
-    const userId = localStorage.getItem("user_id"); // should be UUID from backend
-    if (!userId) throw new Error("Missing user_id in localStorage");
+    // ✅ Use userId from auth hook instead of localStorage
+    if (!userId) throw new Error("No user ID available - please refresh");
 
     await api.post("api/onboarding", {
       ...fixedValues,
-      //user_id: userId, // 👈 inject UUID here
+      //user_id: userId, // 👈 Backend sets this from token
     });
 
     navigate("/dashboard", { replace: true });
@@ -105,11 +104,10 @@ const OnboardingForm: React.FC = () => {
 
   const handleNext = async () => {
     const stepFields: Record<number, (keyof OnboardingFormData)[]> = {
-      0: ["runnerLevel"],
-      1: ["mainGoal", "motivation"],
-      2: ["runPreference"],
-      3: ["trainingDays"],
-      4: ["height", "weight", "ageGroup"],
+      0: [], // Marathon Goal - no validation needed (just display)
+      1: ["raceDate", "raceDistance"], // Race Details
+      2: ["trainingDays"], // Training Days
+      3: ["ageGroup", "height", "weight"], // Physical Stats
     };
 
     const fields = stepFields[step] || [];
@@ -122,13 +120,12 @@ const OnboardingForm: React.FC = () => {
 
   const StepComponent = steps[step].Component;
 
-  if (!isAuthenticated)
-    return <div className="p-6 text-red-600 text-center">❌ Not Authenticated</div>;
   if (loading)
     return <div className="p-8 text-center text-gray-600">⏳ Loading onboarding…</div>;
 
   return (
-    <FormProvider {...methods}>
+    <AuthGuard>
+      <FormProvider {...methods}>
       <form
         className="max-w-2xl mx-auto mt-10 bg-white shadow-xl rounded-xl p-8 space-y-6 border"
         onSubmit={(e) => e.preventDefault()}
@@ -177,7 +174,8 @@ const OnboardingForm: React.FC = () => {
           </button>
         </div>
       </form>
-    </FormProvider>
+      </FormProvider>
+    </AuthGuard>
   );
 };
 

@@ -18,19 +18,26 @@ class Height(BaseModel):
 
 class UserProfileSchema(BaseModel):
     user_id: str
-    runnerLevel: RunnerLevel
-    raceHistory: bool
+
+    # Race Details
     raceDate: Optional[str]
     raceDistance: Optional[RaceDistance]
-    pastRaces: Optional[List[PastRace]]
+    raceName: Optional[str]
+    raceLocation: Optional[str]
 
-    # ✅ Updated to nested height object
-    height: Height
-
-    weight: Optional[int]
+    # Training Schedule
     trainingDays: Optional[List[str]]
-    mainGoal: Optional[Goal]
-    motivation: Optional[List[Motivation]]
-    ageGroup: Optional[AgeGroup]
-    runPreference: Optional[RunPreference]
-    longestRun: Optional[int] = None  # <-- add this line
+
+    # Physical Stats
+    ageGroup: AgeGroup
+    height: Height
+    weight: Optional[int]
+
+    # Legacy fields for backward compatibility (optional)
+    runnerLevel: Optional[RunnerLevel] = None
+    raceHistory: Optional[bool] = None
+    pastRaces: Optional[List[PastRace]] = None
+    mainGoal: Optional[Goal] = None
+    motivation: Optional[List[Motivation]] = None
+    runPreference: Optional[RunPreference] = None
+    longestRun: Optional[int] = None

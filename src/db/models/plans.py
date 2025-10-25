@@ -1,6 +1,16 @@
 # src/db/models/plans.py
 
-from sqlalchemy import Column, Integer, String, Date, Text, TIMESTAMP, ForeignKey, func
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Date,
+    Text,
+    TIMESTAMP,
+    ForeignKey,
+    Boolean,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -24,6 +34,7 @@ class Plan(Base):
     race_date = Column(Date, nullable=True)
     race_distance = Column(String(32), nullable=True)
     notes = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, server_default="false")
 
     created_by = Column(String(32), nullable=True)
     created_at = Column(TIMESTAMP, server_default=func.now())

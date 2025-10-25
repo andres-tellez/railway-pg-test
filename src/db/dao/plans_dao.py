@@ -59,3 +59,37 @@ def get_plan_with_workouts(
             for w in plan.workouts
         ],
     }
+
+
+def get_active_plan(session: Session, user_id: str) -> Plan | None:
+    """Get the currently active plan for a user."""
+    return session.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+
+
+def set_plan_active(session: Session, plan_id: int, user_id: str) -> bool:
+    """Set a specific plan as active and deactivate all others for the user."""
+    # First, verify the plan belongs to the user
+    plan = get_plan(session, plan_id)
+    if not plan or str(plan.user_id) != user_id:
+        return False
+
+    # Deactivate all plans for this user
+    session.query(Plan).filter_by(user_id=user_id).update({"is_active": False})
+
+    # Activate the specified plan
+    plan.is_active = True
+    session.commit()
+
+    return True
+
+
+def delete_plan(session: Session, plan_id: int, user_id: str) -> bool:
+    """Delete a plan (only if it belongs to the user)."""
+    plan = get_plan(session, plan_id)
+    if not plan or str(plan.user_id) != user_id:
+        return False
+
+    session.delete(plan)
+    session.commit()
+
+    return True

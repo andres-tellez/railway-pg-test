@@ -98,12 +98,11 @@ class Motivation(str, enum.Enum):
 
 
 class AgeGroup(str, enum.Enum):
-    Under18 = "Under 18"
-    Age18_24 = "18-24"
-    Age25_34 = "25-34"
-    Age35_44 = "35-44"
-    Age45_54 = "45-54"
-    Age55Plus = "55+"
+    Age18_29 = "18-29"
+    Age30_39 = "30-39"
+    Age40_49 = "40-49"
+    Age50_59 = "50-59"
+    Age60Plus = "60+"
 
 
 class RunPreference(str, enum.Enum):
@@ -129,25 +128,34 @@ class UserProfile(Base):
     __tablename__ = "user_profile"
 
     user_id = Column(String, primary_key=True)
-    runner_level = Column(Enum(RunnerLevel), nullable=False)
-    race_history = Column(Boolean, nullable=False)
+
+    # Race Details
     race_date = Column(String)
     race_distance = Column(Enum(RaceDistance))
-    past_races = Column(
-        PGArray(PGEnum(PastRace, name="pastrace", create_type=False)), nullable=True
-    )
-    height_feet = Column(Integer, nullable=False)
-    height_inches = Column(Integer, nullable=False)
-    weight = Column(Float, nullable=False)
+    race_name = Column(String)
+    race_location = Column(String)
+
+    # Training Schedule
     training_days = Column(
         PGArray(PGEnum(TrainingDay, name="trainingday", create_type=True)),
         nullable=True,
     )
 
-    main_goal = Column(Enum(Goal), nullable=False)
+    # Physical Stats
+    age_group = Column(Enum(AgeGroup), nullable=False)
+    height_feet = Column(Integer, nullable=False)
+    height_inches = Column(Integer, nullable=False)
+    weight = Column(Float)
+
+    # Legacy fields for backward compatibility
+    runner_level = Column(Enum(RunnerLevel))
+    race_history = Column(Boolean)
+    past_races = Column(
+        PGArray(PGEnum(PastRace, name="pastrace", create_type=False)), nullable=True
+    )
+    main_goal = Column(Enum(Goal))
     motivation = Column(
         PGArray(PGEnum(Motivation, name="motivation", create_type=False)), nullable=True
     )
-    age_group = Column(Enum(AgeGroup), nullable=False)
     longest_run = Column(Float)
-    run_preference = Column(Enum(RunPreference), nullable=False)
+    run_preference = Column(Enum(RunPreference))

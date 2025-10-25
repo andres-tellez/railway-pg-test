@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useApiClient } from "../utils/apiClient";
+import { useAuthSetup } from "../hooks/useAuthSetup";
+import { AuthGuard } from "../components/AuthGuard";
 import { format, parseISO, startOfWeek } from "date-fns";
 
 type Workout = {
@@ -23,12 +25,13 @@ type Plan = {
 
 export default function PlanPage() {
   const { id } = useParams(); // plan id from URL
+  const { isReady, userId } = useAuthSetup(); // ✅ Centralized auth (AuthGuard handles the rest)
   const api = useApiClient();
   const [plan, setPlan] = useState<Plan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !isReady || !userId) return; // ✅ Wait for auth setup
 
     const fetchPlan = async () => {
       try {
@@ -41,7 +44,7 @@ export default function PlanPage() {
     };
 
     fetchPlan();
-  }, [id]); // ✅ only depend on id, not api
+  }, [id, isReady, userId, api]); // ✅ Depend on auth setup
 
   if (error) {
     return <p className="p-6 text-red-600">❌ {error}</p>;
@@ -66,7 +69,8 @@ export default function PlanPage() {
   const weekKeys = Object.keys(groupedByWeek).sort();
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <AuthGuard>
+      <div className="p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold mb-2">{plan.plan_name}</h1>
       <p className="mb-4 text-gray-700">{plan.notes}</p>
       <p className="mb-6">
@@ -96,6 +100,7 @@ export default function PlanPage() {
           </div>
         </div>
       ))}
-    </div>
+      </div>
+    </AuthGuard>
   );
 }

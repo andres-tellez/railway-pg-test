@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApiClient } from '../utils/apiClient';
+import { useAuthSetup } from '../hooks/useAuthSetup';
+import { AuthGuard } from '../components/AuthGuard';
 
 interface Athlete {
   athlete_id: number;
@@ -16,6 +18,7 @@ interface SyncResult {
 }
 
 const Admin: React.FC = () => {
+  const { isReady, userId } = useAuthSetup(); // ✅ Centralized auth
   const apiClient = useApiClient();
   const [athletes, setAthletes] = useState<Athlete[]>([]);
   const [selectedAthlete, setSelectedAthlete] = useState<number | ''>('');
@@ -35,6 +38,8 @@ const Admin: React.FC = () => {
 
   // Load athletes on component mount
   useEffect(() => {
+    if (!isReady || !userId) return; // ✅ Wait for auth setup
+
     const loadAthletes = async () => {
       try {
         const response = await apiClient.get('/admin/athletes');
@@ -49,7 +54,7 @@ const Admin: React.FC = () => {
     };
 
     loadAthletes();
-  }, []);
+  }, [isReady, userId, apiClient]); // ✅ Depend on auth setup
 
   const handleSync = async () => {
     if (!selectedAthlete || !startDate || !endDate) {
@@ -83,6 +88,7 @@ const Admin: React.FC = () => {
   };
 
   return (
+    <AuthGuard>
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-2xl mx-auto px-4">
         <div className="bg-white rounded-lg shadow p-6">
@@ -173,6 +179,7 @@ const Admin: React.FC = () => {
         </div>
       </div>
     </div>
+    </AuthGuard>
   );
 };
 

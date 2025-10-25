@@ -14,7 +14,10 @@ import {
   isToday,
   parseISO,
 } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 import { useApiClient } from '@/utils/apiClient';
+import { useAuthSetup } from '@/hooks/useAuthSetup';
+import { AuthGuard } from '@/components/AuthGuard';
 
 type Workout = {
   date: string;
@@ -40,6 +43,14 @@ type PlanResponse = {
   race_date: string;
   notes?: string;
   workouts: any[];
+};
+
+type PlanSummary = {
+  id: number;
+  plan_name: string;
+  race_date: string;
+  created_at: string;
+  is_active: boolean;
 };
 
 const convertWorkoutType = (raw: string): Workout['type'] => {
@@ -162,14 +173,20 @@ const convertDistanceToMiles = (distance: string): string => {
 };
 
 const MyPlan: React.FC = () => {
-  const api = useApiClient(); // ✅ Moved here — top-level inside the component
+  const { isReady, userId } = useAuthSetup(); // ✅ Centralized auth (AuthGuard handles the rest)
+  const api = useApiClient();
+  const navigate = useNavigate();
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [workoutsByDate, setWorkoutsByDate] = useState<Record<string, Workout>>({});
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [availablePlans, setAvailablePlans] = useState<PlanSummary[]>([]);
+  const [showPlanSelector, setShowPlanSelector] = useState(false);
 
 
   useEffect(() => {
+    if (!isReady || !userId) return; // ✅ Wait for auth setup
+
     const fetchPlan = async () => {
       try {
         const res = await api.get('/api/plan/current'); // ✅ Use it, don't re-invoke it
@@ -225,8 +242,35 @@ const MyPlan: React.FC = () => {
     };
 
     fetchPlan();
-  }, []); // ✅ 'api' is stable, no need to include in deps
+  }, [isReady, userId, api]); // ✅ Depend on auth setup
 
+  // Fetch all plans for plan selector
+  useEffect(() => {
+    if (!isReady || !userId) return; // ✅ Wait for auth setup
+
+    const fetchAllPlans = async () => {
+      try {
+        const res = await api.get('/api/plan/list');
+        setAvailablePlans(res.data.plans);
+      } catch (error) {
+        console.error("Failed to fetch plans list:", error);
+      }
+    };
+
+    fetchAllPlans();
+  }, [isReady, userId, api]); // ✅ Depend on auth setup
+
+  // Function to switch between plans
+  const handlePlanSwitch = async (planId: number) => {
+    try {
+      await api.post(`/api/plan/${planId}/set-active`);
+      // Reload the page to show the newly active plan
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to switch plan:", error);
+      alert("Failed to switch plan. Please try again.");
+    }
+  };
 
   const days = eachDayOfInterval({
     start: startOfMonth(currentMonth),
@@ -236,7 +280,92 @@ const MyPlan: React.FC = () => {
   const offset = getDay(startOfMonth(currentMonth));
 
   return (
-    <div className="w-full max-w-lg mx-auto">
+    <AuthGuard>
+      <div className="w-full max-w-lg mx-auto">
+      {/* Plan Header with Actions */}
+      {plan && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">My Training Plan</h1>
+              {plan.race_date && (
+                <p className="mt-1 text-sm text-gray-600">
+                  Race: {format(parseISO(plan.race_date), 'MMMM d, yyyy')}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Plan Selector & Actions */}
+          <div className="flex items-center gap-2">
+            {/* Plan Selector Dropdown */}
+            {availablePlans.length > 1 && (
+              <div className="relative flex-1">
+                <button
+                  onClick={() => setShowPlanSelector(!showPlanSelector)}
+                  className="w-full flex items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  <span>
+                    {availablePlans.find(p => p.is_active)?.plan_name || 'Select Plan'}
+                  </span>
+                  <svg className="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {showPlanSelector && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-10"
+                      onClick={() => setShowPlanSelector(false)}
+                    />
+                    <div className="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white shadow-lg">
+                      <div className="py-1">
+                        {availablePlans.map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => {
+                              if (!p.is_active) {
+                                handlePlanSwitch(p.id);
+                              }
+                              setShowPlanSelector(false);
+                            }}
+                            className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 ${
+                              p.is_active ? 'bg-blue-50 font-semibold text-blue-900' : 'text-gray-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span>{p.plan_name}</span>
+                              {p.is_active && (
+                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Active</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              Race: {format(parseISO(p.race_date), 'MMM d, yyyy')}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Create New Plan Button */}
+            <button
+              onClick={() => navigate('/onboarding')}
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors whitespace-nowrap"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              New Plan
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Safety Warning */}
       {plan && plan.notes && plan.notes.includes('⚠️ SAFETY WARNING:') && (
         <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 p-4 shadow-sm">
@@ -362,7 +491,8 @@ const MyPlan: React.FC = () => {
         </div>
       )}
 
-    </div>
+      </div>
+    </AuthGuard>
   );
 };
 

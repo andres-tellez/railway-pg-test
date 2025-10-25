@@ -38,18 +38,23 @@ const SmartRouter: React.FC = () => {
         const response = await api.get<{ hasOnboarded: boolean; hasStrava: boolean }>('/user');
         const { hasOnboarded, hasStrava } = response.data;
 
+        console.log('🔍 User state check:', { hasOnboarded, hasStrava });
+
         if (hasOnboarded) {
           // Complete user - go to dashboard
+          console.log('✅ User has onboarded, redirecting to /home');
           navigate('/home', { replace: true });
         } else if (hasStrava) {
           // Has Strava but not onboarded - go to onboarding
+          console.log('⚙️ User has Strava but not onboarded, redirecting to /onboarding');
           navigate('/onboarding', { replace: true });
         } else {
           // New user - go to setup
+          console.log('🆕 New user, redirecting to /setup');
           navigate('/setup', { replace: true });
         }
       } catch (error) {
-        console.error('Failed to check user state:', error);
+        console.error('❌ Failed to check user state:', error);
         // Default to setup page on error
         navigate('/setup', { replace: true });
       } finally {

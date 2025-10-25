@@ -24,25 +24,31 @@ def save_user_profile(session: Session, profile_data: dict):
 
     db_data = {
         "user_id": profile_data["user_id"],
-        "runner_level": profile_data["runnerLevel"],
-        "race_history": profile_data["raceHistory"],
+        # Race Details
         "race_date": profile_data.get("raceDate"),
         "race_distance": profile_data.get("raceDistance"),
-        "past_races": _empty_list_to_none(
-            [PastRace(x) for x in profile_data.get("pastRaces", [])]
-        ),
-        "height_feet": profile_data.get("height_feet"),
-        "height_inches": profile_data.get("height_inches"),
-        "weight": profile_data["weight"],
+        "race_name": profile_data.get("raceName"),
+        "race_location": profile_data.get("raceLocation"),
+        # Training Schedule
         "training_days": _empty_list_to_none(
             [TrainingDay(x) for x in profile_data.get("trainingDays", [])]
         ),
-        "main_goal": profile_data["mainGoal"],
+        # Physical Stats
+        "age_group": profile_data["ageGroup"],
+        "height_feet": profile_data.get("height_feet"),
+        "height_inches": profile_data.get("height_inches"),
+        "weight": profile_data.get("weight"),
+        # Legacy fields for backward compatibility
+        "runner_level": profile_data.get("runnerLevel"),
+        "race_history": profile_data.get("raceHistory"),
+        "past_races": _empty_list_to_none(
+            [PastRace(x) for x in profile_data.get("pastRaces", [])]
+        ),
+        "main_goal": profile_data.get("mainGoal"),
         "motivation": _empty_list_to_none(
             [Motivation(x) for x in profile_data.get("motivation", [])]
         ),
-        "age_group": profile_data["ageGroup"],
-        "run_preference": profile_data["runPreference"],
+        "run_preference": profile_data.get("runPreference"),
     }
 
     if longest_run is not None:

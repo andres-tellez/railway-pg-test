@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApiClient } from '../utils/apiClient';
+import { useAuthSetup } from '../hooks/useAuthSetup';
+import { AuthGuard } from '../components/AuthGuard';
 import GYRMetricCard from '../components/cards/GYRMetricCard';
 
 interface GYRScore {
@@ -24,12 +26,15 @@ interface GYRScoresResponse {
 }
 
 export default function GYRMetricsDemo() {
+  const { isReady, userId } = useAuthSetup(); // ✅ Centralized auth
   const apiClient = useApiClient();
   const [gyrData, setGyrData] = useState<GYRScoresResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!isReady || !userId) return; // ✅ Wait for auth setup
+
     const fetchGYRScores = async () => {
       try {
         setLoading(true);
@@ -50,7 +55,7 @@ export default function GYRMetricsDemo() {
     };
 
     fetchGYRScores();
-  }, []); // Remove apiClient dependency to prevent infinite loop
+  }, [isReady, userId, apiClient]); // ✅ Depend on auth setup
 
   // Loading state
   if (loading) {
@@ -89,6 +94,7 @@ export default function GYRMetricsDemo() {
   }
 
   return (
+    <AuthGuard>
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4">
         <div className="mb-8">
@@ -125,5 +131,6 @@ export default function GYRMetricsDemo() {
         </div>
       </div>
     </div>
+    </AuthGuard>
   );
 }
