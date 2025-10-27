@@ -50,6 +50,25 @@ def refresh_materialized_views():
         ).fetchall()
         logger.info(f"📊 Metrics BEFORE refresh: {before_data}")
 
+        # Also check when the latest activity was
+        latest_activity = session.execute(
+            text(
+                """
+                SELECT activity_id, name, start_date, distance
+                FROM activities
+                WHERE type = 'Run'
+                ORDER BY start_date DESC
+                LIMIT 1
+            """
+            )
+        ).fetchone()
+        if latest_activity:
+            logger.info(
+                f"📅 Latest activity in DB: {latest_activity.name} on {latest_activity.start_date} ({latest_activity.distance/1609.34:.2f} miles)"
+            )
+        else:
+            logger.info("📅 No activities found in database!")
+
         # Refresh the main metrics view (non-concurrent to avoid index requirement)
         logger.info("🔄 Executing REFRESH...")
         session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
