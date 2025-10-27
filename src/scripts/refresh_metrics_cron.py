@@ -37,10 +37,8 @@ def refresh_materialized_views():
         session = get_session()
         logger.info("🔄 Refreshing materialized views...")
 
-        # Refresh the main metrics view
-        session.execute(
-            text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_athlete_metrics;")
-        )
+        # Refresh the main metrics view (non-concurrent to avoid index requirement)
+        session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
         session.commit()
 
         logger.info("✅ Materialized views refreshed successfully")
