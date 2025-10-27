@@ -8,20 +8,12 @@ import { onboardingSchema, OnboardingFormData } from "@/schemas/onboardingSchema
 import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
 import { AuthGuard } from "@/components/AuthGuard";
-import MarathonGoalStep from "@/components/onboarding/steps/MarathonGoalStep";
 import RaceDetailsStep from "@/components/onboarding/steps/RaceDetailsStep";
 import TrainingDaysStep from "@/components/onboarding/steps/TrainingDaysStep";
 import PhysicalStatsStep from "@/components/onboarding/steps/PhysicalStatsStep";
 
-const steps = [
-  { title: "Marathon Goal", Component: MarathonGoalStep },
-  { title: "Race Details", Component: RaceDetailsStep },
-  { title: "Training Days", Component: TrainingDaysStep },
-  { title: "Physical Stats", Component: PhysicalStatsStep },
-];
-
 const OnboardingForm: React.FC = () => {
-  const { isReady, userId } = useAuthSetup(); // ✅ Centralized auth (AuthGuard handles the rest)
+  const { isReady, userId } = useAuthSetup();
   const api = useApiClient();
   const navigate = useNavigate();
   const ran = useRef(false);
@@ -31,149 +23,145 @@ const OnboardingForm: React.FC = () => {
     mode: "onBlur",
   });
 
-  const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Remove rogue autofill text artifacts
+  // Preload profile data if user already submitted it
   useEffect(() => {
-    const f = document.querySelector("form");
-    if (f) {
-      Array.from(f.childNodes).forEach((n) => {
-        if (n.nodeType === Node.TEXT_NODE && n.textContent?.includes("canceled")) f.removeChild(n);
-      });
-    }
-  }, []);
-
-  // Preload onboarding state if user already submitted it
-  useEffect(() => {
-    if (!isReady || !userId || ran.current) return; // ✅ Wait for auth setup
+    if (!isReady || !userId || ran.current) return;
     ran.current = true;
 
     const ac = new AbortController();
     (async () => {
       setLoading(true);
       try {
-        const { data } = await api.get("api/onboarding", { signal: ac.signal }); // ✅ fixed path
+        console.log("Fetching profile data...");
+        const { data } = await api.get("api/onboarding", { signal: ac.signal });
+        console.log("Received profile data:", data);
         if (data) {
+          // Pre-fill the form with existing data (for editing)
+          console.log("Resetting form with data...");
           methods.reset(data);
-          navigate("/dashboard", { replace: true });
+          console.log("Form reset complete");
+        } else {
+          console.log("No profile data received");
         }
       } catch (e: any) {
-        if (e.name !== "AbortError") setError(e.message || "Failed to fetch onboarding data");
+        if (e.name !== "AbortError") {
+          console.error("Error fetching profile:", e);
+          // User doesn't have a profile yet - this is expected for new users
+          console.log("No existing profile found - showing empty form");
+        }
       } finally {
         setLoading(false);
       }
     })();
     return () => ac.abort();
-  }, [isReady, userId, methods, navigate, api]); // ✅ Depend on isReady and userId
+  }, [isReady, userId, methods, api]);
 
-  const handleSubmit = async () => {
-  setSaving(true);
-  setError(null);
-  try {
-    const values = methods.getValues();
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
 
-    // ✅ Ensure pastRaces always exists (default [])
-    const fixedValues = {
-      ...values,
-      pastRaces: values.pastRaces ?? [],
-    };
+    // Validate all fields
+    const isValid = await methods.trigger();
+    if (!isValid) {
+      setError("Please fix the errors below");
+      setSaving(false);
+      return;
+    }
 
-    // ✅ Use userId from auth hook instead of localStorage
-    if (!userId) throw new Error("No user ID available - please refresh");
+    try {
+      const values = methods.getValues();
 
-    await api.post("api/onboarding", {
-      ...fixedValues,
-      //user_id: userId, // 👈 Backend sets this from token
-    });
+      if (!userId) throw new Error("No user ID available - please refresh");
 
-    navigate("/dashboard", { replace: true });
-  } catch (e: any) {
-    const msg =
-      e.response?.data?.message ||
-      JSON.stringify(e.response?.data?.errors) ||
-      "Submit error";
-    setError(msg);
-  } finally {
-    setSaving(false);
-  }
-};
+      await api.post("api/onboarding", {
+        ...values,
+      });
 
-
-  const handleNext = async () => {
-    const stepFields: Record<number, (keyof OnboardingFormData)[]> = {
-      0: [], // Marathon Goal - no validation needed (just display)
-      1: ["raceDate", "raceDistance"], // Race Details
-      2: ["trainingDays"], // Training Days
-      3: ["ageGroup", "height", "weight"], // Physical Stats
-    };
-
-    const fields = stepFields[step] || [];
-    const valid = await methods.trigger(fields as any);
-    if (!valid) return;
-
-    if (step < steps.length - 1) setStep(step + 1);
-    else handleSubmit();
+      navigate("/home", { replace: true });
+    } catch (e: any) {
+      const msg =
+        e.response?.data?.message ||
+        JSON.stringify(e.response?.data?.errors) ||
+        "Failed to save profile";
+      setError(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const StepComponent = steps[step].Component;
-
-  if (loading)
-    return <div className="p-8 text-center text-gray-600">⏳ Loading onboarding…</div>;
+  if (loading) {
+    return (
+      <AuthGuard>
+        <div className="p-8 text-center text-gray-600">⏳ Loading profile…</div>
+      </AuthGuard>
+    );
+  }
 
   return (
     <AuthGuard>
       <FormProvider {...methods}>
-      <form
-        className="max-w-2xl mx-auto mt-10 bg-white shadow-xl rounded-xl p-8 space-y-6 border"
-        onSubmit={(e) => e.preventDefault()}
-      >
-        <div className="space-y-1 text-center">
-          <h1 className="text-3xl font-bold text-gray-800">Onboarding</h1>
-          <p className="text-gray-500 text-sm">
-            Step {step + 1} of {steps.length}: {steps[step].title}
-          </p>
-        </div>
-
-        {error && error !== "canceled" && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-            {error}
+        <form
+          onSubmit={handleSubmit}
+          className="max-w-2xl mx-auto mt-10 bg-white shadow-xl rounded-xl p-8 space-y-6 border"
+        >
+          <div className="space-y-1 text-center">
+            <h1 className="text-3xl font-bold text-gray-800">User Profile</h1>
+            <p className="text-gray-500 text-sm">
+              Tell us about yourself to personalize your training plan
+            </p>
           </div>
-        )}
-        <div className="space-y-4">
-          <StepComponent />
-        </div>
 
-        <div className="flex justify-between pt-6">
-          {step > 0 ? (
-            <button
-              type="button"
-              onClick={() => setStep(step - 1)}
-              className="px-5 py-2 border border-gray-300 text-gray-700 rounded hover:bg-gray-100 transition"
-              disabled={saving}
-            >
-              ← Back
-            </button>
-          ) : (
-            <div />
+          {error && error !== "canceled" && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+              {error}
+            </div>
           )}
 
-          <button
-            type="button"
-            onClick={handleNext}
-            disabled={saving}
-            className={`px-6 py-2 font-semibold text-white rounded ${
-              saving
-                ? "bg-blue-300 cursor-not-allowed"
-                : "bg-blue-600 hover:bg-blue-700 transition"
-            }`}
-          >
-            {step === steps.length - 1 ? "Finish" : "Next →"}
-          </button>
-        </div>
-      </form>
+          <div className="space-y-8">
+            {/* Physical Stats Section */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">
+                Physical Stats
+              </h2>
+              <PhysicalStatsStep />
+            </div>
+
+            {/* Training Schedule Section */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">
+                Training Schedule
+              </h2>
+              <TrainingDaysStep />
+            </div>
+
+            {/* Race Details Section */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">
+                Race Details (Optional)
+              </h2>
+              <RaceDetailsStep />
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-6">
+            <button
+              type="submit"
+              disabled={saving}
+              className={`px-8 py-3 font-semibold text-white rounded-lg transition ${
+                saving
+                  ? "bg-blue-300 cursor-not-allowed"
+                  : "bg-blue-600 hover:bg-blue-700"
+              }`}
+            >
+              {saving ? "Saving..." : "Save Profile"}
+            </button>
+          </div>
+        </form>
       </FormProvider>
     </AuthGuard>
   );

@@ -5,13 +5,15 @@ import { z } from 'zod';
 export const Days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] as const;
 export const Distances = ['5K','10K','Half Marathon','Marathon','Ultra','Other'] as const;
 export const AgeGroups = ['18-29','30-39','40-49','50-59','60+'] as const;
+export const Motivations = ['Health','Stress relief','Competition','Enjoyment','Weight loss','Other'] as const;
 
 // 2) Create Zod enums from those tuples
 const DaysEnum = z.enum(Days);
 const DistanceEnum = z.enum(Distances);
 const AgeGroupEnum = z.enum(AgeGroups);
+const MotivationEnum = z.enum(Motivations);
 
-// 3) Schema (aligned with your UI + multi-step)
+// 3) Schema for User Profile form
 export const onboardingSchema = z.object({
   user_id: z.string().uuid().optional(),  // ✅ enforce UUID
 
@@ -23,6 +25,7 @@ export const onboardingSchema = z.object({
 
   // Training Schedule
   trainingDays: z.array(DaysEnum).min(3, 'Select at least 3 training days').max(5, 'Select at most 5 training days'),
+  motivation: z.array(MotivationEnum).min(1, 'Select at least one motivation').optional(),
 
   // Physical Stats
   ageGroup: AgeGroupEnum,
@@ -69,6 +72,15 @@ export const AgeGroupLabels: Record<typeof AgeGroups[number], string> = {
   '40-49': '40–49',
   '50-59': '50–59',
   '60+': '60+',
+};
+
+export const MotivationLabels: Record<typeof Motivations[number], string> = {
+  'Health': 'Health',
+  'Stress relief': 'Stress relief',
+  'Competition': 'Competition',
+  'Enjoyment': 'Enjoyment',
+  'Weight loss': 'Weight loss',
+  'Other': 'Other',
 };
 
 

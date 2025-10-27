@@ -1,7 +1,7 @@
 # src/routes/user_profile_routes.py
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping
+from typing import Any, Dict
 from enum import Enum
 
 from flask import Blueprint, request, jsonify, g, current_app
@@ -13,31 +13,6 @@ from src.utils.auth0_jwt import requires_auth
 from src.db.db_session import get_session
 
 user_profile_bp = Blueprint("user_profile", __name__, url_prefix="/api")
-
-
-def _safe_to_mapping(row: Any) -> Mapping[str, Any]:
-    if row is None:
-        return {}
-    m = getattr(row, "_mapping", None)
-    if m is not None:
-        return m
-    if isinstance(row, Mapping):
-        return row
-    return dict(row)
-
-
-def normalize_postgres_row(row: Mapping[str, Any]) -> Dict[str, Any]:
-    current_app.logger.debug("normalize_postgres_row IN: %r", row)
-    out: Dict[str, Any] = {}
-    for k, v in row.items():
-        if isinstance(v, list):
-            out[k] = [item.value if isinstance(item, Enum) else item for item in v]
-        elif isinstance(v, Enum):
-            out[k] = v.value
-        else:
-            out[k] = v
-    current_app.logger.debug("normalize_postgres_row OUT: %r", out)
-    return out
 
 
 def _coerce_int(value: Any, default: int = 0) -> int:
@@ -63,6 +38,9 @@ def submit_user_profile():
         return jsonify({"status": "error", "message": "No internal user_id"}), 401
 
     data = request.get_json(silent=True) or {}
+    current_app.logger.debug(f"[submit_user_profile] Received data: {data}")
+
+    # No mapping needed - age_group is now a string column that stores user-friendly ranges like "30-39"
 
     # Accept legacy height fields
     if "heightFeet" in data or "heightInches" in data:
@@ -124,6 +102,9 @@ def submit_user_profile():
         )
 
     except ValidationError as e:
+        current_app.logger.error(
+            f"[submit_user_profile] Validation error: {e.errors()}"
+        )
         return jsonify({"status": "error", "errors": e.errors()}), 400
     except Exception as e:
         current_app.logger.exception(
@@ -136,20 +117,26 @@ def submit_user_profile():
 @requires_auth
 def get_user_profile_route():
     """
-    Fetch onboarding profile for the authenticated user (Auth0 sub).
+    Fetch onboarding profile for the authenticated user.
+    Uses internal UUID from g.user_id.
     """
-    sub = (getattr(g, "current_user", {}) or {}).get("sub")
-    if not sub:
+    internal_user_id = getattr(g, "user_id", None)
+    if not internal_user_id:
         return jsonify({"status": "error", "message": "No user"}), 401
+
+    session = get_session()
     try:
-        profile = get_user_profile(sub)
-        if not profile:
+        profile_dict = get_user_profile(session, str(internal_user_id))
+        if not profile_dict:
             return (
                 jsonify({"status": "error", "message": "User profile not found"}),
                 404,
             )
-        normalized = normalize_postgres_row(_safe_to_mapping(profile))
-        return jsonify({"status": "success", "data": normalized}), 200
+        return jsonify({"status": "success", "data": profile_dict}), 200
     except Exception:
-        current_app.logger.exception("get_user_profile failed for sub=%s", sub)
+        current_app.logger.exception(
+            "get_user_profile failed for user_id=%s", internal_user_id
+        )
         return jsonify({"status": "error", "message": "Failed to fetch profile"}), 500
+    finally:
+        session.close()

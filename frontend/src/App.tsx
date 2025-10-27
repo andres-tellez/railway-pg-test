@@ -29,6 +29,7 @@ import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 
 import OnboardingForm from "./pages/OnboardingForm";
+import UserProfile from "./pages/UserProfile";
 import PlanPage from "./pages/PlanPage";
 import MyPlan from "./pages/MyPlan";
 import SetupPage from "./pages/LandingPage";
@@ -134,6 +135,14 @@ export default function App() {
         element={
           <Layout>
             <OnboardingForm />
+          </Layout>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <Layout>
+            <UserProfile />
           </Layout>
         }
       />

@@ -173,7 +173,7 @@ const SetupPage: React.FC = () => {
             if (step === 2 && !forceSyncing) navigate("/onboarding");
           }}
         >
-          <h2 className="font-medium text-lg">Step 2: Complete Onboarding</h2>
+          <h2 className="font-medium text-lg">Step 2: Complete Your Profile</h2>
           {forceSyncing ? (
             <div className="mt-4 flex flex-col items-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>

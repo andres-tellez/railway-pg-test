@@ -1,7 +1,7 @@
 // src/components/OnboardingSteps/TrainingDaysStep.tsx
 import { useFormContext, Controller } from "react-hook-form";
 import type { OnboardingFormData } from "../../../schemas/onboardingSchema";
-import { Days, DayLabels } from "../../../schemas/onboardingSchema";
+import { Days, DayLabels, Motivations, MotivationLabels } from "../../../schemas/onboardingSchema";
 
 export default function TrainingDaysStep() {
   const {
@@ -13,7 +13,8 @@ export default function TrainingDaysStep() {
   const selectedDays = watch("trainingDays") || [];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Training Days */}
       <div>
         <label className="block font-semibold mb-2">Which days can you train?</label>
         <p className="text-sm text-gray-600 mb-4">
@@ -76,6 +77,45 @@ export default function TrainingDaysStep() {
               ✅ Great! {selectedDays.length} training days per week is perfect for marathon training.
             </p>
           </div>
+        )}
+      </div>
+
+      {/* Motivation */}
+      <div>
+        <label className="block font-semibold mb-2">What motivates you to run? (Select all that apply)</label>
+        <p className="text-sm text-gray-600 mb-4">
+          This helps us tailor your training plan to your goals
+        </p>
+
+        <Controller
+          name="motivation"
+          control={control}
+          render={({ field }) => (
+            <div className="space-y-2">
+              {Motivations.map((motivation) => (
+                <label key={motivation} className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    value={motivation}
+                    checked={field.value?.includes(motivation)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      const value = e.target.value;
+                      const newValue = checked
+                        ? [...(field.value || []), value]
+                        : (field.value || []).filter((v) => v !== value);
+                      field.onChange(newValue);
+                    }}
+                  />
+                  <span>{MotivationLabels[motivation]}</span>
+                </label>
+              ))}
+            </div>
+          )}
+        />
+
+        {errors.motivation && (
+          <p className="text-red-600 text-sm mt-2">{errors.motivation.message}</p>
         )}
       </div>
     </div>

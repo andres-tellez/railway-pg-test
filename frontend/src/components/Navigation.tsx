@@ -69,7 +69,7 @@ const Navigation: React.FC = () => {
     } else if (userState.hasStrava) {
       // Has Strava but not onboarded
       navItems.push(
-        { label: 'Complete Setup', path: '/onboarding', icon: '⚙️' }
+        { label: 'Complete Profile', path: '/profile', icon: '⚙️' }
       );
     } else {
       // New user - minimal navigation

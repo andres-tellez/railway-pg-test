@@ -7,25 +7,41 @@ def normalize_postgres_row(row: dict) -> dict:
     - Convert enum types to strings
     - Convert Postgres-style array strings (like '{A,B}') to Python lists
     - Leave native lists untouched
+    - Filter out SQLAlchemy internal fields
     """
-    print("🔍 normalize_postgres_row called with:")
-    print(row)
+    import uuid
+    from enum import Enum
 
     normalized = {}
 
     for key, val in row.items():
-        print(f"  → {key}: {val} ({type(val)})")
+        # Skip SQLAlchemy internal fields
+        if key.startswith("_sa_"):
+            continue
 
-        if isinstance(val, list):
-            normalized[key] = [str(item) for item in val]
+        # Convert enum objects to their values
+        if isinstance(val, Enum):
+            normalized[key] = val.value
+        # Convert UUID objects to strings
+        elif isinstance(val, uuid.UUID):
+            normalized[key] = str(val)
+        # Convert lists of enums/UUIDs
+        elif isinstance(val, list):
+            normalized[key] = [
+                (
+                    item.value
+                    if isinstance(item, Enum)
+                    else str(item) if isinstance(item, uuid.UUID) else str(item)
+                )
+                for item in val
+            ]
+        # Convert Postgres array strings (e.g., "{A,B}")
         elif isinstance(val, str) and val.startswith("{") and val.endswith("}"):
-            # Postgres array string (e.g., "{A,B}")
             items = val.strip("{}").split(",")
             normalized[key] = [item.strip('"') for item in items if item]
         else:
             normalized[key] = val
 
-    print("✅ Normalized result:", normalized)
     return normalized
 
 
