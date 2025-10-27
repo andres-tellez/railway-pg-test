@@ -19,6 +19,41 @@ def ping():
     return "pong from admin"
 
 
+@admin_bp.route("/refresh-metrics", methods=["POST"])
+@requires_auth
+def refresh_metrics():
+    """Manually trigger the metrics refresh."""
+    logger.info("🔄 [Manual Trigger] Starting metrics refresh...")
+
+    try:
+        from src.scripts.refresh_metrics_cron import main as refresh_main
+
+        exit_code = refresh_main()
+
+        if exit_code == 0:
+            logger.info("✅ Metrics refresh completed successfully")
+            return (
+                jsonify(
+                    {"status": "success", "message": "Metrics refreshed successfully"}
+                ),
+                200,
+            )
+        else:
+            logger.error("❌ Metrics refresh completed with errors")
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Metrics refresh completed with errors",
+                    }
+                ),
+                500,
+            )
+    except Exception as e:
+        logger.exception(f"❌ Exception during metrics refresh: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @admin_bp.route("/trigger-ingest/<int:athlete_id>", methods=["POST"])
 @requires_auth
 def trigger_ingestion(athlete_id):
