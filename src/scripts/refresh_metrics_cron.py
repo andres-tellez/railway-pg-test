@@ -42,14 +42,13 @@ def refresh_materialized_views():
         before_data = session.execute(
             text(
                 """
-                SELECT athlete_id, week_commencing, total_miles, longest_run
+                SELECT athlete_id, current_distance, previous_distance, current_runs
                 FROM mv_athlete_metrics
-                ORDER BY week_commencing DESC
                 LIMIT 5
             """
             )
         ).fetchall()
-        logger.info(f"📊 Latest 5 weeks BEFORE refresh: {before_data}")
+        logger.info(f"📊 Metrics BEFORE refresh: {before_data}")
 
         # Refresh the main metrics view (non-concurrent to avoid index requirement)
         logger.info("🔄 Executing REFRESH...")
@@ -61,14 +60,13 @@ def refresh_materialized_views():
         after_data = session.execute(
             text(
                 """
-                SELECT athlete_id, week_commencing, total_miles, longest_run
+                SELECT athlete_id, current_distance, previous_distance, current_runs
                 FROM mv_athlete_metrics
-                ORDER BY week_commencing DESC
                 LIMIT 5
             """
             )
         ).fetchall()
-        logger.info(f"📊 Latest 5 weeks AFTER refresh: {after_data}")
+        logger.info(f"📊 Metrics AFTER refresh: {after_data}")
 
         logger.info("✅ Materialized views refreshed successfully")
         return True
