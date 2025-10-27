@@ -36,6 +36,7 @@ def test_no_auth():
 @requires_auth
 def refresh_metrics():
     """Manually trigger the metrics refresh."""
+    print("🔴 [REFRESH-METRICS] Function entered!", flush=True)
     import sys
     import logging
 
