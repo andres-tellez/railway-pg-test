@@ -89,11 +89,14 @@ const Admin: React.FC = () => {
   };
 
   const handleRefreshMetrics = async () => {
+    console.log('🔴 [BROWSER] Refresh Metrics button clicked!');
     setRefreshingMetrics(true);
     setResult(null);
 
     try {
+      console.log('🔴 [BROWSER] Making POST request to /admin/refresh-metrics');
       const response = await apiClient.post('/admin/refresh-metrics');
+      console.log('🔴 [BROWSER] Response received:', response.data);
       setResult(response.data);
     } catch (error: any) {
       console.error('Refresh metrics failed:', error);
