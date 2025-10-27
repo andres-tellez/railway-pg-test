@@ -2,10 +2,10 @@
 """
 Scheduled metrics refresh script for Railway cron jobs.
 
-This script runs every Monday at 4AM to refresh all metrics data:
-- Refreshes materialized views
+This script runs every Monday at 2:00 AM Central to refresh all metrics data:
+- Refreshes materialized views (mv_athlete_metrics, mv_longest_runs)
 - Invalidates caches
-- Recalculates weekly metrics
+- Ensures metrics page shows current week as leftmost bar
 
 Usage:
     python src/scripts/refresh_metrics_cron.py
@@ -29,30 +29,50 @@ logger = logging.getLogger(__name__)
 
 
 def refresh_materialized_views():
-    """Refresh all materialized views."""
-    try:
-        from src.db.db_session import get_session
-        from sqlalchemy import text
+    """Refresh all materialized views with retry logic."""
+    from src.db.db_session import get_session
+    from sqlalchemy import text
+    import time
 
-        session = get_session()
-        logger.info("🔄 Refreshing materialized views...")
+    max_retries = 3
+    retry_delay = 5  # seconds
 
-        # Refresh both views
-        session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
-        session.execute(text("REFRESH MATERIALIZED VIEW mv_longest_runs;"))
-        session.commit()
+    for attempt in range(max_retries):
+        try:
+            session = get_session()
+            logger.info(
+                f"🔄 Refreshing materialized views... (attempt {attempt + 1}/{max_retries})"
+            )
 
-        logger.info("✅ Materialized views refreshed successfully")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Failed to refresh materialized views: {e}")
-        import traceback
-
-        logger.error(traceback.format_exc())
-        if "session" in locals():
-            session.rollback()
+            # Refresh both views
+            session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
+            session.execute(text("REFRESH MATERIALIZED VIEW mv_longest_runs;"))
+            session.commit()
             session.close()
-        return False
+
+            logger.info("✅ Materialized views refreshed successfully")
+            return True
+        except Exception as e:
+            logger.error(
+                f"❌ Failed to refresh materialized views (attempt {attempt + 1}/{max_retries}): {e}"
+            )
+            if "session" in locals():
+                try:
+                    session.rollback()
+                    session.close()
+                except:
+                    pass
+
+            if attempt < max_retries - 1:
+                logger.info(f"🔄 Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                import traceback
+
+                logger.error(traceback.format_exc())
+                return False
+
+    return False
 
 
 def invalidate_all_caches():

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def should_run_refresh():
-    """Check if it's Monday at 2:00 AM (or within the last hour)."""
+    """Check if it's Monday at 2:00 AM (or within the 2:00-3:00 AM window)."""
     # Use local time (Central Time) for scheduling
     import os
 
@@ -32,24 +32,15 @@ def should_run_refresh():
     now = datetime.utcnow() if use_utc else datetime.now()
 
     # It's Monday (weekday 0) and between 2:00 and 3:00 AM
-    if now.weekday() == 0 and now.hour == 2 and now.minute >= 0:
-        return True
-    if now.weekday() == 0 and now.hour == 3 and now.minute < 0:
+    if now.weekday() == 0 and now.hour == 2:
         return True
 
-    # For testing: run at any time if it's been more than 24 hours since last run
-    # (you can remove this in production)
-    last_run_file = Path("/tmp/last_metrics_refresh.txt")
-    if not last_run_file.exists():
+    # For development/testing: allow manual trigger via environment variable
+    # Set ENABLE_REFRESH=true to trigger refresh on the next check (within the hour)
+    if os.getenv("ENABLE_REFRESH", "false").lower() == "true":
+        # Clear the flag so it only runs once
+        os.environ.pop("ENABLE_REFRESH", None)
         return True
-
-    try:
-        last_run = datetime.fromtimestamp(last_run_file.stat().st_mtime)
-        hours_since = (now - last_run).total_seconds() / 3600
-        if hours_since >= 24:
-            return True
-    except:
-        pass
 
     return False
 
@@ -62,9 +53,6 @@ def run_refresh():
         logger.info("🚀 Triggering metrics refresh...")
         exit_code = refresh_main()
 
-        # Mark that we ran
-        Path("/tmp/last_metrics_refresh.txt").touch()
-
         if exit_code == 0:
             logger.info("✅ Metrics refresh completed successfully")
         else:
@@ -73,6 +61,9 @@ def run_refresh():
         return exit_code
     except Exception as e:
         logger.error(f"❌ Error running refresh: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
         return 1
 
 
@@ -87,13 +78,12 @@ def main():
     logger.info(
         f"💡 The refresh will run automatically every Monday at 2:00 AM Central ({timezone_info})"
     )
-    logger.info("💡 For testing, it will also run if 24+ hours have passed")
+    logger.info(
+        "💡 Set ENABLE_REFRESH=true environment variable to manually trigger (for testing)"
+    )
 
-    # Track last run to avoid running multiple times in the same hour
+    # Track last check to avoid running multiple times in the same hour
     last_check_day = None
-
-    # Determine time source (local time by default for Central Time)
-    use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
 
     while True:
         try:
