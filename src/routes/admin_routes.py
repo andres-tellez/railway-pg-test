@@ -14,9 +14,22 @@ admin_bp = Blueprint("admin", __name__)
 logger = logging.getLogger(__name__)
 
 
+@admin_bp.before_request
+def log_admin_requests():
+    """Log all requests to admin routes for debugging."""
+    logger.info(f"[ADMIN] {request.method} {request.path}")
+
+
 @admin_bp.route("/ping")
 def ping():
     return "pong from admin"
+
+
+@admin_bp.route("/test-no-auth", methods=["GET", "POST"])
+def test_no_auth():
+    """Test endpoint without auth to debug routing."""
+    logger.info("✅ [TEST-NO-AUTH] This endpoint was hit!")
+    return jsonify({"status": "success", "message": "Admin routes are working"}), 200
 
 
 @admin_bp.route("/refresh-metrics", methods=["POST"])
