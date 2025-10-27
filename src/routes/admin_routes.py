@@ -33,6 +33,7 @@ def test_no_auth():
 
 
 @admin_bp.route("/refresh-metrics", methods=["POST"])
+@requires_auth
 def refresh_metrics_wrapper():
     """Wrapper to debug requires_auth issues."""
     print("🔴 [WRAPPER] refresh_metrics endpoint reached!", flush=True)
@@ -41,62 +42,53 @@ def refresh_metrics_wrapper():
         flush=True,
     )
 
-    # Manually call requires_auth logic
-    from src.utils.auth0_jwt import requires_auth
+    # Manually trigger the metrics refresh
+    print("🔴 [REFRESH-METRICS] Function entered!", flush=True)
+    import sys
+    import logging
 
-    @requires_auth
-    def refresh_metrics_inner():
-        """Manually trigger the metrics refresh."""
-        print("🔴 [REFRESH-METRICS] Function entered!", flush=True)
-        import sys
-        import logging
+    # Force refresh_metrics_cron logger to output to stdout
+    refresh_logger = logging.getLogger("src.scripts.refresh_metrics_cron")
+    if not refresh_logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        refresh_logger.addHandler(handler)
+        refresh_logger.setLevel(logging.INFO)
 
-        # Force refresh_metrics_cron logger to output to stdout
-        refresh_logger = logging.getLogger("src.scripts.refresh_metrics_cron")
-        if not refresh_logger.handlers:
-            handler = logging.StreamHandler(sys.stdout)
-            handler.setFormatter(
-                logging.Formatter(
-                    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                )
+    logger.info("🔄 [Manual Trigger] Starting metrics refresh...")
+
+    try:
+        from src.scripts.refresh_metrics_cron import main as refresh_main
+
+        exit_code = refresh_main()
+
+        if exit_code == 0:
+            logger.info("✅ Metrics refresh completed successfully")
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": "Metrics refreshed successfully",
+                    }
+                ),
+                200,
             )
-            refresh_logger.addHandler(handler)
-            refresh_logger.setLevel(logging.INFO)
-
-        logger.info("🔄 [Manual Trigger] Starting metrics refresh...")
-
-        try:
-            from src.scripts.refresh_metrics_cron import main as refresh_main
-
-            exit_code = refresh_main()
-
-            if exit_code == 0:
-                logger.info("✅ Metrics refresh completed successfully")
-                return (
-                    jsonify(
-                        {
-                            "status": "success",
-                            "message": "Metrics refreshed successfully",
-                        }
-                    ),
-                    200,
-                )
-            else:
-                logger.error("❌ Metrics refresh completed with errors")
-                return (
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": "Metrics refresh completed with errors",
-                        }
-                    ),
-                    500,
-                )
-        except Exception as e:
-            logger.exception(f"❌ Exception during metrics refresh: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-
-    return refresh_metrics_inner()
+        else:
+            logger.error("❌ Metrics refresh completed with errors")
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "Metrics refresh completed with errors",
+                    }
+                ),
+                500,
+            )
+    except Exception as e:
+        logger.exception(f"❌ Exception during metrics refresh: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @admin_bp.route("/trigger-ingest/<int:athlete_id>", methods=["POST"])
