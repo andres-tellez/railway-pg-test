@@ -2,8 +2,3 @@ providers = ["...", "python"]
 
 [start]
 cmd = '''gunicorn run:app --bind 0.0.0.0:$PORT --workers 1'''
-
-# Cron job for metrics refresh (every Monday at 4 AM)
-[cron]
-cmd = '''python src/scripts/refresh_metrics_cron.py'''
-schedule = "0 4 * * 1"
