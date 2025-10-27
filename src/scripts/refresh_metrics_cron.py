@@ -37,14 +37,46 @@ def refresh_materialized_views():
         session = get_session()
         logger.info("🔄 Refreshing materialized views...")
 
+        # Check what data exists BEFORE refresh
+        logger.info("📊 Checking data before refresh...")
+        before_data = session.execute(
+            text(
+                """
+                SELECT athlete_id, week_commencing, total_miles, longest_run
+                FROM mv_athlete_metrics
+                ORDER BY week_commencing DESC
+                LIMIT 5
+            """
+            )
+        ).fetchall()
+        logger.info(f"📊 Latest 5 weeks BEFORE refresh: {before_data}")
+
         # Refresh the main metrics view (non-concurrent to avoid index requirement)
+        logger.info("🔄 Executing REFRESH...")
         session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
         session.commit()
+
+        # Check what data exists AFTER refresh
+        logger.info("📊 Checking data after refresh...")
+        after_data = session.execute(
+            text(
+                """
+                SELECT athlete_id, week_commencing, total_miles, longest_run
+                FROM mv_athlete_metrics
+                ORDER BY week_commencing DESC
+                LIMIT 5
+            """
+            )
+        ).fetchall()
+        logger.info(f"📊 Latest 5 weeks AFTER refresh: {after_data}")
 
         logger.info("✅ Materialized views refreshed successfully")
         return True
     except Exception as e:
         logger.error(f"❌ Failed to refresh materialized views: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
         if "session" in locals():
             session.rollback()
             session.close()
@@ -59,13 +91,22 @@ def invalidate_all_caches():
         # Import cache service
         from src.services.metrics_cache_service import invalidate_all_caches
 
+        # Check cache state before invalidation
+        logger.info("📊 Checking cache state before invalidation...")
+
         # Invalidate all caches
         invalidate_all_caches()
 
         logger.info("✅ All caches invalidated successfully")
+        logger.info(
+            "📊 Cache cleared - next request will fetch fresh data from database"
+        )
         return True
     except Exception as e:
         logger.error(f"❌ Failed to invalidate caches: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
         return False
 
 
