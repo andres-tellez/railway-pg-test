@@ -186,9 +186,19 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
     # FIXED: Move current week to end, keep previous week as leftmost bar
     # Materialized view orders by DESC (current week first), but we want previous week first
     if weekly_data and len(weekly_data) > 1:
+        # Log BEFORE reordering
+        logger.info(
+            f"📊 BEFORE reordering - First 3 weeks: {[w['week'] for w in weekly_data[:3]]}"
+        )
+
         # Move the first element (current week) to the end
         current_week = weekly_data.pop(0)
         weekly_data.append(current_week)
+
+        # Log AFTER reordering
+        logger.info(
+            f"📊 AFTER reordering - First 3 weeks: {[w['week'] for w in weekly_data[:3]]}"
+        )
 
     # Parse weekly_goals from JSON string (if it's a string) or use as-is (if already parsed)
     import json
@@ -423,7 +433,10 @@ def format_duration(seconds: int) -> str:
 @metrics_bp.route("/all-metrics", methods=["GET"])
 @requires_auth
 def get_all_metrics_combined():
-    print(f"[API CALL] /api/metrics/all-metrics endpoint hit!")
+    import uuid
+
+    request_id = str(uuid.uuid4())[:8]
+    print(f"[API CALL {request_id}] /api/metrics/all-metrics endpoint hit!")
     """
     Get ALL metrics (dashboard + weekly trends + HR zones + VO2) in a single optimized call.
     This is the fastest possible approach - one API call, minimal queries, maximum caching.
@@ -492,10 +505,10 @@ def get_all_metrics_combined():
         cache_key = _get_cache_key(athlete_id, "all_metrics_combined")
         cached_result = get_cached_metrics(cache_key)
         if cached_result is not None:
-            print(f"[CACHE HIT] All metrics for athlete {athlete_id}")
+            print(f"[CACHE HIT {request_id}] All metrics for athlete {athlete_id}")
             return jsonify(cached_result), 200
 
-        print(f"[CACHE MISS] Fetching fresh data for athlete {athlete_id}")
+        print(f"[CACHE MISS {request_id}] Fetching fresh data for athlete {athlete_id}")
 
         # Performance timing
         import time
@@ -521,11 +534,17 @@ def get_all_metrics_combined():
         # Performance logging
         execution_time = time.time() - start_time
         print(
-            f"[PERF] All metrics query took {execution_time:.3f}s (ULTRA-OPTIMIZED: single materialized view query)"
+            f"[PERF {request_id}] All metrics query took {execution_time:.3f}s (ULTRA-OPTIMIZED: single materialized view query)"
         )
         print(
-            f"[PERF] Plan goals: {len(result.get('weekly_goals', []))} weeks (from materialized view)"
+            f"[PERF {request_id}] Plan goals: {len(result.get('weekly_goals', []))} weeks (from materialized view)"
         )
+
+        # Log first 3 weeks being returned
+        weekly_trends = result.get("weekly_trends", [])
+        if weekly_trends:
+            first_3_weeks = [w["week"] for w in weekly_trends[:3]]
+            print(f"[DEBUG {request_id}] First 3 weeks in response: {first_3_weeks}")
 
         return jsonify(result), 200
 
