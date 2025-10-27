@@ -218,7 +218,8 @@ export default function SimpleMetrics() {
     };
 
     fetchMetrics();
-  }, [isReady, userId, api]); // ✅ Depend on auth setup
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, userId]); // ✅ Depend only on auth setup (api is stable)
 
   // Compute filtered data based on selected weeks (instant filtering)
   const filteredWeeklyTrends = allWeeklyData.trends.slice(0, selectedWeeks);

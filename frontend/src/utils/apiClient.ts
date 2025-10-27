@@ -1,6 +1,7 @@
 // src/utils/apiClient.ts
 import axios from "axios";
 import { useAuth0 } from "@auth0/auth0-react";
+import { useMemo } from "react";
 
 export function useApiClient() {
   const { getAccessTokenSilently, loginWithRedirect } = useAuth0();
@@ -27,56 +28,61 @@ export function useApiClient() {
     console.log("API baseURL =", baseURL);
   }
 
-  const client = axios.create({
-    baseURL,
-    withCredentials: true, // ✅ This sends session cookies
-  });
+  // ✅ Use useMemo to create a stable axios instance
+  const client = useMemo(() => {
+    const axiosInstance = axios.create({
+      baseURL,
+      withCredentials: true, // ✅ This sends session cookies
+    });
 
-  // 🔑 Always attach access token
-  client.interceptors.request.use(async (config) => {
-    try {
-      const token = await getAccessTokenSilently({ detailedResponse: false });
-      if (token) {
-        (config.headers ??= {});
-        (config.headers as any).Authorization = `Bearer ${token}`;
-        console.log("🔑 API Request - Authorization header attached:", config.url);
-      } else {
-        console.warn("⚠️ API Request - No token available:", config.url);
-      }
-      return config;
-    } catch (err: any) {
-      const msg = String(err?.error || err?.message || "");
-      const needsConsent =
-        msg.includes("missing_refresh_token") ||
-        msg.includes("consent_required") ||
-        msg.includes("login_required");
-
-      if (needsConsent) {
-        await loginWithRedirect({
-          authorizationParams: { prompt: "consent" },
-          appState: { returnTo: window.location.pathname || "/dashboard" },
-        });
-      }
-      throw err;
-    }
-  });
-
-  // 🔑 Capture `user_id` from backend identity response
-  client.interceptors.response.use(
-    (response) => {
-      if (
-        response.config.url?.includes("/user/identity") &&
-        response.data?.user_id
-      ) {
-        localStorage.setItem("user_id", response.data.user_id);
-        if (import.meta.env.MODE !== "production") {
-          console.log("✅ Stored internal user_id:", response.data.user_id);
+    // 🔑 Always attach access token
+    axiosInstance.interceptors.request.use(async (config) => {
+      try {
+        const token = await getAccessTokenSilently({ detailedResponse: false });
+        if (token) {
+          (config.headers ??= {});
+          (config.headers as any).Authorization = `Bearer ${token}`;
+          console.log("🔑 API Request - Authorization header attached:", config.url);
+        } else {
+          console.warn("⚠️ API Request - No token available:", config.url);
         }
+        return config;
+      } catch (err: any) {
+        const msg = String(err?.error || err?.message || "");
+        const needsConsent =
+          msg.includes("missing_refresh_token") ||
+          msg.includes("consent_required") ||
+          msg.includes("login_required");
+
+        if (needsConsent) {
+          await loginWithRedirect({
+            authorizationParams: { prompt: "consent" },
+            appState: { returnTo: window.location.pathname || "/dashboard" },
+          });
+        }
+        throw err;
       }
-      return response;
-    },
-    (error) => Promise.reject(error)
-  );
+    });
+
+    // 🔑 Capture `user_id` from backend identity response
+    axiosInstance.interceptors.response.use(
+      (response) => {
+        if (
+          response.config.url?.includes("/user/identity") &&
+          response.data?.user_id
+        ) {
+          localStorage.setItem("user_id", response.data.user_id);
+          if (import.meta.env.MODE !== "production") {
+            console.log("✅ Stored internal user_id:", response.data.user_id);
+          }
+        }
+        return response;
+      },
+      (error) => Promise.reject(error)
+    );
+
+    return axiosInstance;
+  }, [baseURL, getAccessTokenSilently, loginWithRedirect]);
 
   return client;
 }

@@ -10,7 +10,7 @@
  * - Loading states during checks
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useNavigate } from 'react-router-dom';
 import { useApiClient } from '../utils/apiClient';
@@ -21,6 +21,7 @@ const SmartRouter: React.FC = () => {
   const navigate = useNavigate();
   const api = useApiClient();
   const [isCheckingUser, setIsCheckingUser] = useState(true);
+  const [hasChecked, setHasChecked] = useState(false);
 
   useEffect(() => {
     if (authLoading) return; // Wait for auth to load
@@ -30,6 +31,10 @@ const SmartRouter: React.FC = () => {
       navigate('/welcome', { replace: true });
       return;
     }
+
+    // Prevent multiple checks on the same render cycle
+    if (hasChecked) return;
+    setHasChecked(true);
 
     // Authenticated - check user state
     const checkUserState = async () => {
@@ -63,7 +68,7 @@ const SmartRouter: React.FC = () => {
     };
 
     checkUserState();
-  }, [isAuthenticated, authLoading]); // Remove navigate and api to prevent infinite loop
+  }, [isAuthenticated, authLoading, navigate, api, hasChecked]);
 
   if (authLoading || isCheckingUser) {
     return (
