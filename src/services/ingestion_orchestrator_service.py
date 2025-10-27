@@ -163,13 +163,14 @@ def run_full_ingestion_and_enrichment(
             logger.error(f"Enrichment failed: {e}")
             enriched = 0
 
-        # Refresh materialized view after successful ingestion
+        # Refresh materialized views after successful ingestion
         try:
             from sqlalchemy import text
 
             session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
+            session.execute(text("REFRESH MATERIALIZED VIEW mv_longest_runs;"))
             session.commit()
-            logger.info("✅ Refreshed materialized view for metrics")
+            logger.info("✅ Refreshed materialized views for metrics and longest runs")
         except Exception as e:
             logger.error(f"❌ Failed to refresh materialized view: {e}")
             import traceback

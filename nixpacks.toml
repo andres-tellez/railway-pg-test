@@ -2,3 +2,11 @@ providers = ["...", "python"]
 
 [start]
 cmd = '''gunicorn run:app --bind 0.0.0.0:$PORT --workers 1'''
+
+[[processes]]
+name = "web"
+cmd = "gunicorn run:app --bind 0.0.0.0:$PORT --workers 1"
+
+[[processes]]
+name = "cron_scheduler"
+cmd = "python src/scripts/metrics_scheduler.py"

@@ -177,16 +177,15 @@ def run_database_migrations(database_url):
 
 def refresh_materialized_view(database_url):
     """Refresh the materialized view with current data"""
-    print(f"\n🔄 Refreshing materialized view...")
+    print(f"\n🔄 Refreshing materialized views...")
 
     engine = create_engine(database_url)
     with engine.connect() as conn:
         try:
-            conn.execute(
-                text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_athlete_metrics;")
-            )
+            conn.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
+            conn.execute(text("REFRESH MATERIALIZED VIEW mv_longest_runs;"))
             conn.commit()
-            print("✅ Materialized view refreshed")
+            print("✅ Materialized views refreshed")
         except Exception as e:
             print(f"⚠️  Materialized view refresh failed: {e}")
 

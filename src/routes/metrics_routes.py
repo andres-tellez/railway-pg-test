@@ -332,16 +332,46 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
     longest_runs = []
     if longest_runs_result and longest_runs_result.weekly_runs:
         weekly_runs = longest_runs_result.weekly_runs
+        # Log first few runs to debug
+        if weekly_runs:
+            logger.info(f"📊 [Longest Runs] Raw data from view (first 3):")
+            for i, run in enumerate(weekly_runs[:3]):
+                logger.info(
+                    f"  [{i}] Week: {run.get('week_start')}, Distance: {run.get('distance')} miles, Name: {run.get('name')}"
+                )
+
         # Filter to requested number of weeks
         filtered_runs = (
             weekly_runs[:weeks] if weeks and weeks < len(weekly_runs) else weekly_runs
         )
 
         # FIXED: Move current week to end, keep previous week as leftmost bar (same as other charts)
+        # Use same logic as weekly_data to handle case where current week has no data
         if filtered_runs and len(filtered_runs) > 1:
-            # Move the first element (current week) to the end
-            current_week_run = filtered_runs.pop(0)
-            filtered_runs.append(current_week_run)
+            # Calculate what the current week should be
+            from datetime import datetime, timedelta
+
+            today = datetime.now().date()
+            days_since_monday = today.weekday()
+            current_week_start = today - timedelta(days=days_since_monday)
+            current_week_str = current_week_start.isoformat()
+
+            # Get the week_start from the first run
+            first_run_week = filtered_runs[0]["week_start"]
+            if isinstance(first_run_week, str):
+                first_run_week = first_run_week[:10]  # Extract just the date part
+
+            # If first week is the current week, move it to end
+            if first_run_week == current_week_str:
+                logger.info(
+                    f"📊 [Longest Runs] First week ({first_run_week}) is current week ({current_week_str}), moving to end"
+                )
+                current_week_run = filtered_runs.pop(0)
+                filtered_runs.append(current_week_run)
+            else:
+                logger.info(
+                    f"📊 [Longest Runs] First week ({first_run_week}) is NOT current week ({current_week_str}), no reordering needed"
+                )
 
         # Format data (only formatting, no calculations - already done by database)
         for run in filtered_runs:

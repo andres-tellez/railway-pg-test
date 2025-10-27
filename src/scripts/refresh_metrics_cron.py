@@ -37,75 +37,10 @@ def refresh_materialized_views():
         session = get_session()
         logger.info("🔄 Refreshing materialized views...")
 
-        # Check what data exists BEFORE refresh
-        logger.info("📊 Checking data before refresh...")
-        before_data = session.execute(
-            text(
-                """
-                SELECT athlete_id, current_distance, previous_distance, current_runs
-                FROM mv_athlete_metrics
-                LIMIT 5
-            """
-            )
-        ).fetchall()
-        logger.info(f"📊 Metrics BEFORE refresh: {before_data}")
-
-        # Also check when the latest activity was
-        latest_activity = session.execute(
-            text(
-                """
-                SELECT activity_id, name, start_date, distance
-                FROM activities
-                WHERE type = 'Run'
-                ORDER BY start_date DESC
-                LIMIT 1
-            """
-            )
-        ).fetchone()
-        if latest_activity:
-            logger.info(
-                f"📅 Latest activity in DB: {latest_activity.name} on {latest_activity.start_date} ({latest_activity.distance/1609.34:.2f} miles)"
-            )
-
-            # Check what date_trunc('week', CURRENT_DATE) returns
-            week_start = session.execute(
-                text("SELECT date_trunc('week', CURRENT_DATE) AS week_start")
-            ).fetchone()
-            logger.info(f"📅 CURRENT_DATE: {datetime.now().date()}")
-            logger.info(f"📅 Week start (from DB): {week_start.week_start}")
-
-            # Check activities in current week
-            current_week_count = session.execute(
-                text(
-                    """
-                    SELECT COUNT(*) as count
-                    FROM activities
-                    WHERE type = 'Run'
-                    AND date_trunc('week', start_date) = date_trunc('week', CURRENT_DATE)
-                """
-                )
-            ).fetchone()
-            logger.info(f"📊 Activities in current week: {current_week_count.count}")
-        else:
-            logger.info("📅 No activities found in database!")
-
-        # Refresh the main metrics view (non-concurrent to avoid index requirement)
-        logger.info("🔄 Executing REFRESH...")
+        # Refresh both views
         session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
+        session.execute(text("REFRESH MATERIALIZED VIEW mv_longest_runs;"))
         session.commit()
-
-        # Check what data exists AFTER refresh
-        logger.info("📊 Checking data after refresh...")
-        after_data = session.execute(
-            text(
-                """
-                SELECT athlete_id, current_distance, previous_distance, current_runs
-                FROM mv_athlete_metrics
-                LIMIT 5
-            """
-            )
-        ).fetchall()
-        logger.info(f"📊 Metrics AFTER refresh: {after_data}")
 
         logger.info("✅ Materialized views refreshed successfully")
         return True
@@ -128,16 +63,10 @@ def invalidate_all_caches():
         # Import cache service
         from src.services.metrics_cache_service import invalidate_all_caches
 
-        # Check cache state before invalidation
-        logger.info("📊 Checking cache state before invalidation...")
-
         # Invalidate all caches
         invalidate_all_caches()
 
         logger.info("✅ All caches invalidated successfully")
-        logger.info(
-            "📊 Cache cleared - next request will fetch fresh data from database"
-        )
         return True
     except Exception as e:
         logger.error(f"❌ Failed to invalidate caches: {e}")
