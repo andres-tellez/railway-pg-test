@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Scheduler for metrics refresh - runs the refresh script every Monday at 4 AM.
+Scheduler for metrics refresh - runs the refresh script every Monday at 10:15 AM Central.
 This is a long-running process that Railway runs as a worker.
 """
 
@@ -24,13 +24,13 @@ logger = logging.getLogger(__name__)
 
 
 def should_run_refresh():
-    """Check if it's Monday at 9:46 AM (or within the last hour)."""
+    """Check if it's Monday at 10:15 AM (or within the last hour)."""
     now = datetime.now()
 
-    # It's Monday (weekday 0) and between 9:46 and 10:46 AM
-    if now.weekday() == 0 and now.hour == 9 and now.minute >= 46:
+    # It's Monday (weekday 0) and between 10:15 and 11:15 AM
+    if now.weekday() == 0 and now.hour == 10 and now.minute >= 15:
         return True
-    if now.weekday() == 0 and now.hour == 10 and now.minute < 46:
+    if now.weekday() == 0 and now.hour == 11 and now.minute < 15:
         return True
 
     # For testing: run at any time if it's been more than 24 hours since last run
@@ -74,8 +74,10 @@ def run_refresh():
 
 def main():
     """Main scheduler loop - runs forever."""
-    logger.info("🕐 Metrics scheduler started - waiting for Monday at 9:46 AM...")
-    logger.info("💡 The refresh will run automatically every Monday at 9:46 AM Central")
+    logger.info("🕐 Metrics scheduler started - waiting for Monday at 10:15 AM...")
+    logger.info(
+        "💡 The refresh will run automatically every Monday at 10:15 AM Central"
+    )
     logger.info("💡 For testing, it will also run if 24+ hours have passed")
 
     # Track last run to avoid running multiple times in the same hour
@@ -100,7 +102,7 @@ def main():
                     run_refresh()
                 else:
                     logger.debug(
-                        f"⏰ Not time yet - next refresh: Monday at 9:46 AM Central"
+                        f"⏰ Not time yet - next refresh: Monday at 10:15 AM Central"
                     )
 
             # Sleep for 1 minute before checking again
