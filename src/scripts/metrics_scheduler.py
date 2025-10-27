@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Scheduler for metrics refresh - runs the refresh script every Monday at 10:37 AM Central.
+Scheduler for metrics refresh - runs the refresh script every Monday at 10:45 AM Central.
 This is a long-running process that Railway runs as a worker.
 """
 
@@ -24,17 +24,17 @@ logger = logging.getLogger(__name__)
 
 
 def should_run_refresh():
-    """Check if it's Monday at 10:37 AM (or within the last hour)."""
+    """Check if it's Monday at 10:45 AM (or within the last hour)."""
     # Use local time (Central Time) for scheduling
     import os
 
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
     now = datetime.utcnow() if use_utc else datetime.now()
 
-    # It's Monday (weekday 0) and between 10:37 and 11:37 AM
-    if now.weekday() == 0 and now.hour == 10 and now.minute >= 37:
+    # It's Monday (weekday 0) and between 10:45 and 11:45 AM
+    if now.weekday() == 0 and now.hour == 10 and now.minute >= 45:
         return True
-    if now.weekday() == 0 and now.hour == 11 and now.minute < 37:
+    if now.weekday() == 0 and now.hour == 11 and now.minute < 45:
         return True
 
     # For testing: run at any time if it's been more than 24 hours since last run
@@ -83,9 +83,9 @@ def main():
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
     timezone_info = "UTC" if use_utc else "local (Central Time)"
 
-    logger.info("🕐 Metrics scheduler started - waiting for Monday at 10:37 AM...")
+    logger.info("🕐 Metrics scheduler started - waiting for Monday at 10:45 AM...")
     logger.info(
-        f"💡 The refresh will run automatically every Monday at 10:37 AM Central ({timezone_info})"
+        f"💡 The refresh will run automatically every Monday at 10:45 AM Central ({timezone_info})"
     )
     logger.info("💡 For testing, it will also run if 24+ hours have passed")
 
@@ -114,7 +114,7 @@ def main():
                     run_refresh()
                 else:
                     logger.debug(
-                        f"⏰ Not time yet - next refresh: Monday at 10:37 AM Central"
+                        f"⏰ Not time yet - next refresh: Monday at 10:45 AM Central"
                     )
 
             # Sleep for 1 minute before checking again
