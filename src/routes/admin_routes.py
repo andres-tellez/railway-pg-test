@@ -13,10 +13,14 @@ from src.utils.auth0_jwt import requires_auth
 admin_bp = Blueprint("admin", __name__)
 logger = logging.getLogger(__name__)
 
+# Force print at module level to confirm blueprint loads
+print("[ADMIN_BLUEPRINT] Module loaded successfully", flush=True)
+
 
 @admin_bp.before_request
 def log_admin_requests():
     """Log all requests to admin routes for debugging."""
+    print(f"[ADMIN_BEFORE_REQUEST] {request.method} {request.path}", flush=True)
     logger.info(f"[ADMIN] {request.method} {request.path}")
 
 
@@ -28,22 +32,17 @@ def ping():
 @admin_bp.route("/test-no-auth", methods=["GET", "POST"])
 def test_no_auth():
     """Test endpoint without auth to debug routing."""
+    print("✅ [TEST-NO-AUTH] This endpoint was hit!", flush=True)
     logger.info("✅ [TEST-NO-AUTH] This endpoint was hit!")
     return jsonify({"status": "success", "message": "Admin routes are working"}), 200
 
 
 @admin_bp.route("/refresh-metrics", methods=["POST"])
 @requires_auth
-def refresh_metrics_wrapper():
-    """Wrapper to debug requires_auth issues."""
-    print("🔴 [WRAPPER] refresh_metrics endpoint reached!", flush=True)
-    print(
-        f"🔴 [WRAPPER] Authorization header: {bool(request.headers.get('Authorization'))}",
-        flush=True,
-    )
-
-    # Manually trigger the metrics refresh
+def refresh_metrics():
+    """Manually trigger the metrics refresh."""
     print("🔴 [REFRESH-METRICS] Function entered!", flush=True)
+
     import sys
     import logging
 
@@ -87,6 +86,7 @@ def refresh_metrics_wrapper():
                 500,
             )
     except Exception as e:
+        print(f"🔴 [REFRESH-METRICS] Exception: {e}", flush=True)
         logger.exception(f"❌ Exception during metrics refresh: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 

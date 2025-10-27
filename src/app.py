@@ -141,6 +141,20 @@ def create_app(test_config=None):
     app.register_blueprint(webhook_bp, url_prefix="/webhooks")
     app.register_blueprint(conversation_bp, url_prefix="/api")
 
+    # Log all registered routes for debugging
+    print("[BLUEPRINT_REGISTRATION] All blueprints registered", flush=True)
+    print(f"[BLUEPRINT_REGISTRATION] Admin blueprint name: {admin_bp.name}", flush=True)
+    print(
+        f"[BLUEPRINT_REGISTRATION] Admin blueprint registered with prefix: /admin",
+        flush=True,
+    )
+    for rule in app.url_map.iter_rules():
+        if rule.endpoint.startswith("admin."):
+            print(
+                f"[BLUEPRINT_REGISTRATION] Admin route: {rule.endpoint} -> {rule.rule}",
+                flush=True,
+            )
+
     @app.route("/_debug/db-url")
     def debug_db_url():
         from src.db.db_session import engine
