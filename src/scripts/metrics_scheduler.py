@@ -25,10 +25,10 @@ logger = logging.getLogger(__name__)
 
 def should_run_refresh():
     """Check if it's Monday at 10:37 AM (or within the last hour)."""
-    # Use UTC for server environments, local time for testing
+    # Use local time (Central Time) for scheduling
     import os
 
-    use_utc = os.getenv("USE_UTC_TIME", "true").lower() == "true"
+    use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
     now = datetime.utcnow() if use_utc else datetime.now()
 
     # It's Monday (weekday 0) and between 10:37 and 11:37 AM
@@ -80,22 +80,20 @@ def main():
     """Main scheduler loop - runs forever."""
     import os
 
-    use_utc = os.getenv("USE_UTC_TIME", "true").lower() == "true"
-    timezone_info = "UTC" if use_utc else "local"
+    use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
+    timezone_info = "UTC" if use_utc else "local (Central Time)"
 
     logger.info("🕐 Metrics scheduler started - waiting for Monday at 10:37 AM...")
     logger.info(
-        f"💡 The refresh will run automatically every Monday at 10:37 AM Central ({timezone_info} time)"
+        f"💡 The refresh will run automatically every Monday at 10:37 AM Central ({timezone_info})"
     )
     logger.info("💡 For testing, it will also run if 24+ hours have passed")
 
     # Track last run to avoid running multiple times in the same hour
     last_check_day = None
 
-    # Determine time source (UTC for server, local for testing)
-    import os
-
-    use_utc = os.getenv("USE_UTC_TIME", "true").lower() == "true"
+    # Determine time source (local time by default for Central Time)
+    use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
 
     while True:
         try:
