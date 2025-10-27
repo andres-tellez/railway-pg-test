@@ -26,6 +26,7 @@ const Admin: React.FC = () => {
   const [endDate, setEndDate] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
+  const [refreshingMetrics, setRefreshingMetrics] = useState(false);
 
   // Set default date range (last 7 days)
   useEffect(() => {
@@ -87,12 +88,47 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleRefreshMetrics = async () => {
+    setRefreshingMetrics(true);
+    setResult(null);
+
+    try {
+      const response = await apiClient.post('/admin/refresh-metrics');
+      setResult(response.data);
+    } catch (error: any) {
+      console.error('Refresh metrics failed:', error);
+      setResult({
+        status: 'error',
+        message: error.response?.data?.message || 'Metrics refresh failed'
+      });
+    } finally {
+      setRefreshingMetrics(false);
+    }
+  };
+
   return (
     <AuthGuard>
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-2xl mx-auto px-4">
         <div className="bg-white rounded-lg shadow p-6">
-          <h1 className="text-2xl font-bold text-gray-900 mb-6">Activity Sync Admin</h1>
+          <h1 className="text-2xl font-bold text-gray-900 mb-6">Admin Tools</h1>
+
+          {/* Refresh Metrics Section */}
+          <div className="mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Metrics Refresh</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              Manually trigger the metrics refresh to update bar graphs with the latest week's data.
+            </p>
+            <button
+              onClick={handleRefreshMetrics}
+              disabled={refreshingMetrics}
+              className="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              {refreshingMetrics ? 'Refreshing Metrics...' : '🔄 Refresh Metrics'}
+            </button>
+          </div>
+
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">Activity Sync Admin</h2>
 
           <div className="space-y-4">
             {/* Athlete Selection */}
