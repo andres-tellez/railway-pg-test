@@ -66,6 +66,26 @@ def refresh_materialized_views():
             logger.info(
                 f"📅 Latest activity in DB: {latest_activity.name} on {latest_activity.start_date} ({latest_activity.distance/1609.34:.2f} miles)"
             )
+
+            # Check what date_trunc('week', CURRENT_DATE) returns
+            week_start = session.execute(
+                text("SELECT date_trunc('week', CURRENT_DATE) AS week_start")
+            ).fetchone()
+            logger.info(f"📅 CURRENT_DATE: {datetime.now().date()}")
+            logger.info(f"📅 Week start (from DB): {week_start.week_start}")
+
+            # Check activities in current week
+            current_week_count = session.execute(
+                text(
+                    """
+                    SELECT COUNT(*) as count
+                    FROM activities
+                    WHERE type = 'Run'
+                    AND date_trunc('week', start_date) = date_trunc('week', CURRENT_DATE)
+                """
+                )
+            ).fetchone()
+            logger.info(f"📊 Activities in current week: {current_week_count.count}")
         else:
             logger.info("📅 No activities found in database!")
 
