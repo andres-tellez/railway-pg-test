@@ -167,13 +167,14 @@ def run_full_ingestion_and_enrichment(
         try:
             from sqlalchemy import text
 
-            session.execute(
-                text("REFRESH MATERIALIZED VIEW CONCURRENTLY mv_athlete_metrics;")
-            )
+            session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
             session.commit()
-            logger.info("Refreshed materialized view for metrics")
+            logger.info("✅ Refreshed materialized view for metrics")
         except Exception as e:
-            logger.warning(f"Failed to refresh materialized view: {e}")
+            logger.error(f"❌ Failed to refresh materialized view: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
 
         # Invalidate metrics cache for this athlete after successful ingestion
         try:

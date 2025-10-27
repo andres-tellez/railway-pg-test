@@ -23,6 +23,19 @@ def ping():
 @requires_auth
 def refresh_metrics():
     """Manually trigger the metrics refresh."""
+    import sys
+    import logging
+
+    # Force refresh_metrics_cron logger to output to stdout
+    refresh_logger = logging.getLogger("src.scripts.refresh_metrics_cron")
+    if not refresh_logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        refresh_logger.addHandler(handler)
+        refresh_logger.setLevel(logging.INFO)
+
     logger.info("🔄 [Manual Trigger] Starting metrics refresh...")
 
     try:
