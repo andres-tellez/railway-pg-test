@@ -25,7 +25,11 @@ logger = logging.getLogger(__name__)
 
 def should_run_refresh():
     """Check if it's Monday at 10:15 AM (or within the last hour)."""
-    now = datetime.now()
+    # Use UTC for server environments, local time for testing
+    import os
+
+    use_utc = os.getenv("USE_UTC_TIME", "true").lower() == "true"
+    now = datetime.utcnow() if use_utc else datetime.now()
 
     # It's Monday (weekday 0) and between 10:15 and 11:15 AM
     if now.weekday() == 0 and now.hour == 10 and now.minute >= 15:
@@ -74,18 +78,28 @@ def run_refresh():
 
 def main():
     """Main scheduler loop - runs forever."""
+    import os
+
+    use_utc = os.getenv("USE_UTC_TIME", "true").lower() == "true"
+    timezone_info = "UTC" if use_utc else "local"
+
     logger.info("🕐 Metrics scheduler started - waiting for Monday at 10:15 AM...")
     logger.info(
-        "💡 The refresh will run automatically every Monday at 10:15 AM Central"
+        f"💡 The refresh will run automatically every Monday at 10:15 AM Central ({timezone_info} time)"
     )
     logger.info("💡 For testing, it will also run if 24+ hours have passed")
 
     # Track last run to avoid running multiple times in the same hour
     last_check_day = None
 
+    # Determine time source (UTC for server, local for testing)
+    import os
+
+    use_utc = os.getenv("USE_UTC_TIME", "true").lower() == "true"
+
     while True:
         try:
-            now = datetime.now()
+            now = datetime.utcnow() if use_utc else datetime.now()
             current_day = now.strftime("%Y-%m-%d %H")
 
             # Only check once per hour to avoid spam
