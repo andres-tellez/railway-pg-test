@@ -191,9 +191,31 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
             f"📊 BEFORE reordering - First 3 weeks: {[w['week'] for w in weekly_data[:3]]}"
         )
 
-        # Move the first element (current week) to the end
-        current_week = weekly_data.pop(0)
-        weekly_data.append(current_week)
+        # Calculate what the current week should be
+        from datetime import datetime, timedelta
+
+        today = datetime.now().date()
+        days_since_monday = today.weekday()
+        current_week_start = today - timedelta(days=days_since_monday)
+        current_week_str = current_week_start.isoformat()
+
+        # Find the first element that is NOT the current week and move everything before it to the end
+        # This handles the case where current week has no data
+        first_week_date = weekly_data[0]["week"]
+        if isinstance(first_week_date, str):
+            first_week_date = first_week_date[:10]  # Extract just the date part
+
+        # If first week is the current week, move it to end
+        if first_week_date == current_week_str:
+            logger.info(
+                f"📊 First week ({first_week_date}) is current week ({current_week_str}), moving to end"
+            )
+            current_week = weekly_data.pop(0)
+            weekly_data.append(current_week)
+        else:
+            logger.info(
+                f"📊 First week ({first_week_date}) is NOT current week ({current_week_str}), no reordering needed"
+            )
 
         # Log AFTER reordering
         logger.info(
