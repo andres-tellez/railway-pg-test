@@ -545,6 +545,18 @@ def get_all_metrics_combined():
         if weekly_trends:
             first_3_weeks = [w["week"] for w in weekly_trends[:3]]
             print(f"[DEBUG {request_id}] First 3 weeks in response: {first_3_weeks}")
+            print(
+                f"[DEBUG {request_id}] Total weekly_trends in result: {len(weekly_trends)}"
+            )
+            print(
+                f"[DEBUG {request_id}] ALL weeks in weekly_trends: {[w['week'] for w in weekly_trends]}"
+            )
+
+        # Also log what the raw weekly_data looked like
+        if result.get("weekly_trends"):
+            print(
+                f"[DEBUG {request_id}] weekly_trends type: {type(result.get('weekly_trends'))}"
+            )
 
         return jsonify(result), 200
 
