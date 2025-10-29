@@ -32,6 +32,8 @@ import OnboardingForm from "./pages/OnboardingForm";
 import UserProfile from "./pages/UserProfile";
 import PlanPage from "./pages/PlanPage";
 import MyPlan from "./pages/MyPlan";
+import NewPlanForm from "./pages/NewPlanForm";
+import PlansManagement from "./pages/PlansManagement";
 import SetupPage from "./pages/LandingPage";
 import PostOAuth from "./pages/PostOAuth";
 import HomeScreen from "./pages/HomeScreen";
@@ -159,6 +161,22 @@ export default function App() {
         element={
           <Layout>
             <MyPlan />
+          </Layout>
+        }
+      />
+      <Route
+        path="/plan/new"
+        element={
+          <Layout>
+            <NewPlanForm />
+          </Layout>
+        }
+      />
+      <Route
+        path="/plan/manage"
+        element={
+          <Layout>
+            <PlansManagement />
           </Layout>
         }
       />

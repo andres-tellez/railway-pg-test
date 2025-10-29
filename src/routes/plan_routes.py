@@ -3,6 +3,7 @@
 from flask import Blueprint, jsonify, g, request
 from sqlalchemy.orm import Session, joinedload
 import uuid
+import logging
 
 from src.db.db_session import get_session
 from src.db.models.plans import Plan
@@ -14,6 +15,10 @@ from src.db.dao.plans_dao import (
     set_plan_active,
     delete_plan,
 )
+from src.schemas.plan_schema import PlanCreateSchema
+from src.services.plan_generation_service import create_training_plan
+
+logger = logging.getLogger(__name__)
 
 plan_bp = Blueprint("plan", __name__, url_prefix="/api/plan")
 
@@ -303,6 +308,12 @@ def list_user_plans():
                                 plan.race_date.isoformat() if plan.race_date else None
                             ),
                             "race_distance": plan.race_distance,
+                            "race_name": plan.race_name,
+                            "race_location": plan.race_location,
+                            "primary_goal": plan.primary_goal,
+                            "marathon_experience": plan.marathon_experience,
+                            "target_time": plan.target_time,
+                            "training_days": plan.training_days,
                             "created_at": (
                                 plan.created_at.isoformat() if plan.created_at else None
                             ),
@@ -346,3 +357,52 @@ def delete_user_plan(plan_id):
             return jsonify({"error": "Plan not found or unauthorized"}), 404
 
         return jsonify({"message": "Plan deleted successfully"}), 200
+
+
+# ✅ POST /api/plan/create — create a new training plan
+@plan_bp.route("/create", methods=["POST"])
+@requires_auth
+def create_plan_route():
+    """Create a new training plan with GPT-generated workouts."""
+    user_id = g.user_id
+
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        # Validate request data
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Request body is required"}), 400
+
+        # Validate with Pydantic schema
+        validated_data = PlanCreateSchema.model_validate(data)
+        plan_dict = validated_data.model_dump()
+
+        logger.info(f"Creating new training plan for user {user_id}")
+        logger.debug(f"Plan data: {plan_dict}")
+
+        # Create plan with GPT generation
+        with get_session() as session:
+            plan_id = create_training_plan(session, str(user_id), plan_dict)
+
+            logger.info(f"Successfully created plan {plan_id}")
+
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "plan_id": plan_id,
+                        "message": "Training plan created successfully",
+                    }
+                ),
+                201,
+            )
+
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        return jsonify({"error": str(e)}), 400
+
+    except Exception as e:
+        logger.error(f"Error creating plan: {e}", exc_info=True)
+        return jsonify({"error": "Failed to create training plan"}), 500

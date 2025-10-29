@@ -354,7 +354,7 @@ const MyPlan: React.FC = () => {
 
             {/* Create New Plan Button */}
             <button
-              onClick={() => navigate('/onboarding')}
+              onClick={() => navigate('/plan/new')}
               className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors whitespace-nowrap"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

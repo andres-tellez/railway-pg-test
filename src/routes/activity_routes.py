@@ -15,6 +15,81 @@ from src.utils.config import config
 activity_bp = Blueprint("activity", __name__)
 
 
+@activity_bp.get("/")
+@requires_auth
+def get_activities():
+    """
+    Return user's activities for plan generation context.
+    Returns basic activity data with distances and dates.
+    """
+    session = get_session()
+    try:
+        internal_user_id = getattr(g, "user_id", None)
+
+        if not internal_user_id:
+            return jsonify({"activities": []}), 200
+
+        # Get athlete_id for this user
+        stmt = text(
+            """
+            SELECT athlete_id
+            FROM public.user_athletes
+            WHERE user_id = :uid
+            LIMIT 1
+            """
+        ).bindparams(bindparam("uid", type_=UUID))
+        athlete_row = session.execute(stmt, {"uid": internal_user_id}).fetchone()
+
+        if not athlete_row:
+            return jsonify({"activities": []}), 200
+
+        athlete_id = athlete_row.athlete_id
+
+        # Fetch activities from the last 30 days (4 weeks)
+        activities_stmt = text(
+            """
+            SELECT
+                activity_id,
+                start_date,
+                distance,
+                moving_time,
+                name,
+                type
+            FROM public.activities
+            WHERE athlete_id = :aid
+            AND start_date >= NOW() - INTERVAL '30 days'
+            ORDER BY start_date DESC
+            """
+        )
+
+        activities_result = session.execute(
+            activities_stmt, {"aid": athlete_id}
+        ).fetchall()
+
+        activities = [
+            {
+                "activity_id": row[0],
+                "date": row[1].isoformat() if row[1] else None,
+                "distance_miles": (
+                    float(row[2] * 0.000621371) if row[2] else 0
+                ),  # Convert meters to miles
+                "moving_time": row[3],
+                "name": row[4],
+                "type": row[5],
+            }
+            for row in activities_result
+        ]
+
+        return jsonify({"activities": activities}), 200
+
+    except Exception as e:
+        print(f"❌ Error fetching activities: {e}")
+        traceback.print_exc()
+        return jsonify({"activities": []}), 200
+    finally:
+        session.close()
+
+
 @activity_bp.get("/status")
 @requires_auth
 def activities_status():
