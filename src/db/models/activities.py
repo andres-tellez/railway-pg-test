@@ -1,6 +1,6 @@
 from sqlalchemy import Column, BigInteger, Integer, String, Float, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
 from src.db.db_session import Base
+from src.db.models.user_profile import SqliteUUID  # Import SQLite-compatible UUID type
 
 
 class Activity(Base):
@@ -13,7 +13,7 @@ class Activity(Base):
         BigInteger, ForeignKey("user_athletes.athlete_id"), nullable=False, index=True
     )
     user_id = Column(
-        UUID(as_uuid=True),
+        SqliteUUID(),  # SQLite-compatible UUID type
         ForeignKey("user_identity.user_id"),
         nullable=False,
         index=True,

@@ -37,6 +37,35 @@ class SqliteArray(TypeDecorator):
         return value
 
 
+class SqliteUUID(TypeDecorator):
+    """
+    Emulate PostgreSQL UUID in SQLite by storing as TEXT.
+    """
+
+    impl = String(36)  # UUIDs are 36 characters with hyphens
+    cache_ok = True  # Safe to cache - behavior is deterministic
+
+    def process_bind_param(self, value, dialect):
+        """Convert UUID to string for SQLite, pass through for PostgreSQL."""
+        if value is None:
+            return None
+        if dialect.name == "sqlite":
+            # Convert UUID to string for SQLite
+            return str(value) if hasattr(value, "hex") else value
+        return value
+
+    def process_result_value(self, value, dialect):
+        """Convert string back to UUID for SQLite, pass through for PostgreSQL."""
+        if value is None:
+            return None
+        if dialect.name == "sqlite":
+            # Convert string back to UUID for SQLite
+            import uuid as uuid_module
+
+            return uuid_module.UUID(value) if isinstance(value, str) else value
+        return value
+
+
 def ArrayType(base_type):
     """Return ARRAY for Postgres, SqliteArray otherwise."""
 
@@ -86,7 +115,7 @@ class UserProfile(Base):
 
     # Training Schedule
     training_days = Column(
-        PGArray(PGEnum(TrainingDay, name="trainingday", create_type=False)),
+        SqliteArray(),  # Use SQLite-compatible array type
         nullable=True,
     )
 
@@ -100,5 +129,5 @@ class UserProfile(Base):
 
     # Motivation
     motivation = Column(
-        PGArray(PGEnum(Motivation, name="motivation", create_type=False)), nullable=True
+        SqliteArray(), nullable=True  # Use SQLite-compatible array type
     )
