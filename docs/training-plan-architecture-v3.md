@@ -168,48 +168,32 @@ Output from Layer 1 (raw data)
 
 ```python
 {
-    "runner_identity": {
-        "age": 35,
-        "bmi": 23.4,
-        "goal": "Just Finish",
-        "experience": "First",
-        "race_date": "2025-06-15",
-        "weeks_until_race": 28,
-        "available_days": ["Mon", "Wed", "Fri", "Sat"],
-        "days_per_week": 4,
-    },
     "current_fitness": {
-        "data_quality": "GOOD",  # INSUFFICIENT|MINIMAL|GOOD|EXCELLENT
-        "weeks_of_history": 8,
-        "avg_weekly_mileage": 18.5,
-        "mileage_range": {"min": 12, "max": 24},
-        "longest_run_recent": 10.2,  # miles, last 60 days
-        "runs_per_week": 3.5,
-        "consistency_score": 85,  # % of weeks with running
-        "avg_pace": "10:15",  # min:sec per mile
-        "easy_pace_estimate": "10:45",  # 75th percentile
-        "fast_pace_estimate": "9:30",  # 25th percentile
+        "weekly_mileage": 18.5,
+        "longest_run": 10.2,
+        "average_pace": "10:15/mile",
+        "fitness_trend": "Stable | Improving | Declining | Insufficient Data",
     },
-    "heart_rate_zones": {
-        "max_hr_estimate": 185,
-        "zone_1": {"min": 93, "max": 111, "name": "Recovery"},
-        "zone_2": {"min": 111, "max": 130, "name": "Aerobic"},
-        "zone_3": {"min": 130, "max": 148, "name": "Tempo"},
-        "zone_4": {"min": 148, "max": 167, "name": "Threshold"},
-        "zone_5": {"min": 167, "max": 185, "name": "VO2 Max"},
+    "recommendations": {
+        "starting_mileage": {
+            "weekly_mileage": 18.5,
+            "ready_for_marathon": False,
+            "confidence": "Low | Medium | High",
+            "rationale": "..."
+        },
+        "progression_rate": {"rate_percent": 10.0, "rationale": "...", "confidence": "High"},
+        "long_run_distance": {"distance": 11.0, "rationale": "...", "confidence": "High"},
+        "training_frequency": {"runs_per_week": 3, "rationale": "...", "confidence": "High"},
+        "focus_areas": ["Base Building", "Consistency", "..."],
+        "training_principles": ["..."],
+        "safety_guidelines": ["..."]
     },
-    "safety_assessment": {
-        "time_sufficient": True,  # >= 16 weeks
-        "time_status": "SUFFICIENT",
-        "base_adequate": True,  # >= 15 miles/week
-        "base_status": "ADEQUATE",
-        "injury_risk_level": "LOW",  # LOW|MODERATE|HIGH
-        "acwr": 1.05,  # Acute:Chronic Workload Ratio
-        "risk_factors": [],  # List of detected issues
-        "safe_peak_mileage": 38,  # Projected using 10% rule
-        "target_peak_mileage": 35,  # For "Just Finish" goal
-        "plan_feasible": True,
-    },
+    "metadata": {
+        "calculated_at": "ISO-8601",
+        "activities_analyzed": 36,
+        "weeks_analyzed": 12,
+        "data_quality": "sufficient | limited"
+    }
 }
 ```
 

@@ -57,9 +57,7 @@ class RecommendationsGenerator:
             activities, user_profile
         )
 
-        long_run_recommendation = self._recommend_long_run_distance(
-            starting_mileage["weekly_mileage"]
-        )
+        long_run_recommendation = self._recommend_long_run_distance(activities)
 
         return {
             "starting_mileage": starting_mileage,
@@ -276,17 +274,54 @@ class RecommendationsGenerator:
             "confidence": confidence,
         }
 
-    def _recommend_long_run_distance(self, starting_mileage: float) -> Dict[str, Any]:
-        """Recommend long run distance based on starting mileage."""
-        # Long run should be 20-30% of weekly mileage
-        long_run_distance = starting_mileage * 0.25  # 25% of weekly mileage
+    def _recommend_long_run_distance(
+        self, activities: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Recommend starting long run distance based on recent training.
 
-        # Apply constraints
-        long_run_distance = max(6.0, min(long_run_distance, 20.0))  # Between 6-20 miles
+        Uses the longest run from the last 4 weeks (most recent month) as the baseline.
+        This is the "last long run" approach used by running coaches.
+        """
+        if not activities:
+            return {
+                "distance": 10.0,
+                "rationale": "No recent data - conservative 10 mile starting point",
+                "confidence": "Low",
+            }
+
+        # Get longest run from last 4 weeks
+        from datetime import datetime, timedelta
+
+        cutoff_date = datetime.now() - timedelta(weeks=4)
+
+        recent_longest = 0.0
+        for activity in activities:
+            if not activity.get("date"):
+                continue
+
+            try:
+                activity_date = datetime.strptime(activity["date"], "%Y-%m-%d")
+                if activity_date >= cutoff_date:
+                    distance = activity.get("distance", 0.0)
+                    if distance and distance > recent_longest:
+                        recent_longest = distance
+            except (ValueError, TypeError):
+                continue
+
+        if recent_longest == 0:
+            return {
+                "distance": 10.0,
+                "rationale": "No recent long runs - conservative 10 mile starting point",
+                "confidence": "Low",
+            }
+
+        # Start 1 mile more than the last long run (standard progression)
+        starting_long_run = recent_longest + 1.0
 
         return {
-            "distance": round(long_run_distance, 1),
-            "rationale": f"25% of weekly mileage ({starting_mileage} miles)",
+            "distance": round(starting_long_run, 1),
+            "rationale": f"Last long run: {recent_longest} miles, starting at {starting_long_run} miles",
             "confidence": "High",
         }
 
