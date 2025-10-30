@@ -1,0 +1,158 @@
+Loaded environment from C:\Users\andre\projects\railway-pg-test\.env.local
+================================================================================
+  LAYER 3 TEST: Prompt Builder
+================================================================================
+
+[1] Collecting data from Layer 1...
+    Activities: 34
+    Profile: 40-49
+
+[2] Calculating insights from Layer 2...
+
+[3] Building GPT prompt from Layer 3...
+
+================================================================================
+  PROMPT OUTPUT
+================================================================================
+
+[SYSTEM MESSAGE]
+--------------------------------------------------------------------------------
+You are an elite marathon running coach with 20+ years of experience helping runners achieve their marathon goals.
+
+Your expertise includes:
+- Creating safe, evidence-based training plans
+- Specializing in first-time marathoners and "just finish" goals
+- Applying proven methodologies from Hal Higdon, Jack Daniels, and Pete Pfitzinger
+- Balancing progressive overload with injury prevention
+- Personalizing plans based on runner's current fitness and schedule
+
+Your coaching philosophy:
+- Safety first: Never recommend unsafe progressions
+- Build gradually: Follow the 10% rule for weekly mileage increases
+- 80/20 training: 80% easy effort, 20% quality work
+- Individualize: Adapt to each runner's unique situation
+- Encourage: Build confidence while maintaining realism
+
+
+[USER MESSAGE]
+--------------------------------------------------------------------------------
+# RUNNER PROFILE
+
+Age Group: 40-49
+Height: 5'10"
+Weight: 172.0 lbs
+Marathon Experience: First
+Primary Motivation: StressRelief
+
+# RACE GOAL
+
+Race Date: 2025-06-15 (1 weeks available)
+Race Name: Sample Marathon
+Race Location: Boston, MA
+Primary Goal: Just Finish
+Runner's Notes: First marathon attempt, nervous but excited!
+
+# CURRENT FITNESS
+
+Weekly Mileage: 30.7 miles (last complete week)
+Longest Recent Run: 26.0 miles (last 12 weeks)
+Average Pace: 9:49/mile
+Fitness Trend: Improving
+
+# TRAINING RECOMMENDATIONS
+
+Starting Weekly Mileage: 30.7 miles
+Marathon Readiness: Ready for marathon training
+Safe Progression Rate: 10.0% per week
+Starting Long Run Distance: 14.0 miles
+Focus Areas: Injury Prevention, Endurance Focus, Marathon Education, Consistency, Mileage Building
+
+# SCHEDULE CONSTRAINTS
+
+Preferred Training Days: Monday, Wednesday, Friday, Saturday
+Days per Week: 4
+
+# YOUR TASK
+
+Create a 1-week marathon training plan for this runner.
+
+Key Requirements:
+- Goal: Just Finish
+- Progressive overload: Maximum 10% weekly mileage increase
+- Cutback weeks: Every 3-4 weeks, reduce mileage by 20-30%
+- Peak long run: 18-22 miles, 3 weeks before race
+- Taper: Final 2-3 weeks, reduce volume while maintaining intensity
+- 80/20 intensity distribution: 80% easy runs, 20% quality workouts
+- Include rest days and cross-training as appropriate
+- Provide specific workout descriptions for each training day
+
+# OUTPUT FORMAT
+
+Return your training plan as valid JSON with this exact structure:
+
+{
+  "plan_name": "Descriptive name for the plan",
+  "plan_summary": "Brief overview of the training approach (2-3 sentences)",
+  "weeks": [
+    {
+      "week_number": 1,
+      "phase": "Base Building|Build|Peak|Taper",
+      "weekly_mileage": 30.0,
+      "week_notes": "General guidance for this week",
+      "workouts": [
+        {
+          "day": "Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday",
+          "workout_type": "Easy Run|Long Run|Tempo Run|Interval|Rest|Cross-Training",
+          "distance_miles": 5.0,
+          "pace_guidance": "Easy pace (conversational)|Tempo pace|etc.",
+          "workout_description": "Detailed instructions for this workout"
+        }
+      ]
+    }
+  ],
+  "race_week_strategy": "Specific guidance for race week preparation",
+  "nutrition_tips": "Key nutrition guidance for marathon training",
+  "injury_prevention_tips": "Tips to stay healthy during training"
+}
+
+IMPORTANT:
+- Return ONLY valid JSON, no additional text
+- Include all weeks from week 1 through race week
+- Ensure every workout has specific, actionable guidance
+- Make pace guidance relative (easy, moderate, tempo) not absolute numbers
+
+# SPECIAL CONSIDERATIONS
+
+[!] TIME CONSTRAINT: Less than 16 weeks available. Use a conservative approach and consider if the runner should target a later race.
+
+Please adjust your plan accordingly to address these factors.
+
+
+[CONFIG]
+--------------------------------------------------------------------------------
+{
+  "model": "gpt-4",
+  "response_format": {
+    "type": "json_object"
+  },
+  "temperature": 0.7
+}
+
+
+[METADATA]
+--------------------------------------------------------------------------------
+{
+  "prompt_version": "v1.0",
+  "created_at": "2025-10-28T22:48:21.738851",
+  "data_quality": "sufficient"
+}
+
+
+[STATS]
+--------------------------------------------------------------------------------
+System message: 772 characters
+User message: 2870 characters
+Total: 3642 characters
+Estimated tokens: ~910 tokens
+
+[SAVED] Full prompt saved to: layer3_prompt_20251028_224821.json

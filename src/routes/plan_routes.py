@@ -6,6 +6,7 @@ import uuid
 import logging
 
 from src.db.db_session import get_session
+import os
 from src.db.models.plans import Plan
 from src.utils.auth0_jwt import requires_auth
 from src.db.dao.plans_dao import (
@@ -17,6 +18,7 @@ from src.db.dao.plans_dao import (
 )
 from src.schemas.plan_schema import PlanCreateSchema
 from src.services.plan_generation_service import create_training_plan
+from src.services.training_plan import TrainingPlanOrchestratorService
 
 logger = logging.getLogger(__name__)
 
@@ -382,9 +384,21 @@ def create_plan_route():
         logger.info(f"Creating new training plan for user {user_id}")
         logger.debug(f"Plan data: {plan_dict}")
 
+        use_orchestrator = os.getenv(
+            "TRAINING_PLAN_ORCHESTRATOR_ENABLED", "false"
+        ).lower() in ["1", "true", "yes"]
+
         # Create plan with GPT generation
         with get_session() as session:
-            plan_id = create_training_plan(session, str(user_id), plan_dict)
+            if use_orchestrator:
+                orchestrator = TrainingPlanOrchestratorService.create_default()
+                plan_id = orchestrator.generate_training_plan(
+                    session=session,
+                    user_id=str(user_id),
+                    plan_request=plan_dict,
+                )
+            else:
+                plan_id = create_training_plan(session, str(user_id), plan_dict)
 
             logger.info(f"Successfully created plan {plan_id}")
 
@@ -406,3 +420,100 @@ def create_plan_route():
     except Exception as e:
         logger.error(f"Error creating plan: {e}", exc_info=True)
         return jsonify({"error": "Failed to create training plan"}), 500
+
+
+# ✅ POST /api/plan/draft — generate a draft plan (no save)
+@plan_bp.route("/draft", methods=["POST"])
+@requires_auth
+def create_plan_draft_route():
+    """Generate a draft training plan without saving."""
+    user_id = g.user_id
+
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Request body is required"}), 400
+
+        # Validate basic required fields via existing schema
+        validated = PlanCreateSchema.model_validate(data)
+        plan_request = validated.model_dump()
+
+        orchestrator = TrainingPlanOrchestratorService.create_default()
+
+        with get_session() as session:
+            draft = orchestrator.generate_draft(
+                session=session,
+                user_id=str(user_id),
+                plan_request=plan_request,
+            )
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "draft": draft,
+                }
+            ),
+            200,
+        )
+
+    except ValueError as e:
+        logger.error(f"Validation error: {e}")
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error generating draft plan: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate draft plan"}), 500
+
+
+# ✅ POST /api/plan/approve — approve and save a validated draft
+@plan_bp.route("/approve", methods=["POST"])
+@requires_auth
+def approve_plan_route():
+    """Approve a previously generated draft and save it as active plan."""
+    user_id = g.user_id
+
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({"error": "Request body is required"}), 400
+
+        # Expect client to send back { validation, plan_request }
+        validation = payload.get("validation")
+        plan_request = payload.get("plan_request")
+        if not isinstance(validation, dict) or not isinstance(plan_request, dict):
+            return jsonify({"error": "validation and plan_request are required"}), 400
+
+        orchestrator = TrainingPlanOrchestratorService.create_default()
+
+        with get_session() as session:
+            # Use Layer 6 to save the validated plan
+            plan_id = orchestrator.plan_storage_service.save_validated_plan(
+                session=session,
+                user_id=str(user_id),
+                validated_plan=validation,
+                plan_request=plan_request,
+            )
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "plan_id": plan_id,
+                    "message": "Plan approved and saved",
+                }
+            ),
+            201,
+        )
+
+    except ValueError as e:
+        logger.error(f"Approval validation error: {e}")
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error approving plan: {e}", exc_info=True)
+        return jsonify({"error": "Failed to approve plan"}), 500

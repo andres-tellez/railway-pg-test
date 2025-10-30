@@ -140,16 +140,23 @@ const NewPlanForm: React.FC = () => {
 
       if (!userId) throw new Error("No user ID available - please refresh");
 
-      // Call the plan creation API
-      const response = await api.post("api/plan/create", {
+      // Generate a draft (no save)
+      const draftRes = await api.post("/api/plan/draft", {
         ...values,
-        race_date: values.race_date.split("T")[0], // Format date properly
+        race_date: values.race_date.split("T")[0],
       });
 
-      console.log("Plan created successfully:", response);
-
-      // Redirect to plan overview
-      navigate("/plan/overview", { replace: true });
+      // Navigate to draft preview with data in state
+      navigate("/plan/draft", {
+        replace: false,
+        state: {
+          draft: draftRes.data?.draft,
+          plan_request: {
+            ...values,
+            race_date: values.race_date.split("T")[0],
+          },
+        },
+      });
     } catch (e: any) {
       const msg =
         e.response?.data?.error ||

@@ -60,9 +60,8 @@ class InsightsCalculationService:
         Returns:
             Complete insights package containing:
                 - current_fitness: Current fitness level metrics
-                - training_patterns: Training consistency and patterns
-                - safety_assessment: Injury and overtraining risk analysis
                 - recommendations: Safe starting points and progression
+                - metadata: Calculation metadata (timestamp, counts, data quality)
 
         Raises:
             ValueError: If required data is missing or invalid

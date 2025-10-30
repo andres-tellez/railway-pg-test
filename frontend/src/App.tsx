@@ -34,6 +34,7 @@ import PlanPage from "./pages/PlanPage";
 import MyPlan from "./pages/MyPlan";
 import NewPlanForm from "./pages/NewPlanForm";
 import PlansManagement from "./pages/PlansManagement";
+import PlanDraftPreview from "./pages/PlanDraftPreview";
 import SetupPage from "./pages/LandingPage";
 import PostOAuth from "./pages/PostOAuth";
 import HomeScreen from "./pages/HomeScreen";
@@ -169,6 +170,14 @@ export default function App() {
         element={
           <Layout>
             <NewPlanForm />
+          </Layout>
+        }
+      />
+      <Route
+        path="/plan/draft"
+        element={
+          <Layout>
+            <PlanDraftPreview />
           </Layout>
         }
       />
