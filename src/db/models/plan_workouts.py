@@ -3,6 +3,8 @@
 import sqlalchemy as sa
 from sqlalchemy.orm import relationship
 from src.db.db_session import Base
+from sqlalchemy.dialects import postgresql
+from src.db.models.user_profile import SqliteJSONB  # For SQLite compatibility
 
 
 class PlanWorkout(Base):
@@ -21,11 +23,45 @@ class PlanWorkout(Base):
     target_zone = sa.Column(sa.String, nullable=True)
     target_hr = sa.Column(sa.String, nullable=True)
     focus = sa.Column(sa.String, nullable=True)
-    segments = sa.Column(sa.JSON, nullable=True)  # JSON array for workout segments
+    segments = sa.Column(
+        SqliteJSONB(), nullable=True, comment="Spec-compliant segments JSON"
+    )
+
+    # ✅ New metadata fields (all nullable for backward compatibility)
+    run_type_key = sa.Column(
+        sa.Text, nullable=True, comment="Canonical type: easy|steady|endurance|long"
+    )
+    phase = sa.Column(
+        sa.Text, nullable=True, comment="Training phase: Base|Build|Peak|Taper"
+    )
+    pace_ranges = sa.Column(
+        SqliteJSONB(),
+        nullable=True,
+        comment="Pace ranges: {E:[sec,sec], S:[...], M:[...], T:[...]}",
+    )
+    allow_quality = sa.Column(
+        sa.Boolean, nullable=True, comment="Whether quality elements allowed"
+    )
+    cues = sa.Column(
+        sa.Text, nullable=True, comment="Athlete-facing workout cues/guidance"
+    )
+    quality_insert = sa.Column(
+        SqliteJSONB(),
+        nullable=True,
+        comment="Quality insert metadata: {type: 'marathon_finish'|'strides', miles: ...}",
+    )
+
     created_at = sa.Column(
         sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
     )
 
-    __table_args__ = (sa.UniqueConstraint("plan_id", "date", name="uq_plan_date"),)
+    __table_args__ = (
+        sa.UniqueConstraint("plan_id", "date", name="uq_plan_date"),
+        sa.CheckConstraint(
+            "run_type_key IN ('easy','steady','endurance','long')",
+            name="chk_run_type_key",
+        ),
+        sa.Index("idx_plan_workouts_plan_date", "plan_id", "date"),
+    )
 
     plan = relationship("Plan", back_populates="workouts")
