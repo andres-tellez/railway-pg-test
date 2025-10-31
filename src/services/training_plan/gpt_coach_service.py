@@ -36,9 +36,14 @@ class GptCoachService:
             raise ValueError("invalid prompt: messages missing")
 
         # Force JSON response format if not present
+        # Merge defaults: force JSON response and optional timeout from env
+        import os
+
+        default_timeout = float(os.getenv("TRAINING_PLAN_LLM_TIMEOUT", "60"))
         config = {
             **config,
             "response_format": config.get("response_format") or {"type": "json_object"},
+            "timeout": config.get("timeout", default_timeout),
         }
 
         # Call the LLM with retries
