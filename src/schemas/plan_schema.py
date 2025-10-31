@@ -11,12 +11,6 @@ class PrimaryGoal(str, Enum):
     TARGET_TIME = "Target Time"
 
 
-class MarathonExperience(str, Enum):
-    FIRST = "First"
-    SOME = "Some"
-    EXPERIENCED = "Experienced"
-
-
 class PlanCreateSchema(BaseModel):
     """Schema for creating a new training plan."""
 
@@ -33,9 +27,6 @@ class PlanCreateSchema(BaseModel):
     # Plan goals (required)
     primary_goal: PrimaryGoal = Field(
         ..., description="Primary goal: Just Finish or Target Time"
-    )
-    marathon_experience: MarathonExperience = Field(
-        ..., description="Marathon experience level"
     )
     target_time: Optional[str] = Field(
         None,

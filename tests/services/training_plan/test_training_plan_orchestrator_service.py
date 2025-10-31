@@ -34,7 +34,6 @@ def _sample_plan_request():
         "race_name": "Test Marathon",
         "race_location": "Test City",
         "primary_goal": "Just Finish",
-        "marathon_experience": "First",
         "target_time": "4:00:00",
         "training_days": ["Mon", "Wed", "Sat"],
         "notes": "Test plan",

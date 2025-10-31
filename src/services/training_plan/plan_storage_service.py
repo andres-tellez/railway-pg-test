@@ -113,7 +113,6 @@ class PlanStorageService:
                 "race_name": plan_request.get("race_name"),
                 "race_location": plan_request.get("race_location"),
                 "primary_goal": plan_request.get("primary_goal"),
-                "marathon_experience": plan_request.get("marathon_experience"),
                 "target_time": plan_request.get("target_time"),
                 "training_days": plan_request.get("training_days"),
                 "notes": plan_request.get("notes"),
@@ -258,7 +257,6 @@ class PlanStorageService:
         plan_request = {
             "race_date": estimated_race_date,
             "primary_goal": "Just Finish",
-            "marathon_experience": "First",
         }
 
         plan_id = PlanStorageService.save_validated_plan(

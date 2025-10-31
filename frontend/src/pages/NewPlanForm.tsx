@@ -5,7 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useForm, FormProvider, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
-import { planSchema, PlanFormData, trainingDaysOptions, primaryGoalOptions, marathonExperienceOptions } from "@/schemas/planSchema";
+import { planSchema, PlanFormData, trainingDaysOptions, primaryGoalOptions } from "@/schemas/planSchema";
 import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
 import { AuthGuard } from "@/components/AuthGuard";
@@ -21,7 +21,6 @@ const NewPlanForm: React.FC = () => {
     defaultValues: {
       race_distance: "Marathon",
       primary_goal: "" as any, // No default
-      marathon_experience: "" as any, // No default
       training_days: [], // No pre-selected days
       notes: "",
     },
@@ -316,49 +315,16 @@ const NewPlanForm: React.FC = () => {
                   )}
                 </div>
 
-                {/* Target Time (conditional) */}
+                {/* Target Time notice (temporarily unavailable) */}
                 {selectedGoal === "Target Time" && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Target Time (e.g., 4:30:00) *
-                    </label>
-                    <input
-                      type="text"
-                      {...methods.register("target_time")}
-                      placeholder="HH:MM:SS"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    {methods.formState.errors.target_time && (
-                      <p className="text-red-500 text-sm mt-1">
-                        {methods.formState.errors.target_time.message}
-                      </p>
-                    )}
+                  <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-md p-4">
+                    <p className="font-medium">Target Time plans are under construction.</p>
+                    <p className="text-sm mt-1">
+                      For now, only the <span className="font-semibold">Just Finish</span> plan path is available.
+                      Please select <span className="font-semibold">Just Finish</span> to proceed.
+                    </p>
                   </div>
                 )}
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">
-                    Marathon Experience *
-                  </label>
-                  <div className="space-y-3">
-                    {marathonExperienceOptions.map((option) => (
-                      <label key={option.value} className="flex items-center space-x-3 cursor-pointer">
-                        <input
-                          type="radio"
-                          value={option.value}
-                          {...methods.register("marathon_experience")}
-                          className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-gray-700">{option.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {methods.formState.errors.marathon_experience && (
-                    <p className="text-red-500 text-sm mt-1">
-                      {methods.formState.errors.marathon_experience.message}
-                    </p>
-                  )}
-                </div>
               </div>
 
               {/* Training Schedule */}
@@ -427,7 +393,7 @@ const NewPlanForm: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || selectedGoal === "Target Time"}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? "Creating..." : "Generate Training Plan"}

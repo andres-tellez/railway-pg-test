@@ -42,7 +42,6 @@ class ThreePassOrchestrator:
         user_id = runner_ctx.get("user_id")
         plan_request = runner_ctx.get("plan_request", {})
         training_days = runner_ctx.get("training_days", ["Mon", "Wed", "Thu", "Sat"])
-        experience = (runner_ctx.get("experience") or "").lower().strip()
 
         if session is None or user_id is None:
             return {

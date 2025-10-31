@@ -186,7 +186,7 @@ class TestRecommendationsGenerator:
         ]
 
         user_profile = {"training_days": ["Mon", "Wed", "Fri"]}
-        plan_request = {"marathon_experience": "First", "primary_goal": "Just Finish"}
+        plan_request = {"primary_goal": "Just Finish"}
 
         generator = RecommendationsGenerator()
         result = generator.generate_recommendations(
@@ -228,7 +228,6 @@ class TestInsightsCalculationService:
                 "training_days": ["Mon", "Wed", "Fri"],
             },
             "plan_request": {
-                "marathon_experience": "First",
                 "primary_goal": "Just Finish",
             },
         }
@@ -278,7 +277,6 @@ class TestIntegrationScenarios:
                 "training_days": ["Tue", "Thu", "Sat"],
             },
             "plan_request": {
-                "marathon_experience": "First",
                 "primary_goal": "Just Finish",
             },
         }
@@ -309,7 +307,6 @@ class TestIntegrationScenarios:
                 "training_days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
             },
             "plan_request": {
-                "marathon_experience": "Multiple",
                 "primary_goal": "Target Time",
             },
         }
@@ -341,7 +338,6 @@ class TestIntegrationScenarios:
                 "training_days": ["Mon", "Wed", "Fri"],
             },
             "plan_request": {
-                "marathon_experience": "First",
                 "primary_goal": "Just Finish",
             },
         }

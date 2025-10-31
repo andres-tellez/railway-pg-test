@@ -207,7 +207,7 @@ class DataCollectionService:
             session: SQLAlchemy database session
             user_id: UUID string of the user
             plan_request: Dictionary containing plan creation request data
-                         (race_date, primary_goal, marathon_experience, etc.)
+                         (race_date, primary_goal, etc.)
             activity_weeks: Number of weeks of activity history to fetch (default: 12)
 
         Returns:
@@ -227,7 +227,6 @@ class DataCollectionService:
             ...     plan_request={
             ...         "race_date": "2025-06-15",
             ...         "primary_goal": "Just Finish",
-            ...         "marathon_experience": "First",
             ...         "training_days": ["Mon", "Wed", "Fri", "Sat"],
             ...         "notes": "First marathon attempt"
             ...     }

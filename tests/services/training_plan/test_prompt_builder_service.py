@@ -57,7 +57,6 @@ def _plan_request_with_race_date(days_from_now=140):
         "race_name": "Example Marathon",
         "race_location": "Example City",
         "primary_goal": "Just Finish",
-        "marathon_experience": "First",
         "training_days": ["Mon", "Wed", "Fri"],
         "notes": "N/A",
     }

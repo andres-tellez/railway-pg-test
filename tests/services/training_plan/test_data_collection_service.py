@@ -146,7 +146,6 @@ def sample_plan_request():
     return {
         "race_date": "2025-06-15",
         "primary_goal": "Just Finish",
-        "marathon_experience": "First",
         "training_days": ["Mon", "Wed", "Fri", "Sat"],
         "notes": "First marathon attempt",
     }
@@ -493,7 +492,6 @@ class TestCollectAllData:
         custom_request = {
             "race_date": "2025-12-25",
             "primary_goal": "Target Time",
-            "marathon_experience": "Experienced",
             "training_days": ["Tue", "Thu", "Sat", "Sun"],
             "target_time": "3:30:00",
             "notes": "Boston Qualifier attempt",
@@ -669,7 +667,6 @@ class TestDataCollectionIntegration:
         plan_request = {
             "race_date": "2025-07-04",
             "primary_goal": "Just Finish",
-            "marathon_experience": "First",
             "training_days": ["Mon", "Wed", "Fri"],
         }
 

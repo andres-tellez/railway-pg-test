@@ -66,7 +66,6 @@ def _plan_request():
         "race_name": "Boston Marathon",
         "race_location": "Boston, MA",
         "primary_goal": "Just Finish",
-        "marathon_experience": "First",
         "training_days": ["Mon", "Wed", "Sat"],
         "notes": "First marathon",
     }

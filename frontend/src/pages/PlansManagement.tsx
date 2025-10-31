@@ -15,7 +15,6 @@ type Plan = {
   race_name?: string;
   race_location?: string;
   primary_goal?: string;
-  marathon_experience?: string;
   target_time?: string;
   training_days?: string[];
   created_at: string;
@@ -87,7 +86,6 @@ const PlansManagement: React.FC = () => {
   const getPlanDetails = (plan: Plan) => {
     const details = [];
     if (plan.primary_goal) details.push(`Goal: ${plan.primary_goal}`);
-    if (plan.marathon_experience) details.push(`Experience: ${plan.marathon_experience}`);
     if (plan.target_time) details.push(`Target: ${plan.target_time}`);
     return details.join(" • ");
   };

@@ -324,7 +324,6 @@ def list_user_plans():
                             "race_name": plan.race_name,
                             "race_location": plan.race_location,
                             "primary_goal": plan.primary_goal,
-                            "marathon_experience": plan.marathon_experience,
                             "target_time": plan.target_time,
                             "training_days": plan.training_days,
                             "created_at": (
@@ -392,6 +391,21 @@ def create_plan_route():
         validated_data = PlanCreateSchema.model_validate(data)
         plan_dict = validated_data.model_dump()
 
+        # Temporarily restrict Target Time flow
+        if str(plan_dict.get("primary_goal", "")) in [
+            "Target Time",
+            "TARGET_TIME",
+            "target_time",
+        ]:
+            return (
+                jsonify(
+                    {
+                        "error": "Target Time plans are under construction. Please choose 'Just Finish' to generate a plan."
+                    }
+                ),
+                400,
+            )
+
         logger.info(f"Creating new training plan for user {user_id}")
         logger.debug(f"Plan data: {plan_dict}")
 
@@ -428,7 +442,6 @@ def create_plan_route():
                 "longest_recent_run": insights.get("current_fitness", {}).get(
                     "longest_run", 0
                 ),
-                "experience": (plan_dict.get("marathon_experience") or "").lower(),
                 "training_days": plan_dict.get("training_days")
                 or ["Mon", "Wed", "Thu", "Sat"],
             }
@@ -497,6 +510,21 @@ def create_plan_draft_route():
         validated = PlanCreateSchema.model_validate(data)
         plan_request = validated.model_dump()
 
+        # Temporarily restrict Target Time flow for draft as well
+        if str(plan_request.get("primary_goal", "")) in [
+            "Target Time",
+            "TARGET_TIME",
+            "target_time",
+        ]:
+            return (
+                jsonify(
+                    {
+                        "error": "Target Time plans are under construction. Please choose 'Just Finish' to generate a draft."
+                    }
+                ),
+                400,
+            )
+
         with get_session() as session:
             # L1 + L2 to build minimal context
             dc = DataCollectionService()
@@ -531,7 +559,6 @@ def create_plan_draft_route():
                 "longest_recent_run": insights.get("current_fitness", {}).get(
                     "longest_run", 0
                 ),
-                "experience": (plan_request.get("marathon_experience") or "").lower(),
                 "training_days": plan_request.get("training_days")
                 or ["Mon", "Wed", "Thu", "Sat"],
             }
