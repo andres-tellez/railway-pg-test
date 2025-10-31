@@ -11,7 +11,7 @@ from sqlalchemy import (
     Boolean,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 from src.db.db_session import Base
@@ -38,6 +38,11 @@ class Plan(Base):
     race_distance = Column(String(32), nullable=True)
     race_name = Column(String(255), nullable=True)
     race_location = Column(String(255), nullable=True)
+    race_metadata = Column(
+        JSONB,
+        nullable=True,
+        comment="Race metadata (terrain, elevation, course type, etc.)",
+    )
     primary_goal = Column(String(50), nullable=True)
     target_time = Column(String(20), nullable=True)
     training_days = Column(SqliteArray(), nullable=True)  # SQLite-compatible array

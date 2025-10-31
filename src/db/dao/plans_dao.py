@@ -41,6 +41,9 @@ def get_plan_with_workouts(
         "plan_name": plan.plan_name,
         "race_date": plan.race_date.isoformat() if plan.race_date else None,
         "race_distance": plan.race_distance,
+        "race_name": plan.race_name,
+        "race_location": plan.race_location,
+        "race_metadata": plan.race_metadata,
         "notes": plan.notes,
         "created_at": plan.created_at.isoformat() if plan.created_at else None,
         "workouts": [

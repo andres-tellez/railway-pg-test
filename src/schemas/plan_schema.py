@@ -1,7 +1,7 @@
 # src/schemas/plan_schema.py
 
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import date
 from enum import Enum
 
@@ -22,6 +22,10 @@ class PlanCreateSchema(BaseModel):
     )
     race_location: Optional[str] = Field(
         None, max_length=255, description="Race location (optional)"
+    )
+    race_metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Race metadata including terrain, elevation gain, course type, etc. (optional)",
     )
 
     # Plan goals (required)
