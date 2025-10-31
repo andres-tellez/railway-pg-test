@@ -39,7 +39,6 @@ class Plan(Base):
     race_name = Column(String(255), nullable=True)
     race_location = Column(String(255), nullable=True)
     primary_goal = Column(String(50), nullable=True)
-    marathon_experience = Column(String(50), nullable=True)
     target_time = Column(String(20), nullable=True)
     training_days = Column(SqliteArray(), nullable=True)  # SQLite-compatible array
     notes = Column(Text, nullable=True)

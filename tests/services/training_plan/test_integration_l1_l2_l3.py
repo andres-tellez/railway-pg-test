@@ -51,7 +51,6 @@ class TestIntegrationL1L2L3:
         plan_request = {
             "race_date": (datetime.now() + timedelta(weeks=12)).strftime("%Y-%m-%d"),
             "primary_goal": "Just Finish",
-            "marathon_experience": "First",
             "training_days": ["Mon", "Wed", "Fri"],
         }
 
@@ -110,7 +109,6 @@ class TestIntegrationL1L2L3:
         plan_request = {
             "race_date": (datetime.now() + timedelta(weeks=8)).strftime("%Y-%m-%d"),
             "primary_goal": "Just Finish",
-            "marathon_experience": "First",
             "training_days": ["Tue", "Thu"],
         }
 

@@ -212,12 +212,6 @@ class RecommendationsGenerator:
         else:
             focus_areas.append("Marathon Preparation")
 
-        # Check marathon experience
-        experience = plan_request.get("marathon_experience", "First")
-        if experience == "First":
-            focus_areas.append("Marathon Education")
-            focus_areas.append("Injury Prevention")
-
         # Check goal
         goal = plan_request.get("primary_goal", "Just Finish")
         if goal == "Just Finish":

@@ -197,7 +197,6 @@ class Pass1LongRunFirst:
 
         base_mpw = float(current.get("weekly_mileage", 0) or 0)
         longest_recent = float(current.get("longest_run", 0) or 0)
-        exp = (plan_request.get("marathon_experience") or "").lower().strip()
 
         # Compute recent-3w longest; Week 1 MUST be this + 1.0 (rounded to 0.5)
         recent3w = recent_longest_3w(raw.get("strava_activities", []), days=21)
@@ -260,7 +259,6 @@ class Pass1LongRunFirst:
             "signals": {
                 "base_mpw": base_mpw,
                 "longest_recent": longest_recent,
-                "experience": exp or None,
             },
         }
 

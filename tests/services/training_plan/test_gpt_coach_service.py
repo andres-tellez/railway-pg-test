@@ -71,7 +71,6 @@ def _fake_prompt():
     req = {
         "race_date": "2030-01-01",
         "primary_goal": "Just Finish",
-        "marathon_experience": "First",
         "training_days": ["Mon", "Wed", "Fri"],
     }
     return PromptBuilderService.build_complete_prompt(insights, profile, req)

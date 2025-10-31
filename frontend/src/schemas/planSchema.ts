@@ -13,9 +13,6 @@ export const planSchema = z.object({
   primary_goal: z.enum(["Just Finish", "Target Time"], {
     errorMap: () => ({ message: "Please select a primary goal" })
   }),
-  marathon_experience: z.enum(["First", "Some", "Experienced"], {
-    errorMap: () => ({ message: "Please select your marathon experience level" })
-  }),
   target_time: z.string().optional(),
 
   // Training schedule (required)
@@ -38,7 +35,6 @@ export type PlanFormData = z.infer<typeof planSchema>;
 
 // Helper types for form data
 export type PrimaryGoal = "Just Finish" | "Target Time";
-export type MarathonExperience = "First" | "Some" | "Experienced";
 
 // Training days options
 export const trainingDaysOptions = [
@@ -55,11 +51,4 @@ export const trainingDaysOptions = [
 export const primaryGoalOptions = [
   { value: "Just Finish" as const, label: "Just Finish" },
   { value: "Target Time" as const, label: "Target Time" },
-];
-
-// Marathon experience options
-export const marathonExperienceOptions = [
-  { value: "First" as const, label: "First marathon (never completed one)" },
-  { value: "Some" as const, label: "Some experience (completed 1-2 marathons)" },
-  { value: "Experienced" as const, label: "Experienced (completed 3+ marathons)" },
 ];

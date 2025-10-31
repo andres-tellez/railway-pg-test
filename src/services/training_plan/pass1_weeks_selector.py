@@ -22,12 +22,11 @@ class Pass1WeeksSelector:
 
     Logic (safety > date):
     - Use current base mileage from insights (weekly_mileage) as primary signal
-    - Experience hints from plan_request["marathon_experience"] when present
     - Map to recommended duration:
-        <15 mpw or "beginner"     -> 24 weeks
-        15–<20 mpw                 -> 20 weeks
-        20–30 mpw                  -> 16 weeks
-        >30 mpw or "experienced"   -> 12 weeks
+        <15 mpw                     -> 24 weeks
+        15–<20 mpw                  -> 20 weeks
+        20–30 mpw                   -> 16 weeks
+        >30 mpw                     -> 12 weeks
 
     Returns a dict with weeks and rationale for UI/telemetry.
     """
@@ -73,19 +72,17 @@ class Pass1WeeksSelector:
 
         base_mileage = float(current.get("weekly_mileage", 0) or 0)
         longest_run = float(current.get("longest_run", 0) or 0)
-        experience = (plan_request.get("marathon_experience") or "").lower().strip()
         goal = (plan_request.get("primary_goal") or "finish").lower().strip()
 
         # Safety-first mapping
-        recommended_weeks = self._map_weeks(
-            base_mileage=base_mileage, experience=experience
-        )
+        recommended_weeks = self._map_weeks(base_mileage=base_mileage)
 
         rationale = {
             "rule": "safety_first_finish_goal",
             "base_mileage_mpw": base_mileage,
             "longest_recent_run_miles": longest_run,
-            "experience": experience or None,
+            # experience intentionally not used in calculation
+            # include only signals we actually use to avoid confusion
             "primary_goal": goal,
             "mapping": "<15→24, 15–<20→20, 20–30→16, >30 or experienced→12",
         }
@@ -94,7 +91,7 @@ class Pass1WeeksSelector:
             "Pass1WeeksSelector: base=%.1f, longest=%.1f, exp=%s -> weeks=%d",
             base_mileage,
             longest_run,
-            experience or "",
+            "",
             recommended_weeks,
         )
 
@@ -108,9 +105,8 @@ class Pass1WeeksSelector:
         }
 
     @staticmethod
-    def _map_weeks(*, base_mileage: float, experience: str | None) -> int:
-        exp = (experience or "").lower().strip()
-        if base_mileage < 15.0 or exp == "beginner":
+    def _map_weeks(*, base_mileage: float) -> int:
+        if base_mileage < 15.0:
             return 24
         if base_mileage < 20.0:
             return 20
