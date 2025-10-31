@@ -28,22 +28,30 @@ print("=" * 70)
 # Test 1: 3 days/week (Mon, Wed, Sat)
 print("\nTest 1: 3 days/week - Week with 15 LR, 33 total")
 print("-" * 70)
-workouts = calculate_workout_distribution(
+schedule = calculate_workout_distribution(
+    weekly_total=33.0,
     long_run_miles=15.0,
-    total_weekly_miles=33.0,
-    runs_per_week=3,
-    training_days=["Mon", "Wed", "Sat"],
+    run_days=["Mon", "Wed", "Sat"],
+    long_idx=2,  # Sat is index 2
 )
+# Convert dict to list format for display
+workouts_list = [schedule[day] for day in ["Mon", "Wed", "Sat"]]
+
+# Convert schedule dict to list for display
+workouts = [schedule[day] for day in ["Mon", "Wed", "Sat"]]
 
 print("Day  | Type        | Miles | Total")
 print("-" * 40)
 total = 0.0
 for w in workouts:
+    miles = w.get("miles", w.get("distance_miles", 0))
+    wtype = w.get("workout_type", w.get("label", ""))
+    day = w.get("day", "")
     print(
-        f"{w['day']:>4} | {w['workout_type']:>11} | {w['distance_miles']:>5.1f} | ",
+        f"{day:>4} | {wtype:>11} | {miles:>5.1f} | ",
         end="",
     )
-    total += w["distance_miles"]
+    total += miles
     print(f"{total:>5.1f}")
 
 print(f"\nExpected total: 33.0")
@@ -54,22 +62,30 @@ print(f"Match: {'✅' if abs(total - 33.0) < 0.1 else '❌'}")
 print("\n" + "=" * 70)
 print("Test 2: 4 days/week - Week with 16 LR, 40 total")
 print("-" * 70)
-workouts = calculate_workout_distribution(
+schedule = calculate_workout_distribution(
+    weekly_total=40.0,
     long_run_miles=16.0,
-    total_weekly_miles=40.0,
-    runs_per_week=4,
-    training_days=["Mon", "Wed", "Thu", "Sat"],
+    run_days=["Mon", "Wed", "Thu", "Sat"],
+    long_idx=3,  # Sat is index 3
 )
+# Convert dict to list format for display
+workouts_list = [schedule[day] for day in ["Mon", "Wed", "Thu", "Sat"]]
+
+# Convert schedule dict to list for display
+workouts = [schedule[day] for day in ["Mon", "Wed", "Thu", "Sat"]]
 
 print("Day  | Type        | Miles | Total")
 print("-" * 40)
 total = 0.0
 for w in workouts:
+    miles = w.get("miles", w.get("distance_miles", 0))
+    wtype = w.get("workout_type", w.get("label", ""))
+    day = w.get("day", "")
     print(
-        f"{w['day']:>4} | {w['workout_type']:>11} | {w['distance_miles']:>5.1f} | ",
+        f"{day:>4} | {wtype:>11} | {miles:>5.1f} | ",
         end="",
     )
-    total += w["distance_miles"]
+    total += miles
     print(f"{total:>5.1f}")
 
 print(f"\nExpected total: 40.0")
@@ -80,22 +96,30 @@ print(f"Match: {'✅' if abs(total - 40.0) < 0.1 else '❌'}")
 print("\n" + "=" * 70)
 print("Test 3: 5 days/week - Week with 20 LR, 50 total")
 print("-" * 70)
-workouts = calculate_workout_distribution(
+schedule = calculate_workout_distribution(
+    weekly_total=50.0,
     long_run_miles=20.0,
-    total_weekly_miles=50.0,
-    runs_per_week=5,
-    training_days=["Mon", "Tue", "Wed", "Thu", "Sat"],
+    run_days=["Mon", "Tue", "Wed", "Thu", "Sat"],
+    long_idx=4,  # Sat is index 4
 )
+# Convert dict to list format for display
+workouts_list = [schedule[day] for day in ["Mon", "Tue", "Wed", "Thu", "Sat"]]
+
+# Convert schedule dict to list for display
+workouts = [schedule[day] for day in ["Mon", "Tue", "Wed", "Thu", "Sat"]]
 
 print("Day  | Type        | Miles | Total")
 print("-" * 40)
 total = 0.0
 for w in workouts:
+    miles = w.get("miles", w.get("distance_miles", 0))
+    wtype = w.get("workout_type", w.get("label", ""))
+    day = w.get("day", "")
     print(
-        f"{w['day']:>4} | {w['workout_type']:>11} | {w['distance_miles']:>5.1f} | ",
+        f"{day:>4} | {wtype:>11} | {miles:>5.1f} | ",
         end="",
     )
-    total += w["distance_miles"]
+    total += miles
     print(f"{total:>5.1f}")
 
 print(f"\nExpected total: 50.0")

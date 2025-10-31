@@ -275,7 +275,33 @@ def apply_recovery_week_insertion_if_needed(
         start_d = today + timedelta(days=days_until_monday)
 
     current_plan_weeks = len(weeks)
-    target_weeks = (rd - start_d).days / 7.0
+    
+    # Calculate target weeks ensuring the week containing race day is included.
+    # OLD LOGIC (BUGGY):
+    #   target_weeks = (rd - start_d).days / 7.0
+    #   Problem: If race day is Saturday and plan ends earlier, fractional calculation
+    #            might not include the race week (e.g., 14.86 weeks - 14 = 0.86 → int(0.86) = 0)
+    #
+    # NEW LOGIC (FIXED):
+    #   Calculate Monday of week containing race day, then calculate weeks to that Monday.
+    #   Use ceiling to ensure we include the complete week containing race day.
+    #   This ensures the plan always includes the week containing race day.
+    import math
+    
+    # Calculate Monday of the week containing race day
+    race_day_weekday = rd.weekday()  # 0=Monday, 6=Sunday
+    monday_of_race_week = rd - timedelta(days=race_day_weekday)
+    
+    # Calculate weeks from start to Monday of race week
+    days_to_race_week_monday = (monday_of_race_week - start_d).days
+    weeks_to_race_week = days_to_race_week_monday / 7.0
+    
+    # We need AT LEAST ceil(weeks_to_race_week) weeks to reach the race week
+    # Plus 1 to include the race week itself (since weeks are 0-indexed from start)
+    # Example: If Monday of race week is 98 days from start = 14 weeks exactly,
+    #          we need 15 total weeks (14 to reach it + 1 for the race week itself)
+    target_weeks = math.ceil(weeks_to_race_week) + 1
+    
     extra_weeks = int(target_weeks - current_plan_weeks)
 
     metadata = {
