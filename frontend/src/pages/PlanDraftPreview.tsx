@@ -183,7 +183,7 @@ export default function PlanDraftPreview() {
                     {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => (
                       <th key={d} className="border p-2 text-center">{d}</th>
                     ))}
-                    <th className="border p-2 text-center">Total Miles</th>
+                    <th className="border p-2 text-center">Total</th>
                   </tr>
                   {(() => {
                     // Extract run types from first week's workouts to display in header
@@ -208,12 +208,15 @@ export default function PlanDraftPreview() {
                         const day = normalize(workout.day);
                         if (day) {
                           const workoutType = workout.workout_type || '';
-                          // Shorten labels: "Easy Run" -> "Easy", "Medium Run" -> "Medium", etc.
+                          // Map to display names:
+                          // "Easy / Recovery" -> "Easy/Recovery"
+                          // "Aerobic" -> "Aerobic"
+                          // "Endurance" -> "Endurance"
+                          // "Long Run" -> "Long"
                           const shortType = workoutType
-                            .replace(' Run', '')
-                            .replace('Easy/Tempo', 'Easy/Tempo')
-                            .replace('Long Run', 'LR');
-                          runTypeMap[day] = shortType;
+                            .replace('Easy / Recovery', 'Easy/Recovery')
+                            .replace('Long Run', 'Long');
+                          runTypeMap[day] = shortType || workoutType;
                         }
                       });
                     }
@@ -234,6 +237,35 @@ export default function PlanDraftPreview() {
                 </thead>
                 <tbody>
                   {(generated?.weeks || []).map((w: any, idx: number) => {
+                    // Helper: format date as MM/DD/YY
+                    const formatMDY = (d?: Date) => {
+                      if (!d) return '';
+                      const mm = String(d.getMonth() + 1).padStart(2, '0');
+                      const dd = String(d.getDate()).padStart(2, '0');
+                      const yy = String(d.getFullYear()).slice(-2);
+                      return `${mm}/${dd}/${yy}`;
+                    };
+                    // Determine Monday for this week
+                    const parseISODate = (s?: string) => {
+                      try {
+                        if (!s) return undefined;
+                        // Force UTC midnight parse safety
+                        return new Date(`${s}T00:00:00`);
+                      } catch {
+                        return undefined;
+                      }
+                    };
+                    const addDays = (d: Date, days: number) => {
+                      const nd = new Date(d.getTime());
+                      nd.setDate(nd.getDate() + days);
+                      return nd;
+                    };
+                    let mondayDate: Date | undefined =
+                      parseISODate(w?.week_start_date || w?.week_start);
+                    if (!mondayDate && generated?.start_date) {
+                      const start = parseISODate(generated.start_date);
+                      if (start) mondayDate = addDays(start, idx * 7);
+                    }
                     const dayKeys = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
                     const normalize = (day: string | undefined) => {
                       if (!day) return '';
@@ -258,7 +290,7 @@ export default function PlanDraftPreview() {
                           const miles = workout.distance_miles || workout.miles || 0;
                           const workoutType = workout.workout_type || '';
                           // Show miles for all workouts (not just long runs)
-                          const displayText = miles > 0 ? `${miles}${workoutType === 'Long Run' ? ' (LR)' : ''}` : '';
+                          const displayText = miles > 0 ? `${miles}` : '';
                           if (displayText && miles > 0) {
                             dayToItems[day].push(displayText);
                           }
@@ -277,14 +309,14 @@ export default function PlanDraftPreview() {
 
                         // Prefer Sat, then Sun if they're in training days
                         if (normalizedTrainingDays.includes('Sat')) {
-                          dayToItems['Sat'].push(`${lr} (LR)`);
+                          dayToItems['Sat'].push(`${lr}`);
                         } else if (normalizedTrainingDays.includes('Sun')) {
-                          dayToItems['Sun'].push(`${lr} (LR)`);
+                          dayToItems['Sun'].push(`${lr}`);
                         } else if (normalizedTrainingDays.length > 0) {
                           // Fallback to last training day if no weekend days
                           const lastDay = normalizedTrainingDays[normalizedTrainingDays.length - 1];
                           if (dayToItems[lastDay] !== undefined) {
-                            dayToItems[lastDay].push(`${lr} (LR)`);
+                            dayToItems[lastDay].push(`${lr}`);
                           }
                         }
                       }
@@ -297,8 +329,7 @@ export default function PlanDraftPreview() {
                     return (
                       <tr key={idx} className="hover:bg-gray-50">
                         <td className="border p-2 align-top">
-                          <div className="font-medium">{w?.week_number ?? idx + 1}</div>
-                          <div className="text-xs text-gray-500">{weekLabel.replace('Week ', '')}</div>
+                          <div className="font-medium">{formatMDY(mondayDate)}</div>
                         </td>
                         <td className="border p-2 align-top">{w?.phase || ''}</td>
                         {dayKeys.map((d) => (
@@ -320,47 +351,53 @@ export default function PlanDraftPreview() {
                   })}
 
                   {/* Marathon Day Row */}
-                  {currentDraft?.generated_plan?.race_metadata && (
-                    <tr className="bg-purple-50 border-t-2 border-purple-300">
-                      <td className="border p-2 align-top font-semibold text-purple-800">
-                        <div>Race</div>
-                        <div className="text-xs text-purple-600">
-                          {currentDraft.generated_plan.race_metadata.race_date_label}
-                        </div>
-                      </td>
-                      <td className="border p-2 align-top font-semibold text-purple-800">Race Day</td>
-                      {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => {
-                        // Check if race day falls on this day
-                        const raceDateStr = currentDraft.generated_plan.race_metadata.race_date;
-                        let isRaceDay = false;
-                        try {
-                          if (raceDateStr) {
-                            const raceDate = new Date(raceDateStr + 'T00:00:00');
-                            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                            const raceDayIdx = raceDate.getDay();
-                            const raceDayName = dayNames[raceDayIdx];
-                            isRaceDay = raceDayName === d;
-                          }
-                        } catch (e) {
-                          // Ignore date parsing errors
-                        }
+                  {currentDraft?.generated_plan?.race_metadata && (() => {
+                    const raceDateStr = currentDraft.generated_plan.race_metadata.race_date;
+                    let raceDate: Date | undefined;
+                    try {
+                      if (raceDateStr) {
+                        raceDate = new Date(raceDateStr + 'T00:00:00');
+                      }
+                    } catch (e) {
+                      // Ignore date parsing errors
+                    }
 
-                        return (
-                          <td key={d} className="border p-2 align-top text-center">
-                            {isRaceDay ? (
-                              <div className="font-bold text-purple-800">
-                                <div>26.2 mi</div>
-                                <div className="text-xs">Marathon</div>
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">—</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                      <td className="border p-2 align-top text-center font-semibold text-purple-800">26.2 mi</td>
-                    </tr>
-                  )}
+                    const getRaceDayName = () => {
+                      if (!raceDate) return '';
+                      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                      return dayNames[raceDate.getDay()];
+                    };
+
+                    const formatMDY = (d?: Date) => {
+                      if (!d) return '';
+                      const mm = String(d.getMonth() + 1).padStart(2, '0');
+                      const dd = String(d.getDate()).padStart(2, '0');
+                      const yy = String(d.getFullYear()).slice(-2);
+                      return `${mm}/${dd}/${yy}`;
+                    };
+
+                    return (
+                      <tr className="bg-purple-50 border-t-2 border-purple-300">
+                        <td className="border p-2 align-top font-semibold text-purple-800">
+                          <div className="font-medium">{formatMDY(raceDate)}</div>
+                        </td>
+                        <td className="border p-2 align-top font-semibold text-purple-800">Race Day</td>
+                        {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => {
+                          const isRaceDay = getRaceDayName() === d;
+                          return (
+                            <td key={d} className="border p-2 align-top text-center">
+                              {isRaceDay ? (
+                                <div className="font-bold text-purple-800">26.2</div>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="border p-2 align-top text-center font-semibold text-purple-800">26.2</td>
+                      </tr>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>

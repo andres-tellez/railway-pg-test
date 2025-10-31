@@ -165,101 +165,266 @@ def calculate_workout_distribution(
     # Sort by forward position (closest forward = shortest run, furthest forward = longest run)
     day_position_map.sort(key=lambda x: x[2])  # Sort by forward_position ascending
 
-    # Assign distances recovery-aware but with previous ordering:
-    # Shortest → first day after LR, then increasing so that Thu is the longest weekday.
-    # This restores Mon < Wed < Thu behavior from the snapshot.
-    for i, (day, _, forward_pos) in enumerate(day_position_map):
-        # sorted_distances is already shortest→longest; assign in order
-        assigned = (
-            sorted_distances[i] if i < len(sorted_distances) else sorted_distances[-1]
+    # Assign distances with swapped Wed/Thu:
+    # Mon: shortest (Easy/Recovery - recovery after Saturday's LR)
+    # Wed: longest weekday (Endurance - comes after Easy, builds endurance)
+    # Thu: medium (Aerobic - comes before rest day Friday, not right before Long Run Saturday)
+    # Pattern: Mon < Thu < Wed (by distance)
+    # This ensures longer miles come after Easy day, and don't come right before Long Run
+    if len(sorted_distances) >= 3:
+        # 3+ days: Mon (shortest), Wed (longest), Thu (medium)
+        for i, (day, _, forward_pos) in enumerate(day_position_map):
+            if i == 0:
+                # Mon: shortest
+                day_position_map[i] = (day, sorted_distances[0], forward_pos)
+            elif i == 1:
+                # Wed: longest weekday (Endurance)
+                day_position_map[i] = (day, sorted_distances[2], forward_pos)
+            else:
+                # Thu: medium (Aerobic)
+                day_position_map[i] = (day, sorted_distances[1], forward_pos)
+    elif len(sorted_distances) == 2:
+        # 2 days: Mon (shortest) and one other (longest available)
+        for i, (day, _, forward_pos) in enumerate(day_position_map):
+            day_position_map[i] = (day, sorted_distances[i], forward_pos)
+    else:
+        # 1 day: shortest
+        if day_position_map:
+            day_position_map[0] = (
+                day_position_map[0][0],
+                sorted_distances[0],
+                day_position_map[0][2],
+            )
+
+    # Single order-aware reconciliation
+    if len(day_position_map) >= 3:
+        # Extract Mon, Wed, Thu entries
+        mon_idx = next(
+            (i for i, (d, _, _) in enumerate(day_position_map) if d == "Mon"), None
         )
-        day_position_map[i] = (day, assigned, forward_pos)
+        wed_idx = next(
+            (i for i, (d, _, _) in enumerate(day_position_map) if d == "Wed"), None
+        )
+        thu_idx = next(
+            (i for i, (d, _, _) in enumerate(day_position_map) if d == "Thu"), None
+        )
 
-    # Post-process to ensure strict progression (recovery day strictly shorter)
-    if len(day_position_map) >= 2:
-        # Ensure the first day (recovery day) is strictly shorter than the second day
-        first_day, first_dist, first_pos = day_position_map[0]
-        second_day, second_dist, second_pos = day_position_map[1]
+        if mon_idx is not None and wed_idx is not None and thu_idx is not None:
+            mon_day, mon_dist, mon_pos = day_position_map[mon_idx]
+            wed_day, wed_dist, wed_pos = day_position_map[wed_idx]
+            thu_day, thu_dist, thu_pos = day_position_map[thu_idx]
 
-        if first_dist >= second_dist:
-            # Recovery day is not shorter - adjust by taking 1 mile from recovery
-            # and adding it to a later day (prefer the last/longest day)
-            if first_dist > MIN_EASY_MILES:
-                # Reduce recovery day by 1 mile (but keep at minimum)
-                new_first_dist = max(MIN_EASY_MILES, first_dist - 1.0)
-                reduction = first_dist - new_first_dist
+            # Enforce minimums immediately on Mon/Thu; take from Wed if necessary
+            if mon_dist < MIN_EASY_MILES:
+                delta = MIN_EASY_MILES - mon_dist
+                mon_dist = MIN_EASY_MILES
+                wed_dist = max(MIN_EASY_MILES, wed_dist - delta)
+            if thu_dist < MIN_EASY_MILES:
+                delta = MIN_EASY_MILES - thu_dist
+                thu_dist = MIN_EASY_MILES
+                wed_dist = max(MIN_EASY_MILES, wed_dist - delta)
 
-                # Find the day furthest from long run (last in sorted list) and add the reduction
-                if len(day_position_map) > 1:
-                    last_day, last_dist, last_pos = day_position_map[-1]
-                    day_position_map[-1] = (last_day, last_dist + reduction, last_pos)
-                    day_position_map[0] = (first_day, new_first_dist, first_pos)
+            # Enforce Mon < Thu < Wed (order-aware)
+            if thu_dist <= mon_dist:
+                needed = (mon_dist + 1.0) - thu_dist
+                thu_dist += needed
+                wed_dist = max(wed_dist - needed, MIN_EASY_MILES)
+            if wed_dist <= thu_dist:
+                needed = (thu_dist + 1.0) - wed_dist
+                wed_dist += needed
 
-        # Ensure progression across all days (each day should be >= previous + 1.0 miles for noticeable progression)
-        # This creates: recovery < mid-week < longest (with clear increases)
-        MIN_PROGRESSION = 1.0  # Minimum difference between consecutive days (make progression noticeable)
-        for i in range(1, len(day_position_map)):
-            prev_day, prev_dist, prev_pos = day_position_map[i - 1]
-            curr_day, curr_dist, curr_pos = day_position_map[i]
+            # Match non-long-run total exactly
+            current_sum = mon_dist + thu_dist + wed_dist
+            target_sum = non_long_total
+            drift = round(current_sum - target_sum, 6)
 
-            if curr_dist <= prev_dist:
-                # Current day is not longer - adjust by taking from previous or adding to current
-                diff = prev_dist - curr_dist + MIN_PROGRESSION
-                # Try to take from previous (if above minimum)
-                if prev_dist - diff >= MIN_EASY_MILES:
-                    day_position_map[i - 1] = (prev_day, prev_dist - diff, prev_pos)
-                    day_position_map[i] = (curr_day, curr_dist + diff, curr_pos)
-                else:
-                    # Can't reduce previous enough, add to current
-                    day_position_map[i] = (
-                        curr_day,
-                        prev_dist + MIN_PROGRESSION,
-                        curr_pos,
-                    )
-
-        # Re-balance to ensure total still matches after adjustments
-        # Calculate current total and adjust if needed
-        current_non_long_total = sum(dist for _, dist, _ in day_position_map)
-        target_non_long_total = non_long_total
-
-        if abs(current_non_long_total - target_non_long_total) > 0.1:
-            # Adjust by adding/subtracting from the longest day (furthest from long run)
-            drift = target_non_long_total - current_non_long_total
             if abs(drift) > 0.1:
-                # Distribute drift to the longest day (last in sorted list)
-                last_idx = len(day_position_map) - 1
-                last_day, last_dist, last_pos = day_position_map[last_idx]
-                new_last_dist = max(MIN_EASY_MILES + MIN_PROGRESSION, last_dist + drift)
-                # If we had to cap, distribute the remainder to other days
-                actual_change = new_last_dist - last_dist
-                remaining_drift = drift - actual_change
+                if drift > 0:
+                    # Need to reduce: Wed → Thu → Mon
+                    reduce_order = [
+                        (wed_idx, "Wed"),
+                        (thu_idx, "Thu"),
+                        (mon_idx, "Mon"),
+                    ]
+                    for idx, name in reduce_order:
+                        if abs(drift) <= 0.1:
+                            break
+                        d_day, d_val, d_pos = day_position_map[idx]
+                        min_allowed = MIN_EASY_MILES
+                        if name == "Thu":
+                            # Thu must remain > Mon by 1.0
+                            min_allowed = max(min_allowed, mon_dist + 1.0)
+                        if name == "Wed":
+                            # Wed must remain > Thu by 1.0
+                            min_allowed = max(min_allowed, thu_dist + 1.0)
+                        can_reduce = max(0.0, d_val - min_allowed)
+                        take = min(can_reduce, drift)
+                        d_val -= take
+                        drift -= take
+                        if name == "Mon":
+                            mon_dist = d_val
+                        elif name == "Thu":
+                            thu_dist = d_val
+                        else:
+                            wed_dist = d_val
+                        day_position_map[idx] = (d_day, d_val, d_pos)
+                else:
+                    # Need to add: Thu → Wed → Mon
+                    add = -drift
+                    add_order = [(thu_idx, "Thu"), (wed_idx, "Wed"), (mon_idx, "Mon")]
+                    for idx, name in add_order:
+                        if add <= 0.1:
+                            break
+                        d_day, d_val, d_pos = day_position_map[idx]
+                        # Respect ordering during addition
+                        if name == "Thu":
+                            min_needed = mon_dist + 1.0
+                            d_val = max(d_val, min_needed)
+                        if name == "Wed":
+                            min_needed = thu_dist + 1.0
+                            d_val = max(d_val, min_needed)
+                        give = add
+                        d_val += give
+                        add -= give
+                        if name == "Mon":
+                            mon_dist = d_val
+                        elif name == "Thu":
+                            thu_dist = d_val
+                        else:
+                            wed_dist = d_val
+                        day_position_map[idx] = (d_day, d_val, d_pos)
 
-                day_position_map[last_idx] = (last_day, new_last_dist, last_pos)
+            # Write back reconciled values
+            day_position_map[mon_idx] = (mon_day, mon_dist, mon_pos)
+            day_position_map[thu_idx] = (thu_day, thu_dist, thu_pos)
+            day_position_map[wed_idx] = (wed_day, wed_dist, wed_pos)
 
-                # If there's remaining drift, distribute to other days
-                if abs(remaining_drift) > 0.1:
-                    # Distribute to second-longest day (second-to-last)
-                    if len(day_position_map) > 1:
-                        second_last_idx = len(day_position_map) - 2
-                        second_last_day, second_last_dist, second_last_pos = (
-                            day_position_map[second_last_idx]
-                        )
-                        new_second_last_dist = max(
-                            MIN_EASY_MILES, second_last_dist + remaining_drift
-                        )
-                        day_position_map[second_last_idx] = (
-                            second_last_day,
-                            new_second_last_dist,
-                            second_last_pos,
-                        )
+    # Final reconciliation to ensure weekday sum exactly matches target non-long-run total
+    final_non_long_total = sum(dist for _, dist, _ in day_position_map)
+    residual = round(non_long_total - final_non_long_total, 6)
 
-        # Final pass: Re-enforce progression Mon < Wed < Thu with at least 1.0 mile increases
-        for i in range(1, len(day_position_map)):
-            prev_day, prev_dist, prev_pos = day_position_map[i - 1]
-            curr_day, curr_dist, curr_pos = day_position_map[i]
-            min_curr_dist = prev_dist + 1.0
-            if curr_dist < min_curr_dist:
-                day_position_map[i] = (curr_day, min_curr_dist, curr_pos)
+    if abs(residual) > 0.1 and len(day_position_map) >= 3:
+        # Identify Mon, Thu, Wed indices again
+        mon_idx = next(
+            (i for i, (d, _, _) in enumerate(day_position_map) if d == "Mon"), None
+        )
+        wed_idx = next(
+            (i for i, (d, _, _) in enumerate(day_position_map) if d == "Wed"), None
+        )
+        thu_idx = next(
+            (i for i, (d, _, _) in enumerate(day_position_map) if d == "Thu"), None
+        )
+
+        if mon_idx is not None and wed_idx is not None and thu_idx is not None:
+            mon_day, mon_dist, mon_pos = day_position_map[mon_idx]
+            wed_day, wed_dist, wed_pos = day_position_map[wed_idx]
+            thu_day, thu_dist, thu_pos = day_position_map[thu_idx]
+
+            if residual > 0:
+                # Need to add miles: prefer Wed → Thu → Mon while preserving order
+                add = residual
+                # Add to Wed first
+                give = add
+                wed_dist += give
+                add -= give
+                # If still remaining (unlikely), add to Thu maintaining Thu >= Mon + 1
+                if add > 0.1:
+                    min_thu = max(MIN_EASY_MILES, mon_dist + 1.0)
+                    if thu_dist < min_thu:
+                        need = min_thu - thu_dist
+                        take = min(add, need)
+                        thu_dist += take
+                        add -= take
+                    if add > 0.1:
+                        thu_dist += add
+                        add = 0.0
+            else:
+                # Need to reduce miles: prefer Wed → Thu → Mon while preserving order
+                take = -residual
+                # Reduce from Wed first (keep > Thu + 1 and >= MIN)
+                min_wed = max(MIN_EASY_MILES, thu_dist + 1.0)
+                can = max(0.0, wed_dist - min_wed)
+                used = min(can, take)
+                wed_dist -= used
+                take -= used
+                # Then reduce from Thu (keep > Mon + 1 and >= MIN)
+                if take > 0.1:
+                    min_thu = max(MIN_EASY_MILES, mon_dist + 1.0)
+                    can = max(0.0, thu_dist - min_thu)
+                    used = min(can, take)
+                    thu_dist -= used
+                    take -= used
+                # Finally reduce from Mon (keep >= MIN)
+                if take > 0.1:
+                    min_mon = MIN_EASY_MILES
+                    can = max(0.0, mon_dist - min_mon)
+                    used = min(can, take)
+                    mon_dist -= used
+                    take -= used
+
+            # Write back
+            day_position_map[mon_idx] = (mon_day, mon_dist, mon_pos)
+            day_position_map[thu_idx] = (thu_day, thu_dist, thu_pos)
+            day_position_map[wed_idx] = (wed_day, wed_dist, wed_pos)
+
+    # Assert final equality (dev safety)
+    final_non_long_total = sum(dist for _, dist, _ in day_position_map)
+    if abs(final_non_long_total - non_long_total) > 0.1:
+        raise ValueError(
+            f"Weekday allocation drift: got {final_non_long_total}, expected {non_long_total}"
+        )
+
+        # Final pass: Re-enforce progression Mon < Thu < Wed (by distance)
+        # Ensure: Mon (shortest) < Thu (medium) < Wed (longest weekday)
+        # Find Mon, Wed, Thu by day name to enforce correct progression
+        if len(day_position_map) >= 3:
+            mon_entry = next(
+                (
+                    (i, entry)
+                    for i, entry in enumerate(day_position_map)
+                    if entry[0] == "Mon"
+                ),
+                None,
+            )
+            wed_entry = next(
+                (
+                    (i, entry)
+                    for i, entry in enumerate(day_position_map)
+                    if entry[0] == "Wed"
+                ),
+                None,
+            )
+            thu_entry = next(
+                (
+                    (i, entry)
+                    for i, entry in enumerate(day_position_map)
+                    if entry[0] == "Thu"
+                ),
+                None,
+            )
+
+            if mon_entry and wed_entry and thu_entry:
+                mon_idx, (mon_day, mon_dist, mon_pos) = mon_entry
+                wed_idx, (wed_day, wed_dist, wed_pos) = wed_entry
+                thu_idx, (thu_day, thu_dist, thu_pos) = thu_entry
+
+                # Ensure: Mon < Thu < Wed (by distance)
+                if thu_dist <= mon_dist:
+                    thu_dist = mon_dist + 1.0
+                if wed_dist <= thu_dist:
+                    wed_dist = thu_dist + 1.0
+
+                day_position_map[mon_idx] = (mon_day, mon_dist, mon_pos)
+                day_position_map[wed_idx] = (wed_day, wed_dist, wed_pos)
+                day_position_map[thu_idx] = (thu_day, thu_dist, thu_pos)
+        else:
+            # Fallback: enforce sequential progression
+            for i in range(1, len(day_position_map)):
+                prev_day, prev_dist, prev_pos = day_position_map[i - 1]
+                curr_day, curr_dist, curr_pos = day_position_map[i]
+                min_curr_dist = prev_dist + 1.0
+                if curr_dist < min_curr_dist:
+                    day_position_map[i] = (curr_day, min_curr_dist, curr_pos)
 
         # Final verification: ensure total still matches (may need final adjustment)
         final_non_long_total = sum(dist for _, dist, _ in day_position_map)
@@ -269,12 +434,20 @@ def calculate_workout_distribution(
         # Priority: Hit target_total, then maintain progression where possible
         if abs(final_drift) > 0.1:
             if final_drift < 0:
-                # Need to reduce: distribute reduction from longest to shortest (Thu → Wed → Mon)
-                # This ensures we can reduce enough while maintaining progression
+                # Need to reduce: distribute reduction from longest to shortest (Wed → Thu → Mon)
+                # Wed is longest weekday, so reduce from it first
                 remaining_reduction = -final_drift
-                for i in range(
-                    len(day_position_map) - 1, -1, -1
-                ):  # Start from Thu (last)
+                # Find Wed (longest), then Thu, then Mon
+                wed_idx = next(
+                    (i for i, (d, _, _) in enumerate(day_position_map) if d == "Wed"),
+                    len(day_position_map) - 1,
+                )
+                thu_idx = next(
+                    (i for i, (d, _, _) in enumerate(day_position_map) if d == "Thu"),
+                    len(day_position_map) - 2,
+                )
+                reduction_order = [wed_idx, thu_idx, 0]  # Wed (longest) → Thu → Mon
+                for i in reduction_order:
                     if remaining_reduction <= 0.1:
                         break
                     day, dist, pos = day_position_map[i]
@@ -303,34 +476,47 @@ def calculate_workout_distribution(
     # Step 6c: Build workouts list with recovery-aware ordering
     workouts: List[Dict[str, Any]] = []
 
-    # Get run types - previous ordering: Easy → Medium → Easy/Tempo (longest weekday)
-    run_type_priority = {"Easy": 0, "Medium": 1, "Easy/Tempo": 2, "Tempo": 3}
-    sorted_run_types = sorted(run_types, key=lambda rt: run_type_priority.get(rt, 99))
-
-    # Ensure Medium follows Easy
-    if "Easy" in sorted_run_types and "Medium" in sorted_run_types:
-        remaining_types = [
-            rt for rt in sorted_run_types if rt not in ("Easy", "Medium")
-        ]
-        sorted_run_types = ["Easy", "Medium"] + remaining_types
+    # Assign run types based on day and swapped Wed/Thu:
+    # Mon: Easy → Easy/Recovery (shortest, recovery after Saturday's LR)
+    # Wed: Easy/Tempo → Endurance (longest weekday, comes after Easy, builds endurance)
+    # Thu: Medium → Aerobic (medium, comes before rest day Friday, not right before Long Run Saturday)
 
     for i, (day, dist, forward_pos) in enumerate(day_position_map):
-        run_type_idx = i if i < len(sorted_run_types) else len(sorted_run_types) - 1
-        run_type = (
-            sorted_run_types[run_type_idx]
-            if run_type_idx < len(sorted_run_types)
-            else "Easy"
-        )
+        # Assign run type based on day name (not index)
+        if day == "Mon":
+            # Monday: Easy/Recovery (shortest, recovery day)
+            run_type = "Easy"
+        elif day == "Wed":
+            # Wednesday: Endurance (longest weekday)
+            run_type = (
+                "Easy/Tempo"
+                if "Easy/Tempo" in run_types
+                else (run_types[2] if len(run_types) > 2 else "Easy")
+            )
+        elif day == "Thu":
+            # Thursday: Aerobic (medium, before rest day)
+            run_type = (
+                "Medium"
+                if "Medium" in run_types
+                else (run_types[1] if len(run_types) > 1 else "Easy")
+            )
+        else:
+            # Fallback for other days
+            run_type_idx = i if i < len(run_types) else len(run_types) - 1
+            run_type = (
+                run_types[run_type_idx] if run_type_idx < len(run_types) else "Easy"
+            )
+
         distance = float(dist)
 
-        # Map run type to previous labels
+        # Map run type to labels with new names
         workout_type_map = {
-            "Medium": "Medium Run",
-            "Easy": "Easy Run",
-            "Easy/Tempo": "Easy/Tempo Run",
-            "Tempo": "Tempo Run",
+            "Medium": "Aerobic",
+            "Easy": "Easy / Recovery",
+            "Easy/Tempo": "Endurance",
+            "Tempo": "Tempo",
         }
-        workout_type = workout_type_map.get(run_type, "Easy Run")
+        workout_type = workout_type_map.get(run_type, "Easy / Recovery")
 
         workouts.append(
             {
