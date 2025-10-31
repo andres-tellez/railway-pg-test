@@ -26,7 +26,7 @@ Last Updated: October 28, 2025
 import logging
 import os
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 logger = logging.getLogger(__name__)
 
@@ -117,21 +117,7 @@ class PromptBuilderService:
         Returns:
             System prompt string with role definition and guidelines
         """
-        return """You are an elite marathon running coach with 20+ years of experience helping runners achieve their marathon goals.
-
-Your expertise includes:
-- Creating safe, evidence-based training plans
-- Specializing in first-time marathoners and "just finish" goals
-- Applying proven methodologies from Hal Higdon, Jack Daniels, and Pete Pfitzinger
-- Balancing progressive overload with injury prevention
-- Personalizing plans based on runner's current fitness and schedule
-
-Your coaching philosophy:
-- Safety first: Never recommend unsafe progressions
-- Build gradually: Follow the 10% rule for weekly mileage increases
-- 80/20 training: 80% easy effort, 20% quality work
-- Individualize: Adapt to each runner's unique situation
-- Encourage: Build confidence while maintaining realism"""
+        return """You are an elite marathon running coach that follows Jack Daniels methodology with 20+ years of experience helping runners finish a marathon safely."""
 
     @staticmethod
     def _build_user_message(
@@ -191,6 +177,9 @@ Your coaching philosophy:
         # Schedule Constraints Section
         sections.append(PromptBuilderService._build_schedule_section(plan_request))
 
+        # Simple Constraints Section (high-level)
+        sections.append(PromptBuilderService._build_simple_constraints_section())
+
         # Task Instructions Section
         sections.append(
             PromptBuilderService._build_task_section(weeks_until_race, plan_request)
@@ -199,12 +188,7 @@ Your coaching philosophy:
         # Output Format Section
         sections.append(PromptBuilderService._build_output_format_section())
 
-        # Add conditional warnings if needed
-        warnings = PromptBuilderService._build_warnings_section(
-            insights, weeks_until_race, metadata
-        )
-        if warnings:
-            sections.append(warnings)
+        # No special considerations block (kept minimal)
 
         return "\n\n".join(sections)
 
@@ -241,8 +225,7 @@ Primary Motivation: {motivation_str}"""
     ) -> str:
         """Build race goal section."""
         race_date = plan_request.get("race_date", "Not specified")
-        race_name = plan_request.get("race_name", "Not specified")
-        race_location = plan_request.get("race_location", "Not specified")
+        # race_name and race_location intentionally omitted to reduce noise
         primary_goal = plan_request.get("primary_goal", "Not specified")
         target_time = plan_request.get("target_time")
         notes = plan_request.get("notes", "")
@@ -250,8 +233,6 @@ Primary Motivation: {motivation_str}"""
         section = f"""# RACE GOAL
 
 Race Date: {race_date} ({weeks_until_race} weeks available)
-Race Name: {race_name}
-Race Location: {race_location}
 Primary Goal: {primary_goal}"""
 
         if target_time:
@@ -276,24 +257,18 @@ Fitness Trend: {current_fitness.get('fitness_trend', 'Unknown')}"""
     def _build_recommendations_section(recommendations: Dict[str, Any]) -> str:
         """Build recommendations section."""
         starting_mileage = recommendations.get("starting_mileage", {})
-        progression_rate = recommendations.get("progression_rate", {})
         long_run = recommendations.get("long_run_distance", {})
-        focus_areas = recommendations.get("focus_areas", [])
-
-        ready = starting_mileage.get("ready_for_marathon", False)
-        readiness = (
-            "Ready for marathon training" if ready else "Needs to build base first"
-        )
-
-        focus_list = ", ".join(focus_areas) if focus_areas else "General endurance"
 
         return f"""# TRAINING RECOMMENDATIONS
 
 Starting Weekly Mileage: {starting_mileage.get('weekly_mileage', 0)} miles
-Marathon Readiness: {readiness}
-Safe Progression Rate: {progression_rate.get('rate_percent', 10)}% per week
 Starting Long Run Distance: {long_run.get('distance', 0)} miles
-Focus Areas: {focus_list}"""
+"""
+
+    @staticmethod
+    def _build_constraints_section(recommendations: Dict[str, Any]) -> str:
+        """Deprecated: constraints handled elsewhere or by validator."""
+        return ""
 
     @staticmethod
     def _build_training_principles_section(recommendations: Dict[str, Any]) -> str:
@@ -319,6 +294,18 @@ Focus Areas: {focus_list}"""
 # SAFETY GUIDELINES
 
 {safety_str}"""
+
+    @staticmethod
+    def _build_simple_constraints_section() -> str:
+        """Add a concise constraints note referencing JD methodology."""
+        return """# CONSTRAINTS
+
+Follow safety training constraints specified in Jack Daniels methodology (use conservative progression, appropriate cutbacks, and safe tapering).
+
+Additionally:
+- Long runs should be ~25–35% of total weekly mileage
+- Do not exceed 20 miles for any long run
+- Do not exceed 40 miles for total weekly mileage"""
 
     @staticmethod
     def _build_schedule_section(plan_request: Dict[str, Any]) -> str:
@@ -378,9 +365,7 @@ Return your training plan as valid JSON with this exact structure:
       ]
     }
   ],
-  "race_week_strategy": "Specific guidance for race week preparation",
-  "nutrition_tips": "Key nutrition guidance for marathon training",
-  "injury_prevention_tips": "Tips to stay healthy during training"
+  "race_week_strategy": "Specific guidance for race week preparation"
 }
 
 IMPORTANT:
@@ -390,42 +375,7 @@ IMPORTANT:
 - Make pace guidance relative (easy, moderate, tempo) not absolute numbers"""
 
     @staticmethod
-    def _build_warnings_section(
-        insights: Dict[str, Any], weeks_until_race: int, metadata: Dict[str, Any]
-    ) -> str:
-        """Build conditional warnings section based on risk factors."""
-        warnings = []
-
-        # Check for insufficient time
-        if weeks_until_race < 16:
-            warnings.append(
-                "[!] TIME CONSTRAINT: Less than 16 weeks available. Use a conservative approach and consider if the runner should target a later race."
-            )
-
-        # Check for insufficient data
-        data_quality = metadata.get("data_quality", "sufficient")
-        if data_quality == "limited":
-            warnings.append(
-                "[!] LIMITED DATA: Less than 4 weeks of training history. Use conservative baseline assumptions."
-            )
-
-        # Check if not ready for marathon
-        recommendations = insights.get("recommendations", {})
-        starting_mileage = recommendations.get("starting_mileage", {})
-        if not starting_mileage.get("ready_for_marathon", True):
-            warnings.append(
-                "[!] BASE BUILDING NEEDED: Runner's current mileage is below recommended minimum. Include base building phase before marathon-specific training."
-            )
-
-        if not warnings:
-            return ""
-
-        warnings_str = "\n".join(warnings)
-        return f"""# SPECIAL CONSIDERATIONS
-
-{warnings_str}
-
-Please adjust your plan accordingly to address these factors."""
+    # Special considerations removed to keep prompt minimal
 
     @staticmethod
     def _calculate_weeks_until_race(race_date_str: str) -> int:
@@ -442,9 +392,17 @@ Please adjust your plan accordingly to address these factors."""
             return 16  # Default to 16 weeks if no date provided
 
         try:
-            race_date = datetime.strptime(race_date_str, "%Y-%m-%d")
+            # Accept either ISO string or date/datetime objects
+            if isinstance(race_date_str, (date, datetime)):
+                race_dt = (
+                    race_date_str
+                    if isinstance(race_date_str, datetime)
+                    else datetime.combine(race_date_str, datetime.min.time())
+                )
+            else:
+                race_dt = datetime.strptime(str(race_date_str), "%Y-%m-%d")
             today = datetime.now()
-            days_until = (race_date - today).days
+            days_until = (race_dt - today).days
             weeks_until = max(1, days_until // 7)  # At least 1 week
             return weeks_until
         except (ValueError, TypeError):

@@ -119,6 +119,8 @@ class PlanValidationService:
         violations.extend(PlanValidationService._validate_cutback_weeks(weeks))
         violations.extend(PlanValidationService._validate_long_run_progression(weeks))
         violations.extend(PlanValidationService._validate_taper(weeks))
+        # Removed hard weekly mileage cap validation to allow adaptive peaks
+        violations.extend(PlanValidationService._validate_long_run_bounds(weeks))
         violations.extend(PlanValidationService._validate_week_completeness(weeks))
 
         # Check if there are any ERROR-level violations
@@ -167,15 +169,35 @@ class PlanValidationService:
             )
 
         if "weekly_mileage" not in week:
-            violations.append(
-                {
-                    "rule": "missing_weekly_mileage",
-                    "severity": "error",
-                    "location": location,
-                    "details": "Week missing weekly_mileage",
-                    "suggestion": "Add weekly_mileage field",
-                }
-            )
+            # Attempt to compute from workouts distances
+            workouts_for_sum = week.get("workouts", [])
+            if isinstance(workouts_for_sum, list) and workouts_for_sum:
+                try:
+                    total = sum(
+                        float(w.get("distance_miles", w.get("miles", 0)) or 0)
+                        for w in workouts_for_sum
+                    )
+                    week["weekly_mileage"] = round(total, 1)
+                except Exception:
+                    violations.append(
+                        {
+                            "rule": "missing_weekly_mileage",
+                            "severity": "error",
+                            "location": location,
+                            "details": "Week missing weekly_mileage and could not compute from workouts",
+                            "suggestion": "Add weekly_mileage or include workout distances",
+                        }
+                    )
+            else:
+                violations.append(
+                    {
+                        "rule": "missing_weekly_mileage",
+                        "severity": "error",
+                        "location": location,
+                        "details": "Week missing weekly_mileage and workouts are empty",
+                        "suggestion": "Add weekly_mileage field and workouts with distances",
+                    }
+                )
 
         # Validate each workout
         workouts = week.get("workouts", [])
@@ -380,20 +402,20 @@ class PlanValidationService:
             )
 
             if prev_long_run is not None and prev_long_run > 0:
-                # Check for safe progression (max 2 mile increase or 20% increase)
+                # Check for safe progression (max 1 mile increase or 10% increase)
                 increase = curr_long_run - prev_long_run
                 percent_increase = (
                     (increase / prev_long_run * 100) if prev_long_run > 0 else 0
                 )
 
-                if increase > 2.0 and percent_increase > 20:
+                if increase > 1.0 and percent_increase > 10:
                     violations.append(
                         {
                             "rule": "unsafe_long_run_progression",
                             "severity": "error",
                             "location": f"week {week_num}",
-                            "details": f"Long run increased {increase:.1f} miles ({percent_increase:.1f}%) from {prev_long_run} to {curr_long_run}. Maximum safe increase is 2 miles or 20%",
-                            "suggestion": f"Reduce long run distance in week {week_num} to at most {prev_long_run + 2.0:.1f} miles",
+                            "details": f"Long run increased {increase:.1f} miles ({percent_increase:.1f}%) from {prev_long_run} to {curr_long_run}. Maximum safe increase is 1 mile or 10%",
+                            "suggestion": f"Reduce long run distance in week {week_num} to at most {prev_long_run + 1.0:.1f} miles",
                         }
                     )
 
@@ -444,6 +466,70 @@ class PlanValidationService:
                         }
                     )
 
+        return violations
+
+    @staticmethod
+    def _validate_weekly_caps(weeks: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+        """Deprecated: previously enforced a hard weekly cap. No longer used."""
+        return []
+
+    @staticmethod
+    def _validate_long_run_bounds(weeks: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+        """Validate long run proportion and hard cap (<=20 miles)."""
+        violations: List[Dict[str, str]] = []
+        for w in weeks:
+            total = w.get("weekly_mileage")
+            workouts = w.get("workouts", [])
+            if not isinstance(workouts, list) or not workouts:
+                continue
+            # Identify long run as workout_type containing 'long'
+            long_runs = [
+                wo
+                for wo in workouts
+                if str(wo.get("workout_type", "")).lower().startswith("long")
+            ]
+            if not long_runs:
+                continue
+            lr_miles = max(
+                [
+                    float(wo.get("distance_miles", wo.get("miles", 0)) or 0)
+                    for wo in long_runs
+                ]
+            )
+            # Hard cap 20 miles
+            if lr_miles > 20:
+                violations.append(
+                    {
+                        "rule": "long_run_cap_exceeded",
+                        "severity": "error",
+                        "location": f"week {w.get('week_number')}",
+                        "details": f"Long run is {lr_miles} miles which exceeds 20 miles",
+                        "suggestion": "Reduce long run to 20 miles or less",
+                    }
+                )
+            # Proportion 25–35% of total weekly mileage when total available
+            if isinstance(total, (int, float)) and total and total > 0:
+                share = lr_miles / total
+                if share > 0.35:
+                    violations.append(
+                        {
+                            "rule": "long_run_share_too_high",
+                            "severity": "error",
+                            "location": f"week {w.get('week_number')}",
+                            "details": f"Long run is {share*100:.1f}% of weekly mileage (>{35}%)",
+                            "suggestion": "Reduce long run or increase easy mileage to keep long run within 25–35% of weekly total",
+                        }
+                    )
+                elif share < 0.25:
+                    violations.append(
+                        {
+                            "rule": "long_run_share_too_low",
+                            "severity": "warning",
+                            "location": f"week {w.get('week_number')}",
+                            "details": f"Long run is {share*100:.1f}% of weekly mileage (<{25}%)",
+                            "suggestion": "Consider adjusting long run to be ~25–35% of weekly total",
+                        }
+                    )
         return violations
 
     @staticmethod
