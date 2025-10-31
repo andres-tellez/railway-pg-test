@@ -20,7 +20,7 @@ Testing:
     See tests/services/training_plan/test_plan_storage_service.py
 
 Author: SmartCoach Development Team
-Last Updated: October 29, 2025
+Last Updated: January 2026
 """
 
 import logging
@@ -32,6 +32,14 @@ from sqlalchemy.orm import Session
 from src.db.dao.plans_dao import create_plan
 from src.db.dao.plan_workouts_dao import insert_batch
 from src.db.models.plans import Plan
+from src.services.training_plan.workout_detail_rules import (
+    INTENSITY_MAP,
+    FOCUS_TAGS,
+    SEGMENT_SUM_TOLERANCE,
+    QUALITY_ENABLED_PHASES,
+)
+from src.services.training_plan.pace_seed_service import PaceSeed
+from src.services.training_plan.workout_types import TYPE_DISPLAY
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +207,9 @@ class PlanStorageService:
             days_since_monday = week_start.weekday()  # 0=Monday, 6=Sunday
             week_start_monday = week_start - timedelta(days=days_since_monday)
 
+            # Extract phase and seed from week
+            phase = week.get("phase", "Base")
+
             for workout in week_workouts:
                 day_name = workout.get("day", "Monday")
                 weekday = DAY_TO_WEEKDAY.get(day_name, 0)  # Default to Monday
@@ -207,33 +218,199 @@ class PlanStorageService:
                 workout_date = week_start_monday + timedelta(days=weekday)
 
                 # Validate and extract distance
-                distance_miles = float(workout.get("distance_miles", 0.0))
+                distance_miles = float(
+                    workout.get("miles", workout.get("distance_miles", 0.0)) or 0
+                )
                 if distance_miles < 0:
                     raise ValueError(
                         f"Invalid distance_miles: {distance_miles} (must be non-negative)"
                     )
 
-                # Map workout fields to database format
-                workout_db = {
-                    "plan_id": plan_id,
-                    "date": workout_date,
-                    "workout_type": workout.get("workout_type", "Easy Run"),
-                    "description": workout.get(
-                        "workout_description", workout.get("description", "")
-                    ),
-                    "miles": distance_miles,
-                    "intensity": workout.get(
-                        "pace_guidance", "Easy"
-                    ),  # Use pace_guidance as intensity
-                    "target_zone": None,  # Optional field
-                    "target_hr": None,  # Optional field
-                    "focus": None,  # Optional field
-                    "segments": None,  # Optional JSON field
+                # Extract workout details
+                run_type_key = workout.get("type", "easy")
+                segments = workout.get("segments", {})
+                details = {
+                    "segments": segments,
+                    "cues": workout.get("cues", ""),
+                    "quality_insert": workout.get("quality_insert"),
                 }
+
+                # Extract seed from week metadata (stored by Pass4)
+                seed_dict = week.get("_pace_seed")
+                if not seed_dict:
+                    logger.warning(
+                        f"Week {week_num}: No pace seed metadata, using defaults"
+                    )
+                    seed_dict = {
+                        "E_min": 600.0,
+                        "E_max": 690.0,
+                        "S_min": 570.0,
+                        "S_max": 630.0,
+                        "M": 540.0,
+                        "T_min": 510.0,
+                        "T_max": 520.0,
+                        "week1_long_cap": 8.0,
+                    }
+
+                seed = PaceSeed(
+                    E_min=seed_dict["E_min"],
+                    E_max=seed_dict["E_max"],
+                    S_min=seed_dict["S_min"],
+                    S_max=seed_dict["S_max"],
+                    M=seed_dict["M"],
+                    T_min=seed_dict["T_min"],
+                    T_max=seed_dict["T_max"],
+                    week1_long_cap=seed_dict.get("week1_long_cap", 8.0),
+                )
+
+                # Build run dict
+                run = {
+                    "type": run_type_key,
+                    "label": workout.get("label")
+                    or workout.get("workout_type")
+                    or TYPE_DISPLAY.get(run_type_key, "Easy Run"),
+                    "miles": distance_miles,
+                }
+
+                # Convert to database row using new mapper
+                workout_db = PlanStorageService._workout_to_row(
+                    plan_id=plan_id,
+                    date=workout_date,
+                    phase=phase,
+                    run=run,
+                    seed=seed,
+                    details=details,
+                )
+
+                # Validate before adding
+                PlanStorageService._validate_row(workout_db)
 
                 workouts_to_insert.append(workout_db)
 
         return workouts_to_insert
+
+    @staticmethod
+    def _main_step(segments: dict) -> dict:
+        """Extract the longest distance step as 'main' segment."""
+        steps = (segments or {}).get("steps", [])
+        if not steps:
+            return {}
+        return max(steps, key=lambda s: s.get("value", 0), default={})
+
+    @staticmethod
+    def _pace_string_from_target(t: dict) -> str:
+        """Convert target dict {low: sec, high: sec} to pace string."""
+
+        def mmss(x):
+            m = int(x // 60)
+            s = int(round(x - 60 * m))
+            return f"{m}:{s:02d}"
+
+        if not t:
+            return ""
+        if t.get("low") == t.get("high"):
+            return f"{mmss(t['low'])}/mi"
+        return f"{mmss(t['low'])}–{mmss(t['high'])}/mi"
+
+    @staticmethod
+    def _has_marathon_finish(segments: dict) -> bool:
+        """Check if segments include a marathon finish step."""
+        for s in segments.get("steps", []):
+            name_lower = s.get("name", "").lower()
+            if name_lower.startswith("marathon") or s.get("intensity") == "MARATHON":
+                return True
+        return False
+
+    @staticmethod
+    def _workout_to_row(
+        plan_id: int,
+        date: date,
+        phase: str,
+        run: dict,
+        seed: PaceSeed,
+        details: dict,
+    ) -> dict:
+        """
+        Convert workout data to database row format.
+
+        Now reads seed directly (no reconstruction).
+        """
+        run_type_key = run.get("type", "easy")
+        segments = details.get("segments", {})
+        main = PlanStorageService._main_step(segments)
+        target_zone = PlanStorageService._pace_string_from_target(
+            main.get("target", {})
+        )
+
+        # Determine intensity from config
+        intensity = INTENSITY_MAP.get(run_type_key, "E")
+        if run_type_key == "long" and PlanStorageService._has_marathon_finish(segments):
+            intensity = "M"  # Long run with M finish
+
+        # Build pace_ranges from seed (integer seconds)
+        pace_ranges = {
+            "E": [int(seed.E_min), int(seed.E_max)],
+            "S": [int(seed.S_min), int(seed.S_max)],
+            "M": [int(seed.M), int(seed.M)],
+            "T": [int(seed.T_min), int(seed.T_max)],
+        }
+
+        # Get workout label
+        workout_label = run.get("label") or TYPE_DISPLAY.get(run_type_key, "Easy Run")
+
+        return {
+            "plan_id": plan_id,
+            "date": date,
+            "workout_type": workout_label,
+            "run_type_key": run_type_key,
+            "phase": phase,
+            "miles": run.get("miles", 0.0),
+            "intensity": intensity,
+            "target_zone": target_zone,
+            "target_hr": None,  # Future: calculate from intensity
+            "focus": FOCUS_TAGS.get(run_type_key, "Run"),
+            "description": details.get("cues", ""),
+            "cues": details.get("cues", ""),
+            "pace_ranges": pace_ranges,
+            "allow_quality": (phase in QUALITY_ENABLED_PHASES),
+            "quality_insert": details.get("quality_insert"),
+            "segments": segments,  # ✅ Spec-compliant segments
+        }
+
+    @staticmethod
+    def _validate_row(row: dict):
+        """Validate workout row before insertion."""
+        seg = row.get("segments") or {}
+        steps = seg.get("steps") or []
+
+        if steps:
+            # Sum of step distances should equal miles
+            tot = sum(
+                s.get("value", 0) for s in steps if s.get("durationType") == "DISTANCE"
+            )
+            miles = row.get("miles", 0)
+            if abs(tot - miles) >= SEGMENT_SUM_TOLERANCE:
+                raise ValueError(
+                    f"Segments total ({tot:.2f}) != miles ({miles:.2f}), "
+                    f"diff: {abs(tot - miles):.2f}"
+                )
+
+            # Validate target bounds
+            for s in steps:
+                t = s.get("target")
+                if t:
+                    low = t.get("low", 0)
+                    high = t.get("high", 0)
+                    if low > high:
+                        raise ValueError(
+                            f"Bad target bounds in step '{s.get('name')}': "
+                            f"low={low} > high={high}"
+                        )
+
+        # Validate run_type_key
+        run_type_key = row.get("run_type_key")
+        if run_type_key not in ("easy", "steady", "endurance", "long"):
+            raise ValueError(f"Invalid run_type_key: {run_type_key}")
 
     @staticmethod
     def save_plan(

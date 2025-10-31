@@ -37,6 +37,33 @@ class SqliteArray(TypeDecorator):
         return value
 
 
+class SqliteJSONB(TypeDecorator):
+    """
+    Emulate PostgreSQL JSONB in SQLite by storing as TEXT (JSON string).
+    In PostgreSQL, uses native JSONB type.
+    """
+
+    impl = Text
+
+    def load_dialect_impl(self, dialect):
+        """Use native JSONB in PostgreSQL, Text in SQLite."""
+        if dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import JSONB
+
+            return dialect.type_descriptor(JSONB())
+        return dialect.type_descriptor(Text())
+
+    def process_bind_param(self, value, dialect):
+        if dialect.name == "sqlite":
+            return json.dumps(value) if value is not None else None
+        return value
+
+    def process_result_value(self, value, dialect):
+        if dialect.name == "sqlite":
+            return json.loads(value) if value is not None else None
+        return value
+
+
 class SqliteUUID(TypeDecorator):
     """
     Emulate PostgreSQL UUID in SQLite by storing as TEXT.

@@ -11,13 +11,14 @@ from sqlalchemy import (
     Boolean,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from src.db.db_session import Base
 from src.db.models.user_profile import (
     SqliteArray,
-)  # Import SQLite-compatible array type
+    SqliteJSONB,
+)  # Import SQLite-compatible types
 
 # *** Important: import PlanWorkout here so class is known before mapping
 from src.db.models.plan_workouts import PlanWorkout
@@ -39,7 +40,7 @@ class Plan(Base):
     race_name = Column(String(255), nullable=True)
     race_location = Column(String(255), nullable=True)
     race_metadata = Column(
-        JSONB,
+        SqliteJSONB(),
         nullable=True,
         comment="Race metadata (terrain, elevation, course type, etc.)",
     )

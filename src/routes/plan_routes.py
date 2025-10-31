@@ -454,7 +454,8 @@ def create_plan_route():
             )
 
             tp = ThreePassOrchestrator()
-            result = tp.generate_longrun_first(ctx)
+            # Generate plan with details (Pass 4) in prefill mode
+            result = tp.generate_longrun_first(ctx, mode="prefill")
             if not result.get("valid"):
                 raise ValueError("Generated plan failed validation in three-pass mode")
             validation = {
@@ -596,10 +597,53 @@ def create_plan_draft_route():
                 runs_per_week=runs_per_week,
             )
             if True:
-                # Generate workout distributions using Pass3 (NEW: distributes remaining days)
+                # Generate workout distributions using Pass3 (distributes remaining days)
                 pass3 = Pass3WorkoutDistribution()
                 pass3_result = pass3.run(weeks_with_totals, training_days)
                 weeks_with_workouts = pass3_result.get("weeks", [])
+
+                # Pass 4: Add detailed segments, pace guidance, and cues
+                from src.services.training_plan.pass4_workout_details import (
+                    Pass4WorkoutDetails,
+                )
+                from src.services.training_plan.pace_seed_service import (
+                    get_initial_pace_seed,
+                )
+
+                # Generate initial pace seed using Strava activities collected earlier
+                week1_total = (
+                    float(weeks_with_workouts[0].get("weekly_mileage", 0) or 0)
+                    if weeks_with_workouts
+                    else 0
+                )
+                week1_long = (
+                    float(weeks_with_workouts[0].get("long_run_miles", 0) or 0)
+                    if weeks_with_workouts
+                    else 0
+                )
+
+                # Extract Strava activities from raw data (already collected by DataCollectionService)
+                strava_activities = raw.get("strava_activities", [])
+
+                initial_seed = get_initial_pace_seed(
+                    strava_activities=strava_activities,
+                    plan_week1_total=week1_total,
+                    plan_week1_long=week1_long,
+                    goal_mp_sec_per_mi=None,  # Could extract from plan_request if available
+                )
+
+                # Add details to all workouts (prefill mode)
+                pass4 = Pass4WorkoutDetails()
+                plan_with_details = {
+                    "weeks": weeks_with_workouts,
+                }
+                plan_with_details = pass4.add_details_to_plan(
+                    plan=plan_with_details,
+                    seed=initial_seed,
+                    mode="prefill",
+                    week_logs=None,
+                )
+                weeks_with_workouts = plan_with_details.get("weeks", [])
 
                 # Build final weeks structure with all fields
                 weeks_simple = [
@@ -1048,3 +1092,108 @@ def approve_plan_route():
     except Exception as e:
         logger.error(f"Error approving plan: {e}", exc_info=True)
         return jsonify({"error": "Failed to approve plan"}), 500
+
+
+# ✅ POST /api/plan/<plan_id>/week/<week_num>/rebuild — rebuild week details with adjustments
+@plan_bp.route("/<int:plan_id>/week/<int:week_num>/rebuild", methods=["POST"])
+@requires_auth
+def rebuild_week_route(plan_id, week_num):
+    """
+    Rebuild workout details for a specific week with pace adjustments.
+
+    Request body (optional):
+        {
+            "previous_week_logs": [
+                {
+                    "run_type": "easy",
+                    "planned_mi": 4.0,
+                    "done_mi": 4.0,
+                    "rpe": 3,
+                    "avg_hr": 140  // optional
+                },
+                ...
+            ]
+        }
+
+    If previous_week_logs not provided, attempts to fetch from database/Strava.
+    """
+    user_id = g.user_id
+
+    if not user_id:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        payload = request.get_json() or {}
+        previous_week_logs_dict = payload.get("previous_week_logs")
+
+        with get_session() as session:
+            # Verify plan belongs to user
+            from src.db.dao.plans_dao import get_plan
+
+            plan = get_plan(session, plan_id)
+            if not plan:
+                return jsonify({"error": "Plan not found"}), 404
+
+            if str(plan.user_id) != str(user_id):
+                return jsonify({"error": "Unauthorized"}), 403
+
+            # Fetch previous week logs if provided
+            from src.services.training_plan.week_log_service import (
+                convert_request_logs_to_week_logs,
+                fetch_week_logs,
+            )
+
+            previous_week_logs = None
+            if previous_week_logs_dict:
+                previous_week_logs = convert_request_logs_to_week_logs(
+                    previous_week_logs_dict
+                )
+            elif week_num > 1:
+                # Try to fetch from database/Strava
+                previous_week_logs = fetch_week_logs(
+                    session=session,
+                    plan_id=plan_id,
+                    week_num=week_num - 1,
+                    race_date=plan.race_date or date.today(),
+                    request_logs=None,
+                )
+
+            # Rebuild week
+            from src.services.training_plan.weekly_rebuild_service import (
+                WeeklyRebuildService,
+            )
+
+            rebuild_service = WeeklyRebuildService()
+            result = rebuild_service.rebuild_week(
+                session=session,
+                plan_id=plan_id,
+                week_num=week_num,
+                previous_week_logs=previous_week_logs,
+                initial_seed=None,  # Will regenerate from plan
+            )
+
+            session.commit()
+
+            logger.info(
+                f"Successfully rebuilt week {week_num} for plan {plan_id} "
+                f"(pace_adjusted={result.get('pace_adjusted', False)})"
+            )
+
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "week_number": week_num,
+                        "message": f"Week {week_num} rebuilt successfully",
+                        "week": result,
+                    }
+                ),
+                200,
+            )
+
+    except ValueError as e:
+        logger.error(f"Validation error rebuilding week: {e}")
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error rebuilding week: {e}", exc_info=True)
+        return jsonify({"error": "Failed to rebuild week"}), 500

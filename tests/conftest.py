@@ -39,6 +39,8 @@ def use_sqlite_for_tests():
     import src.db.models.activities
     import src.db.models.user_profile
     import src.db.models.user_athletes
+    import src.db.models.plans  # Import plans model for tests
+    import src.db.models.plan_workouts  # Import plan_workouts model for tests
 
     test_engine = create_engine("sqlite:///:memory:", future=True)
 

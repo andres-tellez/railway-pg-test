@@ -1,4 +1,5 @@
 # db/dao/plan_workouts_dao.py
+from datetime import date
 from sqlalchemy.orm import Session
 from src.db.models.plan_workouts import PlanWorkout
 
@@ -31,3 +32,36 @@ def list_by_plan(session: Session, plan_id: int) -> list[PlanWorkout]:
 
 def delete_by_plan(session: Session, plan_id: int) -> None:
     session.query(PlanWorkout).filter_by(plan_id=plan_id).delete()
+
+
+def update_workout(
+    session: Session, workout_id: int, updates: dict
+) -> PlanWorkout | None:
+    """Update a single workout by ID."""
+    workout = session.query(PlanWorkout).filter_by(id=workout_id).first()
+    if not workout:
+        return None
+    for key, value in updates.items():
+        if hasattr(workout, key):
+            setattr(workout, key, value)
+    session.flush()
+    return workout
+
+
+def get_workouts_for_week(
+    session: Session,
+    plan_id: int,
+    week_start: date,
+    week_end: date,
+) -> list[PlanWorkout]:
+    """Get all workouts for a specific week (date range)."""
+    return (
+        session.query(PlanWorkout)
+        .filter(
+            PlanWorkout.plan_id == plan_id,
+            PlanWorkout.date >= week_start,
+            PlanWorkout.date <= week_end,
+        )
+        .order_by(PlanWorkout.date)
+        .all()
+    )
