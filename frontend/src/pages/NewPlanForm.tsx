@@ -9,6 +9,8 @@ import { planSchema, PlanFormData, trainingDaysOptions, primaryGoalOptions } fro
 import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
 import { AuthGuard } from "@/components/AuthGuard";
+import { RaceNameAutocomplete } from "@/components/RaceNameAutocomplete";
+import { LocationAutocomplete } from "@/components/LocationAutocomplete";
 
 const NewPlanForm: React.FC = () => {
   const { isReady, userId } = useAuthSetup();
@@ -262,11 +264,29 @@ const NewPlanForm: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Race Name <span className="text-gray-400">(optional)</span>
                     </label>
-                    <input
-                      type="text"
-                      {...methods.register("race_name")}
+                    <RaceNameAutocomplete
+                      control={methods.control}
+                      name="race_name"
                       placeholder="e.g., Chicago Marathon"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      onRaceSelect={(race) => {
+                        // Auto-populate location if race has location
+                        if (race.location && !methods.getValues("race_location")) {
+                          methods.setValue("race_location", race.location);
+                        }
+                        // Capture race metadata
+                        if (race.terrain || race.elevation_gain || race.course_type || race.race_type || race.difficulty_rating || race.typical_weather || race.qualification_required !== undefined) {
+                          const metadata: any = {};
+                          if (race.terrain) metadata.terrain = race.terrain;
+                          if (race.elevation_gain !== undefined) metadata.elevation_gain = race.elevation_gain;
+                          if (race.course_type) metadata.course_type = race.course_type;
+                          if (race.race_type) metadata.race_type = race.race_type;
+                          if (race.difficulty_rating !== undefined) metadata.difficulty_rating = race.difficulty_rating;
+                          if (race.typical_weather) metadata.typical_weather = race.typical_weather;
+                          if (race.qualification_required !== undefined) metadata.qualification_required = race.qualification_required;
+                          methods.setValue("race_metadata", metadata);
+                        }
+                      }}
                     />
                   </div>
 
@@ -275,11 +295,12 @@ const NewPlanForm: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Race Location <span className="text-gray-400">(optional)</span>
                     </label>
-                    <input
-                      type="text"
-                      {...methods.register("race_location")}
+                    <LocationAutocomplete
+                      control={methods.control}
+                      name="race_location"
                       placeholder="e.g., Chicago, IL"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      apiKey={import.meta.env.VITE_GOOGLE_PLACES_API_KEY}
                     />
                   </div>
                 </div>

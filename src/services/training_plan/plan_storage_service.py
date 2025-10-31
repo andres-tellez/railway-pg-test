@@ -112,6 +112,7 @@ class PlanStorageService:
                 "race_distance": plan_request.get("race_distance", "Marathon"),
                 "race_name": plan_request.get("race_name"),
                 "race_location": plan_request.get("race_location"),
+                "race_metadata": plan_request.get("race_metadata"),
                 "primary_goal": plan_request.get("primary_goal"),
                 "target_time": plan_request.get("target_time"),
                 "training_days": plan_request.get("training_days"),

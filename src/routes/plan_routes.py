@@ -323,6 +323,7 @@ def list_user_plans():
                             "race_distance": plan.race_distance,
                             "race_name": plan.race_name,
                             "race_location": plan.race_location,
+                            "race_metadata": plan.race_metadata,
                             "primary_goal": plan.primary_goal,
                             "target_time": plan.target_time,
                             "training_days": plan.training_days,
@@ -758,21 +759,23 @@ def create_plan_draft_route():
                             #   Use ceiling to ensure we include the complete week containing race day.
                             #   This ensures the plan always includes the week containing race day.
                             import math
-                            
+
                             # Calculate Monday of the week containing race day
                             race_day_weekday = rd.weekday()  # 0=Monday, 6=Sunday
                             monday_of_race_week = rd - timedelta(days=race_day_weekday)
-                            
+
                             # Calculate weeks from start to Monday of race week
-                            days_to_race_week_monday = (monday_of_race_week - start_date).days
+                            days_to_race_week_monday = (
+                                monday_of_race_week - start_date
+                            ).days
                             weeks_to_race_week = days_to_race_week_monday / 7.0
-                            
+
                             # We need AT LEAST ceil(weeks_to_race_week) weeks to reach the race week
                             # Plus 1 to include the race week itself (since weeks are 0-indexed from start)
                             # Example: If Monday of race week is 98 days from start = 14 weeks exactly,
                             #          we need 15 total weeks (14 to reach it + 1 for the race week itself)
                             weeks_available = math.ceil(weeks_to_race_week) + 1
-                            
+
                             weeks_needed = plan_duration_weeks
 
                             # Apply recovery week insertion if plan is shorter than available weeks
@@ -944,13 +947,18 @@ def create_plan_draft_route():
                                     f"Week {week_num} of {month_name} {day}"
                                 )
 
-                            # Add race date info
+                            # Add race date info and race metadata from plan_request
                             race_metadata = {
                                 "race_date": rd.isoformat(),
                                 "race_date_label": rd.strftime("%b %d, %Y"),
                                 "start_date": start_date.isoformat(),
                                 "start_date_label": start_date.strftime("%b %d, %Y"),
                             }
+                            # Include race metadata (terrain, elevation, etc.) if present
+                            if plan_request.get("race_metadata"):
+                                race_metadata["race_details"] = plan_request[
+                                    "race_metadata"
+                                ]
                     except Exception as e:
                         logger.warning(f"Error calculating week dates: {e}")
                         race_metadata = None
@@ -968,6 +976,7 @@ def create_plan_draft_route():
                     },
                     "time_assessment": time_warning,  # Add time assessment to draft
                     "recovery_metadata": recovery_metadata,  # Add recovery insertion metadata if applied
+                    "plan_request": plan_request,  # Include plan_request with race_metadata for saving later
                 }
                 return (jsonify({"status": "success", "draft": draft}), 200)
 

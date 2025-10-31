@@ -8,6 +8,15 @@ export const planSchema = z.object({
   race_distance: z.string().default("Marathon"),
   race_name: z.string().optional(),
   race_location: z.string().optional(),
+  race_metadata: z.object({
+    terrain: z.string().optional(),
+    elevation_gain: z.number().optional(),
+    course_type: z.string().optional(),
+    race_type: z.string().optional(),
+    difficulty_rating: z.number().optional(),
+    typical_weather: z.string().optional(),
+    qualification_required: z.boolean().optional(),
+  }).optional(),
 
   // Plan goals (required)
   primary_goal: z.enum(["Just Finish", "Target Time"], {
