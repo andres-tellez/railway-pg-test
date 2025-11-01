@@ -29,12 +29,7 @@ type Workout = {
   target_zone?: string;
   target_hr?: string;
   focus?: string;
-  segments?: Array<{
-    name: string;
-    distance: string;
-    target_zone: string;
-    notes: string;
-  }>;
+  segments?: any; // Can be spec-compliant object or array
 };
 
 type PlanResponse = {
@@ -62,8 +57,25 @@ const convertWorkoutType = (raw: string): Workout['type'] => {
 
 // Component to render structured workout data
 const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
+  // Helper to get steps array from different segment formats
+  const getSteps = () => {
+    if (!workout.segments) return null;
+    // Spec-compliant format: {steps: [...], units, targetType, notes}
+    if (workout.segments.steps && Array.isArray(workout.segments.steps)) {
+      return workout.segments.steps;
+    }
+    // Legacy array format
+    if (Array.isArray(workout.segments)) {
+      return workout.segments;
+    }
+    return null;
+  };
+
+  const steps = getSteps();
+  const hasSteps = steps && steps.length > 0;
+
   // Simple workout (no segments) - use 3-line template
-  if (!workout.segments || workout.segments.length === 0) {
+  if (!hasSteps) {
     return (
       <div className="space-y-3">
         {/* Workout Header */}
@@ -72,9 +84,14 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
         </div>
 
         {/* Target Zone */}
-        {workout.target_zone && workout.target_hr && (
+        {workout.target_zone && (
+          <div className="text-sm text-blue-700 font-medium">
+            <span className="font-semibold">Target Pace:</span> {workout.target_zone}
+          </div>
+        )}
+        {workout.target_hr && workout.target_zone && (
           <div className="text-sm text-gray-800">
-            <span className="font-semibold">Target:</span> {workout.target_zone} ({workout.target_hr})
+            <span className="font-semibold">Target HR:</span> {workout.target_hr}
           </div>
         )}
 
@@ -97,9 +114,14 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
       </div>
 
       {/* Target Zone */}
-      {workout.target_zone && workout.target_hr && (
+      {workout.target_zone && (
+        <div className="text-sm text-blue-700 font-medium">
+          <span className="font-semibold">Target Pace:</span> {workout.target_zone}
+        </div>
+      )}
+      {workout.target_hr && workout.target_zone && (
         <div className="text-sm text-gray-800">
-          <span className="font-semibold">Target:</span> {workout.target_zone} ({workout.target_hr})
+          <span className="font-semibold">Target HR:</span> {workout.target_hr}
         </div>
       )}
 
@@ -110,45 +132,62 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
         </div>
       )}
 
-        {/* Workout Structure Table */}
-        <div className="space-y-3">
-          <div className="text-sm font-semibold text-gray-700">
-            Workout Structure:
+      {/* Workout Structure Table */}
+      <div className="space-y-3">
+        <div className="text-sm font-semibold text-gray-700">
+          Workout Structure:
+        </div>
+
+        <div className="bg-white border border-gray-300 rounded-lg shadow-sm overflow-hidden">
+          {/* Table Header */}
+          <div className="bg-gray-100 border-b border-gray-300">
+            <div className="grid grid-cols-4 gap-3 px-4 py-2 text-xs font-semibold text-gray-700">
+              <div>Segment</div>
+              <div>Distance</div>
+              <div>Intensity</div>
+              <div>Target</div>
+            </div>
           </div>
 
-          <div className="bg-white border border-gray-300 rounded-lg shadow-sm overflow-hidden">
-            {/* Table Header */}
-            <div className="bg-gray-100 border-b border-gray-300">
-              <div className="grid grid-cols-4 gap-3 px-4 py-2 text-xs font-semibold text-gray-700">
-                <div>Segment</div>
-                <div>Distance</div>
-                <div>Target</div>
-                <div>Notes</div>
-              </div>
-            </div>
-
-            {/* Table Rows */}
-            <div className="divide-y divide-gray-200">
-              {Array.isArray(workout.segments) ? (workout.segments as any[]).map((segment: any, index: number) => (
-                <div key={index} className="grid grid-cols-4 gap-3 px-4 py-2 hover:bg-gray-50 transition-colors items-center">
-                  <div className="text-xs font-medium text-gray-900">{segment.name}</div>
-                  <div className="text-xs text-gray-700">{segment.distance || '-'}</div>
-                  <div className="text-xs text-gray-700">{segment.target_zone || '-'}</div>
-                  <div className="text-xs text-gray-600">{segment.notes || '-'}</div>
-                </div>
-              )) : workout.segments && typeof workout.segments === 'object' ?
-                Object.entries(workout.segments).map(([key, value], index) => (
-                  <div key={index} className="grid grid-cols-4 gap-3 px-4 py-2 hover:bg-gray-50 transition-colors items-center">
-                    <div className="text-xs font-medium text-gray-900 capitalize">{key}</div>
-                    <div className="text-xs text-gray-700">-</div>
-                    <div className="text-xs text-gray-700">{workout.target_zone}</div>
-                    <div className="text-xs text-gray-600">{String(value)}</div>
-                  </div>
-                )) : []
+          {/* Table Rows */}
+          <div className="divide-y divide-gray-200">
+            {steps.map((step: any, index: number) => {
+              // Format target from spec-compliant format {low: sec, high: sec}
+              let targetStr = '-';
+              if (step.target) {
+                const formatPace = (sec: number) => {
+                  const min = Math.floor(sec / 60);
+                  const secRemainder = Math.round(sec % 60);
+                  return `${min}:${secRemainder.toString().padStart(2, '0')}`;
+                };
+                if (step.target.low && step.target.high) {
+                  targetStr = `${formatPace(step.target.low)}–${formatPace(step.target.high)}/mi`;
+                } else if (step.target.low) {
+                  targetStr = `${formatPace(step.target.low)}/mi`;
+                }
               }
-            </div>
+
+              return (
+                <div key={index} className="grid grid-cols-4 gap-3 px-4 py-2 hover:bg-gray-50 transition-colors items-center">
+                  <div className="text-xs font-medium text-gray-900">{step.name}</div>
+                  <div className="text-xs text-gray-700">
+                    {step.value} {step.durationType === 'DISTANCE' ? 'mi' : 'min'}
+                  </div>
+                  <div className="text-xs text-gray-700">{step.intensity || '-'}</div>
+                  <div className="text-xs text-gray-700">{targetStr}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
+      </div>
+
+      {/* Show notes if available */}
+      {workout.segments && workout.segments.notes && (
+        <div className="text-xs text-gray-600 italic mt-2">
+          {workout.segments.notes}
+        </div>
+      )}
     </div>
   );
 };

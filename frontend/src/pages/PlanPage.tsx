@@ -12,6 +12,10 @@ type Workout = {
   miles: number;
   intensity: string;
   description: string;
+  target_zone?: string;
+  target_hr?: string;
+  focus?: string;
+  segments?: any;
 };
 
 type Plan = {
@@ -94,7 +98,36 @@ export default function PlanPage() {
                     {format(parseISO(w.date), "EEE, MMM d")} — {w.workout_type} (
                     {w.miles} mi)
                   </p>
-                  <p className="text-sm text-gray-600">{w.description}</p>
+                  {w.target_zone && (
+                    <p className="text-sm text-blue-700 font-medium mt-1">
+                      Target pace: {w.target_zone}
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-600 mt-2">{w.description}</p>
+
+                  {/* Show workout segments if available */}
+                  {w.segments && w.segments.steps && Array.isArray(w.segments.steps) && (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <p className="text-xs font-semibold text-gray-700 mb-2">Workout Structure:</p>
+                      <div className="space-y-1">
+                        {w.segments.steps.map((step: any, idx: number) => (
+                          <div key={idx} className="flex justify-between items-start text-xs">
+                            <span className="text-gray-700">
+                              {step.name} ({step.value} {step.durationType === 'DISTANCE' ? 'mi' : 'min'})
+                            </span>
+                            {step.intensity && (
+                              <span className="ml-2 px-2 py-0.5 rounded bg-gray-100 text-gray-600">
+                                {step.intensity}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {w.segments.notes && (
+                        <p className="text-xs text-gray-600 mt-2 italic">{w.segments.notes}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
           </div>
