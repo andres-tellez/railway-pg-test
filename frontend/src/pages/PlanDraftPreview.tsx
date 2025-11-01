@@ -30,7 +30,9 @@ export default function PlanDraftPreview() {
   const handleApprove = async () => {
     try {
       const res = await api.post("/api/plan/approve", {
-        validation,
+        validation: {
+          validated_plan: generated,
+        },
         plan_request,
       });
       const planId = res.data?.plan_id;
