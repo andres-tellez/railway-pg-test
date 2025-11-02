@@ -211,10 +211,9 @@ def apply_micro_stretch_if_needed(
             start_d = today
     else:
         # Default: next Monday
-        days_until_monday = (7 - today.weekday()) % 7
-        if days_until_monday == 0:
-            days_until_monday = 7
-        start_d = today + timedelta(days=days_until_monday)
+        from src.utils.date_helpers import get_next_monday
+
+        start_d = get_next_monday(today)
 
     weeks_needed = len(weeks)
     weeks_available = (rd - start_d).days / 7.0

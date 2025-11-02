@@ -357,15 +357,9 @@ class EmailService:
         display_name = user_name or "Runner"
 
         # Build comparison table with days of week across top
-        day_names = [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]
+        from src.utils.date_helpers import DAY_NAMES_FULL
+
+        day_names = DAY_NAMES_FULL
 
         # Helper function to format workout details
         def format_workout_details(workout: Optional[Dict[str, Any]]) -> str:

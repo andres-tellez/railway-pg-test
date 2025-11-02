@@ -353,8 +353,10 @@ class Pass3WorkoutDistribution:
         Returns:
             Dict with "weeks" list containing workout distributions
         """
+        from src.utils.date_helpers import DEFAULT_TRAINING_DAYS
+
         if not training_days:
-            training_days = ["Mon", "Wed", "Thu", "Sat"]
+            training_days = DEFAULT_TRAINING_DAYS
 
         runs_per_week = len(training_days)
 
@@ -362,8 +364,10 @@ class Pass3WorkoutDistribution:
             logger.warning(
                 f"runs_per_week={runs_per_week} not in (3,4,5), defaulting to 4"
             )
+            from src.utils.date_helpers import DEFAULT_TRAINING_DAYS
+
             runs_per_week = 4
-            training_days = ["Mon", "Wed", "Thu", "Sat"]
+            training_days = DEFAULT_TRAINING_DAYS
 
         weeks_out: List[Dict[str, Any]] = []
 
@@ -373,11 +377,13 @@ class Pass3WorkoutDistribution:
             weekly_total = float(w.get("weekly_mileage", 0) or 0)
 
             # Determine long run day (prefer Sat, then Sun, else last day)
+            from src.utils.date_helpers import DAY_NAMES_ABBREV
+
             long_idx = None
-            if "Sat" in training_days:
-                long_idx = training_days.index("Sat")
-            elif "Sun" in training_days:
-                long_idx = training_days.index("Sun")
+            if DAY_NAMES_ABBREV[5] in training_days:  # Saturday
+                long_idx = training_days.index(DAY_NAMES_ABBREV[5])
+            elif DAY_NAMES_ABBREV[6] in training_days:  # Sunday
+                long_idx = training_days.index(DAY_NAMES_ABBREV[6])
             else:
                 long_idx = len(training_days) - 1  # Default to last day
 

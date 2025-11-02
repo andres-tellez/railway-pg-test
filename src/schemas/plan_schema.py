@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import date
 from enum import Enum
+from src.utils.date_helpers import DAY_NAMES_ABBREV
 
 
 class PrimaryGoal(str, Enum):
@@ -58,7 +59,7 @@ class PlanCreateSchema(BaseModel):
     @field_validator("training_days")
     @classmethod
     def validate_training_days(cls, v: List[str]) -> List[str]:
-        valid_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        valid_days = DAY_NAMES_ABBREV
         if not v or len(v) == 0:
             raise ValueError("At least one training day must be specified")
         for day in v:

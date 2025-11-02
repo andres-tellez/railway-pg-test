@@ -44,23 +44,8 @@ from src.services.training_plan.workout_utils import pace_range_to_str
 
 logger = logging.getLogger(__name__)
 
-# Day name to weekday mapping (0=Monday, 6=Sunday)
-DAY_TO_WEEKDAY = {
-    "Monday": 0,
-    "Tuesday": 1,
-    "Wednesday": 2,
-    "Thursday": 3,
-    "Friday": 4,
-    "Saturday": 5,
-    "Sunday": 6,
-    "Mon": 0,
-    "Tue": 1,
-    "Wed": 2,
-    "Thu": 3,
-    "Fri": 4,
-    "Sat": 5,
-    "Sun": 6,
-}
+# Import centralized day name utilities
+from src.utils.date_helpers import DAY_TO_WEEKDAY, DAY_NAMES_FULL
 
 
 class PlanStorageService:
@@ -205,14 +190,15 @@ class PlanStorageService:
             week_start = race_date - timedelta(weeks=weeks_before_race)
 
             # Adjust to Monday of that week
-            days_since_monday = week_start.weekday()  # 0=Monday, 6=Sunday
-            week_start_monday = week_start - timedelta(days=days_since_monday)
+            from src.utils.date_helpers import get_week_start_for_date
+
+            week_start_monday = get_week_start_for_date(week_start)
 
             # Extract phase and seed from week
             phase = week.get("phase", "Base")
 
             for workout in week_workouts:
-                day_name = workout.get("day", "Monday")
+                day_name = workout.get("day", DAY_NAMES_FULL[0])  # Default to Monday
                 weekday = DAY_TO_WEEKDAY.get(day_name, 0)  # Default to Monday
 
                 # Calculate workout date
