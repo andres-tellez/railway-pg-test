@@ -1,12 +1,17 @@
 """
-Weekly Rebuild Service
+Weekly Rebuild Service - Orchestrator
 
 Purpose:
-    Rebuild workout details for a specific week using adjusted pace seed.
-    Used in rolling mode to adapt upcoming weeks based on previous week's completion.
+    Orchestrate the adaptive training plan rebuild pipeline:
+    1. Create enhanced week logs (Stage 1)
+    2. Analyze week performance (Stage 2)
+    3. Analyze trends (Stage 3)
+    4. Calculate adjustments (Stage 4)
+    5. Persist metrics and decisions (Stage 5)
+    6. Apply adjustments and rebuild workouts
 
-Integration:
-    Called by weekly rebuild endpoint to regenerate upcoming week with adjustments.
+This service coordinates all stages but delegates specific logic
+to specialized services.
 
 Author: SmartCoach Development Team
 Last Updated: January 2026
@@ -17,16 +22,24 @@ from datetime import date, timedelta
 from sqlalchemy.orm import Session
 import logging
 
-from .pace_seed_service import PaceSeed, get_initial_pace_seed
-from .weekly_adjuster import adjust_seed_from_week
-from .pass4_workout_details import Pass4WorkoutDetails
+# Stage services (NEW)
 from .week_log_service import fetch_week_logs
+from .week_analysis_service import WeekAnalysisService
+from .trend_analysis_service import TrendAnalysisService
+from .adaptive_adjustment_service import AdaptiveAdjustmentService
+from .weekly_metrics_service import WeeklyMetricsService
+
+# Existing services
+from .pace_seed_service import PaceSeed, get_initial_pace_seed, _time_add
+from .pass4_workout_details import Pass4WorkoutDetails
 from .workout_comparison_service import WorkoutComparisonService
 from .workout_utils import extract_pace_zone_from_workout, normalize_segments
+
+# Database models and DAOs
 from src.db.models.plans import Plan
 from src.db.models.plan_workouts import PlanWorkout
 from src.db.dao.plan_workouts_dao import get_workouts_for_week, update_workout
-from src.utils.date_helpers import date_to_day_name
+from src.utils.date_helpers import date_to_day_name, get_week_start_for_date
 
 logger = logging.getLogger(__name__)
 
@@ -252,22 +265,146 @@ class WeeklyRebuildService:
                         f"[Rebuild] Pace seed generated from fallback in {strava_elapsed:.1f} seconds"
                     )
 
-        # Adjust seed based on previous week logs
+        # ========================================================================
+        # ADAPTIVE PIPELINE: 5-Stage Analysis and Adjustment
+        # ========================================================================
+
+        # Determine phase (simplified - you may store phase in plan or calculate)
+        total_weeks = len(all_workouts) // 7  # Approximate total weeks
+        phase = _determine_phase(week_num, total_weeks)
+        weeks_remaining = total_weeks - week_num + 1
+
+        # STAGE 1: Create enhanced week logs (previous week)
+        previous_week_num = week_num - 1
+        previous_week_logs = None
+        previous_week_workouts = None
+
+        if previous_week_num > 0:
+            logger.info(
+                f"[Adaptive Pipeline] Stage 1: Creating enhanced week logs for week {previous_week_num}"
+            )
+            previous_week_workouts = _find_week_workouts(
+                all_workouts, previous_week_num, plan.race_date
+            )
+
+            if previous_week_workouts:
+                # Fetch week logs from database/Strava
+                previous_week_logs = fetch_week_logs(
+                    session=session,
+                    plan_id=plan_id,
+                    week_num=previous_week_num,
+                    race_date=plan.race_date,
+                    request_logs=None,  # Use database/Strava data
+                )
+                logger.info(
+                    f"[Adaptive Pipeline] Created {len(previous_week_logs)} week log entries"
+                )
+
+        # STAGE 2: Analyze current week (previous week's performance)
+        analysis = None
+        trends = None
+        decision = None
         current_seed = initial_seed
         disable_quality = False
 
-        if previous_week_logs:
-            logger.info(
-                f"Adjusting pace seed based on previous week logs ({len(previous_week_logs)} runs)"
-            )
-            current_seed, disable_quality = adjust_seed_from_week(
-                initial_seed, previous_week_logs
-            )
+        if previous_week_logs and previous_week_workouts:
+            try:
+                logger.info(
+                    f"[Adaptive Pipeline] Stage 2: Analyzing week {previous_week_num} performance"
+                )
 
-        # Determine phase (simplified - you may store phase in plan or calculate)
-        phase = _determine_phase(
-            week_num, len(all_workouts) // 7
-        )  # Approximate total weeks
+                # Calculate previous week start date
+                previous_week_start = get_week_start_for_date(
+                    min(w.date for w in previous_week_workouts)
+                )
+
+                # Get previous week metrics for load delta calculation
+                previous_week_metrics = None
+                try:
+                    from .weekly_metrics_service import WeeklyMetricsService
+
+                    historical = WeeklyMetricsService.get_historical_metrics(
+                        session, plan_id, weeks=1
+                    )
+                    if historical and historical[0].week_num == previous_week_num - 1:
+                        previous_week_metrics = historical[0]
+                except Exception as e:
+                    logger.debug(f"Could not fetch previous week metrics: {e}")
+
+                analysis = WeekAnalysisService.analyze_week(
+                    session=session,
+                    week_logs=previous_week_logs,
+                    planned_workouts=previous_week_workouts,
+                    week_num=previous_week_num,
+                    week_start_date=previous_week_start,
+                    previous_week_metrics=previous_week_metrics,
+                )
+                logger.info(
+                    f"[Adaptive Pipeline] Analysis complete: "
+                    f"volume={analysis.volume_score:.1f}%, "
+                    f"intensity={analysis.intensity_score:.1f}%, "
+                    f"consistency={analysis.consistency_score:.1f}%"
+                )
+
+                # STAGE 3: Analyze trends
+                logger.info(f"[Adaptive Pipeline] Stage 3: Analyzing trends")
+                trends = TrendAnalysisService.analyze_trends(
+                    session=session,
+                    current_week_analysis=analysis,
+                    plan_id=plan_id,
+                    lookback_weeks=2,
+                )
+                logger.info(
+                    f"[Adaptive Pipeline] Trends: volume={trends.volume_trend}, "
+                    f"intensity={trends.intensity_trend}, pace={trends.pace_trend}"
+                )
+
+                # STAGE 4: Calculate adjustments
+                logger.info(
+                    f"[Adaptive Pipeline] Stage 4: Calculating phase-aware adjustments"
+                )
+                decision = AdaptiveAdjustmentService.calculate_adjustment(
+                    analysis=analysis,
+                    trends=trends,
+                    current_seed=initial_seed,
+                    phase=phase,
+                    weeks_remaining=weeks_remaining,
+                )
+                logger.info(
+                    f"[Adaptive Pipeline] Decision: {decision.decision_type}, "
+                    f"volume_change={decision.volume_change_pct}%, "
+                    f"pace_adjustment={decision.pace_adjustment_sec}s"
+                )
+
+                # Apply adjustments to pace seed
+                current_seed = _apply_decision_to_seed(initial_seed, decision)
+                disable_quality = decision.disable_quality_workouts
+
+                # STAGE 5: Persist metrics and decisions
+                logger.info(
+                    f"[Adaptive Pipeline] Stage 5: Persisting metrics and decisions"
+                )
+                WeeklyMetricsService.save_week_metrics(
+                    session=session,
+                    plan_id=plan_id,
+                    analysis=analysis,
+                    decision=decision,
+                )
+                logger.info(f"[Adaptive Pipeline] Metrics and decisions saved")
+
+            except Exception as e:
+                logger.error(
+                    f"[Adaptive Pipeline] Error in adaptive pipeline: {e}",
+                    exc_info=True,
+                )
+                # Fallback to original behavior if pipeline fails
+                logger.warning("Falling back to simple adjustment logic")
+                if previous_week_logs:
+                    from .weekly_adjuster import adjust_seed_from_week
+
+                    current_seed, disable_quality = adjust_seed_from_week(
+                        initial_seed, previous_week_logs
+                    )
 
         # Convert workouts to plan format
         week_plan = {
@@ -413,7 +550,41 @@ class WeeklyRebuildService:
             "workout_changes": workout_changes,  # Include changes for email
             "original_workouts": original_workouts,  # Original plan before rebuild
             "updated_workouts": updated_workouts,  # Updated plan after rebuild
+            "adjustment_decision": decision,  # Include decision for debugging/email
         }
+
+
+def _apply_decision_to_seed(
+    seed: PaceSeed,
+    decision: "AdjustmentDecision",
+) -> PaceSeed:
+    """
+    Apply adjustment decision to pace seed.
+
+    Adjusts all pace zones by the pace_adjustment_sec amount.
+    Volume adjustments are handled separately in workout generation.
+
+    Args:
+        seed: Current pace seed
+        decision: Adjustment decision
+
+    Returns:
+        Adjusted pace seed
+    """
+    if decision.pace_adjustment_sec == 0:
+        return seed
+
+    # Apply pace adjustment to all zones
+    return PaceSeed(
+        E_min=_time_add(seed.E_min, decision.pace_adjustment_sec),
+        E_max=_time_add(seed.E_max, decision.pace_adjustment_sec),
+        S_min=_time_add(seed.S_min, decision.pace_adjustment_sec),
+        S_max=_time_add(seed.S_max, decision.pace_adjustment_sec),
+        M=_time_add(seed.M, decision.pace_adjustment_sec),
+        T_min=_time_add(seed.T_min, decision.pace_adjustment_sec),
+        T_max=_time_add(seed.T_max, decision.pace_adjustment_sec),
+        week1_long_cap=seed.week1_long_cap,
+    )
 
 
 def _find_week_workouts(
