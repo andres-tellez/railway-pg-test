@@ -116,27 +116,60 @@ class EmailService:
                         f"Current username: {config['username']}"
                     )
 
-            if port == 465:
-                # Use SSL connection for port 465
-                logger.info(f"🔌 Connecting to {host}:{port} using SSL...")
-                with smtplib.SMTP_SSL(host, port, timeout=30) as server:
-                    logger.info(f"✅ Connected to {host}:{port}, authenticating...")
-                    server.login(config["username"], config["password"])
-                    logger.info(f"✅ Authenticated, sending email...")
-                    server.send_message(msg)
-            else:
-                # Use STARTTLS for port 587 and others
-                logger.info(f"🔌 Connecting to {host}:{port} using STARTTLS...")
-                with smtplib.SMTP(host, port, timeout=30) as server:
-                    logger.info(f"✅ Connected to {host}:{port}, starting TLS...")
-                    server.starttls()
-                    logger.info(f"✅ TLS established, authenticating...")
-                    server.login(config["username"], config["password"])
-                    logger.info(f"✅ Authenticated, sending email...")
-                    server.send_message(msg)
+            # Try sending email with the configured port
+            try:
+                if port == 465:
+                    # Use SSL connection for port 465
+                    logger.info(f"🔌 Connecting to {host}:{port} using SSL...")
+                    with smtplib.SMTP_SSL(host, port, timeout=30) as server:
+                        logger.info(f"✅ Connected to {host}:{port}, authenticating...")
+                        server.login(config["username"], config["password"])
+                        logger.info(f"✅ Authenticated, sending email...")
+                        server.send_message(msg)
+                else:
+                    # Use STARTTLS for port 587 and others
+                    logger.info(f"🔌 Connecting to {host}:{port} using STARTTLS...")
+                    with smtplib.SMTP(host, port, timeout=30) as server:
+                        logger.info(f"✅ Connected to {host}:{port}, starting TLS...")
+                        server.starttls()
+                        logger.info(f"✅ TLS established, authenticating...")
+                        server.login(config["username"], config["password"])
+                        logger.info(f"✅ Authenticated, sending email...")
+                        server.send_message(msg)
 
-            logger.info(f"✅ Email sent successfully to {to_email}")
-            return True
+                logger.info(f"✅ Email sent successfully to {to_email}")
+                return True
+
+            except (socket.timeout, OSError) as e:
+                # If port 587 times out or fails, and we're using SendGrid, try port 465
+                if port == 587 and "sendgrid" in host.lower():
+                    logger.warning(
+                        f"⚠️  Port 587 timed out or failed ({e}), trying SendGrid port 465 (SSL) as fallback..."
+                    )
+                    try:
+                        logger.info(
+                            f"🔌 Connecting to {host}:465 using SSL (fallback)..."
+                        )
+                        with smtplib.SMTP_SSL(host, 465, timeout=30) as server:
+                            logger.info(
+                                f"✅ Connected to {host}:465, authenticating..."
+                            )
+                            server.login(config["username"], config["password"])
+                            logger.info(f"✅ Authenticated, sending email...")
+                            server.send_message(msg)
+                        logger.info(
+                            f"✅ Email sent successfully to {to_email} via port 465 (fallback)"
+                        )
+                        return True
+                    except Exception as fallback_error:
+                        logger.error(
+                            f"❌ Fallback to port 465 also failed: {fallback_error}"
+                        )
+                        # Re-raise the original error
+                        raise e
+                else:
+                    # Re-raise the original error if it's not SendGrid on port 587
+                    raise
 
         except socket.gaierror as e:
             # DNS resolution error
