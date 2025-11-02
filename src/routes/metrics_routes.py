@@ -194,9 +194,10 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
         # Calculate what the current week should be
         from datetime import datetime, timedelta
 
+        from src.utils.date_helpers import get_current_week_start
+
         today = datetime.now().date()
-        days_since_monday = today.weekday()
-        current_week_start = today - timedelta(days=days_since_monday)
+        current_week_start = get_current_week_start()
         current_week_str = current_week_start.isoformat()
 
         # Find the first element that is NOT the current week and move everything before it to the end
@@ -237,9 +238,10 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
             # Find previous week in weekly_data (now the leftmost bar)
             from datetime import datetime, timedelta
 
+            from src.utils.date_helpers import get_current_week_start
+
             today = datetime.now().date()
-            days_since_monday = today.weekday()
-            current_week_start = today - timedelta(days=days_since_monday)
+            current_week_start = get_current_week_start()
             previous_week_start = current_week_start - timedelta(days=7)
             previous_week_str = previous_week_start.isoformat()
 
@@ -351,9 +353,10 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
             # Calculate what the current week should be
             from datetime import datetime, timedelta
 
+            from src.utils.date_helpers import get_current_week_start
+
             today = datetime.now().date()
-            days_since_monday = today.weekday()
-            current_week_start = today - timedelta(days=days_since_monday)
+            current_week_start = get_current_week_start()
             current_week_str = current_week_start.isoformat()
 
             # Get the week_start from the first run

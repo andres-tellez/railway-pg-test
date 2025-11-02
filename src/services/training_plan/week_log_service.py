@@ -71,10 +71,11 @@ def fetch_week_logs_from_db(
 
     # Calculate week dates from race date backwards
     # Week N is N weeks before race week
+    from src.utils.date_helpers import get_week_start_for_date
+
     weeks_before_race = week_num
     target_week_start = race_date - timedelta(weeks=weeks_before_race)
-    days_since_monday = target_week_start.weekday()
-    week_start = target_week_start - timedelta(days=days_since_monday)
+    week_start = get_week_start_for_date(target_week_start)
     week_end = week_start + timedelta(days=6)
 
     # Find workouts for the target week

@@ -26,6 +26,7 @@ from .workout_utils import extract_pace_zone_from_workout, normalize_segments
 from src.db.models.plans import Plan
 from src.db.models.plan_workouts import PlanWorkout
 from src.db.dao.plan_workouts_dao import get_workouts_for_week, update_workout
+from src.utils.date_helpers import date_to_day_name
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +275,7 @@ class WeeklyRebuildService:
             "phase": phase,
             "workouts": [
                 {
-                    "day": _date_to_day_name(w.date),
+                    "day": date_to_day_name(w.date),
                     "type": _normalize_workout_type(w.workout_type),
                     "miles": float(w.miles),
                     "distance_miles": float(w.miles),
@@ -316,7 +317,7 @@ class WeeklyRebuildService:
                         if hasattr(db_workout.date, "isoformat")
                         else str(db_workout.date)
                     ),
-                    "day": _date_to_day_name(db_workout.date),
+                    "day": date_to_day_name(db_workout.date),
                     "workout_type": db_workout.workout_type,
                     "miles": float(db_workout.miles or 0),
                     "description": db_workout.description or "",
@@ -390,7 +391,7 @@ class WeeklyRebuildService:
                         if hasattr(db_workout.date, "isoformat")
                         else str(db_workout.date)
                     ),
-                    "day": workout_data.get("day", _date_to_day_name(db_workout.date)),
+                    "day": workout_data.get("day", date_to_day_name(db_workout.date)),
                     "workout_type": workout_data.get("type", ""),
                     "miles": float(
                         workout_data.get("miles")
@@ -431,21 +432,16 @@ def _find_week_workouts(
     weeks_before_race = week_num  # Adjust based on your week numbering
 
     # Calculate approximate week start (Monday of that week)
+    from src.utils.date_helpers import get_week_start_for_date
+
     target_week_start = race_date - timedelta(weeks=weeks_before_race)
-    days_since_monday = target_week_start.weekday()
-    week_start = target_week_start - timedelta(days=days_since_monday)
+    week_start = get_week_start_for_date(target_week_start)
     week_end = week_start + timedelta(days=6)
 
     # Find workouts in that date range
     week_workouts = [w for w in all_workouts if week_start <= w.date <= week_end]
 
     return week_workouts
-
-
-def _date_to_day_name(d: date) -> str:
-    """Convert date to day name (Mon, Tue, etc.)."""
-    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    return day_names[d.weekday()]
 
 
 def _normalize_workout_type(workout_type: str) -> str:

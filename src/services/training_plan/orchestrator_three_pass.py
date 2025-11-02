@@ -58,7 +58,9 @@ class ThreePassOrchestrator:
         session = runner_ctx.get("session")
         user_id = runner_ctx.get("user_id")
         plan_request = runner_ctx.get("plan_request", {})
-        training_days = runner_ctx.get("training_days", ["Mon", "Wed", "Thu", "Sat"])
+        from src.utils.date_helpers import DEFAULT_TRAINING_DAYS
+
+        training_days = runner_ctx.get("training_days", DEFAULT_TRAINING_DAYS)
 
         if session is None or user_id is None:
             return {

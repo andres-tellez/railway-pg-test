@@ -30,6 +30,11 @@ from src.services.training_plan.weekly_total_calculator import (
 from src.services.training_plan.pass3_workout_distribution import (
     Pass3WorkoutDistribution,
 )
+from src.utils.date_helpers import (
+    DAY_NAMES_ABBREV,
+    DEFAULT_TRAINING_DAYS,
+    get_next_monday,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -444,7 +449,7 @@ def create_plan_route():
                     "longest_run", 0
                 ),
                 "training_days": plan_dict.get("training_days")
-                or ["Mon", "Wed", "Thu", "Sat"],
+                or DEFAULT_TRAINING_DAYS,
             }
             from src.services.training_plan.plan_storage_service import (
                 PlanStorageService,
@@ -562,7 +567,7 @@ def create_plan_draft_route():
                     "longest_run", 0
                 ),
                 "training_days": plan_request.get("training_days")
-                or ["Mon", "Wed", "Thu", "Sat"],
+                or DEFAULT_TRAINING_DAYS,
             }
 
             tp = ThreePassOrchestrator()
@@ -585,12 +590,7 @@ def create_plan_draft_route():
             recent_3w = lr_first._recent_longest_run_last_days(raw.get("strava_activities", []), days=21)  # type: ignore[attr-defined]
 
             # Calculate weekly totals from long runs (NEW: uses finisher-friendly calculator)
-            training_days = plan_request.get("training_days") or [
-                "Mon",
-                "Wed",
-                "Thu",
-                "Sat",
-            ]
+            training_days = plan_request.get("training_days") or DEFAULT_TRAINING_DAYS
             runs_per_week = len(training_days) if training_days else 4
             weeks_with_totals = calculate_weekly_totals_from_long_runs(
                 weeks=lr_out.get("weeks", []),
@@ -787,10 +787,7 @@ def create_plan_draft_route():
                             today = date.today()
 
                             # Calculate start date (next Monday or closest Monday)
-                            days_until_monday = (7 - today.weekday()) % 7
-                            if days_until_monday == 0:
-                                days_until_monday = 7
-                            start_date = today + timedelta(days=days_until_monday)
+                            start_date = get_next_monday(today)
 
                             # Calculate weeks available ensuring the week containing race day is included.
                             # OLD LOGIC (BUGGY):
@@ -893,7 +890,8 @@ def create_plan_draft_route():
                                                     (
                                                         w.get("distance_miles", 0)
                                                         for w in workouts
-                                                        if w.get("day") == "Mon"
+                                                        if w.get("day")
+                                                        == DAY_NAMES_ABBREV[0]  # Monday
                                                     ),
                                                     0,
                                                 )
@@ -901,7 +899,10 @@ def create_plan_draft_route():
                                                     (
                                                         w.get("distance_miles", 0)
                                                         for w in workouts
-                                                        if w.get("day") == "Wed"
+                                                        if w.get("day")
+                                                        == DAY_NAMES_ABBREV[
+                                                            2
+                                                        ]  # Wednesday
                                                     ),
                                                     0,
                                                 )
@@ -909,7 +910,10 @@ def create_plan_draft_route():
                                                     (
                                                         w.get("distance_miles", 0)
                                                         for w in workouts
-                                                        if w.get("day") == "Thu"
+                                                        if w.get("day")
+                                                        == DAY_NAMES_ABBREV[
+                                                            3
+                                                        ]  # Thursday
                                                     ),
                                                     0,
                                                 )

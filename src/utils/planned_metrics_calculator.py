@@ -29,9 +29,10 @@ def get_planned_miles_for_current_week(session, user_id):
     """
     try:
         # Calculate current week start (Monday) and end (Sunday)
+        from src.utils.date_helpers import get_current_week_start
+
         today = datetime.now().date()
-        days_since_monday = today.weekday()  # Monday = 0
-        week_start = today - timedelta(days=days_since_monday)
+        week_start = get_current_week_start()
         week_end = week_start + timedelta(days=6)  # Sunday
 
         logger.info(f" Calculating planned miles for week {week_start} to {week_end}")
@@ -97,8 +98,9 @@ def get_planned_miles_for_week(session, user_id, target_date):
     """
     try:
         # Calculate week start (Monday) and end (Sunday) for target date
-        days_since_monday = target_date.weekday()  # Monday = 0
-        week_start = target_date - timedelta(days=days_since_monday)
+        from src.utils.date_helpers import get_week_start_for_date
+
+        week_start = get_week_start_for_date(target_date)
         week_end = week_start + timedelta(days=6)  # Sunday
 
         logger.info(f" Calculating planned miles for week {week_start} to {week_end}")
@@ -159,9 +161,10 @@ def get_weekly_planned_miles_history(session, user_id, weeks=20):
     """
     try:
         # Calculate start date (N weeks ago)
+        from src.utils.date_helpers import get_current_week_start
+
         today = datetime.now().date()
-        days_since_monday = today.weekday()
-        current_week_start = today - timedelta(days=days_since_monday)
+        current_week_start = get_current_week_start()
 
         weekly_data = []
 

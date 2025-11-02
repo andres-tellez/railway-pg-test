@@ -206,15 +206,9 @@ def fetch_last_week_actual_runs(
 
         # Group by day of week
         runs_by_day = {}
-        day_names = [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]
+        from src.utils.date_helpers import DAY_NAMES_FULL, get_next_monday
+
+        day_names = DAY_NAMES_FULL
 
         for day_name in day_names:
             runs_by_day[day_name] = None  # Initialize as None (no run)
@@ -271,12 +265,9 @@ def calculate_upcoming_week_num(race_date: date, today: date) -> Optional[int]:
         Week number (1-based) or None if race has passed or week not found
     """
     # Calculate next Monday (start of upcoming week)
-    # If today is Sunday, next Monday is tomorrow
-    # If today is Monday-Saturday, next Monday is days until next Monday
-    days_until_monday = (7 - today.weekday()) % 7
-    if days_until_monday == 0:
-        days_until_monday = 7  # Today is Monday, next Monday is 7 days away
-    upcoming_monday = today + timedelta(days=days_until_monday)
+    from src.utils.date_helpers import get_next_monday
+
+    upcoming_monday = get_next_monday(today)
 
     # Calculate weeks until race from upcoming Monday
     days_until_race = (race_date - upcoming_monday).days
@@ -427,12 +418,9 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
 
                         if user_identity and user_identity.email:
                             # Calculate week start date for display
-                            days_until_monday = (7 - today.weekday()) % 7
-                            if days_until_monday == 0:
-                                days_until_monday = 7
-                            week_start_date_obj = today + timedelta(
-                                days=days_until_monday
-                            )
+                            from src.utils.date_helpers import get_next_monday
+
+                            week_start_date_obj = get_next_monday(today)
                             week_start_date = week_start_date_obj.isoformat()
 
                             # Fetch last week's actual runs
