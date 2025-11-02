@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 SCHEDULE_WEEKDAY = 6  # Sunday (0=Monday, 6=Sunday)
 SCHEDULE_HOUR = 10  # Hour (24-hour format: 10 = 10 AM)
-SCHEDULE_MINUTE = 5  # Minute (0-59)
+SCHEDULE_MINUTE = 30  # Minute (0-59)
 SCHEDULE_TIMEZONE = "America/Chicago"  # Central Time
 SCHEDULE_TIMEZONE_DISPLAY = "Central Time"  # Display name for logs
 
