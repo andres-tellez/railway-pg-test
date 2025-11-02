@@ -15,7 +15,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from typing import Optional, List, Dict, Any
 import pytz
 from dotenv import load_dotenv
@@ -59,8 +59,8 @@ logger = logging.getLogger(__name__)
 # SCHEDULE CONFIGURATION - Update these values to change the schedule
 # ============================================================================
 SCHEDULE_WEEKDAY = 6  # Sunday (0=Monday, 6=Sunday)
-SCHEDULE_HOUR = 10  # Hour (24-hour format: 10 = 10 AM)
-SCHEDULE_MINUTE = 30  # Minute (0-59)
+SCHEDULE_HOUR = 11  # Hour (24-hour format: 11 = 11 AM)
+SCHEDULE_MINUTE = 10  # Minute (0-59)
 SCHEDULE_TIMEZONE = "America/Chicago"  # Central Time
 SCHEDULE_TIMEZONE_DISPLAY = "Central Time"  # Display name for logs
 
@@ -70,19 +70,33 @@ SCHEDULE_DISPLAY = (
 )
 
 
-def should_run_scheduled_tasks():
-    """Check if it's time to run scheduled tasks based on SCHEDULE_* configuration."""
+# ============================================================================
+# CENTRALIZED TIME FUNCTIONS - Use these instead of datetime.utcnow()
+# ============================================================================
+def get_current_utc_time() -> datetime:
+    """Get current UTC time (replaces deprecated datetime.utcnow())."""
+    return datetime.now(timezone.utc)
+
+
+def get_current_local_time() -> datetime:
+    """
+    Get current time in configured timezone (SCHEDULE_TIMEZONE).
+    Returns timezone-naive datetime for compatibility.
+    """
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
 
     if use_utc:
-        # Use UTC time
-        now = datetime.utcnow()
+        return datetime.now(timezone.utc)
     else:
-        # Convert UTC to configured timezone (Railway servers are in UTC)
-        utc_now = datetime.utcnow()
+        utc_now = datetime.now(timezone.utc)
         tz = pytz.timezone(SCHEDULE_TIMEZONE)
-        # Convert UTC to configured timezone
-        now = pytz.utc.localize(utc_now).astimezone(tz).replace(tzinfo=None)
+        # Convert UTC to configured timezone and return as timezone-naive
+        return pytz.utc.localize(utc_now).astimezone(tz).replace(tzinfo=None)
+
+
+def should_run_scheduled_tasks():
+    """Check if it's time to run scheduled tasks based on SCHEDULE_* configuration."""
+    now = get_current_local_time()
 
     # Check if it matches the configured schedule
     if (
@@ -438,13 +452,15 @@ def main():
     logger.info(f"🕐 Weekly scheduler started - waiting for {SCHEDULE_DISPLAY}...")
     logger.info(f"💡 Scheduled tasks will run automatically every {SCHEDULE_DISPLAY}")
     # Log current time in both UTC and configured timezone for verification
-    utc_now = datetime.utcnow()
+    utc_now = get_current_utc_time()
+    local_now = get_current_local_time()
+    use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
     if not use_utc:
         tz = pytz.timezone(SCHEDULE_TIMEZONE)
-        local_now = pytz.utc.localize(utc_now).astimezone(tz)
+        local_with_tz = pytz.utc.localize(utc_now).astimezone(tz)
         logger.info(
             f"📍 Current time: UTC={utc_now.strftime('%Y-%m-%d %H:%M:%S')}, "
-            f"{SCHEDULE_TIMEZONE_DISPLAY}={local_now.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+            f"{SCHEDULE_TIMEZONE_DISPLAY}={local_with_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}"
         )
     else:
         logger.info(f"📍 Current time (UTC): {utc_now.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -474,13 +490,7 @@ def main():
 
     while True:
         try:
-            if use_utc:
-                now = datetime.utcnow()
-            else:
-                # Convert UTC to configured timezone
-                utc_now = datetime.utcnow()
-                tz = pytz.timezone(SCHEDULE_TIMEZONE)
-                now = pytz.utc.localize(utc_now).astimezone(tz).replace(tzinfo=None)
+            now = get_current_local_time()
 
             current_timestamp = now.strftime("%Y-%m-%d %H:%M")
 
