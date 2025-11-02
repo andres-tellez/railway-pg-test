@@ -30,6 +30,7 @@ from .workout_detail_rules import (
     QUALITY_ENABLED_PHASES,
     DEFAULT_UNITS,
 )
+from .workout_utils import pace_range_to_str
 
 logger = logging.getLogger(__name__)
 
@@ -47,17 +48,7 @@ def _fmt_range_dict(min_sec: float, max_sec: float) -> dict:
     return {"low": _sec(min_sec), "high": _sec(max_sec)}
 
 
-def _fmt_range_str(min_sec: float, max_sec: float) -> str:
-    """Format pace range as string (for pace_labels display)."""
-
-    def mmss(sec: float) -> str:
-        m = int(sec // 60)
-        s = int(round(sec - 60 * m))
-        return f"{m}:{s:02d}"
-
-    if abs(min_sec - max_sec) < 1.0:
-        return f"{mmss(min_sec)}/mi"
-    return f"{mmss(min_sec)}–{mmss(max_sec)}/mi"
+# _fmt_range_str removed - now using pace_range_to_str from workout_utils
 
 
 def _wu_step(mi: float, E_min: float, E_max: float) -> dict:
@@ -264,10 +255,10 @@ def _detail_run(
         "segments": segments_obj,
         "cues": cues_str,
         "pace_labels": {
-            "E": _fmt_range_str(seed.E_min, seed.E_max),
-            "S": _fmt_range_str(seed.S_min, seed.S_max),
-            "M": _fmt_range_str(seed.M, seed.M),
-            "T": _fmt_range_str(seed.T_min, seed.T_max),
+            "E": pace_range_to_str(seed.E_min, seed.E_max),
+            "S": pace_range_to_str(seed.S_min, seed.S_max),
+            "M": pace_range_to_str(seed.M, seed.M),
+            "T": pace_range_to_str(seed.T_min, seed.T_max),
         },
         "quality_insert": quality_insert,
     }

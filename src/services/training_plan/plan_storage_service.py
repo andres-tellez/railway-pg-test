@@ -40,6 +40,7 @@ from src.services.training_plan.workout_detail_rules import (
 )
 from src.services.training_plan.pace_seed_service import PaceSeed
 from src.services.training_plan.workout_types import TYPE_DISPLAY
+from src.services.training_plan.workout_utils import pace_range_to_str
 
 logger = logging.getLogger(__name__)
 
@@ -300,17 +301,14 @@ class PlanStorageService:
     @staticmethod
     def _pace_string_from_target(t: dict) -> str:
         """Convert target dict {low: sec, high: sec} to pace string."""
-
-        def mmss(x):
-            m = int(x // 60)
-            s = int(round(x - 60 * m))
-            return f"{m}:{s:02d}"
-
         if not t:
             return ""
-        if t.get("low") == t.get("high"):
-            return f"{mmss(t['low'])}/mi"
-        return f"{mmss(t['low'])}–{mmss(t['high'])}/mi"
+        low = t.get("low")
+        high = t.get("high")
+        if low is None or high is None:
+            return ""
+        # Use centralized pace_range_to_str utility
+        return pace_range_to_str(low, high)
 
     @staticmethod
     def _has_marathon_finish(segments: dict) -> bool:

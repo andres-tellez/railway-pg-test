@@ -21,6 +21,8 @@ from .pace_seed_service import PaceSeed, get_initial_pace_seed
 from .weekly_adjuster import adjust_seed_from_week
 from .pass4_workout_details import Pass4WorkoutDetails
 from .week_log_service import fetch_week_logs
+from .workout_comparison_service import WorkoutComparisonService
+from .workout_utils import extract_pace_zone_from_workout, normalize_segments
 from src.db.models.plans import Plan
 from src.db.models.plan_workouts import PlanWorkout
 from src.db.dao.plan_workouts_dao import get_workouts_for_week, update_workout
@@ -309,222 +311,17 @@ class WeeklyRebuildService:
         for workout_data, db_workout in zip(
             week_with_details["workouts"], week_workouts
         ):
-            # Update segments and related fields
+            # Extract values for update
             segments = workout_data.get("segments", [])
             cues = workout_data.get("cues", "")
-            pace_labels = workout_data.get("pace_labels", {})
             new_intensity = workout_data.get("type", db_workout.workout_type)
 
-            # Track changes before updating
-            changes = []
+            # Detect changes using centralized comparison service
+            changes = WorkoutComparisonService.detect_changes(db_workout, workout_data)
 
-            # Helper function to normalize segments (used in multiple places)
-            import json
-
-            def normalize_segments(seg_data):
-                """Normalize segments to dict for comparison."""
-                if not seg_data:
-                    return None
-                if isinstance(seg_data, dict):
-                    return seg_data
-                if isinstance(seg_data, str):
-                    try:
-                        return json.loads(seg_data)
-                    except (json.JSONDecodeError, TypeError):
-                        return None
-                return None
-
-            # Compare description/cues
-            old_description = db_workout.description or ""
-            new_description = cues or ""
-            if old_description != new_description:
-                changes.append(
-                    {
-                        "field": "Description/Cues",
-                        "before": (
-                            old_description[:50] + "..."
-                            if len(old_description) > 50
-                            else old_description
-                        ),
-                        "after": (
-                            new_description[:50] + "..."
-                            if len(new_description) > 50
-                            else new_description
-                        ),
-                    }
-                )
-
-            # Compare intensity
-            old_intensity = db_workout.intensity or db_workout.workout_type or ""
-            if old_intensity != new_intensity:
-                changes.append(
-                    {
-                        "field": "Intensity",
-                        "before": old_intensity,
-                        "after": new_intensity,
-                    }
-                )
-
-            # Compare segments with detailed information
-            # Normalize both to dict for proper comparison
-            old_segments_normalized = normalize_segments(db_workout.segments)
-            new_segments_normalized = normalize_segments(segments)
-
-            # Deep compare by converting both to JSON strings
-            old_seg_json = (
-                json.dumps(old_segments_normalized, sort_keys=True)
-                if old_segments_normalized
-                else None
-            )
-            new_seg_json = (
-                json.dumps(new_segments_normalized, sort_keys=True)
-                if new_segments_normalized
-                else None
-            )
-
-            if old_seg_json != new_seg_json:
-                # Parse segments to extract detailed information
-                # Helper to format segment details
-                def format_segment_details(seg_data):
-                    """Format segment data into human-readable string."""
-                    if not seg_data:
-                        return "None"
-
-                    # Normalize to dict
-                    normalized = normalize_segments(seg_data)
-                    if not normalized:
-                        return "None"
-
-                    # Extract steps information
-                    steps = (
-                        normalized.get("steps", [])
-                        if isinstance(normalized, dict)
-                        else []
-                    )
-                    if not steps:
-                        return "No steps"
-
-                    # Build summary of workout structure
-                    step_summaries = []
-                    for step in steps[:5]:  # Limit to first 5 intervals
-                        step_type = step.get("type", "unknown")
-                        value = step.get("value", 0)
-                        unit = step.get("unit", "mi")
-                        target = step.get("target", {})
-
-                        # Format pace information
-                        pace_info = ""
-                        if isinstance(target, dict):
-                            pace_min = target.get("paceMin")
-                            pace_max = target.get("paceMax")
-                            if pace_min and pace_max:
-                                # Convert seconds per mile to MM:SS
-                                def sec_to_pace(sec):
-                                    mins = int(sec // 60)
-                                    secs = int(sec % 60)
-                                    return f"{mins}:{secs:02d}"
-
-                                pace_info = f" @ {sec_to_pace(pace_min)}-{sec_to_pace(pace_max)}/mi"
-
-                        step_summaries.append(
-                            f"{step_type.capitalize()}: {value} {unit}{pace_info}"
-                        )
-
-                    summary = "; ".join(step_summaries)
-                    if len(steps) > 5:
-                        summary += f" (+ {len(steps) - 5} more)"
-
-                    return summary or f"{len(steps)} steps"
-
-                old_seg_str = format_segment_details(old_segments_normalized)
-                new_seg_str = format_segment_details(new_segments_normalized)
-
-                changes.append(
-                    {
-                        "field": "Workout Structure",
-                        "before": old_seg_str,
-                        "after": new_seg_str,
-                    }
-                )
-
-            # Compare target zone (pace zone)
-            # Try to extract from multiple sources
-            old_target_zone = db_workout.target_zone or ""
-
-            def extract_pace_zone_string(workout_data):
-                """Extract pace zone string from workout data."""
-                # First try direct target_zone
-                target_zone = workout_data.get("target_zone")
-                if target_zone:
-                    return target_zone
-
-                # Try pace_labels
-                pace_labels = workout_data.get("pace_labels", {})
-                if pace_labels:
-                    primary = pace_labels.get("primary", "")
-                    if primary:
-                        return primary
-                    secondary = pace_labels.get("secondary", "")
-                    if secondary:
-                        return secondary
-
-                # Try extracting from segments (get pace range from first step)
-                segments_data = workout_data.get("segments", {})
-                if segments_data:
-                    normalized_seg = normalize_segments(segments_data)
-                    if normalized_seg and isinstance(normalized_seg, dict):
-                        steps = normalized_seg.get("steps", [])
-                        if steps and isinstance(steps, list) and len(steps) > 0:
-                            first_step = steps[0]
-                            target = first_step.get("target", {})
-                            if isinstance(target, dict):
-                                pace_min = target.get("paceMin")
-                                pace_max = target.get("paceMax")
-                                if pace_min and pace_max:
-                                    # Convert seconds per mile to MM:SS format
-                                    def sec_to_pace(sec):
-                                        mins = int(sec // 60)
-                                        secs = int(sec % 60)
-                                        return f"{mins}:{secs:02d}"
-
-                                    return f"{sec_to_pace(pace_min)}—{sec_to_pace(pace_max)}/mi"
-
-                return ""
-
-            new_target_zone = extract_pace_zone_string(workout_data)
-
-            if old_target_zone != new_target_zone:
-                changes.append(
-                    {
-                        "field": "Target Pace Zone",
-                        "before": old_target_zone or "Not set",
-                        "after": new_target_zone or "Not set",
-                    }
-                )
-
-            # Compare distance/miles
-            old_miles = db_workout.miles or 0
-            new_miles = workout_data.get("miles") or workout_data.get("distance_mi", 0)
-            if abs(old_miles - new_miles) > 0.01:  # Account for floating point
-                changes.append(
-                    {
-                        "field": "Distance",
-                        "before": f"{old_miles:.1f} miles",
-                        "after": f"{new_miles:.1f} miles",
-                    }
-                )
-
-            # Compare pace/target zones if available
-            old_target_hr = db_workout.target_hr
+            # Extract target zone and HR using centralized utilities
+            new_target_zone = extract_pace_zone_from_workout(workout_data)
             new_target_hr = workout_data.get("target_hr")
-            if old_target_hr != new_target_hr:
-                changes.append(
-                    {
-                        "field": "Target HR",
-                        "before": old_target_hr or "Not set",
-                        "after": new_target_hr or "Not set",
-                    }
-                )
 
             # Always store change record (include all workouts, even if no changes)
             workout_changes.append(
@@ -556,6 +353,11 @@ class WeeklyRebuildService:
             f"Updated {updated_count} workouts for week {week_num} "
             f"(phase={phase}, quality={allow_quality})"
         )
+
+        # Extract pace_labels from first workout (all workouts have same labels)
+        pace_labels = {}
+        if week_with_details.get("workouts") and len(week_with_details["workouts"]) > 0:
+            pace_labels = week_with_details["workouts"][0].get("pace_labels", {})
 
         return {
             "week_number": week_num,
@@ -647,8 +449,6 @@ def _extract_pace_seed_from_workouts(
     Returns:
         PaceSeed if extraction successful, None otherwise
     """
-    import json
-
     # Collect pace targets from workout segments
     easy_paces = []
     steady_paces = []
@@ -659,13 +459,10 @@ def _extract_pace_seed_from_workouts(
         if not workout.segments:
             continue
 
-        # Handle both dict format and array format
-        segments = workout.segments
-        if isinstance(segments, str):
-            try:
-                segments = json.loads(segments)
-            except (json.JSONDecodeError, TypeError):
-                continue
+        # Normalize segments using centralized utility
+        segments = normalize_segments(workout.segments)
+        if not segments:
+            continue
 
         # Extract steps from segments
         steps = None
