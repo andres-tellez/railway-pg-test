@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Scheduler for weekly maintenance tasks - runs every Saturday at 10:30 PM Central Time.
+Scheduler for weekly maintenance tasks - runs every Saturday at 11:30 PM Central Time.
 This is a long-running process that Railway runs as a worker.
 
 Tasks:
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 def should_run_scheduled_tasks():
-    """Check if it's Saturday at 10:30 PM Central Time."""
+    """Check if it's Saturday at 11:30 PM Central Time."""
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
 
     if use_utc:
@@ -57,8 +57,8 @@ def should_run_scheduled_tasks():
         # Convert UTC to Central Time
         now = pytz.utc.localize(utc_now).astimezone(central_tz).replace(tzinfo=None)
 
-    # It's Saturday (weekday 5) and at 10:30 PM Central Time (hour 22, minute 30)
-    if now.weekday() == 5 and now.hour == 22 and now.minute == 30:
+    # It's Saturday (weekday 5) and at 11:30 PM Central Time (hour 23, minute 30)
+    if now.weekday() == 5 and now.hour == 23 and now.minute == 30:
         return True
 
     # For development/testing: allow manual trigger via environment variable
@@ -351,7 +351,7 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
 def run_all_scheduled_tasks():
     """Run metrics refresh, weekly rebuild, and send email notifications."""
     logger.info(
-        "🚀 Starting weekly scheduled tasks (Saturday 10:30 PM Central Time)..."
+        "🚀 Starting weekly scheduled tasks (Saturday 11:30 PM Central Time)..."
     )
 
     # Step 1: Metrics refresh
@@ -378,10 +378,10 @@ def main():
     timezone_info = "UTC" if use_utc else "local (Central Time)"
 
     logger.info(
-        "🕐 Weekly scheduler started - waiting for Saturday at 10:30 PM Central Time..."
+        "🕐 Weekly scheduler started - waiting for Saturday at 11:30 PM Central Time..."
     )
     logger.info(
-        f"💡 Scheduled tasks will run automatically every Saturday at 10:30 PM Central Time"
+        f"💡 Scheduled tasks will run automatically every Saturday at 11:30 PM Central Time"
     )
     # Log current time in both UTC and Central Time for verification
     utc_now = datetime.utcnow()
@@ -428,10 +428,10 @@ def main():
             should_run = should_run_scheduled_tasks()
 
             # Log more frequently when approaching target time for debugging
-            if now.weekday() == 5 and now.hour == 22:
-                # On Saturday at 10 PM, log every minute
+            if now.weekday() == 5 and now.hour == 23:
+                # On Saturday at 11 PM, log every minute
                 logger.info(
-                    f"⏰ Saturday 10 PM window - Current time: {now.strftime('%Y-%m-%d %H:%M:%S')} "
+                    f"⏰ Saturday 11 PM window - Current time: {now.strftime('%Y-%m-%d %H:%M:%S')} "
                     f"(weekday={now.weekday()}, hour={now.hour}, minute={now.minute}), should_run={should_run}"
                 )
 
@@ -452,7 +452,7 @@ def main():
                 if now.minute % 10 == 0:
                     logger.info(
                         f"⏰ Checking schedule... (current time: {now.strftime('%Y-%m-%d %H:%M:%S')}, "
-                        f"weekday={now.weekday()}, hour={now.hour}, minute={now.minute}) - next run: Saturday at 10:30 PM Central Time"
+                        f"weekday={now.weekday()}, hour={now.hour}, minute={now.minute}) - next run: Saturday at 11:30 PM Central Time"
                     )
 
             # Sleep for 1 minute before checking again
