@@ -349,20 +349,98 @@ class WeeklyRebuildService:
                     }
                 )
 
-            # Compare segments (simplified comparison)
+            # Compare segments with detailed information
             old_segments = db_workout.segments
             if old_segments != segments:
-                old_seg_count = len(old_segments) if old_segments else 0
-                new_seg_count = len(segments) if segments else 0
+                # Parse segments to extract detailed information
+                import json
+
+                # Helper to format segment details
+                def format_segment_details(seg_data):
+                    """Format segment data into human-readable string."""
+                    if not seg_data:
+                        return "None"
+
+                    # Handle string JSON
+                    if isinstance(seg_data, str):
+                        try:
+                            seg_data = json.loads(seg_data)
+                        except (json.JSONDecodeError, TypeError):
+                            return "Invalid format"
+
+                    # Extract steps information
+                    steps = (
+                        seg_data.get("steps", []) if isinstance(seg_data, dict) else []
+                    )
+                    if not steps:
+                        return "No steps"
+
+                    # Build summary of workout structure
+                    step_summaries = []
+                    for step in steps[:5]:  # Limit to first 5 intervals
+                        step_type = step.get("type", "unknown")
+                        value = step.get("value", 0)
+                        unit = step.get("unit", "mi")
+                        target = step.get("target", {})
+
+                        # Format pace information
+                        pace_info = ""
+                        if isinstance(target, dict):
+                            pace_min = target.get("paceMin")
+                            pace_max = target.get("paceMax")
+                            if pace_min and pace_max:
+                                # Convert seconds per mile to MM:SS
+                                def sec_to_pace(sec):
+                                    mins = int(sec // 60)
+                                    secs = int(sec % 60)
+                                    return f"{mins}:{secs:02d}"
+
+                                pace_info = f" @ {sec_to_pace(pace_min)}-{sec_to_pace(pace_max)}/mi"
+
+                        step_summaries.append(
+                            f"{step_type.capitalize()}: {value} {unit}{pace_info}"
+                        )
+
+                    summary = "; ".join(step_summaries)
+                    if len(steps) > 5:
+                        summary += f" (+ {len(steps) - 5} more)"
+
+                    return summary or f"{len(steps)} steps"
+
+                old_seg_str = format_segment_details(old_segments)
+                new_seg_str = format_segment_details(segments)
+
                 changes.append(
                     {
-                        "field": "Segments",
-                        "before": (
-                            f"{old_seg_count} segments" if old_seg_count > 0 else "None"
-                        ),
-                        "after": (
-                            f"{new_seg_count} segments" if new_seg_count > 0 else "None"
-                        ),
+                        "field": "Workout Structure",
+                        "before": old_seg_str,
+                        "after": new_seg_str,
+                    }
+                )
+
+            # Compare target zone (pace zone)
+            old_target_zone = db_workout.target_zone or ""
+            new_target_zone = workout_data.get("target_zone") or workout_data.get(
+                "pace_labels", {}
+            ).get("primary", "")
+            if old_target_zone != new_target_zone:
+                changes.append(
+                    {
+                        "field": "Target Pace Zone",
+                        "before": old_target_zone or "Not set",
+                        "after": new_target_zone or "Not set",
+                    }
+                )
+
+            # Compare distance/miles
+            old_miles = db_workout.miles or 0
+            new_miles = workout_data.get("miles") or workout_data.get("distance_mi", 0)
+            if abs(old_miles - new_miles) > 0.01:  # Account for floating point
+                changes.append(
+                    {
+                        "field": "Distance",
+                        "before": f"{old_miles:.1f} miles",
+                        "after": f"{new_miles:.1f} miles",
                     }
                 )
 
@@ -378,20 +456,19 @@ class WeeklyRebuildService:
                     }
                 )
 
-            # Store change record if any changes
-            if changes:
-                workout_changes.append(
-                    {
-                        "date": (
-                            db_workout.date.isoformat()
-                            if hasattr(db_workout.date, "isoformat")
-                            else str(db_workout.date)
-                        ),
-                        "workout_type": db_workout.workout_type,
-                        "miles": db_workout.miles,
-                        "changes": changes,
-                    }
-                )
+            # Always store change record (include all workouts, even if no changes)
+            workout_changes.append(
+                {
+                    "date": (
+                        db_workout.date.isoformat()
+                        if hasattr(db_workout.date, "isoformat")
+                        else str(db_workout.date)
+                    ),
+                    "workout_type": db_workout.workout_type,
+                    "miles": db_workout.miles or workout_data.get("miles", 0),
+                    "changes": changes,  # Empty list if no changes
+                }
+            )
 
             update_data = {
                 "segments": segments,  # Store as JSON
