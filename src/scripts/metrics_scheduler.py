@@ -178,6 +178,7 @@ def fetch_last_week_actual_runs(
     """
     from datetime import datetime
     from sqlalchemy import and_
+    from src.db.models.activities import Activity
 
     # Calculate last week's date range (Monday to Sunday)
     last_week_end = week_start_date - timedelta(days=1)  # Sunday
