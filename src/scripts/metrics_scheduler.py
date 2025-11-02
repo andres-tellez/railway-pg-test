@@ -59,8 +59,8 @@ logger = logging.getLogger(__name__)
 # SCHEDULE CONFIGURATION - Update these values to change the schedule
 # ============================================================================
 SCHEDULE_WEEKDAY = 6  # Sunday (0=Monday, 6=Sunday)
-SCHEDULE_HOUR = 13  # Hour (24-hour format: 13 = 1 PM)
-SCHEDULE_MINUTE = 45  # Minute (0-59)
+SCHEDULE_HOUR = 14  # Hour (24-hour format: 14 = 2 PM)
+SCHEDULE_MINUTE = 0  # Minute (0-59)
 SCHEDULE_TIMEZONE = "America/Chicago"  # Central Time
 SCHEDULE_TIMEZONE_DISPLAY = "Central Time"  # Display name for logs
 
@@ -178,6 +178,7 @@ def fetch_last_week_actual_runs(
     """
     from datetime import datetime
     from sqlalchemy import and_
+    from src.db.models.activities import Activity
 
     # Calculate last week's date range (Monday to Sunday)
     last_week_end = week_start_date - timedelta(days=1)  # Sunday
