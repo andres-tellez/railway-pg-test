@@ -72,6 +72,15 @@ class EmailService:
 
         config = EmailService.get_smtp_config()
 
+        # Log SMTP configuration for debugging (without exposing password)
+        logger.debug(
+            f"📧 SMTP Configuration: host={config['host']}, port={config['port']}, "
+            f"username={config['username']}, from_email={config['from_email']}"
+        )
+        logger.info(
+            f"📧 Attempting to send email via {config['host']}:{config['port']}"
+        )
+
         try:
             # Create message
             msg = MIMEMultipart("alternative")
