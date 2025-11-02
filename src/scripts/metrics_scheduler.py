@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Scheduler for weekly maintenance tasks - runs every Saturday at 10:00 PM Central.
+Scheduler for weekly maintenance tasks - runs every Saturday at 10:10 PM Central.
 This is a long-running process that Railway runs as a worker.
 
 Tasks:
@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from datetime import datetime, timedelta, date
 from typing import Optional, List, Dict, Any
+import pytz
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -30,12 +31,21 @@ logger = logging.getLogger(__name__)
 
 
 def should_run_scheduled_tasks():
-    """Check if it's Saturday at 10:00 PM (or within the 10:00-11:00 PM window)."""
+    """Check if it's Saturday at 10:10 PM Central Time."""
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
-    now = datetime.utcnow() if use_utc else datetime.now()
 
-    # It's Saturday (weekday 5) and between 10:00 and 11:00 PM (hour 22)
-    if now.weekday() == 5 and now.hour == 22:
+    if use_utc:
+        # Use UTC time
+        now = datetime.utcnow()
+    else:
+        # Convert UTC to Central Time (Railway servers are in UTC)
+        utc_now = datetime.utcnow()
+        central_tz = pytz.timezone("America/Chicago")
+        # Convert UTC to Central Time
+        now = pytz.utc.localize(utc_now).astimezone(central_tz).replace(tzinfo=None)
+
+    # It's Saturday (weekday 5) and at 10:10 PM (hour 22, minute 10)
+    if now.weekday() == 5 and now.hour == 22 and now.minute == 10:
         return True
 
     # For development/testing: allow manual trigger via environment variable
@@ -296,7 +306,7 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
 
 def run_all_scheduled_tasks():
     """Run metrics refresh, weekly rebuild, and send email notifications."""
-    logger.info("🚀 Starting weekly scheduled tasks (Saturday 10 PM Central)...")
+    logger.info("🚀 Starting weekly scheduled tasks (Saturday 10:10 PM Central)...")
 
     # Step 1: Metrics refresh
     metrics_success, metrics_message = run_metrics_refresh()
@@ -321,9 +331,9 @@ def main():
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
     timezone_info = "UTC" if use_utc else "local (Central Time)"
 
-    logger.info("🕐 Weekly scheduler started - waiting for Saturday at 10:00 PM...")
+    logger.info("🕐 Weekly scheduler started - waiting for Saturday at 10:10 PM...")
     logger.info(
-        f"💡 Scheduled tasks will run automatically every Saturday at 10:00 PM Central ({timezone_info})"
+        f"💡 Scheduled tasks will run automatically every Saturday at 10:10 PM Central ({timezone_info})"
     )
     logger.info(
         "💡 Tasks include: (1) Metrics refresh, (2) Weekly plan rebuild, (3) Email notifications"
@@ -336,29 +346,40 @@ def main():
         logger.error("❌ DATABASE_URL not configured. Exiting.")
         sys.exit(1)
 
-    # Track last check to avoid running multiple times in the same hour
-    last_check_day = None
+    # Track last run to avoid running multiple times
+    last_run_timestamp = None
 
     while True:
         try:
-            now = datetime.utcnow() if use_utc else datetime.now()
-            current_day = now.strftime("%Y-%m-%d %H")
-
-            # Only check once per hour to avoid spam
-            if current_day != last_check_day:
-                logger.debug(
-                    f"⏰ Checking schedule... (current time: {now.strftime('%Y-%m-%d %H:%M')})"
+            if use_utc:
+                now = datetime.utcnow()
+            else:
+                # Convert UTC to Central Time
+                utc_now = datetime.utcnow()
+                central_tz = pytz.timezone("America/Chicago")
+                now = (
+                    pytz.utc.localize(utc_now)
+                    .astimezone(central_tz)
+                    .replace(tzinfo=None)
                 )
-                last_check_day = current_day
 
-                if should_run_scheduled_tasks():
+            current_timestamp = now.strftime("%Y-%m-%d %H:%M")
+
+            # Check schedule every minute
+            if should_run_scheduled_tasks():
+                # Only run if we haven't run in this minute already
+                if current_timestamp != last_run_timestamp:
                     logger.info(
                         f"⏰ Scheduled time reached - running weekly tasks at {now}"
                     )
                     run_all_scheduled_tasks()
-                else:
+                    last_run_timestamp = current_timestamp
+            else:
+                # Log every 10 minutes for debugging
+                if now.minute % 10 == 0:
                     logger.debug(
-                        f"⏰ Not time yet - next run: Saturday at 10:00 PM Central"
+                        f"⏰ Checking schedule... (current time: {now.strftime('%Y-%m-%d %H:%M')}, "
+                        f"weekday={now.weekday()}, hour={now.hour}, minute={now.minute}) - next run: Saturday at 10:10 PM Central"
                     )
 
             # Sleep for 1 minute before checking again
