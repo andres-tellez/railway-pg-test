@@ -331,19 +331,23 @@ class EmailService:
         user_name: Optional[str],
         week_num: int,
         week_start: str,
-        workout_changes: List[Dict[str, Any]],
+        last_week_actual_runs: Dict[str, Optional[Dict[str, Any]]],
+        next_week_original_plan: List[Dict[str, Any]],
+        next_week_updated_plan: List[Dict[str, Any]],
         metrics_refresh_success: bool,
         metrics_refresh_message: str,
     ) -> bool:
         """
-        Send weekly update email with workout changes and metrics validation.
+        Send weekly update email with workout comparison table.
 
         Args:
             to_email: Recipient email
             user_name: Optional user name for personalization
             week_num: Week number that was rebuilt
             week_start: Week start date (YYYY-MM-DD)
-            workout_changes: List of workout change dictionaries
+            last_week_actual_runs: Dict of actual runs from last week by day
+            next_week_original_plan: List of original planned workouts before rebuild
+            next_week_updated_plan: List of updated planned workouts after rebuild
             metrics_refresh_success: Whether metrics refresh succeeded
             metrics_refresh_message: Metrics refresh status message
 
@@ -352,71 +356,110 @@ class EmailService:
         """
         display_name = user_name or "Runner"
 
-        # Build workout changes HTML with improved table format
-        changes_html = ""
-        if workout_changes:
-            changes_html = "<h3>📊 Workout Updates - Week Changes</h3>"
-            changes_html += "<table style='border-collapse: collapse; width: 100%; margin: 20px 0; background-color: white;'>"
+        # Build comparison table with days of week across top
+        day_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
 
-            # Header row
-            changes_html += (
-                "<tr style='background-color: #4CAF50; color: white;'>"
-                "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>Date</th>"
-                "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>Workout</th>"
-                "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>Status</th>"
-                "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>Before</th>"
-                "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>After</th>"
-                "</tr>"
-            )
+        # Helper function to format workout details
+        def format_workout_details(workout: Optional[Dict[str, Any]]) -> str:
+            """Format workout details for display."""
+            if not workout:
+                return "<em>Rest</em>"
 
-            for change in workout_changes:
-                date_str = change.get("date", "")
-                workout_type = change.get("workout_type", "")
-                miles = change.get("miles", 0)
-                changes = change.get("changes", [])
+            miles = workout.get("miles", 0) or workout.get("distance", 0)
+            workout_type = workout.get("workout_type", "Run")
+            # Get pace from either 'pace' (actual runs) or 'target_zone' (planned)
+            pace = workout.get("pace") or workout.get("target_zone", "")
+            desc = workout.get("description") or workout.get("name", "")
 
-                if not changes:
-                    # No changes - show as single row
-                    changes_html += (
-                        f"<tr style='background-color: #f9f9f9;'>"
-                        f"<td style='padding: 10px; border: 1px solid #ddd;'>{date_str}</td>"
-                        f"<td style='padding: 10px; border: 1px solid #ddd;'><strong>{workout_type}</strong><br/><small>{miles:.1f} miles</small></td>"
-                        f"<td style='padding: 10px; border: 1px solid #ddd; color: #28a745;'><strong>✓ No Changes</strong></td>"
-                        f"<td style='padding: 10px; border: 1px solid #ddd;' colspan='2'><em>All details remain the same</em></td>"
-                        f"</tr>"
-                    )
-                else:
-                    # Has changes - show each changed field as a separate row
-                    for idx, ch in enumerate(changes):
-                        field = ch.get("field", "")
-                        before = ch.get("before", "")
-                        after = ch.get("after", "")
+            details = f"<strong>{workout_type}</strong><br/>"
+            if miles > 0:
+                details += f"{miles:.1f} mi"
+            else:
+                details += f"{workout_type}"
 
-                        # First row shows date/workout, subsequent rows show only field
-                        if idx == 0:
-                            changes_html += (
-                                f"<tr style='background-color: #fff3cd;'>"
-                                f"<td style='padding: 10px; border: 1px solid #ddd;' rowspan='{len(changes)}'>{date_str}</td>"
-                                f"<td style='padding: 10px; border: 1px solid #ddd;' rowspan='{len(changes)}'><strong>{workout_type}</strong><br/><small>{miles:.1f} miles</small></td>"
-                                f"<td style='padding: 10px; border: 1px solid #ddd; color: #856404;' rowspan='{len(changes)}'><strong>⚠ Changed</strong><br/><small>{len(changes)} field(s)</small></td>"
-                                f"<td style='padding: 10px; border: 1px solid #ddd;'><strong>{field}</strong><br/>{before}</td>"
-                                f"<td style='padding: 10px; border: 1px solid #ddd;'><strong>{field}</strong><br/>{after}</td>"
-                                f"</tr>"
-                            )
-                        else:
-                            changes_html += (
-                                f"<tr style='background-color: #fff3cd;'>"
-                                f"<td style='padding: 10px; border: 1px solid #ddd;'><strong>{field}</strong><br/>{before}</td>"
-                                f"<td style='padding: 10px; border: 1px solid #ddd;'><strong>{field}</strong><br/>{after}</td>"
-                                f"</tr>"
-                            )
+            if pace and pace != "N/A" and pace:
+                details += f"<br/><small>@{pace}</small>"
+            if desc:
+                # Truncate description if too long
+                desc_short = desc[:30] + "..." if len(desc) > 30 else desc
+                details += f"<br/><small style='color: #666;'>{desc_short}</small>"
 
-                    # Add spacing row between workouts
-                    changes_html += "<tr><td colspan='5' style='padding: 5px; border: none;'></td></tr>"
+            return details
 
-            changes_html += "</table>"
-        else:
-            changes_html = "<p><em>No workouts found for this week</em></p>"
+        # Helper function to get workout for a day
+        def get_workout_for_day(
+            workouts: List[Dict[str, Any]], day_name: str
+        ) -> Optional[Dict[str, Any]]:
+            """Get workout for a specific day from list."""
+            for workout in workouts:
+                if workout.get("day") == day_name:
+                    return workout
+            return None
+
+        # Build table HTML
+        table_html = "<h3>📊 Weekly Comparison</h3>"
+        table_html += "<table style='border-collapse: collapse; width: 100%; margin: 20px 0; background-color: white;'>"
+
+        # Header row with days of week
+        table_html += "<tr style='background-color: #4CAF50; color: white;'>"
+        table_html += "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>Week</th>"
+        for day_name in day_names:
+            table_html += f"<th style='padding: 12px; border: 1px solid #ddd; text-align: center;'>{day_name[:3]}</th>"
+        table_html += "</tr>"
+
+        # Row 1: Last week actual runs
+        table_html += "<tr style='background-color: #e3f2fd;'>"
+        table_html += "<td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>Last Week<br/>Actual Runs</td>"
+        for day_name in day_names:
+            run_data = last_week_actual_runs.get(day_name)
+            if run_data:
+                table_html += f"<td style='padding: 10px; border: 1px solid #ddd;'>{format_workout_details(run_data)}</td>"
+            else:
+                table_html += "<td style='padding: 10px; border: 1px solid #ddd;'><em>Rest</em></td>"
+        table_html += "</tr>"
+
+        # Row 2: Next week original plan
+        table_html += "<tr style='background-color: #f9f9f9;'>"
+        table_html += "<td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>Next Week<br/>Original Plan</td>"
+        for day_name in day_names:
+            workout = get_workout_for_day(next_week_original_plan, day_name)
+            table_html += f"<td style='padding: 10px; border: 1px solid #ddd;'>{format_workout_details(workout)}</td>"
+        table_html += "</tr>"
+
+        # Row 3: Next week updated plan
+        table_html += "<tr style='background-color: #fff3cd;'>"
+        table_html += "<td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>Next Week<br/>Updated Plan</td>"
+        for day_name in day_names:
+            workout = get_workout_for_day(next_week_updated_plan, day_name)
+            # Check if this day changed from original (compare key fields)
+            original_workout = get_workout_for_day(next_week_original_plan, day_name)
+            is_changed = False
+            if workout and original_workout:
+                # Compare key fields to determine if changed
+                is_changed = (
+                    workout.get("miles") != original_workout.get("miles")
+                    or workout.get("workout_type")
+                    != original_workout.get("workout_type")
+                    or workout.get("target_zone") != original_workout.get("target_zone")
+                    or workout.get("target_hr") != original_workout.get("target_hr")
+                    or workout.get("description") != original_workout.get("description")
+                )
+            elif workout != original_workout:  # One is None and other is not
+                is_changed = True
+
+            cell_style = "background-color: #ffeb3b;" if is_changed else ""
+            table_html += f"<td style='padding: 10px; border: 1px solid #ddd; {cell_style}'>{format_workout_details(workout)}</td>"
+        table_html += "</tr>"
+
+        table_html += "</table>"
 
         # Metrics validation status
         metrics_status = (
@@ -450,8 +493,14 @@ class EmailService:
         <div class="content">
             <h2>Hi {display_name}!</h2>
             <p>Your training plan for <strong>Week {week_num}</strong> (starting {week_start}) has been updated based on your recent performance.</p>
+            <p>The table below shows:</p>
+            <ul>
+                <li><strong>Last Week Actual Runs:</strong> What you actually ran last week</li>
+                <li><strong>Next Week Original Plan:</strong> What was originally planned for next week</li>
+                <li><strong>Next Week Updated Plan:</strong> How the plan was adjusted based on your performance (highlighted in yellow)</li>
+            </ul>
 
-            {changes_html}
+            {table_html}
 
             <div class="metrics-box">
                 <h3>📈 Metrics Dashboard Status</h3>

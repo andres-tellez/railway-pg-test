@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 SCHEDULE_WEEKDAY = 6  # Sunday (0=Monday, 6=Sunday)
 SCHEDULE_HOUR = 13  # Hour (24-hour format: 13 = 1 PM)
-SCHEDULE_MINUTE = 5  # Minute (0-59)
+SCHEDULE_MINUTE = 42  # Minute (0-59)
 SCHEDULE_TIMEZONE = "America/Chicago"  # Central Time
 SCHEDULE_TIMEZONE_DISPLAY = "Central Time"  # Display name for logs
 
@@ -162,6 +162,102 @@ def run_metrics_refresh():
         return False, f"Metrics refresh failed: {str(e)}"
 
 
+def fetch_last_week_actual_runs(
+    session, user_id: str, week_start_date: date
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Fetch actual completed runs from last week, grouped by day of week.
+
+    Args:
+        session: Database session
+        user_id: User UUID string
+        week_start_date: Monday of the upcoming week (to calculate previous week)
+
+    Returns:
+        Dict mapping day names to run details: {"Monday": {...}, "Tuesday": {...}, ...}
+    """
+    from datetime import datetime
+    from sqlalchemy import and_
+
+    # Calculate last week's date range (Monday to Sunday)
+    last_week_end = week_start_date - timedelta(days=1)  # Sunday
+    last_week_start = last_week_end - timedelta(days=6)  # Monday
+
+    # Convert to datetime for query
+    last_week_start_dt = datetime.combine(last_week_start, datetime.min.time())
+    last_week_end_dt = datetime.combine(last_week_end, datetime.max.time())
+
+    try:
+        # Fetch activities from last week
+        activities = (
+            session.query(Activity)
+            .filter(
+                and_(
+                    Activity.user_id == user_id,
+                    Activity.type == "Run",
+                    Activity.start_date >= last_week_start_dt,
+                    Activity.start_date <= last_week_end_dt,
+                )
+            )
+            .order_by(Activity.start_date)
+            .all()
+        )
+
+        # Group by day of week
+        runs_by_day = {}
+        day_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+
+        for day_name in day_names:
+            runs_by_day[day_name] = None  # Initialize as None (no run)
+
+        for activity in activities:
+            if not activity.start_date:
+                continue
+
+            # Get day of week (0=Monday, 6=Sunday)
+            day_of_week = activity.start_date.weekday()
+            day_name = day_names[day_of_week]
+
+            # Format pace from average_speed (m/s) to MM:SS/mi
+            pace_str = "N/A"
+            if activity.average_speed and activity.average_speed > 0:
+                # Convert m/s to seconds per mile
+                seconds_per_mile = 1609.34 / activity.average_speed
+                minutes = int(seconds_per_mile // 60)
+                seconds = int(seconds_per_mile % 60)
+                pace_str = f"{minutes}:{seconds:02d}/mi"
+
+            distance_mi = activity.conv_distance or (
+                activity.distance / 1609.34 if activity.distance else 0
+            )
+
+            runs_by_day[day_name] = {
+                "distance": round(distance_mi, 1),
+                "pace": pace_str,
+                "name": activity.name or "Run",
+                "date": (
+                    activity.start_date.date().isoformat()
+                    if activity.start_date
+                    else ""
+                ),
+            }
+
+        logger.info(f"📊 Fetched {len(activities)} actual runs from last week")
+        return runs_by_day
+
+    except Exception as e:
+        logger.warning(f"⚠️  Could not fetch last week actual runs: {e}")
+        return {}
+
+
 def calculate_upcoming_week_num(race_date: date, today: date) -> Optional[int]:
     """
     Calculate the week number for the upcoming week (starts next Monday).
@@ -212,6 +308,7 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
         from src.db.db_session import get_session
         from src.db.models.plans import Plan
         from src.db.models.user_identity import UserIdentity
+        from src.db.models.activities import Activity
         from src.services.training_plan.weekly_rebuild_service import (
             WeeklyRebuildService,
         )
@@ -332,9 +429,27 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
                             days_until_monday = (7 - today.weekday()) % 7
                             if days_until_monday == 0:
                                 days_until_monday = 7
-                            week_start_date = (
-                                today + timedelta(days=days_until_monday)
-                            ).isoformat()
+                            week_start_date_obj = today + timedelta(
+                                days=days_until_monday
+                            )
+                            week_start_date = week_start_date_obj.isoformat()
+
+                            # Fetch last week's actual runs
+                            last_week_runs = {}
+                            try:
+                                last_week_runs = fetch_last_week_actual_runs(
+                                    session=session,
+                                    user_id=str(plan.user_id),
+                                    week_start_date=week_start_date_obj,
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    f"⚠️  Could not fetch last week runs for email: {e}"
+                                )
+
+                            # Get original and updated workouts from rebuild result
+                            original_workouts = result.get("original_workouts", [])
+                            updated_workouts = result.get("updated_workouts", [])
 
                             # Send email
                             email_sent = EmailService.send_weekly_update_email(
@@ -342,7 +457,9 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
                                 user_name=user_identity.name,
                                 week_num=upcoming_week_num,
                                 week_start=week_start_date,
-                                workout_changes=workout_changes,
+                                last_week_actual_runs=last_week_runs,
+                                next_week_original_plan=original_workouts,
+                                next_week_updated_plan=updated_workouts,
                                 metrics_refresh_success=metrics_refresh_success,
                                 metrics_refresh_message=metrics_message,
                             )
