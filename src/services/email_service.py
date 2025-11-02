@@ -108,18 +108,31 @@ class EmailService:
             port = config["port"]
             host = config["host"]
 
+            # Warn about SendGrid configuration if using SendGrid
+            if "sendgrid" in host.lower():
+                if config["username"] != "apikey":
+                    logger.warning(
+                        "⚠️  SendGrid SMTP requires username='apikey' (not your SendGrid username). "
+                        f"Current username: {config['username']}"
+                    )
+
             if port == 465:
                 # Use SSL connection for port 465
-                logger.debug(f"Connecting to {host}:{port} using SSL...")
+                logger.info(f"🔌 Connecting to {host}:{port} using SSL...")
                 with smtplib.SMTP_SSL(host, port, timeout=30) as server:
+                    logger.info(f"✅ Connected to {host}:{port}, authenticating...")
                     server.login(config["username"], config["password"])
+                    logger.info(f"✅ Authenticated, sending email...")
                     server.send_message(msg)
             else:
                 # Use STARTTLS for port 587 and others
-                logger.debug(f"Connecting to {host}:{port} using STARTTLS...")
+                logger.info(f"🔌 Connecting to {host}:{port} using STARTTLS...")
                 with smtplib.SMTP(host, port, timeout=30) as server:
+                    logger.info(f"✅ Connected to {host}:{port}, starting TLS...")
                     server.starttls()
+                    logger.info(f"✅ TLS established, authenticating...")
                     server.login(config["username"], config["password"])
+                    logger.info(f"✅ Authenticated, sending email...")
                     server.send_message(msg)
 
             logger.info(f"✅ Email sent successfully to {to_email}")
@@ -158,11 +171,29 @@ class EmailService:
                 logger.error("   2. Try port 465 with SSL instead of 587")
                 logger.error("   3. Contact Railway support about SMTP restrictions")
             return False
+        except smtplib.SMTPAuthenticationError as e:
+            # SMTP authentication error
+            logger.error(
+                f"❌ Failed to send email to {to_email}: SMTP authentication failed: {e}"
+            )
+            if "sendgrid" in config.get("host", "").lower():
+                logger.error("💡 For SendGrid, make sure:")
+                logger.error(
+                    "   1. SMTP_USERNAME='apikey' (the literal string 'apikey')"
+                )
+                logger.error(
+                    "   2. SMTP_PASSWORD=your SendGrid API key (not your account password)"
+                )
+            return False
+        except smtplib.SMTPException as e:
+            # Other SMTP errors
+            logger.error(f"❌ Failed to send email to {to_email}: SMTP error: {e}")
+            return False
         except Exception as e:
             logger.error(f"❌ Failed to send email to {to_email}: {e}")
             import traceback
 
-            logger.debug(traceback.format_exc())
+            logger.error(traceback.format_exc())
             return False
 
     @staticmethod
