@@ -1,14 +1,20 @@
 #!/usr/bin/env python
 """
-Scheduler for metrics refresh - runs the refresh script every Monday at 2:00 AM Central.
+Scheduler for weekly maintenance tasks - runs every Saturday at 10:00 PM Central.
 This is a long-running process that Railway runs as a worker.
+
+Tasks:
+1. Metrics refresh - refreshes materialized views and invalidates caches
+2. Weekly plan rebuild - rebuilds upcoming week's workouts for all active plans
+3. Email notifications - sends weekly update emails to users with changes
 """
 
 import os
 import sys
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, date
+from typing import Optional, List, Dict, Any
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -23,64 +29,312 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def should_run_refresh():
-    """Check if it's Monday at 2:00 AM (or within the 2:00-3:00 AM window)."""
-    # Use local time (Central Time) for scheduling
-    import os
-
+def should_run_scheduled_tasks():
+    """Check if it's Saturday at 10:00 PM (or within the 10:00-11:00 PM window)."""
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
     now = datetime.utcnow() if use_utc else datetime.now()
 
-    # It's Monday (weekday 0) and between 2:00 and 3:00 AM
-    if now.weekday() == 0 and now.hour == 2:
+    # It's Saturday (weekday 5) and between 10:00 and 11:00 PM (hour 22)
+    if now.weekday() == 5 and now.hour == 22:
         return True
 
     # For development/testing: allow manual trigger via environment variable
-    # Set ENABLE_REFRESH=true to trigger refresh on the next check (within the hour)
-    if os.getenv("ENABLE_REFRESH", "false").lower() == "true":
+    # Set ENABLE_WEEKLY_TASKS=true to trigger on the next check (within the hour)
+    if os.getenv("ENABLE_WEEKLY_TASKS", "false").lower() == "true":
         # Clear the flag so it only runs once
-        os.environ.pop("ENABLE_REFRESH", None)
+        os.environ.pop("ENABLE_WEEKLY_TASKS", None)
         return True
 
     return False
 
 
-def run_refresh():
-    """Import and run the refresh script."""
+def run_metrics_refresh():
+    """Import and run the metrics refresh script."""
     try:
         from src.scripts.refresh_metrics_cron import main as refresh_main
 
-        logger.info("🚀 Triggering metrics refresh...")
+        logger.info("🔄 Step 1/3: Starting metrics refresh...")
         exit_code = refresh_main()
 
         if exit_code == 0:
             logger.info("✅ Metrics refresh completed successfully")
+            return (
+                True,
+                "Metrics dashboard successfully refreshed. All graphs updated with latest data.",
+            )
         else:
             logger.error("❌ Metrics refresh completed with errors")
+            return (
+                False,
+                "Metrics refresh encountered errors. Some graphs may not be updated.",
+            )
 
-        return exit_code
     except Exception as e:
-        logger.error(f"❌ Error running refresh: {e}")
+        logger.error(f"❌ Error running metrics refresh: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
+        return False, f"Metrics refresh failed: {str(e)}"
+
+
+def calculate_upcoming_week_num(race_date: date, today: date) -> Optional[int]:
+    """
+    Calculate the week number for the upcoming week (starts next Monday).
+
+    Args:
+        race_date: Race date
+        today: Current date
+
+    Returns:
+        Week number (1-based) or None if race has passed or week not found
+    """
+    # Calculate next Monday (start of upcoming week)
+    # If today is Sunday, next Monday is tomorrow
+    # If today is Monday-Saturday, next Monday is days until next Monday
+    days_until_monday = (7 - today.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7  # Today is Monday, next Monday is 7 days away
+    upcoming_monday = today + timedelta(days=days_until_monday)
+
+    # Calculate weeks until race from upcoming Monday
+    days_until_race = (race_date - upcoming_monday).days
+
+    # If race has already passed or is less than a week away, don't rebuild
+    if days_until_race < 7:
+        return None
+
+    # Calculate week number (weeks before race week)
+    # Week 1 = first week before race week, Week 2 = second week, etc.
+    weeks_until_race = days_until_race // 7
+
+    # Week numbering: if there are 16 weeks until race,
+    # Week 1 starts 15 weeks before race week (since week 0 is race week)
+    # So week_num = weeks_until_race (when weeks_until_race > 0)
+    week_num = weeks_until_race
+
+    return week_num if week_num > 0 else None
+
+
+def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
+    """Rebuild upcoming week for all active plans and send email notifications."""
+    try:
+        from src.db.db_session import get_session
+        from src.db.models.plans import Plan
+        from src.db.models.user_identity import UserIdentity
+        from src.services.training_plan.weekly_rebuild_service import (
+            WeeklyRebuildService,
+        )
+        from src.services.training_plan.week_log_service import (
+            fetch_week_logs_from_db,
+        )
+        from src.services.email_service import EmailService
+
+        logger.info("🔄 Step 2/3: Starting weekly plan rebuild...")
+
+        session = get_session()
+        try:
+            # Get all active plans
+            active_plans = session.query(Plan).filter_by(is_active=True).all()
+
+            if not active_plans:
+                logger.info("ℹ️  No active plans found - skipping rebuild")
+                return 0
+
+            logger.info(f"📋 Found {len(active_plans)} active plan(s)")
+
+            today = date.today()
+            rebuild_service = WeeklyRebuildService()
+            rebuilt_count = 0
+            skipped_count = 0
+            error_count = 0
+            emails_sent = 0
+            emails_failed = 0
+
+            for plan in active_plans:
+                try:
+                    if not plan.race_date:
+                        logger.warning(f"⚠️  Plan {plan.id} has no race_date - skipping")
+                        skipped_count += 1
+                        continue
+
+                    # Calculate upcoming week number
+                    upcoming_week_num = calculate_upcoming_week_num(
+                        plan.race_date, today
+                    )
+
+                    if upcoming_week_num is None:
+                        logger.debug(
+                            f"ℹ️  Plan {plan.id}: No upcoming week to rebuild "
+                            f"(race_date: {plan.race_date})"
+                        )
+                        skipped_count += 1
+                        continue
+
+                    logger.info(
+                        f"🔧 Rebuilding week {upcoming_week_num} for plan {plan.id} "
+                        f"(race_date: {plan.race_date})"
+                    )
+
+                    # Fetch previous week logs (for pace adjustments)
+                    previous_week_logs = []
+                    if upcoming_week_num > 1:
+                        try:
+                            previous_week_logs = fetch_week_logs_from_db(
+                                session=session,
+                                plan_id=plan.id,
+                                week_num=upcoming_week_num - 1,
+                                race_date=plan.race_date,
+                            )
+                            logger.info(
+                                f"📊 Fetched {len(previous_week_logs)} logs from previous week"
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"⚠️  Could not fetch previous week logs: {e} "
+                                f"(continuing without pace adjustments)"
+                            )
+
+                    # Rebuild the week
+                    result = rebuild_service.rebuild_week(
+                        session=session,
+                        plan_id=plan.id,
+                        week_num=upcoming_week_num,
+                        previous_week_logs=previous_week_logs,
+                        initial_seed=None,  # Will regenerate from plan
+                    )
+
+                    session.commit()
+
+                    # Get workout changes from result
+                    workout_changes = result.get("workout_changes", [])
+
+                    logger.info(
+                        f"✅ Successfully rebuilt week {upcoming_week_num} for plan {plan.id} "
+                        f"(pace_adjusted={result.get('pace_adjusted', False)}, "
+                        f"{len(workout_changes)} workouts changed)"
+                    )
+                    rebuilt_count += 1
+
+                    # Send email notification
+                    try:
+                        # Get user email from user_identity table
+                        user_identity = (
+                            session.query(UserIdentity)
+                            .filter_by(user_id=str(plan.user_id))
+                            .first()
+                        )
+
+                        if user_identity and user_identity.email:
+                            # Calculate week start date for display
+                            days_until_monday = (7 - today.weekday()) % 7
+                            if days_until_monday == 0:
+                                days_until_monday = 7
+                            week_start_date = (
+                                today + timedelta(days=days_until_monday)
+                            ).isoformat()
+
+                            # Send email
+                            email_sent = EmailService.send_weekly_update_email(
+                                to_email=user_identity.email,
+                                user_name=user_identity.name,
+                                week_num=upcoming_week_num,
+                                week_start=week_start_date,
+                                workout_changes=workout_changes,
+                                metrics_refresh_success=metrics_refresh_success,
+                                metrics_refresh_message=metrics_message,
+                            )
+
+                            if email_sent:
+                                emails_sent += 1
+                                logger.info(
+                                    f"📧 Email notification sent to {user_identity.email}"
+                                )
+                            else:
+                                emails_failed += 1
+                                logger.warning(
+                                    f"⚠️  Failed to send email to {user_identity.email}"
+                                )
+                        else:
+                            logger.debug(
+                                f"ℹ️  Plan {plan.id}: No email found for user {plan.user_id} - skipping email"
+                            )
+
+                    except Exception as e:
+                        logger.error(
+                            f"❌ Error sending email for plan {plan.id}: {e}",
+                            exc_info=True,
+                        )
+                        emails_failed += 1
+
+                except Exception as e:
+                    logger.error(
+                        f"❌ Error rebuilding plan {plan.id}: {e}", exc_info=True
+                    )
+                    session.rollback()
+                    error_count += 1
+
+            logger.info(
+                f"📊 Weekly rebuild summary: {rebuilt_count} rebuilt, "
+                f"{skipped_count} skipped, {error_count} errors, "
+                f"{emails_sent} emails sent, {emails_failed} emails failed"
+            )
+
+            if error_count > 0:
+                return 1
+            return 0
+
+        finally:
+            session.close()
+
+    except Exception as e:
+        logger.error(f"❌ Error in weekly rebuild process: {e}")
         import traceback
 
         logger.error(traceback.format_exc())
         return 1
 
 
+def run_all_scheduled_tasks():
+    """Run metrics refresh, weekly rebuild, and send email notifications."""
+    logger.info("🚀 Starting weekly scheduled tasks (Saturday 10 PM Central)...")
+
+    # Step 1: Metrics refresh
+    metrics_success, metrics_message = run_metrics_refresh()
+
+    # Step 2: Weekly rebuild (run even if metrics refresh had issues)
+    rebuild_result = run_weekly_rebuild(metrics_success, metrics_message)
+
+    # Return success only if both completed successfully
+    if metrics_success and rebuild_result == 0:
+        logger.info("✅ All weekly scheduled tasks completed successfully")
+        return 0
+    else:
+        logger.warning(
+            "⚠️  Weekly scheduled tasks completed with some errors "
+            f"(metrics: {'success' if metrics_success else 'failed'}, rebuild: {rebuild_result})"
+        )
+        return 1
+
+
 def main():
     """Main scheduler loop - runs forever."""
-    import os
-
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
     timezone_info = "UTC" if use_utc else "local (Central Time)"
 
-    logger.info("🕐 Metrics scheduler started - waiting for Monday at 2:00 AM...")
+    logger.info("🕐 Weekly scheduler started - waiting for Saturday at 10:00 PM...")
     logger.info(
-        f"💡 The refresh will run automatically every Monday at 2:00 AM Central ({timezone_info})"
+        f"💡 Scheduled tasks will run automatically every Saturday at 10:00 PM Central ({timezone_info})"
     )
     logger.info(
-        "💡 Set ENABLE_REFRESH=true environment variable to manually trigger (for testing)"
+        "💡 Tasks include: (1) Metrics refresh, (2) Weekly plan rebuild, (3) Email notifications"
     )
+    logger.info(
+        "💡 Set ENABLE_WEEKLY_TASKS=true environment variable to manually trigger (for testing)"
+    )
+
+    if not os.getenv("DATABASE_URL"):
+        logger.error("❌ DATABASE_URL not configured. Exiting.")
+        sys.exit(1)
 
     # Track last check to avoid running multiple times in the same hour
     last_check_day = None
@@ -97,14 +351,14 @@ def main():
                 )
                 last_check_day = current_day
 
-                if should_run_refresh():
+                if should_run_scheduled_tasks():
                     logger.info(
-                        f"⏰ Scheduled time reached - running metrics refresh at {now}"
+                        f"⏰ Scheduled time reached - running weekly tasks at {now}"
                     )
-                    run_refresh()
+                    run_all_scheduled_tasks()
                 else:
                     logger.debug(
-                        f"⏰ Not time yet - next refresh: Monday at 2:00 AM Central"
+                        f"⏰ Not time yet - next run: Saturday at 10:00 PM Central"
                     )
 
             # Sleep for 1 minute before checking again
@@ -119,9 +373,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # Make sure we have required env vars
-    if not os.getenv("DATABASE_URL"):
-        logger.error("❌ DATABASE_URL not configured. Exiting.")
-        sys.exit(1)
-
     main()
