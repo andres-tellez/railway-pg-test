@@ -2,33 +2,70 @@
 Email Service
 =============
 
-Service for sending email notifications via SMTP.
+Service for sending email notifications via SendGrid REST API.
+Falls back to SMTP if SendGrid API key is not configured (for backward compatibility).
 
 Supports:
 - HTML email templates
 - Plain text fallback
-- SMTP configuration via environment variables
+- SendGrid REST API (preferred - works on Railway)
+- SMTP fallback (for other providers)
 
 Author: SmartCoach Development Team
 """
 
 import os
-import smtplib
-import socket
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import re
 from typing import List, Optional, Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Try to import SendGrid API (preferred method)
+try:
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail, Email, Content
+
+    SENDGRID_AVAILABLE = True
+except ImportError:
+    SENDGRID_AVAILABLE = False
+    logger.warning(
+        "⚠️  SendGrid library not installed. Install with: pip install sendgrid"
+    )
+
+# Try to import SMTP (fallback method)
+try:
+    import smtplib
+    import socket
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    SMTP_AVAILABLE = True
+except ImportError:
+    SMTP_AVAILABLE = False
+
 
 class EmailService:
-    """Service for sending emails via SMTP."""
+    """Service for sending emails via SendGrid REST API or SMTP fallback."""
+
+    @staticmethod
+    def get_sendgrid_config() -> Dict[str, Any]:
+        """Get SendGrid API configuration from environment variables."""
+        api_key = os.getenv("SENDGRID_API_KEY")
+        from_email = os.getenv("SENDGRID_FROM_EMAIL") or os.getenv("SMTP_FROM_EMAIL")
+        from_name = os.getenv("SENDGRID_FROM_NAME") or os.getenv(
+            "SMTP_FROM_NAME", "SmartCoach"
+        )
+
+        return {
+            "api_key": api_key,
+            "from_email": from_email,
+            "from_name": from_name,
+        }
 
     @staticmethod
     def get_smtp_config() -> Dict[str, Any]:
-        """Get SMTP configuration from environment variables."""
+        """Get SMTP configuration from environment variables (fallback)."""
         return {
             "host": os.getenv("SMTP_HOST", "smtp.gmail.com"),
             "port": int(os.getenv("SMTP_PORT", "587")),
@@ -40,9 +77,179 @@ class EmailService:
 
     @staticmethod
     def is_configured() -> bool:
-        """Check if email service is configured."""
+        """Check if email service is configured (SendGrid API or SMTP)."""
+        # Check SendGrid API first (preferred)
+        sendgrid_config = EmailService.get_sendgrid_config()
+        if sendgrid_config["api_key"]:
+            return True
+
+        # Fallback to SMTP
+        if SMTP_AVAILABLE:
+            smtp_config = EmailService.get_smtp_config()
+            return bool(smtp_config["username"] and smtp_config["password"])
+
+        return False
+
+    @staticmethod
+    def send_email_via_sendgrid_api(
+        to_email: str,
+        subject: str,
+        html_content: str,
+        text_content: Optional[str] = None,
+    ) -> bool:
+        """Send email via SendGrid REST API."""
+        if not SENDGRID_AVAILABLE:
+            logger.error("❌ SendGrid library not available - cannot send email")
+            return False
+
+        config = EmailService.get_sendgrid_config()
+
+        if not config["api_key"]:
+            logger.error("❌ SENDGRID_API_KEY not configured")
+            return False
+
+        if not config["from_email"]:
+            logger.error("❌ SENDGRID_FROM_EMAIL not configured")
+            return False
+
+        try:
+            logger.info("📧 Attempting to send email via SendGrid REST API...")
+
+            # Create plain text version if not provided
+            if not text_content:
+                text_content = re.sub(r"<[^>]+>", "", html_content)
+                text_content = text_content.strip()
+
+            # Create SendGrid message
+            message = Mail(
+                from_email=Email(config["from_email"], config["from_name"]),
+                to_emails=to_email,
+                subject=subject,
+                plain_text_content=Content("text/plain", text_content),
+                html_content=Content("text/html", html_content),
+            )
+
+            # Send via SendGrid API
+            sg = SendGridAPIClient(config["api_key"])
+            response = sg.send(message)
+
+            # Check response status
+            if 200 <= response.status_code < 300:
+                logger.info(
+                    f"✅ Email sent successfully to {to_email} via SendGrid API"
+                )
+                return True
+            else:
+                logger.error(
+                    f"❌ SendGrid API returned status code {response.status_code}: {response.body}"
+                )
+                return False
+
+        except Exception as e:
+            logger.error(f"❌ Failed to send email to {to_email} via SendGrid API: {e}")
+            import traceback
+
+            logger.debug(traceback.format_exc())
+            return False
+
+    @staticmethod
+    def send_email_via_smtp(
+        to_email: str,
+        subject: str,
+        html_content: str,
+        text_content: Optional[str] = None,
+    ) -> bool:
+        """Send email via SMTP (fallback method)."""
+        if not SMTP_AVAILABLE:
+            logger.error("❌ SMTP library not available - cannot send email")
+            return False
+
         config = EmailService.get_smtp_config()
-        return bool(config["username"] and config["password"])
+
+        if not config["username"] or not config["password"]:
+            logger.error("❌ SMTP credentials not configured")
+            return False
+
+        logger.info(
+            f"📧 Attempting to send email via SMTP ({config['host']}:{config['port']})..."
+        )
+
+        try:
+            # Create message
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = f"{config['from_name']} <{config['from_email']}>"
+            msg["To"] = to_email
+
+            # Create plain text version if not provided
+            if not text_content:
+                text_content = re.sub(r"<[^>]+>", "", html_content)
+                text_content = text_content.strip()
+
+            # Add parts
+            part1 = MIMEText(text_content, "plain")
+            part2 = MIMEText(html_content, "html")
+
+            msg.attach(part1)
+            msg.attach(part2)
+
+            # Send email
+            port = config["port"]
+            host = config["host"]
+
+            if port == 465:
+                # Use SSL connection for port 465
+                logger.info(f"🔌 Connecting to {host}:{port} using SSL...")
+                with smtplib.SMTP_SSL(host, port, timeout=30) as server:
+                    server.login(config["username"], config["password"])
+                    server.send_message(msg)
+            else:
+                # Use STARTTLS for port 587 and others
+                logger.info(f"🔌 Connecting to {host}:{port} using STARTTLS...")
+                with smtplib.SMTP(host, port, timeout=30) as server:
+                    server.starttls()
+                    server.login(config["username"], config["password"])
+                    server.send_message(msg)
+
+            logger.info(f"✅ Email sent successfully to {to_email} via SMTP")
+            return True
+
+        except socket.gaierror as e:
+            logger.error(
+                f"❌ Failed to send email to {to_email}: DNS resolution failed for {config['host']}: {e}"
+            )
+            return False
+        except socket.timeout as e:
+            logger.error(
+                f"❌ Failed to send email to {to_email}: Connection timeout to {config['host']}:{config['port']}: {e}"
+            )
+            logger.error(
+                "💡 Railway blocks SMTP ports. Use SendGrid REST API instead (set SENDGRID_API_KEY)"
+            )
+            return False
+        except OSError as e:
+            logger.error(
+                f"❌ Failed to send email to {to_email}: Network error ({e.errno}): {e}"
+            )
+            if e.errno == 101:  # Network is unreachable
+                logger.error(
+                    "💡 Railway blocks SMTP connections. Use SendGrid REST API instead (set SENDGRID_API_KEY)"
+                )
+            return False
+        except smtplib.SMTPAuthenticationError as e:
+            logger.error(
+                f"❌ Failed to send email to {to_email}: SMTP authentication failed: {e}"
+            )
+            return False
+        except smtplib.SMTPException as e:
+            logger.error(f"❌ Failed to send email to {to_email}: SMTP error: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Failed to send email to {to_email}: {e}")
+            import traceback
+
+            logger.debug(traceback.format_exc())
+            return False
 
     @staticmethod
     def send_email(
@@ -52,7 +259,7 @@ class EmailService:
         text_content: Optional[str] = None,
     ) -> bool:
         """
-        Send an email via SMTP.
+        Send an email via SendGrid REST API (preferred) or SMTP (fallback).
 
         Args:
             to_email: Recipient email address
@@ -66,168 +273,28 @@ class EmailService:
         if not EmailService.is_configured():
             logger.warning("Email service not configured - skipping send")
             logger.warning(
-                "Set SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD to enable emails"
+                "Set SENDGRID_API_KEY (preferred) or SMTP_USERNAME/SMTP_PASSWORD to enable emails"
             )
             return False
 
-        config = EmailService.get_smtp_config()
-
-        # Log SMTP configuration for debugging (without exposing password)
-        logger.debug(
-            f"📧 SMTP Configuration: host={config['host']}, port={config['port']}, "
-            f"username={config['username']}, from_email={config['from_email']}"
-        )
-        logger.info(
-            f"📧 Attempting to send email via {config['host']}:{config['port']}"
-        )
-
-        try:
-            # Create message
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = f"{config['from_name']} <{config['from_email']}>"
-            msg["To"] = to_email
-
-            # Create plain text version if not provided
-            if not text_content:
-                # Simple HTML to text conversion (remove HTML tags)
-                import re
-
-                text_content = re.sub(r"<[^>]+>", "", html_content)
-                text_content = text_content.strip()
-
-            # Add parts
-            part1 = MIMEText(text_content, "plain")
-            part2 = MIMEText(html_content, "html")
-
-            msg.attach(part1)
-            msg.attach(part2)
-
-            # Send email
-            # Try different connection methods based on port
-            port = config["port"]
-            host = config["host"]
-
-            # Warn about SendGrid configuration if using SendGrid
-            if "sendgrid" in host.lower():
-                if config["username"] != "apikey":
-                    logger.warning(
-                        "⚠️  SendGrid SMTP requires username='apikey' (not your SendGrid username). "
-                        f"Current username: {config['username']}"
-                    )
-
-            # Try sending email with the configured port
-            try:
-                if port == 465:
-                    # Use SSL connection for port 465
-                    logger.info(f"🔌 Connecting to {host}:{port} using SSL...")
-                    with smtplib.SMTP_SSL(host, port, timeout=30) as server:
-                        logger.info(f"✅ Connected to {host}:{port}, authenticating...")
-                        server.login(config["username"], config["password"])
-                        logger.info(f"✅ Authenticated, sending email...")
-                        server.send_message(msg)
-                else:
-                    # Use STARTTLS for port 587 and others
-                    logger.info(f"🔌 Connecting to {host}:{port} using STARTTLS...")
-                    with smtplib.SMTP(host, port, timeout=30) as server:
-                        logger.info(f"✅ Connected to {host}:{port}, starting TLS...")
-                        server.starttls()
-                        logger.info(f"✅ TLS established, authenticating...")
-                        server.login(config["username"], config["password"])
-                        logger.info(f"✅ Authenticated, sending email...")
-                        server.send_message(msg)
-
-                logger.info(f"✅ Email sent successfully to {to_email}")
-                return True
-
-            except (socket.timeout, OSError) as e:
-                # If port 587 times out or fails, and we're using SendGrid, try port 465
-                if port == 587 and "sendgrid" in host.lower():
-                    logger.warning(
-                        f"⚠️  Port 587 timed out or failed ({e}), trying SendGrid port 465 (SSL) as fallback..."
-                    )
-                    try:
-                        logger.info(
-                            f"🔌 Connecting to {host}:465 using SSL (fallback)..."
-                        )
-                        with smtplib.SMTP_SSL(host, 465, timeout=30) as server:
-                            logger.info(
-                                f"✅ Connected to {host}:465, authenticating..."
-                            )
-                            server.login(config["username"], config["password"])
-                            logger.info(f"✅ Authenticated, sending email...")
-                            server.send_message(msg)
-                        logger.info(
-                            f"✅ Email sent successfully to {to_email} via port 465 (fallback)"
-                        )
-                        return True
-                    except Exception as fallback_error:
-                        logger.error(
-                            f"❌ Fallback to port 465 also failed: {fallback_error}"
-                        )
-                        # Re-raise the original error
-                        raise e
-                else:
-                    # Re-raise the original error if it's not SendGrid on port 587
-                    raise
-
-        except socket.gaierror as e:
-            # DNS resolution error
-            logger.error(
-                f"❌ Failed to send email to {to_email}: DNS resolution failed for {config['host']}: {e}"
+        # Try SendGrid API first (preferred - works on Railway)
+        sendgrid_config = EmailService.get_sendgrid_config()
+        if sendgrid_config["api_key"]:
+            return EmailService.send_email_via_sendgrid_api(
+                to_email, subject, html_content, text_content
             )
-            logger.error(
-                "💡 Check that SMTP_HOST is correct and Railway allows DNS resolution"
-            )
-            return False
-        except socket.timeout as e:
-            # Connection timeout
-            logger.error(
-                f"❌ Failed to send email to {to_email}: Connection timeout to {config['host']}:{config['port']}: {e}"
-            )
-            logger.error(
-                "💡 Railway may be blocking outbound SMTP connections. Try port 465 (SSL) or use an SMTP relay service"
-            )
-            return False
-        except OSError as e:
-            # Network unreachable or other OS-level errors
-            logger.error(
-                f"❌ Failed to send email to {to_email}: Network error ({e.errno}): {e}"
-            )
-            if e.errno == 101:  # Network is unreachable
-                logger.error(
-                    "💡 Railway is blocking outbound SMTP connections. Options:"
-                )
-                logger.error(
-                    "   1. Use an SMTP relay service (SendGrid, Mailgun, etc.)"
-                )
-                logger.error("   2. Try port 465 with SSL instead of 587")
-                logger.error("   3. Contact Railway support about SMTP restrictions")
-            return False
-        except smtplib.SMTPAuthenticationError as e:
-            # SMTP authentication error
-            logger.error(
-                f"❌ Failed to send email to {to_email}: SMTP authentication failed: {e}"
-            )
-            if "sendgrid" in config.get("host", "").lower():
-                logger.error("💡 For SendGrid, make sure:")
-                logger.error(
-                    "   1. SMTP_USERNAME='apikey' (the literal string 'apikey')"
-                )
-                logger.error(
-                    "   2. SMTP_PASSWORD=your SendGrid API key (not your account password)"
-                )
-            return False
-        except smtplib.SMTPException as e:
-            # Other SMTP errors
-            logger.error(f"❌ Failed to send email to {to_email}: SMTP error: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"❌ Failed to send email to {to_email}: {e}")
-            import traceback
 
-            logger.error(traceback.format_exc())
-            return False
+        # Fallback to SMTP (may not work on Railway)
+        if SMTP_AVAILABLE:
+            logger.warning(
+                "⚠️  Using SMTP fallback. SendGrid API is recommended for Railway (set SENDGRID_API_KEY)"
+            )
+            return EmailService.send_email_via_smtp(
+                to_email, subject, html_content, text_content
+            )
+
+        logger.error("❌ No email method available (SendGrid library or SMTP)")
+        return False
 
     @staticmethod
     def send_weekly_update_email(
