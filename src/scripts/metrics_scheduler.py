@@ -16,10 +16,23 @@ from pathlib import Path
 from datetime import datetime, timedelta, date
 from typing import Optional, List, Dict, Any
 import pytz
+from dotenv import load_dotenv
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Load environment variables from .env.local if it exists
+env_local_path = project_root / ".env.local"
+if env_local_path.exists():
+    load_dotenv(env_local_path, override=True)
+    print(f"[OK] Loaded environment from .env.local", flush=True)
+else:
+    # Try .env.staging as fallback
+    env_staging_path = project_root / ".env.staging"
+    if env_staging_path.exists():
+        load_dotenv(env_staging_path, override=True)
+        print(f"[OK] Loaded environment from .env.staging", flush=True)
 
 # Configure logging
 import logging
@@ -60,11 +73,21 @@ def should_run_scheduled_tasks():
 
 def run_metrics_refresh():
     """Import and run the metrics refresh script."""
+    import time
+
+    start_time = time.time()
+
     try:
+        logger.info("🔄 Step 1/3: Starting metrics refresh...")
+        logger.info("   [This may take 2-5 minutes depending on data size]")
+
         from src.scripts.refresh_metrics_cron import main as refresh_main
 
-        logger.info("🔄 Step 1/3: Starting metrics refresh...")
+        logger.info("   [Calling refresh_metrics_cron.main()...]")
         exit_code = refresh_main()
+
+        elapsed = time.time() - start_time
+        logger.info(f"   [Metrics refresh took {elapsed:.1f} seconds]")
 
         if exit_code == 0:
             logger.info("✅ Metrics refresh completed successfully")
@@ -80,7 +103,10 @@ def run_metrics_refresh():
             )
 
     except Exception as e:
-        logger.error(f"❌ Error running metrics refresh: {e}")
+        elapsed = time.time() - start_time
+        logger.error(
+            f"❌ Error running metrics refresh after {elapsed:.1f} seconds: {e}"
+        )
         import traceback
 
         logger.error(traceback.format_exc())
@@ -127,7 +153,13 @@ def calculate_upcoming_week_num(race_date: date, today: date) -> Optional[int]:
 
 def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
     """Rebuild upcoming week for all active plans and send email notifications."""
+    import time
+
+    start_time = time.time()
+
     try:
+        logger.info("🔄 Step 2/3: Starting weekly plan rebuild...")
+
         from src.db.db_session import get_session
         from src.db.models.plans import Plan
         from src.db.models.user_identity import UserIdentity
@@ -139,7 +171,7 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
         )
         from src.services.email_service import EmailService
 
-        logger.info("🔄 Step 2/3: Starting weekly plan rebuild...")
+        logger.info("   [Imports successful, querying database...]")
 
         session = get_session()
         try:
@@ -189,6 +221,7 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
                     previous_week_logs = []
                     if upcoming_week_num > 1:
                         try:
+                            logger.info(f"   [Fetching previous week logs...]")
                             previous_week_logs = fetch_week_logs_from_db(
                                 session=session,
                                 plan_id=plan.id,
@@ -205,12 +238,23 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
                             )
 
                     # Rebuild the week
+                    logger.info(
+                        f"   [Starting rebuild for plan {plan.id}, week {upcoming_week_num}...]"
+                    )
+                    logger.info(
+                        f"   [NOTE: This may take 1-3 minutes - fetching Strava data & generating workout details]"
+                    )
+                    rebuild_start = time.time()
                     result = rebuild_service.rebuild_week(
                         session=session,
                         plan_id=plan.id,
                         week_num=upcoming_week_num,
                         previous_week_logs=previous_week_logs,
                         initial_seed=None,  # Will regenerate from plan
+                    )
+                    rebuild_elapsed = time.time() - rebuild_start
+                    logger.info(
+                        f"   [Rebuild completed for plan {plan.id} in {rebuild_elapsed:.1f} seconds]"
                     )
 
                     session.commit()
@@ -381,19 +425,33 @@ def main():
             current_timestamp = now.strftime("%Y-%m-%d %H:%M")
 
             # Check schedule every minute
-            if should_run_scheduled_tasks():
+            should_run = should_run_scheduled_tasks()
+
+            # Log more frequently when approaching target time for debugging
+            if now.weekday() == 5 and now.hour == 22:
+                # On Saturday at 10 PM, log every minute
+                logger.info(
+                    f"⏰ Saturday 10 PM window - Current time: {now.strftime('%Y-%m-%d %H:%M:%S')} "
+                    f"(weekday={now.weekday()}, hour={now.hour}, minute={now.minute}), should_run={should_run}"
+                )
+
+            if should_run:
                 # Only run if we haven't run in this minute already
                 if current_timestamp != last_run_timestamp:
                     logger.info(
-                        f"⏰ Scheduled time reached - running weekly tasks at {now}"
+                        f"⏰ Scheduled time reached - running weekly tasks at {now.strftime('%Y-%m-%d %H:%M:%S')}"
                     )
                     run_all_scheduled_tasks()
                     last_run_timestamp = current_timestamp
+                else:
+                    logger.debug(
+                        f"⏰ Already ran at {current_timestamp}, skipping duplicate run"
+                    )
             else:
                 # Log every 10 minutes for debugging
                 if now.minute % 10 == 0:
-                    logger.debug(
-                        f"⏰ Checking schedule... (current time: {now.strftime('%Y-%m-%d %H:%M')}, "
+                    logger.info(
+                        f"⏰ Checking schedule... (current time: {now.strftime('%Y-%m-%d %H:%M:%S')}, "
                         f"weekday={now.weekday()}, hour={now.hour}, minute={now.minute}) - next run: Saturday at 10:30 PM Central Time"
                     )
 

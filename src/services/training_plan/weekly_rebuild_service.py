@@ -91,40 +91,163 @@ class WeeklyRebuildService:
         week_end = max(w.date for w in week_workouts)
 
         # Get or generate initial pace seed
+        # OPTIMIZED: Only fetch 12 weeks if it's week 1 (first rebuild)
+        # For subsequent weeks, extract seed from previous week's workouts
         if initial_seed is None:
-            # Get Week 1 totals to seed pace
-            first_week_workouts = (
-                all_workouts[:7] if len(all_workouts) >= 7 else all_workouts
-            )  # Approximate
-            week1_total = sum(w.miles for w in first_week_workouts[:7])
-            week1_long = max(
-                (
-                    w.miles
-                    for w in first_week_workouts
-                    if w.workout_type in ("Long Run", "long")
-                ),
-                default=8.0,
-            )
+            if week_num == 1:
+                # Week 1: Fetch 12 weeks of historical data (only once)
+                logger.info(
+                    f"[Rebuild] Week 1: Fetching 12 weeks of Strava activities to calculate initial pace seed..."
+                )
+                import time
 
-            # Fetch Strava activities for pace seeding (reuse existing infrastructure)
-            from src.services.training_plan.data_collection_service import (
-                DataCollectionService,
-            )
+                strava_start = time.time()
+                from src.services.training_plan.data_collection_service import (
+                    DataCollectionService,
+                )
 
-            raw_data = DataCollectionService.collect_all_data(
-                session=session,
-                user_id=str(plan.user_id),
-                plan_request={},  # Minimal plan request for weekly rebuild
-                activity_weeks=12,
-            )
-            strava_activities = raw_data.get("strava_activities", [])
+                # Get Week 1 totals to seed pace
+                first_week_workouts = (
+                    all_workouts[:7] if len(all_workouts) >= 7 else all_workouts
+                )
+                week1_total = sum(w.miles for w in first_week_workouts[:7])
+                week1_long = max(
+                    (
+                        w.miles
+                        for w in first_week_workouts
+                        if w.workout_type in ("Long Run", "long")
+                    ),
+                    default=8.0,
+                )
 
-            initial_seed = get_initial_pace_seed(
-                strava_activities=strava_activities,
-                plan_week1_total=week1_total,
-                plan_week1_long=week1_long,
-                goal_mp_sec_per_mi=None,
-            )
+                raw_data = DataCollectionService.collect_all_data(
+                    session=session,
+                    user_id=str(plan.user_id),
+                    plan_request={},
+                    activity_weeks=12,
+                )
+                strava_elapsed = time.time() - strava_start
+                strava_activities = raw_data.get("strava_activities", [])
+                logger.info(
+                    f"[Rebuild] Fetched {len(strava_activities)} activities in {strava_elapsed:.1f} seconds"
+                )
+
+                logger.info(
+                    f"[Rebuild] Generating initial pace seed from historical data..."
+                )
+                initial_seed = get_initial_pace_seed(
+                    strava_activities=strava_activities,
+                    plan_week1_total=week1_total,
+                    plan_week1_long=week1_long,
+                    goal_mp_sec_per_mi=None,
+                )
+                logger.info(f"[Rebuild] Initial pace seed generated")
+            else:
+                # Week 2+: Extract pace seed from previous week's workouts
+                logger.info(
+                    f"[Rebuild] Week {week_num}: Extracting pace seed from previous week's workouts..."
+                )
+                previous_week_num = week_num - 1
+                previous_week_workouts = _find_week_workouts(
+                    all_workouts, previous_week_num, plan.race_date
+                )
+
+                if previous_week_workouts:
+                    # Extract seed from previous week's workout segments
+                    extracted_seed = _extract_pace_seed_from_workouts(
+                        previous_week_workouts
+                    )
+                    if extracted_seed:
+                        initial_seed = extracted_seed
+                        logger.info(
+                            f"[Rebuild] Pace seed extracted from previous week's workouts"
+                        )
+                    else:
+                        # Fallback: Fetch 12 weeks if extraction fails
+                        logger.warning(
+                            f"[Rebuild] Could not extract seed from previous week, fetching 12 weeks as fallback..."
+                        )
+                        import time
+
+                        strava_start = time.time()
+                        from src.services.training_plan.data_collection_service import (
+                            DataCollectionService,
+                        )
+
+                        raw_data = DataCollectionService.collect_all_data(
+                            session=session,
+                            user_id=str(plan.user_id),
+                            plan_request={},
+                            activity_weeks=12,
+                        )
+                        strava_elapsed = time.time() - strava_start
+                        strava_activities = raw_data.get("strava_activities", [])
+
+                        first_week_workouts = (
+                            all_workouts[:7] if len(all_workouts) >= 7 else all_workouts
+                        )
+                        week1_total = sum(w.miles for w in first_week_workouts[:7])
+                        week1_long = max(
+                            (
+                                w.miles
+                                for w in first_week_workouts
+                                if w.workout_type in ("Long Run", "long")
+                            ),
+                            default=8.0,
+                        )
+
+                        initial_seed = get_initial_pace_seed(
+                            strava_activities=strava_activities,
+                            plan_week1_total=week1_total,
+                            plan_week1_long=week1_long,
+                            goal_mp_sec_per_mi=None,
+                        )
+                        logger.info(
+                            f"[Rebuild] Pace seed generated from fallback (12 weeks) in {strava_elapsed:.1f} seconds"
+                        )
+                else:
+                    # No previous week found - use fallback
+                    logger.warning(
+                        f"[Rebuild] No previous week workouts found, using fallback..."
+                    )
+                    import time
+
+                    strava_start = time.time()
+                    from src.services.training_plan.data_collection_service import (
+                        DataCollectionService,
+                    )
+
+                    raw_data = DataCollectionService.collect_all_data(
+                        session=session,
+                        user_id=str(plan.user_id),
+                        plan_request={},
+                        activity_weeks=12,
+                    )
+                    strava_elapsed = time.time() - strava_start
+                    strava_activities = raw_data.get("strava_activities", [])
+
+                    first_week_workouts = (
+                        all_workouts[:7] if len(all_workouts) >= 7 else all_workouts
+                    )
+                    week1_total = sum(w.miles for w in first_week_workouts[:7])
+                    week1_long = max(
+                        (
+                            w.miles
+                            for w in first_week_workouts
+                            if w.workout_type in ("Long Run", "long")
+                        ),
+                        default=8.0,
+                    )
+
+                    initial_seed = get_initial_pace_seed(
+                        strava_activities=strava_activities,
+                        plan_week1_total=week1_total,
+                        plan_week1_long=week1_long,
+                        goal_mp_sec_per_mi=None,
+                    )
+                    logger.info(
+                        f"[Rebuild] Pace seed generated from fallback in {strava_elapsed:.1f} seconds"
+                    )
 
         # Adjust seed based on previous week logs
         current_seed = initial_seed
@@ -159,6 +282,12 @@ class WeeklyRebuildService:
         }
 
         # Rebuild details using Pass 4
+        logger.info(
+            f"[Rebuild] Generating workout details with Pass4... (may take 10-30 seconds if calling OpenAI)"
+        )
+        import time
+
+        pass4_start = time.time()
         pass4 = Pass4WorkoutDetails()
         allow_quality = (phase in ("Build", "Peak")) and not disable_quality
 
@@ -166,6 +295,10 @@ class WeeklyRebuildService:
             week=week_plan,
             seed=current_seed,
             allow_quality=allow_quality,
+        )
+        pass4_elapsed = time.time() - pass4_start
+        logger.info(
+            f"[Rebuild] Workout details generated for {len(week_with_details.get('workouts', []))} workouts in {pass4_elapsed:.1f} seconds"
         )
 
         # Track changes for email notification
@@ -346,3 +479,185 @@ def _determine_phase(week_num: int, total_weeks: int) -> str:
         return "Peak"
     else:
         return "Taper"
+
+
+def _extract_pace_seed_from_workouts(
+    workouts: List[PlanWorkout],
+) -> Optional[PaceSeed]:
+    """
+    Extract pace seed from existing workout segments.
+
+    This allows us to reuse the previous week's pace seed without fetching
+    12 weeks of historical data. We extract pace zones from the segments
+    stored in the database.
+
+    Args:
+        workouts: List of PlanWorkout objects from previous week
+
+    Returns:
+        PaceSeed if extraction successful, None otherwise
+    """
+    import json
+
+    # Collect pace targets from workout segments
+    easy_paces = []
+    steady_paces = []
+    marathon_paces = []
+    threshold_paces = []
+
+    for workout in workouts:
+        if not workout.segments:
+            continue
+
+        # Handle both dict format and array format
+        segments = workout.segments
+        if isinstance(segments, str):
+            try:
+                segments = json.loads(segments)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        # Extract steps from segments
+        steps = None
+        if isinstance(segments, dict):
+            steps = segments.get("steps", [])
+        elif isinstance(segments, list):
+            steps = segments
+        else:
+            continue
+
+        if not steps or not isinstance(steps, list):
+            continue
+
+        # Extract pace targets from each step
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+
+            target = step.get("target")
+            intensity = step.get("intensity", "").upper()
+            name = step.get("name", "").upper()
+
+            if not target:
+                continue
+
+            # Handle both dict and simple format
+            if isinstance(target, dict):
+                low = target.get("low")
+                high = target.get("high")
+            elif isinstance(target, (int, float)):
+                low = high = target
+            else:
+                continue
+
+            if low is None or high is None:
+                continue
+
+            # Categorize by intensity/name
+            if (
+                intensity == "EASY"
+                or "EASY" in name
+                or "WARM" in name
+                or "COOL" in name
+            ):
+                easy_paces.extend([low, high])
+            elif intensity == "STEADY" or "STEADY" in name or "ENDURANCE" in name:
+                steady_paces.extend([low, high])
+            elif intensity == "MARATHON" or "MARATHON" in name:
+                marathon_paces.append((low + high) / 2)  # Single value
+            elif intensity == "THRESHOLD" or "THRESHOLD" in name or "TEMPO" in name:
+                threshold_paces.extend([low, high])
+
+    # Calculate pace zones from collected paces
+    # If we have enough data, use median/mean; otherwise return None
+    if not (easy_paces or steady_paces or marathon_paces or threshold_paces):
+        logger.debug("No pace data found in workout segments")
+        return None
+
+    # Calculate E zone (Easy)
+    E_min = E_max = None
+    if easy_paces:
+        sorted_easy = sorted(easy_paces)
+        E_min = sorted_easy[0]  # Minimum easy pace
+        E_max = sorted_easy[-1]  # Maximum easy pace
+        # If we have few samples, create a range around median
+        if len(sorted_easy) < 4:
+            median_easy = sorted_easy[len(sorted_easy) // 2]
+            E_min = median_easy - 15  # 15 seconds slower
+            E_max = median_easy + 45  # 45 seconds faster
+
+    # Calculate S zone (Steady)
+    S_min = S_max = None
+    if steady_paces:
+        sorted_steady = sorted(steady_paces)
+        S_min = sorted_steady[0]
+        S_max = sorted_steady[-1]
+        if len(sorted_steady) < 4:
+            median_steady = sorted_steady[len(sorted_steady) // 2]
+            S_min = median_steady - 15
+            S_max = median_steady + 15
+
+    # Calculate M pace (Marathon - single value)
+    M = None
+    if marathon_paces:
+        M = sum(marathon_paces) / len(marathon_paces)
+    elif E_min and E_max:
+        # Estimate M from E: M is ~60s faster than E
+        median_easy = (E_min + E_max) / 2
+        M = median_easy - 60
+
+    # Calculate T zone (Threshold)
+    T_min = T_max = None
+    if threshold_paces:
+        sorted_threshold = sorted(threshold_paces)
+        T_min = sorted_threshold[0]
+        T_max = sorted_threshold[-1]
+        if len(sorted_threshold) < 4:
+            median_threshold = sorted_threshold[len(sorted_threshold) // 2]
+            T_min = median_threshold - 5
+            T_max = median_threshold + 5
+    elif M:
+        # Estimate T from M: T is ~20-30s faster than M
+        T_min = M - 30
+        T_max = M - 20
+
+    # Validate we have at least E and M (required)
+    if E_min is None or E_max is None or M is None:
+        logger.warning(
+            f"Insufficient pace data extracted: E={E_min}-{E_max}, M={M}, "
+            f"S={S_min}-{S_max}, T={T_min}-{T_max}"
+        )
+        return None
+
+    # Use estimates for missing zones
+    if S_min is None or S_max is None:
+        median_easy = (E_min + E_max) / 2
+        S_min = median_easy - 15
+        S_max = median_easy + 15
+
+    if T_min is None or T_max is None:
+        T_min = M - 30
+        T_max = M - 20
+
+    # Estimate week1_long_cap (use average of long runs if available)
+    long_runs = [w.miles for w in workouts if "long" in w.workout_type.lower()]
+    week1_long_cap = max(long_runs) if long_runs else 8.0
+
+    seed = PaceSeed(
+        E_min=float(E_min),
+        E_max=float(E_max),
+        S_min=float(S_min),
+        S_max=float(S_max),
+        M=float(M),
+        T_min=float(T_min),
+        T_max=float(T_max),
+        week1_long_cap=week1_long_cap,
+    )
+
+    logger.info(
+        f"Extracted pace seed: E={E_min:.1f}-{E_max:.1f}s/mi, "
+        f"S={S_min:.1f}-{S_max:.1f}s/mi, M={M:.1f}s/mi, "
+        f"T={T_min:.1f}-{T_max:.1f}s/mi"
+    )
+
+    return seed
