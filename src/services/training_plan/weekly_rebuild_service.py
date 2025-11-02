@@ -318,6 +318,22 @@ class WeeklyRebuildService:
             # Track changes before updating
             changes = []
 
+            # Helper function to normalize segments (used in multiple places)
+            import json
+
+            def normalize_segments(seg_data):
+                """Normalize segments to dict for comparison."""
+                if not seg_data:
+                    return None
+                if isinstance(seg_data, dict):
+                    return seg_data
+                if isinstance(seg_data, str):
+                    try:
+                        return json.loads(seg_data)
+                    except (json.JSONDecodeError, TypeError):
+                        return None
+                return None
+
             # Compare description/cues
             old_description = db_workout.description or ""
             new_description = cues or ""
@@ -350,27 +366,40 @@ class WeeklyRebuildService:
                 )
 
             # Compare segments with detailed information
-            old_segments = db_workout.segments
-            if old_segments != segments:
-                # Parse segments to extract detailed information
-                import json
+            # Normalize both to dict for proper comparison
+            old_segments_normalized = normalize_segments(db_workout.segments)
+            new_segments_normalized = normalize_segments(segments)
 
+            # Deep compare by converting both to JSON strings
+            old_seg_json = (
+                json.dumps(old_segments_normalized, sort_keys=True)
+                if old_segments_normalized
+                else None
+            )
+            new_seg_json = (
+                json.dumps(new_segments_normalized, sort_keys=True)
+                if new_segments_normalized
+                else None
+            )
+
+            if old_seg_json != new_seg_json:
+                # Parse segments to extract detailed information
                 # Helper to format segment details
                 def format_segment_details(seg_data):
                     """Format segment data into human-readable string."""
                     if not seg_data:
                         return "None"
 
-                    # Handle string JSON
-                    if isinstance(seg_data, str):
-                        try:
-                            seg_data = json.loads(seg_data)
-                        except (json.JSONDecodeError, TypeError):
-                            return "Invalid format"
+                    # Normalize to dict
+                    normalized = normalize_segments(seg_data)
+                    if not normalized:
+                        return "None"
 
                     # Extract steps information
                     steps = (
-                        seg_data.get("steps", []) if isinstance(seg_data, dict) else []
+                        normalized.get("steps", [])
+                        if isinstance(normalized, dict)
+                        else []
                     )
                     if not steps:
                         return "No steps"
@@ -407,8 +436,8 @@ class WeeklyRebuildService:
 
                     return summary or f"{len(steps)} steps"
 
-                old_seg_str = format_segment_details(old_segments)
-                new_seg_str = format_segment_details(segments)
+                old_seg_str = format_segment_details(old_segments_normalized)
+                new_seg_str = format_segment_details(new_segments_normalized)
 
                 changes.append(
                     {
@@ -419,10 +448,51 @@ class WeeklyRebuildService:
                 )
 
             # Compare target zone (pace zone)
+            # Try to extract from multiple sources
             old_target_zone = db_workout.target_zone or ""
-            new_target_zone = workout_data.get("target_zone") or workout_data.get(
-                "pace_labels", {}
-            ).get("primary", "")
+
+            def extract_pace_zone_string(workout_data):
+                """Extract pace zone string from workout data."""
+                # First try direct target_zone
+                target_zone = workout_data.get("target_zone")
+                if target_zone:
+                    return target_zone
+
+                # Try pace_labels
+                pace_labels = workout_data.get("pace_labels", {})
+                if pace_labels:
+                    primary = pace_labels.get("primary", "")
+                    if primary:
+                        return primary
+                    secondary = pace_labels.get("secondary", "")
+                    if secondary:
+                        return secondary
+
+                # Try extracting from segments (get pace range from first step)
+                segments_data = workout_data.get("segments", {})
+                if segments_data:
+                    normalized_seg = normalize_segments(segments_data)
+                    if normalized_seg and isinstance(normalized_seg, dict):
+                        steps = normalized_seg.get("steps", [])
+                        if steps and isinstance(steps, list) and len(steps) > 0:
+                            first_step = steps[0]
+                            target = first_step.get("target", {})
+                            if isinstance(target, dict):
+                                pace_min = target.get("paceMin")
+                                pace_max = target.get("paceMax")
+                                if pace_min and pace_max:
+                                    # Convert seconds per mile to MM:SS format
+                                    def sec_to_pace(sec):
+                                        mins = int(sec // 60)
+                                        secs = int(sec % 60)
+                                        return f"{mins}:{secs:02d}"
+
+                                    return f"{sec_to_pace(pace_min)}—{sec_to_pace(pace_max)}/mi"
+
+                return ""
+
+            new_target_zone = extract_pace_zone_string(workout_data)
+
             if old_target_zone != new_target_zone:
                 changes.append(
                     {
@@ -470,10 +540,13 @@ class WeeklyRebuildService:
                 }
             )
 
+            # Build update data including all fields that should be saved
             update_data = {
                 "segments": segments,  # Store as JSON
                 "description": cues,  # Update description with cues
                 "intensity": new_intensity,  # May update intensity
+                "target_zone": new_target_zone or None,  # Save extracted target zone
+                "target_hr": new_target_hr or None,  # Save target HR if available
             }
 
             update_workout(session, db_workout.id, update_data)
