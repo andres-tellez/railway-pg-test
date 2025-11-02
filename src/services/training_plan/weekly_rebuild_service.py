@@ -168,6 +168,9 @@ class WeeklyRebuildService:
             allow_quality=allow_quality,
         )
 
+        # Track changes for email notification
+        workout_changes = []
+
         # Update workouts in database
         updated_count = 0
         for workout_data, db_workout in zip(
@@ -177,13 +180,90 @@ class WeeklyRebuildService:
             segments = workout_data.get("segments", [])
             cues = workout_data.get("cues", "")
             pace_labels = workout_data.get("pace_labels", {})
+            new_intensity = workout_data.get("type", db_workout.workout_type)
+
+            # Track changes before updating
+            changes = []
+
+            # Compare description/cues
+            old_description = db_workout.description or ""
+            new_description = cues or ""
+            if old_description != new_description:
+                changes.append(
+                    {
+                        "field": "Description/Cues",
+                        "before": (
+                            old_description[:50] + "..."
+                            if len(old_description) > 50
+                            else old_description
+                        ),
+                        "after": (
+                            new_description[:50] + "..."
+                            if len(new_description) > 50
+                            else new_description
+                        ),
+                    }
+                )
+
+            # Compare intensity
+            old_intensity = db_workout.intensity or db_workout.workout_type or ""
+            if old_intensity != new_intensity:
+                changes.append(
+                    {
+                        "field": "Intensity",
+                        "before": old_intensity,
+                        "after": new_intensity,
+                    }
+                )
+
+            # Compare segments (simplified comparison)
+            old_segments = db_workout.segments
+            if old_segments != segments:
+                old_seg_count = len(old_segments) if old_segments else 0
+                new_seg_count = len(segments) if segments else 0
+                changes.append(
+                    {
+                        "field": "Segments",
+                        "before": (
+                            f"{old_seg_count} segments" if old_seg_count > 0 else "None"
+                        ),
+                        "after": (
+                            f"{new_seg_count} segments" if new_seg_count > 0 else "None"
+                        ),
+                    }
+                )
+
+            # Compare pace/target zones if available
+            old_target_hr = db_workout.target_hr
+            new_target_hr = workout_data.get("target_hr")
+            if old_target_hr != new_target_hr:
+                changes.append(
+                    {
+                        "field": "Target HR",
+                        "before": old_target_hr or "Not set",
+                        "after": new_target_hr or "Not set",
+                    }
+                )
+
+            # Store change record if any changes
+            if changes:
+                workout_changes.append(
+                    {
+                        "date": (
+                            db_workout.date.isoformat()
+                            if hasattr(db_workout.date, "isoformat")
+                            else str(db_workout.date)
+                        ),
+                        "workout_type": db_workout.workout_type,
+                        "miles": db_workout.miles,
+                        "changes": changes,
+                    }
+                )
 
             update_data = {
                 "segments": segments,  # Store as JSON
                 "description": cues,  # Update description with cues
-                "intensity": workout_data.get(
-                    "type", db_workout.workout_type
-                ),  # May update intensity
+                "intensity": new_intensity,  # May update intensity
             }
 
             update_workout(session, db_workout.id, update_data)
@@ -201,6 +281,7 @@ class WeeklyRebuildService:
             "pace_adjusted": previous_week_logs is not None,
             "quality_disabled": disable_quality,
             "pace_labels": pace_labels,
+            "workout_changes": workout_changes,  # Include changes for email
         }
 
 
