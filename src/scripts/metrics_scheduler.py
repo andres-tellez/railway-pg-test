@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 SCHEDULE_WEEKDAY = 6  # Sunday (0=Monday, 6=Sunday)
 SCHEDULE_HOUR = 11  # Hour (24-hour format: 11 = 11 AM)
-SCHEDULE_MINUTE = 10  # Minute (0-59)
+SCHEDULE_MINUTE = 20  # Minute (0-59)
 SCHEDULE_TIMEZONE = "America/Chicago"  # Central Time
 SCHEDULE_TIMEZONE_DISPLAY = "Central Time"  # Display name for logs
 
@@ -86,12 +86,16 @@ def get_current_local_time() -> datetime:
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
 
     if use_utc:
-        return datetime.now(timezone.utc)
+        return datetime.now(timezone.utc).replace(tzinfo=None)
     else:
+        # Get timezone-aware UTC datetime
         utc_now = datetime.now(timezone.utc)
+        # Convert to pytz UTC first, then to target timezone
+        pytz_utc = pytz.UTC
         tz = pytz.timezone(SCHEDULE_TIMEZONE)
-        # Convert UTC to configured timezone and return as timezone-naive
-        return pytz.utc.localize(utc_now).astimezone(tz).replace(tzinfo=None)
+        # Convert timezone-aware UTC to target timezone, then remove tzinfo
+        local_with_tz = utc_now.replace(tzinfo=pytz_utc).astimezone(tz)
+        return local_with_tz.replace(tzinfo=None)
 
 
 def should_run_scheduled_tasks():
@@ -457,7 +461,9 @@ def main():
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
     if not use_utc:
         tz = pytz.timezone(SCHEDULE_TIMEZONE)
-        local_with_tz = pytz.utc.localize(utc_now).astimezone(tz)
+        # Convert timezone-aware UTC to target timezone
+        pytz_utc = pytz.UTC
+        local_with_tz = utc_now.replace(tzinfo=pytz_utc).astimezone(tz)
         logger.info(
             f"📍 Current time: UTC={utc_now.strftime('%Y-%m-%d %H:%M:%S')}, "
             f"{SCHEDULE_TIMEZONE_DISPLAY}={local_with_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}"
