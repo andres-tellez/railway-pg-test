@@ -140,16 +140,45 @@ class EmailService:
                 )
                 return True
             else:
-                logger.error(
-                    f"❌ SendGrid API returned status code {response.status_code}: {response.body}"
+                error_body = (
+                    response.body.decode("utf-8")
+                    if response.body
+                    else "No error details"
                 )
+                logger.error(
+                    f"❌ SendGrid API returned status code {response.status_code}"
+                )
+                logger.error(f"Error details: {error_body}")
+
+                # Provide specific guidance for common errors
+                if response.status_code == 403:
+                    logger.error("💡 403 Forbidden usually means:")
+                    logger.error("   1. Sender email not verified in SendGrid")
+                    logger.error("   2. API key doesn't have 'Mail Send' permissions")
+                    logger.error(
+                        "   3. Check SendGrid dashboard → Settings → Sender Authentication"
+                    )
+                elif response.status_code == 401:
+                    logger.error(
+                        "💡 401 Unauthorized - check that SENDGRID_API_KEY is correct"
+                    )
+                elif response.status_code == 400:
+                    logger.error("💡 400 Bad Request - check email format and content")
+
                 return False
 
         except Exception as e:
             logger.error(f"❌ Failed to send email to {to_email} via SendGrid API: {e}")
             import traceback
 
-            logger.debug(traceback.format_exc())
+            logger.error(traceback.format_exc())
+
+            # Check if it's a 403 error specifically
+            if "403" in str(e) or "Forbidden" in str(e):
+                logger.error(
+                    "💡 403 Forbidden - verify sender email in SendGrid dashboard"
+                )
+
             return False
 
     @staticmethod
@@ -323,14 +352,21 @@ class EmailService:
         """
         display_name = user_name or "Runner"
 
-        # Build workout changes HTML
+        # Build workout changes HTML with improved table format
         changes_html = ""
         if workout_changes:
-            changes_html = "<h3>📊 Workout Updates</h3><table style='border-collapse: collapse; width: 100%; margin: 20px 0;'>"
+            changes_html = "<h3>📊 Workout Updates - Week Changes</h3>"
+            changes_html += "<table style='border-collapse: collapse; width: 100%; margin: 20px 0; background-color: white;'>"
+
+            # Header row
             changes_html += (
-                "<tr style='background-color: #f0f0f0;'><th style='padding: 8px; border: 1px solid #ddd;'>Date</th>"
-                "<th style='padding: 8px; border: 1px solid #ddd;'>Workout</th>"
-                "<th style='padding: 8px; border: 1px solid #ddd;'>Changes</th></tr>"
+                "<tr style='background-color: #4CAF50; color: white;'>"
+                "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>Date</th>"
+                "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>Workout</th>"
+                "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>Status</th>"
+                "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>Before</th>"
+                "<th style='padding: 12px; border: 1px solid #ddd; text-align: left;'>After</th>"
+                "</tr>"
             )
 
             for change in workout_changes:
@@ -339,30 +375,48 @@ class EmailService:
                 miles = change.get("miles", 0)
                 changes = change.get("changes", [])
 
-                changes_cells = ""
-                if changes:
-                    changes_list = "<ul style='margin: 0; padding-left: 20px;'>"
-                    for ch in changes:
+                if not changes:
+                    # No changes - show as single row
+                    changes_html += (
+                        f"<tr style='background-color: #f9f9f9;'>"
+                        f"<td style='padding: 10px; border: 1px solid #ddd;'>{date_str}</td>"
+                        f"<td style='padding: 10px; border: 1px solid #ddd;'><strong>{workout_type}</strong><br/><small>{miles:.1f} miles</small></td>"
+                        f"<td style='padding: 10px; border: 1px solid #ddd; color: #28a745;'><strong>✓ No Changes</strong></td>"
+                        f"<td style='padding: 10px; border: 1px solid #ddd;' colspan='2'><em>All details remain the same</em></td>"
+                        f"</tr>"
+                    )
+                else:
+                    # Has changes - show each changed field as a separate row
+                    for idx, ch in enumerate(changes):
                         field = ch.get("field", "")
                         before = ch.get("before", "")
                         after = ch.get("after", "")
-                        changes_list += (
-                            f"<li><strong>{field}:</strong> {before} → {after}</li>"
-                        )
-                    changes_list += "</ul>"
-                    changes_cells = changes_list
-                else:
-                    changes_cells = "<em>No changes (already up to date)</em>"
 
-                changes_html += (
-                    f"<tr><td style='padding: 8px; border: 1px solid #ddd;'>{date_str}</td>"
-                    f"<td style='padding: 8px; border: 1px solid #ddd;'><strong>{workout_type}</strong><br/>{miles} miles</td>"
-                    f"<td style='padding: 8px; border: 1px solid #ddd;'>{changes_cells}</td></tr>"
-                )
+                        # First row shows date/workout, subsequent rows show only field
+                        if idx == 0:
+                            changes_html += (
+                                f"<tr style='background-color: #fff3cd;'>"
+                                f"<td style='padding: 10px; border: 1px solid #ddd;' rowspan='{len(changes)}'>{date_str}</td>"
+                                f"<td style='padding: 10px; border: 1px solid #ddd;' rowspan='{len(changes)}'><strong>{workout_type}</strong><br/><small>{miles:.1f} miles</small></td>"
+                                f"<td style='padding: 10px; border: 1px solid #ddd; color: #856404;' rowspan='{len(changes)}'><strong>⚠ Changed</strong><br/><small>{len(changes)} field(s)</small></td>"
+                                f"<td style='padding: 10px; border: 1px solid #ddd;'><strong>{field}</strong><br/>{before}</td>"
+                                f"<td style='padding: 10px; border: 1px solid #ddd;'><strong>{field}</strong><br/>{after}</td>"
+                                f"</tr>"
+                            )
+                        else:
+                            changes_html += (
+                                f"<tr style='background-color: #fff3cd;'>"
+                                f"<td style='padding: 10px; border: 1px solid #ddd;'><strong>{field}</strong><br/>{before}</td>"
+                                f"<td style='padding: 10px; border: 1px solid #ddd;'><strong>{field}</strong><br/>{after}</td>"
+                                f"</tr>"
+                            )
+
+                    # Add spacing row between workouts
+                    changes_html += "<tr><td colspan='5' style='padding: 5px; border: none;'></td></tr>"
 
             changes_html += "</table>"
         else:
-            changes_html = "<p><em>No workout changes this week</em></p>"
+            changes_html = "<p><em>No workouts found for this week</em></p>"
 
         # Metrics validation status
         metrics_status = (
