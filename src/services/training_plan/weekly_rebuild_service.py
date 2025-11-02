@@ -384,13 +384,29 @@ class WeeklyRebuildService:
                 logger.info(
                     f"[Adaptive Pipeline] Stage 5: Persisting metrics and decisions"
                 )
-                WeeklyMetricsService.save_week_metrics(
-                    session=session,
-                    plan_id=plan_id,
-                    analysis=analysis,
-                    decision=decision,
-                )
-                logger.info(f"[Adaptive Pipeline] Metrics and decisions saved")
+                try:
+                    WeeklyMetricsService.save_week_metrics(
+                        session=session,
+                        plan_id=plan_id,
+                        analysis=analysis,
+                        decision=decision,
+                    )
+                    logger.info(f"[Adaptive Pipeline] Metrics and decisions saved")
+                except Exception as e:
+                    # If persistence fails (e.g., tables don't exist), log warning but continue
+                    error_str = str(e).lower()
+                    if (
+                        "does not exist" in error_str
+                        or "undefinedtable" in error_str
+                        or "infailed" in error_str
+                    ):
+                        logger.warning(
+                            f"⚠️  [Adaptive Pipeline] Could not persist metrics (tables may not exist yet): {e}. "
+                            f"Continuing without persistence..."
+                        )
+                    else:
+                        # Re-raise if it's a different error
+                        raise
 
             except Exception as e:
                 logger.error(
