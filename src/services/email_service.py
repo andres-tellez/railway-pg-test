@@ -14,6 +14,7 @@ Author: SmartCoach Development Team
 
 import os
 import smtplib
+import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Optional, Dict, Any
@@ -94,16 +95,65 @@ class EmailService:
             msg.attach(part2)
 
             # Send email
-            with smtplib.SMTP(config["host"], config["port"]) as server:
-                server.starttls()
-                server.login(config["username"], config["password"])
-                server.send_message(msg)
+            # Try different connection methods based on port
+            port = config["port"]
+            host = config["host"]
+
+            if port == 465:
+                # Use SSL connection for port 465
+                logger.debug(f"Connecting to {host}:{port} using SSL...")
+                with smtplib.SMTP_SSL(host, port, timeout=30) as server:
+                    server.login(config["username"], config["password"])
+                    server.send_message(msg)
+            else:
+                # Use STARTTLS for port 587 and others
+                logger.debug(f"Connecting to {host}:{port} using STARTTLS...")
+                with smtplib.SMTP(host, port, timeout=30) as server:
+                    server.starttls()
+                    server.login(config["username"], config["password"])
+                    server.send_message(msg)
 
             logger.info(f"✅ Email sent successfully to {to_email}")
             return True
 
+        except socket.gaierror as e:
+            # DNS resolution error
+            logger.error(
+                f"❌ Failed to send email to {to_email}: DNS resolution failed for {config['host']}: {e}"
+            )
+            logger.error(
+                "💡 Check that SMTP_HOST is correct and Railway allows DNS resolution"
+            )
+            return False
+        except socket.timeout as e:
+            # Connection timeout
+            logger.error(
+                f"❌ Failed to send email to {to_email}: Connection timeout to {config['host']}:{config['port']}: {e}"
+            )
+            logger.error(
+                "💡 Railway may be blocking outbound SMTP connections. Try port 465 (SSL) or use an SMTP relay service"
+            )
+            return False
+        except OSError as e:
+            # Network unreachable or other OS-level errors
+            logger.error(
+                f"❌ Failed to send email to {to_email}: Network error ({e.errno}): {e}"
+            )
+            if e.errno == 101:  # Network is unreachable
+                logger.error(
+                    "💡 Railway is blocking outbound SMTP connections. Options:"
+                )
+                logger.error(
+                    "   1. Use an SMTP relay service (SendGrid, Mailgun, etc.)"
+                )
+                logger.error("   2. Try port 465 with SSL instead of 587")
+                logger.error("   3. Contact Railway support about SMTP restrictions")
+            return False
         except Exception as e:
             logger.error(f"❌ Failed to send email to {to_email}: {e}")
+            import traceback
+
+            logger.debug(traceback.format_exc())
             return False
 
     @staticmethod
