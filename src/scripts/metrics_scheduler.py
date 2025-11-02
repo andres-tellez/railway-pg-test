@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 """
-Scheduler for weekly maintenance tasks - runs every Sunday at 9:35 AM Central Time.
+Scheduler for weekly maintenance tasks - runs on a configurable schedule.
 This is a long-running process that Railway runs as a worker.
 
 Tasks:
 1. Metrics refresh - refreshes materialized views and invalidates caches
 2. Weekly plan rebuild - rebuilds upcoming week's workouts for all active plans
 3. Email notifications - sends weekly update emails to users with changes
+
+Schedule is configured via SCHEDULE_* constants at the top of this file.
 """
 
 import os
@@ -53,23 +55,41 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ============================================================================
+# SCHEDULE CONFIGURATION - Update these values to change the schedule
+# ============================================================================
+SCHEDULE_WEEKDAY = 6  # Sunday (0=Monday, 6=Sunday)
+SCHEDULE_HOUR = 9  # Hour (24-hour format: 9 = 9 AM)
+SCHEDULE_MINUTE = 35  # Minute (0-59)
+SCHEDULE_TIMEZONE = "America/Chicago"  # Central Time
+SCHEDULE_TIMEZONE_DISPLAY = "Central Time"  # Display name for logs
+
+# Format string for displaying the schedule
+SCHEDULE_DISPLAY = (
+    f"Sunday at {SCHEDULE_HOUR:02d}:{SCHEDULE_MINUTE:02d} {SCHEDULE_TIMEZONE_DISPLAY}"
+)
+
 
 def should_run_scheduled_tasks():
-    """Check if it's Sunday at 9:35 AM Central Time."""
+    """Check if it's time to run scheduled tasks based on SCHEDULE_* configuration."""
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
 
     if use_utc:
         # Use UTC time
         now = datetime.utcnow()
     else:
-        # Convert UTC to Central Time (Railway servers are in UTC)
+        # Convert UTC to configured timezone (Railway servers are in UTC)
         utc_now = datetime.utcnow()
-        central_tz = pytz.timezone("America/Chicago")
-        # Convert UTC to Central Time
-        now = pytz.utc.localize(utc_now).astimezone(central_tz).replace(tzinfo=None)
+        tz = pytz.timezone(SCHEDULE_TIMEZONE)
+        # Convert UTC to configured timezone
+        now = pytz.utc.localize(utc_now).astimezone(tz).replace(tzinfo=None)
 
-    # It's Sunday (weekday 6) and at 9:35 AM Central Time (hour 9, minute 35)
-    if now.weekday() == 6 and now.hour == 9 and now.minute == 35:
+    # Check if it matches the configured schedule
+    if (
+        now.weekday() == SCHEDULE_WEEKDAY
+        and now.hour == SCHEDULE_HOUR
+        and now.minute == SCHEDULE_MINUTE
+    ):
         return True
 
     # For development/testing: allow manual trigger via environment variable
@@ -361,7 +381,7 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
 
 def run_all_scheduled_tasks():
     """Run metrics refresh, weekly rebuild, and send email notifications."""
-    logger.info("🚀 Starting weekly scheduled tasks (Sunday 9:35 AM Central Time)...")
+    logger.info(f"🚀 Starting weekly scheduled tasks ({SCHEDULE_DISPLAY})...")
 
     # Step 1: Metrics refresh
     metrics_success, metrics_message = run_metrics_refresh()
@@ -406,29 +426,25 @@ def main():
 
     # Worker mode: long-running loop (original behavior)
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
-    timezone_info = "UTC" if use_utc else "local (Central Time)"
+    timezone_info = "UTC" if use_utc else f"local ({SCHEDULE_TIMEZONE_DISPLAY})"
 
     print(f"[SCHEDULER] Timezone mode: {timezone_info}", flush=True)
-    print(f"[SCHEDULER] Schedule: Sunday at 9:35 AM Central Time", flush=True)
+    print(f"[SCHEDULER] Schedule: {SCHEDULE_DISPLAY}", flush=True)
     print(
         f"[SCHEDULER] DATABASE_URL configured: {bool(os.getenv('DATABASE_URL'))}",
         flush=True,
     )
 
-    logger.info(
-        "🕐 Weekly scheduler started - waiting for Sunday at 9:35 AM Central Time..."
-    )
-    logger.info(
-        f"💡 Scheduled tasks will run automatically every Sunday at 9:35 AM Central Time"
-    )
-    # Log current time in both UTC and Central Time for verification
+    logger.info(f"🕐 Weekly scheduler started - waiting for {SCHEDULE_DISPLAY}...")
+    logger.info(f"💡 Scheduled tasks will run automatically every {SCHEDULE_DISPLAY}")
+    # Log current time in both UTC and configured timezone for verification
     utc_now = datetime.utcnow()
     if not use_utc:
-        central_tz = pytz.timezone("America/Chicago")
-        central_now = pytz.utc.localize(utc_now).astimezone(central_tz)
+        tz = pytz.timezone(SCHEDULE_TIMEZONE)
+        local_now = pytz.utc.localize(utc_now).astimezone(tz)
         logger.info(
             f"📍 Current time: UTC={utc_now.strftime('%Y-%m-%d %H:%M:%S')}, "
-            f"Central Time={central_now.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+            f"{SCHEDULE_TIMEZONE_DISPLAY}={local_now.strftime('%Y-%m-%d %H:%M:%S %Z')}"
         )
     else:
         logger.info(f"📍 Current time (UTC): {utc_now.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -461,14 +477,10 @@ def main():
             if use_utc:
                 now = datetime.utcnow()
             else:
-                # Convert UTC to Central Time
+                # Convert UTC to configured timezone
                 utc_now = datetime.utcnow()
-                central_tz = pytz.timezone("America/Chicago")
-                now = (
-                    pytz.utc.localize(utc_now)
-                    .astimezone(central_tz)
-                    .replace(tzinfo=None)
-                )
+                tz = pytz.timezone(SCHEDULE_TIMEZONE)
+                now = pytz.utc.localize(utc_now).astimezone(tz).replace(tzinfo=None)
 
             current_timestamp = now.strftime("%Y-%m-%d %H:%M")
 
@@ -476,10 +488,10 @@ def main():
             should_run = should_run_scheduled_tasks()
 
             # Log more frequently when approaching target time for debugging
-            if now.weekday() == 6 and now.hour == 9:
-                # On Sunday at 9 AM, log every minute
+            if now.weekday() == SCHEDULE_WEEKDAY and now.hour == SCHEDULE_HOUR:
+                # On scheduled day/hour, log every minute
                 logger.info(
-                    f"⏰ Sunday 9 AM window - Current time: {now.strftime('%Y-%m-%d %H:%M:%S')} "
+                    f"⏰ {SCHEDULE_DISPLAY} window - Current time: {now.strftime('%Y-%m-%d %H:%M:%S')} "
                     f"(weekday={now.weekday()}, hour={now.hour}, minute={now.minute}), should_run={should_run}"
                 )
 
@@ -500,7 +512,7 @@ def main():
                 if now.minute % 10 == 0:
                     logger.info(
                         f"⏰ Checking schedule... (current time: {now.strftime('%Y-%m-%d %H:%M:%S')}, "
-                        f"weekday={now.weekday()}, hour={now.hour}, minute={now.minute}) - next run: Sunday at 9:35 AM Central Time"
+                        f"weekday={now.weekday()}, hour={now.hour}, minute={now.minute}) - next run: {SCHEDULE_DISPLAY}"
                     )
 
             # Sleep for 1 minute before checking again
