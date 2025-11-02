@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Scheduler for weekly maintenance tasks - runs every Saturday at 11:30 PM Central Time.
+Scheduler for weekly maintenance tasks - runs every Sunday at 12:15 AM Central Time.
 This is a long-running process that Railway runs as a worker.
 
 Tasks:
@@ -22,17 +22,28 @@ from dotenv import load_dotenv
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# Immediate startup output for Railway
+print("=" * 80, flush=True)
+print("[SCHEDULER] Weekly Metrics Scheduler Starting...", flush=True)
+print(f"[SCHEDULER] Project root: {project_root}", flush=True)
+print("=" * 80, flush=True)
+
 # Load environment variables from .env.local if it exists
 env_local_path = project_root / ".env.local"
 if env_local_path.exists():
     load_dotenv(env_local_path, override=True)
-    print(f"[OK] Loaded environment from .env.local", flush=True)
+    print(f"[SCHEDULER] Loaded environment from .env.local", flush=True)
 else:
     # Try .env.staging as fallback
     env_staging_path = project_root / ".env.staging"
     if env_staging_path.exists():
         load_dotenv(env_staging_path, override=True)
-        print(f"[OK] Loaded environment from .env.staging", flush=True)
+        print(f"[SCHEDULER] Loaded environment from .env.staging", flush=True)
+    else:
+        print(
+            f"[SCHEDULER] No .env.local or .env.staging found - using system environment",
+            flush=True,
+        )
 
 # Configure logging
 import logging
@@ -44,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 
 def should_run_scheduled_tasks():
-    """Check if it's Saturday at 11:30 PM Central Time."""
+    """Check if it's Sunday at 12:15 AM Central Time."""
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
 
     if use_utc:
@@ -57,8 +68,8 @@ def should_run_scheduled_tasks():
         # Convert UTC to Central Time
         now = pytz.utc.localize(utc_now).astimezone(central_tz).replace(tzinfo=None)
 
-    # It's Saturday (weekday 5) and at 11:30 PM Central Time (hour 23, minute 30)
-    if now.weekday() == 5 and now.hour == 23 and now.minute == 30:
+    # It's Sunday (weekday 6) and at 12:15 AM Central Time (hour 0, minute 15)
+    if now.weekday() == 6 and now.hour == 0 and now.minute == 15:
         return True
 
     # For development/testing: allow manual trigger via environment variable
@@ -350,9 +361,7 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
 
 def run_all_scheduled_tasks():
     """Run metrics refresh, weekly rebuild, and send email notifications."""
-    logger.info(
-        "🚀 Starting weekly scheduled tasks (Saturday 11:30 PM Central Time)..."
-    )
+    logger.info("🚀 Starting weekly scheduled tasks (Sunday 12:15 AM Central Time)...")
 
     # Step 1: Metrics refresh
     metrics_success, metrics_message = run_metrics_refresh()
@@ -373,15 +382,44 @@ def run_all_scheduled_tasks():
 
 
 def main():
-    """Main scheduler loop - runs forever."""
+    """Main scheduler - supports both worker mode (long-running) and cron mode (run once)."""
+    # Immediate output before logging setup
+    print("[SCHEDULER] Initializing scheduler...", flush=True)
+
+    # Check if running in "run once" mode (for Railway cron jobs)
+    run_once = os.getenv("RUN_ONCE", "false").lower() == "true"
+
+    if run_once:
+        # Cron mode: run once and exit
+        print("[SCHEDULER] Running in cron mode (run once)...", flush=True)
+        logger.info("🚀 Running weekly scheduled tasks (cron mode)...")
+
+        if not os.getenv("DATABASE_URL"):
+            print(
+                "[SCHEDULER] ERROR: DATABASE_URL not configured. Exiting.", flush=True
+            )
+            logger.error("❌ DATABASE_URL not configured. Exiting.")
+            sys.exit(1)
+
+        exit_code = run_all_scheduled_tasks()
+        sys.exit(exit_code)
+
+    # Worker mode: long-running loop (original behavior)
     use_utc = os.getenv("USE_UTC_TIME", "false").lower() == "true"
     timezone_info = "UTC" if use_utc else "local (Central Time)"
 
+    print(f"[SCHEDULER] Timezone mode: {timezone_info}", flush=True)
+    print(f"[SCHEDULER] Schedule: Sunday at 12:15 AM Central Time", flush=True)
+    print(
+        f"[SCHEDULER] DATABASE_URL configured: {bool(os.getenv('DATABASE_URL'))}",
+        flush=True,
+    )
+
     logger.info(
-        "🕐 Weekly scheduler started - waiting for Saturday at 11:30 PM Central Time..."
+        "🕐 Weekly scheduler started - waiting for Sunday at 12:15 AM Central Time..."
     )
     logger.info(
-        f"💡 Scheduled tasks will run automatically every Saturday at 11:30 PM Central Time"
+        f"💡 Scheduled tasks will run automatically every Sunday at 12:15 AM Central Time"
     )
     # Log current time in both UTC and Central Time for verification
     utc_now = datetime.utcnow()
@@ -402,8 +440,18 @@ def main():
     )
 
     if not os.getenv("DATABASE_URL"):
+        print("[SCHEDULER] ERROR: DATABASE_URL not configured. Exiting.", flush=True)
         logger.error("❌ DATABASE_URL not configured. Exiting.")
         sys.exit(1)
+
+    print(
+        "[SCHEDULER] DATABASE_URL configured - starting scheduler loop...", flush=True
+    )
+    print(
+        "[SCHEDULER] Scheduler is now running - waiting for scheduled time...",
+        flush=True,
+    )
+    print("=" * 80, flush=True)
 
     # Track last run to avoid running multiple times
     last_run_timestamp = None
@@ -428,10 +476,10 @@ def main():
             should_run = should_run_scheduled_tasks()
 
             # Log more frequently when approaching target time for debugging
-            if now.weekday() == 5 and now.hour == 23:
-                # On Saturday at 11 PM, log every minute
+            if now.weekday() == 6 and now.hour == 0:
+                # On Sunday at 12 AM, log every minute
                 logger.info(
-                    f"⏰ Saturday 11 PM window - Current time: {now.strftime('%Y-%m-%d %H:%M:%S')} "
+                    f"⏰ Sunday 12 AM window - Current time: {now.strftime('%Y-%m-%d %H:%M:%S')} "
                     f"(weekday={now.weekday()}, hour={now.hour}, minute={now.minute}), should_run={should_run}"
                 )
 
@@ -452,7 +500,7 @@ def main():
                 if now.minute % 10 == 0:
                     logger.info(
                         f"⏰ Checking schedule... (current time: {now.strftime('%Y-%m-%d %H:%M:%S')}, "
-                        f"weekday={now.weekday()}, hour={now.hour}, minute={now.minute}) - next run: Saturday at 11:30 PM Central Time"
+                        f"weekday={now.weekday()}, hour={now.hour}, minute={now.minute}) - next run: Sunday at 12:15 AM Central Time"
                     )
 
             # Sleep for 1 minute before checking again
