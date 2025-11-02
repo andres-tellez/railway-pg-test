@@ -16,10 +16,23 @@ import sys
 import logging
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add project root to path so we can import our modules
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
+
+# Load environment variables from .env.local if it exists
+env_local_path = project_root / ".env.local"
+if env_local_path.exists():
+    load_dotenv(env_local_path, override=True)
+    print(f"[OK] Loaded environment from .env.local", flush=True)
+else:
+    # Try .env.staging as fallback
+    env_staging_path = project_root / ".env.staging"
+    if env_staging_path.exists():
+        load_dotenv(env_staging_path, override=True)
+        print(f"[OK] Loaded environment from .env.staging", flush=True)
 
 # Configure logging
 logging.basicConfig(
@@ -29,13 +42,15 @@ logger = logging.getLogger(__name__)
 
 
 def refresh_materialized_views():
-    """Refresh all materialized views with retry logic."""
+    """Refresh all materialized views with retry logic and timeout."""
     from src.db.db_session import get_session
     from sqlalchemy import text
     import time
+    import signal
 
     max_retries = 3
     retry_delay = 5  # seconds
+    timeout_seconds = 300  # 5 minutes timeout for each view refresh
 
     for attempt in range(max_retries):
         try:
@@ -44,9 +59,39 @@ def refresh_materialized_views():
                 f"🔄 Refreshing materialized views... (attempt {attempt + 1}/{max_retries})"
             )
 
-            # Refresh both views
+            # Check if views exist first
+            check_query = text(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_matviews
+                    WHERE matviewname IN ('mv_athlete_metrics', 'mv_longest_runs')
+                );
+            """
+            )
+            views_exist = session.execute(check_query).scalar()
+
+            if not views_exist:
+                logger.warning(
+                    "⚠️  Materialized views (mv_athlete_metrics, mv_longest_runs) do not exist. "
+                    "Skipping refresh. Views may need to be created first."
+                )
+                session.close()
+                return False
+
+            logger.info(
+                "⏳ Refreshing mv_athlete_metrics (this may take 1-2 minutes)..."
+            )
+            start_time = time.time()
             session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
+            elapsed = time.time() - start_time
+            logger.info(f"✅ mv_athlete_metrics refreshed in {elapsed:.1f} seconds")
+
+            logger.info("⏳ Refreshing mv_longest_runs (this may take 1-2 minutes)...")
+            start_time = time.time()
             session.execute(text("REFRESH MATERIALIZED VIEW mv_longest_runs;"))
+            elapsed = time.time() - start_time
+            logger.info(f"✅ mv_longest_runs refreshed in {elapsed:.1f} seconds")
+
             session.commit()
             session.close()
 
@@ -56,6 +101,10 @@ def refresh_materialized_views():
             logger.error(
                 f"❌ Failed to refresh materialized views (attempt {attempt + 1}/{max_retries}): {e}"
             )
+            import traceback
+
+            logger.error(traceback.format_exc())
+
             if "session" in locals():
                 try:
                     session.rollback()
@@ -67,9 +116,7 @@ def refresh_materialized_views():
                 logger.info(f"🔄 Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
             else:
-                import traceback
-
-                logger.error(traceback.format_exc())
+                logger.error("❌ All retry attempts exhausted")
                 return False
 
     return False
