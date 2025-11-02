@@ -432,6 +432,13 @@ class WeekAnalysisService:
         lookback_start = week_start_date - timedelta(weeks=2)
 
         try:
+            # Rollback any failed transaction first
+            if session.in_transaction():
+                try:
+                    session.rollback()
+                except Exception:
+                    pass  # Ignore rollback errors
+
             # Fetch easy runs from last 2 weeks
             from sqlalchemy import and_
             from datetime import datetime

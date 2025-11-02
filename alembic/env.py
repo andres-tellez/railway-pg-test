@@ -40,6 +40,8 @@ import src.db.models.user_profile
 import src.db.models.user_identity
 import src.db.models.user_athletes
 import src.db.models.user_auth_providers
+import src.db.models.weekly_metrics
+import src.db.models.weekly_decision_log
 
 # Set target metadata for autogenerate
 target_metadata = Base.metadata

@@ -116,8 +116,18 @@ class WeeklyMetricsService:
             return metrics_record.id
 
         except Exception as e:
-            logger.error(f"Error saving weekly metrics: {e}")
-            raise
+            # Check if it's a table doesn't exist error
+            error_str = str(e).lower()
+            if "does not exist" in error_str or "undefinedtable" in error_str:
+                logger.warning(
+                    f"⚠️  Weekly metrics tables not created yet. Skipping persistence. "
+                    f"(Tables need to be created via migration. Error: {e})"
+                )
+                # Return None instead of raising - allow pipeline to continue
+                return None
+            else:
+                logger.error(f"Error saving weekly metrics: {e}")
+                raise
 
     @staticmethod
     def get_historical_metrics(
@@ -137,6 +147,13 @@ class WeeklyMetricsService:
             List of WeekAnalysisResult (most recent first)
         """
         try:
+            # Rollback any failed transaction first
+            if session.in_transaction():
+                try:
+                    session.rollback()
+                except Exception:
+                    pass  # Ignore rollback errors
+
             metrics_records = get_historical_metrics_dao(session, plan_id, weeks)
 
             results = []
@@ -183,8 +200,20 @@ class WeeklyMetricsService:
             return results
 
         except Exception as e:
-            logger.warning(f"Error fetching historical metrics: {e}")
-            return []
+            # Check if it's a table doesn't exist error
+            error_str = str(e).lower()
+            if (
+                "does not exist" in error_str
+                or "undefinedtable" in error_str
+                or "infailed" in error_str
+            ):
+                logger.debug(
+                    f"Weekly metrics tables not created yet. Returning empty history. (Error: {e})"
+                )
+                return []  # Return empty list - pipeline can continue without history
+            else:
+                logger.warning(f"Error fetching historical metrics: {e}")
+                return []
 
     @staticmethod
     def get_decision_logs(
