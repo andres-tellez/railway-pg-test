@@ -306,6 +306,25 @@ class WeeklyRebuildService:
         # Track changes for email notification
         workout_changes = []
 
+        # Capture original workouts for email (before rebuild)
+        original_workouts = []
+        for db_workout in week_workouts:
+            original_workouts.append(
+                {
+                    "date": (
+                        db_workout.date.isoformat()
+                        if hasattr(db_workout.date, "isoformat")
+                        else str(db_workout.date)
+                    ),
+                    "day": _date_to_day_name(db_workout.date),
+                    "workout_type": db_workout.workout_type,
+                    "miles": float(db_workout.miles or 0),
+                    "description": db_workout.description or "",
+                    "target_zone": db_workout.target_zone or "",
+                    "target_hr": db_workout.target_hr or "",
+                }
+            )
+
         # Update workouts in database
         updated_count = 0
         for workout_data, db_workout in zip(
@@ -359,6 +378,30 @@ class WeeklyRebuildService:
         if week_with_details.get("workouts") and len(week_with_details["workouts"]) > 0:
             pace_labels = week_with_details["workouts"][0].get("pace_labels", {})
 
+        # Build updated workouts list for email
+        updated_workouts = []
+        for workout_data, db_workout in zip(
+            week_with_details["workouts"], week_workouts
+        ):
+            updated_workouts.append(
+                {
+                    "date": (
+                        db_workout.date.isoformat()
+                        if hasattr(db_workout.date, "isoformat")
+                        else str(db_workout.date)
+                    ),
+                    "day": workout_data.get("day", _date_to_day_name(db_workout.date)),
+                    "workout_type": workout_data.get("type", ""),
+                    "miles": float(
+                        workout_data.get("miles")
+                        or workout_data.get("distance_miles", 0)
+                    ),
+                    "description": workout_data.get("cues", ""),
+                    "target_zone": extract_pace_zone_from_workout(workout_data),
+                    "target_hr": workout_data.get("target_hr") or "",
+                }
+            )
+
         return {
             "week_number": week_num,
             "phase": phase,
@@ -367,6 +410,8 @@ class WeeklyRebuildService:
             "quality_disabled": disable_quality,
             "pace_labels": pace_labels,
             "workout_changes": workout_changes,  # Include changes for email
+            "original_workouts": original_workouts,  # Original plan before rebuild
+            "updated_workouts": updated_workouts,  # Updated plan after rebuild
         }
 
 
