@@ -30,11 +30,12 @@ import logging
 import statistics
 
 from .week_analysis_service import WeekAnalysisResult
-from .weekly_metrics_service import WeeklyMetricsService
 from src.utils.adaptive_constants import (
     TREND_LOOKBACK_WEEKS,
     ANOMALY_THRESHOLD_SIGMA,
 )
+
+# Import WeeklyMetricsService inside function to avoid circular import
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,9 @@ class TrendAnalysisService:
         Returns:
             TrendAnalysisResult with trend analysis
         """
-        # Fetch historical metrics
+        # Fetch historical metrics (import here to avoid circular import)
+        from .weekly_metrics_service import WeeklyMetricsService
+
         historical_metrics = WeeklyMetricsService.get_historical_metrics(
             session, plan_id, weeks=lookback_weeks
         )
