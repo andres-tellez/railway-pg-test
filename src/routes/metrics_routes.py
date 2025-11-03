@@ -12,7 +12,6 @@ GET /api/metrics/all-metrics
     - Dashboard metrics (current/previous week comparison)
     - Weekly trends (20 weeks of distance, runs, pace)
     - Heart rate zone distribution (weekly and 30-day)
-    - VO2 Max estimates (weekly)
 
     Response format:
     {
@@ -53,14 +52,6 @@ GET /api/metrics/all-metrics
                 "zone_1": 15.2,
                 "zone_2": 45.8,
                 ...
-            },
-            ...
-        ],
-        "weekly_vo2_estimates": [
-            {
-                "week": "2025-10-06",
-                "vo2_estimate": 48.5,
-                "run_score": 185
             },
             ...
         ]
@@ -146,7 +137,6 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
             },
             "weekly_trends": [],
             "weekly_hr_zones": [],
-            "weekly_vo2_estimates": [],
             "weekly_goals": [],  # NEW: Include empty weekly_goals
             "longest_runs": [],  # NEW: Include empty longest_runs
         }
@@ -270,10 +260,9 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
                 f"📊 Updated weekly_goals with planned miles for previous week: {planned_miles}"
             )
 
-    # Process weekly trends, HR zones, and VO2 estimates
+    # Process weekly trends and HR zones
     weekly_trends = []
     weekly_hr_zones = []
-    weekly_vo2_estimates = []
 
     for week in weekly_data:  # Process all weeks (filtering done in frontend)
         # Format pace for this week
@@ -316,19 +305,6 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
                     "zone_5": 0.0,
                 }
             )
-
-        # Extract VO2 estimates (pre-calculated in materialized view)
-        weekly_vo2_estimates.append(
-            {
-                "week": week["week"],
-                "vo2_estimate": week.get("vo2_estimate"),
-                "run_score": (
-                    float(week.get("best_run_score"))
-                    if week.get("best_run_score")
-                    else None
-                ),
-            }
-        )
 
     # Process longest runs data (from mv_longest_runs materialized view)
     longest_runs = []
@@ -419,7 +395,6 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
         "hr_zones": hr_zones,
         "weekly_trends": weekly_trends,
         "weekly_hr_zones": weekly_hr_zones,
-        "weekly_vo2_estimates": weekly_vo2_estimates,
         "weekly_goals": weekly_goals,  # NEW: Include weekly_goals from materialized view
         "longest_runs": longest_runs,  # NEW: Include longest_runs from materialized view
     }
@@ -493,7 +468,7 @@ def get_all_metrics_combined():
     request_id = str(uuid.uuid4())[:8]
     print(f"[API CALL {request_id}] /api/metrics/all-metrics endpoint hit!")
     """
-    Get ALL metrics (dashboard + weekly trends + HR zones + VO2) in a single optimized call.
+    Get ALL metrics (dashboard + weekly trends + HR zones) in a single optimized call.
     This is the fastest possible approach - one API call, minimal queries, maximum caching.
 
     Uses materialized view (mv_athlete_metrics) for ultra-fast performance (~5-10ms query time).
@@ -549,7 +524,6 @@ def get_all_metrics_combined():
                         },
                         "weekly_trends": [],
                         "weekly_hr_zones": [],
-                        "weekly_vo2_estimates": [],
                         "weekly_goals": [],
                     }
                 ),
