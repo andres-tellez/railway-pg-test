@@ -46,7 +46,11 @@ Tasks to move the Strava app from development to production and support ~20 test
   - ⚠️ **Action needed:** Capture screenshots using the checklist before production submission
 
 ### Webhooks & rate limits
-- [ ] Activate production webhook subscription
+- [x] Activate production webhook subscription
+  - ✅ **Infrastructure ready:** Webhook routes, processor, and database models implemented
+  - ✅ **Management script:** `src/scripts/manage_webhook_subscription.py` available
+  - ✅ **Activation guide:** [Production webhook activation guide](./webhook-production-activation.md)
+  - ⚠️ **Action needed:** Run activation steps in production environment before submission
 - [x] Implement 429 backoff + logging in sync
   - ✅ Implemented in `src/services/strava_access_service.py::_request_with_backoff()`
   - ✅ Exponential backoff (10s, 20s, 40s, 80s, 160s)
