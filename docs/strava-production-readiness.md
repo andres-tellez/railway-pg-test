@@ -56,7 +56,12 @@ Tasks to move the Strava app from development to production and support ~20 test
   - ✅ Exponential backoff (10s, 20s, 40s, 80s, 160s)
   - ✅ Logs 429 errors with backoff duration
   - ✅ Max 5 retries before failing
-- [ ] Queue/serialize per-athlete syncs for 100/15m and 1000/day limits
+- [x] Queue/serialize per-athlete syncs for 100/15m and 1000/day limits
+  - ✅ **Rate limiter implemented:** `src/services/rate_limiter.py`
+  - ✅ **Sync queue implemented:** `src/services/sync_queue_service.py`
+  - ✅ **Auto-integrated:** `StravaClient` automatically uses rate limiting
+  - ✅ **Documentation:** [Rate limiting implementation guide](./rate-limiting-implementation.md)
+  - ✅ **Features:** Sliding window tracking, safety margin (90%), sequential processing
 - [ ] Minimize polling (webhooks-first; last-sync timestamps)
 
 ### Security & compliance

@@ -2,12 +2,17 @@
 
 import requests
 import time
+import logging
 from src.utils.config import config
+from src.services.rate_limiter import get_rate_limiter
+
+logger = logging.getLogger(__name__)
 
 
 class StravaClient:
     def __init__(self, access_token):
         self.access_token = access_token
+        self.rate_limiter = get_rate_limiter()
 
     def _request_with_backoff(self, method, url, **kwargs):
         max_retries = 5
@@ -20,8 +25,16 @@ class StravaClient:
         if "params" in kwargs:
             print(f"Params: {kwargs['params']}")
 
+        # Check rate limits before making request
+        self.rate_limiter.wait_if_needed()
+
         for attempt in range(max_retries):
             response = requests.request(method, url, headers=headers, **kwargs)
+
+            # Record successful API request (even if it's a 429, we made a request)
+            # Only record on first attempt to avoid double-counting
+            if attempt == 0:
+                self.rate_limiter.record_request()
 
             if response.status_code == 429:
                 print(f"Rate limit hit (429). Backing off {backoff} seconds...")
