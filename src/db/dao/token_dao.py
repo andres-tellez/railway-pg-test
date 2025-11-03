@@ -1,6 +1,9 @@
+import logging
 from sqlalchemy.exc import NoResultFound, IntegrityError
 from sqlalchemy.dialects.postgresql import insert
 from src.db.models.tokens import Token
+
+logger = logging.getLogger(__name__)
 
 
 def get_tokens_sa(session, athlete_id: int) -> dict | None:
@@ -16,7 +19,7 @@ def get_tokens_sa(session, athlete_id: int) -> dict | None:
             "expires_at": token.expires_at,
         }
     except NoResultFound:
-        print(f"No tokens found for athlete {athlete_id}", flush=True)
+        logger.debug(f"No tokens found for athlete {athlete_id}")
         return None
 
 
@@ -48,19 +51,14 @@ def insert_token_sa(
     try:
         session.execute(stmt)
         session.commit()
-        print(f"Stored tokens for athlete {athlete_id}", flush=True)
+        logger.info(f"Stored tokens for athlete {athlete_id}")
     except IntegrityError as e:
         session.rollback()  # critical fix to avoid poisoned session
-        print(
-            f"Token insert/update failed for athlete {athlete_id}: {e}", flush=True
-        )
+        logger.error(f"Token insert/update failed for athlete {athlete_id}: {e}")
         raise
     except Exception as e:
         session.rollback()
-        print(
-            f"Unexpected error inserting token for athlete {athlete_id}: {e}",
-            flush=True,
-        )
+        logger.error(f"Unexpected error inserting token for athlete {athlete_id}: {e}")
         raise
 
 
@@ -72,11 +70,11 @@ def delete_tokens_sa(session, athlete_id: int) -> int:
     try:
         result = session.query(Token).filter_by(athlete_id=athlete_id).delete()
         session.commit()
-        print(f"Deleted {result} token(s) for athlete {athlete_id}", flush=True)
+        logger.info(f"Deleted {result} token(s) for athlete {athlete_id}")
         return result
     except Exception as e:
         session.rollback()
-        print(f"Failed to delete tokens for athlete {athlete_id}: {e}", flush=True)
+        logger.error(f"Failed to delete tokens for athlete {athlete_id}: {e}")
         raise
 
 

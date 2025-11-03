@@ -71,7 +71,15 @@ Tasks to move the Strava app from development to production and support ~20 test
   - ✅ **Benefits:** 95%+ reduction in API calls when webhooks are active
 
 ### Security & compliance
-- [ ] Secure token storage; redact secrets in logs
+- [x] Secure token storage; redact secrets in logs
+  - ✅ **Security utilities:** `src/utils/security_utils.py` with redaction functions
+  - ✅ **Token redaction:** All access/refresh tokens redacted in logs
+  - ✅ **Secret redaction:** Client secrets and API keys redacted
+  - ✅ **Connection string redaction:** Database passwords redacted
+  - ✅ **Header redaction:** Authorization headers redacted
+  - ✅ **Dictionary redaction:** Automatic redaction of sensitive keys in payloads
+  - ✅ **Updated logging:** All print statements replaced with logger + redaction
+  - ✅ **Documentation:** [Token security guide](./token-security.md)
 - [ ] Add Disconnect Strava UI + explain token deletion
 - [ ] Verify export/delete flows end-to-end in staging
 

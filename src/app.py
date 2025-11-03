@@ -38,9 +38,11 @@ if parsed.hostname and "proxy.rlwy.net" in parsed.hostname:
 else:
     print("[INFO] Using DATABASE_URL as-is", flush=True)
 
+from src.utils.security_utils import redact_connection_string
+
 print(
     "[INFO] DATABASE_URL at runtime (from app.py):",
-    os.getenv("DATABASE_URL"),
+    redact_connection_string(os.getenv("DATABASE_URL")),
     flush=True,
 )
 print(

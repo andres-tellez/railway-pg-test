@@ -18,12 +18,18 @@ class StravaClient:
         max_retries = 5
         backoff = 10  # Start with 10 sec backoff
 
+        from src.utils.security_utils import redact_headers, redact_url
+
         headers = {"Authorization": f"Bearer {self.access_token}"}
 
-        print(f"Strava Request: {method} {url}")
-        print(f"Headers: {headers}")
+        # Redact sensitive data in logs
+        redacted_headers = redact_headers(headers)
+        redacted_url = redact_url(url) if isinstance(url, str) else url
+
+        logger.debug(f"Strava Request: {method} {redacted_url}")
+        logger.debug(f"Headers: {redacted_headers}")
         if "params" in kwargs:
-            print(f"Params: {kwargs['params']}")
+            logger.debug(f"Params: {kwargs['params']}")
 
         # Check rate limits before making request
         self.rate_limiter.wait_if_needed()
@@ -43,7 +49,11 @@ class StravaClient:
                 continue
 
             if response.status_code == 401:
-                print(f"Unauthorized! Token: {self.access_token}")
+                from src.utils.security_utils import redact_token
+
+                logger.warning(
+                    f"Unauthorized! Token: {redact_token(self.access_token)}"
+                )
 
             response.raise_for_status()
             return response.json()

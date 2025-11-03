@@ -39,7 +39,10 @@ def refresh_access_token(session, athlete_id):
         raise RuntimeError(f"No refresh token available for athlete {athlete_id}")
 
     tokens = refresh_token_static(token_data["refresh_token"])
-    print("Refreshed token:", tokens, flush=True)
+    from src.utils.security_utils import redact_dict
+
+    redacted_tokens = redact_dict(tokens)
+    logger.info(f"Refreshed token: {redacted_tokens}")
     insert_token_sa(
         session=session,
         athlete_id=athlete_id,
@@ -97,15 +100,17 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
     from src.utils.config import config
     import requests
 
-    print("🔑 Using Strava client_id:", config.STRAVA_CLIENT_ID, flush=True)
-    print("🔑 Using Strava client_secret:", config.STRAVA_CLIENT_SECRET, flush=True)
-    print("🔑 Using redirect_uri:", redirect_uri, flush=True)
-    print("🔑 Using code:", code, flush=True)
+    from src.utils.security_utils import redact_secret, redact_token, redact_dict
+
+    logger.info(f"Using Strava client_id: {config.STRAVA_CLIENT_ID}")
+    logger.info(
+        f"Using Strava client_secret: {redact_secret(config.STRAVA_CLIENT_SECRET)}"
+    )
+    logger.info(f"Using redirect_uri: {redirect_uri}")
+    logger.info(f"Using code: {redact_token(code, show_length=False)}")
 
     redirect_uri_clean = redirect_uri.strip().rstrip(";")
-    print(
-        f"[TokenService] Using cleaned redirect_uri: '{redirect_uri_clean}'", flush=True
-    )
+    logger.debug(f"[TokenService] Using cleaned redirect_uri: '{redirect_uri_clean}'")
 
     payload = {
         "client_id": config.STRAVA_CLIENT_ID,
@@ -115,12 +120,25 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
         "redirect_uri": redirect_uri_clean,
     }
 
-    print(f"[TokenService] Sending POST data to Strava token endpoint:\n{payload}")
+    # Redact sensitive data before logging
+    redacted_payload = redact_dict(payload)
+    logger.debug(
+        f"[TokenService] Sending POST data to Strava token endpoint: {redacted_payload}"
+    )
+
     response = requests.post("https://www.strava.com/api/v3/oauth/token", data=payload)
 
-    # 🔎 Debug logging so we can see the real error from Strava
-    print("📥 Strava token response status:", response.status_code, flush=True)
-    print("📥 Strava token response body:", response.text, flush=True)
+    # Log response status and body (response body may contain tokens - redact if needed)
+    logger.info(f"Strava token response status: {response.status_code}")
+
+    # Try to parse and redact response body if it contains tokens
+    try:
+        response_data = response.json()
+        redacted_response = redact_dict(response_data)
+        logger.debug(f"Strava token response: {redacted_response}")
+    except:
+        # If not JSON, log as-is (may be error message)
+        logger.debug(f"Strava token response body (non-JSON): {response.text[:200]}")
 
     response.raise_for_status()
     token_data = response.json()
@@ -152,12 +170,11 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
             refresh_token=token_data["refresh_token"],
             expires_at=token_data["expires_at"],
         )
-        print(f"✅ Token stored for athlete: {strava_athlete_id}", flush=True)
+        logger.info(f"Token stored for athlete: {strava_athlete_id}")
     except IntegrityError:
         session.rollback()  # clear failed transaction
-        print(
-            f"♻️ Token already exists for athlete {strava_athlete_id}, updating instead",
-            flush=True,
+        logger.info(
+            f"Token already exists for athlete {strava_athlete_id}, updating instead"
         )
 
         # UPDATE existing token row instead of failing
@@ -167,7 +184,7 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
             existing.refresh_token = token_data["refresh_token"]
             existing.expires_at = token_data["expires_at"]
             session.commit()
-            print(f"✅ Token updated for athlete: {strava_athlete_id}", flush=True)
+            logger.info(f"Token updated for athlete: {strava_athlete_id}")
 
     logger.info(
         f"[store_tokens_from_callback] ✅ Finished storing tokens for user_id={user_id}, athlete_id={strava_athlete_id}"
