@@ -29,6 +29,8 @@ from .workout_detail_rules import (
     MARATHON_FINISH,
     QUALITY_ENABLED_PHASES,
     DEFAULT_UNITS,
+    THRESHOLD_INTERVALS,
+    TEMPO_BLOCKS,
 )
 from .workout_utils import pace_range_to_str
 
@@ -70,6 +72,39 @@ def _cd_step(mi: float, E_min: float, E_max: float) -> dict:
         "value": mi,
         "target": _fmt_range_dict(E_min, E_max),
         "intensity": "EASY",
+    }
+
+
+def _rest_step(mi: float, E_min: float, E_max: float) -> dict:
+    """Create rest/recovery step between intervals."""
+    return {
+        "name": "Rest",
+        "durationType": "DISTANCE",
+        "value": mi,
+        "target": _fmt_range_dict(E_min, E_max),
+        "intensity": "EASY",
+    }
+
+
+def _interval_step(interval_num: int, mi: float, T_min: float, T_max: float) -> dict:
+    """Create threshold interval step."""
+    return {
+        "name": f"Interval {interval_num}",
+        "durationType": "DISTANCE",
+        "value": mi,
+        "target": _fmt_range_dict(T_min, T_max),
+        "intensity": "THRESHOLD",
+    }
+
+
+def _tempo_block_step(block_num: int, mi: float, S_min: float, S_max: float) -> dict:
+    """Create tempo block step."""
+    return {
+        "name": f"Tempo Block {block_num}",
+        "durationType": "DISTANCE",
+        "value": mi,
+        "target": _fmt_range_dict(S_min, S_max),
+        "intensity": "STEADY",
     }
 
 
@@ -135,29 +170,88 @@ def _detail_run(
             )
 
     elif run_type == STEADY:
-        main_mi = max(0.0, distance_mi - (wu_mi + cd_mi))
-        steps = [
-            _wu_step(wu_mi, seed.E_min, seed.E_max),
-            {
-                "name": "Steady",
-                "durationType": "DISTANCE",
-                "value": main_mi,
-                "target": _fmt_range_dict(seed.S_min, seed.S_max),
-                "intensity": "STEADY",
-            },
-            _cd_step(cd_mi, seed.E_min, seed.E_max),
-        ]
-        cues.append("Controlled effort; steady, not hard.")
-
+        # Generate interval workouts for STEADY in Build/Peak phases
         if (
             allow_quality
-            and phase in STRIDES["enabled_phases"]
-            and distance_mi >= STRIDES["min_run_mi"]
+            and phase in THRESHOLD_INTERVALS["enabled_phases"]
+            and distance_mi >= THRESHOLD_INTERVALS["min_run_mi"]
         ):
-            cues.append(
-                f"Optional: add {STRIDES['reps']}×{STRIDES['on_sec']}s strides mid-run "
-                f"({STRIDES['off_sec']}s easy between)."
+            # Determine interval type based on total distance
+            if distance_mi < 7.0:
+                interval_config = THRESHOLD_INTERVALS["interval_types"]["short"]
+            elif distance_mi < 9.0:
+                interval_config = THRESHOLD_INTERVALS["interval_types"]["medium"]
+            else:
+                interval_config = THRESHOLD_INTERVALS["interval_types"]["long"]
+
+            # Calculate total interval distance
+            total_interval_mi = interval_config["reps"] * interval_config["interval_mi"]
+            # Rest only between intervals (not after last), so (reps - 1) rests
+            total_rest_mi = (interval_config["reps"] - 1) * interval_config["rest_mi"]
+            remaining_mi = max(
+                0.0, distance_mi - (wu_mi + total_interval_mi + total_rest_mi + cd_mi)
             )
+
+            # Build steps: warm-up, intervals with rest, cooldown
+            steps = [_wu_step(wu_mi, seed.E_min, seed.E_max)]
+
+            # Add intervals with rest between
+            for i in range(1, interval_config["reps"] + 1):
+                steps.append(
+                    _interval_step(
+                        i, interval_config["interval_mi"], seed.T_min, seed.T_max
+                    )
+                )
+                if (
+                    i < interval_config["reps"]
+                ):  # Rest between intervals (not after last)
+                    steps.append(
+                        _rest_step(interval_config["rest_mi"], seed.E_min, seed.E_max)
+                    )
+
+            # Add any remaining steady distance if needed
+            if remaining_mi > 0.1:
+                steps.append(
+                    {
+                        "name": "Steady",
+                        "durationType": "DISTANCE",
+                        "value": remaining_mi,
+                        "target": _fmt_range_dict(seed.S_min, seed.S_max),
+                        "intensity": "STEADY",
+                    }
+                )
+
+            steps.append(_cd_step(cd_mi, seed.E_min, seed.E_max))
+
+            cues.append(
+                f"Threshold intervals: {interval_config['reps']}×{interval_config['interval_mi']:.2f}mi "
+                f"at threshold pace with {interval_config['rest_mi']:.2f}mi easy recovery."
+            )
+        else:
+            # Continuous steady run (Base phase or when quality not allowed)
+            main_mi = max(0.0, distance_mi - (wu_mi + cd_mi))
+            steps = [
+                _wu_step(wu_mi, seed.E_min, seed.E_max),
+                {
+                    "name": "Steady",
+                    "durationType": "DISTANCE",
+                    "value": main_mi,
+                    "target": _fmt_range_dict(seed.S_min, seed.S_max),
+                    "intensity": "STEADY",
+                },
+                _cd_step(cd_mi, seed.E_min, seed.E_max),
+            ]
+            cues.append("Controlled effort; steady, not hard.")
+
+            if (
+                allow_quality
+                and phase in STRIDES["enabled_phases"]
+                and distance_mi >= STRIDES["min_run_mi"]
+            ):
+                cues.append(
+                    f"Optional: add {STRIDES['reps']}×{STRIDES['on_sec']}s strides mid-run "
+                    f"({STRIDES['off_sec']}s easy between)."
+                )
 
     elif run_type == ENDURANCE:
         main_mi = max(0.0, distance_mi - (wu_mi + cd_mi))
