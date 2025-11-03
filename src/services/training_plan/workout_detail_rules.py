@@ -77,6 +77,41 @@ FOCUS_TAGS = {
 SEGMENT_SUM_TOLERANCE = 0.11  # Allowed drift between sum of segments and total miles
 
 # ============================================================================
+# INTERVAL WORKOUT CONFIGURATION
+# ============================================================================
+# Threshold intervals for STEADY workouts in Build/Peak phases
+THRESHOLD_INTERVALS = {
+    "enabled_phases": {PHASE["BUILD"], PHASE["PEAK"]},
+    "min_run_mi": 5.0,  # Minimum total distance to use intervals
+    "interval_types": {
+        "short": {  # For 5-7 mi total runs
+            "reps": 4,
+            "interval_mi": 0.25,  # 400m intervals
+            "rest_mi": 0.25,  # 400m rest
+        },
+        "medium": {  # For 7-9 mi total runs
+            "reps": 5,
+            "interval_mi": 0.5,  # 800m intervals
+            "rest_mi": 0.25,  # 400m rest
+        },
+        "long": {  # For 9+ mi total runs
+            "reps": 4,
+            "interval_mi": 0.75,  # 1200m intervals
+            "rest_mi": 0.25,  # 400m rest
+        },
+    },
+}
+
+# Tempo blocks for STEADY workouts (alternative to intervals)
+TEMPO_BLOCKS = {
+    "enabled_phases": {PHASE["BUILD"], PHASE["PEAK"]},
+    "min_run_mi": 6.0,
+    "block_mi": 2.0,  # 2-mile tempo blocks
+    "recovery_mi": 0.5,  # 0.5-mile recovery between blocks
+    "max_blocks": 3,  # Maximum 3 tempo blocks
+}
+
+# ============================================================================
 # UNITS (future: support km/mi conversion)
 # ============================================================================
 DEFAULT_UNITS = "mi"

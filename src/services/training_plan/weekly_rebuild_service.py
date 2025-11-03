@@ -460,7 +460,7 @@ class WeeklyRebuildService:
         # Track changes for email notification
         workout_changes = []
 
-        # Capture original workouts for email (before rebuild)
+        # Capture original workouts for email (before rebuild, include existing segments)
         original_workouts = []
         for db_workout in week_workouts:
             original_workouts.append(
@@ -476,6 +476,7 @@ class WeeklyRebuildService:
                     "description": db_workout.description or "",
                     "target_zone": db_workout.target_zone or "",
                     "target_hr": db_workout.target_hr or "",
+                    "segments": db_workout.segments,  # Include existing segments for comparison
                 }
             )
 
@@ -532,7 +533,7 @@ class WeeklyRebuildService:
         if week_with_details.get("workouts") and len(week_with_details["workouts"]) > 0:
             pace_labels = week_with_details["workouts"][0].get("pace_labels", {})
 
-        # Build updated workouts list for email
+        # Build updated workouts list for email (include segments for detailed display)
         updated_workouts = []
         for workout_data, db_workout in zip(
             week_with_details["workouts"], week_workouts
@@ -553,6 +554,9 @@ class WeeklyRebuildService:
                     "description": workout_data.get("cues", ""),
                     "target_zone": extract_pace_zone_from_workout(workout_data),
                     "target_hr": workout_data.get("target_hr") or "",
+                    "segments": workout_data.get(
+                        "segments"
+                    ),  # Include segments for email display
                 }
             )
 

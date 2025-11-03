@@ -361,9 +361,91 @@ class EmailService:
 
         day_names = DAY_NAMES_FULL
 
+        # Helper function to format pace from target dict
+        def format_pace_from_target(target: Any) -> str:
+            """Format pace from target dict (low/high in seconds) or string."""
+            if isinstance(target, dict):
+                low_sec = target.get("low", 0)
+                high_sec = target.get("high", 0)
+                if low_sec and high_sec:
+                    # Convert seconds to MM:SS/mi
+                    low_min = int(low_sec // 60)
+                    low_sec_rem = int(low_sec % 60)
+                    high_min = int(high_sec // 60)
+                    high_sec_rem = int(high_sec % 60)
+                    if low_min == high_min and low_sec_rem == high_sec_rem:
+                        return f"{low_min}:{low_sec_rem:02d}/mi"
+                    return (
+                        f"{low_min}:{low_sec_rem:02d}-{high_min}:{high_sec_rem:02d}/mi"
+                    )
+            elif isinstance(target, str):
+                return target
+            return ""
+
+        # Helper function to format segment breakdown
+        def format_segment_breakdown(workout: Optional[Dict[str, Any]]) -> str:
+            """Format detailed segment breakdown from workout."""
+            if not workout:
+                return ""
+
+            # Try to get segments from workout
+            segments = workout.get("segments")
+            if not segments:
+                return ""
+
+            # Handle segments in different formats
+            if isinstance(segments, str):
+                import json
+
+                try:
+                    segments = json.loads(segments)
+                except:
+                    return ""
+            elif not isinstance(segments, dict):
+                return ""
+
+            steps = segments.get("steps", [])
+            if not steps:
+                return ""
+
+            # Build segment breakdown
+            breakdown = "<div style='margin-top: 8px; font-size: 11px; border-top: 1px solid #ddd; padding-top: 5px;'>"
+            breakdown += "<strong>Workout Structure:</strong><br/>"
+            for i, step in enumerate(steps):
+                name = step.get("name", "Segment")
+                value = step.get("value", 0)
+                duration_type = step.get("durationType", "DISTANCE")
+                target = step.get("target", {})
+                intensity = step.get("intensity", "")
+
+                # Format value
+                if duration_type == "DISTANCE":
+                    value_str = f"{value:.2f} mi" if value > 0 else ""
+                else:
+                    value_str = f"{value} {duration_type.lower()}"
+
+                # Format pace
+                pace_str = format_pace_from_target(target)
+                if pace_str:
+                    pace_str = f" @ {pace_str}"
+
+                # Build segment line
+                segment_line = f"{name}"
+                if value_str:
+                    segment_line += f" {value_str}"
+                if pace_str:
+                    segment_line += pace_str
+                if intensity and intensity != "EASY":
+                    segment_line += f" ({intensity})"
+
+                breakdown += f"• {segment_line}<br/>"
+
+            breakdown += "</div>"
+            return breakdown
+
         # Helper function to format workout details
         def format_workout_details(workout: Optional[Dict[str, Any]]) -> str:
-            """Format workout details for display."""
+            """Format workout details for display with segment breakdown."""
             if not workout:
                 return "<em>Rest</em>"
 
@@ -385,6 +467,11 @@ class EmailService:
                 # Truncate description if too long
                 desc_short = desc[:30] + "..." if len(desc) > 30 else desc
                 details += f"<br/><small style='color: #666;'>{desc_short}</small>"
+
+            # Add segment breakdown if available (for planned workouts)
+            segment_breakdown = format_segment_breakdown(workout)
+            if segment_breakdown:
+                details += segment_breakdown
 
             return details
 
