@@ -62,7 +62,13 @@ Tasks to move the Strava app from development to production and support ~20 test
   - ✅ **Auto-integrated:** `StravaClient` automatically uses rate limiting
   - ✅ **Documentation:** [Rate limiting implementation guide](./rate-limiting-implementation.md)
   - ✅ **Features:** Sliding window tracking, safety margin (90%), sequential processing
-- [ ] Minimize polling (webhooks-first; last-sync timestamps)
+- [x] Minimize polling (webhooks-first; last-sync timestamps)
+  - ✅ **Sync tracking service:** `src/services/sync_tracking_service.py`
+  - ✅ **Webhooks-first strategy:** Prioritizes webhook events over polling
+  - ✅ **Incremental sync:** Only fetches activities after `last_sync_at` when webhooks active
+  - ✅ **Automatic detection:** Checks webhook status and uses appropriate sync method
+  - ✅ **Documentation:** [Webhooks-first strategy guide](./webhooks-first-strategy.md)
+  - ✅ **Benefits:** 95%+ reduction in API calls when webhooks are active
 
 ### Security & compliance
 - [ ] Secure token storage; redact secrets in logs

@@ -15,6 +15,10 @@ from src.services.activity_service import (
     ActivityIngestionService,
     run_enrichment_batch,
 )
+from src.services.sync_tracking_service import (
+    should_use_incremental_sync,
+    update_last_sync_timestamp,
+)
 from src.utils.seeder import seed_sample_activity
 from src.utils.config import config
 
@@ -31,6 +35,7 @@ def run_full_ingestion_and_enrichment(
     per_page=None,
     after=None,
     before=None,
+    force_full_sync=False,
 ):
     session = get_session()
 
@@ -81,11 +86,28 @@ def run_full_ingestion_and_enrichment(
 
         time.sleep(1)  # simulate auth step
 
-        after = after or int(
-            (datetime.utcnow() - timedelta(days=lookback_days))
-            .replace(hour=0, minute=0, second=0, microsecond=0)
-            .timestamp()
+        # Webhooks-first strategy: Use incremental sync if webhooks are active
+        use_incremental, last_sync_at = should_use_incremental_sync(
+            session, athlete_id, force_full=force_full_sync
         )
+
+        if use_incremental and last_sync_at:
+            # Incremental sync: Only fetch activities after last sync
+            after = after or int(last_sync_at.timestamp())
+            logger.info(
+                f"🔄 Incremental sync: fetching activities after {last_sync_at.isoformat()}"
+            )
+        else:
+            # Full sync: Use lookback_days or provided 'after'
+            after = after or int(
+                (datetime.utcnow() - timedelta(days=lookback_days))
+                .replace(hour=0, minute=0, second=0, microsecond=0)
+                .timestamp()
+            )
+            logger.info(
+                f"🔄 Full sync: fetching activities from {lookback_days} days ago"
+            )
+
         before = before or int(
             datetime.utcnow()
             .replace(hour=0, minute=0, second=0, microsecond=0)
@@ -185,6 +207,9 @@ def run_full_ingestion_and_enrichment(
             logger.info(f"Invalidated metrics cache for athlete {athlete_id}")
         except Exception as e:
             logger.warning(f"Failed to invalidate cache for athlete {athlete_id}: {e}")
+
+        # Update last sync timestamp (tracked via most recent activity)
+        update_last_sync_timestamp(session, athlete_id)
 
         logger.info(f"Finished ingestion. Synced={inserted_count}, Enriched={enriched}")
         return {"synced": inserted_count, "enriched": enriched}
