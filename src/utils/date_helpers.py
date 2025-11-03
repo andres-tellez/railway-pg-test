@@ -248,3 +248,46 @@ def get_next_monday(target_date: Union[date, datetime] = None) -> date:
 
     days = get_days_until_next_monday(target_date)
     return target_date + timedelta(days=days)
+
+
+def get_previous_completed_week_range(
+    target_date: Union[date, datetime] = None
+) -> tuple[date, date]:
+    """
+    Get the date range (Monday to Sunday) for the current week that just completed.
+
+    When scheduler runs on Sunday, the current week includes that Sunday and ends on that day.
+    This function returns the week that just ended (Monday to Sunday, where Sunday is today).
+
+    Example:
+        If scheduler runs on Sunday Nov 3:
+        - Current week that just completed: Monday Oct 27 to Sunday Nov 2
+        - Returns: (Monday Oct 27, Sunday Nov 2)
+        - Note: Nov 3 is the next week (starts Monday Nov 3)
+
+    Args:
+        target_date: Date or datetime object (defaults to today if None)
+                     When scheduler runs, this is Sunday (the last day of the week)
+
+    Returns:
+        Tuple of (week_start, week_end) where both are date objects.
+        week_start is Monday, week_end is Sunday of the current week that just completed.
+    """
+    if target_date is None:
+        target_date = datetime.now().date()
+    elif isinstance(target_date, datetime):
+        target_date = target_date.date()
+
+    # When scheduler runs on Sunday, the current week ends on the previous day (Saturday)
+    # The week we want is Monday to Sunday, where Sunday is yesterday
+    # Get yesterday (which is Saturday when scheduler runs on Sunday)
+    yesterday = target_date - timedelta(days=1)
+
+    # Get the week start (Monday) for the week containing yesterday
+    # This gives us the Monday of the week that just completed
+    week_start = get_week_start_for_date(yesterday)
+
+    # Week end is Sunday (6 days after Monday)
+    week_end = week_start + timedelta(days=6)
+
+    return (week_start, week_end)

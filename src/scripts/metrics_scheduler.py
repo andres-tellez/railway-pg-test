@@ -162,16 +162,19 @@ def run_metrics_refresh():
         return False, f"Metrics refresh failed: {str(e)}"
 
 
-def fetch_last_week_actual_runs(
-    session, user_id: str, week_start_date: date
+def fetch_this_week_actual_runs(
+    session, user_id: str, today: date
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Fetch actual completed runs from last week, grouped by day of week.
+    Fetch actual completed runs from THIS WEEK (Monday to Sunday), grouped by day of week.
+
+    When scheduler runs on Sunday, this fetches the previous completed week
+    (Monday to Sunday that just ended).
 
     Args:
         session: Database session
         user_id: User UUID string
-        week_start_date: Monday of the upcoming week (to calculate previous week)
+        today: Current date (should be Sunday when scheduler runs)
 
     Returns:
         Dict mapping day names to run details: {"Monday": {...}, "Tuesday": {...}, ...}
@@ -179,14 +182,15 @@ def fetch_last_week_actual_runs(
     from datetime import datetime
     from sqlalchemy import and_
     from src.db.models.activities import Activity
+    from src.utils.date_helpers import get_previous_completed_week_range
 
-    # Calculate last week's date range (Monday to Sunday)
-    last_week_end = week_start_date - timedelta(days=1)  # Sunday
-    last_week_start = last_week_end - timedelta(days=6)  # Monday
+    # Calculate THIS WEEK's date range (previous completed week: Monday to Sunday)
+    # When scheduler runs on Sunday, get the week that just ended (yesterday)
+    this_week_start, this_week_end = get_previous_completed_week_range(today)
 
     # Convert to datetime for query
-    last_week_start_dt = datetime.combine(last_week_start, datetime.min.time())
-    last_week_end_dt = datetime.combine(last_week_end, datetime.max.time())
+    this_week_start_dt = datetime.combine(this_week_start, datetime.min.time())
+    this_week_end_dt = datetime.combine(this_week_end, datetime.max.time())
 
     try:
         # Fetch activities from last week
@@ -196,8 +200,8 @@ def fetch_last_week_actual_runs(
                 and_(
                     Activity.user_id == user_id,
                     Activity.type == "Run",
-                    Activity.start_date >= last_week_start_dt,
-                    Activity.start_date <= last_week_end_dt,
+                    Activity.start_date >= this_week_start_dt,
+                    Activity.start_date <= this_week_end_dt,
                 )
             )
             .order_by(Activity.start_date)
@@ -206,7 +210,7 @@ def fetch_last_week_actual_runs(
 
         # Group by day of week
         runs_by_day = {}
-        from src.utils.date_helpers import DAY_NAMES_FULL, get_next_monday
+        from src.utils.date_helpers import DAY_NAMES_FULL
 
         day_names = DAY_NAMES_FULL
 
@@ -245,11 +249,11 @@ def fetch_last_week_actual_runs(
                 ),
             }
 
-        logger.info(f"📊 Fetched {len(activities)} actual runs from last week")
+        logger.info(f"📊 Fetched {len(activities)} actual runs from this week")
         return runs_by_day
 
     except Exception as e:
-        logger.warning(f"⚠️  Could not fetch last week actual runs: {e}")
+        logger.warning(f"⚠️  Could not fetch this week actual runs: {e}")
         return {}
 
 
@@ -423,17 +427,17 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
                             week_start_date_obj = get_next_monday(today)
                             week_start_date = week_start_date_obj.isoformat()
 
-                            # Fetch last week's actual runs
-                            last_week_runs = {}
+                            # Fetch this week's actual runs (Monday to Sunday)
+                            this_week_runs = {}
                             try:
-                                last_week_runs = fetch_last_week_actual_runs(
+                                this_week_runs = fetch_this_week_actual_runs(
                                     session=session,
                                     user_id=str(plan.user_id),
-                                    week_start_date=week_start_date_obj,
+                                    today=today,
                                 )
                             except Exception as e:
                                 logger.warning(
-                                    f"⚠️  Could not fetch last week runs for email: {e}"
+                                    f"⚠️  Could not fetch this week runs for email: {e}"
                                 )
 
                             # Get original and updated workouts from rebuild result
@@ -446,7 +450,7 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
                                 user_name=user_identity.name,
                                 week_num=upcoming_week_num,
                                 week_start=week_start_date,
-                                last_week_actual_runs=last_week_runs,
+                                this_week_actual_runs=this_week_runs,
                                 next_week_original_plan=original_workouts,
                                 next_week_updated_plan=updated_workouts,
                                 metrics_refresh_success=metrics_refresh_success,

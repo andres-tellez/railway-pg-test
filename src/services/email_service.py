@@ -331,7 +331,7 @@ class EmailService:
         user_name: Optional[str],
         week_num: int,
         week_start: str,
-        last_week_actual_runs: Dict[str, Optional[Dict[str, Any]]],
+        this_week_actual_runs: Dict[str, Optional[Dict[str, Any]]],
         next_week_original_plan: List[Dict[str, Any]],
         next_week_updated_plan: List[Dict[str, Any]],
         metrics_refresh_success: bool,
@@ -345,7 +345,7 @@ class EmailService:
             user_name: Optional user name for personalization
             week_num: Week number that was rebuilt
             week_start: Week start date (YYYY-MM-DD)
-            last_week_actual_runs: Dict of actual runs from last week by day
+            this_week_actual_runs: Dict of actual runs from THIS WEEK by day
             next_week_original_plan: List of original planned workouts before rebuild
             next_week_updated_plan: List of updated planned workouts after rebuild
             metrics_refresh_success: Whether metrics refresh succeeded
@@ -409,11 +409,11 @@ class EmailService:
             table_html += f"<th style='padding: 12px; border: 1px solid #ddd; text-align: center;'>{day_name[:3]}</th>"
         table_html += "</tr>"
 
-        # Row 1: Last week actual runs
+        # Row 1: This week actual runs
         table_html += "<tr style='background-color: #e3f2fd;'>"
-        table_html += "<td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>Last Week<br/>Actual Runs</td>"
+        table_html += "<td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>This Week<br/>Actual Runs</td>"
         for day_name in day_names:
-            run_data = last_week_actual_runs.get(day_name)
+            run_data = this_week_actual_runs.get(day_name)
             if run_data:
                 table_html += f"<td style='padding: 10px; border: 1px solid #ddd;'>{format_workout_details(run_data)}</td>"
             else:
@@ -489,7 +489,7 @@ class EmailService:
             <p>Your training plan for <strong>Week {week_num}</strong> (starting {week_start}) has been updated based on your recent performance.</p>
             <p>The table below shows:</p>
             <ul>
-                <li><strong>Last Week Actual Runs:</strong> What you actually ran last week</li>
+                <li><strong>This Week Actual Runs:</strong> What you actually ran this week (Mon-Sun)</li>
                 <li><strong>Next Week Original Plan:</strong> What was originally planned for next week</li>
                 <li><strong>Next Week Updated Plan:</strong> How the plan was adjusted based on your performance (highlighted in yellow)</li>
             </ul>
