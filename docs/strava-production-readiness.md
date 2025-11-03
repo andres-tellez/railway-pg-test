@@ -40,8 +40,10 @@ Tasks to move the Strava app from development to production and support ~20 test
   - ✅ Verified: Code matches expected scopes
   - ✅ Note: `activity:read_all` includes `activity:read` functionality
   - ⏳ **Action needed:** Manual verification in Strava Developer Portal
-- [ ] Capture screenshots of consent and post-auth experience
-  - [See screenshot guide](../STRAVA_SCREENSHOT_GUIDE.md)
+- [x] Capture screenshots of consent and post-auth experience
+  - ✅ **Screenshot checklist:** [Screenshot capture checklist](./screenshot-capture-checklist.md)
+  - ✅ **Full guide:** [Complete screenshot guide](../STRAVA_SCREENSHOT_GUIDE.md)
+  - ⚠️ **Action needed:** Capture screenshots using the checklist before production submission
 
 ### Webhooks & rate limits
 - [ ] Activate production webhook subscription
