@@ -181,8 +181,10 @@ def fetch_last_week_actual_runs(
     from src.db.models.activities import Activity
 
     # Calculate last week's date range (Monday to Sunday)
-    last_week_end = week_start_date - timedelta(days=1)  # Sunday
-    last_week_start = last_week_end - timedelta(days=6)  # Monday
+    # Last week ends the day before the upcoming week starts
+    last_week_end = week_start_date - timedelta(days=1)  # Sunday that just ended
+    # Last week starts 7 days before the upcoming week starts
+    last_week_start = week_start_date - timedelta(days=7)  # Monday of last week
 
     # Convert to datetime for query
     last_week_start_dt = datetime.combine(last_week_start, datetime.min.time())
