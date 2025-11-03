@@ -168,7 +168,8 @@ def fetch_this_week_actual_runs(
     """
     Fetch actual completed runs from THIS WEEK (Monday to Sunday), grouped by day of week.
 
-    When scheduler runs on Sunday, this fetches the current week that ends today.
+    When scheduler runs on Sunday, this fetches the previous completed week
+    (Monday to Sunday that just ended).
 
     Args:
         session: Database session
@@ -181,12 +182,11 @@ def fetch_this_week_actual_runs(
     from datetime import datetime
     from sqlalchemy import and_
     from src.db.models.activities import Activity
-    from src.utils.date_helpers import get_current_week_start
+    from src.utils.date_helpers import get_previous_completed_week_range
 
-    # Calculate THIS WEEK's date range (Monday to Sunday)
-    # Current week starts on Monday and ends on Sunday (today)
-    this_week_start = get_current_week_start()  # Monday of this week
-    this_week_end = today  # Sunday (today when scheduler runs)
+    # Calculate THIS WEEK's date range (previous completed week: Monday to Sunday)
+    # When scheduler runs on Sunday, get the week that just ended (yesterday)
+    this_week_start, this_week_end = get_previous_completed_week_range(today)
 
     # Convert to datetime for query
     this_week_start_dt = datetime.combine(this_week_start, datetime.min.time())
@@ -210,7 +210,7 @@ def fetch_this_week_actual_runs(
 
         # Group by day of week
         runs_by_day = {}
-        from src.utils.date_helpers import DAY_NAMES_FULL, get_next_monday
+        from src.utils.date_helpers import DAY_NAMES_FULL
 
         day_names = DAY_NAMES_FULL
 
