@@ -38,7 +38,7 @@ const PlansManagement: React.FC = () => {
     const fetchPlans = async () => {
       try {
         setLoading(true);
-        const response = await api.get("api/plan/list");
+        const response = await api.get("/api/plan/list");
         setPlans(response.data.plans || []);
       } catch (err: any) {
         console.error("Error fetching plans:", err);
@@ -55,10 +55,10 @@ const PlansManagement: React.FC = () => {
     try {
       setSwitching(planId);
       setError(null);
-      await api.post(`api/plan/${planId}/set-active`);
+      await api.post(`/api/plan/${planId}/set-active`);
 
       // Reload plans to reflect the active state
-      const response = await api.get("api/plan/list");
+      const response = await api.get("/api/plan/list");
       setPlans(response.data.plans || []);
 
       // Redirect to the plan overview
@@ -72,7 +72,7 @@ const PlansManagement: React.FC = () => {
   const handleDelete = async (planId: number) => {
     try {
       setError(null);
-      await api.delete(`api/plan/${planId}`);
+      await api.delete(`/api/plan/${planId}`);
 
       // Remove the deleted plan from the list
       setPlans(plans.filter(p => p.id !== planId));
