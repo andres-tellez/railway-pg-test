@@ -89,7 +89,14 @@ Tasks to move the Strava app from development to production and support ~20 test
   - ✅ **What's retained:** Activities, plans, and metrics remain accessible
   - ✅ **Navigation:** Added Settings link to main navigation
   - ✅ **User-friendly:** Confirmation dialog and success messages
-- [ ] Verify export/delete flows end-to-end in staging
+- [x] Verify export/delete flows end-to-end in staging
+  - ✅ **Verification script:** `src/scripts/verify_export_delete_e2e.py`
+  - ✅ **Documentation:** [E2E verification guide](./verify-export-delete-e2e.md)
+  - ✅ **Export test:** Validates data structure, completeness, and accuracy
+  - ✅ **Delete test:** Validates deletion and database cleanup
+  - ✅ **Auth test:** Validates authentication requirements
+  - ✅ **Manual checklist:** Step-by-step verification procedures
+  - ⚠️ **Action needed:** Run verification script in staging environment before production
 
 ### Submission package
 - [x] Draft use case summary

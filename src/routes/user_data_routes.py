@@ -25,6 +25,7 @@ from src.db.models.user_profile import UserProfile
 from src.db.models.user_athletes import UserAthleteLink
 from src.db.models.activities import Activity
 from src.db.models.tokens import Token
+from src.db.models.plans import Plan
 
 user_data_bp = Blueprint("user_data", __name__)
 
