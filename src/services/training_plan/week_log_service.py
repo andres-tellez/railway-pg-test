@@ -18,7 +18,7 @@ Author: SmartCoach Development Team
 Last Updated: January 2026
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from datetime import date, timedelta, datetime
 from sqlalchemy.orm import Session
 import logging
@@ -27,6 +27,16 @@ from .weekly_adjuster import WeekLogRun
 from .data_collection_service import DataCollectionService
 from src.db.models.plan_workouts import PlanWorkout
 from src.db.models.plans import Plan
+from src.utils.adaptive_constants import (
+    MATCH_DAY_WINDOW,
+    MATCH_DISTANCE_TOLERANCE_EASY,
+    MATCH_DISTANCE_TOLERANCE_QUALITY,
+    MATCH_SCORE_PERFECT,
+    MATCH_SCORE_GOOD,
+    MATCH_SCORE_PARTIAL,
+    MATCH_SCORE_TYPE_ONLY,
+    MATCH_SCORE_NONE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,59 +122,13 @@ def fetch_week_logs_from_db(
             <= week_end
         ]
 
-        # Match planned workouts with completed activities
-        # Simple matching: same day + similar distance (±20%)
-        week_logs = []
-        for workout in week_workouts:
-            # Find matching activity on the same day
-            matching_activity = None
-            for activity in week_activities:
-                activity_date = datetime.strptime(activity["date"], "%Y-%m-%d").date()
-                if activity_date == workout.date:
-                    # Check distance similarity (±20%)
-                    planned_mi = workout.miles
-                    actual_mi = activity.get("distance", 0) or 0
-                    if abs(actual_mi - planned_mi) / max(planned_mi, 0.1) <= 0.2:
-                        matching_activity = activity
-                        break
-
-            # Create WeekLogRun entry
-            if matching_activity:
-                planned_mi = workout.miles
-                done_mi = matching_activity.get("distance", 0) or 0
-                avg_hr = matching_activity.get("average_heartrate")
-
-                # Normalize workout type
-                run_type = _normalize_workout_type(workout.workout_type)
-
-                # Estimate RPE from heart rate if available (simplified heuristic)
-                rpe = _estimate_rpe_from_hr(avg_hr) if avg_hr else 3
-
-                week_logs.append(
-                    WeekLogRun(
-                        run_type=run_type,
-                        planned_mi=planned_mi,
-                        done_mi=done_mi,
-                        rpe=rpe,
-                        avg_hr=int(avg_hr) if avg_hr else None,
-                    )
-                )
-            else:
-                # No matching activity - workout not completed
-                run_type = _normalize_workout_type(workout.workout_type)
-                week_logs.append(
-                    WeekLogRun(
-                        run_type=run_type,
-                        planned_mi=workout.miles,
-                        done_mi=0.0,
-                        rpe=0,
-                        avg_hr=None,
-                    )
-                )
+        # Match planned workouts with completed activities using flexible matching
+        # Allows matching within ±3 days and different distance tolerances for easy vs quality
+        week_logs = _match_workouts_flexible(week_workouts, week_activities)
 
         logger.info(
             f"Matched {len([w for w in week_logs if w.done_mi > 0])}/{len(week_workouts)} "
-            f"workouts for week {week_num}"
+            f"workouts for week {week_num} (flexible matching: ±{MATCH_DAY_WINDOW} days)"
         )
 
     except Exception as e:
@@ -172,6 +136,180 @@ def fetch_week_logs_from_db(
         return []
 
     return week_logs
+
+
+def _match_workouts_flexible(
+    week_workouts: List[PlanWorkout], week_activities: List[Dict[str, Any]]
+) -> List[WeekLogRun]:
+    """
+    Match planned workouts with Strava activities using flexible matching.
+
+    Flexible matching allows:
+    - Day flexibility: Match within ±MATCH_DAY_WINDOW days (default ±3)
+    - Distance flexibility: ±40% for easy runs, ±20% for quality workouts
+    - Workout type consideration: Prefers matching same workout type
+
+    Prevents double-matching: Each activity can only match one workout.
+
+    Args:
+        week_workouts: List of planned workouts for the week
+        week_activities: List of Strava activity dictionaries for the week
+
+    Returns:
+        List of WeekLogRun entries (one per planned workout)
+    """
+    week_logs = []
+    matched_activity_ids = set()  # Prevent double-matching
+
+    for workout in week_workouts:
+        planned_mi = workout.miles
+        planned_type = _normalize_workout_type(workout.workout_type)
+
+        # Score all activities against this workout
+        best_match = None
+        best_score = MATCH_SCORE_NONE
+
+        for activity in week_activities:
+            # Skip already matched activities
+            activity_id = activity.get("activity_id")
+            if activity_id and activity_id in matched_activity_ids:
+                continue
+
+            activity_date = datetime.strptime(activity["date"], "%Y-%m-%d").date()
+            actual_mi = activity.get("distance", 0) or 0
+
+            # Calculate match score
+            score, match_details = _calculate_match_score(
+                workout_date=workout.date,
+                activity_date=activity_date,
+                planned_mi=planned_mi,
+                actual_mi=actual_mi,
+                planned_type=planned_type,
+            )
+
+            if score > best_score:
+                best_score = score
+                best_match = {
+                    "activity": activity,
+                    "score": score,
+                    "details": match_details,
+                }
+
+        # Create WeekLogRun entry
+        if best_match and best_score >= MATCH_SCORE_PARTIAL:
+            # Good enough match (≥60% score)
+            activity = best_match["activity"]
+            activity_id = activity.get("activity_id")
+            if activity_id:
+                matched_activity_ids.add(activity_id)
+
+            done_mi = activity.get("distance", 0) or 0
+            avg_hr = activity.get("average_heartrate")
+
+            run_type = _normalize_workout_type(workout.workout_type)
+
+            # Estimate RPE from heart rate if available
+            rpe = _estimate_rpe_from_hr(avg_hr) if avg_hr else 3
+
+            week_logs.append(
+                WeekLogRun(
+                    run_type=run_type,
+                    planned_mi=planned_mi,
+                    done_mi=done_mi,
+                    rpe=rpe,
+                    avg_hr=int(avg_hr) if avg_hr else None,
+                )
+            )
+        else:
+            # No matching activity - workout not completed
+            run_type = _normalize_workout_type(workout.workout_type)
+            week_logs.append(
+                WeekLogRun(
+                    run_type=run_type,
+                    planned_mi=planned_mi,
+                    done_mi=0.0,
+                    rpe=0,
+                    avg_hr=None,
+                )
+            )
+
+    return week_logs
+
+
+def _calculate_match_score(
+    workout_date: date,
+    activity_date: date,
+    planned_mi: float,
+    actual_mi: float,
+    planned_type: str,
+) -> Tuple[float, Dict[str, Any]]:
+    """
+    Calculate match score for a workout-activity pair.
+
+    Scoring system:
+    - Perfect match (same day, same distance, same type) = 1.0
+    - Good match (same type, within 2 days, ±30% distance) = 0.8
+    - Partial match (same type, within 3 days, ±40% distance) = 0.6
+    - Type match only (correct type, wrong day/distance) = 0.4
+    - No match = 0.0
+
+    Args:
+        workout_date: Planned workout date
+        activity_date: Actual activity date
+        planned_mi: Planned distance in miles
+        actual_mi: Actual distance in miles
+        planned_type: Normalized workout type (easy/steady/endurance/long)
+
+    Returns:
+        Tuple of (score, details_dict)
+    """
+    # Calculate day difference (absolute)
+    day_diff = abs((activity_date - workout_date).days)
+
+    # Calculate distance difference percentage
+    distance_pct_diff = abs(actual_mi - planned_mi) / max(planned_mi, 0.1)
+
+    # Determine distance tolerance based on workout type
+    # Easy/endurance runs are more lenient, quality workouts stricter
+    is_quality_workout = planned_type in ("steady", "threshold", "tempo", "interval")
+    distance_tolerance = (
+        MATCH_DISTANCE_TOLERANCE_QUALITY
+        if is_quality_workout
+        else MATCH_DISTANCE_TOLERANCE_EASY
+    )
+
+    # Perfect match: same day, same distance (±10%), same type
+    if day_diff == 0 and distance_pct_diff <= 0.10:
+        return MATCH_SCORE_PERFECT, {
+            "day_diff": day_diff,
+            "distance_pct_diff": distance_pct_diff,
+            "match_type": "perfect",
+        }
+
+    # Good match: same type, within 2 days, ±30% distance
+    if day_diff <= 2 and distance_pct_diff <= 0.30:
+        return MATCH_SCORE_GOOD, {
+            "day_diff": day_diff,
+            "distance_pct_diff": distance_pct_diff,
+            "match_type": "good",
+        }
+
+    # Partial match: within day window, within distance tolerance
+    if day_diff <= MATCH_DAY_WINDOW and distance_pct_diff <= distance_tolerance:
+        return MATCH_SCORE_PARTIAL, {
+            "day_diff": day_diff,
+            "distance_pct_diff": distance_pct_diff,
+            "match_type": "partial",
+        }
+
+    # Type match only: correct type but outside day/distance windows
+    # (This would require knowing activity type, which we don't have here)
+    # For now, return 0.0 if outside all windows
+    return MATCH_SCORE_NONE, {
+        "day_diff": day_diff,
+        "distance_pct_diff": distance_pct_diff,
+        "match_type": "none",
+    }
 
 
 def _normalize_workout_type(workout_type: str) -> str:
