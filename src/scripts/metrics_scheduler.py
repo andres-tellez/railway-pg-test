@@ -59,8 +59,8 @@ logger = logging.getLogger(__name__)
 # SCHEDULE CONFIGURATION - Update these values to change the schedule
 # ============================================================================
 SCHEDULE_WEEKDAY = 6  # Sunday (0=Monday, 6=Sunday)
-SCHEDULE_HOUR = 17  # Hour (24-hour format: 17 = 5 PM)
-SCHEDULE_MINUTE = 30  # Minute (0-59)
+SCHEDULE_HOUR = 19  # Hour (24-hour format: 19 = 7 PM)
+SCHEDULE_MINUTE = 46  # Minute (0-59)
 SCHEDULE_TIMEZONE = "America/Chicago"  # Central Time
 SCHEDULE_TIMEZONE_DISPLAY = "Central Time"  # Display name for logs
 
