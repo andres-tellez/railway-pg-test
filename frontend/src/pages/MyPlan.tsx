@@ -94,13 +94,6 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
             <span className="font-semibold">Target HR:</span> {workout.target_hr}
           </div>
         )}
-
-        {/* Focus with bold emphasis */}
-        {workout.focus && (
-          <div className="text-sm text-gray-800">
-            <span className="font-semibold">Focus:</span> {workout.focus}
-          </div>
-        )}
       </div>
     );
   }
@@ -122,13 +115,6 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
       {workout.target_hr && workout.target_zone && (
         <div className="text-sm text-gray-800">
           <span className="font-semibold">Target HR:</span> {workout.target_hr}
-        </div>
-      )}
-
-      {/* Focus with bold emphasis and extra spacing */}
-      {workout.focus && (
-        <div className="text-sm text-gray-800 pb-2">
-          <span className="font-semibold">Focus:</span> {workout.focus}
         </div>
       )}
 
