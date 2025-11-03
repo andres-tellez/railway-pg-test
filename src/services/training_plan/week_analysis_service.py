@@ -117,25 +117,51 @@ class WeekAnalysisService:
         Returns:
             WeekAnalysisResult with all metrics calculated
         """
-        # Calculate core metrics
+        # Rollback any failed transaction first to prevent lazy-load errors
+        if session.in_transaction():
+            try:
+                session.rollback()
+            except Exception:
+                pass  # Ignore rollback errors
+
+        # Extract all needed data from planned_workouts BEFORE any queries
+        # This prevents lazy-load failures if transaction was aborted
+        planned_workouts_data = []
+        if planned_workouts:
+            for w in planned_workouts:
+                # Access all attributes we'll need to prevent lazy-loading later
+                try:
+                    planned_workouts_data.append(
+                        {
+                            "miles": float(w.miles) if w.miles else 0.0,
+                            "workout_type": w.workout_type or "",
+                            "date": w.date if hasattr(w, "date") else None,
+                        }
+                    )
+                except Exception as e:
+                    # If we can't access the data, log and skip
+                    logger.debug(f"Could not extract data from planned workout: {e}")
+                    continue
+
+        # Calculate core metrics (using extracted data to avoid lazy-load issues)
         volume_score = WeekAnalysisService._calculate_volume_score(
-            week_logs, planned_workouts
+            week_logs, planned_workouts_data
         )
         intensity_score = WeekAnalysisService._calculate_intensity_score(
-            week_logs, planned_workouts
+            week_logs, planned_workouts_data
         )
         consistency_score = WeekAnalysisService._calculate_consistency_score(
-            week_logs, planned_workouts
+            week_logs, planned_workouts_data
         )
 
         # Calculate pace trend
         pace_data = WeekAnalysisService._calculate_pace_trend(
-            week_logs, planned_workouts
+            week_logs, planned_workouts_data
         )
 
         # Calculate recovery indicators
         recovery_data = WeekAnalysisService._calculate_recovery_indicators(
-            week_logs, planned_workouts
+            week_logs, planned_workouts_data
         )
 
         # Calculate training load
@@ -149,7 +175,7 @@ class WeekAnalysisService:
         # Calculate dynamic thresholds
         # Get user_id from plan (need to query plan if relationship not loaded)
         user_id = None
-        if planned_workouts:
+        if planned_workouts:  # Use original list for relationship access
             try:
                 # Try to access via relationship first
                 if hasattr(planned_workouts[0], "plan") and planned_workouts[0].plan:
@@ -178,12 +204,16 @@ class WeekAnalysisService:
             else {"pace_threshold": FATIGUE_PACE_THRESHOLD_MIN, "hr_threshold": 5.0}
         )
 
-        # Calculate totals
+        # Calculate totals (using extracted data)
         total_planned_miles = (
-            sum(w.miles for w in planned_workouts) if planned_workouts else 0.0
+            sum(w["miles"] for w in planned_workouts_data)
+            if planned_workouts_data
+            else 0.0
         )
         total_actual_miles = sum(w.done_mi for w in week_logs)
-        planned_workouts_count = len(planned_workouts) if planned_workouts else 0
+        planned_workouts_count = (
+            len(planned_workouts_data) if planned_workouts_data else 0
+        )
         completed_workouts_count = len([w for w in week_logs if w.done_mi > 0])
 
         return WeekAnalysisResult(
@@ -211,7 +241,7 @@ class WeekAnalysisService:
     @staticmethod
     def _calculate_volume_score(
         week_logs: List[WeekLogRun],
-        planned_workouts: List[PlanWorkout],
+        planned_workouts: List[Dict[str, Any]],
     ) -> float:
         """
         Calculate volume score (0-100%).
@@ -221,7 +251,7 @@ class WeekAnalysisService:
         if not planned_workouts:
             return 0.0
 
-        total_planned = sum(w.miles for w in planned_workouts)
+        total_planned = sum(w.get("miles", 0.0) for w in planned_workouts)
         total_actual = sum(w.done_mi for w in week_logs)
 
         if total_planned == 0:
@@ -233,7 +263,7 @@ class WeekAnalysisService:
     @staticmethod
     def _calculate_intensity_score(
         week_logs: List[WeekLogRun],
-        planned_workouts: List[PlanWorkout],
+        planned_workouts: List[Dict[str, Any]],
     ) -> float:
         """
         Calculate intensity score (0-100%).
@@ -248,8 +278,8 @@ class WeekAnalysisService:
         quality_planned = [
             w
             for w in planned_workouts
-            if w.workout_type
-            and w.workout_type.lower() not in ("easy", "recovery", "rest")
+            if w.get("workout_type")
+            and w.get("workout_type", "").lower() not in ("easy", "recovery", "rest")
         ]
 
         # Count quality workouts completed
@@ -268,8 +298,8 @@ class WeekAnalysisService:
                     "speed",
                 ):
                     # Check if this could match the planned workout
-                    if workout.workout_type and any(
-                        term in workout.workout_type.lower()
+                    if workout.get("workout_type") and any(
+                        term in workout.get("workout_type", "").lower()
                         for term in [
                             "tempo",
                             "threshold",
@@ -293,7 +323,7 @@ class WeekAnalysisService:
     @staticmethod
     def _calculate_consistency_score(
         week_logs: List[WeekLogRun],
-        planned_workouts: List[PlanWorkout],
+        planned_workouts: List[Dict[str, Any]],
     ) -> float:
         """
         Calculate consistency score (0-100%).
@@ -312,7 +342,7 @@ class WeekAnalysisService:
     @staticmethod
     def _calculate_pace_trend(
         week_logs: List[WeekLogRun],
-        planned_workouts: List[PlanWorkout],
+        planned_workouts: List[Dict[str, Any]],
     ) -> Dict[str, Optional[float]]:
         """
         Calculate pace trend analysis.
@@ -336,7 +366,7 @@ class WeekAnalysisService:
     @staticmethod
     def _calculate_recovery_indicators(
         week_logs: List[WeekLogRun],
-        planned_workouts: List[PlanWorkout],
+        planned_workouts: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """
         Calculate recovery indicators (fatigue markers).
