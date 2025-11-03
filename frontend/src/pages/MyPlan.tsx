@@ -15,6 +15,7 @@ import {
   parseISO,
 } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+import PlanLayout from '@/components/layout/PlanLayout';
 import { useApiClient } from '@/utils/apiClient';
 import { useAuthSetup } from '@/hooks/useAuthSetup';
 import { AuthGuard } from '@/components/AuthGuard';
@@ -306,6 +307,7 @@ const MyPlan: React.FC = () => {
 
   return (
     <AuthGuard>
+      <PlanLayout>
       <div className="w-full max-w-lg mx-auto">
       {/* Plan Header with Actions */}
       {plan && (
@@ -377,16 +379,7 @@ const MyPlan: React.FC = () => {
               </div>
             )}
 
-            {/* Create New Plan Button */}
-            <button
-              onClick={() => navigate('/plan/new')}
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors whitespace-nowrap"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Plan
-            </button>
+            {/* New Plan button removed (available via sub-navigation) */}
           </div>
         </div>
       )}
@@ -517,6 +510,7 @@ const MyPlan: React.FC = () => {
       )}
 
       </div>
+      </PlanLayout>
     </AuthGuard>
   );
 };

@@ -62,8 +62,7 @@ const Navigation: React.FC = () => {
       // Complete user - show full navigation
       navItems.push(
         { label: 'Dashboard', path: '/home', icon: '🏠' },
-        { label: 'My Plan', path: '/plan/overview', icon: '📅' },
-        { label: 'Manage Plans', path: '/plan/manage', icon: '⚙️' },
+        { label: 'Training Plan', path: '/plan/overview', icon: '📅' },
         { label: 'Metrics', path: '/metrics', icon: '📊' },
         { label: 'Ask Coach', path: '/ask', icon: '💬' }
       );
