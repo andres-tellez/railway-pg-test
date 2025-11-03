@@ -48,6 +48,7 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import DataDeletion from "./pages/DataDeletion";
 import DataUsage from "./pages/DataUsage";
+import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 
 import Layout from "./components/Layout";
@@ -150,6 +151,14 @@ export default function App() {
         element={
           <Layout>
             <UserProfile />
+          </Layout>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <Layout>
+            <Settings />
           </Layout>
         }
       />

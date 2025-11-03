@@ -71,6 +71,7 @@ from src.routes.user_profile_routes import user_profile_bp
 from src.routes.user_identity_routes import identity_bp
 from src.routes.auth_me_routes import auth_me_bp
 from src.routes.user_data_routes import user_data_bp
+from src.routes.strava_connection_routes import strava_connection_bp
 from src.utils.auth0_jwt import requires_auth
 from src.routes.metrics_routes import metrics_bp
 from src.routes.webhook_routes import webhook_bp
@@ -135,6 +136,7 @@ def create_app(test_config=None):
     # Removed ask_bp - using conversation system instead
     app.register_blueprint(user_profile_bp)
     app.register_blueprint(user_data_bp, url_prefix="/api")
+    app.register_blueprint(strava_connection_bp)
     app.register_blueprint(metrics_bp, url_prefix="/api/metrics")
     app.register_blueprint(longest_runs_bp, url_prefix="/api/longest-runs")
     app.register_blueprint(gyr_metrics_bp, url_prefix="/api/gyr-metrics")

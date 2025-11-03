@@ -80,7 +80,15 @@ Tasks to move the Strava app from development to production and support ~20 test
   - ✅ **Dictionary redaction:** Automatic redaction of sensitive keys in payloads
   - ✅ **Updated logging:** All print statements replaced with logger + redaction
   - ✅ **Documentation:** [Token security guide](./token-security.md)
-- [ ] Add Disconnect Strava UI + explain token deletion
+- [x] Add Disconnect Strava UI + explain token deletion
+  - ✅ **Settings page:** `/settings` page with Strava connection management
+  - ✅ **Disconnect endpoint:** `DELETE /api/strava/disconnect` with comprehensive response
+  - ✅ **Status endpoint:** `GET /api/strava/status` to check connection status
+  - ✅ **Clear explanation:** Detailed UI explaining what happens when disconnected
+  - ✅ **What's deleted:** Tokens and athlete link (API access revoked)
+  - ✅ **What's retained:** Activities, plans, and metrics remain accessible
+  - ✅ **Navigation:** Added Settings link to main navigation
+  - ✅ **User-friendly:** Confirmation dialog and success messages
 - [ ] Verify export/delete flows end-to-end in staging
 
 ### Submission package

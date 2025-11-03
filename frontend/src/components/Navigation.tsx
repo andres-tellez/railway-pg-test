@@ -63,7 +63,8 @@ const Navigation: React.FC = () => {
       navItems.push(
         { label: 'Training Plan', path: '/plan/overview', icon: '📅' },
         { label: 'Metrics', path: '/metrics', icon: '📊' },
-        { label: 'Ask Coach', path: '/ask', icon: '💬' }
+        { label: 'Ask Coach', path: '/ask', icon: '💬' },
+        { label: 'Settings', path: '/settings', icon: '⚙️' }
       );
     } else if (userState.hasStrava) {
       // Has Strava but not onboarded
