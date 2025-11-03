@@ -61,7 +61,6 @@ const Navigation: React.FC = () => {
     if (userState.hasOnboarded) {
       // Complete user - show full navigation
       navItems.push(
-        { label: 'Dashboard', path: '/home', icon: '🏠' },
         { label: 'Training Plan', path: '/plan/overview', icon: '📅' },
         { label: 'Metrics', path: '/metrics', icon: '📊' },
         { label: 'Ask Coach', path: '/ask', icon: '💬' }
