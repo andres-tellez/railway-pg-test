@@ -482,11 +482,14 @@ class WeeklyRebuildService:
 
         # Update workouts in database
         updated_count = 0
+        segments_saved_count = 0
+        segments_missing_count = 0
+
         for workout_data, db_workout in zip(
             week_with_details["workouts"], week_workouts
         ):
             # Extract values for update
-            segments = workout_data.get("segments", [])
+            segments = workout_data.get("segments")
             cues = workout_data.get("cues", "")
             new_intensity = workout_data.get("type", db_workout.workout_type)
 
@@ -513,15 +516,63 @@ class WeeklyRebuildService:
 
             # Build update data including all fields that should be saved
             update_data = {
-                "segments": segments,  # Store as JSON
                 "description": cues,  # Update description with cues
                 "intensity": new_intensity,  # May update intensity
                 "target_zone": new_target_zone or None,  # Save extracted target zone
                 "target_hr": new_target_hr or None,  # Save target HR if available
             }
 
+            # ALWAYS save segments if they exist (critical for Garmin automation)
+            # Segments should be a dict with "steps" array from pass4_workout_details
+            if segments is not None:
+                # Validate segments structure - must be a dict with "steps" key
+                if isinstance(segments, dict):
+                    steps = segments.get("steps", [])
+                    step_count = len(steps) if isinstance(steps, list) else 0
+
+                    # Only save if segments has valid structure (steps array)
+                    if step_count > 0 or "steps" in segments:
+                        update_data["segments"] = segments
+                        segments_saved_count += 1
+                        logger.debug(
+                            f"Saving segments for workout {db_workout.id} ({db_workout.date}): "
+                            f"{step_count} steps, type={db_workout.workout_type}"
+                        )
+                    else:
+                        # Segments dict exists but has no steps - log warning
+                        logger.warning(
+                            f"Segments for workout {db_workout.id} is missing 'steps' array. "
+                            f"Structure: {list(segments.keys())}"
+                        )
+                        # Still try to save it (maybe valid empty structure)
+                        update_data["segments"] = segments
+                        segments_saved_count += 1
+                else:
+                    # Segments exists but is not a dict - log warning but still try to save
+                    logger.warning(
+                        f"Segments for workout {db_workout.id} is not a dict: {type(segments)}. "
+                        f"Saving anyway."
+                    )
+                    update_data["segments"] = segments
+                    segments_saved_count += 1
+            else:
+                # Only log missing segments for workouts that should have them (non-rest days)
+                if db_workout.miles and db_workout.miles > 0:
+                    logger.warning(
+                        f"No segments found for workout {db_workout.id} on {db_workout.date} "
+                        f"({db_workout.workout_type}, {db_workout.miles:.1f} mi) - "
+                        f"workout_data keys: {list(workout_data.keys())}"
+                    )
+                    segments_missing_count += 1
+
             update_workout(session, db_workout.id, update_data)
             updated_count += 1
+
+        # Log summary of segments saved
+        logger.info(
+            f"Segments saved: {segments_saved_count}/{updated_count} workouts "
+            f"({segments_missing_count} missing for workouts with distance > 0)"
+        )
 
         logger.info(
             f"Updated {updated_count} workouts for week {week_num} "
