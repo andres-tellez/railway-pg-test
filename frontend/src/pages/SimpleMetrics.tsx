@@ -5,7 +5,6 @@ import { AuthGuard } from "../components/AuthGuard";
 import HeartRateZoneChart from "../components/charts/HeartRateZoneChart";
 import TotalMilesActualVsPlanChart from "../components/charts/TotalMilesActualVsPlanChart";
 import WeeklyPaceChart from "../components/charts/WeeklyPaceChart";
-import WeeklyVO2Chart from "../components/charts/WeeklyVO2Chart";
 import LongestRunsChart from "../components/charts/LongestRunsChart";
 import ChartHelpTooltip from "../components/charts/ChartHelpTooltip";
 
@@ -58,11 +57,6 @@ interface WeeklyHRZoneData {
   zone_5: number;
 }
 
-interface WeeklyVO2Data {
-  week: string;
-  vo2_estimate: number | null;
-  run_score: number | null;
-}
 
 interface WeeklyGoalData {
   week: string;
@@ -92,7 +86,6 @@ export default function SimpleMetrics() {
   const [hrZones, setHrZones] = useState<any>(null);
   const [weeklyTrends, setWeeklyTrends] = useState<WeeklyTrendData[]>([]);
   const [weeklyHRZones, setWeeklyHRZones] = useState<WeeklyHRZoneData[]>([]);
-  const [weeklyVO2, setWeeklyVO2] = useState<WeeklyVO2Data[]>([]);
   const [weeklyGoals, setWeeklyGoals] = useState<WeeklyGoalData[]>([]);
   const [longestRuns, setLongestRuns] = useState<LongestRunData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,10 +101,9 @@ export default function SimpleMetrics() {
   const [allWeeklyData, setAllWeeklyData] = useState<{
     trends: WeeklyTrendData[];
     hrZones: WeeklyHRZoneData[];
-    vo2: WeeklyVO2Data[];
     goals: WeeklyGoalData[];
     longestRuns: LongestRunData[];
-  }>({ trends: [], hrZones: [], vo2: [], goals: [], longestRuns: [] });
+  }>({ trends: [], hrZones: [], goals: [], longestRuns: [] });
 
   // Handle window resize to update default weeks
   useEffect(() => {
@@ -139,7 +131,7 @@ export default function SimpleMetrics() {
         const startTime = performance.now();
 
         // Single API call for everything (always fetch all 20 weeks)
-        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_vo2_estimates: WeeklyVO2Data[], weekly_goals: WeeklyGoalData[], longest_runs: LongestRunData[]}>("/api/metrics/all-metrics");
+        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_goals: WeeklyGoalData[], longest_runs: LongestRunData[]}>("/api/metrics/all-metrics");
 
         const loadTime = performance.now() - startTime;
         console.log(`📊 All metrics loaded in ${loadTime.toFixed(0)}ms`);
@@ -179,7 +171,6 @@ export default function SimpleMetrics() {
         setAllWeeklyData({
           trends: data.weekly_trends,
           hrZones: data.weekly_hr_zones,
-          vo2: data.weekly_vo2_estimates || [],
           goals: data.weekly_goals || [],
           longestRuns: data.longest_runs || []
         });
@@ -224,7 +215,6 @@ export default function SimpleMetrics() {
   // Compute filtered data based on selected weeks (instant filtering)
   const filteredWeeklyTrends = allWeeklyData.trends.slice(0, selectedWeeks);
   const filteredWeeklyHRZones = allWeeklyData.hrZones.slice(0, selectedWeeks);
-  const filteredWeeklyVO2 = allWeeklyData.vo2.slice(0, selectedWeeks);
   const filteredWeeklyGoals = allWeeklyData.goals.slice(0, selectedWeeks);
   const filteredLongestRuns = allWeeklyData.longestRuns.slice(0, selectedWeeks);
 
@@ -247,8 +237,8 @@ export default function SimpleMetrics() {
   };
 
   // Debug logging
-  console.log(`📊 Data availability: ${allWeeklyData.trends.length} trends, ${allWeeklyData.hrZones.length} HR zones, ${allWeeklyData.vo2.length} VO2`);
-  console.log(`📊 Selected weeks: ${selectedWeeks}, Filtered: ${filteredWeeklyTrends.length} trends, ${filteredWeeklyHRZones.length} HR zones, ${filteredWeeklyVO2.length} VO2`);
+  console.log(`📊 Data availability: ${allWeeklyData.trends.length} trends, ${allWeeklyData.hrZones.length} HR zones`);
+  console.log(`📊 Selected weeks: ${selectedWeeks}, Filtered: ${filteredWeeklyTrends.length} trends, ${filteredWeeklyHRZones.length} HR zones`);
 
   if (loading) {
     return (
@@ -332,23 +322,7 @@ export default function SimpleMetrics() {
     }
   };
 
-  const vo2HelpContent = {
-    title: "VO2 Max Estimate",
-    quickTip: "Higher VO2 Max means your body can use oxygen more efficiently, which equals better endurance!",
-    detailedExplanation: {
-      why: "VO2 Max measures your cardiovascular fitness. It's the maximum oxygen your body can use during intense exercise.",
-      benefits: [
-        "Track fitness improvements over time",
-        "Predict race performance potential",
-        "Guide training intensity zones"
-      ],
-      tips: [
-        "Consistency matters more than single data points",
-        "Track trends over 4-8 weeks for meaningful insights",
-        "Higher isn't always better - focus on steady improvement"
-      ]
-    }
-  };
+  // VO2 content removed
 
   return (
     <AuthGuard>
@@ -643,23 +617,7 @@ export default function SimpleMetrics() {
               />
             )}
 
-            {/* VO2 Max Section */}
-            {filteredWeeklyVO2.length > 0 && (
-              <WeeklyVO2Chart
-                data={filteredWeeklyVO2.map(vo2 => {
-                  // Find matching weekly trend data to get runs and distance
-                  const matchingTrend = filteredWeeklyTrends.find(trend => trend.week === vo2.week);
-                  return {
-                    ...vo2,
-                    runs: matchingTrend?.runs,
-                    distance: matchingTrend?.distance
-                  };
-                })}
-                title="VO2 Max Estimate"
-                showHeader={true}
-                helpTooltip={vo2HelpContent}
-              />
-            )}
+            {/* VO2 Max Section removed */}
           </div>
         </div>
       </div>
