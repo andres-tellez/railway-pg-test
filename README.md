@@ -94,6 +94,19 @@ We’ve added a skeleton workflow in `.github/workflows/cron-sync.yml` that:
 
 ---
 
+## 📚 Documentation
+
+### Strava Production Readiness
+- **Main Checklist:** [`docs/strava-production-readiness.md`](docs/strava-production-readiness.md)
+- **Process Guide:** [`docs/strava-production-process-guide.md`](docs/strava-production-process-guide.md) - Complete walkthrough
+- **OAuth Verification:** [`docs/strava-oauth-verification-checklist.md`](docs/strava-oauth-verification-checklist.md)
+- **Verification Script:** `python src/scripts/verify_oauth_config.py`
+
+### Other Documentation
+See [`docs/`](docs/) directory for architecture guides, API docs, and setup instructions.
+
+---
+
 ## 🧩 Project Structure
 
 ```bash
@@ -104,6 +117,7 @@ railway-pg-test/
 │   ├── services/            → Business logic
 │   ├── db/                  → Database models + sessions
 │   └── utils/               → Utility functions
+├── docs/                    → Documentation (see above)
 ├── schema.sql               → Creates core DB tables
 ├── run.py                   → Runs the app
 ├── requirements.txt
