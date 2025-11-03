@@ -82,10 +82,11 @@ def get_current_plan():
 
         workouts = sorted(plan.workouts, key=lambda w: w.date)
 
-        # Helper to convert segments from {warmup, main, cooldown} to array format
+        # Helper to parse segments - supports both new spec-compliant format and legacy format
         def parse_segments(segments_json):
             if not segments_json:
-                return []
+                return None
+
             try:
                 import json
 
@@ -94,81 +95,96 @@ def get_current_plan():
                     if isinstance(segments_json, str)
                     else segments_json
                 )
-                result = []
 
-                # Handle warmup
-                warmup = segments.get("warmup", {})
-                if warmup:
-                    result.append(
-                        {
-                            "name": "Warmup",
-                            "distance": (
-                                warmup.get("distance", "")
-                                if isinstance(warmup, dict)
-                                else ""
-                            ),
-                            "target_zone": (
-                                warmup.get("target", "")
-                                if isinstance(warmup, dict)
-                                else ""
-                            ),
-                            "notes": (
-                                warmup.get("notes", warmup)
-                                if isinstance(warmup, dict)
-                                else warmup
-                            ),
-                        }
-                    )
+                # Check if it's the new spec-compliant format (has "steps" array)
+                if isinstance(segments, dict) and "steps" in segments:
+                    # New format: {steps: [...], units: "...", targetType: "...", notes: "..."}
+                    # Return as-is for frontend compatibility
+                    return segments
 
-                # Handle main
-                main = segments.get("main", {})
-                if main:
-                    result.append(
-                        {
-                            "name": "Main",
-                            "distance": (
-                                main.get("distance", "")
-                                if isinstance(main, dict)
-                                else ""
-                            ),
-                            "target_zone": (
-                                main.get("target", "") if isinstance(main, dict) else ""
-                            ),
-                            "notes": (
-                                main.get("notes", main)
-                                if isinstance(main, dict)
-                                else main
-                            ),
-                        }
-                    )
+                # Legacy format: {warmup: {...}, main: {...}, cooldown: {...}}
+                # Convert to new format for compatibility
+                if isinstance(segments, dict) and (
+                    "warmup" in segments or "main" in segments or "cooldown" in segments
+                ):
+                    steps = []
 
-                # Handle cooldown
-                cooldown = segments.get("cooldown", {})
-                if cooldown:
-                    result.append(
-                        {
-                            "name": "Cooldown",
-                            "distance": (
-                                cooldown.get("distance", "")
-                                if isinstance(cooldown, dict)
-                                else ""
-                            ),
-                            "target_zone": (
-                                cooldown.get("target", "")
-                                if isinstance(cooldown, dict)
-                                else ""
-                            ),
-                            "notes": (
-                                cooldown.get("notes", cooldown)
-                                if isinstance(cooldown, dict)
-                                else cooldown
-                            ),
-                        }
-                    )
+                    # Handle warmup
+                    warmup = segments.get("warmup", {})
+                    if warmup:
+                        steps.append(
+                            {
+                                "name": "Warm-up",
+                                "value": (
+                                    warmup.get("distance", 0)
+                                    if isinstance(warmup, dict)
+                                    else 0
+                                ),
+                                "durationType": "DISTANCE",
+                                "target": (
+                                    warmup.get("target", {})
+                                    if isinstance(warmup, dict)
+                                    else {}
+                                ),
+                                "intensity": "EASY",
+                            }
+                        )
 
-                return result
-            except:
-                return []
+                    # Handle main
+                    main = segments.get("main", {})
+                    if main:
+                        steps.append(
+                            {
+                                "name": "Main",
+                                "value": (
+                                    main.get("distance", 0)
+                                    if isinstance(main, dict)
+                                    else 0
+                                ),
+                                "durationType": "DISTANCE",
+                                "target": (
+                                    main.get("target", {})
+                                    if isinstance(main, dict)
+                                    else {}
+                                ),
+                                "intensity": "STEADY",
+                            }
+                        )
+
+                    # Handle cooldown
+                    cooldown = segments.get("cooldown", {})
+                    if cooldown:
+                        steps.append(
+                            {
+                                "name": "Cool-down",
+                                "value": (
+                                    cooldown.get("distance", 0)
+                                    if isinstance(cooldown, dict)
+                                    else 0
+                                ),
+                                "durationType": "DISTANCE",
+                                "target": (
+                                    cooldown.get("target", {})
+                                    if isinstance(cooldown, dict)
+                                    else {}
+                                ),
+                                "intensity": "EASY",
+                            }
+                        )
+
+                    # Return in new format
+                    return {
+                        "steps": steps,
+                        "units": "mi",
+                        "targetType": "PACE",
+                        "notes": segments.get("notes", ""),
+                    }
+
+                # If it's already an array or unknown format, return None
+                return None
+            except Exception as e:
+                logger.warning(f"Failed to parse segments: {e}")
+                return None
 
         return (
             jsonify(
@@ -211,91 +227,107 @@ def get_plan_route(plan_id):
         if not plan_data:
             return jsonify({"error": "Plan not found"}), 404
 
-        # Parse segments for frontend compatibility
+        # Helper to parse segments - supports both new spec-compliant format and legacy format
         def parse_segments(segments_json):
             if not segments_json:
-                return []
+                return None
+
             try:
                 segments = (
                     json_lib.loads(segments_json)
                     if isinstance(segments_json, str)
                     else segments_json
                 )
-                result = []
 
-                # Handle warmup
-                warmup = segments.get("warmup", {})
-                if warmup:
-                    result.append(
-                        {
-                            "name": "Warmup",
-                            "distance": (
-                                warmup.get("distance", "")
-                                if isinstance(warmup, dict)
-                                else ""
-                            ),
-                            "target_zone": (
-                                warmup.get("target", "")
-                                if isinstance(warmup, dict)
-                                else ""
-                            ),
-                            "notes": (
-                                warmup.get("notes", warmup)
-                                if isinstance(warmup, dict)
-                                else warmup
-                            ),
-                        }
-                    )
+                # Check if it's the new spec-compliant format (has "steps" array)
+                if isinstance(segments, dict) and "steps" in segments:
+                    # New format: {steps: [...], units: "...", targetType: "...", notes: "..."}
+                    # Return as-is for frontend compatibility
+                    return segments
 
-                # Handle main
-                main = segments.get("main", {})
-                if main:
-                    result.append(
-                        {
-                            "name": "Main",
-                            "distance": (
-                                main.get("distance", "")
-                                if isinstance(main, dict)
-                                else ""
-                            ),
-                            "target_zone": (
-                                main.get("target", "") if isinstance(main, dict) else ""
-                            ),
-                            "notes": (
-                                main.get("notes", main)
-                                if isinstance(main, dict)
-                                else main
-                            ),
-                        }
-                    )
+                # Legacy format: {warmup: {...}, main: {...}, cooldown: {...}}
+                # Convert to new format for compatibility
+                if isinstance(segments, dict) and (
+                    "warmup" in segments or "main" in segments or "cooldown" in segments
+                ):
+                    steps = []
 
-                # Handle cooldown
-                cooldown = segments.get("cooldown", {})
-                if cooldown:
-                    result.append(
-                        {
-                            "name": "Cooldown",
-                            "distance": (
-                                cooldown.get("distance", "")
-                                if isinstance(cooldown, dict)
-                                else ""
-                            ),
-                            "target_zone": (
-                                cooldown.get("target", "")
-                                if isinstance(cooldown, dict)
-                                else ""
-                            ),
-                            "notes": (
-                                cooldown.get("notes", cooldown)
-                                if isinstance(cooldown, dict)
-                                else cooldown
-                            ),
-                        }
-                    )
+                    # Handle warmup
+                    warmup = segments.get("warmup", {})
+                    if warmup:
+                        steps.append(
+                            {
+                                "name": "Warm-up",
+                                "value": (
+                                    warmup.get("distance", 0)
+                                    if isinstance(warmup, dict)
+                                    else 0
+                                ),
+                                "durationType": "DISTANCE",
+                                "target": (
+                                    warmup.get("target", {})
+                                    if isinstance(warmup, dict)
+                                    else {}
+                                ),
+                                "intensity": "EASY",
+                            }
+                        )
 
-                return result
-            except:
-                return []
+                    # Handle main
+                    main = segments.get("main", {})
+                    if main:
+                        steps.append(
+                            {
+                                "name": "Main",
+                                "value": (
+                                    main.get("distance", 0)
+                                    if isinstance(main, dict)
+                                    else 0
+                                ),
+                                "durationType": "DISTANCE",
+                                "target": (
+                                    main.get("target", {})
+                                    if isinstance(main, dict)
+                                    else {}
+                                ),
+                                "intensity": "STEADY",
+                            }
+                        )
+
+                    # Handle cooldown
+                    cooldown = segments.get("cooldown", {})
+                    if cooldown:
+                        steps.append(
+                            {
+                                "name": "Cool-down",
+                                "value": (
+                                    cooldown.get("distance", 0)
+                                    if isinstance(cooldown, dict)
+                                    else 0
+                                ),
+                                "durationType": "DISTANCE",
+                                "target": (
+                                    cooldown.get("target", {})
+                                    if isinstance(cooldown, dict)
+                                    else {}
+                                ),
+                                "intensity": "EASY",
+                            }
+                        )
+
+                    # Return in new format
+                    return {
+                        "steps": steps,
+                        "units": "mi",
+                        "targetType": "PACE",
+                        "notes": segments.get("notes", ""),
+                    }
+
+                # If it's already an array or unknown format, return None
+                return None
+            except Exception as e:
+                logger.warning(f"Failed to parse segments: {e}")
+                return None
 
         # Parse segments for each workout
         if "workouts" in plan_data:
