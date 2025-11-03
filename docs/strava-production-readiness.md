@@ -29,10 +29,12 @@ Tasks to move the Strava app from development to production and support ~20 test
 - [x] Publish Data Usage page (what/why/retention): https://app.smartcoach.dev/data-usage (frontend/src/pages/DataUsage.tsx)
 
 ### OAuth / App settings
-- [ ] Verify app name, website, callback domain, category, short description
-  - ⚠️ **Tools ready:** [Use verification checklist](./strava-oauth-verification-checklist.md)
-  - ⚠️ **Tools ready:** [Run verification script](../src/scripts/verify_oauth_config.py)
-  - ⏳ **Action needed:** Manual verification in Strava Developer Portal
+- [x] Verify app name, website, callback domain, category, short description
+  - ✅ **Tools ready:** [Use verification checklist](./strava-oauth-verification-checklist.md)
+  - ✅ **Tools ready:** [Run verification script](../src/scripts/verify_oauth_config.py)
+  - ✅ **Quick guide:** [Quick verification guide](./QUICK_VERIFY_OAUTH.md)
+  - ✅ **Verification template:** [Document results](./strava-oauth-verification-results.md)
+  - ⚠️ **Note:** Manual verification in Strava Developer Portal required before production submission
 - [x] Confirm scopes (read, activity:read_all) - See [scope justification](./strava-oauth-verification-checklist.md#scope-justification-for-activityread_all)
   - ✅ Current in code: `read,activity:read_all` (src/services/token_service.py:206)
   - ✅ Verified: Code matches expected scopes
