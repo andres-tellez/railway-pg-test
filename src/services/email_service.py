@@ -410,7 +410,6 @@ class EmailService:
 
             # Build segment breakdown
             breakdown = "<div style='margin-top: 8px; font-size: 11px; border-top: 1px solid #ddd; padding-top: 5px;'>"
-            breakdown += "<strong>Workout Structure:</strong><br/>"
             for i, step in enumerate(steps):
                 name = step.get("name", "Segment")
                 value = step.get("value", 0)
