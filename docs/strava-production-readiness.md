@@ -26,7 +26,7 @@ Tasks to move the Strava app from development to production and support ~20 test
 - [x] Publish Privacy Policy (URL): https://app.smartcoach.dev/privacy-policy (frontend/src/pages/PrivacyPolicy.tsx)
 - [x] Publish Terms of Service (URL): https://app.smartcoach.dev/terms-of-service (frontend/src/pages/TermsOfService.tsx)
 - [x] Publish Data Deletion instructions (linking the DELETE endpoint): https://app.smartcoach.dev/data-deletion (frontend/src/pages/DataDeletion.tsx)
-- [ ] Publish Data Usage page (what/why/retention)
+- [x] Publish Data Usage page (what/why/retention): https://app.smartcoach.dev/data-usage (frontend/src/pages/DataUsage.tsx)
 
 ### OAuth / App settings
 - [ ] Verify app name, website, callback domain, category, short description

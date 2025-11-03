@@ -62,6 +62,10 @@ const Layout: React.FC<LayoutProps> = ({
                 Delete My Data
               </a>
               <span className="text-gray-300">|</span>
+              <a href="/data-usage" className="hover:text-gray-900 hover:underline">
+                Data Usage
+              </a>
+              <span className="text-gray-300">|</span>
               <a href="mailto:support@smartcoach.app" className="hover:text-gray-900 hover:underline">
                 Contact Support
               </a>

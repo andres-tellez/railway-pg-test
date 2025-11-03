@@ -47,6 +47,7 @@ import Metrics from "./pages/Metrics";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import DataDeletion from "./pages/DataDeletion";
+import DataUsage from "./pages/DataUsage";
 import Admin from "./pages/Admin";
 
 import Layout from "./components/Layout";
@@ -122,6 +123,7 @@ export default function App() {
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
       <Route path="/terms-of-service" element={<TermsOfService />} />
       <Route path="/data-deletion" element={<DataDeletion />} />
+      <Route path="/data-usage" element={<DataUsage />} />
 
       {/* Smart Routing */}
       <Route path="/" element={<SmartRouter />} />
