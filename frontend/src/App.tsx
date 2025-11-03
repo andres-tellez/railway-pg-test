@@ -46,6 +46,7 @@ import GYRMetricsDemo from "./pages/GYRMetricsDemo";
 import Metrics from "./pages/Metrics";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
+import DataDeletion from "./pages/DataDeletion";
 import Admin from "./pages/Admin";
 
 import Layout from "./components/Layout";
@@ -120,6 +121,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
       <Route path="/terms-of-service" element={<TermsOfService />} />
+      <Route path="/data-deletion" element={<DataDeletion />} />
 
       {/* Smart Routing */}
       <Route path="/" element={<SmartRouter />} />
