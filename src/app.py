@@ -219,7 +219,9 @@ def create_app(test_config=None):
             resp.headers["Access-Control-Allow-Headers"] = (
                 "Authorization, Content-Type, X-User-Id"
             )
-            resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            resp.headers["Access-Control-Allow-Methods"] = (
+                "GET, POST, PUT, DELETE, OPTIONS"
+            )
             resp.headers["Access-Control-Allow-Credentials"] = "true"
             return resp
 
