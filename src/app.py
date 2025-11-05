@@ -9,22 +9,15 @@ from werkzeug.exceptions import HTTPException
 import uuid
 
 # Environment Setup
-# Prioritize .env.local if it exists (for local development)
+# Only load .env.local if it exists (for local development)
+# On Railway/production, environment variables are set directly - no files needed
 env_local_path = Path(".env.local")
 if env_local_path.exists():
-    env_path = ".env.local"
-    os.environ["FLASK_ENV"] = "local"  # Set FLASK_ENV for consistency
-    load_dotenv(env_path, override=False)  # Don't override what run.py loaded
-    print(f"[OK] Using local environment file: {env_path}", flush=True)
+    load_dotenv(env_local_path, override=False)  # Don't override what run.py loaded
+    print(f"[OK] Using local environment file: .env.local", flush=True)
 else:
-    # Fall back to FLASK_ENV logic for staging/production
-    raw_env_mode = os.environ.get("FLASK_ENV", "production")
-    env_path = {
-        "staging": ".env.staging",
-        "production": ".env.prod",
-    }.get(raw_env_mode, ".env.prod")
-    load_dotenv(env_path, override=True)
-    print(f"[OK] Loaded environment file: {env_path}", flush=True)
+    # On Railway/production, environment variables are already set
+    print("[OK] Using system environment variables (Railway/production)", flush=True)
 
 # Patch for Railway proxy handling
 original_url = os.getenv("DATABASE_URL", "")

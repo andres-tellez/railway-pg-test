@@ -227,30 +227,17 @@ def test_email_config() -> Tuple[bool, str]:
         sendgrid_from_name = os.getenv("SENDGRID_FROM_NAME") or os.getenv(
             "SMTP_FROM_NAME"
         )
-        smtp_host = os.getenv("SMTP_HOST")
-        smtp_username = os.getenv("SMTP_USERNAME")
-        smtp_password = os.getenv("SMTP_PASSWORD")
 
         is_local = env_local_path.exists()
 
-        # SendGrid REST API is preferred (works on Railway)
+        # SendGrid REST API is required (SMTP fallback removed)
         if sendgrid_key:
             if not sendgrid_from_email:
                 return (
                     False,
                     "SENDGRID_API_KEY set but SENDGRID_FROM_EMAIL (or SMTP_FROM_EMAIL) missing",
                 )
-            return True, "SendGrid REST API configured (preferred - works on Railway)"
-
-        # SMTP fallback (may not work on Railway)
-        elif smtp_host and smtp_username and smtp_password:
-            if not is_local:
-                # Railway blocks SMTP - warn but don't fail
-                return (
-                    True,
-                    "⚠️ SMTP configured but SENDGRID_API_KEY missing (SMTP may not work on Railway - use SendGrid REST API instead)",
-                )
-            return True, "SMTP configured (SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD set)"
+            return True, "SendGrid REST API configured (required - works on Railway)"
         else:
             # For local dev, email is optional; for staging/prod, it's recommended
             if is_local:
@@ -398,14 +385,11 @@ def test_optional_variables() -> Tuple[bool, str]:
     optional_vars = {
         "AUTH0_ALGORITHMS": config.AUTH0_ALGORITHMS or "RS256 (using default)",
         "SESSION_COOKIE_DOMAIN": os.getenv("SESSION_COOKIE_DOMAIN"),
-        "SESSION_COOKIE_SECURE": os.getenv("SESSION_COOKIE_SECURE"),
-        "SESSION_COOKIE_SAMESITE": os.getenv("SESSION_COOKIE_SAMESITE"),
         "STRAVA_WEBHOOK_VERIFY_TOKEN": os.getenv("STRAVA_WEBHOOK_VERIFY_TOKEN"),
         "WEBHOOK_CALLBACK_URL": os.getenv("WEBHOOK_CALLBACK_URL"),
         "SENDGRID_API_KEY": os.getenv("SENDGRID_API_KEY"),
         "SENDGRID_FROM_EMAIL": os.getenv("SENDGRID_FROM_EMAIL"),
         "SENDGRID_FROM_NAME": os.getenv("SENDGRID_FROM_NAME"),
-        "SMTP_HOST": os.getenv("SMTP_HOST"),
     }
 
     missing = [

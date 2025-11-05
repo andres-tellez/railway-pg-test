@@ -34,15 +34,13 @@ These are staging/production-specific:
 1. **FLASK_ENV** - ❌ Not needed (auto-set to "local" when `.env.local` exists)
 2. **FRONTEND_REDIRECT** - ❌ Optional for local (only needed for OAuth redirects in staging/prod)
 3. **SESSION_COOKIE_DOMAIN** - ❌ Not needed (local dev doesn't need cross-domain cookies)
-4. **SESSION_COOKIE_SECURE** - ❌ Not needed
-5. **SESSION_COOKIE_SAMESITE** - ❌ Not needed
-6. **SMTP_*** (all SMTP vars)** - ❌ Optional for local (email not needed for local dev)
-7. **STRAVA_WEBHOOK_VERIFY_TOKEN** - ❌ Not needed (webhooks don't work locally)
-8. **WEBHOOK_CALLBACK_URL** - ❌ Not needed (webhooks don't work locally)
-9. ~~**ALERT_WEBHOOK_URL**~~ - ❌ **DELETED** (legacy - replaced by `/webhooks/strava/status` endpoint)
-10. **ENABLE_WEEKLY_TASKS** - ❌ Deleted (code removed, manual trigger no longer available)
-11. **RUN_CRON** - ❌ Optional (cron job flag)
-12. **RUN_STAGING_CRON** - ❌ Not needed (GitHub Actions only)
+4. **SMTP_*** (all SMTP vars)** - ❌ Optional for local (email not needed for local dev)
+5. **STRAVA_WEBHOOK_VERIFY_TOKEN** - ❌ Not needed (webhooks don't work locally)
+6. **WEBHOOK_CALLBACK_URL** - ❌ Not needed (webhooks don't work locally)
+7. ~~**ALERT_WEBHOOK_URL**~~ - ❌ **DELETED** (legacy - replaced by `/webhooks/strava/status` endpoint)
+8. **ENABLE_WEEKLY_TASKS** - ❌ Deleted (code removed, manual trigger no longer available)
+9. **RUN_CRON** - ❌ Optional (cron job flag)
+10. **RUN_STAGING_CRON** - ❌ Not needed (GitHub Actions only)
 
 ### 🗑️ **Variables that should be REMOVED from staging (Unused)**
 

@@ -1,9 +1,13 @@
 #!/usr/bin/env python
 """
-Test SMTP Connection
-====================
+Test SMTP Connection (DEPRECATED)
+==================================
 
-Diagnostic script to test SMTP connectivity from Railway.
+⚠️  NOTE: SMTP support has been removed. This script is kept for reference only.
+Email sending now requires SendGrid REST API (SENDGRID_API_KEY).
+
+This script was used to diagnose SMTP connectivity issues on Railway.
+Since Railway blocks SMTP ports, SendGrid REST API is the required method.
 
 Usage:
     python src/scripts/test_smtp_connection.py

@@ -15,20 +15,15 @@ sys.path.insert(0, str(project_root))  # For run.py-local imports
 sys.path.insert(0, str(src_path))  # Ensures `import src...` works!
 
 # Load env vars before importing config
+# Only load .env.local if it exists (for local development)
+# On Railway/production, environment variables are set directly - no files needed
 env_path = Path(".env.local")
 if env_path.exists():
     load_dotenv(dotenv_path=env_path, override=True)
     print("[OK] Explicitly loaded .env.local", flush=True)
 else:
-    env_mode = os.getenv("FLASK_ENV", "production")
-    env_file = {
-        "local": ".env.local",
-        "staging": ".env.staging",
-        "production": ".env.prod",
-    }.get(env_mode, ".env")
-
-    load_dotenv(env_file, override=False)
-    print(f"Loaded fallback environment file: {env_file}", flush=True)
+    # On Railway/production, environment variables are already set
+    print("[OK] Using system environment variables (Railway/production)", flush=True)
 
 print("STRAVA_REDIRECT_URI =", os.getenv("STRAVA_REDIRECT_URI"), flush=True)
 print("DATABASE_URL at runtime:", os.getenv("DATABASE_URL"), flush=True)
