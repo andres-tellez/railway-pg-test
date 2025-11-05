@@ -236,8 +236,8 @@ class RecommendationsGenerator:
         # Calculate current frequency
         current_frequency = self._calculate_training_frequency(activities)
 
-        # Get user preferences
-        preferred_days = user_profile.get("training_days", [])
+        # Get user preferences (training_days is now collected at plan creation, not in user_profile)
+        preferred_days = []  # Will be provided in plan_request
 
         # Recommend frequency
         if current_frequency >= 5:

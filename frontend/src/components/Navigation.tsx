@@ -71,12 +71,8 @@ const Navigation: React.FC = () => {
       navItems.push(
         { label: 'Complete Profile', path: '/profile', icon: '⚙️' }
       );
-    } else {
-      // New user - minimal navigation
-      navItems.push(
-        { label: 'Get Started', path: '/', icon: '🚀' }
-      );
     }
+    // New users without Strava - no navigation items (they're on setup page)
   }
 
   if (!isAuthenticated) {

@@ -74,6 +74,15 @@ def strava_login_redirect():
     print("🛑 Flask route /auth/strava-login triggered", flush=True)
 
     redirect_uri = (os.getenv("STRAVA_REDIRECT_URI") or "").strip().rstrip(";")
+
+    # Auto-fix HTTP to HTTPS for localhost if app is running on HTTPS
+    # This handles the case where .env.local has HTTP but app runs on HTTPS
+    if redirect_uri.startswith("http://localhost:5000") or redirect_uri.startswith(
+        "http://127.0.0.1:5000"
+    ):
+        redirect_uri = redirect_uri.replace("http://", "https://")
+        print(f"⚠️ Auto-converted redirect URI to HTTPS: {redirect_uri}", flush=True)
+
     client_id = os.getenv("STRAVA_CLIENT_ID") or ""
 
     # Extract user identity from cookie or fallback param
@@ -107,6 +116,21 @@ def strava_connect_alias():
     """Alias route to trigger Strava OAuth flow (for flexibility in frontend)."""
     print("⚡️ /auth/strava/connect triggered!", flush=True)
     return strava_login_redirect()
+
+
+@auth_bp.route("/callback", methods=["GET"])
+def strava_callback_compatibility():
+    """
+    Compatibility route for /auth/callback redirect URI.
+    Handles Strava OAuth callbacks that use the older /auth/callback path.
+    This allows existing Strava portal configurations to continue working.
+    """
+    print(
+        "🔄 Compatibility route /auth/callback hit - forwarding to strava_callback_get()",
+        flush=True,
+    )
+    # Just call the same handler as /auth/strava/callback
+    return strava_callback_get()
 
 
 @auth_bp.route("/strava/callback", methods=["GET"])
@@ -156,7 +180,7 @@ def strava_callback_get():
     threading.Thread(target=background_job, daemon=True).start()
 
     frontend_redirect = (
-        (os.getenv("FRONTEND_REDIRECT") or "http://localhost:5173/landing")
+        (os.getenv("FRONTEND_REDIRECT") or "https://localhost:5173/setup")
         .strip()
         .rstrip("/")
     )
@@ -260,8 +284,14 @@ def process_strava_callback(session, code, state_or_sub, create_if_missing=True)
 
     redirect_uri = (os.getenv("STRAVA_REDIRECT_URI") or "").strip().rstrip(";")
 
+    # Auto-fix HTTP to HTTPS for localhost if app is running on HTTPS
+    if redirect_uri.startswith("http://localhost:5000") or redirect_uri.startswith(
+        "http://127.0.0.1:5000"
+    ):
+        redirect_uri = redirect_uri.replace("http://", "https://")
+
     try:
-        athlete_id = token_service.store_tokens_from_callback(
+        athlete_id, user_id = token_service.store_tokens_from_callback(
             code=code,
             session=session,
             redirect_uri=redirect_uri,

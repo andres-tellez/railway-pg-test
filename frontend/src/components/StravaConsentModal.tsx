@@ -9,12 +9,34 @@ const StravaConsentModal: React.FC<StravaConsentModalProps> = ({ onAccept, onDec
   const [hasReadPrivacy, setHasReadPrivacy] = useState(false);
   const [hasReadTerms, setHasReadTerms] = useState(false);
   const [consentGiven, setConsentGiven] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   const canProceed = hasReadPrivacy && hasReadTerms && consentGiven;
 
+  const handleAccept = () => {
+    if (canProceed && !isConnecting) {
+      setIsConnecting(true);
+      // Small delay to show spinner before redirect
+      setTimeout(() => {
+        onAccept();
+      }, 100);
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+      onClick={(e) => {
+        // Close modal only if clicking the backdrop, not the modal content
+        if (e.target === e.currentTarget) {
+          onDecline();
+        }
+      }}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center mb-4">
@@ -75,7 +97,8 @@ const StravaConsentModal: React.FC<StravaConsentModalProps> = ({ onAccept, onDec
                   type="checkbox"
                   checked={hasReadPrivacy}
                   onChange={(e) => setHasReadPrivacy(e.target.checked)}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded flex-shrink-0"
+                  style={{ minWidth: '16px', minHeight: '16px' }}
                 />
                 <span className="ml-3 text-sm text-gray-700">
                   I have read and agree to the{' '}
@@ -95,7 +118,8 @@ const StravaConsentModal: React.FC<StravaConsentModalProps> = ({ onAccept, onDec
                   type="checkbox"
                   checked={hasReadTerms}
                   onChange={(e) => setHasReadTerms(e.target.checked)}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded flex-shrink-0"
+                  style={{ minWidth: '16px', minHeight: '16px' }}
                 />
                 <span className="ml-3 text-sm text-gray-700">
                   I have read and agree to the{' '}
@@ -115,7 +139,8 @@ const StravaConsentModal: React.FC<StravaConsentModalProps> = ({ onAccept, onDec
                   type="checkbox"
                   checked={consentGiven}
                   onChange={(e) => setConsentGiven(e.target.checked)}
-                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded flex-shrink-0"
+                  style={{ minWidth: '16px', minHeight: '16px' }}
                 />
                 <span className="ml-3 text-sm text-gray-700">
                   <strong>I consent to SmartCoach accessing my Strava data</strong> as described above,
@@ -154,20 +179,30 @@ const StravaConsentModal: React.FC<StravaConsentModalProps> = ({ onAccept, onDec
           <div className="flex gap-3 mt-6">
             <button
               onClick={onDecline}
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+              disabled={isConnecting}
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
-              onClick={onAccept}
-              disabled={!canProceed}
-              className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors ${
-                canProceed
+              onClick={handleAccept}
+              disabled={!canProceed || isConnecting}
+              className={`flex-1 px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 ${
+                canProceed && !isConnecting
                   ? 'bg-[#FC5200] text-white hover:bg-[#E64700]'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
               }`}
             >
-              {canProceed ? 'Connect to Strava' : 'Please accept all terms'}
+              {isConnecting ? (
+                <>
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  <span>Connecting...</span>
+                </>
+              ) : canProceed ? (
+                'Connect to Strava'
+              ) : (
+                'Please accept all terms'
+              )}
             </button>
           </div>
 

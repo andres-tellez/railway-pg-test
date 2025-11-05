@@ -91,7 +91,7 @@ export default function TrainingDaysStep() {
           name="motivation"
           control={control}
           render={({ field }) => (
-            <div className="space-y-2">
+            <div className="flex flex-wrap gap-4">
               {Motivations.map((motivation) => (
                 <label key={motivation} className="inline-flex items-center gap-2 cursor-pointer">
                   <input

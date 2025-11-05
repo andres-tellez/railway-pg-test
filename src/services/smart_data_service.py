@@ -167,18 +167,11 @@ class SmartDataService:
                 text(
                     """
                 SELECT
-                    runner_level,
-                    race_date,
-                    race_distance,
-                    training_days,
-                    main_goal,
                     motivation,
                     age_group,
                     height_feet,
                     height_inches,
-                    weight,
-                    longest_run,
-                    run_preference
+                    weight
                 FROM user_profile
                 WHERE user_id = :user_id
             """
@@ -188,18 +181,11 @@ class SmartDataService:
 
             if result:
                 profile_data = {
-                    "runner_level": result.runner_level,
-                    "race_date": str(result.race_date) if result.race_date else None,
-                    "race_distance": result.race_distance,
-                    "training_days": result.training_days,
-                    "main_goal": result.main_goal,
                     "motivation": result.motivation,
                     "age_group": result.age_group,
                     "height_feet": result.height_feet,
                     "height_inches": result.height_inches,
                     "weight": result.weight,
-                    "longest_run": result.longest_run,
-                    "run_preference": result.run_preference,
                 }
                 # Cache the result
                 self._cache[cache_key] = profile_data

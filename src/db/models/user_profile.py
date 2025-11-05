@@ -140,12 +140,6 @@ class UserProfile(Base):
 
     user_id = Column(String, primary_key=True)
 
-    # Training Schedule
-    training_days = Column(
-        SqliteArray(),  # Use SQLite-compatible array type
-        nullable=True,
-    )
-
     # Physical Stats
     age_group = Column(
         String, nullable=False

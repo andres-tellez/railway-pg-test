@@ -8,9 +8,8 @@ import { onboardingSchema, OnboardingFormData } from "@/schemas/onboardingSchema
 import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
 import { AuthGuard } from "@/components/AuthGuard";
-import RaceDetailsStep from "@/components/onboarding/steps/RaceDetailsStep";
-import TrainingDaysStep from "@/components/onboarding/steps/TrainingDaysStep";
 import PhysicalStatsStep from "@/components/onboarding/steps/PhysicalStatsStep";
+import MotivationStep from "@/components/onboarding/steps/MotivationStep";
 
 const OnboardingForm: React.FC = () => {
   const { isReady, userId } = useAuthSetup();
@@ -82,7 +81,7 @@ const OnboardingForm: React.FC = () => {
         ...values,
       });
 
-      navigate("/home", { replace: true });
+      navigate("/home?welcome=true", { replace: true });
     } catch (e: any) {
       const msg =
         e.response?.data?.message ||
@@ -111,9 +110,6 @@ const OnboardingForm: React.FC = () => {
         >
           <div className="space-y-1 text-center">
             <h1 className="text-3xl font-bold text-gray-800">User Profile</h1>
-            <p className="text-gray-500 text-sm">
-              Tell us about yourself to personalize your training plan
-            </p>
           </div>
 
           {error && error !== "canceled" && (
@@ -123,28 +119,20 @@ const OnboardingForm: React.FC = () => {
           )}
 
           <div className="space-y-8">
-            {/* Physical Stats Section */}
+            {/* About You Section */}
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">
-                Physical Stats
+                About You
               </h2>
               <PhysicalStatsStep />
             </div>
 
-            {/* Training Schedule Section */}
+            {/* Motivation Section */}
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">
-                Training Schedule
+                Motivation
               </h2>
-              <TrainingDaysStep />
-            </div>
-
-            {/* Race Details Section */}
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">
-                Race Details (Optional)
-              </h2>
-              <RaceDetailsStep />
+              <MotivationStep />
             </div>
           </div>
 

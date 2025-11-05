@@ -17,14 +17,7 @@ const MotivationEnum = z.enum(Motivations);
 export const onboardingSchema = z.object({
   user_id: z.string().uuid().optional(),  // ✅ enforce UUID
 
-  // Race Details
-  raceDate: z.string().optional(),
-  raceDistance: DistanceEnum.optional(),
-  raceName: z.string().optional(),
-  raceLocation: z.string().optional(),
-
-  // Training Schedule
-  trainingDays: z.array(DaysEnum).min(3, 'Select at least 3 training days').max(5, 'Select at most 5 training days'),
+  // Motivation
   motivation: z.array(MotivationEnum).min(1, 'Select at least one motivation').optional(),
 
   // Physical Stats

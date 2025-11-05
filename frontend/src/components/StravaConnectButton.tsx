@@ -8,9 +8,12 @@ interface StravaConnectButtonProps {
 const StravaConnectButton: React.FC<StravaConnectButtonProps> = ({ onClick, disabled = false }) => {
   return (
     <button
-      onClick={onClick}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
       disabled={disabled}
-      className="flex items-center justify-center bg-[#FC5200] hover:bg-[#E64700] disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg disabled:cursor-not-allowed"
+      className="flex items-center justify-center bg-[#FC5200] hover:bg-[#E64700] disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg cursor-pointer disabled:cursor-not-allowed"
       style={{ height: '48px', minWidth: '200px' }}
     >
       {/* Official Strava Connect Button */}

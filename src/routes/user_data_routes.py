@@ -74,20 +74,11 @@ def export_user_data():
         )
         if user_profile:
             export_data["data"]["profile"] = {
-                "age": user_profile.age,
-                "gender": user_profile.gender,
-                "fitness_level": user_profile.fitness_level,
-                "training_days": user_profile.training_days,
-                "max_long_run": user_profile.max_long_run,
-                "race_distance": user_profile.race_distance,
-                "race_date": (
-                    user_profile.race_date.isoformat()
-                    if user_profile.race_date
-                    else None
-                ),
-                "goal_time": user_profile.goal_time,
-                "injury_history": user_profile.injury_history,
-                "run_preference": user_profile.run_preference,
+                "age_group": user_profile.age_group,
+                "height_feet": user_profile.height_feet,
+                "height_inches": user_profile.height_inches,
+                "weight": user_profile.weight,
+                "motivation": user_profile.motivation,
             }
 
         # 3. Athlete Links (Strava connection)

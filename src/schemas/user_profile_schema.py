@@ -14,8 +14,8 @@ class Height(BaseModel):
 class UserProfileSchema(BaseModel):
     user_id: str
 
-    # Training Schedule
-    trainingDays: Optional[List[str]]
+    # Motivation
+    motivation: Optional[List[Motivation]] = None
 
     # Physical Stats
     ageGroup: (
@@ -23,6 +23,3 @@ class UserProfileSchema(BaseModel):
     )
     height: Height
     weight: Optional[int]
-
-    # Motivation
-    motivation: Optional[List[Motivation]] = None

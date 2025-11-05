@@ -87,19 +87,50 @@ def verify_oauth_config():
         print(f"   [OK] STRAVA_REDIRECT_URI: {redirect_uri}")
 
         # Validate redirect URI format
-        if not redirect_uri.startswith("https://"):
-            issues.append(f"[ERROR] Redirect URI must use HTTPS: {redirect_uri}")
+        is_local = "localhost" in redirect_uri or "127.0.0.1" in redirect_uri
+        is_production = "api.smartcoach.dev" in redirect_uri
+
+        if is_local:
+            # Local development: allow HTTP
+            if not redirect_uri.startswith("http://"):
+                issues.append(
+                    f"[ERROR] Local redirect URI should use HTTP (not HTTPS): {redirect_uri}"
+                )
+        elif not is_production:
+            # Production must use HTTPS
+            if not redirect_uri.startswith("https://"):
+                issues.append(
+                    f"[ERROR] Production redirect URI must use HTTPS: {redirect_uri}"
+                )
+
+        # Check that the path includes /strava/callback
+        if "/auth/strava/callback" not in redirect_uri:
+            issues.append(
+                f"[ERROR] Redirect URI path is incorrect! Should end with /auth/strava/callback"
+            )
+            issues.append(f"   Current: {redirect_uri}")
+            if is_local:
+                issues.append(
+                    f"   Expected: http://localhost:5000/auth/strava/callback"
+                )
+            else:
+                issues.append(
+                    f"   Expected: https://api.smartcoach.dev/auth/strava/callback"
+                )
         elif (
-            "api.smartcoach.dev" not in redirect_uri and "localhost" not in redirect_uri
+            is_production
+            and redirect_uri != "https://api.smartcoach.dev/auth/strava/callback"
         ):
             warnings.append(
-                f"[WARN] Redirect URI domain doesn't match expected: {redirect_uri}"
-            )
-        elif redirect_uri != "https://api.smartcoach.dev/auth/strava/callback":
-            warnings.append(
-                f"[WARN] Expected redirect URI: https://api.smartcoach.dev/auth/strava/callback"
+                f"[WARN] Production redirect URI should be: https://api.smartcoach.dev/auth/strava/callback"
             )
             warnings.append(f"   Current: {redirect_uri}")
+        elif is_local and redirect_uri not in [
+            "http://localhost:5000/auth/strava/callback",
+            "http://127.0.0.1:5000/auth/strava/callback",
+        ]:
+            # Local dev is fine with either localhost or 127.0.0.1
+            pass  # Both are acceptable
 
     print()
 
