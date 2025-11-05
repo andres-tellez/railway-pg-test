@@ -36,10 +36,19 @@ const PostOAuth: React.FC = () => {
     if (ran.current) return;
     ran.current = true;
 
+    // Check if this is a Strava OAuth callback - preserve the query param
+    const params = new URLSearchParams(window.location.search);
+    const isStravaCallback = params.get('strava') === 'connected';
+
     const ac = new AbortController();
     const safety = setTimeout(() => {
       console.warn("⏱️ Safety timeout triggered, redirecting");
-      navigate("/", { replace: true });
+      // If Strava callback, redirect to /setup with query param, otherwise to /
+      if (isStravaCallback) {
+        navigate("/setup?strava=connected", { replace: true });
+      } else {
+        navigate("/", { replace: true });
+      }
     }, 8000);
 
     const go = async () => {
@@ -78,7 +87,13 @@ const PostOAuth: React.FC = () => {
       } catch (err) {
         console.error("❌ PostOAuth error:", err);
         clearTimeout(safety);
-        navigate("/", { replace: true });
+        // If Strava callback, redirect to /setup with query param, otherwise to /
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('strava') === 'connected') {
+          navigate("/setup?strava=connected", { replace: true });
+        } else {
+          navigate("/", { replace: true });
+        }
       }
     };
 
@@ -91,10 +106,21 @@ const PostOAuth: React.FC = () => {
   }, [isLoading, isAuthenticated, getIdTokenClaims, navigate]); // Remove 'api' to prevent infinite loop
 
   if (readyToSync) {
+    // Check if this is a Strava OAuth callback
+    const params = new URLSearchParams(window.location.search);
+    const isStravaCallback = params.get('strava') === 'connected';
+
     return (
       <LandingProgress
         userId={user?.sub || ""}
-        onComplete={() => navigate("/", { replace: true })}
+        onComplete={() => {
+          // If Strava callback, redirect to /setup with query param, otherwise to /
+          if (isStravaCallback) {
+            navigate("/setup?strava=connected", { replace: true });
+          } else {
+            navigate("/", { replace: true });
+          }
+        }}
       />
     );
   }

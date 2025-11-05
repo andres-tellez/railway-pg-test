@@ -33,12 +33,18 @@ const SmartRouter: React.FC = () => {
     }
 
     // Check if we're handling a Strava OAuth callback
-    // If so, don't redirect - let the setup page handle it
+    // If so, redirect to setup page and DO NOT check user state (let setup page handle it)
     const params = new URLSearchParams(window.location.search);
     if (params.get('strava') === 'connected') {
       console.log('🔄 Strava OAuth callback detected - redirecting to /setup to show consent completion');
       navigate('/setup?strava=connected', { replace: true });
-      return;
+      return; // ✅ CRITICAL: Return early to prevent user state check
+    }
+
+    // Also check if we're already on /setup page - don't interfere
+    if (window.location.pathname === '/setup') {
+      console.log('📍 Already on /setup page - skipping SmartRouter redirect');
+      return; // ✅ Don't interfere with setup page
     }
 
     // Prevent multiple checks on the same render cycle
