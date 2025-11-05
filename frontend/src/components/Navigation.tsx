@@ -30,8 +30,9 @@ const Navigation: React.FC = () => {
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
 
   // Fetch user state for smart navigation
+  // Refresh when authenticated, when location changes (to catch onboarding completion), or when userState is null
   useEffect(() => {
-    if (isAuthenticated && !userState) {
+    if (isAuthenticated) {
       api.get<{ hasOnboarded: boolean; hasStrava: boolean }>('/user')
         .then((res) => {
           setUserState(res.data);
@@ -40,7 +41,7 @@ const Navigation: React.FC = () => {
           console.error('Failed to fetch user state:', err);
         });
     }
-  }, [isAuthenticated]); // Remove 'api' from dependencies to prevent infinite loop
+  }, [isAuthenticated, location.pathname]); // Refresh when route changes to catch onboarding completion
 
   const handleLogout = () => {
     logout({
@@ -57,6 +58,9 @@ const Navigation: React.FC = () => {
   const navItems = [];
 
   // Add navigation items based on user state
+  // Don't show "Complete Profile" on setup or onboarding pages - they handle profile completion themselves
+  const isOnSetupOrOnboarding = location.pathname === '/setup' || location.pathname === '/onboarding';
+
   if (userState) {
     if (userState.hasOnboarded) {
       // Complete user - show full navigation
@@ -66,10 +70,10 @@ const Navigation: React.FC = () => {
         { label: 'Ask Coach', path: '/ask', icon: '💬' },
         { label: 'Settings', path: '/settings', icon: '⚙️' }
       );
-    } else if (userState.hasStrava) {
-      // Has Strava but not onboarded
+    } else if (userState.hasStrava && !isOnSetupOrOnboarding) {
+      // Has Strava but not onboarded - only show "Complete Profile" if not already on setup/onboarding pages
       navItems.push(
-        { label: 'Complete Profile', path: '/profile', icon: '⚙️' }
+        { label: 'Complete Profile', path: '/onboarding', icon: '⚙️' }
       );
     }
     // New users without Strava - no navigation items (they're on setup page)
