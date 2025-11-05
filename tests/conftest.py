@@ -194,26 +194,6 @@ def seed_default_user(test_db_session):
 
 
 # -------------------------
-# 🔁 Patched App Fixtures
-# -------------------------
-
-
-@pytest.fixture(scope="function")
-def patched_app(monkeypatch):
-    monkeypatch.setenv("CRON_SECRET_KEY", "devkey123")
-
-    with patch("src.routes.sync_routes.sync_recent") as mock_sync_recent:
-        mock_sync_recent.return_value = 10
-        app = create_app({"TESTING": True, "DATABASE_URL": os.getenv("DATABASE_URL")})
-        yield app
-
-
-@pytest.fixture(scope="function")
-def patched_client(patched_app):
-    return patched_app.test_client()
-
-
-# -------------------------
 # 🔐 Auth0 Token Mocking
 # -------------------------
 

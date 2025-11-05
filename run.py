@@ -39,10 +39,6 @@ from src.utils.config import config
 # -----------------------------------------
 # Imports
 # -----------------------------------------
-from src.db.db_session import get_session
-from src.services.ingestion_orchestrator_service import (
-    run_full_ingestion_and_enrichment,
-)
 from src.app import create_app
 
 # -----------------------------------------
@@ -52,7 +48,7 @@ app = create_app()
 print("App created via create_app()", flush=True)
 
 # -----------------------------------------
-# Local + Cron Execution Only
+# Local Execution Only
 # -----------------------------------------
 if __name__ == "__main__":
     print("Starting run.py...", flush=True)
@@ -70,24 +66,6 @@ if __name__ == "__main__":
         print(f"[DEBUG] DATABASE_URL rewritten for local: {patched_db_url}", flush=True)
     else:
         print(f"[OK] DATABASE_URL used as-is: {config.DATABASE_URL}", flush=True)
-
-    # Cron-only mode
-    if os.getenv("RUN_CRON") == "true":
-        print(
-            f"[CRON SYNC] [OK] Sync job started at {datetime.utcnow().isoformat()}",
-            flush=True,
-        )
-        try:
-            session = get_session()
-            athlete_id = int(os.getenv("ATHLETE_ID", "123456"))
-            result = run_full_ingestion_and_enrichment(session, athlete_id)
-            print(f"[CRON SYNC] [OK] Sync complete: {result}", flush=True)
-        except Exception as e:
-            print(f"[CRON SYNC] [ERROR] Error during sync: {e}", flush=True)
-            import traceback
-
-            traceback.print_exc()
-        sys.exit(0)
 
     # Local run - automatically handle Railway interference
     railway_port = os.environ.get("PORT")

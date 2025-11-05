@@ -13,18 +13,11 @@ class Config:
     ACCESS_TOKEN_EXP = int(os.getenv("ACCESS_TOKEN_EXP", "900"))  # 15 min
     REFRESH_TOKEN_EXP = int(os.getenv("REFRESH_TOKEN_EXP", "604800"))  # 7 days
 
-    # ===== JWT / Auth =====
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "unused-secret")
-
     # ===== Auth0 =====
     AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
     AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
     AUTH0_ISSUER = os.getenv("AUTH0_ISSUER")
     AUTH0_ALGORITHMS = os.getenv("AUTH0_ALGORITHMS", "RS256")
-
-    # ===== Internal API / Jobs =====
-    CRON_SECRET_KEY = os.getenv("CRON_SECRET_KEY", "")
-    INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
 
     # ===== Database =====
     DATABASE_URL = os.getenv("DATABASE_URL")

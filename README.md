@@ -52,8 +52,6 @@ REDIRECT_URI=http://127.0.0.1:5000/oauth/callback
 ADMIN_USER=admin
 ADMIN_PASS=secret
 SECRET_KEY=supersecretkey
-CRON_SECRET_KEY=your_cron_key
-INTERNAL_API_KEY=your_internal_key
 
 ```
 

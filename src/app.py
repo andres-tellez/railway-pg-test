@@ -113,8 +113,6 @@ def create_app(test_config=None):
     # Required app config values
     app.config.from_mapping(
         SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL"),
-        CRON_SECRET_KEY=config.CRON_SECRET_KEY,
-        INTERNAL_API_KEY=config.INTERNAL_API_KEY,
         SESSION_TYPE="filesystem",
     )
 

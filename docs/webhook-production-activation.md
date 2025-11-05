@@ -143,7 +143,6 @@ python -m src.scripts.manage_webhook_subscription view
 
 2. **Check webhook status endpoint:**
    - Visit: `https://api.smartcoach.dev/webhooks/strava/status`
-   - Or run: `python -m src.scripts.check_webhook_health`
 
 3. **Verify in database:**
    ```sql
@@ -163,9 +162,8 @@ python -m src.scripts.manage_webhook_subscription view
 After webhook is activated, verify activities are syncing:
 
 1. **Check webhook status:**
-   ```bash
-   python -m src.scripts.check_webhook_health
-   ```
+   - Visit: `https://api.smartcoach.dev/webhooks/strava/status`
+   - Or check database directly
 
 2. **Verify activity appears in database:**
    ```sql
@@ -220,15 +218,7 @@ After webhook is activated, verify activities are syncing:
 
 ### Daily Health Check
 
-Run daily to ensure webhooks are working:
-
-```bash
-python -m src.scripts.check_webhook_health
-```
-
-### Webhook Status Endpoint
-
-Monitor webhook health via HTTP:
+Monitor webhook health via HTTP endpoint:
 
 **URL:** `https://api.smartcoach.dev/webhooks/strava/status`
 
@@ -237,16 +227,12 @@ Monitor webhook health via HTTP:
 - Recent events
 - Processing statistics
 
-### Set Up Alerts (Optional)
-
-Configure webhook health alerts:
-
-```bash
-# Run with alerting enabled
-python -m src.scripts.webhook_health_alert
+You can also check the database directly:
+```sql
+SELECT status, COUNT(*)
+FROM webhook_events
+GROUP BY status;
 ```
-
-Set `ALERT_WEBHOOK_URL` or `ALERT_EMAIL` in Railway for notifications.
 
 ---
 
@@ -287,11 +273,8 @@ python -m src.scripts.manage_webhook_subscription create
 # Delete subscription
 python -m src.scripts.manage_webhook_subscription delete <subscription_id>
 
-# Check health
-python -m src.scripts.check_webhook_health
-
-# Health with alerts
-python -m src.scripts.webhook_health_alert
+# Check health (via API endpoint)
+curl https://api.smartcoach.dev/webhooks/strava/status
 ```
 
 ---

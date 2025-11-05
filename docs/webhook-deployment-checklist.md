@@ -235,9 +235,9 @@ If webhooks cause issues:
 # Delete subscription (stops receiving events)
 python -m src.scripts.manage_webhook_subscription delete <subscription_id>
 
-# Re-enable cron job
-# Edit .github/workflows/staging-cron.yml
-# Remove the conditional: if: ${{ vars.RUN_STAGING_CRON == 'true' }}
+# Re-enable cron job (if needed)
+# Note: The staging cron workflow was removed (replaced by webhooks)
+# Manual ingestion is available via: /admin/trigger-ingest/<athlete_id>
 ```
 
 ### Option 2: Rollback deployment

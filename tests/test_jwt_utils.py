@@ -4,7 +4,6 @@ from flask import Flask, jsonify
 from unittest.mock import patch
 
 import src.utils.jwt_utils as jwt_utils
-import src.utils.config as config
 
 
 @pytest.fixture
@@ -44,16 +43,6 @@ def test_decode_token_valid():
 def test_decode_token_invalid():
     with pytest.raises(ValueError):
         jwt_utils.decode_token("bad")
-
-
-def test_require_auth_internal_key(app):
-    app.route("/protected")(jwt_utils.require_auth(lambda: jsonify(success=True)))
-
-    with app.test_client() as client:
-        headers = {"X-Internal-Key": config.INTERNAL_API_KEY}
-        resp = client.get("/protected", headers=headers)
-        assert resp.status_code == 200
-        assert resp.json == {"success": True}
 
 
 def test_require_auth_missing_auth_header(app):
