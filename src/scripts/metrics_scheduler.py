@@ -110,13 +110,6 @@ def should_run_scheduled_tasks():
     ):
         return True
 
-    # For development/testing: allow manual trigger via environment variable
-    # Set ENABLE_WEEKLY_TASKS=true to trigger on the next check (within the hour)
-    if os.getenv("ENABLE_WEEKLY_TASKS", "false").lower() == "true":
-        # Clear the flag so it only runs once
-        os.environ.pop("ENABLE_WEEKLY_TASKS", None)
-        return True
-
     return False
 
 
@@ -582,9 +575,6 @@ def main():
         logger.info(f"📍 Current time (UTC): {utc_now.strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(
         "💡 Tasks include: (1) Metrics refresh, (2) Weekly plan rebuild, (3) Email notifications"
-    )
-    logger.info(
-        "💡 Set ENABLE_WEEKLY_TASKS=true environment variable to manually trigger (for testing)"
     )
 
     if not os.getenv("DATABASE_URL"):

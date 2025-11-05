@@ -4,28 +4,16 @@
 
 The weekly scheduler can be tested on your local machine. Here's how:
 
-## Quick Test (Manual Trigger)
+## Quick Test
 
-### Option 1: Environment Variable Trigger
+The scheduler runs automatically on schedule (Sunday at 5 PM Central Time). To test:
 
-1. **Set the trigger environment variable**:
-   ```bash
-   # Windows PowerShell
-   $env:ENABLE_WEEKLY_TASKS="true"
-
-   # Windows CMD
-   set ENABLE_WEEKLY_TASKS=true
-
-   # Mac/Linux
-   export ENABLE_WEEKLY_TASKS=true
-   ```
-
-2. **Run the scheduler**:
+1. **Run the scheduler**:
    ```bash
    python src/scripts/metrics_scheduler.py
    ```
 
-3. **It will trigger immediately** (within the next minute check)
+2. **Wait for scheduled time** - The scheduler will run automatically when the schedule matches
 
 4. **Watch the logs** to see:
    - Metrics refresh
@@ -90,7 +78,6 @@ When you trigger it, you'll see:
 ```
 🕐 Weekly scheduler started - waiting for Saturday at 10:00 PM...
 💡 Scheduled tasks will run automatically every Saturday at 10:00 PM Central (local (Central Time))
-💡 Set ENABLE_WEEKLY_TASKS=true environment variable to manually trigger (for testing)
 ⏰ Checking schedule... (current time: 2025-01-11 22:15)
 ⏰ Scheduled time reached - running weekly tasks at 2025-01-11 22:15:30
 🚀 Starting weekly scheduled tasks (Saturday 10 PM Central)...
@@ -128,7 +115,6 @@ When you trigger it, you'll see:
 - ✅ Monitored via Railway logs
 
 ### Local
-- ✅ Can test anytime with `ENABLE_WEEKLY_TASKS=true`
 - ✅ Uses local database (your `.env.local` DATABASE_URL)
 - ✅ Can test email sending if SMTP configured
 - ✅ Same code, same behavior!
@@ -145,12 +131,7 @@ venv\Scripts\activate
 # Mac/Linux
 source venv/bin/activate
 
-# 2. Set trigger
-export ENABLE_WEEKLY_TASKS=true  # Mac/Linux
-# or
-$env:ENABLE_WEEKLY_TASKS="true"  # Windows PowerShell
-
-# 3. Run scheduler
+# 2. Run scheduler (will run on scheduled time)
 python src/scripts/metrics_scheduler.py
 
 # 4. Watch logs - it should trigger within 1 minute!

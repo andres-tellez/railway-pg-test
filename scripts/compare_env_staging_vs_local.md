@@ -40,7 +40,7 @@ These are staging/production-specific:
 7. **STRAVA_WEBHOOK_VERIFY_TOKEN** - ❌ Not needed (webhooks don't work locally)
 8. **WEBHOOK_CALLBACK_URL** - ❌ Not needed (webhooks don't work locally)
 9. ~~**ALERT_WEBHOOK_URL**~~ - ❌ **DELETED** (legacy - replaced by `/webhooks/strava/status` endpoint)
-10. **ENABLE_WEEKLY_TASKS** - ❌ Optional (cron job flag)
+10. **ENABLE_WEEKLY_TASKS** - ❌ Deleted (code removed, manual trigger no longer available)
 11. **RUN_CRON** - ❌ Optional (cron job flag)
 12. **RUN_STAGING_CRON** - ❌ Not needed (GitHub Actions only)
 

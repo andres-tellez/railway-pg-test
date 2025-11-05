@@ -31,7 +31,6 @@ SMTP_FROM_NAME=SmartCoach              # Default: SmartCoach
 #### Scheduling Configuration (Optional)
 ```bash
 USE_UTC_TIME=false                    # Default: false (uses Central Time)
-ENABLE_WEEKLY_TASKS=false             # Set to true to manually trigger (testing)
 ```
 
 ### Email Setup Instructions
@@ -93,10 +92,7 @@ If SMTP is not configured:
 To test the scheduler without waiting for Sunday:
 
 ```bash
-# Set environment variable
-export ENABLE_WEEKLY_TASKS=true
-
-# Run scheduler (will trigger immediately on next check)
+# Run scheduler (will run on scheduled time)
 python src/scripts/metrics_scheduler.py
 ```
 
@@ -200,10 +196,7 @@ The scheduler logs all activities:
    - Default: Central Time
    - Override with `USE_UTC_TIME=true` for UTC
 
-3. **Manual trigger for testing**:
-   ```bash
-   export ENABLE_WEEKLY_TASKS=true
-   ```
+3. **Testing**: Scheduler runs automatically on schedule (Sunday at 6 PM Central)
 
 ### No Workout Changes Showing
 - This is normal if workouts haven't changed
@@ -219,7 +212,6 @@ The scheduler logs all activities:
 - **Time**: 6:00 PM Central (18:00)
 - **Timezone**: Central Time (configurable via `USE_UTC_TIME`)
 - **Frequency**: Weekly
-- **Manual Trigger**: Set `ENABLE_WEEKLY_TASKS=true`
 
 ## Security Notes
 
