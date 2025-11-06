@@ -4,7 +4,7 @@ import requests
 import time
 import logging
 from src.utils.config import config
-from src.services.rate_limiter import get_rate_limiter
+from src.utils.rate_limiter import get_rate_limiter
 
 logger = logging.getLogger(__name__)
 

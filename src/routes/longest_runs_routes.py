@@ -47,13 +47,13 @@ from src.services.metrics_cache_service import (
     _get_cache_key,
 )
 from src.utils.auth0_jwt import requires_auth
-from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
+from src.utils.auth_helpers import get_user_id_from_request
 from src.utils.normalize_claims import normalize_claims
 from sqlalchemy import text
 import time
 import traceback
 
-longest_runs_bp = Blueprint("longest_runs", __name__)
+longest_runs_bp = Blueprint("longest_runs", __name__, url_prefix="/api/longest-runs")
 
 # Configuration (can be moved to database later)
 DEFAULT_CONFIG = {
@@ -197,17 +197,14 @@ def get_longest_runs_data():
 
     try:
         # Get user identity (same as metrics)
+        from src.utils.auth_helpers import get_user_id_from_request
+
         claims = getattr(g, "current_user", {}) or {}
         claims = normalize_claims(claims)
-        sub = claims.get("sub")
 
-        if not sub:
-            return jsonify({"error": "Missing sub claim"}), 401
-
-        user_id = resolve_user_id_from_auth_provider(sub, claims)
-
-        if not user_id:
-            return jsonify({"error": "Could not resolve user ID"}), 404
+        user_id, error = get_user_id_from_request(claims, create_if_missing=False)
+        if error:
+            return error
 
         # Get athlete_id
         athlete_id = get_athlete_id_for_user(session, user_id)

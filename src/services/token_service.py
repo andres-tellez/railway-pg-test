@@ -34,23 +34,48 @@ def get_valid_token(session, athlete_id):
 
 
 def refresh_access_token(session, athlete_id):
-    token_data = get_tokens_sa(session, athlete_id)
-    if not token_data:
+    """
+    Refresh access token (also rotates refresh token).
+
+    Returns:
+        Dict with access_token, refresh_token, expires_at
+
+    Note: This function also performs token rotation for security.
+    """
+    from src.db.models.tokens import Token
+    from src.utils.audit_logger import log_token_refresh
+
+    token = session.query(Token).filter_by(athlete_id=athlete_id).first()
+    if not token:
         raise RuntimeError(f"No refresh token available for athlete {athlete_id}")
 
-    tokens = refresh_token_static(token_data["refresh_token"])
+    # Check if token is revoked
+    if token.is_revoked():
+        raise ValueError(f"Token for athlete {athlete_id} has been revoked")
+
+    # Refresh tokens (Strava returns new access + refresh tokens)
+    tokens = refresh_token_static(token.refresh_token)
+
+    # ✅ Token rotation: Update both access and refresh tokens
+    token.access_token = tokens["access_token"]  # Automatically encrypted
+    token.refresh_token = tokens["refresh_token"]  # New refresh token (rotated)
+    token.expires_at = tokens["expires_at"]
+    token.revoked_at = None  # Ensure not revoked
+    session.commit()
+
     from src.utils.security_utils import redact_dict
 
     redacted_tokens = redact_dict(tokens)
-    logger.info(f"Refreshed token: {redacted_tokens}")
-    insert_token_sa(
-        session=session,
-        athlete_id=athlete_id,
-        access_token=tokens["access_token"],
-        refresh_token=tokens["refresh_token"],
-        expires_at=tokens["expires_at"],
+    logger.info(f"Tokens refreshed and rotated: {redacted_tokens}")
+
+    log_token_refresh(
+        user_id=None,  # Will be set by caller if available
+        athlete_id=str(athlete_id),
+        success=True,
+        details={"rotated": True},
     )
-    return tokens
+
+    return tokens  # Return dict with access_token, refresh_token, expires_at
 
 
 def refresh_token_static(refresh_token):
@@ -68,25 +93,99 @@ def refresh_token_static(refresh_token):
 
 
 def refresh_token_if_expired(session, athlete_id):
+    """
+    Refresh tokens if expired, with automatic token rotation.
+
+    Note: Refresh tokens are rotated (new refresh token issued) on each refresh
+    for improved security. Old refresh tokens are invalidated.
+    """
+    from src.db.models.tokens import Token
+    from src.utils.audit_logger import log_token_refresh
+
     token = session.query(Token).filter_by(athlete_id=athlete_id).first()
     if not token:
         raise ValueError(f"No token found for athlete ID {athlete_id}")
 
+    # Check if token is revoked
+    if token.is_revoked():
+        logger.warning(f"Attempted to refresh revoked token for athlete {athlete_id}")
+        log_token_refresh(
+            user_id=None,
+            athlete_id=str(athlete_id),
+            success=False,
+            details={"reason": "token_revoked"},
+        )
+        raise ValueError(f"Token for athlete {athlete_id} has been revoked")
+
     now = datetime.utcnow().timestamp()
     if token.expires_at <= now:
+        # Refresh tokens (Strava returns new access + refresh tokens)
         refreshed = refresh_token_static(token.refresh_token)
-        token.access_token = refreshed["access_token"]
-        token.refresh_token = refreshed["refresh_token"]
+
+        # ✅ Token rotation: Update both access and refresh tokens
+        # This invalidates the old refresh token (one-time use)
+        token.access_token = refreshed["access_token"]  # Automatically encrypted
+        token.refresh_token = refreshed["refresh_token"]  # New refresh token (rotated)
         token.expires_at = refreshed["expires_at"]
+        token.revoked_at = None  # Ensure not revoked
         session.commit()
+
+        logger.info(f"Tokens refreshed and rotated for athlete {athlete_id}")
+        log_token_refresh(
+            user_id=None,  # Will be set by caller if available
+            athlete_id=str(athlete_id),
+            success=True,
+            details={"rotated": True},
+        )
         return True
     return False
 
 
 def delete_athlete_tokens(session, athlete_id):
+    """
+    Delete tokens for athlete (hard delete).
+
+    For soft delete (revocation), use revoke_athlete_tokens instead.
+    """
+    from src.db.models.tokens import Token
+    from src.utils.audit_logger import log_token_revocation
+
+    token = session.query(Token).filter_by(athlete_id=athlete_id).first()
+    if token:
+        log_token_revocation(
+            user_id=None,  # Will be set by caller if available
+            athlete_id=str(athlete_id),
+        )
+
     deleted = session.query(Token).filter_by(athlete_id=athlete_id).delete()
     session.commit()
     return deleted
+
+
+def revoke_athlete_tokens(session, athlete_id):
+    """
+    Revoke tokens for athlete (soft delete - marks as revoked but keeps record).
+
+    This allows for immediate revocation while maintaining audit trail.
+    """
+    from src.db.models.tokens import Token
+    from src.utils.audit_logger import log_token_revocation
+
+    token = session.query(Token).filter_by(athlete_id=athlete_id).first()
+    if not token:
+        return False
+
+    if not token.is_revoked():
+        token.revoke()  # Sets revoked_at timestamp
+        session.commit()
+        logger.info(f"Tokens revoked for athlete {athlete_id}")
+        log_token_revocation(
+            user_id=None,  # Will be set by caller if available
+            athlete_id=str(athlete_id),
+        )
+        return True
+
+    return False  # Already revoked
 
 
 def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None = None):

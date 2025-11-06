@@ -3,6 +3,7 @@ import os
 import time
 import threading
 import traceback
+import logging
 from functools import wraps
 from typing import Any, Dict, Optional, Tuple
 
@@ -13,6 +14,8 @@ from jose import jwt
 
 # src/utils/auth0_jwt.py
 from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
+
+logger = logging.getLogger(__name__)
 
 
 AUTH0_DOMAIN = config.AUTH0_DOMAIN
@@ -107,25 +110,18 @@ def requires_auth(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         auth = request.headers.get("Authorization", "")
-        print(
-            f"[requires_auth] {request.path} - Authorization present={bool(auth)} len={len(auth)}",
-            flush=True,
-        )
+        # Only log presence, never log length or content (security best practice)
+        logger.debug(f"[requires_auth] {request.path} - Authorization header present")
         if DEBUG_AUTH:
-            print(
-                f"[requires_auth] Authorization present={bool(auth)} len={len(auth)}",
-                flush=True,
-            )
+            logger.debug(f"[requires_auth] Authorization header present")
+            # NEVER log token length or content
 
         if not auth.startswith("Bearer "):
-            print(
-                f"[requires_auth] {request.path} - Missing/invalid Authorization header",
-                flush=True,
+            logger.warning(
+                f"[requires_auth] {request.path} - Missing/invalid Authorization header"
             )
             if DEBUG_AUTH:
-                print(
-                    "[requires_auth] Missing/invalid Authorization header", flush=True
-                )
+                logger.debug("[requires_auth] Missing/invalid Authorization header")
             return jsonify({"error": "unauthorized", "reason": "no_bearer"}), 401
 
         token = auth.split(" ", 1)[1]
@@ -136,13 +132,16 @@ def requires_auth(fn):
 
             sub = claims.get("sub")
             if not sub:
+                logger.warning(f"[requires_auth] Missing sub claim in token")
                 return jsonify({"error": "unauthorized", "reason": "no_sub"}), 401
 
-            # 🔍 DEBUG: Log claims before resolving
+            # 🔍 DEBUG: Log only non-sensitive claims (never log email, name, picture, or full token)
             if DEBUG_AUTH:
-                print("🔍 Decoded JWT claims:")
-                for k, v in claims.items():
-                    print(f"  {k}: {v}", flush=True)
+                # Only log safe, non-sensitive fields
+                safe_fields = ["sub", "aud", "iss", "exp", "iat", "azp"]
+                safe_claims = {k: v for k, v in claims.items() if k in safe_fields}
+                logger.debug(f"🔍 Decoded JWT claims (safe): {safe_claims}")
+                # NEVER log: email, email_verified, name, picture, or full token content
 
             # 🔑 Resolve internal UUID from identity table
             internal_id = resolve_user_id_from_auth_provider(
@@ -150,6 +149,9 @@ def requires_auth(fn):
             )
 
             if not internal_id:
+                logger.warning(
+                    f"[requires_auth] Could not resolve internal user_id for sub={sub}"
+                )
                 return (
                     jsonify({"error": "unauthorized", "reason": "no_internal_user_id"}),
                     401,
@@ -160,17 +162,22 @@ def requires_auth(fn):
             if DEBUG_AUTH:
                 aud = claims.get("aud")
                 iss = claims.get("iss")
-                print(
-                    f"[requires_auth] ✅ OK sub={sub} internal_id={internal_id} aud={aud} iss={iss}",
-                    flush=True,
+                logger.debug(
+                    f"[requires_auth] ✅ OK sub={sub} internal_id={internal_id} aud={aud} iss={iss}"
                 )
 
             return fn(*args, **kwargs)
 
         except Exception as e:
+            # Log full error details server-side only (for debugging)
             if DEBUG_AUTH:
-                traceback.print_exc()
-                print(f"[requires_auth] ❌ 401 reason: {e}", flush=True)
-            return jsonify({"error": "unauthorized", "reason": str(e)}), 401
+                logger.exception(f"[requires_auth] ❌ Authentication failed: {e}")
+            else:
+                logger.warning(
+                    f"[requires_auth] ❌ Authentication failed: {e}", exc_info=True
+                )
+
+            # Return generic error to client (don't leak internal details)
+            return jsonify({"error": "unauthorized", "reason": "invalid_token"}), 401
 
     return wrapper

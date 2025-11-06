@@ -1,4 +1,37 @@
-# src/routes/user_profile_routes.py
+"""
+User Profile Routes Module
+==========================
+
+Provides API endpoints for user profile management and onboarding.
+
+Endpoints:
+----------
+POST /api/onboarding
+    Create or update user's onboarding profile
+
+GET  /api/onboarding
+    Fetch user's onboarding profile
+
+Dependencies:
+-------------
+- UserProfileSchema: Pydantic validation schema
+- user_profile_dao: Database operations for profiles
+- requires_auth: JWT authentication decorator
+
+Data Managed:
+------------
+- User profile information (race goals, fitness level, etc.)
+- Height (feet/inches)
+- Age group
+- Training preferences
+- Race information
+
+Note:
+-----
+All endpoints use internal UUID (from g.user_id) rather than Auth0 sub.
+Profile data is used for personalized training plan generation.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict

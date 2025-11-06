@@ -30,12 +30,12 @@ from flask import Blueprint, request, jsonify
 from src.db.db_session import get_session
 from src.db.models.webhook_events import WebhookEvent, WebhookEventStatus
 from src.db.models.user_athletes import UserAthleteLink
-from src.services.webhook_processor import process_webhook_event
+from src.services.webhook_processor_service import process_webhook_event
 import os
 import logging
 import threading
 
-webhook_bp = Blueprint("webhooks", __name__)
+webhook_bp = Blueprint("webhooks", __name__, url_prefix="/webhooks")
 logger = logging.getLogger(__name__)
 
 # Get webhook verification token from environment

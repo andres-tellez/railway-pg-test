@@ -36,7 +36,7 @@ const OnboardingForm: React.FC = () => {
       setLoading(true);
       try {
         console.log("Fetching profile data...");
-        const { data } = await api.get("api/onboarding", { signal: ac.signal });
+        const { data } = await api.get("/onboarding", { signal: ac.signal });
         console.log("Received profile data:", data);
         if (data) {
           // Pre-fill the form with existing data (for editing)
@@ -77,7 +77,7 @@ const OnboardingForm: React.FC = () => {
 
       if (!userId) throw new Error("No user ID available - please refresh");
 
-      await api.post("api/onboarding", {
+      await api.post("/onboarding", {
         ...values,
       });
 

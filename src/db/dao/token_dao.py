@@ -10,9 +10,18 @@ def get_tokens_sa(session, athlete_id: int) -> dict | None:
     """
     Retrieves access, refresh, and expiration tokens for the given athlete.
     Returns None if not found.
+
+    Note: Tokens are automatically decrypted when accessed via Token model properties.
     """
     try:
         token = session.query(Token).filter_by(athlete_id=athlete_id).one()
+
+        # Check if token is revoked
+        if token.is_revoked():
+            logger.warning(f"Token for athlete {athlete_id} has been revoked")
+            return None
+
+        # Tokens are automatically decrypted via @hybrid_property
         return {
             "access_token": token.access_token,
             "refresh_token": token.refresh_token,
@@ -29,21 +38,33 @@ def insert_token_sa(
     """
     Inserts or updates a token record for the given athlete using upsert.
     Rolls back on error to prevent session poisoning.
+
+    Note: Tokens are automatically encrypted when set via Token model properties.
     """
+    # Create Token instance (encryption happens via @hybrid_property setters)
+    token = Token()
+    token.athlete_id = athlete_id
+    token.access_token = access_token  # Automatically encrypted
+    token.refresh_token = refresh_token  # Automatically encrypted
+    token.expires_at = expires_at
+    token.revoked_at = None  # Clear revocation if updating
+
     stmt = (
         insert(Token)
         .values(
-            athlete_id=athlete_id,
-            access_token=access_token,
-            refresh_token=refresh_token,
-            expires_at=expires_at,
+            athlete_id=token.athlete_id,
+            access_token=token._encrypted_access_token,  # Use encrypted value
+            refresh_token=token._encrypted_refresh_token,  # Use encrypted value
+            expires_at=token.expires_at,
+            revoked_at=None,  # Clear revocation on update
         )
         .on_conflict_do_update(
             index_elements=["athlete_id"],
             set_={
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "expires_at": expires_at,
+                "access_token": token._encrypted_access_token,
+                "refresh_token": token._encrypted_refresh_token,
+                "expires_at": token.expires_at,
+                "revoked_at": None,  # Clear revocation on update
             },
         )
     )

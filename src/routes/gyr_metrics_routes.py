@@ -55,7 +55,7 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-gyr_metrics_bp = Blueprint("gyr_metrics", __name__)
+gyr_metrics_bp = Blueprint("gyr_metrics", __name__, url_prefix="/api/gyr-metrics")
 
 
 def get_athlete_id_for_user(session, user_id) -> int | None:
@@ -104,24 +104,21 @@ def get_gyr_scores():
     # Import here to avoid circular import issues at module level
     from src.db.db_session import get_session
     from src.services.gyr_metrics_service import GYRMetricsService
-    from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
+    from src.utils.auth_helpers import get_user_id_from_request
     from src.utils.normalize_claims import normalize_claims
 
     session = get_session()
 
     try:
         # Get authenticated user
+        from src.utils.auth_helpers import get_user_id_from_request
+
         claims = getattr(g, "current_user", {}) or {}
         claims = normalize_claims(claims)
-        sub = claims.get("sub")
 
-        if not sub:
-            return jsonify({"error": "Missing sub claim"}), 401
-
-        user_id = resolve_user_id_from_auth_provider(sub, claims)
-
-        if not user_id:
-            return jsonify({"error": "Could not resolve user ID"}), 404
+        user_id, error = get_user_id_from_request(claims, create_if_missing=False)
+        if error:
+            return error
 
         # Get athlete_id for this user
         athlete_id = get_athlete_id_for_user(session, user_id)

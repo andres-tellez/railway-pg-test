@@ -1,3 +1,45 @@
+"""
+Admin Routes Module
+===================
+
+Provides administrative and debugging endpoints for system management.
+
+Endpoints:
+----------
+GET  /admin/ping
+    Basic health check endpoint
+
+GET/POST /admin/test-no-auth
+    Test endpoint without authentication (for debugging)
+
+POST /admin/refresh-metrics
+    Manually trigger metrics refresh
+
+POST /admin/trigger-ingest/<athlete_id>
+    Manually trigger activity ingestion for an athlete
+
+POST /admin/fetch-activity/<activity_id>
+    Manually fetch a single activity from Strava
+
+GET  /admin/athletes
+    Get list of all athletes for admin dropdown
+
+POST /admin/sync-activities
+    Sync activities for a specific athlete in a date range
+
+Dependencies:
+-------------
+- ActivityIngestionService: Activity ingestion logic
+- StravaClient: Strava API access
+- TokenService: Token management
+- requires_auth: JWT authentication decorator
+
+Note:
+-----
+These endpoints are for administrative use and debugging.
+All endpoints require authentication unless otherwise specified.
+"""
+
 from flask import Blueprint, jsonify, request
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
@@ -10,7 +52,7 @@ from src.db.models.user_athletes import UserAthleteLink
 import logging
 from src.utils.auth0_jwt import requires_auth
 
-admin_bp = Blueprint("admin", __name__)
+admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 logger = logging.getLogger(__name__)
 
 # Force print at module level to confirm blueprint loads

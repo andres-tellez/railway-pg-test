@@ -36,12 +36,6 @@ import NewPlanForm from "./pages/NewPlanForm";
 import PlansManagement from "./pages/PlansManagement";
 import PlanDraftPreview from "./pages/PlanDraftPreview";
 import SetupPage from "./pages/LandingPage";
-import SetupPageV1 from "./pages/LandingPage-v1-bold";
-import SetupPageV2 from "./pages/LandingPage-v2-minimal";
-import SetupPageV3 from "./pages/LandingPage-v3-card-focused";
-import SetupPageV4 from "./pages/LandingPage-v4-split-screen";
-import SetupPageV5 from "./pages/LandingPage-v5-impact";
-import SetupPageV6 from "./pages/LandingPage-v6-modern";
 import PostOAuth from "./pages/PostOAuth";
 import HomeScreen from "./pages/HomeScreen";
 import AskGptMvpUI from "./pages/AskGptMvpUI";
@@ -141,55 +135,6 @@ export default function App() {
         element={
           <Layout>
             <SetupPage />
-          </Layout>
-        }
-      />
-      {/* Setup Page Design Variations - For Testing */}
-      <Route
-        path="/setup-v1"
-        element={
-          <Layout>
-            <SetupPageV1 />
-          </Layout>
-        }
-      />
-      <Route
-        path="/setup-v2"
-        element={
-          <Layout>
-            <SetupPageV2 />
-          </Layout>
-        }
-      />
-      <Route
-        path="/setup-v3"
-        element={
-          <Layout>
-            <SetupPageV3 />
-          </Layout>
-        }
-      />
-      <Route
-        path="/setup-v4"
-        element={
-          <Layout>
-            <SetupPageV4 />
-          </Layout>
-        }
-      />
-      <Route
-        path="/setup-v5"
-        element={
-          <Layout>
-            <SetupPageV5 />
-          </Layout>
-        }
-      />
-      <Route
-        path="/setup-v6"
-        element={
-          <Layout>
-            <SetupPageV6 />
           </Layout>
         }
       />

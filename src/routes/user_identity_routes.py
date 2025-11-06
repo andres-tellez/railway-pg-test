@@ -1,11 +1,61 @@
-# src/routes/user_identity_routes.py
+"""
+User Identity Routes Module
+===========================
+
+Provides API endpoints for user identity management and user-athlete linking.
+
+Responsibilities:
+- User identity CRUD operations
+- User-athlete account linking
+- User status and profile information
+- Integration with Auth0 JWT claims
+
+Endpoints:
+----------
+GET  /api/user/identity       - Get user identity
+POST /api/user/identity       - Create/update user identity
+GET  /api/user                - Get user info with status
+GET  /api/me                  - Get canonical user view (merged from auth_me_routes.py)
+GET  /api/user/link           - Get user-athlete link status
+POST /api/user/link           - Link user to athlete
+DELETE /api/user/link         - Unlink user from athlete
+
+Dependencies:
+-------------
+- Auth0 JWT tokens (via @requires_auth decorator)
+- User identity DAO (resolve_user_id_from_auth_provider, upsert_identity)
+- User athletes DAO (get_by_user_id, create_link, delete_by_user_id)
+- User identity service (get_user_status)
+
+Data Managed:
+-------------
+- UserIdentity table (user_id, email, name, picture, etc.)
+- UserAthletes table (user_id <-> athlete_id mapping)
+
+Authentication:
+--------------
+All endpoints require valid Auth0 JWT token in Authorization header.
+The @requires_auth decorator validates tokens and resolves internal user_id.
+
+Note:
+-----
+The /api/me endpoint was merged from auth_me_routes.py to consolidate
+user identity endpoints in a single module.
+"""
+
 from __future__ import annotations
 
-import sys
-from flask import Blueprint, jsonify, request, g
+from flask import Blueprint, request, g
 from sqlalchemy.exc import IntegrityError
 
-from src.utils.auth0_jwt import requires_auth, verify_and_decode
+from src.utils.auth0_jwt import requires_auth
+from src.utils.auth_helpers import get_sub_from_claims, get_user_id_from_request
+from src.utils.response_utils import (
+    error_response,
+    validation_error_response,
+    not_found_response,
+    success_response,
+)
 
 from src.db.models import UserIdentity
 from src.db.db_session import db
@@ -19,56 +69,51 @@ from src.db.dao.user_athletes_dao import (
 
 from src.services.user_identity_service import get_user_status
 
-from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
-
 # Normalize claims
 from src.utils.normalize_claims import normalize_claims
 from src.db.dao.user_identity_dao import upsert_identity
 from datetime import datetime
 
 
-identity_bp = Blueprint("identity", __name__, url_prefix="/api")
+user_identity_bp = Blueprint("user_identity", __name__, url_prefix="/api")
 
 
-@identity_bp.get("/user/identity")
+@user_identity_bp.get("/user/identity")
 @requires_auth
 def get_user_identity():
     """
     Minimal identity read (no writes). Uses claims to ensure a row exists.
     """
     claims = getattr(g, "current_user", {})
-    sub = claims.get("sub")
-    if not sub:
-        return jsonify({"error": "missing_sub"}), 400
-
-    user_id = resolve_user_id_from_auth_provider(sub, claims)
+    user_id, error = get_user_id_from_request(claims, create_if_missing=False)
+    if error:
+        return error
     identity = db.session.get(UserIdentity, user_id)
 
     if not identity:
-        return {"ok": False, "error": "User not found"}, 404
-    return jsonify(identity.to_dict()), 200
+        return not_found_response("User")
+    return success_response(identity.to_dict())
 
 
-@identity_bp.get("/user/link")
+@user_identity_bp.get("/user/link")
 @requires_auth
 def get_user_link():
-    sub = (getattr(g, "current_user", None) or {}).get("sub")
-    if not sub:
-        return jsonify({"error": "missing_sub"}), 400
+    user_id, error = get_user_id_from_request(create_if_missing=False)
+    if error:
+        return error
 
-    user_id = resolve_user_id_from_auth_provider(sub, {})
     row = get_by_user_id(user_id)
     if not row:
-        return jsonify({"linked": False}), 404
-    return jsonify({"linked": True, **row.to_dict()}), 200
+        return not_found_response("User-athlete link")
+    return success_response({"linked": True, **row.to_dict()})
 
 
-@identity_bp.post("/user/link")
+@user_identity_bp.post("/user/link")
 @requires_auth
 def post_user_link():
-    sub = (getattr(g, "current_user", None) or {}).get("sub")
-    if not sub:
-        return jsonify({"error": "missing_sub"}), 400
+    user_id, error = get_user_id_from_request(create_if_missing=False)
+    if error:
+        return error
 
     payload = request.get_json(silent=True) or {}
     try:
@@ -76,44 +121,45 @@ def post_user_link():
         if athlete_id <= 0:
             raise ValueError
     except (TypeError, ValueError):
-        return jsonify({"error": "athlete_id must be a positive integer"}), 400
-
-    user_id = resolve_user_id_from_auth_provider(sub, {})
+        return validation_error_response(
+            "athlete_id must be a positive integer", field="athlete_id"
+        )
 
     try:
         row = create_link(user_id, athlete_id)
-        return (
-            jsonify({"linked": True, "user_id": user_id, "athlete_id": athlete_id}),
-            201,
+        return success_response(
+            {"linked": True, "user_id": user_id, "athlete_id": athlete_id},
+            status_code=201,
         )
     except IntegrityError:
-        return jsonify({"error": "user or athlete already linked"}), 409
+        return error_response(
+            "User or athlete already linked",
+            status_code=409,
+            error_code="ALREADY_LINKED",
+        )
 
 
-@identity_bp.delete("/user/link")
+@user_identity_bp.delete("/user/link")
 @requires_auth
 def delete_user_link():
-    sub = (getattr(g, "current_user", None) or {}).get("sub")
-    if not sub:
-        return jsonify({"deleted": False, "error": "missing_sub"}), 400
+    user_id, error = get_user_id_from_request(create_if_missing=False)
+    if error:
+        return error
 
-    user_id = resolve_user_id_from_auth_provider(sub, {})
     deleted = delete_by_user_id(user_id)
     if not deleted:
-        return jsonify({"deleted": False, "message": "no link found"}), 404
-    return jsonify({"deleted": True}), 200
+        return not_found_response("User-athlete link")
+    return success_response({"deleted": True})
 
 
-@identity_bp.post("/user/identity")
+@user_identity_bp.post("/user/identity")
 @requires_auth
 def save_identity():
     claims = getattr(g, "current_user", {})
-    sub = claims.get("sub")
-    if not sub:
-        return jsonify({"error": "missing_sub"}), 400
-
     claims = normalize_claims(claims)
-    user_id = resolve_user_id_from_auth_provider(sub, claims, create_if_missing=True)
+    user_id, error = get_user_id_from_request(claims, create_if_missing=True)
+    if error:
+        return error
 
     payload = {
         "user_id": user_id,
@@ -125,25 +171,19 @@ def save_identity():
     }
 
     result = upsert_identity(payload)
-    return jsonify({"user_id": str(result)}), 200
+    return success_response({"user_id": str(result)})
 
 
-@identity_bp.get("/user")
+@user_identity_bp.get("/user")
 @requires_auth
 def get_user_info():
-    claims = getattr(g, "current_user", {})
-    sub = claims.get("sub")
-    if not sub:
-        return jsonify({"error": "missing_sub"}), 400
-
-    user_id = resolve_user_id_from_auth_provider(sub)
-
-    if not user_id:
-        return jsonify({"error": "User ID could not be resolved"}), 404
+    user_id, error = get_user_id_from_request(create_if_missing=False)
+    if error:
+        return error
 
     identity = db.session.get(UserIdentity, user_id)
     if not identity:
-        return jsonify({"error": "User not found"}), 404
+        return not_found_response("User")
 
     status = get_user_status(user_id)
 
@@ -154,4 +194,37 @@ def get_user_info():
         "hasOnboarded": bool(status.get("hasOnboarded")),
         "hasStrava": bool(status.get("hasStrava")),
     }
-    return jsonify(payload), 200
+    return success_response(payload)
+
+
+@user_identity_bp.get("/me")
+@requires_auth
+def me():
+    """
+    Returns the app's canonical view of the current user.
+    Ensures we have a user_identity row (via upsert).
+    Uses claims directly from the verified JWT (no /userinfo call).
+
+    This endpoint was merged from auth_me_routes.py.
+    """
+    claims = getattr(g, "current_user", {}) or {}
+    claims = normalize_claims(claims)
+
+    # 🔑 Resolve a proper UUID for this user
+    user_id, error = get_user_id_from_request(claims, create_if_missing=True)
+    if error:
+        return error
+
+    # Prepare the payload for upsert
+    payload = {
+        "user_id": user_id,
+        "email": claims["email"],
+        "email_verified": claims["email_verified"],
+        "name": claims["name"],
+        "picture": claims["picture"],
+        "updated_at": datetime.utcnow(),
+    }
+
+    result = upsert_identity(payload)
+
+    return success_response({"user_id": str(result)})

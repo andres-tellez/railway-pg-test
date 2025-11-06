@@ -27,7 +27,7 @@ from src.db.models.activities import Activity
 from src.db.models.tokens import Token
 from src.db.models.plans import Plan
 
-user_data_bp = Blueprint("user_data", __name__)
+user_data_bp = Blueprint("user_data", __name__, url_prefix="/api")
 
 
 @user_data_bp.get("/user/export-data")

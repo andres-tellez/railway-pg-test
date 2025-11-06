@@ -1,14 +1,20 @@
 """
-rate_limiter.py
+Rate Limiter Utility
+====================
 
-Strava API Rate Limiting Service
+Strava API Rate Limiting Utility
 =================================
 
 Tracks and enforces Strava API rate limits:
 - 100 requests per 15 minutes (short-term limit)
 - 1000 requests per day (long-term limit)
 
-This service ensures we never exceed these limits when syncing multiple athletes.
+This utility ensures we never exceed these limits when syncing multiple athletes.
+
+Note:
+-----
+This is a utility module (not a service) because it provides pure rate limiting
+functionality without business logic. It's used by services to manage API calls.
 """
 
 import time

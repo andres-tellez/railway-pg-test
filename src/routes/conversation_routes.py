@@ -1,4 +1,42 @@
-# src/routes/conversation_routes.py
+"""
+Conversation Routes Module
+==========================
+
+Provides API endpoints for AI-powered conversation management.
+
+Endpoints:
+----------
+GET    /api/conversations
+    Get all conversations for the current user
+
+POST   /api/conversations
+    Create a new conversation
+
+GET    /api/conversations/<conversation_id>
+    Get a specific conversation with its messages
+
+POST   /api/conversations/<conversation_id>/messages
+    Send a message and get AI coach response
+
+DELETE /api/conversations/<conversation_id>
+    Delete a conversation
+
+Dependencies:
+-------------
+- SmartDataService: Provides context-aware training data
+- get_conversation_response: GPT integration for AI responses
+- Conversation/ConversationMessage: Database models
+
+Features:
+---------
+- Context-aware responses based on user's training data
+- Conversation history management
+- Training plan coach system prompt
+- Automatic conversation title generation
+
+Author: SmartCoach Development Team
+Last Updated: November 2025
+"""
 
 import time
 import logging
@@ -6,13 +44,14 @@ from flask import Blueprint, request, jsonify
 from src.db.db_session import get_session
 from src.db.models.conversations import Conversation, ConversationMessage
 from src.utils.gpt_ops import get_conversation_response
+from src.utils.auth_helpers import get_user_id_from_request
 
 logger = logging.getLogger(__name__)
 
 
 from datetime import datetime
 
-conversation_bp = Blueprint("conversation", __name__)
+conversation_bp = Blueprint("conversation", __name__, url_prefix="/api")
 
 
 TRAINING_PLAN_COACH_SYSTEM_PROMPT = """You are an expert running coach with access to comprehensive training data.
@@ -57,15 +96,11 @@ def get_user_from_auth():
     except Exception as e:
         return None, jsonify({"error": "unauthorized", "reason": str(e)}), 401
 
-    sub = claims.get("sub")
-    if not sub:
-        return None, jsonify({"error": "missing_sub"}), 400
+    from src.utils.auth_helpers import get_user_id_from_request
 
-    from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
-
-    user_id = resolve_user_id_from_auth_provider(sub)
-    if not user_id:
-        return None, jsonify({"error": "User ID could not be resolved"}), 404
+    user_id, error = get_user_id_from_request(claims, create_if_missing=False)
+    if error:
+        return None, error[0], error[1]  # Return (None, response, status_code)
 
     return user_id, None, None
 

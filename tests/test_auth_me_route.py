@@ -27,19 +27,11 @@ def test_auth_me_route(client):
     # With AUTH_BYPASS=1, the decorator sets g.current_user.sub to this fixed id
     expected_user = "auth0|dev-bypass"
 
-    # Try /auth/me first; fallback if you mounted it under /api
-    status, resp = _try_get(client, "/auth/me")
-    if status == 404:
-        status, resp = _try_get(client, "/api/auth/me")
+    # Endpoint moved from /auth/me to /api/me (merged into user_identity_routes.py)
+    status, resp = _try_get(client, "/api/me")
 
     assert status == 200, resp.get_data(as_text=True)
     data = resp.get_json()
-    assert data["user_id"] == expected_user
-    # Keys present (values may be None, that’s OK for this smoke check)
-    assert "email" in data
-    assert "email_verified" in data
-    assert "name" in data
-    assert "picture" in data
-    assert "roles" in data
-    assert isinstance(data["updated_at"], str)
-    assert re.match(r"^\d{4}-\d{2}-\d{2}T", data["updated_at"])
+    # Endpoint now returns just user_id (merged from auth_me_routes.py)
+    assert "user_id" in data
+    assert isinstance(data["user_id"], str)

@@ -1,3 +1,38 @@
+"""
+Activity Routes Module
+======================
+
+Provides API endpoints for managing and enriching user activities.
+
+Endpoints:
+----------
+GET  /api/activities/
+    Get user's activities (last 30 days) for plan generation context
+
+GET  /api/activities/status
+    Get Strava connection status and activity sync progress
+
+GET  /api/activities/enrich/status
+    Check enrichment service status
+
+POST /api/activities/enrich/activity/<activity_id>
+    Enrich a single activity with additional data
+
+POST /api/activities/enrich/batch
+    Enrich a batch of activities for an athlete
+
+Dependencies:
+-------------
+- ActivityIngestionService: Activity enrichment logic
+- requires_auth: JWT authentication decorator
+- Database: activities table, user_athletes table
+
+Data Source:
+-----------
+- activities table: Stores synced Strava activities
+- Enrichment: Adds calculated metrics (pace zones, HR zones, etc.)
+"""
+
 from __future__ import annotations
 
 import traceback
@@ -12,7 +47,7 @@ from src.services.activity_service import ActivityIngestionService, run_enrichme
 from src.utils.auth0_jwt import requires_auth
 from src.utils.config import config
 
-activity_bp = Blueprint("activity", __name__)
+activity_bp = Blueprint("activity", __name__, url_prefix="/api/activities")
 
 
 @activity_bp.get("/")

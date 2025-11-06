@@ -55,16 +55,19 @@ from flask import Flask, request, jsonify, g, session
 from flask_cors import CORS
 from src.utils.config import config
 from src.routes.admin_routes import admin_bp
-from src.routes.auth_routes import auth_bp
+from src.routes.auth_routes import (
+    register_auth_blueprints,
+    delete_athlete_tokens,
+    refresh_token_if_expired,
+    store_tokens_from_callback,
+)
 from src.routes.activity_routes import activity_bp
 from src.routes.health_routes import health_bp
 
 # Removed ask_routes - using conversation system instead
 from src.routes.user_profile_routes import user_profile_bp
-from src.routes.user_identity_routes import identity_bp
-from src.routes.auth_me_routes import auth_me_bp
+from src.routes.user_identity_routes import user_identity_bp
 from src.routes.user_data_routes import user_data_bp
-from src.routes.strava_connection_routes import strava_connection_bp
 from src.utils.auth0_jwt import requires_auth
 from src.routes.metrics_routes import metrics_bp
 from src.routes.webhook_routes import webhook_bp
@@ -118,23 +121,38 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
+    # Security headers middleware
+    @app.after_request
+    def set_security_headers(response):
+        """Set security headers on all responses."""
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+        # Content Security Policy - adjust based on your needs
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.auth0.com https://*.strava.com;"
+        )
+        return response
+
     # Register Blueprints
-    app.register_blueprint(auth_bp, url_prefix="/auth")
-    app.register_blueprint(identity_bp, url_prefix="")
-    app.register_blueprint(admin_bp, url_prefix="/admin")
-    app.register_blueprint(activity_bp, url_prefix="/api/activities")
+    # Register authentication blueprints (Auth0, Strava, tokens, debug)
+    register_auth_blueprints(app)
+    # Register all blueprints (URL prefixes now defined in Blueprint definitions)
+    app.register_blueprint(user_identity_bp)
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(activity_bp)
     app.register_blueprint(health_bp)
-    # Removed ask_bp - using conversation system instead
     app.register_blueprint(user_profile_bp)
-    app.register_blueprint(user_data_bp, url_prefix="/api")
-    app.register_blueprint(strava_connection_bp)
-    app.register_blueprint(metrics_bp, url_prefix="/api/metrics")
-    app.register_blueprint(longest_runs_bp, url_prefix="/api/longest-runs")
-    app.register_blueprint(gyr_metrics_bp, url_prefix="/api/gyr-metrics")
+    app.register_blueprint(user_data_bp)
+    app.register_blueprint(metrics_bp)
+    app.register_blueprint(longest_runs_bp)
+    app.register_blueprint(gyr_metrics_bp)
     app.register_blueprint(plan_bp)
-    app.register_blueprint(auth_me_bp)
-    app.register_blueprint(webhook_bp, url_prefix="/webhooks")
-    app.register_blueprint(conversation_bp, url_prefix="/api")
+    app.register_blueprint(webhook_bp)
+    app.register_blueprint(conversation_bp)
 
     # Log all registered routes for debugging
     print("[BLUEPRINT_REGISTRATION] All blueprints registered", flush=True)

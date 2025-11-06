@@ -16,9 +16,10 @@ export function useApiClient() {
   const isAbsolute = /^https?:\/\//i.test(base);
   if (isAbsolute) {
     const url = new URL(base);
-    //if (!url.pathname.endsWith("/api")) {
-    //  url.pathname = url.pathname.replace(/\/$/, "") + "/api";
-    //}
+    // Ensure absolute URLs have /api in the pathname
+    if (!url.pathname.endsWith("/api") && url.pathname !== "/api") {
+      url.pathname = url.pathname.replace(/\/$/, "") + "/api";
+    }
     base = url.toString().replace(/\/$/, "");
   }
 

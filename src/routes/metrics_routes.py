@@ -91,7 +91,7 @@ from src.services.metrics_cache_service import (
     _get_cache_key,
 )
 from src.utils.auth0_jwt import requires_auth
-from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
+from src.utils.auth_helpers import get_user_id_from_request
 from src.utils.normalize_claims import normalize_claims
 from src.utils.planned_metrics_calculator import get_planned_miles_for_current_week
 from src.utils.logger import get_logger
@@ -99,7 +99,7 @@ from sqlalchemy import text
 
 logger = get_logger(__name__)
 
-metrics_bp = Blueprint("metrics", __name__)
+metrics_bp = Blueprint("metrics", __name__, url_prefix="/api/metrics")
 
 
 def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
@@ -484,17 +484,14 @@ def get_all_metrics_combined():
     session = get_session()
 
     try:
+        from src.utils.auth_helpers import get_user_id_from_request
+
         claims = getattr(g, "current_user", {}) or {}
         claims = normalize_claims(claims)
-        sub = claims.get("sub")
 
-        if not sub:
-            return jsonify({"error": "Missing sub claim"}), 401
-
-        user_id = resolve_user_id_from_auth_provider(sub, claims)
-
-        if not user_id:
-            return jsonify({"error": "Could not resolve user ID"}), 404
+        user_id, error = get_user_id_from_request(claims, create_if_missing=False)
+        if error:
+            return error
 
         # Get athlete_id for this user
         athlete_id = get_athlete_id_for_user(session, user_id)

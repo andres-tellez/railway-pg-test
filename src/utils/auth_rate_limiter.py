@@ -1,0 +1,196 @@
+"""
+Authentication Rate Limiter
+===========================
+
+Rate limiting utilities for authentication endpoints to prevent abuse.
+
+This module provides rate limiting decorators specifically for auth endpoints:
+- Login attempts
+- OAuth callbacks
+- Token refresh requests
+
+Rate Limits:
+-----------
+- Login/OAuth callbacks: 10 requests per 5 minutes per IP
+- Token refresh: 30 requests per 15 minutes per IP
+- General auth endpoints: 20 requests per 5 minutes per IP
+
+Note:
+-----
+This is separate from the Strava API rate limiter (rate_limiter.py) which
+handles external API calls. This handles incoming HTTP requests to our auth endpoints.
+"""
+
+import functools
+import time
+from collections import defaultdict, deque
+from typing import Callable
+from flask import request, jsonify
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Rate limit configurations
+RATE_LIMITS = {
+    "login": {"requests": 10, "window_seconds": 300},  # 10 per 5 minutes
+    "oauth_callback": {"requests": 10, "window_seconds": 300},  # 10 per 5 minutes
+    "token_refresh": {"requests": 30, "window_seconds": 900},  # 30 per 15 minutes
+    "general": {"requests": 20, "window_seconds": 300},  # 20 per 5 minutes
+}
+
+# In-memory storage (per IP address)
+_rate_limit_storage: dict[str, deque] = defaultdict(lambda: deque())
+
+
+def _get_client_identifier() -> str:
+    """
+    Get unique identifier for rate limiting.
+
+    Uses IP address from request headers (X-Forwarded-For for proxies, or remote_addr).
+    """
+    # Check for forwarded IP (from proxies/load balancers)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        # Take first IP if multiple (client is first)
+        client_ip = forwarded_for.split(",")[0].strip()
+    else:
+        client_ip = request.remote_addr or "unknown"
+
+    return client_ip
+
+
+def _cleanup_old_requests(identifier: str, window_seconds: int):
+    """Remove request timestamps outside the rate limit window."""
+    now = time.time()
+    cutoff = now - window_seconds
+
+    requests_list = _rate_limit_storage[identifier]
+    while requests_list and requests_list[0] < cutoff:
+        requests_list.popleft()
+
+
+def _check_rate_limit(identifier: str, limit_type: str) -> tuple[bool, float]:
+    """
+    Check if request is within rate limit.
+
+    Args:
+        identifier: Client identifier (IP address)
+        limit_type: Type of rate limit ("login", "oauth_callback", "token_refresh", "general")
+
+    Returns:
+        Tuple of (is_allowed, retry_after_seconds)
+    """
+    limits = RATE_LIMITS.get(limit_type, RATE_LIMITS["general"])
+    max_requests = limits["requests"]
+    window_seconds = limits["window_seconds"]
+
+    # Clean up old requests
+    _cleanup_old_requests(identifier, window_seconds)
+
+    # Get current request count
+    requests_list = _rate_limit_storage[identifier]
+    current_count = len(requests_list)
+
+    if current_count >= max_requests:
+        # Calculate retry after time
+        oldest_request = requests_list[0]
+        retry_after = (oldest_request + window_seconds) - time.time()
+        retry_after = max(0, retry_after)
+        return False, retry_after
+
+    return True, 0.0
+
+
+def _record_request(identifier: str):
+    """Record that a request was made."""
+    now = time.time()
+    _rate_limit_storage[identifier].append(now)
+
+
+def rate_limit_auth(limit_type: str = "general"):
+    """
+    Decorator to rate limit authentication endpoints.
+
+    Args:
+        limit_type: Type of rate limit ("login", "oauth_callback", "token_refresh", "general")
+
+    Usage:
+        @rate_limit_auth("login")
+        def login_endpoint():
+            ...
+    """
+
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            identifier = _get_client_identifier()
+            is_allowed, retry_after = _check_rate_limit(identifier, limit_type)
+
+            if not is_allowed:
+                logger.warning(
+                    f"Rate limit exceeded for {limit_type} from {identifier}. "
+                    f"Retry after {retry_after:.1f} seconds"
+                )
+                return (
+                    jsonify(
+                        {
+                            "error": "Rate limit exceeded",
+                            "error_code": "RATE_LIMIT_EXCEEDED",
+                            "status": 429,
+                            "retry_after_seconds": int(retry_after),
+                            "message": f"Too many requests. Please try again in {int(retry_after)} seconds.",
+                        }
+                    ),
+                    429,
+                )
+
+            # Record the request
+            _record_request(identifier)
+
+            # Call the original function
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def reset_rate_limits(identifier: str = None):
+    """
+    Reset rate limits for testing or manual cleanup.
+
+    Args:
+        identifier: Specific client identifier to reset, or None to reset all
+    """
+    global _rate_limit_storage
+    if identifier:
+        _rate_limit_storage.pop(identifier, None)
+    else:
+        _rate_limit_storage.clear()
+    logger.info(f"Rate limits reset for {identifier or 'all clients'}")
+
+
+def get_rate_limit_stats(identifier: str = None) -> dict:
+    """
+    Get rate limit statistics for debugging.
+
+    Args:
+        identifier: Client identifier, or None for all clients
+
+    Returns:
+        Dictionary with rate limit statistics
+    """
+    if identifier:
+        identifiers = [identifier]
+    else:
+        identifiers = list(_rate_limit_storage.keys())
+
+    stats = {}
+    for ident in identifiers:
+        requests_list = _rate_limit_storage[ident]
+        stats[ident] = {
+            "request_count": len(requests_list),
+            "oldest_request": requests_list[0] if requests_list else None,
+        }
+
+    return stats

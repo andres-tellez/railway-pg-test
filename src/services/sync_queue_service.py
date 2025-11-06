@@ -26,7 +26,7 @@ from src.db.db_session import get_session
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
 )
-from src.services.rate_limiter import get_rate_limiter
+from src.utils.rate_limiter import get_rate_limiter
 from src.db.models.user_athletes import UserAthleteLink
 from src.db.dao import user_athletes_dao
 
