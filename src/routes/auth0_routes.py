@@ -70,14 +70,14 @@ def login_callback():
             from jose import jwt as jose_jwt
 
             unverified_claims = jose_jwt.get_unverified_claims(id_token)
-            logger.debug(
+            logger.info(
                 "Auth0 id_token unverified claims: aud=%s iss=%s sub=%s",
                 unverified_claims.get("aud"),
                 unverified_claims.get("iss"),
                 unverified_claims.get("sub"),
             )
         except Exception as debug_exc:  # pragma: no cover - debug logging only
-            logger.debug("Failed to inspect unverified claims: %s", debug_exc)
+            logger.info("Failed to inspect unverified claims: %s", debug_exc)
 
         try:
             decoded_jwt = verify_and_decode(id_token)
