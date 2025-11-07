@@ -106,7 +106,8 @@ const PostOAuth: React.FC = () => {
     setIsRetrying(false);
 
     try {
-      const claims = await getIdTokenClaims();
+      // Force a fresh ID token so we never reuse an expired one (especially after Strava redirect)
+      const claims = await getIdTokenClaims({ cacheMode: "off" });
       const idToken = claims?.__raw;
       console.log("🪪 ID token →", idToken ? "present" : "missing");
 
