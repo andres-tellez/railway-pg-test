@@ -11,7 +11,7 @@ Responsibilities:
 - Set session cookies
 """
 
-from flask import Blueprint, request, make_response, redirect
+from flask import Blueprint, request, make_response, redirect, jsonify
 import os
 import traceback
 import logging
@@ -120,8 +120,18 @@ def login_callback():
         # Log successful login
         log_login_success(user_id=user_id, auth0_sub=auth0_sub)
 
-        # Create response with redirect
-        resp = make_response(redirect("https://app.smartcoach.dev"))
+        frontend_redirect = (
+            os.getenv("FRONTEND_REDIRECT") or "https://app.smartcoach.dev"
+        )
+        is_xhr = (
+            request.is_json
+            or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        )
+
+        if is_xhr:
+            resp = make_response(jsonify({"status": "ok"}), 200)
+        else:
+            resp = make_response(redirect(frontend_redirect))
 
         # Use 'Lax' for same-site by default, 'None' only if cross-site required
         # SameSite=None requires Secure=True (already set)
