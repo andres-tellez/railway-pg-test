@@ -177,15 +177,33 @@ def save_identity():
 @user_identity_bp.get("/user")
 @requires_auth
 def get_user_info():
+    import logging
+
+    logger = logging.getLogger(__name__)
+
     user_id, error = get_user_id_from_request(create_if_missing=False)
     if error:
         return error
+
+    print(
+        f"[DEBUG] 📋 GET /api/user - user_id={user_id} (type: {type(user_id).__name__})"
+    )
+    logger.info(
+        f"📋 GET /api/user - user_id={user_id} (type: {type(user_id).__name__})"
+    )
 
     identity = db.session.get(UserIdentity, user_id)
     if not identity:
         return not_found_response("User")
 
     status = get_user_status(user_id)
+
+    print(
+        f"[DEBUG] 📤 GET /api/user response: hasOnboarded={status.get('hasOnboarded')}, hasStrava={status.get('hasStrava')}"
+    )
+    logger.info(
+        f"📤 GET /api/user response: hasOnboarded={status.get('hasOnboarded')}, hasStrava={status.get('hasStrava')}"
+    )
 
     payload = {
         "name": identity.name or "",

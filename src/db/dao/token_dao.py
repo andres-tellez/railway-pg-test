@@ -41,29 +41,28 @@ def insert_token_sa(
 
     Note: Tokens are automatically encrypted when set via Token model properties.
     """
-    # Create Token instance (encryption happens via @hybrid_property setters)
-    token = Token()
-    token.athlete_id = athlete_id
-    token.access_token = access_token  # Automatically encrypted
-    token.refresh_token = refresh_token  # Automatically encrypted
-    token.expires_at = expires_at
-    token.revoked_at = None  # Clear revocation if updating
+    from src.utils.token_encryption import encrypt_token
 
+    # Encrypt tokens before inserting (don't use hybrid property in SQLAlchemy insert)
+    encrypted_access_token = encrypt_token(access_token)
+    encrypted_refresh_token = encrypt_token(refresh_token)
+
+    # Use column objects directly to avoid hybrid property evaluation
     stmt = (
-        insert(Token)
+        insert(Token.__table__)
         .values(
-            athlete_id=token.athlete_id,
-            access_token=token._encrypted_access_token,  # Use encrypted value
-            refresh_token=token._encrypted_refresh_token,  # Use encrypted value
-            expires_at=token.expires_at,
+            athlete_id=athlete_id,
+            access_token=encrypted_access_token,  # Database column name (not Python attr)
+            refresh_token=encrypted_refresh_token,  # Database column name (not Python attr)
+            expires_at=expires_at,
             revoked_at=None,  # Clear revocation on update
         )
         .on_conflict_do_update(
             index_elements=["athlete_id"],
             set_={
-                "access_token": token._encrypted_access_token,
-                "refresh_token": token._encrypted_refresh_token,
-                "expires_at": token.expires_at,
+                "access_token": encrypted_access_token,
+                "refresh_token": encrypted_refresh_token,
+                "expires_at": expires_at,
                 "revoked_at": None,  # Clear revocation on update
             },
         )

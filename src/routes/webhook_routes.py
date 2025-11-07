@@ -26,7 +26,15 @@ References:
 - https://developers.strava.com/docs/webhooks/
 """
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request
+from src.utils.response_utils import (
+    success_response,
+    error_response,
+    validation_error_response,
+    internal_error_response,
+)
+from src.utils.strava_validators import validate_webhook_event
+from src.utils.auth_rate_limiter import rate_limit_auth
 from src.db.db_session import get_session
 from src.db.models.webhook_events import WebhookEvent, WebhookEventStatus
 from src.db.models.user_athletes import UserAthleteLink
@@ -43,6 +51,7 @@ WEBHOOK_VERIFY_TOKEN = os.getenv("STRAVA_WEBHOOK_VERIFY_TOKEN")
 
 
 @webhook_bp.route("/strava", methods=["GET"])
+@rate_limit_auth("webhook_verification")
 def verify_webhook():
     """
     Handle Strava webhook verification challenge.
@@ -62,20 +71,52 @@ def verify_webhook():
     challenge = request.args.get("hub.challenge")
     verify_token = request.args.get("hub.verify_token")
 
+    from src.utils.security_utils import redact_secret, sanitize_user_input
+
+    # Sanitize inputs to prevent injection attacks
+    mode = sanitize_user_input(mode, max_length=50) if mode else None
+    challenge = sanitize_user_input(challenge, max_length=200) if challenge else None
+    verify_token = (
+        sanitize_user_input(verify_token, max_length=200) if verify_token else None
+    )
+
     logger.info(
-        f"🔐 Webhook verification request: mode={mode}, token={verify_token[:10]}..."
+        f"🔐 Webhook verification request: mode={mode}, token={redact_secret(verify_token)}"
     )
 
     # Verify the request is legitimate
-    if mode == "subscribe" and verify_token == WEBHOOK_VERIFY_TOKEN:
-        logger.info("✅ Webhook verification successful!")
-        return jsonify({"hub.challenge": challenge}), 200
-    else:
-        logger.warning("❌ Webhook verification failed - invalid token")
-        return jsonify({"error": "Verification failed"}), 403
+    # Use constant-time comparison to prevent timing attacks
+    if mode == "subscribe" and verify_token and WEBHOOK_VERIFY_TOKEN:
+        # Constant-time comparison for security
+        import hmac
+
+        token_match = hmac.compare_digest(verify_token, WEBHOOK_VERIFY_TOKEN)
+        if token_match:
+            logger.info("✅ Webhook verification successful!")
+            # Strava requires exact format: {"hub.challenge": "<challenge>"}
+            # Sanitize challenge before returning
+            if challenge:
+                from flask import jsonify
+
+                return jsonify({"hub.challenge": challenge}), 200
+            else:
+                logger.warning("❌ Webhook verification failed - missing challenge")
+                return error_response(
+                    message="Verification failed",
+                    status_code=400,
+                    error_code="WEBHOOK_VERIFICATION_FAILED",
+                )
+
+    logger.warning("❌ Webhook verification failed - invalid token or mode")
+    return error_response(
+        message="Verification failed",
+        status_code=403,
+        error_code="WEBHOOK_VERIFICATION_FAILED",
+    )
 
 
 @webhook_bp.route("/strava", methods=["POST"])
+@rate_limit_auth("webhook")
 def receive_webhook():
     """
     Receive webhook events from Strava.
@@ -106,8 +147,21 @@ def receive_webhook():
 
         if not event_data:
             logger.warning("⚠️ Received webhook with no JSON body")
-            return jsonify({"error": "No data provided"}), 400
+            return validation_error_response(
+                message="No data provided",
+                field="body",
+            )
 
+        # Validate webhook event data
+        validated_event_data, error = validate_webhook_event(event_data)
+        if error:
+            logger.warning(
+                f"⚠️ Invalid webhook event data: {error[0].json.get('error')}"
+            )
+            return error
+
+        # Use validated data
+        event_data = validated_event_data
         object_type = event_data.get("object_type")
         object_id = event_data.get("object_id")
         aspect_type = event_data.get("aspect_type")
@@ -117,11 +171,6 @@ def receive_webhook():
             f"📬 Webhook received: {object_type}.{aspect_type} "
             f"(object_id={object_id}, owner_id={owner_id})"
         )
-
-        # Quick validation
-        if not all([object_type, object_id, aspect_type, owner_id]):
-            logger.warning("⚠️ Webhook missing required fields")
-            return jsonify({"error": "Missing required fields"}), 400
 
         # Store event in database (fast!)
         session = get_session()
@@ -146,34 +195,36 @@ def receive_webhook():
         except Exception as e:
             session.rollback()
             logger.error(f"❌ Failed to store webhook event: {e}", exc_info=True)
-            return jsonify({"error": "Database error"}), 500
+            return internal_error_response(
+                message="Database error",
+                log_error=e,
+            )
         finally:
             session.close()
 
         # Process asynchronously (don't block Strava's webhook)
-        def background_processing():
-            """Process webhook event in background thread"""
-            process_session = get_session()
-            try:
-                process_webhook_event(process_session, event_id)
-            except Exception as e:
-                logger.error(
-                    f"❌ Background processing failed for event {event_id}: {e}",
-                    exc_info=True,
-                )
-            finally:
-                process_session.close()
+        from src.utils.strava_helpers import run_background_job
 
-        # Start background thread
-        threading.Thread(target=background_processing, daemon=True).start()
+        def process_webhook_job(session, event_id):
+            """Process webhook event in background thread"""
+            process_webhook_event(session, event_id)
+
+        run_background_job(process_webhook_job, event_id)
 
         # Respond immediately to Strava (they want fast 200 OK)
-        return jsonify({"status": "received", "event_id": event_id}), 200
+        return success_response(
+            data={"event_id": event_id},
+            message="Webhook event received",
+        )
 
     except Exception as e:
         logger.error(f"❌ Webhook handling error: {e}", exc_info=True)
-        # Still return 200 to avoid Strava retrying
-        return jsonify({"status": "error", "message": str(e)}), 200
+        # Still return 200 to avoid Strava retrying (webhook requirement)
+        # But use standardized response format
+        return success_response(
+            data={"status": "error", "message": str(e)},
+            message="Webhook received but processing failed",
+        )
 
 
 @webhook_bp.route("/strava/status", methods=["GET"])
@@ -209,20 +260,20 @@ def webhook_status():
             .all()
         )
 
-        return (
-            jsonify(
-                {
-                    "status": "ok",
-                    "verify_token_configured": bool(WEBHOOK_VERIFY_TOKEN),
-                    "stats": status_counts,
-                    "recent_events": [event.to_dict() for event in recent_events],
-                }
-            ),
-            200,
+        return success_response(
+            data={
+                "verify_token_configured": bool(WEBHOOK_VERIFY_TOKEN),
+                "stats": status_counts,
+                "recent_events": [event.to_dict() for event in recent_events],
+            },
+            message="Webhook status",
         )
 
     except Exception as e:
         logger.error(f"❌ Status check failed: {e}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return internal_error_response(
+            message="Failed to fetch webhook status",
+            log_error=e,
+        )
     finally:
         session.close()

@@ -46,9 +46,14 @@ export function useStravaSetup(): UseStravaSetupReturn {
       setError(null);
       const res = await api.get<UserStatus>("/user");
       console.log("📊 User status:", res.data);
-      setHasStrava(res.data.hasStrava);
 
-      if (res.data.hasOnboarded) {
+      // Backend wraps response in { data: {...}, status: 200 }
+      const userData = res.data.data || res.data;
+      console.log("📊 Extracted user data:", userData);
+
+      setHasStrava(userData.hasStrava || false);
+
+      if (userData.hasOnboarded) {
         navigate("/home");
       }
     } catch (err: any) {

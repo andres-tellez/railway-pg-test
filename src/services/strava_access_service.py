@@ -1,10 +1,54 @@
-# services/strava_access_service.py
+"""
+Strava API Access Service
+=========================
+
+This module provides a client for making authenticated requests to the Strava API.
+
+The StravaClient class handles:
+- Authenticated API requests with Bearer tokens
+- Rate limiting to respect Strava API limits
+- Automatic retry with exponential backoff on 429 (rate limit) errors
+- Token redaction in logs for security
+- Stream data conversion and normalization
+
+Key Features:
+- Rate Limiting: Automatically respects Strava's rate limits (600 requests per 15 minutes)
+- Retry Logic: Automatically retries on 429 errors with exponential backoff
+- Security: Redacts sensitive tokens from logs
+- Error Handling: Provides clear error messages for API failures
+
+Usage:
+    from src.services.strava_access_service import StravaClient
+
+    client = StravaClient(access_token="your_token")
+    activities = client.get_activities(per_page=30)
+    activity = client.get_activity(activity_id=123456)
+    streams = client.get_streams(activity_id=123456, types=["time", "distance"])
+
+API Endpoints Used:
+- GET /athlete/activities - List athlete activities
+- GET /activities/{id} - Get activity details
+- GET /activities/{id}/streams - Get activity streams (time, distance, etc.)
+
+Rate Limits:
+- Strava API: 600 requests per 15 minutes per application
+- This client automatically enforces these limits
+
+References:
+- https://developers.strava.com/docs/reference/
+- https://developers.strava.com/docs/rate-limits/
+"""
 
 import requests
 import time
 import logging
 from src.utils.config import config
 from src.utils.rate_limiter import get_rate_limiter
+from src.utils.strava_exceptions import (
+    StravaAPIError,
+    StravaRateLimitError,
+    StravaAuthenticationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +59,8 @@ class StravaClient:
         self.rate_limiter = get_rate_limiter()
 
     def _request_with_backoff(self, method, url, **kwargs):
-        max_retries = 5
-        backoff = 10  # Start with 10 sec backoff
+        max_retries = config.STRAVA_MAX_RETRIES
+        backoff = config.STRAVA_INITIAL_BACKOFF  # Start with configured backoff
 
         from src.utils.security_utils import redact_headers, redact_url
 
@@ -43,7 +87,11 @@ class StravaClient:
                 self.rate_limiter.record_request()
 
             if response.status_code == 429:
-                print(f"Rate limit hit (429). Backing off {backoff} seconds...")
+                retry_after = int(response.headers.get("Retry-After", backoff))
+                logger.warning(
+                    f"Rate limit hit (429). Backing off {backoff} seconds... "
+                    f"(Retry-After: {retry_after}s)"
+                )
                 time.sleep(backoff)
                 backoff *= 2
                 continue
@@ -54,11 +102,41 @@ class StravaClient:
                 logger.warning(
                     f"Unauthorized! Token: {redact_token(self.access_token)}"
                 )
+                raise StravaAuthenticationError(
+                    "Strava API authentication failed",
+                    details={
+                        "url": redact_url(url),
+                        "method": method,
+                        "attempt": attempt + 1,
+                    },
+                )
 
-            response.raise_for_status()
-            return response.json()
+            try:
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as e:
+                # Convert HTTP errors to StravaAPIError
+                raise StravaAPIError(
+                    f"Strava API request failed: {e}",
+                    status_code=response.status_code,
+                    response_body=response.text[:500] if response.text else None,
+                    details={
+                        "url": redact_url(url),
+                        "method": method,
+                        "attempt": attempt + 1,
+                    },
+                )
 
-        raise RuntimeError("Exceeded max retries due to repeated 429 errors")
+        # Exceeded max retries
+        raise StravaRateLimitError(
+            f"Exceeded max retries ({max_retries}) due to repeated 429 errors",
+            retry_after=backoff,
+            details={
+                "url": redact_url(url),
+                "method": method,
+                "max_retries": max_retries,
+            },
+        )
 
     def get_activities(self, after=None, before=None, limit=None, per_page=None):
         """
@@ -152,7 +230,7 @@ class StravaClient:
                         and str(x).replace(".", "", 1).isdigit()
                     ]
                 except Exception as e:
-                    print(f"Failed to convert stream {key}: {e}")
+                    logger.warning(f"Failed to convert stream {key}: {e}")
                     streams[key] = []
             else:
                 streams[key] = []

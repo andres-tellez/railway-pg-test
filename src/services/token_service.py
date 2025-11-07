@@ -1,4 +1,64 @@
-# src/services/token_service.py
+"""
+Strava Token Management Service
+================================
+
+This module handles Strava OAuth token management, including:
+- Token storage and retrieval
+- Token refresh (with automatic rotation)
+- Token expiration checking
+- Token revocation
+- User-athlete linking
+
+Key Features:
+- Token Rotation: Refresh tokens are rotated (new token issued) on each refresh for security
+- Encryption: Access and refresh tokens are encrypted at rest in the database
+- Expiration Handling: Automatically refreshes expired tokens
+- Audit Logging: All token operations are logged for security auditing
+
+Token Lifecycle:
+1. OAuth Callback: Store tokens from Strava OAuth callback
+2. Token Usage: Retrieve valid access token (auto-refresh if expired)
+3. Token Refresh: Refresh expired tokens (with rotation)
+4. Token Revocation: Revoke tokens when user disconnects Strava
+
+Security:
+- Tokens are encrypted at rest using Fernet symmetric encryption
+- Refresh tokens are rotated on each use (old token invalidated)
+- Token operations are audit logged
+- Revoked tokens are soft-deleted (maintains audit trail)
+
+Usage:
+    from src.services.token_service import (
+        get_valid_token,
+        refresh_access_token,
+        store_tokens_from_callback,
+        revoke_athlete_tokens,
+    )
+
+    # Get valid access token (auto-refreshes if expired)
+    access_token = get_valid_token(session, athlete_id=12345)
+
+    # Store tokens from OAuth callback
+    athlete_id, user_id = store_tokens_from_callback(
+        code="oauth_code",
+        session=session,
+        redirect_uri="https://example.com/callback",
+        user_id="user-uuid"
+    )
+
+    # Revoke tokens
+    revoked = revoke_athlete_tokens(session, athlete_id=12345)
+
+Token Storage:
+- Tokens are stored in the `tokens` table
+- Encrypted fields: `_encrypted_access_token`, `_encrypted_refresh_token`
+- Plain fields: `expires_at`, `athlete_id`, `revoked_at`
+
+References:
+- https://developers.strava.com/docs/authentication/
+- https://developers.strava.com/docs/oauth-updates/
+"""
+
 import logging
 import requests
 from datetime import datetime
@@ -23,12 +83,37 @@ def is_expired(expires_at):
 
 
 def get_valid_token(session, athlete_id):
+    """
+    Get a valid access token for an athlete, refreshing if expired.
+
+    Args:
+        session: Database session
+        athlete_id: Strava athlete ID
+
+    Returns:
+        Valid access token (string)
+
+    Raises:
+        StravaTokenNotFoundError: If no tokens found for athlete
+        StravaTokenRefreshError: If token refresh fails
+        StravaTokenRevokedError: If token has been revoked
+    """
     token_data = get_tokens_sa(session, athlete_id)
     if not token_data:
-        raise RuntimeError(f"No tokens found for athlete {athlete_id}")
+        raise StravaTokenNotFoundError(athlete_id)
 
     if is_expired(token_data["expires_at"]):
-        return refresh_access_token(session, athlete_id)["access_token"]
+        try:
+            refreshed = refresh_access_token(session, athlete_id)
+            return refreshed["access_token"]
+        except (StravaTokenRevokedError, StravaTokenRefreshError):
+            raise
+        except Exception as e:
+            raise StravaTokenRefreshError(
+                athlete_id=athlete_id,
+                reason=str(e),
+                message=f"Failed to refresh expired token for athlete {athlete_id}",
+            )
 
     return token_data["access_token"]
 
@@ -47,11 +132,14 @@ def refresh_access_token(session, athlete_id):
 
     token = session.query(Token).filter_by(athlete_id=athlete_id).first()
     if not token:
-        raise RuntimeError(f"No refresh token available for athlete {athlete_id}")
+        raise StravaTokenNotFoundError(
+            athlete_id=athlete_id,
+            message=f"No refresh token available for athlete {athlete_id}",
+        )
 
     # Check if token is revoked
     if token.is_revoked():
-        raise ValueError(f"Token for athlete {athlete_id} has been revoked")
+        raise StravaTokenRevokedError(athlete_id=athlete_id)
 
     # Refresh tokens (Strava returns new access + refresh tokens)
     tokens = refresh_token_static(token.refresh_token)
@@ -79,17 +167,42 @@ def refresh_access_token(session, athlete_id):
 
 
 def refresh_token_static(refresh_token):
-    response = requests.post(
-        "https://www.strava.com/api/v3/oauth/token",
-        data={
-            "client_id": config.STRAVA_CLIENT_ID,
-            "client_secret": config.STRAVA_CLIENT_SECRET,
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-        },
-    )
-    response.raise_for_status()
-    return response.json()
+    """
+    Refresh Strava token via API (static method, no session required).
+
+    Args:
+        refresh_token: Strava refresh token
+
+    Returns:
+        Dict with access_token, refresh_token, expires_at
+
+    Raises:
+        StravaTokenRefreshError: If refresh fails
+        StravaAPIError: If API request fails
+    """
+    try:
+        response = requests.post(
+            f"{config.STRAVA_API_BASE_URL}/oauth/token",
+            data={
+                "client_id": config.STRAVA_CLIENT_ID,
+                "client_secret": config.STRAVA_CLIENT_SECRET,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        raise StravaTokenRefreshError(
+            athlete_id=None,
+            reason=f"HTTP {e.response.status_code}: {e.response.text[:200] if e.response.text else 'Unknown error'}",
+            message="Failed to refresh token via Strava API",
+        )
+    except requests.exceptions.RequestException as e:
+        raise StravaAPIError(
+            f"Network error during token refresh: {e}",
+            details={"error_type": type(e).__name__},
+        )
 
 
 def refresh_token_if_expired(session, athlete_id):
@@ -225,26 +338,54 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
         f"[TokenService] Sending POST data to Strava token endpoint: {redacted_payload}"
     )
 
-    response = requests.post("https://www.strava.com/api/v3/oauth/token", data=payload)
+    try:
+        response = requests.post(
+            f"{config.STRAVA_API_BASE_URL}/oauth/token", data=payload
+        )
+    except requests.exceptions.RequestException as e:
+        raise StravaOAuthCodeExchangeError(
+            reason=f"Network error: {e}",
+            message="Failed to connect to Strava API for token exchange",
+        )
 
     # Log response status and body (response body may contain tokens - redact if needed)
     logger.info(f"Strava token response status: {response.status_code}")
 
     # Try to parse and redact response body if it contains tokens
+    response_data = None
     try:
         response_data = response.json()
         redacted_response = redact_dict(response_data)
         logger.debug(f"Strava token response: {redacted_response}")
-    except:
+    except (ValueError, TypeError) as e:
         # If not JSON, log as-is (may be error message)
         logger.debug(f"Strava token response body (non-JSON): {response.text[:200]}")
+        logger.debug(f"JSON parse error: {e}")
 
-    response.raise_for_status()
-    token_data = response.json()
+    try:
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        raise StravaOAuthCodeExchangeError(
+            reason=f"HTTP {e.response.status_code}: {e.response.text[:200] if e.response.text else 'Unknown error'}",
+            message="Failed to exchange OAuth code for tokens",
+        )
 
-    athlete = token_data.get("athlete")
+    if not response_data:
+        # Try to parse again if we failed earlier
+        try:
+            response_data = response.json()
+        except (ValueError, TypeError):
+            raise StravaOAuthCodeExchangeError(
+                reason="Invalid response format (not JSON)",
+                message="Strava OAuth response is not valid JSON",
+            )
+
+    athlete = response_data.get("athlete")
     if not athlete or "id" not in athlete:
-        raise KeyError("❌ Strava callback response missing athlete ID")
+        raise StravaOAuthCodeExchangeError(
+            reason="Response missing athlete ID",
+            message="Strava OAuth response missing required athlete field",
+        )
 
     strava_athlete_id = athlete["id"]
 
@@ -254,20 +395,32 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
             user_athletes_dao.create_link(
                 user_id=user_id,
                 athlete_id=strava_athlete_id,
+                session=session,  # Use the same session for transaction consistency
             )
-            print(f"✅ Linked user {user_id} → athlete {strava_athlete_id}", flush=True)
+            logger.info(f"Linked user {user_id} → athlete {strava_athlete_id}")
         except IntegrityError:
             session.rollback()  # clear failed transaction
-            print(f"🔗 Link already exists for user {user_id}", flush=True)
+            logger.debug(f"Link already exists for user {user_id}")
 
     # ✅ 2. Insert or update tokens
+    # Extract token data from response
+    access_token = response_data.get("access_token")
+    refresh_token = response_data.get("refresh_token")
+    expires_at = response_data.get("expires_at")
+
+    if not access_token or not refresh_token or not expires_at:
+        raise StravaOAuthCodeExchangeError(
+            reason="Response missing required token fields",
+            message="Strava OAuth response missing access_token, refresh_token, or expires_at",
+        )
+
     try:
         insert_token_sa(
             session=session,
             athlete_id=strava_athlete_id,
-            access_token=token_data["access_token"],
-            refresh_token=token_data["refresh_token"],
-            expires_at=token_data["expires_at"],
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_at=expires_at,
         )
         logger.info(f"Token stored for athlete: {strava_athlete_id}")
     except IntegrityError:
@@ -279,9 +432,9 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
         # UPDATE existing token row instead of failing
         existing = session.query(Token).filter_by(athlete_id=strava_athlete_id).first()
         if existing:
-            existing.access_token = token_data["access_token"]
-            existing.refresh_token = token_data["refresh_token"]
-            existing.expires_at = token_data["expires_at"]
+            existing.access_token = access_token
+            existing.refresh_token = refresh_token
+            existing.expires_at = expires_at
             session.commit()
             logger.info(f"Token updated for athlete: {strava_athlete_id}")
 
@@ -298,7 +451,7 @@ def exchange_code_for_token(code, redirect_uri=None):
         redirect_uri = redirect_uri.strip().rstrip(";")
 
     response = requests.post(
-        "https://www.strava.com/api/v3/oauth/token",
+        f"{config.STRAVA_API_BASE_URL}/oauth/token",
         data={
             "client_id": config.STRAVA_CLIENT_ID,
             "client_secret": config.STRAVA_CLIENT_SECRET,
@@ -315,7 +468,7 @@ def get_authorization_url():
     redirect_uri = config.STRAVA_REDIRECT_URI.strip().rstrip(";")
     client_id = config.STRAVA_CLIENT_ID
     url = (
-        f"https://www.strava.com/oauth/authorize"
+        f"{config.STRAVA_API_BASE_URL.replace('/api/v3', '')}/oauth/authorize"
         f"?client_id={client_id}"
         f"&response_type=code"
         f"&redirect_uri={redirect_uri}"

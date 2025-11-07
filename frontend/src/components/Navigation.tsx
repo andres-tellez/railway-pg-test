@@ -35,7 +35,9 @@ const Navigation: React.FC = () => {
     if (isAuthenticated) {
       api.get<{ hasOnboarded: boolean; hasStrava: boolean }>('/user')
         .then((res) => {
-          setUserState(res.data);
+          // Backend wraps response in { data: {...}, status: 200 }
+          const userData = res.data.data || res.data;
+          setUserState(userData);
         })
         .catch((err) => {
           console.error('Failed to fetch user state:', err);

@@ -33,6 +33,9 @@ from src.db.models.plans import PlanWorkout
 from src.db.models.splits import Split
 from src.db.models.conversations import Conversation, ConversationMessage
 from src.db.models.webhook_events import WebhookEvent
+from src.db.models.auth_audit_log import AuthAuditLog
+from src.db.models.weekly_metrics import WeeklyMetrics
+from src.db.models.weekly_decision_log import WeeklyDecisionLog
 
 
 def clean_database():
@@ -76,6 +79,20 @@ def clean_database():
         print("  Deleting webhook events...")
         deleted = session.query(WebhookEvent).delete()
         print(f"    ✅ Deleted {deleted} webhook events")
+
+        # Weekly metrics and decision logs
+        print("  Deleting weekly decision logs...")
+        deleted = session.query(WeeklyDecisionLog).delete()
+        print(f"    ✅ Deleted {deleted} weekly decision logs")
+
+        print("  Deleting weekly metrics...")
+        deleted = session.query(WeeklyMetrics).delete()
+        print(f"    ✅ Deleted {deleted} weekly metrics")
+
+        # Audit logs
+        print("  Deleting auth audit logs...")
+        deleted = session.query(AuthAuditLog).delete()
+        print(f"    ✅ Deleted {deleted} auth audit logs")
 
         # User related data
         print("  Deleting tokens...")

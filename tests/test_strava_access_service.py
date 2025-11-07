@@ -2,6 +2,11 @@ import pytest
 from unittest.mock import patch, MagicMock
 from requests.exceptions import HTTPError
 from src.services.strava_access_service import StravaClient
+from src.utils.strava_exceptions import (
+    StravaAPIError,
+    StravaRateLimitError,
+    StravaAuthenticationError,
+)
 
 
 @pytest.fixture
@@ -48,7 +53,7 @@ def test_request_with_backoff_max_retries_exceeded(mock_sleep, mock_request, cli
 
     mock_request.return_value = resp_429
 
-    with pytest.raises(RuntimeError, match="Exceeded max retries"):
+    with pytest.raises(StravaRateLimitError):
         client._request_with_backoff("GET", "http://test-url")
 
 

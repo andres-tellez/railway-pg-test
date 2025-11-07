@@ -56,7 +56,9 @@ const SmartRouter: React.FC = () => {
       try {
         setIsCheckingUser(true);
         const response = await api.get<{ hasOnboarded: boolean; hasStrava: boolean }>('/user');
-        const { hasOnboarded, hasStrava } = response.data;
+        // Backend wraps response in { data: {...}, status: 200 }
+        const userData = response.data.data || response.data;
+        const { hasOnboarded, hasStrava } = userData;
 
         console.log('🔍 User state check:', { hasOnboarded, hasStrava });
 

@@ -13,6 +13,8 @@ Rate Limits:
 -----------
 - Login/OAuth callbacks: 10 requests per 5 minutes per IP
 - Token refresh: 30 requests per 15 minutes per IP
+- Webhook events: 100 requests per minute per IP (allows bursty webhook traffic)
+- Webhook verification: 10 requests per 5 minutes per IP (verification is rare)
 - General auth endpoints: 20 requests per 5 minutes per IP
 
 Note:
@@ -25,7 +27,7 @@ import functools
 import time
 from collections import defaultdict, deque
 from typing import Callable
-from flask import request, jsonify
+from flask import request
 import logging
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,14 @@ RATE_LIMITS = {
     "login": {"requests": 10, "window_seconds": 300},  # 10 per 5 minutes
     "oauth_callback": {"requests": 10, "window_seconds": 300},  # 10 per 5 minutes
     "token_refresh": {"requests": 30, "window_seconds": 900},  # 30 per 15 minutes
+    "webhook": {
+        "requests": 100,
+        "window_seconds": 60,
+    },  # 100 per minute (webhooks can be bursty)
+    "webhook_verification": {
+        "requests": 10,
+        "window_seconds": 300,
+    },  # 10 per 5 minutes (verification is rare)
     "general": {"requests": 20, "window_seconds": 300},  # 20 per 5 minutes
 }
 
@@ -131,17 +141,17 @@ def rate_limit_auth(limit_type: str = "general"):
                     f"Rate limit exceeded for {limit_type} from {identifier}. "
                     f"Retry after {retry_after:.1f} seconds"
                 )
-                return (
-                    jsonify(
-                        {
-                            "error": "Rate limit exceeded",
-                            "error_code": "RATE_LIMIT_EXCEEDED",
-                            "status": 429,
-                            "retry_after_seconds": int(retry_after),
-                            "message": f"Too many requests. Please try again in {int(retry_after)} seconds.",
-                        }
-                    ),
-                    429,
+                # Use standardized error response format
+                from src.utils.response_utils import error_response
+
+                return error_response(
+                    message=f"Too many requests. Please try again in {int(retry_after)} seconds.",
+                    status_code=429,
+                    error_code="RATE_LIMIT_EXCEEDED",
+                    details={
+                        "retry_after_seconds": int(retry_after),
+                        "limit_type": limit_type,
+                    },
                 )
 
             # Record the request

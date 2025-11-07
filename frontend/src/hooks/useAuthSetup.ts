@@ -36,7 +36,8 @@ export function useAuthSetup(): AuthSetupResult {
     // Ensure user identity is created (like other working pages do)
     api.post("/user/identity", {})
       .then((res) => {
-        const newUserId = res.data.user_id;
+        // Backend returns {data: {user_id: "..."}, status: 200}
+        const newUserId = res.data.data?.user_id || res.data.user_id;
         setUserId(newUserId);
         setIsReady(true);
         console.log("✅ Auth setup complete - User ID:", newUserId);

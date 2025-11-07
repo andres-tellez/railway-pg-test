@@ -12,29 +12,47 @@ Responsibilities:
 - Trigger activity ingestion
 """
 
-from flask import Blueprint, request, redirect, jsonify, g, session
+from flask import Blueprint, request, redirect, g, session
 import os
-import re
 import traceback
-import threading
 import logging
 
 from src.db.db_session import get_session
+from src.utils.config import config
 from src.utils.auth0_jwt import verify_and_decode, requires_auth
 from src.utils.response_utils import (
     error_response,
     validation_error_response,
     internal_error_response,
+    success_response,
+    unauthorized_response,
+    not_found_response,
 )
+from src.utils.strava_validators import validate_oauth_code
 from src.utils.auth_rate_limiter import rate_limit_auth
 from src.utils.oauth_state_manager import generate_state_token, validate_state_token
 from src.utils.audit_logger import log_oauth_callback
+from src.utils.strava_exceptions import (
+    StravaOAuthError,
+    StravaTokenError,
+    StravaAPIError,
+    StravaOAuthCodeExchangeError,
+)
 from src.db.dao.user_athletes_dao import get_by_user_id, delete_by_user_id
 from src.db.dao.token_dao import delete_tokens_sa
 from src.db.models.activities import Activity
 import src.services.token_service as token_service
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
+)
+from src.utils.strava_helpers import (
+    get_authenticated_user_id,
+    get_user_athlete_link,
+    get_authenticated_user_with_athlete,
+    run_background_job,
+    get_frontend_redirect_url,
+    is_uuid_format,
+    normalize_redirect_uri,
 )
 
 strava_bp = Blueprint("strava", __name__, url_prefix="/auth")
@@ -52,57 +70,84 @@ def strava_login_redirect():
     Reads Auth0 JWT from cookie (or fallback query param) to get `auth0_sub`.
     Redirects user to Strava with `state=auth0_sub`.
     """
-    logger.info("Strava login redirect triggered")
+    try:
+        logger.info("Strava login redirect triggered")
 
-    redirect_uri = (os.getenv("STRAVA_REDIRECT_URI") or "").strip().rstrip(";")
+        redirect_uri = (os.getenv("STRAVA_REDIRECT_URI") or "").strip().rstrip(";")
 
-    # Auto-fix HTTP to HTTPS for localhost if app is running on HTTPS
-    if redirect_uri.startswith("http://localhost:5000") or redirect_uri.startswith(
-        "http://127.0.0.1:5000"
-    ):
-        redirect_uri = redirect_uri.replace("http://", "https://")
-        logger.warning(f"Auto-converted redirect URI to HTTPS: {redirect_uri}")
+        # Auto-fix HTTP to HTTPS for localhost if app is running on HTTPS
+        if redirect_uri.startswith("http://localhost:5000") or redirect_uri.startswith(
+            "http://127.0.0.1:5000"
+        ):
+            redirect_uri = redirect_uri.replace("http://", "https://")
+            logger.warning(f"Auto-converted redirect URI to HTTPS: {redirect_uri}")
 
-    client_id = os.getenv("STRAVA_CLIENT_ID") or ""
+        client_id = os.getenv("STRAVA_CLIENT_ID") or ""
 
-    if not client_id:
-        return error_response(
-            "STRAVA_CLIENT_ID not configured",
-            status_code=500,
-            error_code="CONFIG_ERROR",
+        if not client_id:
+            return error_response(
+                "STRAVA_CLIENT_ID not configured",
+                status_code=500,
+                error_code="CONFIG_ERROR",
+            )
+
+        # Extract user identity from cookie or fallback param
+        jwt_cookie = request.cookies.get("user_jwt")
+        user_id_param = request.args.get("user_id")  # Could be UUID or auth0_sub
+
+        auth0_sub = None
+        internal_user_id = None
+
+        # Check if user_id_param is a UUID (internal user_id) or auth0_sub
+        if user_id_param:
+            if is_uuid_format(user_id_param):
+                internal_user_id = user_id_param
+                logger.info(f"Received internal user_id (UUID): {internal_user_id}")
+            else:
+                auth0_sub = user_id_param
+                logger.info(f"Received auth0_sub: {auth0_sub}")
+
+        if jwt_cookie:
+            try:
+                payload = verify_and_decode(jwt_cookie)
+                auth0_sub = payload.get("sub") or auth0_sub
+            except Exception as e:
+                logger.warning(f"Failed to decode JWT cookie: {e}")
+
+        # If we have internal_user_id but no auth0_sub, we can still proceed
+        # The state token will use the internal_user_id
+        user_id_for_state = auth0_sub or internal_user_id or "unknown"
+
+        # Generate cryptographically secure state token for CSRF protection
+        try:
+            state_token = generate_state_token(user_id_for_state)
+        except Exception as e:
+            logger.error(f"Failed to generate state token: {e}", exc_info=True)
+            # Fallback: use a simple state if session is not available
+            import secrets
+
+            state_token = secrets.token_urlsafe(32)
+            logger.warning("Using fallback state token (session may not be available)")
+
+        # Build Strava OAuth URL with secure state token
+        url = (
+            f"{config.STRAVA_API_BASE_URL.replace('/api/v3', '')}/oauth/authorize"
+            f"?client_id={client_id}"
+            f"&response_type=code"
+            f"&redirect_uri={redirect_uri}"
+            f"&scope=read,activity:read_all"
+            f"&state={state_token}"
         )
 
-    # Extract user identity from cookie or fallback param
-    jwt_cookie = request.cookies.get("user_jwt")
-    auth0_sub = request.args.get("user_id")  # fallback
-
-    if jwt_cookie:
-        try:
-            payload = verify_and_decode(jwt_cookie)
-            auth0_sub = payload.get("sub") or auth0_sub
-        except Exception as e:
-            logger.warning(f"Failed to decode JWT cookie: {e}")
-
-    # Generate cryptographically secure state token for CSRF protection
-    if auth0_sub:
-        state_token = generate_state_token(auth0_sub)
-    else:
-        # Fallback: generate state without user_id (less secure but better than nothing)
-        state_token = generate_state_token("unknown")
-        logger.warning("No auth0_sub found, using generic state token")
-
-    # Build Strava OAuth URL with secure state token
-    url = (
-        "https://www.strava.com/oauth/authorize"
-        f"?client_id={client_id}"
-        f"&response_type=code"
-        f"&redirect_uri={redirect_uri}"
-        f"&scope=read,activity:read_all"
-        f"&state={state_token}"
-    )
-
-    logger.info(f"Redirecting to Strava OAuth with secure state token")
-    return redirect(url)
+        logger.info(f"Redirecting to Strava OAuth with secure state token")
+        return redirect(url)
+    except Exception as e:
+        logger.exception("Unexpected error in strava_login_redirect")
+        return error_response(
+            f"Failed to initiate Strava login: {str(e)}",
+            status_code=500,
+            error_code="INTERNAL_ERROR",
+        )
 
 
 @strava_bp.route("/strava/connect", methods=["GET"])
@@ -138,7 +183,7 @@ def strava_callback_get():
     - Triggers ingestion in background (with fresh session)
     - Redirects back to frontend with query param
     """
-    session = get_session()
+    db_session = get_session()
     try:
         code = request.args.get("code")
         state = request.args.get("state")
@@ -147,14 +192,20 @@ def strava_callback_get():
             f"Received Strava callback - code={'present' if code else 'missing'}, state={'present' if state else 'missing'}"
         )
 
-        if not code or not state:
+        # Validate OAuth code
+        validated_code, error = validate_oauth_code(code)
+        if error:
+            return error
+        code = validated_code
+
+        if not state:
             return validation_error_response(
-                "Missing code or state parameter",
-                errors={"code": "required", "state": "required"},
+                "Missing state parameter",
+                field="state",
             )
 
-        # Validate state token to prevent CSRF attacks
-        is_valid, error_msg = validate_state_token(state)
+        # Validate state token to prevent CSRF attacks and extract user_id
+        is_valid, error_msg, extracted_user_id = validate_state_token(state)
         if not is_valid:
             logger.warning(f"OAuth state validation failed: {error_msg}")
             log_oauth_callback(
@@ -170,12 +221,18 @@ def strava_callback_get():
                 error_code="CSRF_PROTECTION",
             )
 
-        # Get user_id from session (stored during state generation)
-        expected_user_id = session.get("oauth_state_user_id")
+        # Use extracted user_id from state token (works even if session expired)
+        if not extracted_user_id:
+            logger.error("OAuth callback: Could not extract user_id from state token")
+            return error_response(
+                "Could not identify user from state token. Please try connecting again.",
+                status_code=400,
+                error_code="USER_ID_EXTRACTION_FAILED",
+            )
 
         try:
             athlete_id, user_id = process_strava_callback(
-                session, code, expected_user_id or state
+                db_session, code, extracted_user_id
             )
             log_oauth_callback(
                 user_id=user_id,
@@ -183,37 +240,53 @@ def strava_callback_get():
                 success=True,
                 provider="strava",
             )
+        except (StravaOAuthError, StravaTokenError) as e:
+            logger.exception(f"Strava error during callback processing: {e}")
+            raise
         except Exception as e:
             logger.exception(f"Failed to process Strava callback: {e}")
-            raise RuntimeError(f"Failed to process callback: {e}")
+            raise StravaOAuthCodeExchangeError(
+                reason=str(e), message="Failed to process Strava OAuth callback"
+            )
 
-        session.commit()
+        db_session.commit()
         logger.info(f"Successfully linked athlete={athlete_id} to user={user_id}")
 
+    except (StravaOAuthError, StravaTokenError, StravaAPIError) as e:
+        db_session.rollback()
+        logger.exception(f"Strava error during callback: {e}")
+        from src.utils.security_utils import (
+            get_safe_error_message,
+            sanitize_exception_details,
+        )
+
+        safe_message = get_safe_error_message(e, context="oauth")
+        safe_details = sanitize_exception_details(
+            e.details if hasattr(e, "details") else {}
+        )
+        return error_response(
+            message=safe_message,
+            status_code=(
+                400 if isinstance(e, (StravaOAuthError, StravaTokenError)) else 500
+            ),
+            error_code=type(e).__name__,
+            details=safe_details,
+        )
     except Exception as e:
-        session.rollback()
+        db_session.rollback()
         logger.exception("Error processing Strava callback")
         return internal_error_response("Failed to process Strava callback", log_error=e)
     finally:
-        session.close()
+        db_session.close()
 
     # Ingestion runs with a brand new session
-    def background_job():
-        try:
-            logger.info(f"Starting ingestion for user={user_id}, athlete={athlete_id}")
-            run_full_ingestion_and_enrichment(None, athlete_id, user_id=user_id)
-        except Exception as e:
-            logger.error(
-                f"Ingestion failed for athlete={athlete_id}: {e}", exc_info=True
-            )
+    def ingestion_job(session, athlete_id, user_id):
+        logger.info(f"Starting ingestion for user={user_id}, athlete={athlete_id}")
+        run_full_ingestion_and_enrichment(None, athlete_id, user_id=user_id)
 
-    threading.Thread(target=background_job, daemon=True).start()
+    run_background_job(ingestion_job, athlete_id, user_id)
 
-    frontend_redirect = (
-        (os.getenv("FRONTEND_REDIRECT") or "https://localhost:5173/setup")
-        .strip()
-        .rstrip("/")
-    )
+    frontend_redirect = get_frontend_redirect_url()
     logger.info(f"Redirecting user to: {frontend_redirect}")
     return redirect(f"{frontend_redirect}?strava=connected")
 
@@ -231,9 +304,16 @@ def strava_callback_post():
     code = data.get("code")
     auth0_sub = data.get("sub")
 
-    if not code or not auth0_sub:
+    # Validate OAuth code
+    validated_code, error = validate_oauth_code(code)
+    if error:
+        return error
+    code = validated_code
+
+    if not auth0_sub:
         return validation_error_response(
-            "Missing code or sub", errors={"code": "required", "sub": "required"}
+            "Missing sub parameter",
+            field="sub",
         )
 
     athlete_id = None
@@ -249,6 +329,32 @@ def strava_callback_post():
                 success=True,
                 provider="strava",
             )
+    except (StravaOAuthError, StravaTokenError, StravaAPIError) as e:
+        logger.exception(f"Strava error during callback (POST): {e}")
+        from src.utils.security_utils import (
+            get_safe_error_message,
+            sanitize_exception_details,
+        )
+
+        safe_message = get_safe_error_message(e, context="oauth")
+        safe_details = sanitize_exception_details(
+            e.details if hasattr(e, "details") else {}
+        )
+        log_oauth_callback(
+            user_id=auth0_sub,
+            athlete_id=None,
+            success=False,
+            provider="strava",
+            details={"error": safe_message},
+        )
+        return error_response(
+            message=safe_message,
+            status_code=(
+                400 if isinstance(e, (StravaOAuthError, StravaTokenError)) else 500
+            ),
+            error_code=type(e).__name__,
+            details=safe_details,
+        )
     except Exception as e:
         logger.exception("Error processing Strava callback (POST)")
         log_oauth_callback(
@@ -261,32 +367,19 @@ def strava_callback_post():
         return internal_error_response("Failed to process Strava callback", log_error=e)
 
     # Ingestion runs in fresh session
-    def background_job():
-        db = get_session()
-        try:
-            logger.info(f"Starting ingestion for user={user_id}, athlete={athlete_id}")
-            run_full_ingestion_and_enrichment(None, athlete_id, user_id=user_id)
-        except Exception as e:
-            logger.error(
-                f"Ingestion failed for athlete={athlete_id}: {e}", exc_info=True
-            )
-        finally:
-            db.close()
+    def ingestion_job(session, athlete_id, user_id):
+        logger.info(f"Starting ingestion for user={user_id}, athlete={athlete_id}")
+        run_full_ingestion_and_enrichment(None, athlete_id, user_id=user_id)
 
-    threading.Thread(target=background_job, daemon=True).start()
+    run_background_job(ingestion_job, athlete_id, user_id)
 
     # Return both IDs
-    from flask import jsonify
-
-    return (
-        jsonify(
-            {
-                "status": "success",
-                "user_id": user_id,
-                "athlete_id": athlete_id,
-            }
-        ),
-        200,
+    return success_response(
+        data={
+            "user_id": user_id,
+            "athlete_id": athlete_id,
+        },
+        message="Strava account connected successfully",
     )
 
 
@@ -311,13 +404,17 @@ def process_strava_callback(session, code, state_or_sub, create_if_missing=True)
         f"Processing Strava callback: code={'present'}, state_or_sub={'present'}"
     )
 
-    # Simple regex check for UUID format
-    uuid_pattern = re.compile(r"^[0-9a-fA-F-]{36}$")
-
-    if uuid_pattern.match(state_or_sub):
+    # Check if state_or_sub is already a UUID (internal user_id)
+    if is_uuid_format(state_or_sub):
         user_id = state_or_sub  # Already internal user_id
+        logger.info(f"Using UUID as user_id: {user_id}")
     else:
-        # Fallback: treat as auth0_sub
+        # Fallback: treat as auth0_sub (must be in format "provider|user_id")
+        if "|" not in str(state_or_sub):
+            raise ValueError(
+                f"Invalid user identifier format: expected UUID or auth0_sub (format: 'provider|user_id'), got: {state_or_sub}"
+            )
+
         from src.utils.auth_helpers import get_user_id_from_request
 
         # Create a minimal claims dict with just the sub
@@ -330,6 +427,7 @@ def process_strava_callback(session, code, state_or_sub, create_if_missing=True)
             raise ValueError(
                 f"User not found or could not be created: {error[0].json.get('error', 'Unknown error')}"
             )
+        logger.info(f"Resolved auth0_sub to user_id: {user_id}")
 
     redirect_uri = (os.getenv("STRAVA_REDIRECT_URI") or "").strip().rstrip(";")
 
@@ -347,8 +445,13 @@ def process_strava_callback(session, code, state_or_sub, create_if_missing=True)
             user_id=user_id,
         )
         logger.info(f"Stored tokens for athlete {athlete_id}")
+    except (StravaOAuthCodeExchangeError, StravaTokenError, StravaAPIError) as e:
+        # Re-raise Strava-specific errors as-is
+        raise
     except Exception as e:
-        raise RuntimeError(f"Token exchange failed: {e}")
+        raise StravaOAuthCodeExchangeError(
+            reason=str(e), message="Token exchange failed"
+        )
 
     return athlete_id, user_id
 
@@ -379,91 +482,73 @@ def disconnect_strava():
     """
     session = get_session()
     try:
-        internal_user_id = getattr(g, "user_id", None)
-
-        if not internal_user_id:
-            return jsonify({"error": "User not authenticated"}), 401
-
-        # Get athlete link to find athlete_id
-        athlete_link = get_by_user_id(internal_user_id)
-
-        if not athlete_link:
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "No Strava account connected",
+        # Get authenticated user and athlete link
+        user_id, athlete_link, error = get_authenticated_user_with_athlete()
+        if error:
+            # Customize error for disconnect endpoint
+            if "No Strava account connected" in str(error):
+                return not_found_response(
+                    resource="Strava connection",
+                    message="No Strava account connected",
+                    details={
                         "deleted": {"tokens": 0, "athlete_link": False},
                         "retained": {
                             "activities": 0,
                             "plans": "All training plans remain accessible",
                         },
-                    }
-                ),
-                404,
-            )
+                    },
+                )
+            return error
 
         athlete_id = athlete_link.athlete_id
 
         # Count activities before deletion (for response)
-        activity_count = (
-            session.query(Activity).filter_by(user_id=internal_user_id).count()
-        )
+        activity_count = session.query(Activity).filter_by(user_id=user_id).count()
 
         # 1. Delete tokens (revokes API access)
         tokens_deleted = delete_tokens_sa(session, athlete_id)
         logger.info(
             f"Deleted {tokens_deleted} token(s) for athlete {athlete_id} "
-            f"(user {internal_user_id})"
+            f"(user {user_id})"
         )
 
         # 2. Delete user-athlete link
-        link_deleted = delete_by_user_id(internal_user_id)
+        link_deleted = delete_by_user_id(user_id)
         logger.info(
-            f"Deleted athlete link for user {internal_user_id} "
-            f"(athlete {athlete_id})"
+            f"Deleted athlete link for user {user_id} " f"(athlete {athlete_id})"
         )
 
         session.commit()
 
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "message": "Strava account disconnected successfully",
-                    "deleted": {"tokens": tokens_deleted, "athlete_link": link_deleted},
-                    "retained": {
-                        "activities": activity_count,
-                        "message": (
-                            f"Your {activity_count} synced activities remain in your account. "
-                            "Training plans and metrics based on these activities are still accessible. "
-                            "To sync new activities, reconnect Strava."
-                        ),
-                    },
-                    "reconnect": {
-                        "message": "You can reconnect Strava anytime via Settings or the Setup page",
-                        "url": "/setup",
-                    },
-                }
-            ),
-            200,
+        return success_response(
+            data={
+                "deleted": {"tokens": tokens_deleted, "athlete_link": link_deleted},
+                "retained": {
+                    "activities": activity_count,
+                    "message": (
+                        f"Your {activity_count} synced activities remain in your account. "
+                        "Training plans and metrics based on these activities are still accessible. "
+                        "To sync new activities, reconnect Strava."
+                    ),
+                },
+                "reconnect": {
+                    "message": "You can reconnect Strava anytime via Settings or the Setup page",
+                    "url": "/setup",
+                },
+            },
+            message="Strava account disconnected successfully",
         )
 
     except Exception as e:
         session.rollback()
         logger.error(
-            f"Error disconnecting Strava for user {internal_user_id}: {e}",
+            f"Error disconnecting Strava for user {user_id if 'user_id' in locals() else 'unknown'}: {e}",
             exc_info=True,
         )
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "error": "Failed to disconnect Strava account",
-                    "detail": str(e),
-                }
-            ),
-            500,
+        return internal_error_response(
+            message="Failed to disconnect Strava account",
+            log_error=e,
+            details={"detail": str(e)},
         )
     finally:
         session.close()
@@ -480,50 +565,43 @@ def get_strava_status():
     """
     session = get_session()
     try:
-        internal_user_id = getattr(g, "user_id", None)
-
-        if not internal_user_id:
-            return jsonify({"error": "User not authenticated"}), 401
-
-        # Get athlete link
-        athlete_link = get_by_user_id(internal_user_id)
-
-        if not athlete_link:
-            return (
-                jsonify({"connected": False, "message": "No Strava account connected"}),
-                200,
-            )
+        # Get authenticated user and athlete link
+        user_id, athlete_link, error = get_authenticated_user_with_athlete()
+        if error:
+            # If not found, return success with connected=False
+            if "No Strava account connected" in str(error):
+                return success_response(
+                    data={"connected": False},
+                    message="No Strava account connected",
+                )
+            return error
 
         # Count activities
-        activity_count = (
-            session.query(Activity).filter_by(user_id=internal_user_id).count()
-        )
+        activity_count = session.query(Activity).filter_by(user_id=user_id).count()
 
-        return (
-            jsonify(
-                {
-                    "connected": True,
-                    "athlete_id": athlete_link.athlete_id,
-                    "connected_at": (
-                        athlete_link.created_at.isoformat()
-                        if athlete_link.created_at
-                        else None
-                    ),
-                    "activity_count": activity_count,
-                    "message": f"Connected to Strava. {activity_count} activities synced.",
-                }
-            ),
-            200,
+        return success_response(
+            data={
+                "connected": True,
+                "athlete_id": athlete_link.athlete_id,
+                "connected_at": (
+                    athlete_link.created_at.isoformat()
+                    if athlete_link.created_at
+                    else None
+                ),
+                "activity_count": activity_count,
+            },
+            message=f"Connected to Strava. {activity_count} activities synced.",
         )
 
     except Exception as e:
         logger.error(
-            f"Error fetching Strava status for user {internal_user_id}: {e}",
+            f"Error fetching Strava status for user {user_id if 'user_id' in locals() else 'unknown'}: {e}",
             exc_info=True,
         )
-        return (
-            jsonify({"error": "Failed to fetch Strava status", "detail": str(e)}),
-            500,
+        return internal_error_response(
+            message="Failed to fetch Strava status",
+            log_error=e,
+            details={"detail": str(e)},
         )
     finally:
         session.close()

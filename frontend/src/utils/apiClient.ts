@@ -68,13 +68,14 @@ export function useApiClient() {
     // 🔑 Capture `user_id` from backend identity response
     axiosInstance.interceptors.response.use(
       (response) => {
-        if (
-          response.config.url?.includes("/user/identity") &&
-          response.data?.user_id
-        ) {
-          localStorage.setItem("user_id", response.data.user_id);
-          if (import.meta.env.MODE !== "production") {
-            console.log("✅ Stored internal user_id:", response.data.user_id);
+        if (response.config.url?.includes("/user/identity")) {
+          // Backend returns {data: {user_id: "..."}, status: 200}
+          const userId = response.data.data?.user_id || response.data.user_id;
+          if (userId) {
+            localStorage.setItem("user_id", userId);
+            if (import.meta.env.MODE !== "production") {
+              console.log("✅ Stored internal user_id:", userId);
+            }
           }
         }
         return response;

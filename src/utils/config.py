@@ -32,6 +32,25 @@ class Config:
     MAX_ACTIVITIES_TO_DOWNLOAD = int(os.getenv("MAX_ACTIVITIES_TO_DOWNLOAD", 50))
     STRAVA_PER_PAGE = int(os.getenv("STRAVA_PER_PAGE", 200))  # Strava API limit is 200
 
+    # ===== Strava API Retry Settings =====
+    STRAVA_MAX_RETRIES = int(
+        os.getenv("STRAVA_MAX_RETRIES", 5)
+    )  # Max retries for API requests
+    STRAVA_INITIAL_BACKOFF = int(
+        os.getenv("STRAVA_INITIAL_BACKOFF", 10)
+    )  # Initial backoff in seconds
+
+    # ===== Ingestion Defaults =====
+    DEFAULT_LOOKBACK_DAYS = int(
+        os.getenv("DEFAULT_LOOKBACK_DAYS", 365)
+    )  # Default days to look back
+    DEFAULT_BATCH_SIZE = int(
+        os.getenv("DEFAULT_BATCH_SIZE", 50)
+    )  # Default batch size for enrichment
+    DEFAULT_PER_PAGE = int(
+        os.getenv("DEFAULT_PER_PAGE", 50)
+    )  # Default activities per page
+
 
 # Export single instance for import convenience
 config = Config()

@@ -137,6 +137,19 @@ def process_webhook_event(session: Session, event_id: int):
 
 def _handle_activity_create(session: Session, event: WebhookEvent, user_id):
     """Handle activity.create webhook event."""
+    # Validate user_id if provided
+    if user_id is not None:
+        from src.utils.strava_validators import validate_user_id
+
+        validated_user_id, error = validate_user_id(user_id)
+        if error:
+            logger.warning(
+                f"Invalid user_id format: {user_id}, continuing without user_id"
+            )
+            user_id = None  # Continue without user_id rather than failing
+        else:
+            user_id = validated_user_id  # Use validated UUID string
+
     activity_id = event.object_id
 
     logger.info(f"Fetching new activity {activity_id} from Strava")
@@ -190,6 +203,19 @@ def _handle_activity_create(session: Session, event: WebhookEvent, user_id):
 
 def _handle_activity_update(session: Session, event: WebhookEvent, user_id):
     """Handle activity.update webhook event."""
+    # Validate user_id if provided
+    if user_id is not None:
+        from src.utils.strava_validators import validate_user_id
+
+        validated_user_id, error = validate_user_id(user_id)
+        if error:
+            logger.warning(
+                f"Invalid user_id format: {user_id}, continuing without user_id"
+            )
+            user_id = None  # Continue without user_id rather than failing
+        else:
+            user_id = validated_user_id  # Use validated UUID string
+
     activity_id = event.object_id
 
     logger.info(f"Updating activity {activity_id} from Strava")

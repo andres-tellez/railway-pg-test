@@ -38,11 +38,16 @@ class ActivityDAO:
             logger.warning("[WARNING] No activities provided to upsert.")
             return 0
 
-        try:
-            uid = uuid.UUID(str(user_id))
-        except Exception as e:
-            logger.error(f"Invalid user_id (not UUID): {user_id} | {e}")
-            return 0
+        # Handle user_id validation - can be None, UUID object, or UUID string
+        uid = None
+        if user_id is not None:
+            try:
+                uid = uuid.UUID(str(user_id))
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.warning(
+                    f"Invalid user_id format (not UUID): {user_id}, continuing without user_id: {e}"
+                )
+                uid = None  # Continue without user_id rather than failing completely
 
         logger.info(
             f"[INFO] Preparing to upsert {len(activities)} activities for athlete={athlete_id}, user_id={uid}"
