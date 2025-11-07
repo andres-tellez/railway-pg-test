@@ -13,8 +13,14 @@ const AuthProviderWithHistory: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const onRedirectCallback = (appState: any) => {
     console.log("🎯 Redirect callback:", appState);
-    // Optionally send user to a specific route after login
-    navigate(appState?.returnTo || "/", { replace: true });
+
+    // If Auth0 provided an appState return path (e.g., when login was triggered mid-session),
+    // honor it so the user lands back where they started. Otherwise, leave navigation alone
+    // so dedicated callback routes (like /post-oauth) can finish their own flows before
+    // redirecting (they will call navigate once setup completes).
+    if (appState?.returnTo) {
+      navigate(appState.returnTo, { replace: true });
+    }
   };
 
   if (!domain || !clientId || !redirectUri || !audience) {

@@ -22,7 +22,7 @@ const UserProfile: React.FC = () => {
     const fetchProfile = async () => {
       try {
         console.log("Fetching profile for /profile page...");
-        const response = await api.get("/onboarding");
+        const response = await api.get("/api/onboarding");
         console.log("Profile response received:", response);
         // Backend returns {status: "success", data: profile_dict}
         const profileData = response.data?.data;
@@ -104,7 +104,7 @@ const UserProfile: React.FC = () => {
       console.log("Sending payload:", payload);
 
       // Send update to backend
-      await api.post("/onboarding", payload);
+      await api.post("/api/onboarding", payload);
 
       // Update local state
       if (field === "height") {
@@ -122,7 +122,7 @@ const UserProfile: React.FC = () => {
       console.error("Error saving field:", e);
       setError(e.response?.data?.message || e.message || "Failed to save changes");
       // Revert on error
-      const response = await api.get("/onboarding");
+      const response = await api.get("/api/onboarding");
       if (response.data?.data) {
         setProfile(response.data.data);
       }

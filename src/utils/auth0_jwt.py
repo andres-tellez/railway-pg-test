@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 AUTH0_DOMAIN = config.AUTH0_DOMAIN
 API_AUDIENCE = config.AUTH0_AUDIENCE
+AUX_AUDIENCE = os.getenv("AUTH0_ID_TOKEN_AUDIENCE") or os.getenv("AUTH0_CLIENT_ID")
 ALGORITHMS = ["RS256"]
 JWKS_URL = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json" if AUTH0_DOMAIN else None
 JWKS_TTL_SEC = 60 * 10  # 10 minutes cache
@@ -91,18 +92,26 @@ def _error(status: int, message: str):
 DEBUG_AUTH = os.getenv("DEBUG_AUTH") == "1"
 
 
-def verify_and_decode(token: str) -> dict:
+def verify_and_decode(token: str, audience: str | None = None) -> dict:
     unverified_header = jwt.get_unverified_header(token)
     rsa_key = _get_rsa_key_for_kid(unverified_header["kid"])
     if rsa_key is None:
         raise Exception("Unable to find appropriate key")
 
+    expected_audience = audience or API_AUDIENCE
+    # Allow comma-separated audiences in env var
+    if expected_audience and "," in expected_audience:
+        expected_audience = [
+            part.strip() for part in expected_audience.split(",") if part.strip()
+        ]
+
     return jwt.decode(
         token,
         rsa_key,
         algorithms=ALGORITHMS,
-        audience=API_AUDIENCE,  # must be a string
+        audience=expected_audience,  # must be a string or list
         issuer=f"https://{AUTH0_DOMAIN}/",
+        options={"leeway": int(os.getenv("AUTH0_EXP_LEEWAY", "120"))},
     )
 
 

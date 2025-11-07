@@ -6,24 +6,9 @@ import { useMemo } from "react";
 export function useApiClient() {
   const { getAccessTokenSilently, loginWithRedirect } = useAuth0();
 
-  // ✅ Use only VITE_BACKEND_URL (must be set in Railway + .env.local)
-  let base = import.meta.env.VITE_BACKEND_URL || "/api";
-
-  // Normalize: remove trailing slash
-  if (base.endsWith("/")) base = base.slice(0, -1);
-
-  // If absolute (https://api.smartcoach.dev), ensure it ends with `/api`
-  const isAbsolute = /^https?:\/\//i.test(base);
-  if (isAbsolute) {
-    const url = new URL(base);
-    // Ensure absolute URLs have /api in the pathname
-    if (!url.pathname.endsWith("/api") && url.pathname !== "/api") {
-      url.pathname = url.pathname.replace(/\/$/, "") + "/api";
-    }
-    base = url.toString().replace(/\/$/, "");
-  }
-
-  const baseURL = base;
+  // Rely on explicit backend URL (no automatic `/api` suffix to avoid double-prefix bugs)
+  const rawBase = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") ?? "";
+  const baseURL = rawBase || "";
 
   if (import.meta.env.MODE !== "production") {
     console.log("API baseURL =", baseURL);

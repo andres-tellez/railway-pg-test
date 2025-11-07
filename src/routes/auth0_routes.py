@@ -11,7 +11,7 @@ Responsibilities:
 - Set session cookies
 """
 
-from flask import Blueprint, request, make_response, redirect
+from flask import Blueprint, request, make_response, redirect, jsonify
 import os
 import traceback
 import logging
@@ -65,8 +65,25 @@ def login_callback():
         if len(token_parts) != 3:
             return validation_error_response("Invalid token format", field="id_token")
 
+        # Log unverified audience for debugging when tokens fail validation
         try:
-            decoded_jwt = verify_and_decode(id_token)
+            from jose import jwt as jose_jwt
+
+            unverified_claims = jose_jwt.get_unverified_claims(id_token)
+            logger.info(
+                "Auth0 id_token unverified claims: aud=%s iss=%s sub=%s",
+                unverified_claims.get("aud"),
+                unverified_claims.get("iss"),
+                unverified_claims.get("sub"),
+            )
+        except Exception as debug_exc:  # pragma: no cover - debug logging only
+            logger.info("Failed to inspect unverified claims: %s", debug_exc)
+
+        try:
+            id_token_audience = os.getenv("AUTH0_ID_TOKEN_AUDIENCE") or os.getenv(
+                "AUTH0_CLIENT_ID"
+            )
+            decoded_jwt = verify_and_decode(id_token, audience=id_token_audience)
             logger.info(
                 f"Token validated successfully for user: {decoded_jwt.get('sub')}"
             )
@@ -103,8 +120,18 @@ def login_callback():
         # Log successful login
         log_login_success(user_id=user_id, auth0_sub=auth0_sub)
 
-        # Create response with redirect
-        resp = make_response(redirect("https://app.smartcoach.dev"))
+        frontend_redirect = (
+            os.getenv("FRONTEND_REDIRECT") or "https://app.smartcoach.dev"
+        )
+        is_xhr = (
+            request.is_json
+            or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        )
+
+        if is_xhr:
+            resp = make_response(jsonify({"status": "ok"}), 200)
+        else:
+            resp = make_response(redirect(frontend_redirect))
 
         # Use 'Lax' for same-site by default, 'None' only if cross-site required
         # SameSite=None requires Secure=True (already set)

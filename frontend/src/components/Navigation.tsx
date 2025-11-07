@@ -33,7 +33,7 @@ const Navigation: React.FC = () => {
   // Refresh when authenticated, when location changes (to catch onboarding completion), or when userState is null
   useEffect(() => {
     if (isAuthenticated) {
-      api.get<{ hasOnboarded: boolean; hasStrava: boolean }>('/user')
+      api.get<{ hasOnboarded: boolean; hasStrava: boolean }>('/api/user')
         .then((res) => {
           // Backend wraps response in { data: {...}, status: 200 }
           const userData = res.data.data || res.data;
