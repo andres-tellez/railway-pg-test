@@ -13,6 +13,7 @@ from src.services.token_service import get_valid_token
 from src.db.dao.split_dao import upsert_splits
 from src.db.dao.activity_dao import ActivityDAO
 from src.services.strava_access_service import StravaClient
+from src.utils.config import config
 from src.utils.logger import get_logger
 from src.utils.conversions import convert_metrics
 from src.db.models.activities import Activity
@@ -22,9 +23,7 @@ log.setLevel(logging.INFO)
 
 
 def log_strava_payload(activity_id, activity_json, zones_data, streams):
-    """
-    Write debug payload to file.
-    """
+    """Write debug payload to file."""
     try:
         os.makedirs("debug_dumps", exist_ok=True)
         with open(
@@ -36,13 +35,11 @@ def log_strava_payload(activity_id, activity_json, zones_data, streams):
                 indent=2,
             )
     except Exception as e:  # pylint: disable=broad-exception-caught
-        log.warning("⚠️ Could not write debug payload for %s: %s", activity_id, e)
+        log.warning("Could not write debug payload for %s: %s", activity_id, e)
 
 
 def get_activities_to_enrich(session, athlete_id, limit):
-    """
-    Get recent unenriched activities.
-    """
+    """Get recent unenriched activities."""
     result = session.execute(
         text(
             """
@@ -58,9 +55,7 @@ def get_activities_to_enrich(session, athlete_id, limit):
 
 
 def enrich_one_activity(session, access_token, activity_id):
-    """
-    Enrich a single activity with streams, splits, zones.
-    """
+    """Enrich a single activity with streams, splits, zones."""
     try:
         client = StravaClient(access_token)
         retries = 3
@@ -78,7 +73,7 @@ def enrich_one_activity(session, access_token, activity_id):
                 break
 
             log.warning(
-                "⚠️ Missing required fields for activity %s, retry %d/%d...",
+                "Missing required fields for activity %s, retry %d/%d...",
                 activity_id,
                 attempt + 1,
                 retries,
@@ -86,7 +81,7 @@ def enrich_one_activity(session, access_token, activity_id):
             time.sleep(1)
         else:
             raise ValueError(
-                f"❌ Critical data missing after retries for activity {activity_id}: "
+                f"Critical data missing after retries for activity {activity_id}: "
                 f"{[(field, activity_json.get(field)) for field in required_fields]}"
             )
 
@@ -95,12 +90,12 @@ def enrich_one_activity(session, access_token, activity_id):
         missing_soft = [f for f in soft_fields if activity_json.get(f) is None]
         if missing_soft:
             log.warning(
-                "⚠️ Partial enrichment for activity %s — missing: %s",
+                "Partial enrichment for activity %s - missing: %s",
                 activity_id,
                 missing_soft,
             )
 
-        log.info("➡️ Enriching activity %s — %s", activity_id, activity_json.get("name"))
+        log.info("Enriching activity %s - %s", activity_id, activity_json.get("name"))
 
         hr_zone_pcts = extract_hr_zone_percentages(zones_data) or [0.0] * 5
         update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
@@ -108,18 +103,16 @@ def enrich_one_activity(session, access_token, activity_id):
         splits = build_mile_splits(activity_id, streams)
         if splits:
             upsert_splits(session, splits)
-            log.info("✅ Synced %d splits for activity %s", len(splits), activity_id)
+            log.info("Synced %d splits for activity %s", len(splits), activity_id)
 
         return True
     except Exception as e:  # pylint: disable=broad-exception-caught
-        log.error("🔥 Exception while enriching %s: %s", activity_id, e)
+        log.error("Exception while enriching %s: %s", activity_id, e)
         raise
 
 
 def enrich_one_activity_with_refresh(session, athlete_id, activity_id, max_retries=2):
-    """
-    Attempt enrichment with token refresh and retries.
-    """
+    """Attempt enrichment with token refresh and retries."""
     for attempt in range(1, max_retries + 1):
         try:
             access_token = get_valid_token(session, athlete_id)
@@ -141,14 +134,14 @@ def enrich_one_activity_with_refresh(session, athlete_id, activity_id, max_retri
 
             if enriched:
                 log.info(
-                    "✅ Enrichment succeeded on attempt %d for activity %s",
+                    "Enrichment succeeded on attempt %d for activity %s",
                     attempt,
                     activity_id,
                 )
                 return True
 
             log.warning(
-                "⚠️ Enrichment fields missing on attempt %d for %s. Retrying in 5s...",
+                "Enrichment fields missing on attempt %d for %s. Retrying in 5s...",
                 attempt,
                 activity_id,
             )
@@ -156,20 +149,18 @@ def enrich_one_activity_with_refresh(session, athlete_id, activity_id, max_retri
 
         except Exception as e:  # pylint: disable=broad-exception-caught
             log.error(
-                "🔥 Enrichment error on attempt %d for %s: %s", attempt, activity_id, e
+                "Enrichment error on attempt %d for %s: %s", attempt, activity_id, e
             )
             time.sleep(1)
 
     log.error(
-        "❌ All retries failed — Activity %s has incomplete enrichment.", activity_id
+        "All retries failed - Activity %s has incomplete enrichment.", activity_id
     )
     raise RuntimeError(f"Enrichment failed for activity {activity_id}")
 
 
 def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts):
-    """
-    Update enriched fields on activity.
-    """
+    """Update enriched fields on activity."""
     conv = convert_metrics(
         {
             "distance": activity_json.get("distance"),
@@ -191,7 +182,7 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
 
     for key in ["average_heartrate", "max_speed", "suffer_score", "calories"]:
         if activity_json.get(key) is None:
-            log.warning("⚠️ %s missing from activity %s", key, activity_id)
+            log.warning("%s missing from activity %s", key, activity_id)
 
     params = {
         "activity_id": activity_id,
@@ -251,9 +242,7 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
 
 
 def extract_hr_zone_percentages(zones_data):
-    """
-    Compute HR zone percentages.
-    """
+    """Compute HR zone percentages."""
     try:
         for zone_group in zones_data:
             if zone_group.get("type") == "heartrate":
@@ -263,14 +252,12 @@ def extract_hr_zone_percentages(zones_data):
                 if total_time > 0:
                     return [round((t / total_time) * 100, 2) for t in times]
     except Exception as e:  # pylint: disable=broad-exception-caught
-        log.warning("⚠️ HR zone extraction failed: %s", e)
+        log.warning("HR zone extraction failed: %s", e)
     return [0.0] * 5
 
 
 def build_mile_splits(activity_id, streams):
-    """
-    Build mile splits from stream data.
-    """
+    """Build mile splits from stream data."""
     distances = streams.get("distance", [])
     times = streams.get("time", [])
     paces = streams.get("velocity_smooth", [])
@@ -343,40 +330,51 @@ class ActivityIngestionService:
     Service to ingest activities from Strava.
     """
 
-    def __init__(self, session, athlete_id):
+    def __init__(self, session, athlete_id, user_id=None):
         self.session = session
         self.athlete_id = athlete_id
+        self.user_id = user_id  # keep track of user_id
         self._refresh_client()
 
     def _refresh_client(self):
         access_token = get_valid_token(self.session, self.athlete_id)
         self.client = StravaClient(access_token)
 
-    def ingest_recent(self, lookback_days, max_activities=None, per_page=200):
-        """
-        Ingest recent activities within lookback_days.
-        """
+    def fetch_all_activities(self, after=None, before=None, per_page=None, limit=None):
+        """Fetch all activities from Strava with pagination."""
         self._refresh_client()
-        after = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
-        activities = self.client.get_activities(
-            after=after, per_page=per_page, limit=max_activities
-        )
-        activities = [a for a in activities if a.get("type") == "Run"]
-        return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
+        page = 1
+        results = []
+        while True:
+            batch = self.client.get_activities(
+                after=after,
+                before=before,
+                per_page=per_page or config.STRAVA_PER_PAGE,
+                page=page,
+            )
+            if not batch:
+                break
+            results.extend(batch)
+            log.info(
+                f"[INFO] Page {page} -> {len(batch)} activities (total={len(results)})"
+            )
+            if limit and len(results) >= limit:
+                return results[:limit]
+            page += 1
+        return results
 
     def ingest_full_history(
-        self, lookback_days=None, max_activities=None, per_page=200, dry_run=False
+        self, lookback_days=None, max_activities=None, per_page=None, dry_run=False
     ):
-        """
-        Ingest full history with optional filters.
-        """
         after = (
             int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
             if lookback_days
             else None
         )
-        all_activities = self.client.get_activities(
-            after=after, per_page=per_page, limit=max_activities
+        all_activities = self.fetch_all_activities(
+            after=after,
+            per_page=per_page or config.STRAVA_PER_PAGE,
+            limit=max_activities,
         )
         all_activities = [a for a in all_activities if a.get("type") == "Run"]
 
@@ -386,27 +384,35 @@ class ActivityIngestionService:
         if not all_activities:
             return 0
 
+        # inject user_id before saving
+        for act in all_activities:
+            act["user_id"] = self.user_id
+
         ActivityDAO.upsert_activities(self.session, self.athlete_id, all_activities)
         return len(all_activities)
 
-    def ingest_between(self, start_date, end_date, max_activities=None, per_page=200):
-        """
-        Ingest activities between date range.
-        """
+    def ingest_between(self, start_date, end_date, max_activities=None, per_page=None):
+        """Ingest activities between date range."""
         self._refresh_client()
         after = int(start_date.timestamp())
         before = int(end_date.timestamp())
         activities = self.client.get_activities(
-            after=after, before=before, per_page=per_page, limit=max_activities
+            after=after,
+            before=before,
+            per_page=per_page or config.STRAVA_PER_PAGE,
+            limit=max_activities,
         )
         activities = [a for a in activities if a.get("type") == "Run"]
+
+        # inject user_id before saving
+        for act in activities:
+            act["user_id"] = self.user_id
+
         return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
 
 
 def run_enrichment_batch(session, athlete_id, batch_size=10):
-    """
-    Batch enrichment job for activities.
-    """
+    """Batch enrichment job for activities."""
     activity_ids = get_activities_to_enrich(session, athlete_id, batch_size)
     for aid in activity_ids:
         enrich_one_activity_with_refresh(session, athlete_id, aid)

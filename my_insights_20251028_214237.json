@@ -1,0 +1,116 @@
+{
+  "current_fitness": {
+    "weekly_mileage": 30.7,
+    "longest_run": 26.0,
+    "average_pace": "9:49/mile",
+    "fitness_trend": "Improving"
+  },
+  "training_patterns": {
+    "consistency_score": 61.0,
+    "consistency_level": "Consistent",
+    "training_frequency": 2.8,
+    "frequency_level": "Moderate",
+    "volume_patterns": {
+      "pattern": "Consistent",
+      "trend": "Decreasing",
+      "average_weekly_mileage": 20.8,
+      "mileage_range": {
+        "min": 3.0,
+        "max": 30.7
+      }
+    },
+    "training_regularity": "Very regular",
+    "data_quality": {
+      "is_sufficient": true,
+      "message": "12 complete weeks available",
+      "weeks_analyzed": 12
+    }
+  },
+  "safety_assessment": {
+    "overall_risk_level": "Medium",
+    "injury_risk": {
+      "level": "High",
+      "score": 70,
+      "factors": [
+        "Weekly increase of 67.5% (exceeds 20% rule)",
+        "Weekly increase of 18.5% (approaching limit)",
+        "Recent volume spike of 44.4%"
+      ]
+    },
+    "overtraining_risk": {
+      "level": "Very Low",
+      "score": 0,
+      "factors": [
+        "No overtraining risk factors identified"
+      ]
+    },
+    "progression_risk": {
+      "level": "High",
+      "score": 45,
+      "factors": [
+        "High average progression: 76.2% per week",
+        "Very high single-week progression: 783.3%"
+      ]
+    },
+    "recovery_assessment": {
+      "needs_recovery": true,
+      "recommendation": "Consider easy training or rest day",
+      "recent_mileage": 51.5,
+      "high_intensity_sessions": 2
+    },
+    "safety_recommendations": [
+      "Reduce weekly mileage increases to 10% or less",
+      "Consider adding more rest days",
+      "Follow 10% rule for mileage progression",
+      "Consider periodized training approach"
+    ]
+  },
+  "recommendations": {
+    "starting_mileage": {
+      "weekly_mileage": 40.0,
+      "rationale": "Adjusted to 40.0 miles to accommodate 14.0 mile long run",
+      "confidence": "High"
+    },
+    "progression_rate": {
+      "rate_percent": 8.0,
+      "rationale": "Past progression was 63.0% - reducing to 8% for safety",
+      "confidence": "High"
+    },
+    "focus_areas": [
+      "Consistency",
+      "Endurance Focus",
+      "Mileage Building",
+      "Marathon Education",
+      "Injury Prevention"
+    ],
+    "training_frequency": {
+      "runs_per_week": 3,
+      "rationale": "Current frequency is 2.9 runs/week - increasing to 3 for marathon training",
+      "confidence": "Medium"
+    },
+    "long_run_distance": {
+      "distance": 10.0,
+      "rationale": "25% of weekly mileage (40.0 miles)",
+      "confidence": "High"
+    },
+    "training_principles": [
+      "Follow the 10% rule for weekly mileage increases",
+      "Include one long run per week (20-30% of weekly mileage)",
+      "Maintain 80/20 easy-to-hard training ratio",
+      "Allow adequate recovery between hard sessions",
+      "Listen to your body and adjust as needed"
+    ],
+    "safety_guidelines": [
+      "Stop training if you experience pain",
+      "Increase mileage gradually (10% per week maximum)",
+      "Take rest days seriously",
+      "Stay hydrated and fuel properly",
+      "Consult a healthcare provider for any concerns"
+    ]
+  },
+  "metadata": {
+    "calculated_at": "2025-10-28T21:42:37.164596",
+    "activities_analyzed": 34,
+    "analysis_period_weeks": 11
+  }
+}

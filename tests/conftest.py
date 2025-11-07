@@ -2,50 +2,92 @@
 import os
 import sys
 import pytest
+import uuid
 from pathlib import Path
-from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
-from unittest.mock import patch
 from datetime import datetime, timedelta
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, clear_mappers
+
 
 # -------------------------
 # 🔧 Environment & Path Setup
 # -------------------------
 
-# Add project root to PYTHONPATH
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Load test-specific environment variables
 load_dotenv(dotenv_path=PROJECT_ROOT / ".env.local", override=True)
+
+
+# -------------------------
+# 🛠️ Import project modules AFTER sys.path is fixed
+# -------------------------
+
+from src.db import db_session
+
+
+@pytest.fixture(scope="session", autouse=True)
+def use_sqlite_for_tests():
+    """Force all DB sessions to use in-memory SQLite for tests."""
+    from src.db import db_session
+
+    # 🚨 Import all models so Base.metadata sees them
+    import src.db.models.user_identity
+    import src.db.models.tokens
+    import src.db.models.activities
+    import src.db.models.user_profile
+    import src.db.models.user_athletes
+    import src.db.models.plans  # Import plans model for tests
+    import src.db.models.plan_workouts  # Import plan_workouts model for tests
+
+    test_engine = create_engine("sqlite:///:memory:", future=True)
+
+    from sqlalchemy import event
+
+    @event.listens_for(test_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=OFF")  # ⚠️ TEMPORARY to break FK loops
+        cursor.close()
+
+    db_session.engine = test_engine
+    db_session.SessionLocal = sessionmaker(
+        bind=test_engine, future=True, autoflush=False, autocommit=False
+    )
+
+    # Now Base has all models registered
+    db_session.Base.metadata.create_all(bind=test_engine)
+
+    yield
+
+    db_session.Base.metadata.drop_all(bind=test_engine)
+
 
 # -------------------------
 # 🔌 Flask App Fixtures
 # -------------------------
 
 from src.app import create_app
-from src.db.db_session import get_engine
 from src.db.models.tokens import Token
-from src.db.models.athletes import Athlete
 from src.db.models.activities import Activity
+from src.db.models.user_identity import UserIdentity
 from tests.test_data.sample_activities import SAMPLE_ACTIVITY_JSON
 
 
-@pytest.fixture(scope="session")
-def shared_engine():
-    database_url = os.getenv("DATABASE_URL")
-    print(f"[TEST] Using DATABASE_URL = {database_url}")
-    return get_engine(database_url)
-
-
 @pytest.fixture(scope="function")
-def app(shared_engine):
+def app():
+    """Flask app for tests"""
     test_config = {"TESTING": True, "DATABASE_URL": os.getenv("DATABASE_URL")}
-    yield create_app(test_config)
+    app = create_app(test_config)
+    app.config["PROPAGATE_EXCEPTIONS"] = True  # ✅ show tracebacks instead of 500
+    yield app
 
 
 @pytest.fixture(scope="function")
 def client(app):
+    """Flask test client"""
     return app.test_client()
 
 
@@ -55,11 +97,12 @@ def client(app):
 
 
 @pytest.fixture(scope="function")
-def sqlalchemy_session(shared_engine):
-    connection = shared_engine.connect()
+def test_db_session():
+    """Provide a database session wrapped in a rollback transaction."""
+    connection = db_session.engine.connect()
     transaction = connection.begin()
-    Session = sessionmaker(bind=connection, future=True)
-    session = Session()
+    SessionTesting = sessionmaker(bind=connection, autoflush=False, autocommit=False)
+    session = SessionTesting()
     yield session
     session.close()
     transaction.rollback()
@@ -67,17 +110,8 @@ def sqlalchemy_session(shared_engine):
 
 
 @pytest.fixture(scope="function")
-def test_db_session(sqlalchemy_session):
-    return sqlalchemy_session
-
-
-@pytest.fixture(scope="function")
 def seed_test_data(test_db_session):
-    """Seed athletes, tokens, and activities with safe defaults."""
-    if not test_db_session.query(Athlete).filter_by(athlete_id=1).first():
-        test_db_session.add(
-            Athlete(athlete_id=1, first_name="Test", last_name="Athlete")
-        )
+    """Seed tokens and activities with safe defaults."""
 
     if not test_db_session.query(Token).filter_by(athlete_id=1).first():
         test_db_session.add(
@@ -117,23 +151,46 @@ def seed_test_data(test_db_session):
 
 
 # -------------------------
-# 🔁 Patched App Fixtures
+# 👤 Default User Fixture (autouse)
 # -------------------------
 
+from src.db.models.user_identity import (
+    UserIdentity,
+)  # ✅ Ensure this is at the top if not already
 
-@pytest.fixture(scope="function")
-def patched_app(monkeypatch):
-    monkeypatch.setenv("CRON_SECRET_KEY", "devkey123")
-
-    with patch("src.routes.sync_routes.sync_recent") as mock_sync_recent:
-        mock_sync_recent.return_value = 10
-        app = create_app({"TESTING": True, "DATABASE_URL": os.getenv("DATABASE_URL")})
-        yield app
+import uuid
+import pytest
 
 
-@pytest.fixture(scope="function")
-def patched_client(patched_app):
-    return patched_app.test_client()
+@pytest.fixture(scope="function", autouse=True)
+def seed_default_user(test_db_session):
+    """Ensure a default UserIdentity exists for tests."""
+
+    default_user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+    # ✅ wrap with text()
+    from sqlalchemy import or_
+
+    test_db_session.query(UserIdentity).filter(
+        or_(
+            UserIdentity.user_id == uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            UserIdentity.user_id == 1,  # For SQLite, fallback
+        )
+    ).delete(synchronize_session=False)
+    test_db_session.commit()
+
+    test_db_session.add(
+        UserIdentity(
+            user_id=default_user_id,
+            email="default@example.com",
+            email_verified=True,
+            name="Default Test User",
+            picture=None,
+        )
+    )
+    test_db_session.commit()
+
+    yield
 
 
 # -------------------------
@@ -143,10 +200,7 @@ def patched_client(patched_app):
 
 @pytest.fixture(autouse=True)
 def mock_verify_and_decode(monkeypatch):
-    """
-    Automatically mock Auth0 JWT verification for all tests.
-    Prevents hitting Auth0 JWKS and ensures deterministic claims.
-    """
+    """Automatically mock Auth0 JWT verification for all tests."""
 
     def fake_verify_and_decode(token: str):
         return {"sub": "auth0|test-user", "email": "test@example.com"}
@@ -157,9 +211,7 @@ def mock_verify_and_decode(monkeypatch):
 
 @pytest.fixture(scope="function")
 def auth_header():
-    """
-    Helper: generate headers for test users.
-    """
+    """Helper: generate headers for test users."""
 
     def _h(sub: str = "auth0|test-user", *, unauthorized: bool = False):
         if unauthorized:
@@ -173,67 +225,51 @@ def auth_header():
 # 🧹 Table Cleanup Between Tests
 # -------------------------
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 
 @pytest.fixture(scope="function", autouse=True)
-def clean_user_profile(shared_engine):
+def clean_user_profile(test_db_session):
     yield
-    with shared_engine.connect() as conn:
-        conn.execute(text("DELETE FROM user_profile WHERE user_id LIKE 'auth0|%'"))
-        conn.commit()
+    inspector = inspect(test_db_session.bind)
+    if "user_profile" in inspector.get_table_names():
+        test_db_session.execute(
+            text("DELETE FROM user_profile WHERE user_id LIKE 'auth0|%'")
+        )
+        test_db_session.commit()
 
 
 @pytest.fixture(scope="function", autouse=True)
-def clean_user_athletes(shared_engine):
+def clean_user_athletes(test_db_session):
     yield
-    with shared_engine.connect() as conn:
-        conn.execute(text("DELETE FROM user_athletes WHERE user_id LIKE 'auth0|%'"))
-        conn.commit()
+    inspector = inspect(test_db_session.bind)
+    if "user_athletes" in inspector.get_table_names():
+        test_db_session.execute(
+            text("DELETE FROM user_athletes WHERE user_id LIKE 'auth0|%'")
+        )
+        test_db_session.commit()
 
 
 # -------------------------
-# 🏃 DAO Helpers
+# 🏗️ Create & Drop Tables
 # -------------------------
 
+from sqlalchemy.schema import DropTable
+from sqlalchemy.ext.compiler import compiles
 
-@pytest.fixture(scope="function")
-def make_athlete(shared_engine):
+
+@compiles(DropTable, "postgresql")
+def _compile_drop_table(element, compiler, **kwargs):
+    """Force CASCADE on drop_all()"""
+    return compiler.visit_drop_table(element) + " CASCADE"
+
+
+@pytest.fixture(autouse=True)
+def patch_get_session(monkeypatch, test_db_session):
     """
-    Factory to insert a new athlete row.
-    Handles both old and new schema (athlete_id vs strava_athlete_id).
+    Ensure routes use the same test_db_session instead of creating a new one.
+    Prevents session mismatches & hanging commits.
     """
-    Session = sessionmaker(bind=shared_engine, future=True)
+    monkeypatch.setattr("src.db.db_session.get_session", lambda: test_db_session)
 
-    def _create(**overrides):
-        from time import time
-
-        with Session() as s:
-            if hasattr(Athlete, "strava_athlete_id"):
-                a = Athlete(
-                    strava_athlete_id=overrides.get(
-                        "strava_athlete_id", int(time() * 1_000_000)
-                    )
-                )
-            else:
-                a = Athlete(
-                    athlete_id=overrides.get("athlete_id", int(time() * 1_000_000)),
-                    first_name=overrides.get("first_name", "Test"),
-                    last_name=overrides.get("last_name", "Athlete"),
-                )
-            s.add(a)
-            s.commit()
-            s.refresh(a)
-            return a
-
-    return _create
-
-
-@pytest.fixture(scope="function")
-def link_user():
-    from src.db.dao.user_athletes_dao import create_link
-
-    def _link(user_id: str, athlete_id: int):
-        return create_link(user_id, athlete_id)
-
-    return _link
+    yield

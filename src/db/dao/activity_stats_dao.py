@@ -55,12 +55,13 @@ class ActivityStatsDAO:
     ) -> Optional[float]:
         cutoff = datetime.utcnow() - timedelta(days=days)
         stmt = select(
-            func.avg(Activity.moving_time / (Activity.distance / 1000))
+            func.avg(Activity.distance / Activity.moving_time)
         ).where(
             Activity.athlete_id == athlete_id,
             Activity.type == "Run",
             Activity.start_date >= cutoff,
             Activity.distance > 0,
+            Activity.moving_time > 0,
         )
         return session.scalar(stmt)
 

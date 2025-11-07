@@ -1,62 +1,197 @@
+"""
+Activity Routes Module
+======================
+
+Provides API endpoints for managing and enriching user activities.
+
+Endpoints:
+----------
+GET  /api/activities/
+    Get user's activities (last 30 days) for plan generation context
+
+GET  /api/activities/status
+    Get Strava connection status and activity sync progress
+
+GET  /api/activities/enrich/status
+    Check enrichment service status
+
+POST /api/activities/enrich/activity/<activity_id>
+    Enrich a single activity with additional data
+
+POST /api/activities/enrich/batch
+    Enrich a batch of activities for an athlete
+
+Dependencies:
+-------------
+- ActivityIngestionService: Activity enrichment logic
+- requires_auth: JWT authentication decorator
+- Database: activities table, user_athletes table
+
+Data Source:
+-----------
+- activities table: Stores synced Strava activities
+- Enrichment: Adds calculated metrics (pace zones, HR zones, etc.)
+"""
+
 from __future__ import annotations
 
 import traceback
 from typing import Optional
 
 from flask import Blueprint, jsonify, request, g
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
+from sqlalchemy.dialects.postgresql import UUID
 
 from src.db.db_session import get_session
 from src.services.activity_service import ActivityIngestionService, run_enrichment_batch
 from src.utils.auth0_jwt import requires_auth
+from src.utils.config import config
 
-activity_bp = Blueprint("activity", __name__)
+activity_bp = Blueprint("activity", __name__, url_prefix="/api/activities")
+
+
+@activity_bp.get("/")
+@requires_auth
+def get_activities():
+    """
+    Return user's activities for plan generation context.
+    Returns basic activity data with distances and dates.
+    """
+    session = get_session()
+    try:
+        internal_user_id = getattr(g, "user_id", None)
+
+        if not internal_user_id:
+            return jsonify({"activities": []}), 200
+
+        # Get athlete_id for this user
+        stmt = text(
+            """
+            SELECT athlete_id
+            FROM public.user_athletes
+            WHERE user_id = :uid
+            LIMIT 1
+            """
+        ).bindparams(bindparam("uid", type_=UUID))
+        athlete_row = session.execute(stmt, {"uid": internal_user_id}).fetchone()
+
+        if not athlete_row:
+            return jsonify({"activities": []}), 200
+
+        athlete_id = athlete_row.athlete_id
+
+        # Fetch activities from the last 30 days (4 weeks)
+        activities_stmt = text(
+            """
+            SELECT
+                activity_id,
+                start_date,
+                distance,
+                moving_time,
+                name,
+                type
+            FROM public.activities
+            WHERE athlete_id = :aid
+            AND start_date >= NOW() - INTERVAL '30 days'
+            ORDER BY start_date DESC
+            """
+        )
+
+        activities_result = session.execute(
+            activities_stmt, {"aid": athlete_id}
+        ).fetchall()
+
+        activities = [
+            {
+                "activity_id": row[0],
+                "date": row[1].isoformat() if row[1] else None,
+                "distance_miles": (
+                    float(row[2] * 0.000621371) if row[2] else 0
+                ),  # Convert meters to miles
+                "moving_time": row[3],
+                "name": row[4],
+                "type": row[5],
+            }
+            for row in activities_result
+        ]
+
+        return jsonify({"activities": activities}), 200
+
+    except Exception as e:
+        print(f"❌ Error fetching activities: {e}")
+        traceback.print_exc()
+        return jsonify({"activities": []}), 200
+    finally:
+        session.close()
 
 
 @activity_bp.get("/status")
 @requires_auth
 def activities_status():
     """
-    Return count of Strava activities and connection status for current logged-in user.
-    Resolves user -> athlete via user_athletes mapping.
-    Falls back to the athlete_id with most activities if current mapping is invalid.
+    Return Strava connection status + progress of synced activities for current user.
     """
-    user_id = (getattr(g, "current_user", None) or {}).get("sub")
     session = get_session()
     try:
-        athlete_row = session.execute(
-            text("SELECT athlete_id FROM user_athletes WHERE user_id = :uid LIMIT 1"),
-            {"uid": user_id},
-        ).fetchone()
+        internal_user_id = getattr(g, "user_id", None)
+
+        if not internal_user_id:
+            print("❌ No internal_user_id on g")
+            return (
+                jsonify(
+                    {
+                        "stravaConnected": False,
+                        "downloaded": 0,
+                        "total": config.MIN_ACTIVITIES_REQUIRED,
+                        "status": "Pending",
+                    }
+                ),
+                200,
+            )
+
+        # 🔗 Resolve athlete mapping
+        stmt = text(
+            """
+            SELECT athlete_id
+            FROM public.user_athletes
+            WHERE user_id = :uid
+            LIMIT 1
+            """
+        ).bindparams(bindparam("uid", type_=UUID))
+        athlete_row = session.execute(stmt, {"uid": internal_user_id}).fetchone()
 
         is_connected = athlete_row is not None
         athlete_id = athlete_row.athlete_id if is_connected else None
 
-        print(f"👤 user_id = {user_id}")
-        print(f"🔍 athlete_row = {athlete_row}")
-        print(f"🏃 original athlete_id = {athlete_id}")
-
-        # 🧠 Fallback: If no activities are found for this athlete_id, try another
+        # 🧠 fallback: busiest athlete
         if athlete_id:
             row_exists = session.execute(
-                text("SELECT 1 FROM activities WHERE athlete_id = :aid LIMIT 1"),
+                text("SELECT 1 FROM public.activities WHERE athlete_id = :aid LIMIT 1"),
                 {"aid": athlete_id},
             ).fetchone()
-
             if not row_exists:
                 fallback = session.execute(
                     text(
-                        "SELECT athlete_id FROM activities GROUP BY athlete_id ORDER BY COUNT(*) DESC LIMIT 1"
+                        """
+                        SELECT athlete_id
+                        FROM public.activities
+                        GROUP BY athlete_id
+                        ORDER BY COUNT(*) DESC
+                        LIMIT 1
+                        """
                     )
                 ).fetchone()
                 if fallback:
                     print(f"⏭ Fallback to athlete_id = {fallback.athlete_id}")
                     athlete_id = fallback.athlete_id
 
+        # 📊 Count activities
         count = (
             (
                 session.execute(
-                    text("SELECT COUNT(*) FROM activities WHERE athlete_id = :aid"),
+                    text(
+                        "SELECT COUNT(*) FROM public.activities WHERE athlete_id = :aid"
+                    ),
                     {"aid": athlete_id},
                 ).scalar()
                 or 0
@@ -65,14 +200,17 @@ def activities_status():
             else 0
         )
 
-        status = "Complete" if count >= 9 else "Pending"
-        print(f"📊 Returning activity status: {count} activities → {status}")
+        total = config.MIN_ACTIVITIES_REQUIRED
+        status = "Complete" if count >= total else "Syncing" if count > 0 else "Pending"
+
+        print(f"📊 Returning activity status: {count}/{total} → {status}")
 
         return (
             jsonify(
                 {
                     "stravaConnected": is_connected,
-                    "recentActivitiesCount": int(count),
+                    "downloaded": int(count),
+                    "total": total,
                     "status": status,
                 }
             ),
@@ -81,146 +219,25 @@ def activities_status():
 
     except Exception:
         traceback.print_exc()
-        return jsonify({"stravaConnected": False, "recentActivitiesCount": 0}), 200
-    finally:
-        session.close()
-
-
-@activity_bp.post("/sync")
-@requires_auth
-def activities_sync():
-    """
-    Trigger Strava sync for the current user (dev only – safe no-op if not linked).
-    """
-    from src.services.ingestion_orchestrator_service import (
-        run_full_ingestion_and_enrichment,
-    )
-
-    session = get_session()
-    try:
-        user_id = (getattr(g, "current_user", None) or {}).get("sub")
-        print("🆕 Sync route triggered for user:", user_id)
-
-        # Resolve current athlete mapping
-        mapping_row = session.execute(
-            text("SELECT athlete_id FROM user_athletes WHERE user_id = :uid LIMIT 1"),
-            {"uid": user_id},
-        ).fetchone()
-
-        current_athlete_id = mapping_row.athlete_id if mapping_row else None
-
-        # 🧠 Attempt to auto-correct mapping if broken
-        if current_athlete_id is not None:
-            real_athlete_id_row = session.execute(
-                text(
-                    """
-                    SELECT athlete_id
-                    FROM activities
-                    WHERE athlete_id = :aid
-                    LIMIT 1
-                """
-                ),
-                {"aid": current_athlete_id},
-            ).fetchone()
-
-            if not real_athlete_id_row:
-                print(
-                    f"⚠️ Mapped athlete_id {current_athlete_id} has no activities. Searching for actual athlete..."
-                )
-                actual_row = session.execute(
-                    text(
-                        """
-                        SELECT athlete_id
-                        FROM activities
-                        GROUP BY athlete_id
-                        ORDER BY COUNT(*) DESC
-                        LIMIT 1
-                    """
-                    )
-                ).fetchone()
-
-                if actual_row:
-                    print(
-                        f"✅ Found better athlete_id: {actual_row.athlete_id} → Updating mapping..."
-                    )
-                    session.execute(
-                        text(
-                            """
-                            INSERT INTO user_athletes (user_id, athlete_id)
-                            VALUES (:uid, :aid)
-                            ON CONFLICT (user_id) DO UPDATE SET athlete_id = EXCLUDED.athlete_id
-                        """
-                        ),
-                        {"uid": user_id, "aid": actual_row.athlete_id},
-                    )
-                    session.commit()
-                    session.expire_all()
-                    current_athlete_id = actual_row.athlete_id
-
-        # ✅ Pull strava_athlete_id from athletes table
-        # ✅ Correctly map strava_athlete_id if missing or stale
-        strava_row = session.execute(
-            text(
-                """
-                SELECT id, strava_athlete_id
-                FROM athletes
-                WHERE strava_athlete_id = (
-                    SELECT strava_athlete_id FROM athletes WHERE id = :id
-                )
-                LIMIT 1
-                """
+        return (
+            jsonify(
+                {
+                    "stravaConnected": False,
+                    "downloaded": 0,
+                    "total": config.MIN_ACTIVITIES_REQUIRED,
+                    "status": "Pending",
+                }
             ),
-            {"id": current_athlete_id},
-        ).fetchone()
-
-        if not strava_row:
-            return jsonify({"ok": False, "error": "Strava athlete not found"}), 404
-
-        # 🧠 Ensure mapping is using correct internal athlete_id
-        if strava_row.id != current_athlete_id:
-            print(
-                f"🔁 Updating athlete mapping from {current_athlete_id} → {strava_row.id}"
-            )
-            session.execute(
-                text(
-                    """
-                    INSERT INTO user_athletes (user_id, athlete_id)
-                    VALUES (:uid, :aid)
-                    ON CONFLICT (user_id) DO UPDATE SET athlete_id = EXCLUDED.athlete_id
-                """
-                ),
-                {"uid": user_id, "aid": strava_row.id},
-            )
-            session.commit()
-            session.expire_all()
-
-        strava_athlete_id = strava_row.strava_athlete_id  # ✅ used for ingestion
-
-        if not strava_row:
-            return jsonify({"ok": False, "error": "Strava athlete not found"}), 404
-
-        strava_athlete_id = strava_row.strava_athlete_id
-
-        # ✅ Correct: Pass strava_athlete_id here
-        result = run_full_ingestion_and_enrichment(
-            session=session,
-            athlete_id=strava_athlete_id,
-            max_activities=10,
-            batch_size=10,
-            per_page=200,
+            200,
         )
-
-        return jsonify({"ok": True, "fetched": int(result.get("fetched", 0))}), 200
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"ok": False, "error": str(e)}), 500
     finally:
         session.close()
+
+
+# Deprecated sync route removed - use /api/progress/ingest instead
 
 
 # -------- Enrichment routes --------
-
-
 @activity_bp.get("/enrich/status")
 @requires_auth
 def enrich_status():

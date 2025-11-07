@@ -1,0 +1,24 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are an elite marathon running coach with 20+ years of experience helping runners achieve their marathon goals.\n\nYour expertise includes:\n- Creating safe, evidence-based training plans\n- Specializing in first-time marathoners and \"just finish\" goals\n- Applying proven methodologies from Hal Higdon, Jack Daniels, and Pete Pfitzinger\n- Balancing progressive overload with injury prevention\n- Personalizing plans based on runner's current fitness and schedule\n\nYour coaching philosophy:\n- Safety first: Never recommend unsafe progressions\n- Build gradually: Follow the 10% rule for weekly mileage increases\n- 80/20 training: 80% easy effort, 20% quality work\n- Individualize: Adapt to each runner's unique situation\n- Encourage: Build confidence while maintaining realism"
+    },
+    {
+      "role": "user",
+      "content": "# RUNNER PROFILE\n\nAge Group: 40-49\nHeight: 5'10\"\nWeight: 172.0 lbs\nMarathon Experience: First\nPrimary Motivation: StressRelief\n\n# RACE GOAL\n\nRace Date: 2025-06-15 (1 weeks available)\nRace Name: Sample Marathon\nRace Location: Boston, MA\nPrimary Goal: Just Finish\nRunner's Notes: First marathon attempt, nervous but excited!\n\n# CURRENT FITNESS\n\nWeekly Mileage: 30.7 miles (last complete week)\nLongest Recent Run: 26.0 miles (last 12 weeks)\nAverage Pace: 9:49/mile\nFitness Trend: Improving\n\n# TRAINING RECOMMENDATIONS\n\nStarting Weekly Mileage: 30.7 miles\nMarathon Readiness: Ready for marathon training\nSafe Progression Rate: 10.0% per week\nStarting Long Run Distance: 15.0 miles\nFocus Areas: Injury Prevention, Mileage Building, Consistency, Marathon Education, Endurance Focus\n\n# SCHEDULE CONSTRAINTS\n\nPreferred Training Days: Monday, Wednesday, Friday, Saturday\nDays per Week: 4\n\n# YOUR TASK\n\nCreate a 1-week marathon training plan for this runner.\n\nKey Requirements:\n- Goal: Just Finish\n- Weekly mileage: Maximum 10% increase per week\n- Long runs: Increase by 1 mile per week (standard progression)\n- Cutback weeks: Every 3-4 weeks, reduce mileage by 20-30%\n- Peak long run: 18-22 miles, 3 weeks before race\n- Taper: Final 2-3 weeks, reduce volume while maintaining intensity\n- 80/20 intensity distribution: 80% easy runs, 20% quality workouts\n- Include rest days and cross-training as appropriate\n- Provide specific workout descriptions for each training day\n\n# OUTPUT FORMAT\n\nReturn your training plan as valid JSON with this exact structure:\n\n{\n  \"plan_name\": \"Descriptive name for the plan\",\n  \"plan_summary\": \"Brief overview of the training approach (2-3 sentences)\",\n  \"weeks\": [\n    {\n      \"week_number\": 1,\n      \"phase\": \"Base Building|Build|Peak|Taper\",\n      \"weekly_mileage\": 30.0,\n      \"week_notes\": \"General guidance for this week\",\n      \"workouts\": [\n        {\n          \"day\": \"Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday\",\n          \"workout_type\": \"Easy Run|Long Run|Tempo Run|Interval|Rest|Cross-Training\",\n          \"distance_miles\": 5.0,\n          \"pace_guidance\": \"Easy pace (conversational)|Tempo pace|etc.\",\n          \"workout_description\": \"Detailed instructions for this workout\"\n        }\n      ]\n    }\n  ],\n  \"race_week_strategy\": \"Specific guidance for race week preparation\",\n  \"nutrition_tips\": \"Key nutrition guidance for marathon training\",\n  \"injury_prevention_tips\": \"Tips to stay healthy during training\"\n}\n\nIMPORTANT:\n- Return ONLY valid JSON, no additional text\n- Include all weeks from week 1 through race week\n- Ensure every workout has specific, actionable guidance\n- Make pace guidance relative (easy, moderate, tempo) not absolute numbers\n\n# SPECIAL CONSIDERATIONS\n\n[!] TIME CONSTRAINT: Less than 16 weeks available. Use a conservative approach and consider if the runner should target a later race.\n\nPlease adjust your plan accordingly to address these factors."
+    }
+  ],
+  "config": {
+    "model": "gpt-4",
+    "response_format": {
+      "type": "json_object"
+    },
+    "temperature": 0.7
+  },
+  "metadata": {
+    "prompt_version": "v1.0",
+    "created_at": "2025-10-28T22:50:31.211167",
+    "data_quality": "sufficient"
+  }
+}

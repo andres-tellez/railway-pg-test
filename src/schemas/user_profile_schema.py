@@ -1,13 +1,8 @@
 from typing import List, Optional, Union, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator, StrictInt
 from src.db.models.user_profile import (
-    RunnerLevel,
-    RaceDistance,
-    PastRace,
-    Goal,
     Motivation,
-    AgeGroup,
-    RunPreference,
+    TrainingDay,
 )
 
 
@@ -18,19 +13,13 @@ class Height(BaseModel):
 
 class UserProfileSchema(BaseModel):
     user_id: str
-    runnerLevel: RunnerLevel
-    raceHistory: bool
-    raceDate: Optional[str]
-    raceDistance: Optional[RaceDistance]
-    pastRaces: Optional[List[PastRace]]
 
-    # ✅ Updated to nested height object
+    # Motivation
+    motivation: Optional[List[Motivation]] = None
+
+    # Physical Stats
+    ageGroup: (
+        str  # Changed from enum to string to store user-friendly ranges like "30-39"
+    )
     height: Height
-
     weight: Optional[int]
-    trainingDays: Optional[List[str]]
-    mainGoal: Optional[Goal]
-    motivation: Optional[List[Motivation]]
-    ageGroup: Optional[AgeGroup]
-    runPreference: Optional[RunPreference]
-    longestRun: Optional[int] = None  # <-- add this line

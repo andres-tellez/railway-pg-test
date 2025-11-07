@@ -1,99 +1,154 @@
+# src/db/models/user_profile.py
 from sqlalchemy import (
-    Table,
     Column,
     Integer,
     String,
     Boolean,
     Enum,
     Float,
-    MetaData,
     Text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ENUM as PGEnum, ARRAY as PGArray
+from sqlalchemy.types import TypeDecorator
+from sqlalchemy.ext.declarative import declarative_base
 import enum
+import json
+from src.db.db_session import Base
 
-metadata = MetaData()
+
+# ---------------------------
+# Cross-database compatibility
+# ---------------------------
+class SqliteArray(TypeDecorator):
+    """
+    Emulate PostgreSQL ARRAY in SQLite by storing as JSON.
+    """
+
+    impl = Text
+
+    def process_bind_param(self, value, dialect):
+        if dialect.name == "sqlite":
+            return json.dumps(value) if value is not None else None
+        return value
+
+    def process_result_value(self, value, dialect):
+        if dialect.name == "sqlite":
+            return json.loads(value) if value is not None else None
+        return value
+
+
+class SqliteJSONB(TypeDecorator):
+    """
+    Emulate PostgreSQL JSONB in SQLite by storing as TEXT (JSON string).
+    In PostgreSQL, uses native JSONB type.
+    """
+
+    impl = Text
+
+    def load_dialect_impl(self, dialect):
+        """Use native JSONB in PostgreSQL, Text in SQLite."""
+        if dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import JSONB
+
+            return dialect.type_descriptor(JSONB())
+        return dialect.type_descriptor(Text())
+
+    def process_bind_param(self, value, dialect):
+        if dialect.name == "sqlite":
+            return json.dumps(value) if value is not None else None
+        return value
+
+    def process_result_value(self, value, dialect):
+        if dialect.name == "sqlite":
+            return json.loads(value) if value is not None else None
+        return value
+
+
+class SqliteUUID(TypeDecorator):
+    """
+    Emulate PostgreSQL UUID in SQLite by storing as TEXT.
+    """
+
+    impl = String(36)  # UUIDs are 36 characters with hyphens
+    cache_ok = True  # Safe to cache - behavior is deterministic
+
+    def process_bind_param(self, value, dialect):
+        """Convert UUID to string for SQLite, pass through for PostgreSQL."""
+        if value is None:
+            return None
+        if dialect.name == "sqlite":
+            # Convert UUID to string for SQLite
+            return str(value) if hasattr(value, "hex") else value
+        return value
+
+    def process_result_value(self, value, dialect):
+        """Convert string back to UUID for SQLite, pass through for PostgreSQL."""
+        if value is None:
+            return None
+        if dialect.name == "sqlite":
+            # Convert string back to UUID for SQLite
+            import uuid as uuid_module
+
+            return uuid_module.UUID(value) if isinstance(value, str) else value
+        return value
+
+
+def ArrayType(base_type):
+    """Return ARRAY for Postgres, SqliteArray otherwise."""
+
+    def _factory():
+        from sqlalchemy import inspect
+
+        return (
+            ARRAY(base_type)
+            if base_type
+            and Base.metadata.bind
+            and Base.metadata.bind.dialect.name == "postgresql"
+            else SqliteArray()
+        )
+
+    return SqliteArray()  # default fallback; we’ll override properly in columns
 
 
 # ---------------------------
 # Enumerations
 # ---------------------------
-class RunnerLevel(str, enum.Enum):
-    Beginner = "Beginner"
-    Intermediate = "Intermediate"
-    Expert = "Expert"
-
-
-class RaceDistance(str, enum.Enum):
-    _5K = "5K"
-    _10K = "10K"
-    Half = "Half Marathon"
-    Marathon = "Marathon"
-    Ultra = "Ultra"
-    Other = "Other"
-
-
-class PastRace(str, enum.Enum):
-    _5K = "5K"
-    _10K = "10K"
-    Half = "Half Marathon"
-    Marathon = "Marathon"
-    Ultra = "Ultra"
-    NoneYet = "Haven't raced yet"
-
-
-class Goal(str, enum.Enum):
-    Fitness = "General fitness"
-    Race = "Run a race"
-    LoseWeight = "Lose weight"
-    Faster = "Run faster"
-    Other = "Other"
-
-
 class Motivation(str, enum.Enum):
     Health = "Health"
     Competition = "Competition"
     StressRelief = "Stress relief"
     Enjoyment = "Enjoyment"
+    WeightLoss = "Weight loss"
     Other = "Other"
 
 
-class AgeGroup(str, enum.Enum):
-    Under18 = "Under 18"
-    Age18_24 = "18-24"
-    Age25_34 = "25-34"
-    Age35_44 = "35-44"
-    Age45_54 = "45-54"
-    Age55Plus = "55+"
-
-
-class RunPreference(str, enum.Enum):
-    Distance = "Distance"
-    Time = "Time"
-    NonePref = "No preference"
+class TrainingDay(str, enum.Enum):
+    MON = "Mon"
+    TUE = "Tue"
+    WED = "Wed"
+    THU = "Thu"
+    FRI = "Fri"
+    SAT = "Sat"
+    SUN = "Sun"
 
 
 # ---------------------------
-# SQLAlchemy Core Table Definition
+# ORM Model
 # ---------------------------
-user_profile_table = Table(
-    "user_profile",
-    metadata,
-    Column("user_id", String, primary_key=True),
-    Column("runner_level", Enum(RunnerLevel), nullable=False),
-    Column("race_history", Boolean, nullable=False),
-    Column("race_date", String),
-    Column("race_distance", Enum(RaceDistance)),
-    Column("past_races", ARRAY(Enum(PastRace))),
-    Column("height_feet", Integer, nullable=False),
-    Column("height_inches", Integer, nullable=False),
-    Column("weight", Float, nullable=False),
-    Column("training_days", ARRAY(String)),
-    Column("main_goal", Enum(Goal), nullable=False),
-    Column("motivation", ARRAY(Enum(Motivation)), nullable=False),
-    Column("age_group", Enum(AgeGroup), nullable=False),
-    Column("longest_run", Float),
-    Column("run_preference", Enum(RunPreference), nullable=False),
-)
+class UserProfile(Base):
+    __tablename__ = "user_profile"
 
-__all__ = ["user_profile_table"]
+    user_id = Column(String, primary_key=True)
+
+    # Physical Stats
+    age_group = Column(
+        String, nullable=False
+    )  # Changed from enum to string to store user-friendly ranges like "30-39"
+    height_feet = Column(Integer, nullable=False)
+    height_inches = Column(Integer, nullable=False)
+    weight = Column(Float)
+
+    # Motivation
+    motivation = Column(
+        SqliteArray(), nullable=True  # Use SQLite-compatible array type
+    )

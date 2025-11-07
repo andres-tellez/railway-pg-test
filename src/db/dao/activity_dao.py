@@ -1,10 +1,21 @@
+# @file activity_dao.py
+# @component ActivityDAO
+# @description: Handles database operations for Strava activities
+# @features: Insert, update, query by athlete or activity
+# @integration-points: SQLAlchemy ORM, Postgres (insert + on_conflict), conversion utils
+# @usage: Used in ingestion orchestration and enrichment
+# @prerequisites: Activity table must exist with correct schema
+
+from typing import List, Dict, Optional
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
-from src.db.models.activities import Activity
+from uuid import UUID
+import uuid
+import logging
 
-from src.utils.conversions import convert_metrics
+from src.db.models.activities import Activity
 from src.utils.logger import get_logger
-from typing import List, Dict
+from src.utils.conversions import convert_metrics  # assumed to exist
 
 logger = get_logger(__name__)
 
@@ -12,27 +23,53 @@ logger = get_logger(__name__)
 class ActivityDAO:
     @staticmethod
     def upsert_activities(
-        session: Session, athlete_id: int, activities: List[Dict]
+        session: Session,
+        athlete_id: int,
+        activities: List[Dict],
+        user_id: UUID,
     ) -> int:
         """
-        Upsert activities into the database, filtering only 'Run' types.
+        Upsert 'Run' activities into the database.
+        Requires activity_id, user_id (UUID), and minimum required fields.
+        Skips invalid or non-Run types.
         """
+
         if not activities:
+            logger.warning("[WARNING] No activities provided to upsert.")
             return 0
+
+        # Handle user_id validation - can be None, UUID object, or UUID string
+        uid = None
+        if user_id is not None:
+            try:
+                uid = uuid.UUID(str(user_id))
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.warning(
+                    f"Invalid user_id format (not UUID): {user_id}, continuing without user_id: {e}"
+                )
+                uid = None  # Continue without user_id rather than failing completely
+
+        logger.info(
+            f"[INFO] Preparing to upsert {len(activities)} activities for athlete={athlete_id}, user_id={uid}"
+        )
 
         rows = []
         for act in activities:
+            logger.debug(
+                f"[DEBUG] Processing candidate: {act.get('activity_id') or act.get('id')}"
+            )
+
+            # Ensure it's a 'Run'
             if act.get("type") != "Run":
-                logger.warning(
-                    f"⚠️ Skipping non-Run activity {act.get('id')} — type={act.get('type')}"
-                )
+                logger.debug(f"[SKIP] Skipping non-Run activity type={act.get('type')}")
                 continue
 
-            name = act.get("name", "").lower()
+            name = (act.get("name") or "").lower()
             is_treadmill = "treadmill" in name
 
+            # Required fields check
             required_fields = [
-                "id",
+                "activity_id",
                 "start_date",
                 "distance",
                 "moving_time",
@@ -44,10 +81,11 @@ class ActivityDAO:
             missing = [f for f in required_fields if not act.get(f)]
             if missing:
                 logger.error(
-                    f"❌ Skipping activity {act.get('id')} due to missing required fields: {missing}"
+                    f"[ERROR] Skipping activity {act.get('activity_id')} due to missing: {missing}"
                 )
                 continue
 
+            # Metric conversions
             conv_input = {
                 "distance": act.get("distance"),
                 "elevation": act.get("total_elevation_gain"),
@@ -56,19 +94,23 @@ class ActivityDAO:
                 "moving_time": act.get("moving_time"),
                 "elapsed_time": act.get("elapsed_time"),
             }
-            conv_fields = [
-                "distance",
-                "elevation",
-                "average_speed",
-                "max_speed",
-                "moving_time",
-                "elapsed_time",
-            ]
-            conv = convert_metrics(conv_input, conv_fields)
+
+            conv = convert_metrics(
+                conv_input,
+                [
+                    "distance",
+                    "elevation",
+                    "average_speed",
+                    "max_speed",
+                    "moving_time",
+                    "elapsed_time",
+                ],
+            )
 
             row = {
-                "activity_id": act["id"],
+                "activity_id": act["activity_id"],
                 "athlete_id": athlete_id,
+                "user_id": uid,
                 "name": act.get("name"),
                 "type": act.get("type"),
                 "start_date": act.get("start_date"),
@@ -90,34 +132,44 @@ class ActivityDAO:
                 "conv_moving_time": conv.get("conv_moving_time"),
                 "conv_elapsed_time": conv.get("conv_elapsed_time"),
             }
+
             rows.append(row)
 
         if not rows:
+            logger.warning("[WARNING] No valid rows prepared for upsert.")
             return 0
 
-        stmt = insert(Activity).values(rows)
-        update_cols = {
-            col.name: getattr(stmt.excluded, col.name)
-            for col in Activity.__table__.columns
-            if col.name != "activity_id"
-        }
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["activity_id"], set_=update_cols
-        )
+        logger.info(f"[INFO] Upserting {len(rows)} activities into database...")
+        logger.debug(f"[DEBUG] Example row: {rows[0]}")
 
-        result = session.execute(stmt)
-        session.commit()
-        return result.rowcount
+        try:
+            stmt = insert(Activity).values(rows)
+
+            update_cols = {
+                col.name: getattr(stmt.excluded, col.name)
+                for col in Activity.__table__.columns
+                if col.name not in ("activity_id", "user_id")
+            }
+
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["activity_id"], set_=update_cols
+            )
+
+            result = session.execute(stmt)
+            session.commit()
+            logger.info(f"[SUCCESS] Successfully upserted {result.rowcount} activities")
+            return result.rowcount
+        except Exception as e:
+            session.rollback()
+            logger.error(f"[ERROR] Upsert failed: {e}")
+            return 0
 
     @staticmethod
-    def get_by_id(session: Session, activity_id: int) -> Activity | None:
-        """
-        Retrieve a single activity by its activity_id.
-        """
+    def get_by_id(session: Session, activity_id: int) -> Optional[Activity]:
         return session.query(Activity).filter_by(activity_id=activity_id).first()
 
     @staticmethod
-    def get_activities_by_athlete(session: Session, athlete_id: int) -> list[Activity]:
+    def get_activities_by_athlete(session: Session, athlete_id: int) -> List[Activity]:
         return (
             session.query(Activity)
             .filter(Activity.athlete_id == athlete_id)
@@ -127,8 +179,5 @@ class ActivityDAO:
 
 
 def has_existing_activities(session: Session, athlete_id: int) -> bool:
-    """
-    Return True if the athlete has any synced activities.
-    """
     count = session.query(Activity).filter(Activity.athlete_id == athlete_id).count()
     return count > 0

@@ -3,48 +3,62 @@
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
+from src.utils.config import config
 
-import src.utils.config as config
-
-# ✅ SQLAlchemy instance for Flask use
+# ✅ SQLAlchemy instance for Flask integration (if you use db.Model elsewhere)
 db = SQLAlchemy()
 
-# ✅ Declarative base for non-Flask models
+# ✅ Declarative base for models
 Base = declarative_base()
 
+# ✅ Global engine
+DATABASE_URL = config.DATABASE_URL
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set in configuration.")
 
-# Engine creation
-def get_engine(db_url=None):
-    """
-    Create a SQLAlchemy engine.
-    Allows optional db_url override for tests or special cases.
-    """
-    db_url = db_url or config.DATABASE_URL
-    if not db_url:
-        raise RuntimeError("DATABASE_URL is not set in configuration.")
-    return create_engine(db_url, echo=False, future=True)
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    future=True,
+    pool_pre_ping=True,  # ✅ ensures dead connections are recycled
+    connect_args={"sslmode": "require"},  # ✅ important for Railway
+)
+
+# ✅ Global session factory
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    future=True,
+)
+
+# -------------------------
+# 🔧 Session helpers
+# -------------------------
 
 
-# Session factory
-def get_session(engine=None):
+def get_engine():
+    """Return the global engine (backward compatibility)."""
+    return engine
+
+
+def get_session():
     """
-    Create a new SQLAlchemy sessionmaker (not a global session).
-    Allows optional engine injection for test harnesses.
+    Return a new SQLAlchemy session from the global SessionLocal.
+    Usage:
+        session = get_session()
     """
-    engine = engine or get_engine()
-    SessionLocal = sessionmaker(
-        bind=engine, autoflush=False, autocommit=False, future=True
-    )
     return SessionLocal()
 
 
-# Dependency-style session generator (used in routes)
 def get_db():
     """
-    Generator that yields a database session and ensures closure.
-    Use in routes: `db = next(get_db())` or in context managers.
+    Dependency-style generator that yields a session and ensures closure.
+    Useful in routes or background tasks.
+    Usage:
+        for db in get_db():
+            ...
     """
-    SessionLocal = get_session()
     db_session = SessionLocal()
     try:
         yield db_session

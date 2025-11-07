@@ -63,7 +63,7 @@ def test_strava_login_redirect(client, monkeypatch):
 
 
 # ----------------------
-# /auth/callback GET
+# /auth/strava/callback GET
 # ----------------------
 
 
@@ -72,13 +72,13 @@ def test_strava_login_redirect(client, monkeypatch):
 def test_callback_success(mock_get_session, mock_store_tokens, client):
     mock_store_tokens.return_value = 123
     mock_get_session.return_value = MagicMock()
-    response = client.get("/auth/callback?code=fakecode")
+    response = client.get("/auth/strava/callback?code=fakecode")
     assert response.status_code == 200
     assert "Token stored for athlete_id: 123" in response.get_data(as_text=True)
 
 
 def test_callback_missing_code(client):
-    response = client.get("/auth/callback")
+    response = client.get("/auth/strava/callback")
     assert response.status_code == 400
     assert "Missing OAuth code" in response.get_data(as_text=True)
 
@@ -90,7 +90,7 @@ def test_callback_missing_code(client):
 @patch("src.routes.auth_routes.get_session")
 def test_callback_exception(mock_get_session, mock_store_tokens, client):
     mock_get_session.return_value = MagicMock()
-    response = client.get("/auth/callback?code=code")
+    response = client.get("/auth/strava/callback?code=code")
     assert response.status_code == 500
     assert "Callback error" in response.get_data(as_text=True)
 

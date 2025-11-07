@@ -1,7 +1,40 @@
-# src/routes/user_profile_routes.py
+"""
+User Profile Routes Module
+==========================
+
+Provides API endpoints for user profile management and onboarding.
+
+Endpoints:
+----------
+POST /api/onboarding
+    Create or update user's onboarding profile
+
+GET  /api/onboarding
+    Fetch user's onboarding profile
+
+Dependencies:
+-------------
+- UserProfileSchema: Pydantic validation schema
+- user_profile_dao: Database operations for profiles
+- requires_auth: JWT authentication decorator
+
+Data Managed:
+------------
+- User profile information (race goals, fitness level, etc.)
+- Height (feet/inches)
+- Age group
+- Training preferences
+- Race information
+
+Note:
+-----
+All endpoints use internal UUID (from g.user_id) rather than Auth0 sub.
+Profile data is used for personalized training plan generation.
+"""
+
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping
+from typing import Any, Dict
 from enum import Enum
 
 from flask import Blueprint, request, jsonify, g, current_app
@@ -10,33 +43,9 @@ from pydantic import ValidationError
 from src.db.dao.user_profile_dao import save_user_profile, get_user_profile
 from src.schemas.user_profile_schema import UserProfileSchema
 from src.utils.auth0_jwt import requires_auth
+from src.db.db_session import get_session
 
 user_profile_bp = Blueprint("user_profile", __name__, url_prefix="/api")
-
-
-def _safe_to_mapping(row: Any) -> Mapping[str, Any]:
-    if row is None:
-        return {}
-    m = getattr(row, "_mapping", None)
-    if m is not None:
-        return m
-    if isinstance(row, Mapping):
-        return row
-    return dict(row)
-
-
-def normalize_postgres_row(row: Mapping[str, Any]) -> Dict[str, Any]:
-    current_app.logger.debug("normalize_postgres_row IN: %r", row)
-    out: Dict[str, Any] = {}
-    for k, v in row.items():
-        if isinstance(v, list):
-            out[k] = [item.value if isinstance(item, Enum) else item for item in v]
-        elif isinstance(v, Enum):
-            out[k] = v.value
-        else:
-            out[k] = v
-    current_app.logger.debug("normalize_postgres_row OUT: %r", out)
-    return out
 
 
 def _coerce_int(value: Any, default: int = 0) -> int:
@@ -55,13 +64,17 @@ def _coerce_int(value: Any, default: int = 0) -> int:
 def submit_user_profile():
     """
     Create/update a user's onboarding profile.
-    Always uses the Auth0 subject from the access token; the client cannot override it.
+    Always uses the internal UUID from identity, not the raw Auth0 sub.
     """
-    sub = (getattr(g, "current_user", {}) or {}).get("sub")
-    if not sub:
-        return jsonify({"status": "error", "message": "No user"}), 401
+    internal_user_id = getattr(g, "user_id", None)  # <-- UUID from your middleware
+    if not internal_user_id:
+        return jsonify({"status": "error", "message": "No internal user_id"}), 401
 
     data = request.get_json(silent=True) or {}
+    current_app.logger.debug(f"[submit_user_profile] Received data: {data}")
+
+    # No mapping needed - age_group is now a string column that stores user-friendly ranges like "30-39"
+
     # Accept legacy height fields
     if "heightFeet" in data or "heightInches" in data:
         feet = _coerce_int(data.pop("heightFeet", 0))
@@ -73,14 +86,14 @@ def submit_user_profile():
             )
         data["height"] = {"feet": feet, "inches": inches}
 
-    # Force user_id to token sub (schema still expects it)
-    data["user_id"] = sub
+    # Force user_id to internal UUID (not client-provided)
+    data["user_id"] = str(internal_user_id)
 
     try:
         validated = UserProfileSchema.model_validate(data)
         user_dict: Dict[str, Any] = validated.model_dump(exclude_unset=True)
 
-        # Flatten height if present
+        # Flatten height
         if "height" in user_dict:
             height = user_dict.pop("height") or {}
             feet = height.get("feet")
@@ -107,19 +120,29 @@ def submit_user_profile():
                     item.value if isinstance(item, Enum) else item for item in v
                 ]
 
-        # Enforce the sub
-        user_dict["user_id"] = sub
+        # Always overwrite with UUID
+        user_dict["user_id"] = str(internal_user_id)
 
-        save_user_profile(user_dict)
+        session = get_session()
+        try:
+            save_user_profile(session, user_dict)
+        finally:
+            session.close()
+
         return (
             jsonify({"status": "success", "message": "Profile saved successfully"}),
             200,
         )
 
     except ValidationError as e:
+        current_app.logger.error(
+            f"[submit_user_profile] Validation error: {e.errors()}"
+        )
         return jsonify({"status": "error", "errors": e.errors()}), 400
     except Exception as e:
-        current_app.logger.exception("submit_user_profile failed for sub=%s", sub)
+        current_app.logger.exception(
+            "submit_user_profile failed for user_id=%s", internal_user_id
+        )
         return jsonify({"status": "error", "message": "Failed to save profile"}), 500
 
 
@@ -127,20 +150,26 @@ def submit_user_profile():
 @requires_auth
 def get_user_profile_route():
     """
-    Fetch onboarding profile for the authenticated user (Auth0 sub).
+    Fetch onboarding profile for the authenticated user.
+    Uses internal UUID from g.user_id.
     """
-    sub = (getattr(g, "current_user", {}) or {}).get("sub")
-    if not sub:
+    internal_user_id = getattr(g, "user_id", None)
+    if not internal_user_id:
         return jsonify({"status": "error", "message": "No user"}), 401
+
+    session = get_session()
     try:
-        profile = get_user_profile(sub)
-        if not profile:
+        profile_dict = get_user_profile(session, str(internal_user_id))
+        if not profile_dict:
             return (
                 jsonify({"status": "error", "message": "User profile not found"}),
                 404,
             )
-        normalized = normalize_postgres_row(_safe_to_mapping(profile))
-        return jsonify({"status": "success", "data": normalized}), 200
+        return jsonify({"status": "success", "data": profile_dict}), 200
     except Exception:
-        current_app.logger.exception("get_user_profile failed for sub=%s", sub)
+        current_app.logger.exception(
+            "get_user_profile failed for user_id=%s", internal_user_id
+        )
         return jsonify({"status": "error", "message": "Failed to fetch profile"}), 500
+    finally:
+        session.close()

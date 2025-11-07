@@ -38,5 +38,7 @@ jobs:
         run: echo "PYTHONPATH=$(pwd)/src" >> $GITHUB_ENV
 
       - name: Run tests
+        env:
+          DATABASE_URL: "postgresql://user:password@localhost:5432/db"
         run: |
           pytest --maxfail=1 --disable-warnings -q

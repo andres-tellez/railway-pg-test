@@ -1,231 +1,409 @@
-import sys
+"""
+Strava Activity Ingestion Orchestrator
+=======================================
+
+This module orchestrates the full ingestion and enrichment process for Strava activities.
+
+The ingestion process includes:
+1. Token validation and retrieval
+2. Sync strategy determination (full vs. incremental)
+3. Activity fetching from Strava API
+4. Activity filtering (runs only)
+5. Activity storage in database
+6. Activity enrichment (streams, splits, metrics)
+
+Key Features:
+- Incremental Sync: Only fetches new activities since last sync (efficient)
+- Full Sync: Fetches all activities when needed (first sync, force flag)
+- Automatic Enrichment: Automatically enriches activities with streams and metrics
+- Error Handling: Comprehensive error handling with logging
+- Input Validation: Validates all parameters before processing
+
+Sync Strategies:
+- Incremental: Fetches activities since last sync timestamp (default)
+- Full: Fetches all activities within lookback period (first sync or force flag)
+
+Processing Flow:
+1. Validate athlete_id and parameters
+2. Get valid access token (auto-refresh if expired)
+3. Determine sync strategy (incremental vs. full)
+4. Fetch activities from Strava API
+5. Filter for runs only
+6. Store new activities in database
+7. Trigger enrichment batch for new activities
+8. Update last sync timestamp
+
+Usage:
+    from src.services.ingestion_orchestrator_service import run_full_ingestion_and_enrichment
+
+    result = run_full_ingestion_and_enrichment(
+        _unused_session=None,
+        athlete_id=12345,
+        user_id="user-uuid",
+        lookback_days=365,
+        max_activities=1000,
+        force_full_sync=False
+    )
+    # Returns: {"synced": 50, "enriched": 50}
+
+Parameters:
+- athlete_id: Strava athlete ID (required)
+- user_id: Internal user ID (optional, UUID format)
+- lookback_days: Number of days to look back (default: 365, max: 3650)
+- max_activities: Maximum activities to fetch (default: from config)
+- batch_size: Batch size for enrichment (optional)
+- per_page: Activities per API page (optional, max: 200)
+- after: Unix timestamp - only fetch activities after this time (optional)
+- before: Unix timestamp - only fetch activities before this time (optional)
+- force_full_sync: Force full sync instead of incremental (default: False)
+
+Returns:
+    Dict with "synced" and "enriched" counts:
+    {
+        "synced": 50,      # Number of activities synced from Strava
+        "enriched": 50     # Number of activities enriched with streams/metrics
+    }
+
+Error Handling:
+- Invalid athlete_id: Raises ValueError
+- Invalid parameters: Logs warning and uses defaults
+- API errors: Logged and propagated
+- Database errors: Logged and propagated
+
+References:
+- https://developers.strava.com/docs/reference/#api-Activities
+- https://developers.strava.com/docs/reference/#api-Streams
+"""
+
 import os
 import time
-from pathlib import Path
+import logging
 from datetime import datetime, timedelta
-from sqlalchemy import exists
 
-sys.path.append(str(Path(__file__).resolve().parents[2]))  # adds project root
-
+from src.db.db_session import get_session
+from src.db.dao.token_dao import get_tokens_sa
 from src.db.dao.activity_dao import ActivityDAO
-from src.utils.logger import get_logger
+from src.db.models.tokens import Token
+from src.db.models.activities import Activity
+from src.services.token_service import get_valid_token
 from src.services.activity_service import (
     ActivityIngestionService,
-    enrich_one_activity_with_refresh,
     run_enrichment_batch,
 )
-from src.db.dao.token_dao import get_tokens_sa
-from src.services.token_service import get_valid_token
-from src.db.models.activities import Activity
-from src.db.models.tokens import Token
+from src.services.sync_tracking_service import (
+    should_use_incremental_sync,
+    update_last_sync_timestamp,
+)
 from src.utils.seeder import seed_sample_activity
+from src.utils.config import config
+from src.utils.strava_exceptions import (
+    StravaIngestionValidationError,
+    StravaIngestionSyncError,
+    StravaIngestionEnrichmentError,
+    StravaTokenError,
+)
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 def run_full_ingestion_and_enrichment(
-    session,
+    _unused_session,
     athlete_id,
-    lookback_days=60,
-    max_activities=30,
-    batch_size=10,
-    per_page=200,
+    user_id=None,
+    lookback_days=config.DEFAULT_LOOKBACK_DAYS,
+    max_activities=config.MAX_ACTIVITIES_TO_DOWNLOAD,
+    batch_size=None,
+    per_page=None,
+    after=None,
+    before=None,
+    force_full_sync=False,
 ):
-    logger.info(f"[CRON SYNC] ✅ Sync job started at {datetime.utcnow().isoformat()}")
-    logger.info(
-        f"🚀 Starting run_full_ingestion_and_enrichment for athlete {athlete_id}"
+    """
+    Run full ingestion and enrichment for an athlete.
+
+    Args:
+        _unused_session: Unused session parameter (for backward compatibility)
+        athlete_id: Strava athlete ID (required, must be positive integer)
+        user_id: Internal user ID (optional, UUID format)
+        lookback_days: Number of days to look back (default: 365, max: 3650)
+        max_activities: Maximum activities to fetch (default: from config)
+        batch_size: Batch size for enrichment (optional)
+        per_page: Activities per API page (optional, max: 200)
+        after: Unix timestamp - only fetch activities after this time (optional)
+        before: Unix timestamp - only fetch activities before this time (optional)
+        force_full_sync: Force full sync instead of incremental (default: False)
+
+    Returns:
+        Dict with "synced" and "enriched" counts
+
+    Raises:
+        ValueError: If athlete_id is invalid
+    """
+    from src.utils.strava_validators import (
+        validate_athlete_id,
+        validate_ingestion_params,
     )
-    logger.info(f"🔍 Effective lookback_days: {lookback_days}")
 
-    tokens = get_tokens_sa(session, athlete_id)
-    if not tokens:
-        logger.warning(
-            f"⚠️ No tokens found for athlete {athlete_id}. Attempting to seed from .env..."
+    # Validate athlete_id
+    validated_athlete_id, error = validate_athlete_id(athlete_id)
+    if error:
+        logger.error(f"Invalid athlete_id: {athlete_id}")
+        raise StravaIngestionValidationError(
+            message=f"Invalid athlete_id: {error[0].json.get('error', 'Unknown error')}",
+            validation_errors={
+                "athlete_id": error[0].json.get("error", "Invalid format")
+            },
         )
+    athlete_id = validated_athlete_id
 
-        access_token = os.getenv("STRAVA_ACCESS_TOKEN")
-        refresh_token = os.getenv("STRAVA_REFRESH_TOKEN")
-        expires_at = int(os.getenv("STRAVA_EXPIRES_AT", time.time() + 3600))
+    # Validate user_id if provided
+    if user_id is not None:
+        from src.utils.strava_validators import validate_user_id
 
-        if access_token and refresh_token:
-            token = Token(
-                athlete_id=athlete_id,
-                access_token=access_token,
-                refresh_token=refresh_token,
-                expires_at=expires_at,
-            )
-            session.merge(token)
-            session.commit()
-            logger.info(f"✅ Seeded Strava token from .env for athlete {athlete_id}")
-        else:
+        validated_user_id, error = validate_user_id(user_id)
+        if error:
             logger.warning(
-                "⚠️ .env credentials not found. Using fallback seeding for mock activity"
+                f"Invalid user_id format: {user_id}, continuing without user_id"
             )
-            seed_sample_activity(session, athlete_id)
-            session.commit()
-            logger.info(f"✅ Seeded mock activity for athlete {athlete_id}")
-            return {"synced": 1, "enriched": 0}
+            user_id = None  # Continue without user_id rather than failing
 
-    access_token = get_valid_token(session, athlete_id)
-    logger.info(f"🟢 Retrieved valid access token for athlete {athlete_id}")
-
-    logger.info(f"🗖️ Fetching recent activities from Strava...")
-    service = ActivityIngestionService(session, athlete_id)
-
-    after_ts = None
-
-    if lookback_days:
-        after_ts = int((datetime.utcnow() - timedelta(days=lookback_days)).timestamp())
-        logger.info(
-            f"🔍 Using 'after' timestamp: {after_ts} ({datetime.utcfromtimestamp(after_ts).isoformat()} UTC)"
-        )
-
-    try:
-        all_fetched = service.client.get_activities(
-            after=after_ts, per_page=per_page, limit=max_activities
-        )
-        logger.info(f"📥 Received {len(all_fetched)} activities from Strava.")
-    except Exception as e:
-        logger.exception(f"❌ Failed to fetch activities from Strava: {e}")
-        return {"synced": 0, "enriched": 0}
-
-    # Continue as before
-    all_fetched = [a for a in all_fetched if a.get("type") == "Run"]
-
-    if not all_fetched:
-        logger.warning("📬 No 'Run' type activities returned from Strava.")
-        return {"synced": 0, "enriched": 0}
-
-    logger.info(
-        f"📥 Pulled {len(all_fetched)} total activities from Strava (pre-filtering)"
-    )
-
-    non_runs = [a for a in all_fetched if a.get("type") != "Run"]
-    if non_runs:
-        logger.info(f"❌ {len(non_runs)} activities excluded because type != 'Run'")
-        for act in non_runs:
-            logger.debug(
-                f"Filtered out: id={act.get('id')} type={act.get('type')} name={act.get('name')}"
-            )
-
-    all_fetched = [a for a in all_fetched if a.get("type") == "Run"]
-    logger.info(f"🏃 {len(all_fetched)} 'Run' activities after filtering")
-
-    if not all_fetched:
-        logger.warning("📬 No qualifying 'Run' activities returned from Strava.")
-        return {"synced": 0, "enriched": 0}
-
-    fetched_ids = [a["id"] for a in all_fetched]
-    existing_ids = {
-        r[0]
-        for r in session.query(Activity.activity_id)
-        .filter(Activity.activity_id.in_(fetched_ids))
-        .all()
-    }
-    logger.info(f"📦 {len(existing_ids)} activities already exist in DB")
-    if existing_ids:
-        logger.debug(f"Already in DB: {list(existing_ids)}")
-
-    new_activities = [a for a in all_fetched if a["id"] not in existing_ids]
-    logger.info(f"🆕 {len(new_activities)} new activities to ingest")
-
-    if not new_activities:
-        logger.warning(
-            f"⚠️ No new activities to ingest — all fetched entries already exist in DB."
-        )
-        return {"synced": 0, "enriched": 0}
-
-    for a in new_activities:
-        logger.debug(
-            f"⬇️ Ingesting activity: id={a['id']} name={a.get('name')} start_date={a.get('start_date')}"
-        )
-
-    ActivityDAO.upsert_activities(session, athlete_id, new_activities)
-    logger.info(f"✅ Synced {len(new_activities)} activities")
-
-    enriched = run_enrichment_batch(session, athlete_id, batch_size=batch_size)
-    logger.info(f"✅ Enriched {enriched} activities")
-
-    logger.info(
-        f"🧾 Ingestion summary for athlete {athlete_id}: pulled={len(fetched_ids)}, new={len(new_activities)}, enriched={enriched}"
-    )
-    logger.info(f"🎯 Ingestion + enrichment complete for athlete {athlete_id}")
-    return {"synced": len(new_activities), "enriched": enriched}
-
-
-def ingest_specific_activity(session, athlete_id, activity_id):
-    logger.info(
-        f"⏳ Ingesting specific activity {activity_id} for athlete {athlete_id}"
-    )
-    service = ActivityIngestionService(session, athlete_id)
-    activity_data = service.client.get_activity(activity_id)
-    if not activity_data:
-        logger.warning(f"Activity {activity_id} not found for athlete {athlete_id}")
-        return 0
-
-    ActivityDAO.upsert_activities(session, athlete_id, [activity_data])
-    logger.info(f"✅ Activity {activity_id} upserted")
-
-    try:
-        enrich_one_activity_with_refresh(session, athlete_id, activity_id)
-        logger.info(f"✅ Activity {activity_id} enriched")
-    except Exception as e:
-        logger.error(
-            f"❌ Skipping enrichment for activity {activity_id} due to error: {e}"
-        )
-
-    return 1
-
-
-def ingest_between_dates(
-    session,
-    athlete_id,
-    start_date: datetime,
-    end_date: datetime,
-    batch_size=10,
-    max_activities=None,
-    per_page=200,
-):
-    logger.info(
-        f"⏳ Ingesting activities for athlete {athlete_id} between {start_date} and {end_date}"
-    )
-    service = ActivityIngestionService(session, athlete_id)
-    activities = service.client.get_activities(
-        after=int(start_date.timestamp()),
-        before=int(end_date.timestamp()),
+    # Validate ingestion parameters
+    params, error = validate_ingestion_params(
+        lookback_days=lookback_days,
+        max_activities=max_activities,
+        batch_size=batch_size,
         per_page=per_page,
-        limit=max_activities,
+    )
+    if error:
+        logger.warning(
+            f"Invalid ingestion parameters, using defaults: {error[0].json.get('error')}"
+        )
+        # Use defaults instead of failing - keep original values or use defaults
+        if (
+            lookback_days is None
+            or not isinstance(lookback_days, int)
+            or lookback_days < 1
+        ):
+            lookback_days = config.DEFAULT_LOOKBACK_DAYS
+        if (
+            max_activities is None
+            or not isinstance(max_activities, int)
+            or max_activities < 1
+        ):
+            max_activities = config.MAX_ACTIVITIES_TO_DOWNLOAD
+        # batch_size and per_page can remain None if invalid
+    else:
+        # Use validated parameters
+        if params:
+            if "lookback_days" in params:
+                lookback_days = params["lookback_days"]
+            if "max_activities" in params:
+                max_activities = params["max_activities"]
+            if "batch_size" in params:
+                batch_size = params["batch_size"]
+            if "per_page" in params:
+                per_page = params["per_page"]
+
+    session = get_session()
+
+    logger.info(
+        f"[Ingestion] run_full_ingestion_and_enrichment called for user_id={user_id}, athlete_id={athlete_id}"
     )
 
-    logger.info(f"📥 Pulled {len(activities)} activities from Strava in date range")
-
-    activities = [a for a in activities if a.get("type") == "Run"]
-
-    if not activities:
-        logger.warning(
-            f"No 'Run' activities found between dates for athlete {athlete_id}"
+    try:
+        logger.info(
+            f"[CRON SYNC] Sync job started at {datetime.utcnow().isoformat()} "
+            f"for user_id={user_id}, athlete_id={athlete_id}"
         )
-        return 0
 
-    ActivityDAO.upsert_activities(session, athlete_id, activities)
-    logger.info(f"✅ Upserted {len(activities)} activities")
+        max_activities = max_activities or config.MAX_ACTIVITIES_TO_DOWNLOAD
+        batch_size = batch_size or config.DEFAULT_BATCH_SIZE
+        per_page = per_page or config.DEFAULT_PER_PAGE
 
-    count = 0
-    for act in activities:
+        # Token handling
+        tokens = get_tokens_sa(session, athlete_id)
+        if not tokens:
+            access_token = os.getenv("STRAVA_ACCESS_TOKEN")
+            refresh_token = os.getenv("STRAVA_REFRESH_TOKEN")
+            expires_at = int(os.getenv("STRAVA_EXPIRES_AT", time.time() + 3600))
+            if access_token and refresh_token:
+                token = Token(
+                    athlete_id=athlete_id,
+                    access_token=access_token,
+                    refresh_token=refresh_token,
+                    expires_at=expires_at,
+                )
+                session.merge(token)
+                session.commit()
+                logger.info("Seeded fallback Strava token")
+            else:
+                seed_sample_activity(session, athlete_id)
+                session.commit()
+                logger.info("Mock activity seeded")
+                return {"synced": 1, "enriched": 0}
+
+        access_token = get_valid_token(session, athlete_id)
+        logger.info("Access granted")
+
+        # Webhooks-first strategy: Use incremental sync if webhooks are active
+        use_incremental, last_sync_at = should_use_incremental_sync(
+            session, athlete_id, force_full=force_full_sync
+        )
+
+        if use_incremental and last_sync_at:
+            # Incremental sync: Only fetch activities after last sync
+            after = after or int(last_sync_at.timestamp())
+            logger.info(
+                f"🔄 Incremental sync: fetching activities after {last_sync_at.isoformat()}"
+            )
+        else:
+            # Full sync: Use lookback_days or provided 'after'
+            after = after or int(
+                (datetime.utcnow() - timedelta(days=lookback_days))
+                .replace(hour=0, minute=0, second=0, microsecond=0)
+                .timestamp()
+            )
+            logger.info(
+                f"🔄 Full sync: fetching activities from {lookback_days} days ago"
+            )
+
+        before = before or int(
+            datetime.utcnow()
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            .timestamp()
+        )
+        logger.info("Prepared date window")
+
+        service = ActivityIngestionService(session, athlete_id)
+        logger.info("Fetching recent runs from Strava...")
+
         try:
-            enrich_one_activity_with_refresh(session, athlete_id, act["id"])
-            count += 1
-            if count % batch_size == 0:
-                logger.info(f"Processed {count} activities for enrichment")
-        except Exception:
-            continue
+            all_fetched = service.client.get_activities(
+                after=after, before=before, per_page=per_page, limit=max_activities
+            )
+        except StravaTokenError as e:
+            logger.error(f"Token error during activity fetch: {e}", exc_info=True)
+            raise StravaIngestionSyncError(
+                athlete_id=athlete_id,
+                reason=f"Token error: {e.message}",
+                message="Failed to fetch activities due to token error",
+            )
+        except Exception as e:
+            logger.error(f"Failed to fetch activities: {e}", exc_info=True)
+            raise StravaIngestionSyncError(
+                athlete_id=athlete_id,
+                reason=str(e),
+                message="Failed to fetch activities from Strava API",
+            )
 
-    logger.info(f"✅ Enriched {count} activities")
-    return count
+        logger.info(f"Fetched {len(all_fetched)} activities")
 
+        runs_only = [a for a in all_fetched if a.get("type") == "Run"]
+        logger.info(f"Identified {len(runs_only)} runs")
 
-def ingest_today(session, athlete_id):
-    today = datetime.utcnow()
-    start = datetime(today.year, today.month, today.day)
-    end = start + timedelta(days=1)
-    return ingest_between_dates(session, athlete_id, start_date=start, end_date=end)
+        if not runs_only:
+            logger.info("No runs found in Strava account")
+            return {"synced": 0, "enriched": 0}
+
+        fetched_ids = [int(a.get("id")) for a in runs_only if a.get("id")]
+        existing_ids = {
+            r[0]
+            for r in session.query(Activity.activity_id)
+            .filter(Activity.activity_id.in_(fetched_ids))
+            .all()
+        }
+
+        new_activities = [a for a in runs_only if int(a.get("id")) not in existing_ids]
+        for a in new_activities:
+            a["activity_id"] = a.pop("id", None)
+            a["user_id"] = user_id  # store user_id (UUID) alongside activity
+
+        # Deduplicate by activity_id
+        dedup = {
+            int(a["activity_id"]): a for a in new_activities if a.get("activity_id")
+        }
+        unique_new_activities = list(dedup.values())
+
+        logger.info(f"Saving {len(unique_new_activities)} new runs...")
+
+        inserted_count = ActivityDAO.upsert_activities(
+            session, athlete_id, unique_new_activities, user_id=user_id
+        )
+
+        logger.info(f"Synced {inserted_count} new runs")
+
+        logger.info("Enriching activities...")
+
+        try:
+            enriched = (
+                run_enrichment_batch(session, athlete_id, batch_size=batch_size) or 0
+            )
+            logger.info(f"Enriched {enriched} activities")
+        except StravaTokenError as e:
+            logger.error(f"Token error during enrichment: {e}", exc_info=True)
+            # Don't fail ingestion if enrichment fails - log and continue
+            enriched = 0
+            logger.warning(
+                f"Enrichment skipped due to token error, but ingestion completed"
+            )
+        except Exception as e:
+            logger.error(f"Enrichment failed: {e}", exc_info=True)
+            # Don't fail ingestion if enrichment fails - log and continue
+            enriched = 0
+            logger.warning(f"Enrichment failed, but ingestion completed")
+
+        # Refresh materialized views after successful ingestion
+        try:
+            from sqlalchemy import text
+
+            session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics;"))
+            session.execute(text("REFRESH MATERIALIZED VIEW mv_longest_runs;"))
+            session.commit()
+            logger.info("✅ Refreshed materialized views for metrics and longest runs")
+        except Exception as e:
+            logger.error(f"❌ Failed to refresh materialized view: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
+
+        # Invalidate metrics cache for this athlete after successful ingestion
+        try:
+            from src.services.metrics_cache_service import invalidate_athlete_cache
+
+            invalidate_athlete_cache(athlete_id)
+            logger.info(f"Invalidated metrics cache for athlete {athlete_id}")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate cache for athlete {athlete_id}: {e}")
+
+        # Update last sync timestamp (tracked via most recent activity)
+        update_last_sync_timestamp(session, athlete_id)
+
+        logger.info(f"Finished ingestion. Synced={inserted_count}, Enriched={enriched}")
+        return {"synced": inserted_count, "enriched": enriched}
+
+    except (
+        StravaIngestionValidationError,
+        StravaIngestionSyncError,
+        StravaIngestionEnrichmentError,
+    ):
+        # Re-raise our custom exceptions as-is
+        session.rollback()
+        raise
+    except StravaTokenError as e:
+        session.rollback()
+        logger.exception(f"Token error during ingestion: {e}")
+        raise StravaIngestionSyncError(
+            athlete_id=athlete_id if "athlete_id" in locals() else None,
+            reason=f"Token error: {e.message}",
+            message="Ingestion failed due to token error",
+        )
+    except Exception as e:
+        session.rollback()
+        logger.exception(f"Ingestion failed: {e}")
+        raise StravaIngestionSyncError(
+            athlete_id=athlete_id if "athlete_id" in locals() else None,
+            reason=str(e),
+            message="Ingestion failed with unexpected error",
+        )
+    finally:
+        session.close()

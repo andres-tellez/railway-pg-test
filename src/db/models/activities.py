@@ -1,12 +1,24 @@
-from sqlalchemy import Column, BigInteger, Integer, String, Float, DateTime
+from sqlalchemy import Column, BigInteger, Integer, String, Float, DateTime, ForeignKey
 from src.db.db_session import Base
+from src.db.models.user_profile import SqliteUUID  # Import SQLite-compatible UUID type
 
 
 class Activity(Base):
     __tablename__ = "activities"
 
-    activity_id = Column(BigInteger, primary_key=True, index=True)
-    athlete_id = Column(BigInteger, nullable=False, index=True)
+    activity_id = Column(
+        BigInteger, primary_key=True, index=True
+    )  # Strava’s activity ID
+    athlete_id = Column(
+        BigInteger, ForeignKey("user_athletes.athlete_id"), nullable=False, index=True
+    )
+    user_id = Column(
+        SqliteUUID(),  # SQLite-compatible UUID type
+        ForeignKey("user_identity.user_id"),
+        nullable=False,
+        index=True,
+    )
+
     name = Column(String)
     type = Column(String)
     start_date = Column(DateTime)
@@ -31,9 +43,9 @@ class Activity(Base):
     conv_moving_time = Column(String)
     conv_elapsed_time = Column(String)
 
-    # HR Zone enrichment (test field)
-    hr_zone_1 = Column(Float, nullable=True)
-    hr_zone_2 = Column(Float, nullable=True)
-    hr_zone_3 = Column(Float, nullable=True)
-    hr_zone_4 = Column(Float, nullable=True)
-    hr_zone_5 = Column(Float, nullable=True)
+    # HR Zone enrichment
+    hr_zone_1 = Column(Float)
+    hr_zone_2 = Column(Float)
+    hr_zone_3 = Column(Float)
+    hr_zone_4 = Column(Float)
+    hr_zone_5 = Column(Float)

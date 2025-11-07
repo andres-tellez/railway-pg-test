@@ -52,8 +52,6 @@ REDIRECT_URI=http://127.0.0.1:5000/oauth/callback
 ADMIN_USER=admin
 ADMIN_PASS=secret
 SECRET_KEY=supersecretkey
-CRON_SECRET_KEY=your_cron_key
-INTERNAL_API_KEY=your_internal_key
 
 ```
 
@@ -65,7 +63,7 @@ INTERNAL_API_KEY=your_internal_key
 python run.py
 ```
 
-Then open [http://127.0.0.1:5000/ping](http://127.0.0.1:5000/ping)  
+Then open [http://127.0.0.1:5000/ping](http://127.0.0.1:5000/ping)
 You should see: `pong`
 
 ---
@@ -94,6 +92,19 @@ We’ve added a skeleton workflow in `.github/workflows/cron-sync.yml` that:
 
 ---
 
+## 📚 Documentation
+
+### Strava Production Readiness
+- **Main Checklist:** [`docs/strava-production-readiness.md`](docs/strava-production-readiness.md)
+- **Process Guide:** [`docs/strava-production-process-guide.md`](docs/strava-production-process-guide.md) - Complete walkthrough
+- **OAuth Verification:** [`docs/strava-oauth-verification-checklist.md`](docs/strava-oauth-verification-checklist.md)
+- **Verification Script:** `python src/scripts/verify_oauth_config.py`
+
+### Other Documentation
+See [`docs/`](docs/) directory for architecture guides, API docs, and setup instructions.
+
+---
+
 ## 🧩 Project Structure
 
 ```bash
@@ -104,6 +115,7 @@ railway-pg-test/
 │   ├── services/            → Business logic
 │   ├── db/                  → Database models + sessions
 │   └── utils/               → Utility functions
+├── docs/                    → Documentation (see above)
 ├── schema.sql               → Creates core DB tables
 ├── run.py                   → Runs the app
 ├── requirements.txt

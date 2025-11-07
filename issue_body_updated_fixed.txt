@@ -1,0 +1,360 @@
+# Strava Production Submission - Next Steps
+
+**Status:** Ready for submission preparation
+**Priority:** High
+**Estimated Time:** 1.5-2 hours
+
+---
+
+## 🎯 Overview
+
+You're **95% ready** to submit to Strava! All infrastructure is complete. This issue tracks the remaining action items needed before submission.
+
+---
+
+## ✅ What's Already Complete
+
+All infrastructure is ready:
+- ✅ All required endpoints (export, delete, disconnect)
+- ✅ All required pages (Privacy, Terms, Data Deletion, Data Usage)
+- ✅ Security measures (token redaction, secure storage)
+- ✅ Rate limiting and webhook infrastructure
+- ✅ OAuth verification tools and scripts
+- ✅ Documentation and guides
+
+---
+
+## 📋 Action Items Before Submission
+
+### 1. **Capture Screenshots** ⚠️ REQUIRED
+
+**Priority:** HIGH
+**Time:** 15-30 minutes
+**Status:** Tools ready, screenshots needed
+
+**Step-by-Step Guide:** See [`docs/SCREENSHOT_STEP_BY_STEP_GUIDE.md`](docs/SCREENSHOT_STEP_BY_STEP_GUIDE.md) for complete instructions
+
+**Quick Steps:**
+1. **Disconnect Strava first** (if already connected):
+   - Go to: `https://app.smartcoach.dev/settings`
+   - Click "Disconnect Strava Account"
+   - Confirm disconnection
+
+2. **Navigate to Setup:**
+   - Go to: `https://app.smartcoach.dev/setup`
+   - You should see "Connect with Strava" button
+
+3. **Screenshot #1 - Consent Modal:**
+   - Click "Connect with Strava" button
+   - **Screenshot the consent modal** that appears
+   - **Save as:** `screenshots/screenshot-consent-modal.png`
+
+4. **Screenshot #2 - Strava Authorization:**
+   - Check all 3 checkboxes in consent modal
+   - Click "Connect to Strava"
+   - You'll be redirected to Strava
+   - **Screenshot Strava's authorization page**
+   - **Save as:** `screenshots/screenshot-strava-authorize.png`
+
+5. **Screenshot #3 - Post-Auth Success:**
+   - Click "Authorize" on Strava page
+   - You'll be redirected back to SmartCoach
+   - **Screenshot the syncing/success state**
+   - **Save as:** `screenshots/screenshot-post-auth-success.png`
+
+**Where to Save:**
+- **Folder:** `screenshots/` (in project root - already created)
+- **File names:** Use exact names above
+- **Format:** PNG (preferred) or JPG
+- **Quality:** High quality, all text readable
+
+**Full Guide:** [`docs/SCREENSHOT_STEP_BY_STEP_GUIDE.md`](docs/SCREENSHOT_STEP_BY_STEP_GUIDE.md)
+
+- [ ] Screenshot 1: Consent Modal captured and saved to `screenshots/screenshot-consent-modal.png`
+- [ ] Screenshot 2: Strava Authorization Page captured and saved to `screenshots/screenshot-strava-authorize.png`
+- [ ] Screenshot 3: Post-Auth Success captured and saved to `screenshots/screenshot-post-auth-success.png`
+- [ ] All screenshots verified readable and high quality
+
+---
+
+### 2. **Verify OAuth Settings in Strava Portal** ⚠️ REQUIRED
+
+**Priority:** HIGH
+**Time:** 10-15 minutes
+**Status:** Tools ready, verification needed
+
+**What to verify:**
+1. Log into Strava Developer Portal: https://www.strava.com/settings/api
+2. Verify app settings match:
+   - **App Name:** SmartCoach (or your app name)
+   - **Website:** https://app.smartcoach.dev
+   - **Callback Domain:** api.smartcoach.dev
+   - **Category:** Fitness
+   - **Description:** Brief description of your app
+
+3. Verify scopes:
+   - Check that `read` and `activity:read_all` are selected
+   - Verify these match your code
+
+**Tools:**
+- Run verification script: `python -m src.scripts.verify_oauth_config.py`
+- Use checklist: [`docs/strava-oauth-verification-checklist.md`](docs/strava-oauth-verification-checklist.md)
+- Document results: [`docs/strava-oauth-verification-results.md`](docs/strava-oauth-verification-results.md)
+
+- [ ] Opened Strava Developer Portal
+- [ ] Verified app name matches
+- [ ] Verified website URL matches
+- [ ] Verified callback domain matches
+- [ ] Verified category is correct
+- [ ] Verified description is appropriate
+- [ ] Verified scopes match code (`read`, `activity:read_all`)
+- [ ] Ran verification script and confirmed all checks pass
+- [ ] Documented verification results
+
+---
+
+### 3. **Activate Production Webhook** ⚠️ REQUIRED
+
+**Priority:** HIGH
+**Time:** 10 minutes
+**Status:** Infrastructure ready, activation needed
+
+**Steps:**
+1. Deploy latest code to production/staging
+2. Set environment variables:
+   ```bash
+   STRAVA_WEBHOOK_VERIFY_TOKEN=your-secret-token-here
+   WEBHOOK_CALLBACK_URL=https://api.smartcoach.dev/webhooks/strava
+   ```
+
+3. Register webhook:
+   ```bash
+   python -m src.scripts.manage_webhook_subscription create
+   ```
+
+4. Verify webhook is active:
+   ```bash
+   python -m src.scripts.manage_webhook_subscription view
+   ```
+
+**Guide:** See [`docs/webhook-production-activation.md`](docs/webhook-production-activation.md)
+
+- [ ] Environment variables set in production/staging
+- [ ] Webhook subscription created successfully
+- [ ] Webhook subscription verified active
+- [ ] Test webhook endpoint receives events (optional but recommended)
+
+---
+
+### 4. **Create Test Accounts Documentation** ⚠️ REQUIRED
+
+**Priority:** HIGH
+**Time:** 15-20 minutes
+**Status:** Not started
+
+**What to create:**
+A document with 2-3 test accounts that Strava reviewers can use to test your app.
+
+**Template:**
+```markdown
+# Test Accounts for Strava Review
+
+## Test Account 1: Complete User
+- **Email:** test-user-1@smartcoach.app
+- **Password:** [provide password]
+- **Strava:** Connected
+- **Activities:** 20+ activities synced
+- **Plan:** Active training plan created
+- **Steps to test:**
+  1. Log in with credentials above
+  2. View training plan at /plan/overview
+  3. View metrics at /metrics
+  4. Test export at /data-usage
+  5. Test disconnect at /settings
+
+## Test Account 2: New User
+- **Email:** test-user-2@smartcoach.app
+- **Password:** [provide password]
+- **Strava:** Not connected
+- **Steps to test:**
+  1. Log in with credentials above
+  2. Go through OAuth flow
+  3. Complete onboarding
+  4. Verify activities sync
+```
+
+**Save as:** `docs/test-accounts.md`
+
+- [ ] Created test account 1 (complete user with data)
+- [ ] Created test account 2 (new user for OAuth flow)
+- [ ] Created test account 3 (optional, for edge cases)
+- [ ] Documented all test accounts with credentials
+- [ ] Documented testing steps for each account
+- [ ] Saved documentation to `docs/test-accounts.md`
+- [ ] Verified all test accounts work correctly
+
+---
+
+### 5. **Run E2E Verification in Staging** ⚠️ RECOMMENDED
+
+**Priority:** MEDIUM
+**Time:** 30 minutes
+**Status:** Script ready, execution needed
+
+**Steps:**
+1. Create test account in staging
+2. Connect Strava and sync activities
+3. Run verification script:
+   ```bash
+   export AUTH_TOKEN=your-jwt-token
+   export API_BASE_URL=https://api.smartcoach.dev
+   python -m src.scripts.verify_export_delete_e2e
+   ```
+
+4. Verify all tests pass:
+   - ✅ Export test passes
+   - ✅ Delete test passes (deletes test account)
+   - ✅ Auth test passes
+
+**Guide:** See [`docs/verify-export-delete-e2e.md`](docs/verify-export-delete-e2e.md)
+
+- [ ] Created dedicated test account in staging
+- [ ] Connected Strava and synced activities
+- [ ] Obtained JWT token for test account
+- [ ] Ran verification script
+- [ ] Export test passed
+- [ ] Delete test passed (test account deleted)
+- [ ] Auth test passed
+- [ ] All tests verified successfully
+
+---
+
+## 🚀 Submission Process
+
+### Step 1: Complete All Action Items Above
+
+Check off each item above before proceeding.
+
+### Step 2: Final Review
+
+Review all links:
+- [ ] Privacy Policy accessible: https://app.smartcoach.dev/privacy-policy
+- [ ] Terms of Service accessible: https://app.smartcoach.dev/terms-of-service
+- [ ] Data Deletion page accessible: https://app.smartcoach.dev/data-deletion
+- [ ] Data Usage page accessible: https://app.smartcoach.dev/data-usage
+- [ ] Homepage loads correctly: https://app.smartcoach.dev
+- [ ] API endpoints respond: https://api.smartcoach.dev
+
+### Step 3: Submit to Strava
+
+1. Go to: https://www.strava.com/settings/api
+2. Click "Request Production Access" (or similar button)
+3. Fill out the form with:
+   - Use case summary (already drafted in checklist)
+   - Scope justification (already drafted in checklist)
+   - All required links (already assembled)
+   - Screenshots (upload as attachments)
+   - Test account credentials
+   - Rate limit estimate and request
+
+4. Submit the request
+
+### Step 4: Monitor Submission
+
+- [ ] Submission submitted to Strava
+- [ ] Confirmation email received
+- [ ] Monitoring for review updates
+- [ ] Ready to respond to any clarification requests
+
+---
+
+## 📝 Submission Form Fields (Expected)
+
+Based on Strava's typical requirements:
+
+**Required Fields:**
+- App name
+- Website URL
+- Privacy Policy URL
+- Terms of Service URL
+- Data Deletion URL
+- Use case description
+- Scope justification
+- Screenshots (3-5)
+- Test accounts (2-3)
+- Rate limit estimate
+
+**Optional but Helpful:**
+- Support email
+- Data retention policy
+- Security measures
+- Webhook usage explanation
+
+---
+
+## 📚 Reference Documents
+
+- **Complete Action Plan:** [`docs/strava-submission-action-plan.md`](docs/strava-submission-action-plan.md)
+- **Step-by-Step Screenshot Guide:** [`docs/SCREENSHOT_STEP_BY_STEP_GUIDE.md`](docs/SCREENSHOT_STEP_BY_STEP_GUIDE.md)
+- **Screenshot Checklist:** [`docs/screenshot-capture-checklist.md`](docs/screenshot-capture-checklist.md)
+- **Process Guide:** [`docs/strava-production-process-guide.md`](docs/strava-production-process-guide.md)
+- **OAuth Verification:** [`docs/strava-oauth-verification-checklist.md`](docs/strava-oauth-verification-checklist.md)
+- **Webhook Activation:** [`docs/webhook-production-activation.md`](docs/webhook-production-activation.md)
+- **E2E Verification:** [`docs/verify-export-delete-e2e.md`](docs/verify-export-delete-e2e.md)
+- **Production Readiness Checklist:** [`docs/strava-production-readiness.md`](docs/strava-production-readiness.md)
+
+---
+
+## ✅ Success Criteria
+
+You're ready to submit when:
+1. ✅ All 3 screenshots captured and saved to `screenshots/` folder
+2. ✅ OAuth settings verified in Strava portal
+3. ✅ Webhook subscription active
+4. ✅ Test accounts documented and tested
+5. ✅ All links verified and accessible
+6. ✅ Submission form filled out completely
+
+---
+
+## ⚠️ Common Issues & Solutions
+
+### Issue: Screenshots Rejected
+**Solution:**
+- Ensure screenshots show full consent flow
+- Include URL bar in screenshots
+- Make sure text is readable
+- Use PNG format (not JPG)
+
+### Issue: Scope Justification Questioned
+**Solution:**
+- Reference the detailed justification in your docs
+- Explain why `activity:read_all` is needed (private activities)
+- Show how you minimize data access
+
+### Issue: Test Accounts Don't Work
+**Solution:**
+- Create fresh test accounts specifically for review
+- Ensure accounts have real Strava data
+- Test accounts yourself before providing
+- Document exact steps to reproduce
+
+---
+
+## 🎯 Estimated Time to Complete
+
+**Minimum (Essential):**
+- Screenshots: 15 min
+- OAuth verification: 10 min
+- Webhook activation: 10 min
+- Test accounts: 15 min
+- **Total: ~50 minutes**
+
+**Recommended (Thorough):**
+- Add E2E verification: +30 min
+- Add detailed documentation: +30 min
+- **Total: ~1.5-2 hours**
+
+---
+
+**Next Steps:** Start with screenshots (easiest), then work through the list in order.

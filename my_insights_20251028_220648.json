@@ -1,0 +1,58 @@
+{
+  "current_fitness": {
+    "weekly_mileage": 25.0,
+    "longest_run": 26.0,
+    "average_pace": "9:49/mile",
+    "fitness_trend": "Improving"
+  },
+  "recommendations": {
+    "starting_mileage": {
+      "weekly_mileage": 25.0,
+      "rationale": "4-week average of 25.0 miles",
+      "confidence": "High",
+      "ready_for_marathon": true
+    },
+    "progression_rate": {
+      "rate_percent": 10.0,
+      "rationale": "Standard 10% rule for safe weekly mileage progression",
+      "confidence": "High"
+    },
+    "focus_areas": [
+      "Endurance Focus",
+      "Injury Prevention",
+      "Mileage Building",
+      "Consistency",
+      "Marathon Education"
+    ],
+    "training_frequency": {
+      "runs_per_week": 3,
+      "rationale": "Current frequency is 2.9 runs/week - increasing to 3 for marathon training",
+      "confidence": "Medium"
+    },
+    "long_run_distance": {
+      "distance": 6.2,
+      "rationale": "25% of weekly mileage (25.0 miles)",
+      "confidence": "High"
+    },
+    "training_principles": [
+      "Follow the 10% rule for weekly mileage increases",
+      "Include one long run per week (20-30% of weekly mileage)",
+      "Maintain 80/20 easy-to-hard training ratio",
+      "Allow adequate recovery between hard sessions",
+      "Listen to your body and adjust as needed"
+    ],
+    "safety_guidelines": [
+      "Stop training if you experience pain",
+      "Increase mileage gradually (10% per week maximum)",
+      "Take rest days seriously",
+      "Stay hydrated and fuel properly",
+      "Consult a healthcare provider for any concerns"
+    ]
+  },
+  "metadata": {
+    "calculated_at": "2025-10-28T22:06:48.627120",
+    "activities_analyzed": 34,
+    "weeks_analyzed": 11,
+    "data_quality": "sufficient"
+  }
+}

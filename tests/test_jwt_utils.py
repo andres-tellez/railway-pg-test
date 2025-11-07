@@ -4,7 +4,6 @@ from flask import Flask, jsonify
 from unittest.mock import patch
 
 import src.utils.jwt_utils as jwt_utils
-import src.utils.config as config
 
 
 @pytest.fixture
@@ -46,16 +45,6 @@ def test_decode_token_invalid():
         jwt_utils.decode_token("bad")
 
 
-def test_require_auth_internal_key(app):
-    app.route("/protected")(jwt_utils.require_auth(lambda: jsonify(success=True)))
-
-    with app.test_client() as client:
-        headers = {"X-Internal-Key": config.INTERNAL_API_KEY}
-        resp = client.get("/protected", headers=headers)
-        assert resp.status_code == 200
-        assert resp.json == {"success": True}
-
-
 def test_require_auth_missing_auth_header(app):
     app.route("/protected")(jwt_utils.require_auth(lambda: jsonify(success=True)))
 
@@ -84,9 +73,17 @@ def test_require_auth_invalid_token(app):
 
 
 def test_require_auth_valid_token(app):
-    app.route("/protected")(jwt_utils.require_auth(lambda: jsonify(success=True)))
+    @app.route("/protected")
+    @jwt_utils.require_auth
+    def protected():
+        from flask import g
+
+        return jsonify(success=True, user_id=g.user_id)
 
     with app.test_client() as client:
         resp = client.get("/protected", headers={"Authorization": "Bearer valid"})
         assert resp.status_code == 200
-        assert resp.json == {"success": True}
+        assert resp.json["success"] is True
+        # Now assert UUID-like value
+        assert isinstance(resp.json["user_id"], str)
+        assert len(resp.json["user_id"]) == 36  # UUID string

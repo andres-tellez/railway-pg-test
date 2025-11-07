@@ -12,10 +12,10 @@ import AuthProviderWithHistory from "./auth/AuthProvider";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <AuthProviderWithHistory>
-      <BrowserRouter>
+    <BrowserRouter>
+      <AuthProviderWithHistory>
         <App />
-      </BrowserRouter>
-    </AuthProviderWithHistory>
+      </AuthProviderWithHistory>
+    </BrowserRouter>
   </React.StrictMode>
 );
