@@ -103,6 +103,7 @@ def verify_and_decode(token: str) -> dict:
         algorithms=ALGORITHMS,
         audience=API_AUDIENCE,  # must be a string
         issuer=f"https://{AUTH0_DOMAIN}/",
+        options={"leeway": int(os.getenv("AUTH0_EXP_LEEWAY", "120"))},
     )
 
 
