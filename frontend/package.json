@@ -9,7 +9,7 @@
     "build:staging": "vite build --mode staging",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "serve -s dist -l $PORT"
+    "start": "node server.js"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.4.0",
