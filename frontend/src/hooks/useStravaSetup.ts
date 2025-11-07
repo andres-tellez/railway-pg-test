@@ -44,7 +44,7 @@ export function useStravaSetup(): UseStravaSetupReturn {
     try {
       setIsLoading(true);
       setError(null);
-      const res = await api.get<UserStatus>("/user");
+      const res = await api.get<UserStatus>("/api/user");
       console.log("📊 User status:", res.data);
 
       // Backend wraps response in { data: {...}, status: 200 }

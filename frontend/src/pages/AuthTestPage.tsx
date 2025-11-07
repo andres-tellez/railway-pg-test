@@ -47,7 +47,7 @@ const AuthTestPage: React.FC = () => {
             <button
               onClick={async () => {
                 try {
-                  const response = await api.get("/user");
+                  const response = await api.get("/api/user");
                   alert(`✅ API call successful!\nResponse: ${JSON.stringify(response.data, null, 2)}`);
                 } catch (error: any) {
                   alert(`❌ API call failed!\nError: ${error.message}`);
