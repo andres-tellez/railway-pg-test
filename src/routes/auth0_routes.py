@@ -80,7 +80,10 @@ def login_callback():
             logger.info("Failed to inspect unverified claims: %s", debug_exc)
 
         try:
-            decoded_jwt = verify_and_decode(id_token)
+            id_token_audience = os.getenv("AUTH0_ID_TOKEN_AUDIENCE") or os.getenv(
+                "AUTH0_CLIENT_ID"
+            )
+            decoded_jwt = verify_and_decode(id_token, audience=id_token_audience)
             logger.info(
                 f"Token validated successfully for user: {decoded_jwt.get('sub')}"
             )
