@@ -109,7 +109,10 @@ def strava_login_redirect():
 
         if jwt_cookie:
             try:
-                payload = verify_and_decode(jwt_cookie)
+                audience = os.getenv("AUTH0_ID_TOKEN_AUDIENCE") or os.getenv(
+                    "AUTH0_CLIENT_ID"
+                )
+                payload = verify_and_decode(jwt_cookie, audience=audience)
                 auth0_sub = payload.get("sub") or auth0_sub
             except Exception as e:
                 logger.warning(f"Failed to decode JWT cookie: {e}")
