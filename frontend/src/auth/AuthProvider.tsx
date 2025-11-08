@@ -34,7 +34,7 @@ const AuthProviderWithHistory: React.FC<{ children: React.ReactNode }> = ({ chil
       authorizationParams={{
         redirect_uri: redirectUri,
         audience: audience,
-        scope: "openid profile email",
+        scope: "openid profile email offline_access",
       }}
       onRedirectCallback={onRedirectCallback}
       cacheLocation="localstorage"
