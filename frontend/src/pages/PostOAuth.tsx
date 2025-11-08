@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
+import type { GetTokenSilentlyVerboseResponse } from "@auth0/auth0-react";
 import { useApiClient } from "@/utils/apiClient";
 
 interface ErrorState {
@@ -19,7 +20,7 @@ interface ErrorState {
 
 const PostOAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { isLoading, isAuthenticated, getIdTokenClaims } = useAuth0();
+  const { isLoading, isAuthenticated, getAccessTokenSilently } = useAuth0();
   const api = useApiClient();
   const ran = useRef(false);
 
@@ -106,9 +107,17 @@ const PostOAuth: React.FC = () => {
     setIsRetrying(false);
 
     try {
-      // Force a fresh ID token so we never reuse an expired one (especially after Strava redirect)
-      const claims = await getIdTokenClaims({ cacheMode: "off" });
-      const idToken = claims?.__raw;
+      // Force Auth0 to mint a fresh token for this callback (prevents expiration issues after long sessions)
+      const tokenResponse = (await getAccessTokenSilently({
+        detailedResponse: true,
+        cacheMode: "off",
+        authorizationParams: {
+          audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+          scope: "openid profile email",
+        },
+      })) as GetTokenSilentlyVerboseResponse;
+
+      const idToken = tokenResponse.id_token;
       console.log("🪪 ID token →", idToken ? "present" : "missing");
 
       if (!idToken) {
@@ -204,7 +213,7 @@ const PostOAuth: React.FC = () => {
       clearTimeout(safety);
       ac.abort();
     };
-  }, [isLoading, isAuthenticated, getIdTokenClaims, navigate, api, isRetrying, error]);
+  }, [isLoading, isAuthenticated, getAccessTokenSilently, navigate, api, isRetrying, error]);
 
   const handleRetry = () => {
     setIsRetrying(true);
