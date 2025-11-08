@@ -107,6 +107,8 @@ const PostOAuth: React.FC = () => {
     };
   };
 
+  const CONSENT_RETRY_KEY = "smartcoach_auth_retry";
+
   const performAuth = async (signal: AbortSignal) => {
     setError(null);
     setIsRetrying(false);
@@ -130,12 +132,25 @@ const PostOAuth: React.FC = () => {
           msg.includes("consent_required") ||
           msg.includes("login_required");
         if (needsConsent) {
+          const alreadyRetried =
+            sessionStorage.getItem(CONSENT_RETRY_KEY) === "1";
+
+          if (alreadyRetried) {
+            console.error(
+              "❌ Auth retry already attempted but refresh token still missing."
+            );
+            throw new Error(
+              "Authentication requires a fresh login. Please log out and sign in again."
+            );
+          }
+
+          sessionStorage.setItem(CONSENT_RETRY_KEY, "1");
           console.warn(
-            "⚠️ Missing refresh token/consent. Redirecting user to grant consent."
+            "⚠️ Missing refresh token/consent. Forcing new Auth0 login."
           );
           await loginWithRedirect({
             authorizationParams: {
-              prompt: "consent",
+              prompt: "login",
               audience: import.meta.env.VITE_AUTH0_AUDIENCE,
               scope: "openid profile email offline_access",
               redirect_uri: window.location.origin + "/post-oauth",
@@ -189,6 +204,8 @@ const PostOAuth: React.FC = () => {
       // Get user info
       await api.get("/api/user", { signal });
 
+      sessionStorage.removeItem(CONSENT_RETRY_KEY);
+
       // Check if this is a Strava callback
       const params = new URLSearchParams(window.location.search);
       const isStravaCallback = params.get("strava") === "connected";
@@ -204,6 +221,7 @@ const PostOAuth: React.FC = () => {
         // Don't set error if request was intentionally aborted
         return;
       }
+      sessionStorage.removeItem(CONSENT_RETRY_KEY);
       const errorState = handleError(err, "performAuth");
       setError(errorState);
     }
