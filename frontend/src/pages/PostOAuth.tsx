@@ -20,7 +20,12 @@ interface ErrorState {
 
 const PostOAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { isLoading, isAuthenticated, getAccessTokenSilently } = useAuth0();
+  const {
+    isLoading,
+    isAuthenticated,
+    getAccessTokenSilently,
+    loginWithRedirect,
+  } = useAuth0();
   const api = useApiClient();
   const ran = useRef(false);
 
@@ -108,14 +113,41 @@ const PostOAuth: React.FC = () => {
 
     try {
       // Force Auth0 to mint a fresh token for this callback (prevents expiration issues after long sessions)
-      const tokenResponse = (await getAccessTokenSilently({
-        detailedResponse: true,
-        cacheMode: "off",
-        authorizationParams: {
-          audience: import.meta.env.VITE_AUTH0_AUDIENCE,
-          scope: "openid profile email",
-        },
-      })) as GetTokenSilentlyVerboseResponse;
+      let tokenResponse: GetTokenSilentlyVerboseResponse | null = null;
+      try {
+        tokenResponse = (await getAccessTokenSilently({
+          detailedResponse: true,
+          cacheMode: "off",
+          authorizationParams: {
+            audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+            scope: "openid profile email offline_access",
+          },
+        })) as GetTokenSilentlyVerboseResponse;
+      } catch (err: any) {
+        const msg = String(err?.error || err?.message || err || "");
+        const needsConsent =
+          msg.includes("missing_refresh_token") ||
+          msg.includes("consent_required") ||
+          msg.includes("login_required");
+        if (needsConsent) {
+          console.warn(
+            "⚠️ Missing refresh token/consent. Redirecting user to grant consent."
+          );
+          await loginWithRedirect({
+            authorizationParams: {
+              prompt: "consent",
+              audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+              scope: "openid profile email offline_access",
+              redirect_uri: window.location.origin + "/post-oauth",
+            },
+            appState: {
+              returnTo: window.location.pathname + window.location.search,
+            },
+          });
+          return;
+        }
+        throw err;
+      }
 
       const idToken = tokenResponse.id_token;
       console.log("🪪 ID token →", idToken ? "present" : "missing");
@@ -213,7 +245,16 @@ const PostOAuth: React.FC = () => {
       clearTimeout(safety);
       ac.abort();
     };
-  }, [isLoading, isAuthenticated, getAccessTokenSilently, navigate, api, isRetrying, error]);
+  }, [
+    isLoading,
+    isAuthenticated,
+    getAccessTokenSilently,
+    loginWithRedirect,
+    navigate,
+    api,
+    isRetrying,
+    error,
+  ]);
 
   const handleRetry = () => {
     setIsRetrying(true);
