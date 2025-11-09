@@ -9,9 +9,6 @@ Endpoints:
 GET  /api/activities/
     Get user's activities (last 30 days) for plan generation context
 
-GET  /api/activities/status
-    Get Strava connection status and activity sync progress
-
 GET  /api/activities/enrich/status
     Check enrichment service status
 
@@ -45,7 +42,6 @@ from sqlalchemy.dialects.postgresql import UUID
 from src.db.db_session import get_session
 from src.services.activity_service import ActivityIngestionService, run_enrichment_batch
 from src.utils.auth0_jwt import requires_auth
-from src.utils.config import config
 
 activity_bp = Blueprint("activity", __name__, url_prefix="/api/activities")
 
@@ -123,118 +119,6 @@ def get_activities():
         return jsonify({"activities": []}), 200
     finally:
         session.close()
-
-
-@activity_bp.get("/status")
-@requires_auth
-def activities_status():
-    """
-    Return Strava connection status + progress of synced activities for current user.
-    """
-    session = get_session()
-    try:
-        internal_user_id = getattr(g, "user_id", None)
-
-        if not internal_user_id:
-            print("❌ No internal_user_id on g")
-            return (
-                jsonify(
-                    {
-                        "stravaConnected": False,
-                        "downloaded": 0,
-                        "total": config.MIN_ACTIVITIES_REQUIRED,
-                        "status": "Pending",
-                    }
-                ),
-                200,
-            )
-
-        # 🔗 Resolve athlete mapping
-        stmt = text(
-            """
-            SELECT athlete_id
-            FROM public.user_athletes
-            WHERE user_id = :uid
-            LIMIT 1
-            """
-        ).bindparams(bindparam("uid", type_=UUID))
-        athlete_row = session.execute(stmt, {"uid": internal_user_id}).fetchone()
-
-        is_connected = athlete_row is not None
-        athlete_id = athlete_row.athlete_id if is_connected else None
-
-        # 🧠 fallback: busiest athlete
-        if athlete_id:
-            row_exists = session.execute(
-                text("SELECT 1 FROM public.activities WHERE athlete_id = :aid LIMIT 1"),
-                {"aid": athlete_id},
-            ).fetchone()
-            if not row_exists:
-                fallback = session.execute(
-                    text(
-                        """
-                        SELECT athlete_id
-                        FROM public.activities
-                        GROUP BY athlete_id
-                        ORDER BY COUNT(*) DESC
-                        LIMIT 1
-                        """
-                    )
-                ).fetchone()
-                if fallback:
-                    print(f"⏭ Fallback to athlete_id = {fallback.athlete_id}")
-                    athlete_id = fallback.athlete_id
-
-        # 📊 Count activities
-        count = (
-            (
-                session.execute(
-                    text(
-                        "SELECT COUNT(*) FROM public.activities WHERE athlete_id = :aid"
-                    ),
-                    {"aid": athlete_id},
-                ).scalar()
-                or 0
-            )
-            if athlete_id
-            else 0
-        )
-
-        total = config.MIN_ACTIVITIES_REQUIRED
-        status = "Complete" if count >= total else "Syncing" if count > 0 else "Pending"
-
-        print(f"📊 Returning activity status: {count}/{total} → {status}")
-
-        return (
-            jsonify(
-                {
-                    "stravaConnected": is_connected,
-                    "downloaded": int(count),
-                    "total": total,
-                    "status": status,
-                }
-            ),
-            200,
-        )
-
-    except Exception:
-        traceback.print_exc()
-        return (
-            jsonify(
-                {
-                    "stravaConnected": False,
-                    "downloaded": 0,
-                    "total": config.MIN_ACTIVITIES_REQUIRED,
-                    "status": "Pending",
-                }
-            ),
-            200,
-        )
-    finally:
-        session.close()
-
-
-# Deprecated sync route removed - use /api/progress/ingest instead
 
 
 # -------- Enrichment routes --------

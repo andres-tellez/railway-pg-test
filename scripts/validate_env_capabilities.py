@@ -320,26 +320,11 @@ def test_business_logic_config() -> Tuple[bool, str]:
     """Test business logic configuration values"""
     print_info("Testing business logic configuration...")
 
-    min_activities = config.MIN_ACTIVITIES_REQUIRED
     max_activities = config.MAX_ACTIVITIES_TO_DOWNLOAD
-
-    issues = []
-
-    if min_activities < 1:
-        issues.append(
-            f"MIN_ACTIVITIES_REQUIRED should be >= 1 (currently {min_activities})"
-        )
-    if max_activities < min_activities:
-        issues.append(
-            f"MAX_ACTIVITIES_TO_DOWNLOAD ({max_activities}) should be >= MIN_ACTIVITIES_REQUIRED ({min_activities})"
-        )
-
-    if issues:
-        return False, "; ".join(issues)
 
     return (
         True,
-        f"Business logic config valid (min={min_activities}, max={max_activities})",
+        f"Business logic config valid (max_activities={max_activities})",
     )
 
 

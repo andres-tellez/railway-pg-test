@@ -59,6 +59,7 @@ References:
 - https://developers.strava.com/docs/oauth-updates/
 """
 
+import json
 import logging
 import requests
 from datetime import datetime
@@ -69,6 +70,7 @@ from src.db.dao.token_dao import get_tokens_sa, insert_token_sa
 from src.db.models.tokens import Token
 from sqlalchemy.exc import IntegrityError
 from src.db.dao import user_athletes_dao  # add this import
+from src.utils.strava_exceptions import StravaOAuthCodeExchangeError
 
 
 logger = logging.getLogger(__name__)
@@ -365,8 +367,31 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
     try:
         response.raise_for_status()
     except requests.exceptions.HTTPError as e:
+        error_details = response_data
+        if error_details is None:
+            try:
+                error_details = response.json()
+            except (ValueError, TypeError):
+                error_details = (
+                    e.response.text[:200] if e.response and e.response.text else ""
+                )
+
+        if isinstance(error_details, dict):
+            sanitized_error = redact_dict(error_details)
+            sanitized_error_str = json.dumps(sanitized_error, default=str)[:500]
+        else:
+            sanitized_error_str = error_details or "No response body"
+        logger.error(
+            "Strava token exchange failed: status=%s, body=%s",
+            e.response.status_code if e.response else "unknown",
+            sanitized_error_str,
+        )
         raise StravaOAuthCodeExchangeError(
-            reason=f"HTTP {e.response.status_code}: {e.response.text[:200] if e.response.text else 'Unknown error'}",
+            reason=(
+                f"HTTP {e.response.status_code}: {sanitized_error_str}"
+                if e.response
+                else f"HTTP error: {sanitized_error_str}"
+            ),
             message="Failed to exchange OAuth code for tokens",
         )
 

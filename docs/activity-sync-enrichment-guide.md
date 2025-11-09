@@ -261,7 +261,6 @@ POST /api/activities/enrich/activity/<activity_id>
 
 ```python
 MAX_ACTIVITIES_TO_DOWNLOAD = 1000  # Max activities per sync
-MIN_ACTIVITIES_REQUIRED = 10       # Min for training plan generation
 STRAVA_API_BASE_URL = "https://www.strava.com/api/v3"
 ```
 

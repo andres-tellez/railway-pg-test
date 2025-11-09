@@ -135,6 +135,12 @@ class ActivityDAO:
 
             rows.append(row)
 
+        skipped_count = len(activities) - len(rows)
+        if skipped_count:
+            logger.warning(
+                f"[WARNING] Skipped {skipped_count} activities due to missing required fields or unsupported types."
+            )
+
         if not rows:
             logger.warning("[WARNING] No valid rows prepared for upsert.")
             return 0
