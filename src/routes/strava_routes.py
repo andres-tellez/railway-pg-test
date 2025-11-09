@@ -592,8 +592,8 @@ def get_strava_status():
                 if latest_status
                 else None
             )
-            # If not found, return success with connected=False
-            if "No Strava account connected" in str(error):
+            # error is a (response, status_code) tuple
+            if error[1] == 404:
                 return success_response(
                     data={"connected": False, "sync_status": sync_payload},
                     message="No Strava account connected",
