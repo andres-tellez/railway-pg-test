@@ -39,11 +39,12 @@ def log_strava_payload(activity_id, activity_json, zones_data, streams):
 
 
 def get_activities_to_enrich(session, athlete_id, limit):
-    """Get recent unenriched activities."""
+    """Get recent activities (with start dates) for enrichment."""
     result = session.execute(
         text(
             """
-            SELECT activity_id FROM activities
+            SELECT activity_id, start_date
+            FROM activities
             WHERE athlete_id = :athlete_id AND type = 'Run'
             ORDER BY start_date DESC
             LIMIT :limit
@@ -51,10 +52,15 @@ def get_activities_to_enrich(session, athlete_id, limit):
         ),
         {"athlete_id": athlete_id, "limit": limit},
     )
-    return [row.activity_id for row in result.fetchall()]
+    rows = result.fetchall()
+    return [
+        {"activity_id": row.activity_id, "start_date": row.start_date} for row in rows
+    ]
 
 
-def enrich_one_activity(session, access_token, activity_id):
+def enrich_one_activity(
+    session, access_token, activity_id, *, fetch_streams: bool = True
+):
     """Enrich a single activity with streams, splits, zones."""
     try:
         client = StravaClient(access_token)
@@ -65,9 +71,17 @@ def enrich_one_activity(session, access_token, activity_id):
         for attempt in range(retries):
             activity_json = client.get_activity(activity_id)
             zones_data = client.get_hr_zones(activity_id)
-            streams = client.get_streams(
-                activity_id, keys=["distance", "time", "velocity_smooth", "heartrate"]
-            )
+            streams = {}
+            if fetch_streams:
+                streams = client.get_streams(
+                    activity_id,
+                    keys=["distance", "time", "velocity_smooth", "heartrate"],
+                )
+            else:
+                log.info(
+                    "Skipping stream fetch for activity %s (outside split lookback window)",
+                    activity_id,
+                )
 
             if all(activity_json.get(field) for field in required_fields):
                 break
@@ -100,10 +114,14 @@ def enrich_one_activity(session, access_token, activity_id):
         hr_zone_pcts = extract_hr_zone_percentages(zones_data) or [0.0] * 5
         update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
 
-        splits = build_mile_splits(activity_id, streams)
-        if splits:
-            upsert_splits(session, splits)
-            log.info("Synced %d splits for activity %s", len(splits), activity_id)
+        splits = []
+        if fetch_streams:
+            splits = build_mile_splits(activity_id, streams)
+            if splits:
+                upsert_splits(session, splits)
+                log.info("Synced %d splits for activity %s", len(splits), activity_id)
+        else:
+            log.debug("Split generation skipped for activity %s", activity_id)
 
         return True
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -111,12 +129,16 @@ def enrich_one_activity(session, access_token, activity_id):
         raise
 
 
-def enrich_one_activity_with_refresh(session, athlete_id, activity_id, max_retries=2):
+def enrich_one_activity_with_refresh(
+    session, athlete_id, activity_id, max_retries=2, *, fetch_streams: bool = True
+):
     """Attempt enrichment with token refresh and retries."""
     for attempt in range(1, max_retries + 1):
         try:
             access_token = get_valid_token(session, athlete_id)
-            enrich_one_activity(session, access_token, activity_id)
+            enrich_one_activity(
+                session, access_token, activity_id, fetch_streams=fetch_streams
+            )
             session.expire_all()
 
             enriched = (
@@ -453,9 +475,26 @@ class ActivityIngestionService:
         return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
 
 
-def run_enrichment_batch(session, athlete_id, batch_size=10):
+def run_enrichment_batch(session, athlete_id, batch_size=10, *, split_cutoff=None):
     """Batch enrichment job for activities."""
-    activity_ids = get_activities_to_enrich(session, athlete_id, batch_size)
-    for aid in activity_ids:
-        enrich_one_activity_with_refresh(session, athlete_id, aid)
+    activities = get_activities_to_enrich(session, athlete_id, batch_size)
+    for row in activities:
+        aid = row["activity_id"]
+        start_date = row.get("start_date")
+
+        fetch_streams = True
+        if split_cutoff is not None and start_date is not None:
+            start_dt = start_date
+            cutoff_dt = split_cutoff
+
+            if start_dt.tzinfo is None and cutoff_dt.tzinfo is not None:
+                start_dt = start_dt.replace(tzinfo=cutoff_dt.tzinfo)
+            elif start_dt.tzinfo is not None and cutoff_dt.tzinfo is None:
+                cutoff_dt = cutoff_dt.replace(tzinfo=start_dt.tzinfo)
+
+            fetch_streams = start_dt >= cutoff_dt
+
+        enrich_one_activity_with_refresh(
+            session, athlete_id, aid, fetch_streams=fetch_streams
+        )
         time.sleep(1)

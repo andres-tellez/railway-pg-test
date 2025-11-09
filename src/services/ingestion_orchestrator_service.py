@@ -259,6 +259,20 @@ def run_full_ingestion_and_enrichment(
         sync_start()
         sync_progress(5, "Preparing sync")
 
+        current_week_start = get_current_week_start()
+        six_week_start = current_week_start - timedelta(weeks=6)
+        two_week_cutoff = current_week_start - timedelta(weeks=2)
+
+        six_week_start_dt = datetime.combine(
+            six_week_start, dt_time.min, tzinfo=timezone.utc
+        )
+        two_week_cutoff_dt = datetime.combine(
+            two_week_cutoff, dt_time.min, tzinfo=timezone.utc
+        )
+
+        window_after_ts = int(six_week_start_dt.timestamp())
+        now_ts = int(datetime.utcnow().replace(tzinfo=timezone.utc).timestamp())
+
         max_activities = max_activities or config.MAX_ACTIVITIES_TO_DOWNLOAD
         batch_size = batch_size or config.DEFAULT_BATCH_SIZE
         per_page = per_page or config.DEFAULT_PER_PAGE
@@ -295,29 +309,26 @@ def run_full_ingestion_and_enrichment(
             session, athlete_id, force_full=force_full_sync
         )
 
+        after_ts = max(window_after_ts, after or 0)
+        before_ts = before or now_ts
+
         if use_incremental and last_sync_at:
             # Incremental sync: Only fetch activities after last sync
-            after = after or int(last_sync_at.timestamp())
+            last_sync_ts = int(last_sync_at.timestamp())
+            after_ts = max(after_ts, last_sync_ts)
             logger.info(
-                f"🔄 Incremental sync: fetching activities after {last_sync_at.isoformat()}"
+                f"🔄 Incremental sync: fetching activities after {datetime.fromtimestamp(after_ts, tz=timezone.utc).isoformat()}"
             )
         else:
-            # Full sync: Use lookback_days or provided 'after'
-            after = after or int(
-                (datetime.utcnow() - timedelta(days=lookback_days))
-                .replace(hour=0, minute=0, second=0, microsecond=0)
-                .timestamp()
-            )
             logger.info(
-                f"🔄 Full sync: fetching activities from {lookback_days} days ago"
+                f"🔄 Full sync: fetching activities from {six_week_start_dt.isoformat()} (last 6 full weeks + current week)"
             )
 
-        before = before or int(
-            datetime.utcnow()
-            .replace(hour=0, minute=0, second=0, microsecond=0)
-            .timestamp()
+        logger.info(
+            "Prepared date window: after=%s, before=%s",
+            datetime.fromtimestamp(after_ts, tz=timezone.utc).isoformat(),
+            datetime.fromtimestamp(before_ts, tz=timezone.utc).isoformat(),
         )
-        logger.info("Prepared date window")
         sync_progress(20, "Fetching activities from Strava…")
 
         service = ActivityIngestionService(session, athlete_id)
@@ -325,11 +336,11 @@ def run_full_ingestion_and_enrichment(
 
         try:
             all_fetched = service.fetch_all_activities(
-                after=after,
-                before=before,
+                after=after_ts,
+                before=before_ts,
                 per_page=per_page,
                 type_filter="Run",
-                type_limit=max_activities,
+                type_limit=None,
             )
         except StravaTokenError as e:
             logger.error(f"Token error during activity fetch: {e}", exc_info=True)
@@ -347,7 +358,19 @@ def run_full_ingestion_and_enrichment(
             )
 
         logger.info(f"Fetched {len(all_fetched)} run activities")
-        runs_only = all_fetched
+        runs_only = []
+        for activity in all_fetched:
+            start_date_str = activity.get("start_date")
+            if not start_date_str:
+                runs_only.append(activity)
+                continue
+            try:
+                start_dt = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
+            except ValueError:
+                runs_only.append(activity)
+                continue
+            if start_dt >= six_week_start_dt:
+                runs_only.append(activity)
         sync_progress(
             35,
             "Processing activities",
@@ -403,7 +426,13 @@ def run_full_ingestion_and_enrichment(
 
         try:
             enriched = (
-                run_enrichment_batch(session, athlete_id, batch_size=batch_size) or 0
+                run_enrichment_batch(
+                    session,
+                    athlete_id,
+                    batch_size=batch_size,
+                    split_cutoff=two_week_cutoff_dt,
+                )
+                or 0
             )
             logger.info(f"Enriched {enriched} activities")
         except StravaTokenError as e:
