@@ -78,7 +78,7 @@ References:
 import os
 import time
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone, time as dt_time
 
 from src.db.db_session import get_session
 from src.db.dao.token_dao import get_tokens_sa
@@ -103,6 +103,8 @@ from src.utils.strava_exceptions import (
     StravaTokenError,
 )
 from src.db.dao.strava_sync_status_dao import StravaSyncStatusDAO
+from src.utils.date_helpers import get_current_week_start
+from src.utils.rate_limiter import get_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -273,6 +275,20 @@ def run_full_ingestion_and_enrichment(
         window_after_ts = int(six_week_start_dt.timestamp())
         now_ts = int(datetime.utcnow().replace(tzinfo=timezone.utc).timestamp())
 
+        current_week_start = get_current_week_start()
+        six_week_start = current_week_start - timedelta(weeks=6)
+        two_week_cutoff = current_week_start - timedelta(weeks=2)
+
+        six_week_start_dt = datetime.combine(
+            six_week_start, dt_time.min, tzinfo=timezone.utc
+        )
+        two_week_cutoff_dt = datetime.combine(
+            two_week_cutoff, dt_time.min, tzinfo=timezone.utc
+        )
+
+        window_after_ts = int(six_week_start_dt.timestamp())
+        now_ts = int(datetime.utcnow().replace(tzinfo=timezone.utc).timestamp())
+
         max_activities = max_activities or config.MAX_ACTIVITIES_TO_DOWNLOAD
         batch_size = batch_size or config.DEFAULT_BATCH_SIZE
         per_page = per_page or config.DEFAULT_PER_PAGE
@@ -371,6 +387,51 @@ def run_full_ingestion_and_enrichment(
                 continue
             if start_dt >= six_week_start_dt:
                 runs_only.append(activity)
+        projected_enrichment_calls = 0
+        for act in runs_only:
+            start_date_str = act.get("start_date")
+            try:
+                start_dt = (
+                    datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
+                    if start_date_str
+                    else None
+                )
+            except Exception:
+                start_dt = None
+            projected_enrichment_calls += 2  # detail + zones
+            if start_dt and start_dt >= two_week_cutoff_dt:
+                projected_enrichment_calls += 1  # streams/splits
+
+        rate_limiter = get_rate_limiter()
+        stats = rate_limiter.get_stats()
+        remaining_15m = stats.get("remaining_15min", 0)
+        required_calls = projected_enrichment_calls + len(runs_only)
+        logger.info(
+            "Projected Strava calls: detail/zones/streams=%d, additional list=%d, remaining window=%d",
+            projected_enrichment_calls,
+            len(runs_only),
+            remaining_15m,
+        )
+
+        RATE_BUFFER = 10
+        if required_calls + RATE_BUFFER > remaining_15m:
+            wait_seconds = max(stats.get("wait_time_seconds", 0), 60)
+            message = (
+                "Strava is handling a lot of requests right now. "
+                f"Please wait about {int(wait_seconds // 60) + 1} minutes before trying again."
+            )
+            logger.warning(
+                "Rate limit headroom too low (%d remaining, %d needed). Aborting sync.",
+                remaining_15m,
+                required_calls + RATE_BUFFER,
+            )
+            sync_error(message, error_code="RATE_LIMIT_WINDOW")
+            raise StravaIngestionSyncError(
+                athlete_id=athlete_id,
+                reason="rate_limit_headroom_exceeded",
+                message=message,
+            )
+
         sync_progress(
             35,
             "Processing activities",

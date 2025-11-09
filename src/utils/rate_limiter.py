@@ -130,6 +130,7 @@ class RateLimiter:
             "remaining_24h": SAFE_REQUESTS_PER_DAY - len(self._requests_24h),
             "can_make_request": self.can_make_request(),
             "wait_time_seconds": self.get_wait_time(),
+            "timestamp": now,
         }
 
     def _cleanup_old_requests(self, now: float):
