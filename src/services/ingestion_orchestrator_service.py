@@ -405,16 +405,14 @@ def run_full_ingestion_and_enrichment(
         rate_limiter = get_rate_limiter()
         stats = rate_limiter.get_stats()
         remaining_15m = stats.get("remaining_15min", 0)
-        required_calls = projected_enrichment_calls + len(runs_only)
         logger.info(
-            "Projected Strava calls: detail/zones/streams=%d, additional list=%d, remaining window=%d",
+            "Projected Strava calls: detail/zones/streams=%d, remaining window=%d",
             projected_enrichment_calls,
-            len(runs_only),
             remaining_15m,
         )
 
         RATE_BUFFER = 10
-        if required_calls + RATE_BUFFER > remaining_15m:
+        if projected_enrichment_calls + RATE_BUFFER > remaining_15m:
             wait_seconds = max(stats.get("wait_time_seconds", 0), 60)
             message = (
                 "Strava is handling a lot of requests right now. "
@@ -423,7 +421,7 @@ def run_full_ingestion_and_enrichment(
             logger.warning(
                 "Rate limit headroom too low (%d remaining, %d needed). Aborting sync.",
                 remaining_15m,
-                required_calls + RATE_BUFFER,
+                projected_enrichment_calls + RATE_BUFFER,
             )
             sync_error(message, error_code="RATE_LIMIT_WINDOW")
             raise StravaIngestionSyncError(
