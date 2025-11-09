@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 import StravaConnectButton from "../StravaConnectButton";
 import StravaAttribution from "../StravaAttribution";
 
@@ -24,8 +24,62 @@ const StravaConnectSection: React.FC<StravaConnectSectionProps> = ({
   syncStatus,
   onConnectClick,
 }) => {
+  const MIN_STEP_DISPLAY_MS = 700;
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastUpdateRef = useRef<number>(Date.now());
+  const [displayStatus, setDisplayStatus] = useState<SyncStatusProps>({
+    status: syncStatus?.status ?? null,
+    progress: syncStatus?.progress ?? 0,
+    step: syncStatus?.step ?? null,
+    detail: syncStatus?.detail ?? null,
+  });
+
+  useEffect(() => {
+    if (!isSyncing || !syncStatus) {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      setDisplayStatus({
+        status: syncStatus?.status ?? null,
+        progress: syncStatus?.progress ?? 0,
+        step: syncStatus?.step ?? null,
+        detail: syncStatus?.detail ?? null,
+      });
+      return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - lastUpdateRef.current;
+    const applyUpdate = () => {
+      lastUpdateRef.current = Date.now();
+      setDisplayStatus({
+        status: syncStatus.status ?? null,
+        progress: syncStatus.progress ?? 0,
+        step: syncStatus.step ?? null,
+        detail: syncStatus.detail ?? null,
+      });
+    };
+
+    if (elapsed >= MIN_STEP_DISPLAY_MS) {
+      applyUpdate();
+    } else {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      timeoutRef.current = setTimeout(applyUpdate, MIN_STEP_DISPLAY_MS - elapsed);
+    }
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, [isSyncing, syncStatus?.progress, syncStatus?.step, syncStatus?.detail, syncStatus?.status]);
+
   if (isSyncing) {
-    const progress = Math.min(Math.max(syncStatus?.progress ?? 5, 5), 100);
+    const progress = Math.min(Math.max(displayStatus.progress ?? 5, 5), 100);
     const progressLabel = `${Math.round(progress)}%`;
 
     return (
@@ -38,12 +92,15 @@ const StravaConnectSection: React.FC<StravaConnectSectionProps> = ({
             ></div>
           </div>
         </div>
-        <p className="text-sm text-gray-600 mt-3 text-center leading-relaxed">
-          {progressLabel} • {syncStatus?.step || "Syncing your Strava data…"}
-        </p>
-        {syncStatus?.detail && (
+        <div className="flex items-center justify-center gap-2 mt-3">
+          <div className="h-3 w-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm text-gray-600 text-center leading-relaxed">
+            {progressLabel} • {displayStatus.step || "Syncing your Strava data…"}
+          </p>
+        </div>
+        {displayStatus.detail && (
           <p className="text-xs text-gray-500 text-center mt-1 leading-relaxed">
-            {syncStatus.detail}
+            {displayStatus.detail}
           </p>
         )}
       </div>
