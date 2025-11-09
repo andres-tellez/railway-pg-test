@@ -284,8 +284,9 @@ def strava_callback_get():
 
     # Ingestion runs with a brand new session
     def ingestion_job(session, athlete_id, user_id):
-        logger.info(f"Starting ingestion for user={user_id}, athlete={athlete_id}")
-        run_full_ingestion_and_enrichment(None, athlete_id, user_id=user_id)
+        user_id_str = str(user_id) if user_id is not None else None
+        logger.info(f"Starting ingestion for user={user_id_str}, athlete={athlete_id}")
+        run_full_ingestion_and_enrichment(None, athlete_id, user_id=user_id_str)
 
     run_background_job(ingestion_job, athlete_id, user_id)
 
