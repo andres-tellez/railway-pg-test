@@ -2,10 +2,18 @@ import React, { memo } from "react";
 import StravaConnectButton from "../StravaConnectButton";
 import StravaAttribution from "../StravaAttribution";
 
+interface SyncStatusProps {
+  status: string | null;
+  progress: number;
+  step: string | null;
+  detail: string | null;
+}
+
 interface StravaConnectSectionProps {
   isSyncing: boolean;
   isComplete: boolean;
   userId: string | null;
+  syncStatus: SyncStatusProps | null;
   onConnectClick: () => void;
 }
 
@@ -13,13 +21,29 @@ const StravaConnectSection: React.FC<StravaConnectSectionProps> = ({
   isSyncing,
   isComplete,
   userId,
+  syncStatus,
   onConnectClick,
 }) => {
   if (isSyncing) {
+    const progress = Math.min(Math.max(syncStatus?.progress ?? 5, 5), 100);
     return (
       <div className="flex flex-col items-center py-4">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <p className="text-sm text-gray-600 mt-2">Syncing your Strava data…</p>
+        <div className="w-full">
+          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+            <div
+              className="h-2 bg-blue-600 rounded-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+        </div>
+        <p className="text-sm text-gray-600 mt-3 text-center leading-relaxed">
+          {syncStatus?.step || "Syncing your Strava data…"}
+        </p>
+        {syncStatus?.detail && (
+          <p className="text-xs text-gray-500 text-center mt-1 leading-relaxed">
+            {syncStatus.detail}
+          </p>
+        )}
       </div>
     );
   }

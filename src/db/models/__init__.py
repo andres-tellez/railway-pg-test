@@ -7,5 +7,6 @@ from src.db.models.plan_workouts import PlanWorkout
 from src.db.models.webhook_events import WebhookEvent
 from src.db.models.conversations import Conversation, ConversationMessage
 from src.db.models.auth_audit_log import AuthAuditLog  # Audit logging
+from src.db.models.strava_sync_status import StravaSyncStatus
 
 # Add other models in the proper order if needed (e.g. tokens, activities)

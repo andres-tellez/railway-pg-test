@@ -40,6 +40,7 @@ from src.utils.strava_exceptions import (
 )
 from src.db.dao.user_athletes_dao import get_by_user_id, delete_by_user_id
 from src.db.dao.token_dao import delete_tokens_sa
+from src.db.dao.strava_sync_status_dao import StravaSyncStatusDAO
 from src.db.models.activities import Activity
 import src.services.token_service as token_service
 from src.services.ingestion_orchestrator_service import (
@@ -569,19 +570,58 @@ def get_strava_status():
     """
     session = get_session()
     try:
+        status_dao = StravaSyncStatusDAO(session)
+
         # Get authenticated user and athlete link
         user_id, athlete_link, error = get_authenticated_user_with_athlete()
         if error:
+            latest_status = status_dao.get_latest_for_user(user_id) if user_id else None
+            sync_payload = (
+                {
+                    "status": latest_status.status,
+                    "progress": latest_status.progress,
+                    "step": latest_status.step,
+                    "detail": latest_status.detail,
+                    "errorCode": latest_status.error_code,
+                    "updatedAt": (
+                        latest_status.updated_at.isoformat()
+                        if latest_status and latest_status.updated_at
+                        else None
+                    ),
+                }
+                if latest_status
+                else None
+            )
             # If not found, return success with connected=False
             if "No Strava account connected" in str(error):
                 return success_response(
-                    data={"connected": False},
+                    data={"connected": False, "sync_status": sync_payload},
                     message="No Strava account connected",
                 )
             return error
 
         # Count activities
         activity_count = session.query(Activity).filter_by(user_id=user_id).count()
+
+        sync_status = status_dao.get_status(user_id, athlete_link.athlete_id)
+        if not sync_status:
+            sync_status = status_dao.get_latest_for_user(user_id)
+        sync_payload = (
+            {
+                "status": sync_status.status,
+                "progress": sync_status.progress,
+                "step": sync_status.step,
+                "detail": sync_status.detail,
+                "errorCode": sync_status.error_code,
+                "updatedAt": (
+                    sync_status.updated_at.isoformat()
+                    if sync_status and sync_status.updated_at
+                    else None
+                ),
+            }
+            if sync_status
+            else None
+        )
 
         return success_response(
             data={
@@ -593,6 +633,7 @@ def get_strava_status():
                     else None
                 ),
                 "activity_count": activity_count,
+                "sync_status": sync_payload,
             },
             message=f"Connected to Strava. {activity_count} activities synced.",
         )

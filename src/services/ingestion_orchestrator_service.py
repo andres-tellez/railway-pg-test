@@ -102,6 +102,7 @@ from src.utils.strava_exceptions import (
     StravaIngestionEnrichmentError,
     StravaTokenError,
 )
+from src.db.dao.strava_sync_status_dao import StravaSyncStatusDAO
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +206,46 @@ def run_full_ingestion_and_enrichment(
                 per_page = params["per_page"]
 
     session = get_session()
+    sync_status_dao = StravaSyncStatusDAO(session) if user_id else None
+
+    def sync_start():
+        if not sync_status_dao:
+            return
+        try:
+            sync_status_dao.start_sync(user_id, athlete_id)
+        except Exception as exc:  # pragma: no cover - best-effort logging
+            logger.warning(f"Failed to start sync status tracking: {exc}")
+
+    def sync_progress(progress: float, step: str, detail: str | None = None):
+        if not sync_status_dao:
+            return
+        try:
+            sync_status_dao.update_progress(
+                user_id, athlete_id, progress=progress, step=step, detail=detail
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.warning(f"Failed to update sync progress: {exc}")
+
+    def sync_complete(message: str = "Sync complete"):
+        if not sync_status_dao:
+            return
+        try:
+            sync_status_dao.update_progress(
+                user_id, athlete_id, progress=100.0, step=message
+            )
+            sync_status_dao.mark_complete(user_id, athlete_id)
+        except Exception as exc:  # pragma: no cover
+            logger.warning(f"Failed to mark sync complete: {exc}")
+
+    def sync_error(detail: str, error_code: str | None = None):
+        if not sync_status_dao:
+            return
+        try:
+            sync_status_dao.mark_error(
+                user_id, athlete_id, detail=detail, error_code=error_code
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.warning(f"Failed to record sync error: {exc}")
 
     logger.info(
         f"[Ingestion] run_full_ingestion_and_enrichment called for user_id={user_id}, athlete_id={athlete_id}"
@@ -215,6 +256,8 @@ def run_full_ingestion_and_enrichment(
             f"[CRON SYNC] Sync job started at {datetime.utcnow().isoformat()} "
             f"for user_id={user_id}, athlete_id={athlete_id}"
         )
+        sync_start()
+        sync_progress(5, "Preparing sync")
 
         max_activities = max_activities or config.MAX_ACTIVITIES_TO_DOWNLOAD
         batch_size = batch_size or config.DEFAULT_BATCH_SIZE
@@ -240,10 +283,12 @@ def run_full_ingestion_and_enrichment(
                 seed_sample_activity(session, athlete_id)
                 session.commit()
                 logger.info("Mock activity seeded")
+                sync_complete("Seeded sample activity")
                 return {"synced": 1, "enriched": 0}
 
         access_token = get_valid_token(session, athlete_id)
         logger.info("Access granted")
+        sync_progress(10, "Access token validated")
 
         # Webhooks-first strategy: Use incremental sync if webhooks are active
         use_incremental, last_sync_at = should_use_incremental_sync(
@@ -273,6 +318,7 @@ def run_full_ingestion_and_enrichment(
             .timestamp()
         )
         logger.info("Prepared date window")
+        sync_progress(20, "Fetching activities from Strava…")
 
         service = ActivityIngestionService(session, athlete_id)
         logger.info("Fetching recent runs from Strava...")
@@ -300,9 +346,15 @@ def run_full_ingestion_and_enrichment(
 
         runs_only = [a for a in all_fetched if a.get("type") == "Run"]
         logger.info(f"Identified {len(runs_only)} runs")
+        sync_progress(
+            35,
+            "Processing activities",
+            detail=f"Fetched {len(runs_only)} runs",
+        )
 
         if not runs_only:
             logger.info("No runs found in Strava account")
+            sync_complete("No new runs found")
             return {"synced": 0, "enriched": 0}
 
         fetched_ids = [int(a.get("id")) for a in runs_only if a.get("id")]
@@ -331,6 +383,11 @@ def run_full_ingestion_and_enrichment(
         )
 
         logger.info(f"Synced {inserted_count} new runs")
+        sync_progress(
+            60,
+            "Saving activities",
+            detail=f"Saved {inserted_count} new runs",
+        )
 
         logger.info("Enriching activities...")
 
@@ -352,6 +409,12 @@ def run_full_ingestion_and_enrichment(
             enriched = 0
             logger.warning(f"Enrichment failed, but ingestion completed")
 
+        sync_progress(
+            80,
+            "Enrichment complete",
+            detail=f"Enriched {enriched} activities",
+        )
+
         # Refresh materialized views after successful ingestion
         try:
             from sqlalchemy import text
@@ -360,6 +423,7 @@ def run_full_ingestion_and_enrichment(
             session.execute(text("REFRESH MATERIALIZED VIEW mv_longest_runs;"))
             session.commit()
             logger.info("✅ Refreshed materialized views for metrics and longest runs")
+            sync_progress(90, "Refreshing metrics")
         except Exception as e:
             logger.error(f"❌ Failed to refresh materialized view: {e}")
             import traceback
@@ -377,21 +441,24 @@ def run_full_ingestion_and_enrichment(
 
         # Update last sync timestamp (tracked via most recent activity)
         update_last_sync_timestamp(session, athlete_id)
-
+        sync_progress(95, "Finalizing sync")
         logger.info(f"Finished ingestion. Synced={inserted_count}, Enriched={enriched}")
+        sync_complete()
         return {"synced": inserted_count, "enriched": enriched}
 
     except (
         StravaIngestionValidationError,
         StravaIngestionSyncError,
         StravaIngestionEnrichmentError,
-    ):
+    ) as e:
         # Re-raise our custom exceptions as-is
         session.rollback()
+        sync_error(f"Sync failed: {e}", error_code=e.__class__.__name__)
         raise
     except StravaTokenError as e:
         session.rollback()
         logger.exception(f"Token error during ingestion: {e}")
+        sync_error(f"Token error during sync: {e.message}", error_code="TOKEN_ERROR")
         raise StravaIngestionSyncError(
             athlete_id=athlete_id if "athlete_id" in locals() else None,
             reason=f"Token error: {e.message}",
@@ -400,6 +467,7 @@ def run_full_ingestion_and_enrichment(
     except Exception as e:
         session.rollback()
         logger.exception(f"Ingestion failed: {e}")
+        sync_error(f"Ingestion failed: {e}", error_code="INGESTION_ERROR")
         raise StravaIngestionSyncError(
             athlete_id=athlete_id if "athlete_id" in locals() else None,
             reason=str(e),

@@ -17,6 +17,7 @@ const SetupPage: React.FC = () => {
     isLoading,
     error,
     userId,
+    syncStatus,
     showConsentModal,
     handleConnectClick,
     handleConsentAccept,
@@ -116,6 +117,7 @@ const SetupPage: React.FC = () => {
                 <StravaConnectSection
                   isSyncing={isSyncing}
                   isComplete={isComplete}
+                  syncStatus={syncStatus}
                   userId={userId}
                   onConnectClick={handleConnectClick}
                 />
