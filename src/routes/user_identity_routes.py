@@ -211,6 +211,7 @@ def get_user_info():
         "picture": identity.picture or "",
         "hasOnboarded": bool(status.get("hasOnboarded")),
         "hasStrava": bool(status.get("hasStrava")),
+        "hasActivities": bool(status.get("hasActivities")),
     }
     return success_response(payload)
 

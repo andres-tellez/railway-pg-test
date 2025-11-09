@@ -7,6 +7,7 @@ from sqlalchemy import select
 from src.db.db_session import get_session
 from src.db.models import UserIdentity
 from src.db.models.user_profile import UserProfile
+from src.db.models.activities import Activity
 from src.db.dao.user_athletes_dao import get_by_user_id
 
 from src.db.dao.user_identity_dao import (
@@ -50,12 +51,22 @@ def get_user_status(user_id: str) -> dict:
         link = get_by_user_id(user_id_str)
         has_strava = link is not None
 
+        activity_exists = (
+            session.execute(
+                select(Activity.activity_id)
+                .where(Activity.user_id == user_id_str)
+                .limit(1)
+            ).first()
+            is not None
+        )
+
         print(
-            f"[DEBUG] ✅ User status for {user_id_str}: hasOnboarded={has_onboarded}, hasStrava={has_strava}, link={'found' if link else 'not found'}"
+            f"[DEBUG] ✅ User status for {user_id_str}: hasOnboarded={has_onboarded}, hasStrava={has_strava}, "
+            f"hasActivities={activity_exists}, link={'found' if link else 'not found'}"
         )
         logger.info(
             f"✅ User status for {user_id_str}: hasOnboarded={has_onboarded}, hasStrava={has_strava}, "
-            f"link={'found' if link else 'not found'}"
+            f"hasActivities={activity_exists}, link={'found' if link else 'not found'}"
         )
 
         if link:
@@ -65,21 +76,11 @@ def get_user_status(user_id: str) -> dict:
             logger.info(
                 f"   Link details: user_id={link.user_id}, athlete_id={link.athlete_id}"
             )
-        else:
-            # Debug: check if any links exist at all
-            from src.db.models.user_athletes import UserAthleteLink
 
-            all_links = session.query(UserAthleteLink).all()
-            print(f"[DEBUG]    No link found. Total links in DB: {len(all_links)}")
-            logger.info(f"   No link found. Total links in DB: {len(all_links)}")
-            if all_links:
-                print(
-                    f"[DEBUG]    Sample link user_id: {all_links[0].user_id} (type: {type(all_links[0].user_id).__name__})"
-                )
-                logger.info(
-                    f"   Sample link user_id: {all_links[0].user_id} (type: {type(all_links[0].user_id).__name__})"
-                )
-
-        return {"hasOnboarded": has_onboarded, "hasStrava": has_strava}
+        return {
+            "hasOnboarded": has_onboarded,
+            "hasStrava": has_strava,
+            "hasActivities": activity_exists,
+        }
     finally:
         session.close()
