@@ -21,6 +21,7 @@ import json
 
 # Simple in-memory cache (can be replaced with Redis later)
 _metrics_cache: Dict[str, Dict[str, Any]] = {}
+_athlete_cache_keys: Dict[int, set[str]] = {}
 CACHE_TTL_SECONDS = 300  # 5 minutes
 
 
@@ -55,20 +56,20 @@ def get_cached_metrics(cache_key: str) -> Optional[Any]:
     return None
 
 
-def set_cached_metrics(cache_key: str, data: Any, ttl: int = CACHE_TTL_SECONDS) -> None:
+def set_cached_metrics(
+    cache_key: str, data: Any, ttl: int = CACHE_TTL_SECONDS, *, athlete_id: int
+) -> None:
     """Store metrics in cache with TTL."""
     _metrics_cache[cache_key] = {"data": data, "created_at": time.time(), "ttl": ttl}
+    _athlete_cache_keys.setdefault(athlete_id, set()).add(cache_key)
 
 
 def invalidate_athlete_cache(athlete_id: int) -> None:
     """Invalidate all cache entries for a specific athlete."""
-    keys_to_remove = []
-    for key in _metrics_cache.keys():
-        if f'athlete_id": {athlete_id}' in key:
-            keys_to_remove.append(key)
+    keys_to_remove = _athlete_cache_keys.pop(athlete_id, set())
 
     for key in keys_to_remove:
-        del _metrics_cache[key]
+        _metrics_cache.pop(key, None)
 
 
 def cache_metrics(cache_type: str, ttl: int = CACHE_TTL_SECONDS):
@@ -101,7 +102,7 @@ def cache_metrics(cache_type: str, ttl: int = CACHE_TTL_SECONDS):
             result = func(*args, **kwargs)
 
             if result is not None:
-                set_cached_metrics(cache_key, result, ttl)
+                set_cached_metrics(cache_key, result, ttl, athlete_id=athlete_id)
 
             return result
 

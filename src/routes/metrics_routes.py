@@ -555,7 +555,7 @@ def get_all_metrics_combined():
             print(f"[DEBUG] First goal: {weekly_goals[0]}")
 
         # Cache the result for 5 minutes
-        set_cached_metrics(cache_key, result, ttl=300)
+        set_cached_metrics(cache_key, result, ttl=300, athlete_id=athlete_id)
 
         # Performance logging
         execution_time = time.time() - start_time

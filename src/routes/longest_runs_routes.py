@@ -244,7 +244,7 @@ def get_longest_runs_data():
         result = get_longest_runs_ultra_optimized(session, athlete_id, weeks)
 
         # Cache the result for 5 minutes (same as metrics)
-        set_cached_metrics(cache_key, result, ttl=300)
+        set_cached_metrics(cache_key, result, ttl=300, athlete_id=athlete_id)
 
         # Performance logging
         execution_time = time.time() - start_time
