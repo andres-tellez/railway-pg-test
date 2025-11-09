@@ -340,28 +340,69 @@ class ActivityIngestionService:
         access_token = get_valid_token(self.session, self.athlete_id)
         self.client = StravaClient(access_token)
 
-    def fetch_all_activities(self, after=None, before=None, per_page=None, limit=None):
-        """Fetch all activities from Strava with pagination."""
+    def fetch_all_activities(
+        self,
+        after=None,
+        before=None,
+        per_page=None,
+        limit=None,
+        *,
+        type_filter: str | None = None,
+        type_limit: int | None = None,
+    ):
+        """Fetch activities from Strava with pagination.
+
+        Args:
+            after: Only return activities after this epoch timestamp.
+            before: Only return activities before this epoch timestamp.
+            per_page: Page size for each Strava API request.
+            limit: Maximum number of activities to retrieve (all types).
+            type_filter: Optional activity `type` to filter (e.g. "Run").
+            type_limit: Maximum number of filtered activities to return.
+        """
         self._refresh_client()
         page = 1
         results = []
+        filtered: list[dict] = []
+
+        # When looking for a filtered set, prefer that count as the stopping
+        # condition but provide a reasonable safety cap for total fetches.
+        filtered_target = type_limit if type_limit is not None else None
+
         while True:
-            batch = self.client.get_activities(
+            batch = self.client.get_activities_page(
+                page=page,
+                per_page=per_page or config.STRAVA_PER_PAGE,
                 after=after,
                 before=before,
-                per_page=per_page or config.STRAVA_PER_PAGE,
-                page=page,
             )
             if not batch:
                 break
             results.extend(batch)
+
+            # Apply per-type filtering if requested.
+            if type_filter:
+                for activity in batch:
+                    if activity.get("type") == type_filter:
+                        filtered.append(activity)
+                        if filtered_target and len(filtered) >= filtered_target:
+                            return filtered[:filtered_target]
+
+            # Stop early if we reached the unfiltered limit (only when not filtering).
+            if not type_filter and limit and len(results) >= limit:
+                return results[:limit]
+
             log.info(
                 f"[INFO] Page {page} -> {len(batch)} activities (total={len(results)})"
             )
-            if limit and len(results) >= limit:
-                return results[:limit]
+
+            # Safety: if we were asked for a filter but also have an overall limit,
+            # respect whichever condition hits first.
+            if type_filter and limit and len(results) >= limit:
+                break
+
             page += 1
-        return results
+        return filtered[:filtered_target] if type_filter else results
 
     def ingest_full_history(
         self, lookback_days=None, max_activities=None, per_page=None, dry_run=False
@@ -374,9 +415,10 @@ class ActivityIngestionService:
         all_activities = self.fetch_all_activities(
             after=after,
             per_page=per_page or config.STRAVA_PER_PAGE,
-            limit=max_activities,
+            limit=None,
+            type_filter="Run",
+            type_limit=max_activities,
         )
-        all_activities = [a for a in all_activities if a.get("type") == "Run"]
 
         if dry_run:
             return all_activities

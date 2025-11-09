@@ -190,6 +190,26 @@ class StravaClient:
 
         return all_activities
 
+    def get_activities_page(
+        self,
+        *,
+        page: int = 1,
+        per_page: int | None = None,
+        after: int | None = None,
+        before: int | None = None,
+    ) -> list[dict]:
+        """Fetch a single page of activities from Strava."""
+        url = f"{config.STRAVA_API_BASE_URL}/athlete/activities"
+        params = {
+            "page": page,
+            "per_page": per_page or config.STRAVA_PER_PAGE,
+        }
+        if after:
+            params["after"] = after
+        if before:
+            params["before"] = before
+        return self._request_with_backoff("GET", url, params=params)
+
     def get_activity(self, activity_id):
         url = f"{config.STRAVA_API_BASE_URL}/activities/{activity_id}"
         return self._request_with_backoff("GET", url)

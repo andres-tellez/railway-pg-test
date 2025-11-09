@@ -324,8 +324,12 @@ def run_full_ingestion_and_enrichment(
         logger.info("Fetching recent runs from Strava...")
 
         try:
-            all_fetched = service.client.get_activities(
-                after=after, before=before, per_page=per_page, limit=max_activities
+            all_fetched = service.fetch_all_activities(
+                after=after,
+                before=before,
+                per_page=per_page,
+                type_filter="Run",
+                type_limit=max_activities,
             )
         except StravaTokenError as e:
             logger.error(f"Token error during activity fetch: {e}", exc_info=True)
@@ -342,10 +346,8 @@ def run_full_ingestion_and_enrichment(
                 message="Failed to fetch activities from Strava API",
             )
 
-        logger.info(f"Fetched {len(all_fetched)} activities")
-
-        runs_only = [a for a in all_fetched if a.get("type") == "Run"]
-        logger.info(f"Identified {len(runs_only)} runs")
+        logger.info(f"Fetched {len(all_fetched)} run activities")
+        runs_only = all_fetched
         sync_progress(
             35,
             "Processing activities",
@@ -357,7 +359,11 @@ def run_full_ingestion_and_enrichment(
             sync_complete("No new runs found")
             return {"synced": 0, "enriched": 0}
 
-        fetched_ids = [int(a.get("id")) for a in runs_only if a.get("id")]
+        fetched_ids = [
+            int(a.get("id") or a.get("activity_id"))
+            for a in runs_only
+            if a.get("id") or a.get("activity_id")
+        ]
         existing_ids = {
             r[0]
             for r in session.query(Activity.activity_id)
@@ -365,9 +371,13 @@ def run_full_ingestion_and_enrichment(
             .all()
         }
 
-        new_activities = [a for a in runs_only if int(a.get("id")) not in existing_ids]
+        new_activities = [
+            a
+            for a in runs_only
+            if int(a.get("id") or a.get("activity_id")) not in existing_ids
+        ]
         for a in new_activities:
-            a["activity_id"] = a.pop("id", None)
+            a["activity_id"] = a.pop("id", None) or a.get("activity_id")
             a["user_id"] = user_id  # store user_id (UUID) alongside activity
 
         # Deduplicate by activity_id
