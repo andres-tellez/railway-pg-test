@@ -26,6 +26,8 @@ const StravaConnectSection: React.FC<StravaConnectSectionProps> = ({
 }) => {
   if (isSyncing) {
     const progress = Math.min(Math.max(syncStatus?.progress ?? 5, 5), 100);
+    const progressLabel = `${Math.round(progress)}%`;
+
     return (
       <div className="flex flex-col items-center py-4">
         <div className="w-full">
@@ -37,7 +39,7 @@ const StravaConnectSection: React.FC<StravaConnectSectionProps> = ({
           </div>
         </div>
         <p className="text-sm text-gray-600 mt-3 text-center leading-relaxed">
-          {syncStatus?.step || "Syncing your Strava data…"}
+          {progressLabel} • {syncStatus?.step || "Syncing your Strava data…"}
         </p>
         {syncStatus?.detail && (
           <p className="text-xs text-gray-500 text-center mt-1 leading-relaxed">
