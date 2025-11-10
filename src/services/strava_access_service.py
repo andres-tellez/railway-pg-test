@@ -113,6 +113,7 @@ class StravaClient:
 
             try:
                 response.raise_for_status()
+                self._record_rate_headers(response.headers)
                 return response.json()
             except requests.exceptions.HTTPError as e:
                 # Convert HTTP errors to StravaAPIError
@@ -255,3 +256,38 @@ class StravaClient:
             else:
                 streams[key] = []
         return streams
+
+    def _record_rate_headers(self, headers):
+        """
+        Record Strava rate limit headers for diagnostics.
+        """
+        try:
+            limit_header = headers.get("X-RateLimit-Limit")
+            usage_header = headers.get("X-RateLimit-Usage")
+            if not limit_header or not usage_header:
+                return
+
+            limits = [int(x) for x in limit_header.split(",")]
+            usage = [int(x) for x in usage_header.split(",")]
+            if len(limits) != 2 or len(usage) != 2:
+                return
+
+            short_limit, long_limit = limits
+            short_usage, long_usage = usage
+
+            logger.debug(
+                "Strava rate headers – short: %d/%d, long: %d/%d",
+                short_usage,
+                short_limit,
+                long_usage,
+                long_limit,
+            )
+
+            from src.utils.rate_limiter import get_rate_limiter
+
+            limiter = get_rate_limiter()
+            limiter.update_strava_headers(
+                short_usage, short_limit, long_usage, long_limit
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.debug(f"Failed to record Strava rate headers: {exc}")

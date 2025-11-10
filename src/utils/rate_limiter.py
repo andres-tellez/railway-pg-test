@@ -51,6 +51,11 @@ class RateLimiter:
         self._requests_15min: deque = deque()  # Requests in last 15 minutes
         self._requests_24h: deque = deque()  # Requests in last 24 hours
         self._lock = None  # Thread lock (if needed for multi-threading)
+        self._last_short_usage: int | None = None
+        self._last_short_limit: int | None = None
+        self._last_long_usage: int | None = None
+        self._last_long_limit: int | None = None
+        self._last_headers_at: float | None = None
 
     def can_make_request(self) -> bool:
         """
@@ -131,7 +136,20 @@ class RateLimiter:
             "can_make_request": self.can_make_request(),
             "wait_time_seconds": self.get_wait_time(),
             "timestamp": now,
+            "strava_short_usage": self._last_short_usage,
+            "strava_short_limit": self._last_short_limit,
+            "strava_long_usage": self._last_long_usage,
+            "strava_long_limit": self._last_long_limit,
+            "strava_headers_timestamp": self._last_headers_at,
         }
+
+    def update_strava_headers(self, short_usage, short_limit, long_usage, long_limit):
+        now = time.time()
+        self._last_short_usage = short_usage
+        self._last_short_limit = short_limit
+        self._last_long_usage = long_usage
+        self._last_long_limit = long_limit
+        self._last_headers_at = now
 
     def _cleanup_old_requests(self, now: float):
         """
