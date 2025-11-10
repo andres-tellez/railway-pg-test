@@ -98,9 +98,9 @@ const DataUsage: React.FC = () => {
               You can request deletion of your data at any time:
             </p>
             <ul className="list-disc pl-6 mt-2 space-y-1">
-              <li>Delete your account and all associated data via our <a href="/data-deletion" className="text-blue-600 hover:underline">Data Deletion page</a></li>
-              <li>All data is permanently deleted within 48 hours of your request</li>
-              <li>Deletion is immediate and irreversible</li>
+              <li>Email <a href="mailto:support@smartcoach.app" className="text-blue-600 hover:underline">support@smartcoach.app</a> to request permanent deletion</li>
+              <li>All data is permanently deleted within 48 hours of your confirmed request</li>
+              <li>Deletion is immediate and irreversible once processed</li>
             </ul>
 
             <h3 className="text-xl font-semibold text-gray-800 mb-2 mt-4">3.3 Account Inactivity</h3>
@@ -138,7 +138,7 @@ const DataUsage: React.FC = () => {
             <ul className="list-disc pl-6 mt-2 space-y-1">
               <li><strong>Access:</strong> View all your data via our application or request a data export</li>
               <li><strong>Export:</strong> Request a copy of all your data at any time via our <a href="/api/user/export-data" className="text-blue-600 hover:underline">Data Export endpoint</a></li>
-              <li><strong>Delete:</strong> Permanently delete your account and all data via our <a href="/data-deletion" className="text-blue-600 hover:underline">Data Deletion page</a></li>
+              <li><strong>Delete:</strong> Request account deletion at any time by emailing <a href="mailto:support@smartcoach.app" className="text-blue-600 hover:underline">support@smartcoach.app</a></li>
               <li><strong>Disconnect Strava:</strong> Disconnect your Strava account at any time (we will stop syncing new data, but existing data remains unless you delete your account)</li>
             </ul>
           </section>
@@ -161,7 +161,7 @@ const DataUsage: React.FC = () => {
             <ul className="list-disc pl-6 mt-2 space-y-1">
               <li><a href="/privacy-policy" className="text-blue-600 hover:underline">Privacy Policy</a></li>
               <li><a href="/terms-of-service" className="text-blue-600 hover:underline">Terms of Service</a></li>
-              <li><a href="/data-deletion" className="text-blue-600 hover:underline">Data Deletion Instructions</a></li>
+              <li><a href="mailto:support@smartcoach.app?subject=Data%20Deletion%20Request" className="text-blue-600 hover:underline">Request Data Deletion</a></li>
             </ul>
           </section>
         </div>

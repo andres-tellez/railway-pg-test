@@ -248,10 +248,10 @@ const Settings: React.FC = () => {
                     Permanently delete all your data from SmartCoach.
                   </p>
                   <a
-                    href="/data-deletion"
+                    href="mailto:support@smartcoach.app?subject=Data%20Deletion%20Request"
                     className="text-sm text-red-600 hover:underline"
                   >
-                    Learn more about account deletion →
+                    Request account deletion →
                   </a>
                 </div>
               </div>

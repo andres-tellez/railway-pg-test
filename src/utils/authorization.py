@@ -14,9 +14,10 @@ Authorization (what can you do?) is handled here.
 """
 
 from functools import wraps
-from typing import Optional
+from typing import Optional, Set
 from flask import g, jsonify
 from src.utils.response_utils import unauthorized_response
+from src.utils.config import config
 import logging
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,15 @@ def check_user_owns_resource(
     return str(current_user_id) == str(resource_user_id)
 
 
+def _get_admin_email_set() -> Set[str]:
+    raw = getattr(config, "ADMIN_EMAILS", "") or ""
+    return {
+        email.strip().lower()
+        for email in raw.split(",")
+        if isinstance(email, str) and email.strip()
+    }
+
+
 def is_admin(user_id: Optional[str] = None) -> bool:
     """
     Check if user has admin role.
@@ -155,14 +165,21 @@ def is_admin(user_id: Optional[str] = None) -> bool:
     if not user_id:
         return False
 
-    # TODO: Implement actual admin check
-    # Options:
-    # 1. Check user_identity.role or user_identity.is_admin field
-    # 2. Check against admin_users table
-    # 3. Check against environment variable ADMIN_USER_IDS
+    admin_emails = _get_admin_email_set()
+    if not admin_emails:
+        return False
 
-    # For now, return False (no admins)
-    return False
+    claims = getattr(g, "current_user", {}) or {}
+    email = (
+        claims.get("email")
+        or claims.get("https://api.smartcoach.dev/email")
+        or claims.get("https://smartcoach.dev/email")
+    )
+
+    if not email:
+        return False
+
+    return email.lower() in admin_emails
 
 
 def requires_admin(fn):
