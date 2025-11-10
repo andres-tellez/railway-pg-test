@@ -103,7 +103,10 @@ export default function PlanPage() {
                       Target pace: {w.target_zone}
                     </p>
                   )}
-                  <p className="text-sm text-gray-600 mt-2">{w.description}</p>
+                  {/* Only show description when no structured notes exist */}
+                  {(!w.segments || !w.segments.notes) && w.description && (
+                    <p className="text-sm text-gray-600 mt-2">{w.description}</p>
+                  )}
 
                   {/* Show workout segments if available */}
                   {w.segments && w.segments.steps && Array.isArray(w.segments.steps) && (
