@@ -142,15 +142,38 @@ def calculate_workout_distribution(
     # Distances longest→...→shortest (matching shares order)
     parts_desc = _largest_remainder(non_long_total, shares)
 
-    # 4) Role assignment by invariants
+    # 4) Role assignment with safety guard for day-before-long run
     roles = {run_days[long_idx]: LONG}  # Long day
 
-    # Farthest → ENDURANCE
-    far_idx = non_long_idxs[-1]
+    # Identify the slot immediately before the long run (calendar order)
+    prev_idx = (long_idx - 1) % n
+    day_before_is_run = prev_idx in non_long_idxs
+
+    # Determine safe ENDURANCE candidate(s): prefer slots at least 2 days away
+    def calendar_gap(idx: int) -> int:
+        return (idx - long_idx) % n
+
+    safe_endurance_candidates = [
+        idx for idx in non_long_idxs if idx != prev_idx and calendar_gap(idx) >= 2
+    ]
+    if not safe_endurance_candidates:
+        # Fallback: use the farthest non-long slot (even if adjacent) to avoid failure
+        safe_endurance_candidates = [i for i in non_long_idxs if i != prev_idx]
+        if not safe_endurance_candidates:
+            safe_endurance_candidates = non_long_idxs.copy()
+
+    # Choose ENDURANCE slot with largest gap (furthest in calendar days)
+    far_idx = max(safe_endurance_candidates, key=calendar_gap)
     roles[run_days[far_idx]] = ENDURANCE
 
-    # Closest → EASY
-    close_idx = non_long_idxs[0]
+    # Assign EASY slot:
+    #  - If the day before the long run is a training day, force it to be EASY.
+    #  - Otherwise, use the closest slot in forward distance ordering.
+    if day_before_is_run:
+        close_idx = prev_idx
+    else:
+        close_idx = non_long_idxs[0]
+
     roles[run_days[close_idx]] = EASY
 
     # Remainder → STEADY
@@ -160,9 +183,14 @@ def calculate_workout_distribution(
 
     # 5) Assign miles to roles by size:
     #    ENDURANCE gets largest, EASY gets smallest, STEADY gets middles
-    largest = parts_desc[0]
-    smallest = parts_desc[-1]
-    steadies = parts_desc[1:-1]  # May be 0, 1, or 2 items depending on n
+    # Reorder the non-long mile buckets so that:
+    #  - ENDURANCE gets the largest share
+    #  - EASY gets the smallest
+    #  - STEADY days get the middles (ascending with proximity)
+    parts_desc_sorted = sorted(parts_desc)
+    smallest = parts_desc_sorted[0]
+    largest = parts_desc_sorted[-1]
+    steadies = parts_desc_sorted[1:-1]  # May be empty
 
     # STEADY positions ordered by forward distance (closer first)
     steady_positions = [i for i in non_long_idxs if roles[run_days[i]] == STEADY]
