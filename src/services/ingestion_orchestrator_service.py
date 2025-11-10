@@ -114,7 +114,7 @@ def run_full_ingestion_and_enrichment(
     athlete_id,
     user_id=None,
     lookback_days=config.DEFAULT_LOOKBACK_DAYS,
-    max_activities=config.MAX_ACTIVITIES_TO_DOWNLOAD,
+    max_activities=None,
     batch_size=None,
     per_page=None,
     after=None,
@@ -188,20 +188,12 @@ def run_full_ingestion_and_enrichment(
             or lookback_days < 1
         ):
             lookback_days = config.DEFAULT_LOOKBACK_DAYS
-        if (
-            max_activities is None
-            or not isinstance(max_activities, int)
-            or max_activities < 1
-        ):
-            max_activities = config.MAX_ACTIVITIES_TO_DOWNLOAD
         # batch_size and per_page can remain None if invalid
     else:
         # Use validated parameters
         if params:
             if "lookback_days" in params:
                 lookback_days = params["lookback_days"]
-            if "max_activities" in params:
-                max_activities = params["max_activities"]
             if "batch_size" in params:
                 batch_size = params["batch_size"]
             if "per_page" in params:
@@ -289,7 +281,6 @@ def run_full_ingestion_and_enrichment(
         window_after_ts = int(six_week_start_dt.timestamp())
         now_ts = int(datetime.utcnow().replace(tzinfo=timezone.utc).timestamp())
 
-        max_activities = max_activities or config.MAX_ACTIVITIES_TO_DOWNLOAD
         batch_size = batch_size or config.DEFAULT_BATCH_SIZE
         per_page = per_page or config.DEFAULT_PER_PAGE
 

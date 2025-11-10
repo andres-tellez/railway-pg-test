@@ -320,12 +320,7 @@ def test_business_logic_config() -> Tuple[bool, str]:
     """Test business logic configuration values"""
     print_info("Testing business logic configuration...")
 
-    max_activities = config.MAX_ACTIVITIES_TO_DOWNLOAD
-
-    return (
-        True,
-        f"Business logic config valid (max_activities={max_activities})",
-    )
+    return (True, "Business logic config valid")
 
 
 def test_required_variables() -> Tuple[bool, str]:

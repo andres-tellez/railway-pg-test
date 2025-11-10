@@ -146,8 +146,8 @@ class StravaClient:
         Args:
             after (int | None): Unix timestamp (seconds) - only return activities after this time.
             before (int | None): Unix timestamp (seconds) - only return activities before this time.
-            limit (int | None): Maximum number of activities to fetch. Defaults to config.MAX_ACTIVITIES_TO_DOWNLOAD.
-            per_page (int | None): How many activities to fetch per API page. Defaults to min(limit, 200).
+            limit (int | None): Optional cap on total activities to fetch.
+            per_page (int | None): How many activities to fetch per API page. Defaults to 200.
 
         Returns:
             list[dict]: A list of Strava activity objects.
@@ -157,19 +157,21 @@ class StravaClient:
         page = 1
 
         # Default limit from config if not provided
-        if limit is None:
-            limit = config.MAX_ACTIVITIES_TO_DOWNLOAD
-
-        # Default per_page = min(limit, STRAVA_PER_PAGE) (Strava caps at 200)
         if per_page is None:
-            per_page = min(limit, config.STRAVA_PER_PAGE)
+            per_page = config.STRAVA_PER_PAGE
 
-        while len(all_activities) < limit:
+        while True:
+            remaining = None
+            if limit is not None:
+                remaining = limit - len(all_activities)
+                if remaining <= 0:
+                    break
+
             params = {
                 "page": page,
-                "per_page": min(
-                    per_page, limit - len(all_activities)
-                ),  # don’t overshoot limit
+                "per_page": (
+                    min(per_page, remaining) if remaining is not None else per_page
+                ),
             }
             if after:
                 params["after"] = after
@@ -184,7 +186,7 @@ class StravaClient:
             all_activities.extend(batch)
 
             # Stop early if we've hit the limit
-            if len(all_activities) >= limit:
+            if limit is not None and len(all_activities) >= limit:
                 return all_activities[:limit]
 
             page += 1

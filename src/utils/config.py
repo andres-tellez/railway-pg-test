@@ -28,7 +28,6 @@ class Config:
     FRONTEND_REDIRECT = os.getenv("FRONTEND_REDIRECT")
 
     # ===== Business Rules =====
-    MAX_ACTIVITIES_TO_DOWNLOAD = int(os.getenv("MAX_ACTIVITIES_TO_DOWNLOAD", 50))
     STRAVA_PER_PAGE = int(os.getenv("STRAVA_PER_PAGE", 200))  # Strava API limit is 200
 
     # ===== Strava API Retry Settings =====

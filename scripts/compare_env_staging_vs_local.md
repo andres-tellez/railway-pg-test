@@ -22,7 +22,6 @@ These are required for local development:
 12. **CRON_SECRET_KEY** - ❌ **NOT NEEDED** (Legacy - removed)
 13. **INTERNAL_API_KEY** - ❌ **NOT NEEDED** (Legacy - removed)
 14. **CORS_ORIGINS** - ✅ Required (but different value: `https://localhost:5173,https://app.smartcoach.dev`)
-16. **MAX_ACTIVITIES_TO_DOWNLOAD** - ✅ Required
 17. **ACCESS_TOKEN_EXP** - ✅ Optional (has default)
 18. **VITE_BACKEND_URL** - ✅ Required (frontend variable, but backend uses it via config)
 

@@ -136,8 +136,8 @@ url = (
 ```python
 lookback_days=365,
 ...
-batch_size = batch_size or min(config.MAX_ACTIVITIES_TO_DOWNLOAD, 50)
-per_page = per_page or min(config.MAX_ACTIVITIES_TO_DOWNLOAD, 50)
+batch_size = batch_size or 50
+per_page = per_page or config.STRAVA_PER_PAGE
 ```
 
 **After:**
