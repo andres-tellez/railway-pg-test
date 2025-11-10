@@ -129,7 +129,7 @@ class ThreePassOrchestrator:
         plan_with_details = self.pass4.add_details_to_plan(
             plan=fixed,
             seed=initial_seed,
-            mode=mode,
+            mode="rolling",
             week_logs=week_logs,
         )
 
