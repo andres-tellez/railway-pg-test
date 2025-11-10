@@ -33,6 +33,7 @@ export default function PlanPage() {
   const api = useApiClient();
   const [plan, setPlan] = useState<Plan | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expandedWorkouts, setExpandedWorkouts] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!id || !isReady || !userId) return; // ✅ Wait for auth setup
@@ -81,7 +82,7 @@ export default function PlanPage() {
         <strong>Race:</strong> {plan.race_distance} on {plan.race_date}
       </p>
 
-      {weekKeys.map((week) => (
+      {weekKeys.map((week, weekIdx) => (
         <div key={week} className="mb-8">
           <h2 className="text-xl font-semibold mb-3">
             Week of {format(parseISO(week), "MMM d, yyyy")}
@@ -90,30 +91,84 @@ export default function PlanPage() {
             {groupedByWeek[week]
               .sort((a, b) => a.date.localeCompare(b.date))
               .map((w) => (
-                <div
+                <WorkoutRow
                   key={w.id}
-                  className="border rounded-lg p-4 bg-white shadow-sm"
-                >
+                  workout={w}
+                  isInteractive={weekIdx === 0}
+                  isExpanded={!!expandedWorkouts[`${week}-${w.id}`]}
+                  onToggle={() =>
+                    setExpandedWorkouts((prev) => ({
+                      ...prev,
+                      [`${week}-${w.id}`]: !prev[`${week}-${w.id}`],
+                    }))
+                  }
+                />
+              ))}
+          </div>
+        </div>
+      ))}
+      </div>
+    </AuthGuard>
+  );
+}
+
+type WorkoutRowProps = {
+  workout: Workout;
+  isInteractive: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+};
+
+const WorkoutRow: React.FC<WorkoutRowProps> = ({
+  workout,
+  isInteractive,
+  isExpanded,
+  onToggle,
+}) => {
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isInteractive) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onToggle();
+    }
+  };
+
+  const interactiveClasses = isInteractive
+    ? `transition-colors ${isExpanded ? "bg-blue-50" : "hover:bg-blue-50"} cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400`
+    : "";
+
+  return (
+    <div
+      className={`border rounded-lg p-4 bg-white shadow-sm ${interactiveClasses}`}
+      onClick={isInteractive ? onToggle : undefined}
+      onKeyDown={handleKeyDown}
+      role={isInteractive ? "button" : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      aria-expanded={isInteractive ? isExpanded : undefined}
+    >
                   <p className="font-medium">
-                    {format(parseISO(w.date), "EEE, MMM d")} — {w.workout_type} (
-                    {w.miles} mi)
+        {format(parseISO(workout.date), "EEE, MMM d")} — {workout.workout_type} (
+        {workout.miles} mi)
                   </p>
-                  {w.target_zone && (
+      {(!isInteractive || isExpanded) && workout.target_zone && (
                     <p className="text-sm text-blue-700 font-medium mt-1">
-                      Target pace: {w.target_zone}
+          Target pace: {workout.target_zone}
                     </p>
                   )}
-                  {/* Only show description when no structured notes exist */}
-                  {(!w.segments || !w.segments.notes) && w.description && (
-                    <p className="text-sm text-gray-600 mt-2">{w.description}</p>
-                  )}
+      {/* Only show description when no structured notes exist */}
+      {(!workout.segments || !workout.segments.notes) && workout.description && (
+        <p className="text-sm text-gray-600 mt-2">{workout.description}</p>
+      )}
 
-                  {/* Show workout segments if available */}
-                  {w.segments && w.segments.steps && Array.isArray(w.segments.steps) && (
+      {/* Show workout segments if available */}
+      {(!isInteractive || isExpanded) &&
+        workout.segments &&
+        workout.segments.steps &&
+        Array.isArray(workout.segments.steps) && (
                     <div className="mt-3 pt-3 border-t border-gray-200">
                       <p className="text-xs font-semibold text-gray-700 mb-2">Workout Structure:</p>
                       <div className="space-y-1">
-                        {w.segments.steps.map((step: any, idx: number) => (
+          {workout.segments.steps.map((step: any, idx: number) => (
                           <div key={idx} className="flex justify-between items-start text-xs">
                             <span className="text-gray-700">
                               {step.name} ({step.value} {step.durationType === 'DISTANCE' ? 'mi' : 'min'})
@@ -126,17 +181,11 @@ export default function PlanPage() {
                           </div>
                         ))}
                       </div>
-                      {w.segments.notes && (
-                        <p className="text-xs text-gray-600 mt-2 italic">{w.segments.notes}</p>
+          {workout.segments.notes && (
+            <p className="text-xs text-gray-600 mt-2 italic">{workout.segments.notes}</p>
                       )}
                     </div>
                   )}
-                </div>
-              ))}
-          </div>
-        </div>
-      ))}
-      </div>
-    </AuthGuard>
+    </div>
   );
-}
+};
