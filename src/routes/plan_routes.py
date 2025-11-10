@@ -1016,8 +1016,6 @@ def create_plan_draft_route():
                 # Calculate week start dates
                 if start_date and race_date:
                     try:
-                        from datetime import datetime, date, timedelta
-
                         if isinstance(race_date, str):
                             rd = datetime.fromisoformat(race_date.split("T")[0]).date()
                         elif isinstance(race_date, date):
