@@ -1,6 +1,6 @@
 // frontend/src/pages/PlanDraftPreview.tsx
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AuthGuard } from "@/components/AuthGuard";
 import { useApiClient } from "@/utils/apiClient";
@@ -27,13 +27,33 @@ export default function PlanDraftPreview() {
   const violations: any[] = validation?.violations || [];
   const hasErrors = violations.some((v) => (v?.severity || "").toLowerCase() === "error");
 
+  const browserTimezone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    []
+  );
+
+  const planRequestWithTimezone = useMemo(() => {
+    if (!plan_request) {
+      return { user_timezone: browserTimezone };
+    }
+    return {
+      ...plan_request,
+      user_timezone: plan_request.user_timezone || browserTimezone,
+    };
+  }, [plan_request, browserTimezone]);
+
+  const displayedTimezone =
+    generated?.timezone ||
+    planRequestWithTimezone.user_timezone ||
+    browserTimezone;
+
   const handleApprove = async () => {
     try {
       const res = await api.post("/api/plan/approve", {
         validation: {
           validated_plan: generated,
         },
-        plan_request,
+        plan_request: planRequestWithTimezone,
       });
       const planId = res.data?.plan_id;
       if (planId) {
@@ -55,7 +75,7 @@ export default function PlanDraftPreview() {
     try {
       setRegenLoading(true);
       const res = await api.post("/api/plan/draft", {
-        ...plan_request,
+        ...planRequestWithTimezone,
       });
       setCurrentDraft(res.data?.draft);
     } catch (e) {
@@ -104,6 +124,11 @@ export default function PlanDraftPreview() {
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-gray-800">Summary</h2>
             <p className="text-gray-700">{generated?.plan_name || "Unnamed Plan"}</p>
+            {displayedTimezone && (
+              <p className="text-sm text-gray-500 mt-1">
+                Plan dates shown in <span className="font-medium">{displayedTimezone}</span>.
+              </p>
+            )}
           </div>
 
           {/* Time Assessment */}

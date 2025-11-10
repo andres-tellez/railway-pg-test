@@ -142,10 +142,15 @@ const NewPlanForm: React.FC = () => {
       if (!userId) throw new Error("No user ID available - please refresh");
 
       // Generate a draft (no save)
-      const draftRes = await api.post("/api/plan/draft", {
+      const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+      const requestPayload = {
         ...values,
         race_date: values.race_date.split("T")[0],
-      });
+        user_timezone: userTimezone,
+      };
+
+      const draftRes = await api.post("/api/plan/draft", requestPayload);
 
       // Navigate to draft preview with data in state
       navigate("/plan/draft", {
@@ -153,8 +158,7 @@ const NewPlanForm: React.FC = () => {
         state: {
           draft: draftRes.data?.draft,
           plan_request: {
-            ...values,
-            race_date: values.race_date.split("T")[0],
+            ...requestPayload,
           },
         },
       });

@@ -204,7 +204,9 @@ def normalize_day_name(day_name: str) -> str:
     return day_name  # Return original if not recognized
 
 
-def get_days_until_next_monday(target_date: Union[date, datetime] = None) -> int:
+def get_days_until_next_monday(
+    target_date: Union[date, datetime] = None, include_today: bool = False
+) -> int:
     """
     Calculate days until the next Monday from the target date.
 
@@ -223,12 +225,16 @@ def get_days_until_next_monday(target_date: Union[date, datetime] = None) -> int
         target_date = target_date.date()
 
     days_until_monday = (7 - target_date.weekday()) % 7
-    if days_until_monday == 0:
+    if days_until_monday == 0 and not include_today:
         days_until_monday = 7  # Today is Monday, next Monday is 7 days away
+    elif days_until_monday == 0 and include_today:
+        days_until_monday = 0
     return days_until_monday
 
 
-def get_next_monday(target_date: Union[date, datetime] = None) -> date:
+def get_next_monday(
+    target_date: Union[date, datetime] = None, include_today: bool = False
+) -> date:
     """
     Get the date of the next Monday from the target date.
 
@@ -246,7 +252,7 @@ def get_next_monday(target_date: Union[date, datetime] = None) -> date:
     elif isinstance(target_date, datetime):
         target_date = target_date.date()
 
-    days = get_days_until_next_monday(target_date)
+    days = get_days_until_next_monday(target_date, include_today=include_today)
     return target_date + timedelta(days=days)
 
 

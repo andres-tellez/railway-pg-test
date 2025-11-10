@@ -29,6 +29,7 @@ export const planSchema = z.object({
 
   // Additional notes (optional)
   notes: z.string().optional(),
+  user_timezone: z.string().optional(),
 }).refine((data) => {
   // If primary_goal is "Target Time", target_time is required
   if (data.primary_goal === "Target Time" && !data.target_time) {

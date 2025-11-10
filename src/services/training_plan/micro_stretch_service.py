@@ -15,6 +15,10 @@ Design:
 
 from typing import Any, Dict, List, Tuple
 import logging
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from src.utils.timezone_helpers import DEFAULT_TIMEZONE
 
 logger = logging.getLogger(__name__)
 
@@ -165,10 +169,24 @@ def micro_stretch_plan(
     return stretched
 
 
+def _get_local_today(timezone_str: str) -> date:
+    try:
+        tz = ZoneInfo(timezone_str)
+    except ZoneInfoNotFoundError:
+        logger.warning(
+            "Unknown timezone '%s' provided for micro stretch. Falling back to %s.",
+            timezone_str,
+            DEFAULT_TIMEZONE,
+        )
+        tz = ZoneInfo(DEFAULT_TIMEZONE)
+    return datetime.now(tz).date()
+
+
 def apply_micro_stretch_if_needed(
     weeks: List[Dict[str, Any]],
     race_date: Any,
     plan_start_date: Any = None,
+    timezone_str: str = DEFAULT_TIMEZONE,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Apply micro-stretch if there's buffer time, and return metadata.
 
@@ -183,8 +201,6 @@ def apply_micro_stretch_if_needed(
         - buffer_weeks: float
         - original_weeks: int
     """
-    from datetime import datetime, date, timedelta
-
     # Calculate buffer
     if isinstance(race_date, str):
         rd = datetime.fromisoformat(race_date.split("T")[0]).date()
@@ -200,7 +216,7 @@ def apply_micro_stretch_if_needed(
             "original_weeks": len(weeks),
         }
 
-    today = date.today()
+    today_local = _get_local_today(timezone_str)
 
     if plan_start_date:
         if isinstance(plan_start_date, str):
@@ -208,12 +224,12 @@ def apply_micro_stretch_if_needed(
         elif isinstance(plan_start_date, date):
             start_d = plan_start_date
         else:
-            start_d = today
+            start_d = today_local
     else:
         # Default: next Monday
         from src.utils.date_helpers import get_next_monday
 
-        start_d = get_next_monday(today)
+        start_d = get_next_monday(today_local, include_today=True)
 
     weeks_needed = len(weeks)
     weeks_available = (rd - start_d).days / 7.0

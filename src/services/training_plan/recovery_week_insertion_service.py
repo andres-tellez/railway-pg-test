@@ -19,6 +19,10 @@ Design:
 
 from typing import Any, Dict, List, Tuple
 import logging
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from src.utils.timezone_helpers import DEFAULT_TIMEZONE
 
 logger = logging.getLogger(__name__)
 
@@ -221,10 +225,24 @@ def insert_recovery_weeks(
     return modified_weeks
 
 
+def _get_local_today(timezone_str: str) -> date:
+    try:
+        tz = ZoneInfo(timezone_str)
+    except ZoneInfoNotFoundError:
+        logger.warning(
+            "Unknown timezone '%s' provided. Falling back to %s.",
+            timezone_str,
+            DEFAULT_TIMEZONE,
+        )
+        tz = ZoneInfo(DEFAULT_TIMEZONE)
+    return datetime.now(tz).date()
+
+
 def apply_recovery_week_insertion_if_needed(
     weeks: List[Dict[str, Any]],
     race_date: Any,
     plan_start_date: Any = None,
+    timezone_str: str = DEFAULT_TIMEZONE,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Apply recovery week insertion if plan is shorter than available weeks.
 
@@ -232,6 +250,7 @@ def apply_recovery_week_insertion_if_needed(
         weeks: List of weeks
         race_date: Race date
         plan_start_date: Plan start date (if None, calculates from today)
+        timezone_str: IANA timezone string representing the user's local time
 
     Returns:
         (modified_weeks, metadata) where metadata includes:
@@ -240,8 +259,6 @@ def apply_recovery_week_insertion_if_needed(
         - original_weeks: int
         - target_weeks: float
     """
-    from datetime import datetime, date, timedelta
-
     # Calculate target weeks (available weeks)
     if isinstance(race_date, str):
         rd = datetime.fromisoformat(race_date.split("T")[0]).date()
@@ -258,7 +275,7 @@ def apply_recovery_week_insertion_if_needed(
             "target_weeks": 0.0,
         }
 
-    today = date.today()
+    today_local = _get_local_today(timezone_str)
 
     if plan_start_date:
         if isinstance(plan_start_date, str):
@@ -266,12 +283,12 @@ def apply_recovery_week_insertion_if_needed(
         elif isinstance(plan_start_date, date):
             start_d = plan_start_date
         else:
-            start_d = today
+            start_d = today_local
     else:
         # Default: next Monday
         from src.utils.date_helpers import get_next_monday
 
-        start_d = get_next_monday(today)
+        start_d = get_next_monday(today_local, include_today=True)
 
     current_plan_weeks = len(weeks)
 

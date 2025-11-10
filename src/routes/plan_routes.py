@@ -22,7 +22,8 @@ from src.services.training_plan.data_collection_service import DataCollectionSer
 from src.services.training_plan.insights_calculation_service import (
     InsightsCalculationService,
 )
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+import pytz
 from src.services.training_plan.pass1_weeks_selector import Pass1WeeksSelector
 from src.services.training_plan.weekly_total_calculator import (
     calculate_weekly_totals_from_long_runs,
@@ -35,6 +36,7 @@ from src.utils.date_helpers import (
     DEFAULT_TRAINING_DAYS,
     get_next_monday,
 )
+from src.utils.timezone_helpers import resolve_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -549,6 +551,20 @@ def create_plan_draft_route():
         validated = PlanCreateSchema.model_validate(data)
         plan_request = validated.model_dump()
 
+        user_timezone = resolve_timezone(plan_request)
+        plan_request["user_timezone"] = user_timezone
+        try:
+            tz = pytz.timezone(user_timezone)
+        except Exception:
+            logger.warning(
+                "Invalid timezone '%s' provided. Falling back to UTC.", user_timezone
+            )
+            user_timezone = "UTC"
+            plan_request["user_timezone"] = user_timezone
+            tz = pytz.timezone(user_timezone)
+
+        today_local = datetime.now(tz).date()
+
         # Temporarily restrict Target Time flow for draft as well
         if str(plan_request.get("primary_goal", "")) in [
             "Target Time",
@@ -802,12 +818,10 @@ def create_plan_draft_route():
                 race_date = plan_request.get("race_date")
                 time_warning = None
                 stretched_metadata = None
-                start_date = None
+                start_date = get_next_monday(today_local, include_today=True)
 
                 if race_date:
                     try:
-                        from datetime import datetime, date, timedelta
-
                         if isinstance(race_date, str):
                             rd = datetime.fromisoformat(race_date.split("T")[0]).date()
                         elif isinstance(race_date, date):
@@ -816,11 +830,6 @@ def create_plan_draft_route():
                             rd = None
 
                         if rd:
-                            today = date.today()
-
-                            # Calculate start date (next Monday or closest Monday)
-                            start_date = get_next_monday(today)
-
                             # Calculate weeks available ensuring the week containing race day is included.
                             # OLD LOGIC (BUGGY):
                             #   weeks_available = (rd - start_date).days / 7.0
@@ -868,7 +877,10 @@ def create_plan_draft_route():
 
                                 weeks_with_recovery, recovery_metadata = (
                                     apply_recovery_week_insertion_if_needed(
-                                        weeks_simple, race_date, start_date
+                                        weeks_simple,
+                                        race_date,
+                                        start_date,
+                                        user_timezone,
                                     )
                                 )
 
@@ -1049,6 +1061,7 @@ def create_plan_draft_route():
                     "generated_plan": {
                         "weeks": weeks_simple,
                         "race_metadata": race_metadata,
+                        "timezone": user_timezone,
                     },
                     "validation": {
                         "valid": len(violations) == 0,

@@ -48,6 +48,10 @@ class PlanCreateSchema(BaseModel):
     notes: Optional[str] = Field(
         None, description="Additional notes for plan generation"
     )
+    user_timezone: Optional[str] = Field(
+        default=None,
+        description="IANA timezone for the user when generating the plan",
+    )
 
     def model_post_init(self, __context):
         """Validate target_time requirement based on primary_goal."""
