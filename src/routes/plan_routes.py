@@ -688,7 +688,7 @@ def create_plan_draft_route():
                 plan_with_details = pass4.add_details_to_plan(
                     plan=plan_with_details,
                     seed=initial_seed,
-                    mode="prefill",
+                    mode="rolling",
                     week_logs=None,
                 )
                 weeks_with_workouts = plan_with_details.get("weeks", [])
