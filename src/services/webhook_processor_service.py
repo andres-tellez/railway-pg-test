@@ -56,7 +56,7 @@ def process_webhook_event(session: Session, event_id: int):
         logger.error(f"Webhook event {event_id} not found")
         return False
 
-    if event.status == WebhookEventStatus.PROCESSED:
+    if event.status == WebhookEventStatus.COMPLETED:
         logger.info(f"Event {event_id} already processed")
         return True
 
@@ -105,7 +105,7 @@ def process_webhook_event(session: Session, event_id: int):
         elif event.object_type == "athlete":
             # For now, just log athlete events
             logger.info(f"Athlete event {event_id}: {event.aspect_type}")
-            event.status = WebhookEventStatus.PROCESSED
+            event.status = WebhookEventStatus.COMPLETED
             session.commit()
             return True
 
@@ -118,8 +118,8 @@ def process_webhook_event(session: Session, event_id: int):
             session.commit()
             return False
 
-        # Mark as processed
-        event.status = WebhookEventStatus.PROCESSED
+        # Mark as completed
+        event.status = WebhookEventStatus.COMPLETED
         session.commit()
 
         logger.info(f"Successfully processed webhook event {event_id}")
