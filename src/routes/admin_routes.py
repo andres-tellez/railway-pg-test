@@ -401,7 +401,7 @@ def sync_activities():
                 400,
             )
 
-        # Validate athlete_id matches authenticated user (if user_id available)
+        # Log if syncing for different athlete (audit trail for admin operations)
         if user_id:
             mapping = (
                 session.query(UserAthleteLink)
@@ -409,17 +409,9 @@ def sync_activities():
                 .first()
             )
             if not mapping:
-                logger.warning(
-                    f"⚠️ [Sync Activities] User {user_id} not linked to athlete {athlete_id}"
-                )
-                return (
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": f"Athlete {athlete_id} not linked to your account",
-                        }
-                    ),
-                    403,
+                logger.info(
+                    f"🔄 [Sync Activities] Admin sync: User {user_id} syncing athlete {athlete_id} "
+                    f"(not their own athlete - admin operation)"
                 )
 
         # Convert dates to Unix timestamps (UTC)
