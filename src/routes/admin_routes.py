@@ -422,12 +422,29 @@ def sync_activities():
                     403,
                 )
 
-        # Convert dates to Unix timestamps
-        from datetime import datetime
+        # Convert dates to Unix timestamps (UTC)
+        from datetime import datetime, timezone, time as dt_time
 
         try:
-            start_timestamp = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
-            end_timestamp = int(datetime.strptime(end_date, "%Y-%m-%d").timestamp())
+            # Parse dates and set to start of day UTC
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            )
+            start_timestamp = int(start_dt.timestamp())
+
+            # For end date, set to end of day (23:59:59) UTC
+            end_dt = datetime.combine(
+                datetime.strptime(end_date, "%Y-%m-%d").date(),
+                dt_time.max,
+                tzinfo=timezone.utc,
+            )
+            end_timestamp = int(end_dt.timestamp())
+
+            logger.info(
+                f"🔄 [Sync Activities] Date conversion: "
+                f"start_date={start_date} -> {start_dt.isoformat()} (timestamp={start_timestamp}), "
+                f"end_date={end_date} -> {end_dt.isoformat()} (timestamp={end_timestamp})"
+            )
         except ValueError as e:
             logger.warning(f"⚠️ [Sync Activities] Invalid date format: {e}")
             return (
@@ -440,10 +457,6 @@ def sync_activities():
                 400,
             )
 
-        logger.info(
-            f"🔄 [Sync Activities] Starting sync for athlete {athlete_id} from {start_date} to {end_date}"
-        )
-
         # Get user_id for this athlete if not already set
         if not user_id:
             mapping = (
@@ -455,28 +468,48 @@ def sync_activities():
                     f"✅ [Sync Activities] Found user_id={user_id} for athlete_id={athlete_id}"
                 )
 
-        # Call the existing function with date range
-        result = run_full_ingestion_and_enrichment(
-            _unused_session=None,
-            athlete_id=athlete_id,
-            user_id=str(user_id) if user_id else None,
-            after=start_timestamp,
-            before=end_timestamp,
-            max_activities=None,  # Use env var setting
+        logger.info(
+            f"🔄 [Sync Activities] Starting background sync for athlete {athlete_id} "
+            f"from {start_date} to {end_date} (UTC timestamps: {start_timestamp} to {end_timestamp})"
         )
 
-        logger.info(f"✅ [Sync Activities] Sync completed: {result}")
+        # Run sync in background job (don't block HTTP request)
+        from src.utils.strava_helpers import run_background_job
 
+        def sync_job(session, athlete_id, user_id, start_timestamp, end_timestamp):
+            """Run sync in background thread"""
+            user_id_str = str(user_id) if user_id else None
+            logger.info(
+                f"🔄 [Background Sync] Starting sync for athlete {athlete_id}, user {user_id_str}"
+            )
+            try:
+                result = run_full_ingestion_and_enrichment(
+                    _unused_session=None,
+                    athlete_id=athlete_id,
+                    user_id=user_id_str,
+                    after=start_timestamp,
+                    before=end_timestamp,
+                    max_activities=None,
+                )
+                logger.info(f"✅ [Background Sync] Sync completed: {result}")
+            except Exception as e:
+                logger.exception(f"❌ [Background Sync] Sync failed: {e}")
+
+        run_background_job(
+            sync_job, athlete_id, user_id, start_timestamp, end_timestamp
+        )
+
+        # Return immediately - sync is running in background
         return (
             jsonify(
                 {
                     "status": "success",
-                    "result": result,
+                    "message": f"Sync started for athlete {athlete_id} from {start_date} to {end_date}. Processing in background...",
                     "athlete_id": athlete_id,
                     "date_range": f"{start_date} to {end_date}",
                 }
             ),
-            200,
+            202,  # 202 Accepted - request accepted but processing asynchronously
         )
 
     except Exception as e:
