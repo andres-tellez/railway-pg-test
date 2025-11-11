@@ -28,6 +28,10 @@ from typing import Tuple, Optional
 from src.utils.response_utils import validation_error_response, not_found_response
 from src.db.dao.user_identity_dao import resolve_user_id_from_auth_provider
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def get_sub_from_claims(
     claims: Optional[dict] = None,
@@ -96,8 +100,13 @@ def get_user_id_from_request(
     if claims is None:
         claims = getattr(g, "current_user", {})
 
+    logger.info("get_user_id_from_request: resolving Auth0 sub=%s", sub)
     user_id = resolve_user_id_from_auth_provider(
         sub, claims, create_if_missing=create_if_missing
+    )
+    logger.info(
+        "get_user_id_from_request: resolve_user_id_from_auth_provider returned %s",
+        user_id,
     )
 
     if not user_id:
