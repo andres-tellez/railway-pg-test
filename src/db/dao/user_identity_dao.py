@@ -111,15 +111,26 @@ def resolve_user_id_from_auth_provider(
     email_verified = claims.get("email_verified")
     picture = claims.get("picture")
 
+    logger.info("resolve_user_id_from_auth_provider: opening DB session (primary)")
     db = get_session()
+    logger.info("resolve_user_id_from_auth_provider: DB session (primary) opened")
     try:
         # 1) Existing provider mapping?
+        logger.info(
+            "resolve_user_id_from_auth_provider: querying existing mapping for provider=%s user_id=%s",
+            provider_name,
+            provider_user_id,
+        )
         existing_user_id = db.execute(
             select(UserAuthProvider.user_id).where(
                 UserAuthProvider.provider_name == provider_name,
                 UserAuthProvider.provider_user_id == provider_user_id,
             )
         ).scalar()
+        logger.info(
+            "resolve_user_id_from_auth_provider: mapping query returned %s",
+            existing_user_id,
+        )
         if existing_user_id:
             return existing_user_id
 
@@ -164,14 +175,26 @@ def resolve_user_id_from_auth_provider(
         db.close()
 
     # 6) Re-fetch with a fresh session to be 100% consistent
+    logger.info("resolve_user_id_from_auth_provider: opening DB session (verify)")
     db2 = get_session()
+    logger.info("resolve_user_id_from_auth_provider: DB session (verify) opened")
     try:
+        logger.info(
+            "resolve_user_id_from_auth_provider: verifying mapping for provider=%s user_id=%s",
+            provider_name,
+            provider_user_id,
+        )
         final_user_id = db2.execute(
             select(UserAuthProvider.user_id).where(
                 UserAuthProvider.provider_name == provider_name,
                 UserAuthProvider.provider_user_id == provider_user_id,
             )
         ).scalar()
+        logger.info(
+            "resolve_user_id_from_auth_provider: verification query returned %s",
+            final_user_id,
+        )
         return final_user_id
     finally:
+        logger.info("resolve_user_id_from_auth_provider: closing DB session (verify)")
         db2.close()
