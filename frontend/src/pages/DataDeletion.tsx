@@ -1,200 +1,141 @@
-import React, { useMemo, useState } from "react";
-import { useApiClient } from "../utils/apiClient";
-import { AuthGuard } from "../components/AuthGuard";
-import { useAuth0 } from "@auth0/auth0-react";
-
-type DeletionResult = {
-  success: boolean;
-  message: string;
-  deleted?: Record<string, unknown>;
-  user_id?: string;
-  timestamp?: string;
-};
-
-const adminEmailSet = new Set(
-  (import.meta.env.VITE_ADMIN_EMAILS || "")
-    .split(",")
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean)
-);
+import React, { useState } from 'react';
+import { useApiClient } from '../utils/apiClient';
+import { useAuthSetup } from '../hooks/useAuthSetup';
 
 const DataDeletion: React.FC = () => {
+  const { isReady, userId } = useAuthSetup();
   const api = useApiClient();
-  const { user } = useAuth0();
-  const [identifierEmail, setIdentifierEmail] = useState("");
-  const [identifierUserId, setIdentifierUserId] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [result, setResult] = useState<DeletionResult | null>(null);
+  const [deletionResult, setDeletionResult] = useState<{
+    success: boolean;
+    message: string;
+    deleted?: any;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const isAdmin = useMemo(() => {
-    const email = user?.email?.toLowerCase();
-    return !!(email && adminEmailSet.has(email));
-  }, [user]);
-
-  const hasIdentifier = !!identifierEmail.trim() || !!identifierUserId.trim();
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-
-    if (!hasIdentifier) {
-      setError("Provide a user email or user ID to delete.");
+  const handleDeleteAccount = async () => {
+    if (!isReady || !userId) {
+      setError('Please log in to delete your account');
       return;
     }
 
-    setIsSubmitting(true);
+    setIsDeleting(true);
     setError(null);
-    setResult(null);
+    setDeletionResult(null);
 
     try {
-      const payload: Record<string, string> = {};
-      if (identifierEmail.trim()) {
-        payload.email = identifierEmail.trim();
-      }
-      if (identifierUserId.trim()) {
-        payload.user_id = identifierUserId.trim();
-      }
-
-      const response = await api.delete("/api/admin/users", {
-        data: payload,
+      const response = await api.delete('/api/user/delete-account');
+      setDeletionResult({
+        success: true,
+        message: response.data.message || 'Your account has been deleted',
+        deleted: response.data.deleted,
       });
-
-      setResult(response.data);
-      setIdentifierEmail("");
-      setIdentifierUserId("");
+      // Redirect to logout or home after successful deletion
+      setTimeout(() => {
+        window.location.href = '/login';
+      }, 3000);
     } catch (err: any) {
-      const message =
-        err?.response?.data?.detail ||
-        err?.response?.data?.error ||
-        err?.message ||
-        "Failed to delete user.";
-      setError(message);
+      setError(err.response?.data?.error || 'Failed to delete account. Please try again or contact support.');
+      setDeletionResult(null);
     } finally {
-      setIsSubmitting(false);
+      setIsDeleting(false);
       setShowConfirm(false);
     }
   };
 
   return (
-    <AuthGuard>
-      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-6">
-            Administrative Data Deletion
-          </h1>
-          <p className="text-sm text-gray-600 mb-8">Last Updated: November 10, 2025</p>
+    <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-6">Data Deletion Instructions</h1>
+        <p className="text-sm text-gray-600 mb-8">Last Updated: November 3, 2025</p>
 
-          {!isAdmin ? (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-              <h2 className="text-xl font-semibold text-yellow-900 mb-2">
-                Restricted Access
-              </h2>
-              <p className="text-yellow-800">
-                This page is restricted to SmartCoach administrators. If you need your
-                data deleted, please contact{" "}
-                <a
-                  href="mailto:support@smartcoach.app"
-                  className="underline font-semibold"
-                >
-                  support@smartcoach.app
-                </a>{" "}
-                and we will handle the request promptly.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-8 text-gray-700">
-              <section>
-                <h2 className="text-2xl font-semibold text-gray-900 mb-3">
-                  Deletion Scope
-                </h2>
-                <p>
-                  Deleting a user removes all personalized data stored in SmartCoach,
-                  including:
-                </p>
-                <ul className="list-disc pl-6 mt-2 space-y-2">
-                  <li>Identity, profile, and Auth0 linkage records</li>
-                  <li>Training plans, workout metadata, and analytics artifacts</li>
-                  <li>Strava athlete links and stored tokens</li>
-                  <li>All synced activities and coaching conversations</li>
-                </ul>
-                <p className="mt-3 text-red-600 font-semibold">
-                  This action is immediate and irreversible.
-                </p>
-              </section>
+        <div className="space-y-6 text-gray-700">
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-3">Your Right to Delete Your Data</h2>
+            <p>
+              Under GDPR Article 17 (Right to Erasure) and other privacy regulations, you have the right to request
+              deletion of all personal data we hold about you. SmartCoach provides a simple, self-service way to
+              permanently delete your account and all associated data.
+            </p>
+            <p className="mt-2">
+              <strong>Important:</strong> Account deletion is immediate and irreversible. Once deleted, we cannot
+              recover your data.
+            </p>
+          </section>
 
-              <section>
-                <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-                  Delete a User
-                </h2>
-                <form
-                  onSubmit={handleSubmit}
-                  className="bg-red-50 border-2 border-red-200 rounded-lg p-6 space-y-4"
-                >
-                  <p className="text-red-800">
-                    Provide either the user's email address or internal user ID. Email
-                    lookup is case-insensitive.
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-3">What Gets Deleted</h2>
+            <p>When you delete your account, we permanently remove:</p>
+            <ul className="list-disc pl-6 mt-2 space-y-2">
+              <li><strong>User Account:</strong> Your user identity and authentication data</li>
+              <li><strong>Profile Information:</strong> Your onboarding data and preferences</li>
+              <li><strong>Strava Connection:</strong> Your linked Strava athlete account and access tokens</li>
+              <li><strong>Activity Data:</strong> All running activities imported from Strava</li>
+              <li><strong>Training Plans:</strong> All your training plans and workout data</li>
+              <li><strong>Conversations:</strong> All chat conversations and coaching interactions</li>
+              <li><strong>Metrics & Analytics:</strong> All performance metrics and historical data</li>
+            </ul>
+            <p className="mt-4">
+              <strong>Note:</strong> Deleting your SmartCoach account does not affect your Strava account. Your
+              activities and data remain in Strava. We only delete the copy of your data stored in SmartCoach.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-3">How to Delete Your Account</h2>
+
+            {!isReady ? (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-blue-800">
+                  Please <a href="/login" className="underline font-semibold">log in</a> to access the account deletion tool.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="bg-red-50 border-2 border-red-200 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold text-red-900 mb-3">⚠️ Permanent Account Deletion</h3>
+                  <p className="text-red-800 mb-4">
+                    This action cannot be undone. All your data will be permanently deleted immediately.
                   </p>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        User Email
-                      </label>
-                      <input
-                        type="email"
-                        value={identifierEmail}
-                        onChange={(event) => setIdentifierEmail(event.target.value)}
-                        placeholder="user@example.com"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Internal User ID
-                      </label>
-                      <input
-                        type="text"
-                        value={identifierUserId}
-                        onChange={(event) => setIdentifierUserId(event.target.value)}
-                        placeholder="UUID"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                      />
-                    </div>
-                  </div>
-
-                  {!showConfirm ? (
+                  {!showConfirm && !deletionResult && (
                     <button
-                      type="button"
-                      disabled={!hasIdentifier}
                       onClick={() => setShowConfirm(true)}
-                      className="px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors"
                     >
-                      Continue to Confirmation
+                      Delete My Account
                     </button>
-                  ) : (
+                  )}
+
+                  {showConfirm && !deletionResult && (
                     <div className="space-y-4">
-                      <div className="bg-white border border-red-300 rounded-lg p-4">
-                        <p className="font-semibold text-red-900 mb-2">
-                          Confirm permanent deletion
-                        </p>
+                      <div className="bg-white border-2 border-red-300 rounded-lg p-4">
+                        <p className="font-semibold text-red-900 mb-2">Are you absolutely sure?</p>
                         <p className="text-sm text-red-800">
-                          The user and all related data will be removed immediately.
-                          This cannot be undone.
+                          This will permanently delete:
+                        </p>
+                        <ul className="text-sm text-red-800 list-disc pl-6 mt-2 space-y-1">
+                          <li>All your training plans</li>
+                          <li>All your activity history</li>
+                          <li>All your conversations and data</li>
+                          <li>Your SmartCoach account</li>
+                        </ul>
+                        <p className="text-sm text-red-800 mt-2 font-semibold">
+                          This action cannot be reversed.
                         </p>
                       </div>
                       <div className="flex gap-3">
                         <button
-                          type="submit"
-                          disabled={isSubmitting}
+                          onClick={handleDeleteAccount}
+                          disabled={isDeleting}
                           className="px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {isSubmitting ? "Deleting..." : "Yes, delete this user"}
+                          {isDeleting ? 'Deleting...' : 'Yes, Delete My Account'}
                         </button>
                         <button
-                          type="button"
-                          disabled={isSubmitting}
                           onClick={() => setShowConfirm(false)}
+                          disabled={isDeleting}
                           className="px-6 py-3 bg-gray-200 text-gray-800 rounded-lg font-semibold hover:bg-gray-300 transition-colors disabled:opacity-50"
                         >
                           Cancel
@@ -202,58 +143,88 @@ const DataDeletion: React.FC = () => {
                       </div>
                     </div>
                   )}
-                </form>
 
-                {result && result.success && (
-                  <div className="mt-6 bg-green-50 border border-green-200 rounded-lg p-4">
-                    <p className="text-green-800 font-semibold mb-2">
-                      ✅ User deleted successfully
-                    </p>
-                    <p className="text-sm text-green-700">
-                      User ID <span className="font-mono">{result.user_id}</span> was
-                      purged at {result.timestamp}.
-                    </p>
-                    {result.deleted && (
-                      <details className="mt-3">
-                        <summary className="text-sm text-green-700 cursor-pointer">
-                          View deletion summary
-                        </summary>
-                        <pre className="mt-2 text-xs bg-white p-3 rounded-lg overflow-auto">
-                          {JSON.stringify(result.deleted, null, 2)}
-                        </pre>
-                      </details>
-                    )}
-                  </div>
-                )}
+                  {deletionResult && deletionResult.success && (
+                    <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4">
+                      <p className="text-green-800 font-semibold mb-2">✅ Account Deleted Successfully</p>
+                      <p className="text-sm text-green-700">
+                        Your account and all data have been permanently deleted. You will be redirected to the login page shortly.
+                      </p>
+                      {deletionResult.deleted && (
+                        <details className="mt-3">
+                          <summary className="text-sm text-green-700 cursor-pointer">Deletion Summary</summary>
+                          <pre className="mt-2 text-xs bg-white p-2 rounded overflow-auto">
+                            {JSON.stringify(deletionResult.deleted, null, 2)}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  )}
 
-                {error && (
-                  <div className="mt-6 bg-red-50 border border-red-200 rounded-lg p-4">
-                    <p className="text-red-800 font-semibold">Error</p>
-                    <p className="text-sm text-red-700 mt-1">{error}</p>
-                  </div>
-                )}
-              </section>
+                  {error && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mt-4">
+                      <p className="text-red-800 font-semibold">Error</p>
+                      <p className="text-sm text-red-700 mt-1">{error}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
 
-              <section>
-                <h2 className="text-2xl font-semibold text-gray-900 mb-3">
-                  Need assistance?
-                </h2>
-                <p>
-                  For audit requests or complex data removal scenarios, reach out to{" "}
-                  <a
-                    href="mailto:support@smartcoach.app"
-                    className="text-blue-600 hover:underline font-medium"
-                  >
-                    support@smartcoach.app
-                  </a>
-                  .
-                </p>
-              </section>
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-3">Alternative: API Endpoint</h2>
+            <p>
+              If you prefer to delete your account programmatically, you can use our API endpoint:
+            </p>
+            <div className="bg-gray-100 rounded-lg p-4 mt-3 font-mono text-sm">
+              <p className="text-gray-800 mb-2">
+                <strong>DELETE</strong> <code className="bg-gray-200 px-2 py-1 rounded">/api/user/delete-account</code>
+              </p>
+              <p className="text-xs text-gray-600 mt-2">
+                Requires authentication. Returns deletion summary upon successful completion.
+              </p>
             </div>
-          )}
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-3">Need Help?</h2>
+            <p>
+              If you have questions about data deletion or need assistance, please contact us:
+            </p>
+            <ul className="list-disc pl-6 mt-2 space-y-1">
+              <li>
+                <strong>Email:</strong>{' '}
+                <a href="mailto:support@smartcoach.app" className="text-blue-600 hover:underline">
+                  support@smartcoach.app
+                </a>
+              </li>
+              <li>
+                <strong>Response Time:</strong> We typically respond within 24-48 hours
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h2 className="text-2xl font-semibold text-gray-900 mb-3">Related Information</h2>
+            <ul className="list-disc pl-6 space-y-1">
+              <li>
+                <a href="/privacy-policy" className="text-blue-600 hover:underline">
+                  Privacy Policy
+                </a>
+                {' - Learn more about how we handle your data'}
+              </li>
+              <li>
+                <a href="/terms-of-service" className="text-blue-600 hover:underline">
+                  Terms of Service
+                </a>
+                {' - Our terms and conditions'}
+              </li>
+            </ul>
+          </section>
         </div>
       </div>
-    </AuthGuard>
+    </div>
   );
 };
 

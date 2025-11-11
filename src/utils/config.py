@@ -26,7 +26,6 @@ class Config:
     PORT = int(os.getenv("PORT", "5000"))
     IS_LOCAL = os.getenv("IS_LOCAL", "false").lower() == "true"
     FRONTEND_REDIRECT = os.getenv("FRONTEND_REDIRECT")
-    ADMIN_EMAILS = os.getenv("ADMIN_EMAILS", "")
 
     # ===== Business Rules =====
     STRAVA_PER_PAGE = int(os.getenv("STRAVA_PER_PAGE", 200))  # Strava API limit is 200

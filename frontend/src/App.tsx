@@ -123,15 +123,8 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
       <Route path="/terms-of-service" element={<TermsOfService />} />
+      <Route path="/data-deletion" element={<DataDeletion />} />
       <Route path="/data-usage" element={<DataUsage />} />
-      <Route
-        path="/admin/data-deletion"
-        element={
-          <Layout>
-            <DataDeletion />
-          </Layout>
-        }
-      />
 
       {/* Smart Routing */}
       <Route path="/" element={<SmartRouter />} />

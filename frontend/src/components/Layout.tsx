@@ -58,8 +58,8 @@ const Layout: React.FC<LayoutProps> = ({
                 Terms of Service
               </a>
               <span className="text-gray-300">|</span>
-              <a href="mailto:support@smartcoach.app?subject=Data%20Deletion%20Request" className="hover:text-gray-900 hover:underline">
-                Request Data Deletion
+              <a href="/data-deletion" className="hover:text-gray-900 hover:underline">
+                Delete My Data
               </a>
               <span className="text-gray-300">|</span>
               <a href="/data-usage" className="hover:text-gray-900 hover:underline">

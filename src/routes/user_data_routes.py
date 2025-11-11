@@ -13,88 +13,21 @@ All endpoints require authentication.
 """
 
 from flask import Blueprint, jsonify, request, g
-from sqlalchemy import text
+from sqlalchemy import text, delete
+from sqlalchemy.dialects.postgresql import UUID
+import json
 from datetime import datetime
 
 from src.db.db_session import get_session
 from src.utils.auth0_jwt import requires_auth
-from src.utils.authorization import requires_admin
 from src.db.models.user_identity import UserIdentity
 from src.db.models.user_profile import UserProfile
 from src.db.models.user_athletes import UserAthleteLink
-from src.db.models.user_auth_providers import UserAuthProvider
 from src.db.models.activities import Activity
 from src.db.models.tokens import Token
 from src.db.models.plans import Plan
 
 user_data_bp = Blueprint("user_data", __name__, url_prefix="/api")
-
-
-def _delete_user_with_dependencies(session, target_user_id: str) -> dict:
-    """
-    Centralized deletion utility so both self-service and admin flows
-    use the exact same cascade behaviour.
-    """
-
-    normalized_user_id = str(target_user_id)
-    deletions = {
-        "activities": 0,
-        "plans": 0,
-        "athlete_links": 0,
-        "tokens": 0,
-        "profile": 0,
-        "identity": 0,
-        "auth_providers": 0,
-    }
-
-    deletions["activities"] = (
-        session.query(Activity)
-        .filter_by(user_id=normalized_user_id)
-        .delete(synchronize_session=False)
-    )
-
-    deletions["plans"] = (
-        session.query(Plan)
-        .filter_by(user_id=normalized_user_id)
-        .delete(synchronize_session=False)
-    )
-
-    athlete_links = (
-        session.query(UserAthleteLink).filter_by(user_id=normalized_user_id).all()
-    )
-
-    for link in athlete_links:
-        deletions["tokens"] += (
-            session.query(Token)
-            .filter_by(athlete_id=link.athlete_id)
-            .delete(synchronize_session=False)
-        )
-
-    deletions["athlete_links"] = (
-        session.query(UserAthleteLink)
-        .filter_by(user_id=normalized_user_id)
-        .delete(synchronize_session=False)
-    )
-
-    deletions["profile"] = (
-        session.query(UserProfile)
-        .filter_by(user_id=normalized_user_id)
-        .delete(synchronize_session=False)
-    )
-
-    deletions["auth_providers"] = (
-        session.query(UserAuthProvider)
-        .filter_by(user_id=normalized_user_id)
-        .delete(synchronize_session=False)
-    )
-
-    deletions["identity"] = (
-        session.query(UserIdentity)
-        .filter_by(user_id=normalized_user_id)
-        .delete(synchronize_session=False)
-    )
-
-    return deletions
 
 
 @user_data_bp.get("/user/export-data")
@@ -204,7 +137,6 @@ def export_user_data():
 
 @user_data_bp.delete("/user/delete-account")
 @requires_auth
-@requires_admin
 def delete_user_account():
     """
     Permanently delete all user data (GDPR Article 17 - Right to Erasure).
@@ -222,37 +154,72 @@ def delete_user_account():
     session = get_session()
     try:
         internal_user_id = getattr(g, "user_id", None)
-        payload = request.get_json(silent=True) or {}
-        target_user_id = payload.get("user_id")
-        target_email = payload.get("email")
 
-        if target_email and not target_user_id:
-            target = (
-                session.query(UserIdentity)
-                .filter(UserIdentity.email.ilike(target_email))
-                .first()
-            )
-            if not target:
-                return (
-                    jsonify({"error": "User not found", "identifier": target_email}),
-                    404,
-                )
-            target_user_id = str(target.user_id)
-
-        if not target_user_id:
-            target_user_id = internal_user_id
-
-        if not target_user_id:
+        if not internal_user_id:
             return jsonify({"error": "User not authenticated"}), 401
 
-        print(f"🗑️ Starting account deletion for user: {target_user_id}", flush=True)
+        print(f"🗑️ Starting account deletion for user: {internal_user_id}", flush=True)
 
-        deletions = _delete_user_with_dependencies(session, target_user_id)
+        # Track deletions
+        deletions = {
+            "activities": 0,
+            "plans": 0,
+            "athlete_links": 0,
+            "tokens": 0,
+            "profile": 0,
+            "identity": 0,
+        }
+
+        # 1. Delete activities
+        activities_result = (
+            session.query(Activity).filter_by(user_id=internal_user_id).delete()
+        )
+        deletions["activities"] = activities_result
+        print(f"  ✓ Deleted {activities_result} activities", flush=True)
+
+        # 2. Delete training plans
+        plans_result = session.query(Plan).filter_by(user_id=internal_user_id).delete()
+        deletions["plans"] = plans_result
+        print(f"  ✓ Deleted {plans_result} training plans", flush=True)
+
+        # 3. Delete athlete links and associated tokens
+        athlete_links = (
+            session.query(UserAthleteLink).filter_by(user_id=internal_user_id).all()
+        )
+        for link in athlete_links:
+            # Delete tokens for this athlete
+            tokens_result = (
+                session.query(Token).filter_by(athlete_id=link.athlete_id).delete()
+            )
+            deletions["tokens"] += tokens_result
+
+        athlete_links_result = (
+            session.query(UserAthleteLink).filter_by(user_id=internal_user_id).delete()
+        )
+        deletions["athlete_links"] = athlete_links_result
+        print(
+            f"  ✓ Deleted {athlete_links_result} athlete links and {deletions['tokens']} tokens",
+            flush=True,
+        )
+
+        # 4. Delete user profile
+        profile_result = (
+            session.query(UserProfile).filter_by(user_id=internal_user_id).delete()
+        )
+        deletions["profile"] = profile_result
+        print(f"  ✓ Deleted user profile", flush=True)
+
+        # 5. Delete user identity (this should cascade to any remaining data)
+        identity_result = (
+            session.query(UserIdentity).filter_by(user_id=internal_user_id).delete()
+        )
+        deletions["identity"] = identity_result
+        print(f"  ✓ Deleted user identity", flush=True)
 
         # Commit all deletions
         session.commit()
 
-        print(f"✅ Account deletion complete for user: {target_user_id}", flush=True)
+        print(f"✅ Account deletion complete for user: {internal_user_id}", flush=True)
         print(f"   Summary: {deletions}", flush=True)
 
         return (
@@ -262,7 +229,6 @@ def delete_user_account():
                     "message": "All your data has been permanently deleted",
                     "deleted": deletions,
                     "timestamp": datetime.utcnow().isoformat(),
-                    "user_id": str(target_user_id),
                 }
             ),
             200,
@@ -275,79 +241,6 @@ def delete_user_account():
 
         traceback.print_exc()
         return jsonify({"error": "Failed to delete account", "detail": str(e)}), 500
-    finally:
-        session.close()
-
-
-@user_data_bp.delete("/admin/users")
-@requires_auth
-@requires_admin
-def admin_delete_user():
-    """
-    Admin-only endpoint to delete a user by user_id or email.
-    """
-    session = get_session()
-    try:
-        payload = request.get_json(silent=True) or {}
-        target_user_id = payload.get("user_id")
-        target_email = payload.get("email")
-
-        if not target_user_id and not target_email:
-            return (
-                jsonify(
-                    {
-                        "error": "Missing identifier",
-                        "detail": "Provide user_id or email to delete a user",
-                    }
-                ),
-                400,
-            )
-
-        if target_email and not target_user_id:
-            target = (
-                session.query(UserIdentity)
-                .filter(UserIdentity.email.ilike(target_email))
-                .first()
-            )
-            if not target:
-                return (
-                    jsonify({"error": "User not found", "identifier": target_email}),
-                    404,
-                )
-            target_user_id = str(target.user_id)
-
-        if not target_user_id:
-            return jsonify({"error": "Unable to resolve user identifier"}), 400
-
-        print(f"🗑️ Admin-initiated deletion for user: {target_user_id}", flush=True)
-        deletions = _delete_user_with_dependencies(session, target_user_id)
-        session.commit()
-        print(f"✅ Admin deletion complete for user: {target_user_id}", flush=True)
-
-        return (
-            jsonify(
-                {
-                    "success": True,
-                    "message": "User account deleted by admin",
-                    "user_id": str(target_user_id),
-                    "deleted": deletions,
-                    "timestamp": datetime.utcnow().isoformat(),
-                }
-            ),
-            200,
-        )
-    except Exception as e:
-        session.rollback()
-        print(f"❌ Error deleting user (admin): {e}", flush=True)
-        return (
-            jsonify(
-                {
-                    "error": "Failed to delete user",
-                    "detail": str(e),
-                }
-            ),
-            500,
-        )
     finally:
         session.close()
 
