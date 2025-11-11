@@ -93,15 +93,16 @@ DEBUG_AUTH = os.getenv("DEBUG_AUTH") == "1"
 
 
 def verify_and_decode(token: str, audience: str | None = None) -> dict:
-    logger.info("verify_and_decode: extracting unverified header")
+    print("verify_and_decode: extracting unverified header", flush=True)
     unverified_header = jwt.get_unverified_header(token)
-    logger.info(
-        "verify_and_decode: retrieving JWKS for kid=%s", unverified_header.get("kid")
+    print(
+        f"verify_and_decode: retrieving JWKS for kid={unverified_header.get('kid')}",
+        flush=True,
     )
     rsa_key = _get_rsa_key_for_kid(unverified_header["kid"])
-    logger.info(
-        "verify_and_decode: JWKS retrieval %s",
-        "succeeded" if rsa_key else "failed",
+    print(
+        f"verify_and_decode: JWKS retrieval {'succeeded' if rsa_key else 'failed'}",
+        flush=True,
     )
     if rsa_key is None:
         raise Exception("Unable to find appropriate key")
@@ -113,7 +114,7 @@ def verify_and_decode(token: str, audience: str | None = None) -> dict:
             part.strip() for part in expected_audience.split(",") if part.strip()
         ]
 
-    logger.info("verify_and_decode: decoding JWT")
+    print("verify_and_decode: decoding JWT", flush=True)
     return jwt.decode(
         token,
         rsa_key,
