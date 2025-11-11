@@ -346,43 +346,126 @@ def get_athletes():
 
 
 @admin_bp.route("/sync-activities", methods=["POST"])
+@requires_auth
 def sync_activities():
     """Sync activities for a specific athlete in a date range."""
-    try:
-        data = request.get_json()
-        athlete_id = data.get("athlete_id")
-        start_date = data.get("start_date")  # YYYY-MM-DD format
-        end_date = data.get("end_date")  # YYYY-MM-DD format
+    logger.info("🔄 [Sync Activities] Request received")
+    session = get_session()
 
-        if not athlete_id or not start_date or not end_date:
+    try:
+        # Get user_id from authenticated user
+        from flask import g
+
+        user_id = getattr(g, "user_id", None)
+        if user_id:
+            logger.info(f"✅ [Sync Activities] Authenticated user_id={user_id}")
+
+        data = request.get_json()
+        if not data:
+            logger.warning("⚠️ [Sync Activities] No JSON data in request")
             return (
                 jsonify(
                     {
                         "status": "error",
-                        "message": "Missing required fields: athlete_id, start_date, end_date",
+                        "message": "Request body must be JSON",
                     }
                 ),
                 400,
             )
 
+        athlete_id = data.get("athlete_id")
+        start_date = data.get("start_date")  # YYYY-MM-DD format
+        end_date = data.get("end_date")  # YYYY-MM-DD format
+
+        logger.info(
+            f"🔄 [Sync Activities] athlete_id={athlete_id}, start_date={start_date}, end_date={end_date}"
+        )
+
+        if not athlete_id or not start_date or not end_date:
+            missing = []
+            if not athlete_id:
+                missing.append("athlete_id")
+            if not start_date:
+                missing.append("start_date")
+            if not end_date:
+                missing.append("end_date")
+
+            logger.warning(f"⚠️ [Sync Activities] Missing fields: {missing}")
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": f"Missing required fields: {', '.join(missing)}",
+                    }
+                ),
+                400,
+            )
+
+        # Validate athlete_id matches authenticated user (if user_id available)
+        if user_id:
+            mapping = (
+                session.query(UserAthleteLink)
+                .filter_by(user_id=user_id, athlete_id=athlete_id)
+                .first()
+            )
+            if not mapping:
+                logger.warning(
+                    f"⚠️ [Sync Activities] User {user_id} not linked to athlete {athlete_id}"
+                )
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": f"Athlete {athlete_id} not linked to your account",
+                        }
+                    ),
+                    403,
+                )
+
         # Convert dates to Unix timestamps
         from datetime import datetime
 
-        start_timestamp = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
-        end_timestamp = int(datetime.strptime(end_date, "%Y-%m-%d").timestamp())
+        try:
+            start_timestamp = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
+            end_timestamp = int(datetime.strptime(end_date, "%Y-%m-%d").timestamp())
+        except ValueError as e:
+            logger.warning(f"⚠️ [Sync Activities] Invalid date format: {e}")
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": f"Invalid date format. Use YYYY-MM-DD format. Error: {str(e)}",
+                    }
+                ),
+                400,
+            )
 
         logger.info(
-            f"🔄 Syncing activities for athlete {athlete_id} from {start_date} to {end_date}"
+            f"🔄 [Sync Activities] Starting sync for athlete {athlete_id} from {start_date} to {end_date}"
         )
+
+        # Get user_id for this athlete if not already set
+        if not user_id:
+            mapping = (
+                session.query(UserAthleteLink).filter_by(athlete_id=athlete_id).first()
+            )
+            if mapping:
+                user_id = mapping.user_id
+                logger.info(
+                    f"✅ [Sync Activities] Found user_id={user_id} for athlete_id={athlete_id}"
+                )
 
         # Call the existing function with date range
         result = run_full_ingestion_and_enrichment(
             _unused_session=None,
             athlete_id=athlete_id,
+            user_id=str(user_id) if user_id else None,
             after=start_timestamp,
             before=end_timestamp,
             max_activities=None,  # Use env var setting
         )
+
+        logger.info(f"✅ [Sync Activities] Sync completed: {result}")
 
         return (
             jsonify(
@@ -397,5 +480,8 @@ def sync_activities():
         )
 
     except Exception as e:
-        logger.exception(f"❌ Failed to sync activities")
+        logger.exception(f"❌ [Sync Activities] Failed to sync activities: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+    finally:
+        session.close()
