@@ -115,6 +115,7 @@ def verify_and_decode(token: str, audience: str | None = None) -> dict:
 
     logger.info("verify_and_decode: decoding JWT")
     return jwt.decode(
+        token,
         rsa_key,
         algorithms=ALGORITHMS,
         audience=expected_audience,  # must be a string or list
