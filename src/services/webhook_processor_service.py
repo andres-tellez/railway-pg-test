@@ -137,18 +137,26 @@ def process_webhook_event(session: Session, event_id: int):
 
 def _handle_activity_create(session: Session, event: WebhookEvent, user_id):
     """Handle activity.create webhook event."""
-    # Validate user_id if provided
+    # Convert user_id to string if it's a UUID object
     if user_id is not None:
-        from src.utils.strava_validators import validate_user_id
+        user_id = str(user_id) if not isinstance(user_id, str) else user_id
 
-        validated_user_id, error = validate_user_id(user_id)
-        if error:
-            logger.warning(
-                f"Invalid user_id format: {user_id}, continuing without user_id"
-            )
-            user_id = None  # Continue without user_id rather than failing
-        else:
-            user_id = validated_user_id  # Use validated UUID string
+        # Validate UUID format (simple check, no Flask responses)
+        import re
+        import uuid as uuid_lib
+
+        uuid_pattern = re.compile(
+            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        )
+        if not uuid_pattern.match(user_id):
+            try:
+                # Try to parse as UUID to validate format
+                uuid_lib.UUID(user_id)
+            except (ValueError, AttributeError):
+                logger.warning(
+                    f"Invalid user_id format: {user_id}, continuing without user_id"
+                )
+                user_id = None  # Continue without user_id rather than failing
 
     activity_id = event.object_id
 
@@ -203,18 +211,26 @@ def _handle_activity_create(session: Session, event: WebhookEvent, user_id):
 
 def _handle_activity_update(session: Session, event: WebhookEvent, user_id):
     """Handle activity.update webhook event."""
-    # Validate user_id if provided
+    # Convert user_id to string if it's a UUID object
     if user_id is not None:
-        from src.utils.strava_validators import validate_user_id
+        user_id = str(user_id) if not isinstance(user_id, str) else user_id
 
-        validated_user_id, error = validate_user_id(user_id)
-        if error:
-            logger.warning(
-                f"Invalid user_id format: {user_id}, continuing without user_id"
-            )
-            user_id = None  # Continue without user_id rather than failing
-        else:
-            user_id = validated_user_id  # Use validated UUID string
+        # Validate UUID format (simple check, no Flask responses)
+        import re
+        import uuid as uuid_lib
+
+        uuid_pattern = re.compile(
+            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        )
+        if not uuid_pattern.match(user_id):
+            try:
+                # Try to parse as UUID to validate format
+                uuid_lib.UUID(user_id)
+            except (ValueError, AttributeError):
+                logger.warning(
+                    f"Invalid user_id format: {user_id}, continuing without user_id"
+                )
+                user_id = None  # Continue without user_id rather than failing
 
     activity_id = event.object_id
 
