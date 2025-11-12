@@ -80,7 +80,7 @@ You have several options for storing database backups. Here's a comparison to he
    ```python
    # Install B2 SDK
    pip install b2sdk
-   
+
    # Use B2 storage (requires script modification)
    ```
 
@@ -269,4 +269,3 @@ Tell me which option you prefer, and I can:
 1. Update the backup script for that storage type
 2. Update GitHub Actions workflow
 3. Create setup instructions specific to your choice
-

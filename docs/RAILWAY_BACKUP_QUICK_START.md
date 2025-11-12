@@ -155,4 +155,3 @@ Make sure the volume is mounted correctly in Railway dashboard.
 ---
 
 **That's it!** You now have automated database backups running on Railway. 🎉
-

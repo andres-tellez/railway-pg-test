@@ -339,4 +339,3 @@ Once S3 is set up:
 For more information, see:
 - `docs/DISASTER_RECOVERY_PLAN.md` - Full DR procedures
 - `scripts/BACKUP_SETUP.md` - Backup script usage
-

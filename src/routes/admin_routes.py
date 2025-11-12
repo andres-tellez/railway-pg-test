@@ -468,9 +468,13 @@ def sync_activities():
                 """Run sync in background thread"""
                 user_id_str = str(user_id) if user_id else None
                 logger.info(
-                    f"🔄 [Background Sync] Starting sync for athlete {athlete_id}, user {user_id_str}"
+                    f"🔄 [Background Sync] Starting sync for athlete {athlete_id}, user {user_id_str}, "
+                    f"after={start_timestamp}, before={end_timestamp}"
                 )
                 try:
+                    logger.info(
+                        f"🔄 [Background Sync] Calling run_full_ingestion_and_enrichment..."
+                    )
                     result = run_full_ingestion_and_enrichment(
                         _unused_session=None,
                         athlete_id=athlete_id,
@@ -479,12 +483,26 @@ def sync_activities():
                         before=end_timestamp,
                         max_activities=None,
                     )
-                    logger.info(f"✅ [Background Sync] Sync completed: {result}")
+                    logger.info(
+                        f"✅ [Background Sync] Sync completed: synced={result.get('synced', 0)}, "
+                        f"enriched={result.get('enriched', 0)}"
+                    )
+                    if result.get("enriched", 0) == 0:
+                        logger.warning(
+                            f"⚠️ [Background Sync] No activities were enriched! "
+                            f"Result: {result}"
+                        )
                 except Exception as e:
                     logger.exception(f"❌ [Background Sync] Sync failed: {e}")
 
+            logger.info(
+                f"🚀 [Sync Activities] Launching background job for athlete {athlete_id}..."
+            )
             run_background_job(
                 sync_job, athlete_id, user_id, start_timestamp, end_timestamp
+            )
+            logger.info(
+                f"✅ [Sync Activities] Background job launched, returning 202 response"
             )
 
             # Return immediately - sync is running in background

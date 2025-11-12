@@ -107,11 +107,11 @@ def backup_database():
     """Trigger database backup."""
     import subprocess
     from datetime import datetime
-    
+
     backup_path = "/backups"
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     backup_file = f"{backup_path}/backup_{timestamp}.sql"
-    
+
     try:
         # Run backup
         subprocess.run([
@@ -122,7 +122,7 @@ def backup_database():
             "-f", backup_file,
             os.getenv("DATABASE_URL")
         ], check=True)
-        
+
         return jsonify({
             "status": "success",
             "message": f"Backup created: {backup_file}",
@@ -169,12 +169,12 @@ def create_backup():
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise ValueError("DATABASE_URL not set")
-    
+
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     backup_file = f"{BACKUP_PATH}/backup_{timestamp}.sql"
-    
+
     Path(BACKUP_PATH).mkdir(parents=True, exist_ok=True)
-    
+
     subprocess.run([
         "pg_dump",
         "--no-owner",
@@ -183,7 +183,7 @@ def create_backup():
         "-f", backup_file,
         db_url
     ], check=True)
-    
+
     print(f"✅ Backup created: {backup_file}")
     cleanup_old_backups()
     return backup_file
@@ -192,11 +192,11 @@ def cleanup_old_backups():
     """Remove backups older than retention period."""
     from datetime import timedelta
     cutoff = datetime.utcnow() - timedelta(days=RETENTION_DAYS)
-    
+
     backup_dir = Path(BACKUP_PATH)
     if not backup_dir.exists():
         return
-    
+
     deleted = 0
     for backup_file in backup_dir.glob("backup_*.sql"):
         file_time = datetime.fromtimestamp(backup_file.stat().st_mtime)
@@ -204,7 +204,7 @@ def cleanup_old_backups():
             backup_file.unlink()
             deleted += 1
             print(f"🗑️  Deleted old backup: {backup_file.name}")
-    
+
     if deleted > 0:
         print(f"✅ Cleaned up {deleted} old backup(s)")
 
@@ -262,28 +262,28 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
-    
+
     steps:
       - uses: actions/checkout@v3
-      
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-      
+
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
-      
+
       - name: Install Railway CLI
         run: npm install -g @railway/cli
-      
+
       - name: Login to Railway
         run: railway login --browserless
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-      
+
       - name: Create backup
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -292,7 +292,7 @@ jobs:
             --storage local \
             --local-path ./backups \
             --output-dir ./backups
-      
+
       - name: Copy backup to Railway Volume
         run: |
           railway link ${{ secrets.RAILWAY_PROJECT_ID }}
@@ -400,4 +400,3 @@ Railway Volumes are more expensive but simpler to set up and manage.
 5. ✅ Monitor backup storage usage
 
 For detailed disaster recovery procedures, see: `docs/DISASTER_RECOVERY_PLAN.md`
-

@@ -259,7 +259,6 @@ python scripts/restore_database.py \
 
 **That's it!** You now have cheap, reliable cloud backups using Backblaze B2. 🎉
 
-**Cost:** ~$0.06/month (vs $3/month for Railway Volumes)  
-**Storage:** 10 GB free forever  
+**Cost:** ~$0.06/month (vs $3/month for Railway Volumes)
+**Storage:** 10 GB free forever
 **Reliability:** Enterprise-grade cloud storage
-

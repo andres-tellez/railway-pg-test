@@ -79,4 +79,3 @@ BACKUP_LOCAL_PATH=/backups
 curl -X POST https://prod.smartcoach.dev/admin/backup-database \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
-

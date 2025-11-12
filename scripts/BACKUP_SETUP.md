@@ -145,4 +145,3 @@ For a typical 10 GB database:
 6. ✅ Document recovery procedures for your team
 
 For detailed disaster recovery procedures, see: `docs/DISASTER_RECOVERY_PLAN.md`
-

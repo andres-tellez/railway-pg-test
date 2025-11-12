@@ -477,7 +477,18 @@ class ActivityIngestionService:
 
 def run_enrichment_batch(session, athlete_id, batch_size=10, *, split_cutoff=None):
     """Batch enrichment job for activities."""
+    log.info(
+        f"🔄 [Enrichment Batch] Starting enrichment for athlete {athlete_id}, "
+        f"batch_size={batch_size}"
+    )
     activities = get_activities_to_enrich(session, athlete_id, batch_size)
+    log.info(f"📋 [Enrichment Batch] Found {len(activities)} activities to enrich")
+    if not activities:
+        log.warning(
+            f"⚠️ [Enrichment Batch] No activities found to enrich for athlete {athlete_id}"
+        )
+        return 0
+
     enriched_count = 0
     failed_count = 0
 

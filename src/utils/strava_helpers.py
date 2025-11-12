@@ -162,16 +162,23 @@ def run_background_job(job_func: Callable, *args, **kwargs) -> None:
     def background_wrapper():
         db = get_session()
         try:
+            logger.info("🚀 [Background Job] Thread started, executing job function...")
             job_func(db, *args, **kwargs)
+            logger.info("✅ [Background Job] Job function completed successfully")
         except Exception as e:
             logger.error(
-                f"Background job failed: {e}",
+                f"❌ [Background Job] Background job failed: {e}",
                 exc_info=True,
             )
         finally:
             db.close()
+            logger.info("🔒 [Background Job] Database session closed")
 
-    threading.Thread(target=background_wrapper, daemon=True).start()
+    thread = threading.Thread(target=background_wrapper, daemon=False)
+    thread.start()
+    logger.info(
+        f"🚀 [Background Job] Started background thread (thread_id={thread.ident})"
+    )
 
 
 def get_frontend_redirect_url(default: str = "https://localhost:5173/setup") -> str:
