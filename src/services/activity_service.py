@@ -343,6 +343,12 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
 
 def extract_hr_zone_percentages(zones_data):
     """Compute HR zone percentages."""
+    if zones_data is None:
+        log.debug(
+            "HR zones data is None (may be unavailable due to 402 or missing data)"
+        )
+        return [0.0] * 5
+
     try:
         for zone_group in zones_data:
             if zone_group.get("type") == "heartrate":
