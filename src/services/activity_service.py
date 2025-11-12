@@ -135,11 +135,22 @@ def enrich_one_activity(
             activity_json = client.get_activity(activity_id)
             zones_data = client.get_hr_zones(activity_id)
             streams = {}
-            if fetch_streams:
-                streams = client.get_streams(
-                    activity_id,
-                    keys=["distance", "time", "velocity_smooth", "heartrate"],
-                )
+
+            # Always fetch heartrate stream if zones API unavailable (for HR zone calculation)
+            # Even if outside split lookback window
+            need_hr_stream = zones_data is None and activity_json.get("has_heartrate")
+
+            if fetch_streams or need_hr_stream:
+                stream_keys = ["distance", "time", "velocity_smooth", "heartrate"]
+                if not fetch_streams and need_hr_stream:
+                    # Only fetch heartrate if we just need it for zones
+                    stream_keys = ["heartrate"]
+                    log.info(
+                        "Fetching heartrate stream for HR zone calculation "
+                        "(zones API unavailable for activity %s)",
+                        activity_id,
+                    )
+                streams = client.get_streams(activity_id, keys=stream_keys)
             else:
                 log.info(
                     "Skipping stream fetch for activity %s (outside split lookback window)",
@@ -174,7 +185,26 @@ def enrich_one_activity(
 
         log.info("Enriching activity %s - %s", activity_id, activity_json.get("name"))
 
-        hr_zone_pcts = extract_hr_zone_percentages(zones_data) or [0.0] * 5
+        # Extract HR zones from zones endpoint if available
+        hr_zone_pcts = extract_hr_zone_percentages(zones_data)
+
+        # Fallback: Calculate HR zones from heartrate streams if zones endpoint unavailable
+        if (
+            hr_zone_pcts == [0.0] * 5
+            and zones_data is None
+            and streams.get("heartrate")
+        ):
+            log.info(
+                "HR zones unavailable from API, attempting to calculate from heartrate streams"
+            )
+            hr_zone_pcts = calculate_hr_zones_from_streams(
+                streams.get("heartrate", []), activity_json.get("max_heartrate")
+            )
+
+        # Final fallback: use default if still no zones
+        if hr_zone_pcts == [0.0] * 5:
+            hr_zone_pcts = [0.0] * 5
+
         update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
 
         splits = []
@@ -342,7 +372,7 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
 
 
 def extract_hr_zone_percentages(zones_data):
-    """Compute HR zone percentages."""
+    """Compute HR zone percentages from Strava zones API response."""
     if zones_data is None:
         log.debug(
             "HR zones data is None (may be unavailable due to 402 or missing data)"
@@ -360,6 +390,76 @@ def extract_hr_zone_percentages(zones_data):
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.warning("HR zone extraction failed: %s", e)
     return [0.0] * 5
+
+
+def calculate_hr_zones_from_streams(heartrate_stream, max_heartrate=None):
+    """
+    Calculate HR zone percentages from heartrate stream data.
+
+    Uses standard HR zone thresholds:
+    - Zone 1: 50-60% of max HR
+    - Zone 2: 60-70% of max HR
+    - Zone 3: 70-80% of max HR
+    - Zone 4: 80-90% of max HR
+    - Zone 5: 90-100% of max HR
+
+    Args:
+        heartrate_stream: List of heartrate values from stream
+        max_heartrate: Maximum heartrate (from activity or estimated)
+
+    Returns:
+        List of 5 zone percentages [zone1, zone2, zone3, zone4, zone5]
+    """
+    if not heartrate_stream or len(heartrate_stream) == 0:
+        log.debug("No heartrate stream data available for HR zone calculation")
+        return [0.0] * 5
+
+    # Filter out None/null values
+    hr_values = [float(hr) for hr in heartrate_stream if hr is not None]
+    if not hr_values:
+        log.debug("No valid heartrate values in stream")
+        return [0.0] * 5
+
+    # Estimate max HR from stream if not provided (use 95th percentile + 5%)
+    if max_heartrate is None or max_heartrate == 0:
+        sorted_hr = sorted(hr_values)
+        percentile_95 = sorted_hr[int(len(sorted_hr) * 0.95)]
+        max_heartrate = percentile_95 * 1.05
+        log.debug(f"Estimated max HR from stream: {max_heartrate:.1f} bpm")
+
+    if max_heartrate <= 0:
+        log.warning("Invalid max heartrate for HR zone calculation")
+        return [0.0] * 5
+
+    # Calculate time in each zone
+    zone_times = [0.0] * 5
+    for hr in hr_values:
+        hr_pct = hr / max_heartrate
+        if hr_pct < 0.5:
+            zone_times[0] += 1  # Zone 1
+        elif hr_pct < 0.6:
+            zone_times[0] += 1  # Zone 1
+        elif hr_pct < 0.7:
+            zone_times[1] += 1  # Zone 2
+        elif hr_pct < 0.8:
+            zone_times[2] += 1  # Zone 3
+        elif hr_pct < 0.9:
+            zone_times[3] += 1  # Zone 4
+        else:
+            zone_times[4] += 1  # Zone 5
+
+    total_time = sum(zone_times)
+    if total_time == 0:
+        return [0.0] * 5
+
+    # Convert to percentages
+    zone_percentages = [round((t / total_time) * 100, 2) for t in zone_times]
+    log.info(
+        f"Calculated HR zones from streams: Z1={zone_percentages[0]:.1f}%, "
+        f"Z2={zone_percentages[1]:.1f}%, Z3={zone_percentages[2]:.1f}%, "
+        f"Z4={zone_percentages[3]:.1f}%, Z5={zone_percentages[4]:.1f}%"
+    )
+    return zone_percentages
 
 
 def build_mile_splits(activity_id, streams):
