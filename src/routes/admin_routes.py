@@ -466,12 +466,25 @@ def sync_activities():
 
             def sync_job(session, athlete_id, user_id, start_timestamp, end_timestamp):
                 """Run sync in background thread"""
+                import sys
+
                 user_id_str = str(user_id) if user_id else None
+                print(
+                    f"🔄 [Background Sync] Starting sync for athlete {athlete_id}, "
+                    f"user {user_id_str}, after={start_timestamp}, before={end_timestamp}",
+                    file=sys.stdout,
+                    flush=True,
+                )
                 logger.info(
                     f"🔄 [Background Sync] Starting sync for athlete {athlete_id}, user {user_id_str}, "
                     f"after={start_timestamp}, before={end_timestamp}"
                 )
                 try:
+                    print(
+                        f"🔄 [Background Sync] Calling run_full_ingestion_and_enrichment...",
+                        file=sys.stdout,
+                        flush=True,
+                    )
                     logger.info(
                         f"🔄 [Background Sync] Calling run_full_ingestion_and_enrichment..."
                     )
@@ -483,16 +496,32 @@ def sync_activities():
                         before=end_timestamp,
                         max_activities=None,
                     )
+                    print(
+                        f"✅ [Background Sync] Sync completed: synced={result.get('synced', 0)}, "
+                        f"enriched={result.get('enriched', 0)}",
+                        file=sys.stdout,
+                        flush=True,
+                    )
                     logger.info(
                         f"✅ [Background Sync] Sync completed: synced={result.get('synced', 0)}, "
                         f"enriched={result.get('enriched', 0)}"
                     )
                     if result.get("enriched", 0) == 0:
+                        print(
+                            f"⚠️ [Background Sync] No activities were enriched! Result: {result}",
+                            file=sys.stdout,
+                            flush=True,
+                        )
                         logger.warning(
                             f"⚠️ [Background Sync] No activities were enriched! "
                             f"Result: {result}"
                         )
                 except Exception as e:
+                    print(
+                        f"❌ [Background Sync] Sync failed: {e}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                     logger.exception(f"❌ [Background Sync] Sync failed: {e}")
 
             logger.info(
