@@ -138,7 +138,13 @@ def enrich_one_activity(
 
             # Always fetch heartrate stream if zones API unavailable (for HR zone calculation)
             # Even if outside split lookback window
-            need_hr_stream = zones_data is None and activity_json.get("has_heartrate")
+            # Check for any HR data indicators (has_heartrate, average_heartrate, or max_heartrate)
+            has_hr_data = (
+                activity_json.get("has_heartrate")
+                or activity_json.get("average_heartrate") is not None
+                or activity_json.get("max_heartrate") is not None
+            )
+            need_hr_stream = zones_data is None and has_hr_data
 
             if fetch_streams or need_hr_stream:
                 stream_keys = ["distance", "time", "velocity_smooth", "heartrate"]
