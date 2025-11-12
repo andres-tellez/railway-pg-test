@@ -478,6 +478,9 @@ class ActivityIngestionService:
 def run_enrichment_batch(session, athlete_id, batch_size=10, *, split_cutoff=None):
     """Batch enrichment job for activities."""
     activities = get_activities_to_enrich(session, athlete_id, batch_size)
+    enriched_count = 0
+    failed_count = 0
+
     for row in activities:
         aid = row["activity_id"]
         start_date = row.get("start_date")
@@ -494,7 +497,24 @@ def run_enrichment_batch(session, athlete_id, batch_size=10, *, split_cutoff=Non
 
             fetch_streams = start_dt >= cutoff_dt
 
-        enrich_one_activity_with_refresh(
-            session, athlete_id, aid, fetch_streams=fetch_streams
-        )
+        try:
+            enrich_one_activity_with_refresh(
+                session, athlete_id, aid, fetch_streams=fetch_streams
+            )
+            enriched_count += 1
+            log.info(f"Successfully enriched activity {aid} for athlete {athlete_id}")
+        except Exception as e:
+            failed_count += 1
+            log.error(
+                f"Failed to enrich activity {aid} for athlete {athlete_id}: {e}",
+                exc_info=True,
+            )
+            # Continue with next activity - don't let one failure stop the batch
+
         time.sleep(1)
+
+    log.info(
+        f"Enrichment batch complete for athlete {athlete_id}: "
+        f"{enriched_count} enriched, {failed_count} failed"
+    )
+    return enriched_count

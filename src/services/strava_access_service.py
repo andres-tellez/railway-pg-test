@@ -225,6 +225,18 @@ class StravaClient:
             if e.response.status_code == 404:
                 return None
             raise
+        except StravaAPIError as e:
+            # Handle 402 Payment Required (user may not have Strava Summit or API access issue)
+            # Also handle 404 if it comes through as StravaAPIError
+            if e.status_code == 402:
+                logger.warning(
+                    f"HR zones unavailable for activity {activity_id} "
+                    f"(402 Payment Required - may be subscription or API access issue)"
+                )
+                return None
+            if e.status_code == 404:
+                return None
+            raise
 
     def get_splits(self, activity_id):
         url = f"{config.STRAVA_API_BASE_URL}/activities/{activity_id}/laps"
