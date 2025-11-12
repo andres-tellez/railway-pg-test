@@ -427,88 +427,103 @@ def run_full_ingestion_and_enrichment(
             detail=f"Fetched {len(runs_only)} runs",
         )
 
-        if not runs_only:
-            logger.info("No runs found in Strava account")
-            sync_complete("No new runs found")
-            return {"synced": 0, "enriched": 0}
+        inserted_count = 0
+        if runs_only:
+            fetched_ids = [
+                int(a.get("id") or a.get("activity_id"))
+                for a in runs_only
+                if a.get("id") or a.get("activity_id")
+            ]
+            existing_ids = {
+                r[0]
+                for r in session.query(Activity.activity_id)
+                .filter(Activity.activity_id.in_(fetched_ids))
+                .all()
+            }
 
-        fetched_ids = [
-            int(a.get("id") or a.get("activity_id"))
-            for a in runs_only
-            if a.get("id") or a.get("activity_id")
-        ]
-        existing_ids = {
-            r[0]
-            for r in session.query(Activity.activity_id)
-            .filter(Activity.activity_id.in_(fetched_ids))
-            .all()
-        }
+            new_activities = [
+                a
+                for a in runs_only
+                if int(a.get("id") or a.get("activity_id")) not in existing_ids
+            ]
+            for a in new_activities:
+                a["activity_id"] = a.pop("id", None) or a.get("activity_id")
+                a["user_id"] = user_id  # store user_id (UUID) alongside activity
 
-        new_activities = [
-            a
-            for a in runs_only
-            if int(a.get("id") or a.get("activity_id")) not in existing_ids
-        ]
-        for a in new_activities:
-            a["activity_id"] = a.pop("id", None) or a.get("activity_id")
-            a["user_id"] = user_id  # store user_id (UUID) alongside activity
+            # Deduplicate by activity_id
+            dedup = {
+                int(a["activity_id"]): a for a in new_activities if a.get("activity_id")
+            }
+            unique_new_activities = list(dedup.values())
 
-        # Deduplicate by activity_id
-        dedup = {
-            int(a["activity_id"]): a for a in new_activities if a.get("activity_id")
-        }
-        unique_new_activities = list(dedup.values())
+            logger.info(f"Saving {len(unique_new_activities)} new runs...")
 
-        logger.info(f"Saving {len(unique_new_activities)} new runs...")
+            inserted_count = ActivityDAO.upsert_activities(
+                session, athlete_id, unique_new_activities, user_id=user_id
+            )
 
-        inserted_count = ActivityDAO.upsert_activities(
-            session, athlete_id, unique_new_activities, user_id=user_id
-        )
+            logger.info(f"Synced {inserted_count} new runs")
+        else:
+            logger.info(
+                "No new runs found from Strava API (activities may already exist)"
+            )
 
-        logger.info(f"Synced {inserted_count} new runs")
         sync_progress(
             60,
             "Saving activities",
             detail=f"Saved {inserted_count} new runs",
         )
 
-        logger.info("Enriching activities...")
-        print(
-            f"🔄 [Orchestrator] About to call run_enrichment_batch with: "
-            f"athlete_id={athlete_id}, batch_size={batch_size}, "
-            f"after={after}, before={before}",
-            flush=True,
-        )
+        # ALWAYS run enrichment if date range is provided, even if no new activities were synced
+        # This ensures existing activities in the date range get enriched
+        should_enrich = True
+        if after is None and before is None:
+            # Only skip enrichment if no date range provided AND no activities were synced
+            should_enrich = inserted_count > 0
 
-        try:
-            enriched = (
-                run_enrichment_batch(
-                    session,
-                    athlete_id,
-                    batch_size=batch_size,
-                    split_cutoff=two_week_cutoff_dt,
-                    after=after,  # Pass date range to enrichment
-                    before=before,  # Pass date range to enrichment
-                )
-                or 0
-            )
+        if should_enrich:
+            logger.info("Enriching activities...")
             print(
-                f"✅ [Orchestrator] run_enrichment_batch returned: enriched={enriched}",
+                f"🔄 [Orchestrator] About to call run_enrichment_batch with: "
+                f"athlete_id={athlete_id}, batch_size={batch_size}, "
+                f"after={after}, before={before}",
                 flush=True,
             )
-            logger.info(f"Enriched {enriched} activities")
-        except StravaTokenError as e:
-            logger.error(f"Token error during enrichment: {e}", exc_info=True)
-            # Don't fail ingestion if enrichment fails - log and continue
-            enriched = 0
-            logger.warning(
-                f"Enrichment skipped due to token error, but ingestion completed"
+
+            try:
+                enriched = (
+                    run_enrichment_batch(
+                        session,
+                        athlete_id,
+                        batch_size=batch_size,
+                        split_cutoff=two_week_cutoff_dt,
+                        after=after,  # Pass date range to enrichment
+                        before=before,  # Pass date range to enrichment
+                    )
+                    or 0
+                )
+                print(
+                    f"✅ [Orchestrator] run_enrichment_batch returned: enriched={enriched}",
+                    flush=True,
+                )
+                logger.info(f"Enriched {enriched} activities")
+            except StravaTokenError as e:
+                logger.error(f"Token error during enrichment: {e}", exc_info=True)
+                # Don't fail ingestion if enrichment fails - log and continue
+                enriched = 0
+                logger.warning(
+                    f"Enrichment skipped due to token error, but ingestion completed"
+                )
+            except Exception as e:
+                logger.error(f"Enrichment failed: {e}", exc_info=True)
+                # Don't fail ingestion if enrichment fails - log and continue
+                enriched = 0
+                logger.warning(f"Enrichment failed, but ingestion completed")
+        else:
+            logger.info(
+                "Skipping enrichment (no date range provided and no new activities)"
             )
-        except Exception as e:
-            logger.error(f"Enrichment failed: {e}", exc_info=True)
-            # Don't fail ingestion if enrichment fails - log and continue
             enriched = 0
-            logger.warning(f"Enrichment failed, but ingestion completed")
 
         sync_progress(
             80,
