@@ -1,6 +1,7 @@
 # Fix: Localhost Redirect URI HTTPS Conversion Issue
 
 ## Problem
+
 The app auto-converts `http://localhost:5000` to `https://localhost:5000` because it's running on HTTPS (mkcert), but Strava app 180950 might only have `http://localhost:5000` registered.
 
 ## Solution
@@ -20,6 +21,7 @@ Strava's callback domain setting is flexible - if you set it to `localhost:5000`
 If Strava already has `https://localhost:5000` registered:
 
 1. Update `.env.local`:
+
    ```bash
    STRAVA_REDIRECT_URI=https://localhost:5000/auth/strava/callback
    ```
@@ -33,6 +35,7 @@ If you want to keep using HTTP, you'd need to modify the code, but this is not r
 ## Why This Matters
 
 The quota error might be a red herring. The real issue could be:
+
 1. Redirect URI mismatch → OAuth fails
 2. Strava shows quota error as a generic error message
 3. But the actual problem is the redirect URI not matching
@@ -40,6 +43,7 @@ The quota error might be a red herring. The real issue could be:
 ## Verification
 
 After updating Strava app settings:
+
 1. Try connecting again
 2. Check if you still get quota error
 3. If quota error persists, then it's a real quota issue and you need to:
