@@ -402,12 +402,12 @@ def calculate_hr_zones_from_streams(heartrate_stream, max_heartrate=None):
     """
     Calculate HR zone percentages from heartrate stream data.
 
-    Uses standard HR zone thresholds:
-    - Zone 1: 50-60% of max HR
-    - Zone 2: 60-70% of max HR
-    - Zone 3: 70-80% of max HR
-    - Zone 4: 80-90% of max HR
-    - Zone 5: 90-100% of max HR
+    Uses Strava-compatible HR zone thresholds:
+    - Zone 1: 50-60% of max HR (Recovery)
+    - Zone 2: 60-75% of max HR (Easy/Aerobic)
+    - Zone 3: 75-85% of max HR (Threshold)
+    - Zone 4: 85-95% of max HR (VO2 Max)
+    - Zone 5: 95-100% of max HR (Neuromuscular)
 
     Args:
         heartrate_stream: List of heartrate values from stream
@@ -427,43 +427,64 @@ def calculate_hr_zones_from_streams(heartrate_stream, max_heartrate=None):
         return [0.0] * 5
 
     # Estimate max HR from stream if not provided (use 95th percentile + 5%)
+    # Note: This is less accurate than using user's configured max HR
     if max_heartrate is None or max_heartrate == 0:
         sorted_hr = sorted(hr_values)
         percentile_95 = sorted_hr[int(len(sorted_hr) * 0.95)]
         max_heartrate = percentile_95 * 1.05
         log.debug(f"Estimated max HR from stream: {max_heartrate:.1f} bpm")
+        log.warning(
+            "Using estimated max HR - accuracy may be reduced. "
+            "Consider using user's configured max HR for better accuracy."
+        )
 
     if max_heartrate <= 0:
         log.warning("Invalid max heartrate for HR zone calculation")
         return [0.0] * 5
 
-    # Calculate time in each zone
+    # Calculate time in each zone using Strava-compatible thresholds
+    # HR values below 50% are excluded (not counted in any zone)
     zone_times = [0.0] * 5
+    excluded_count = 0
+
     for hr in hr_values:
         hr_pct = hr / max_heartrate
+
+        # Exclude HR below 50% (warmup/cooldown or invalid readings)
         if hr_pct < 0.5:
-            zone_times[0] += 1  # Zone 1
+            excluded_count += 1
+            continue
         elif hr_pct < 0.6:
-            zone_times[0] += 1  # Zone 1
-        elif hr_pct < 0.7:
-            zone_times[1] += 1  # Zone 2
-        elif hr_pct < 0.8:
-            zone_times[2] += 1  # Zone 3
-        elif hr_pct < 0.9:
-            zone_times[3] += 1  # Zone 4
+            zone_times[0] += 1  # Zone 1: 50-60%
+        elif hr_pct < 0.75:
+            zone_times[1] += 1  # Zone 2: 60-75%
+        elif hr_pct < 0.85:
+            zone_times[2] += 1  # Zone 3: 75-85%
+        elif hr_pct < 0.95:
+            zone_times[3] += 1  # Zone 4: 85-95%
         else:
-            zone_times[4] += 1  # Zone 5
+            zone_times[4] += 1  # Zone 5: 95-100%
 
     total_time = sum(zone_times)
     if total_time == 0:
+        log.warning("No HR values in valid zones (all below 50% max HR)")
         return [0.0] * 5
 
     # Convert to percentages
     zone_percentages = [round((t / total_time) * 100, 2) for t in zone_times]
+
+    if excluded_count > 0:
+        excluded_pct = round((excluded_count / len(hr_values)) * 100, 1)
+        log.debug(
+            f"Excluded {excluded_count} HR readings ({excluded_pct}%) "
+            f"below 50% max HR from zone calculation"
+        )
+
     log.info(
         f"Calculated HR zones from streams: Z1={zone_percentages[0]:.1f}%, "
         f"Z2={zone_percentages[1]:.1f}%, Z3={zone_percentages[2]:.1f}%, "
-        f"Z4={zone_percentages[3]:.1f}%, Z5={zone_percentages[4]:.1f}%"
+        f"Z4={zone_percentages[3]:.1f}%, Z5={zone_percentages[4]:.1f}% "
+        f"(max_hr={max_heartrate:.0f} bpm)"
     )
     return zone_percentages
 
