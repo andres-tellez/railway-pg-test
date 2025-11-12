@@ -66,11 +66,33 @@ def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None
 
     query += " ORDER BY start_date DESC LIMIT :limit"
 
+    log.info(
+        f"🔍 [Get Activities] Executing query for athlete {athlete_id} with params: "
+        f"after={after} ({datetime.fromtimestamp(after) if after else None}), "
+        f"before={before} ({datetime.fromtimestamp(before) if before else None}), "
+        f"limit={limit}"
+    )
+
     result = session.execute(text(query), params)
     rows = result.fetchall()
-    return [
+
+    log.info(f"🔍 [Get Activities] Query returned {len(rows)} activities")
+
+    activities = [
         {"activity_id": row.activity_id, "start_date": row.start_date} for row in rows
     ]
+
+    if activities:
+        log.info(
+            f"🔍 [Get Activities] Found activities: {[a['activity_id'] for a in activities[:5]]}"
+        )
+    else:
+        log.warning(
+            f"⚠️ [Get Activities] No activities found for athlete {athlete_id} "
+            f"with filters: after={after}, before={before}"
+        )
+
+    return activities
 
 
 def enrich_one_activity(
