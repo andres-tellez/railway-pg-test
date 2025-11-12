@@ -510,3 +510,159 @@ def sync_activities():
 
     finally:
         session.close()
+
+
+@admin_bp.route("/backup-database", methods=["POST"])
+@requires_auth
+def backup_database():
+    """
+    Manually trigger a database backup.
+
+    Creates a PostgreSQL backup and stores it in the configured backup location
+    (Railway Volume at /backups or configured BACKUP_LOCAL_PATH).
+
+    Returns:
+        JSON response with backup status and file path
+    """
+    import os
+    import subprocess
+    from datetime import datetime
+    from pathlib import Path
+
+    logger.info("🔄 [Backup Database] Request received")
+
+    try:
+        # Get configuration
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            return jsonify({"status": "error", "message": "DATABASE_URL not set"}), 500
+
+        backup_path = os.getenv("BACKUP_LOCAL_PATH", "/backups")
+        retention_days = int(os.getenv("BACKUP_RETENTION_DAYS", "7"))
+
+        # Ensure backup directory exists
+        backup_dir = Path(backup_path)
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate backup filename
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        backup_file = backup_dir / f"backup_{timestamp}.sql"
+
+        logger.info(f"📦 [Backup Database] Creating backup: {backup_file}")
+
+        # Run pg_dump
+        result = subprocess.run(
+            [
+                "pg_dump",
+                "--no-owner",
+                "--no-acl",
+                "--clean",
+                "--if-exists",
+                "-f",
+                str(backup_file),
+                db_url,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        # Verify backup was created
+        if not backup_file.exists():
+            raise FileNotFoundError(f"Backup file was not created: {backup_file}")
+
+        file_size = backup_file.stat().st_size
+        if file_size == 0:
+            raise ValueError(f"Backup file is empty: {backup_file}")
+
+        logger.info(
+            f"✅ [Backup Database] Backup created: {backup_file} ({file_size:,} bytes)"
+        )
+
+        # Cleanup old backups (optional, non-blocking)
+        try:
+            from datetime import timedelta
+
+            cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
+            deleted_count = 0
+
+            for old_backup in backup_dir.glob("backup_*.sql"):
+                if old_backup == backup_file:
+                    continue  # Don't delete the backup we just created
+
+                file_time = datetime.fromtimestamp(old_backup.stat().st_mtime)
+                if file_time < cutoff_date:
+                    old_backup.unlink()
+                    deleted_count += 1
+                    logger.info(
+                        f"🗑️  [Backup Database] Deleted old backup: {old_backup.name}"
+                    )
+
+            if deleted_count > 0:
+                logger.info(
+                    f"✅ [Backup Database] Cleaned up {deleted_count} old backup(s)"
+                )
+        except Exception as cleanup_error:
+            logger.warning(
+                f"⚠️  [Backup Database] Cleanup failed (non-critical): {cleanup_error}"
+            )
+
+        # List current backups
+        backups = sorted(backup_dir.glob("backup_*.sql"), reverse=True)
+        backup_list = [
+            {
+                "filename": b.name,
+                "size_bytes": b.stat().st_size,
+                "created_at": datetime.fromtimestamp(b.stat().st_mtime).isoformat(),
+            }
+            for b in backups[:10]  # Last 10 backups
+        ]
+
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "message": f"Backup created successfully",
+                    "backup_file": str(backup_file),
+                    "size_bytes": file_size,
+                    "backup_path": backup_path,
+                    "recent_backups": backup_list,
+                    "total_backups": len(backups),
+                }
+            ),
+            200,
+        )
+
+    except subprocess.CalledProcessError as e:
+        logger.exception(f"❌ [Backup Database] pg_dump failed: {e}")
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": f"Backup failed: {e.stderr}",
+                }
+            ),
+            500,
+        )
+    except FileNotFoundError:
+        logger.error("❌ [Backup Database] pg_dump not found")
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": "pg_dump not found. Install PostgreSQL client tools.",
+                }
+            ),
+            500,
+        )
+    except Exception as e:
+        logger.exception(f"❌ [Backup Database] Backup failed: {e}")
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": str(e),
+                }
+            ),
+            500,
+        )
