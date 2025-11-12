@@ -58,3 +58,6 @@ railway.json
 
 # SSL certificates (local development)
 *.pem
+
+# Flask session files
+flask_session/
