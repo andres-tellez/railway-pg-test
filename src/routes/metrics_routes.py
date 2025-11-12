@@ -173,14 +173,9 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
     # The materialized view returns it as a list, not a JSON string
     weekly_data = result.weekly_data if result.weekly_data else []
 
-    # FIXED: Move current week to end, keep previous week as leftmost bar
+    # FIXED: Filter out current week entirely, keep previous week as leftmost bar
     # Materialized view orders by DESC (current week first), but we want previous week first
-    if weekly_data and len(weekly_data) > 1:
-        # Log BEFORE reordering
-        logger.info(
-            f"📊 BEFORE reordering - First 3 weeks: {[w['week'] for w in weekly_data[:3]]}"
-        )
-
+    if weekly_data:
         # Calculate what the current week should be
         from datetime import datetime, timedelta
 
@@ -190,28 +185,28 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
         current_week_start = get_current_week_start()
         current_week_str = current_week_start.isoformat()
 
-        # Find the first element that is NOT the current week and move everything before it to the end
-        # This handles the case where current week has no data
-        first_week_date = weekly_data[0]["week"]
-        if isinstance(first_week_date, str):
-            first_week_date = first_week_date[:10]  # Extract just the date part
+        # Filter out the current week entirely
+        filtered_weekly_data = []
+        for week in weekly_data:
+            week_date = week.get("week")
+            if isinstance(week_date, str):
+                week_date = week_date[:10]  # Extract just the date part
 
-        # If first week is the current week, move it to end
-        if first_week_date == current_week_str:
-            logger.info(
-                f"📊 First week ({first_week_date}) is current week ({current_week_str}), moving to end"
-            )
-            current_week = weekly_data.pop(0)
-            weekly_data.append(current_week)
-        else:
-            logger.info(
-                f"📊 First week ({first_week_date}) is NOT current week ({current_week_str}), no reordering needed"
-            )
+            # Only include weeks that are NOT the current week
+            if week_date != current_week_str:
+                filtered_weekly_data.append(week)
+            else:
+                logger.info(
+                    f"📊 Filtering out current week ({week_date}) from weekly trends"
+                )
 
-        # Log AFTER reordering
-        logger.info(
-            f"📊 AFTER reordering - First 3 weeks: {[w['week'] for w in weekly_data[:3]]}"
-        )
+        weekly_data = filtered_weekly_data
+
+        # Log final ordering
+        if weekly_data:
+            logger.info(
+                f"📊 Weekly trends (current week filtered out) - First 3 weeks: {[w['week'] for w in weekly_data[:3]]}"
+            )
 
     # Parse weekly_goals from JSON string (if it's a string) or use as-is (if already parsed)
     import json
@@ -323,9 +318,9 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
             weekly_runs[:weeks] if weeks and weeks < len(weekly_runs) else weekly_runs
         )
 
-        # FIXED: Move current week to end, keep previous week as leftmost bar (same as other charts)
-        # Use same logic as weekly_data to handle case where current week has no data
-        if filtered_runs and len(filtered_runs) > 1:
+        # FIXED: Filter out current week entirely (same as other charts)
+        # Materialized view orders by DESC (current week first), but we want previous week first
+        if filtered_runs:
             # Calculate what the current week should be
             from datetime import datetime, timedelta
 
@@ -335,22 +330,22 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
             current_week_start = get_current_week_start()
             current_week_str = current_week_start.isoformat()
 
-            # Get the week_start from the first run
-            first_run_week = filtered_runs[0]["week_start"]
-            if isinstance(first_run_week, str):
-                first_run_week = first_run_week[:10]  # Extract just the date part
+            # Filter out the current week entirely
+            filtered_runs_list = []
+            for run in filtered_runs:
+                run_week = run.get("week_start")
+                if isinstance(run_week, str):
+                    run_week = run_week[:10]  # Extract just the date part
 
-            # If first week is the current week, move it to end
-            if first_run_week == current_week_str:
-                logger.info(
-                    f"📊 [Longest Runs] First week ({first_run_week}) is current week ({current_week_str}), moving to end"
-                )
-                current_week_run = filtered_runs.pop(0)
-                filtered_runs.append(current_week_run)
-            else:
-                logger.info(
-                    f"📊 [Longest Runs] First week ({first_run_week}) is NOT current week ({current_week_str}), no reordering needed"
-                )
+                # Only include weeks that are NOT the current week
+                if run_week != current_week_str:
+                    filtered_runs_list.append(run)
+                else:
+                    logger.info(
+                        f"📊 [Longest Runs] Filtering out current week ({run_week}) from longest runs"
+                    )
+
+            filtered_runs = filtered_runs_list
 
         # Format data (only formatting, no calculations - already done by database)
         for run in filtered_runs:
