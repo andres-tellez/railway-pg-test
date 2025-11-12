@@ -57,11 +57,12 @@ def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None
     params = {"athlete_id": athlete_id, "limit": limit}
 
     # Add date range filters if provided
+    # Use AT TIME ZONE 'UTC' to ensure timezone-aware comparison
     if after is not None:
-        query += " AND start_date >= to_timestamp(:after)"
+        query += " AND start_date >= (to_timestamp(:after) AT TIME ZONE 'UTC')"
         params["after"] = after
     if before is not None:
-        query += " AND start_date <= to_timestamp(:before)"
+        query += " AND start_date <= (to_timestamp(:before) AT TIME ZONE 'UTC')"
         params["before"] = before
 
     query += " ORDER BY start_date DESC LIMIT :limit"
