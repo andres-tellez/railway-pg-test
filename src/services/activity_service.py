@@ -67,6 +67,16 @@ def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None
 
     query += " ORDER BY start_date DESC LIMIT :limit"
 
+    import sys
+
+    print(
+        f"🔍 [Get Activities] Executing query for athlete {athlete_id} with params: "
+        f"after={after} ({datetime.fromtimestamp(after) if after and isinstance(after, (int, float)) else None}), "
+        f"before={before} ({datetime.fromtimestamp(before) if before and isinstance(before, (int, float)) else None}), "
+        f"limit={limit}",
+        file=sys.stdout,
+        flush=True,
+    )
     log.info(
         f"🔍 [Get Activities] Executing query for athlete {athlete_id} with params: "
         f"after={after} ({datetime.fromtimestamp(after) if after else None}), "
@@ -77,6 +87,11 @@ def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None
     result = session.execute(text(query), params)
     rows = result.fetchall()
 
+    print(
+        f"🔍 [Get Activities] Query returned {len(rows)} activities",
+        file=sys.stdout,
+        flush=True,
+    )
     log.info(f"🔍 [Get Activities] Query returned {len(rows)} activities")
 
     activities = [
@@ -84,10 +99,20 @@ def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None
     ]
 
     if activities:
-        log.info(
-            f"🔍 [Get Activities] Found activities: {[a['activity_id'] for a in activities[:5]]}"
+        activity_ids = [a["activity_id"] for a in activities[:5]]
+        print(
+            f"🔍 [Get Activities] Found activities: {activity_ids}",
+            file=sys.stdout,
+            flush=True,
         )
+        log.info(f"🔍 [Get Activities] Found activities: {activity_ids}")
     else:
+        print(
+            f"⚠️ [Get Activities] No activities found for athlete {athlete_id} "
+            f"with filters: after={after}, before={before}",
+            file=sys.stdout,
+            flush=True,
+        )
         log.warning(
             f"⚠️ [Get Activities] No activities found for athlete {athlete_id} "
             f"with filters: after={after}, before={before}"
@@ -527,6 +552,14 @@ def run_enrichment_batch(
         after: Optional Unix timestamp - only enrich activities after this time
         before: Optional Unix timestamp - only enrich activities before this time
     """
+    import sys
+
+    print(
+        f"🔄 [Enrichment Batch] Starting enrichment for athlete {athlete_id}, "
+        f"batch_size={batch_size}, after={after}, before={before}",
+        file=sys.stdout,
+        flush=True,
+    )
     log.info(
         f"🔄 [Enrichment Batch] Starting enrichment for athlete {athlete_id}, "
         f"batch_size={batch_size}, after={after}, before={before}"

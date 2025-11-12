@@ -473,6 +473,12 @@ def run_full_ingestion_and_enrichment(
         )
 
         logger.info("Enriching activities...")
+        print(
+            f"🔄 [Orchestrator] About to call run_enrichment_batch with: "
+            f"athlete_id={athlete_id}, batch_size={batch_size}, "
+            f"after={after}, before={before}",
+            flush=True,
+        )
 
         try:
             enriched = (
@@ -485,6 +491,10 @@ def run_full_ingestion_and_enrichment(
                     before=before,  # Pass date range to enrichment
                 )
                 or 0
+            )
+            print(
+                f"✅ [Orchestrator] run_enrichment_batch returned: enriched={enriched}",
+                flush=True,
             )
             logger.info(f"Enriched {enriched} activities")
         except StravaTokenError as e:
