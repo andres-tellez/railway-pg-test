@@ -204,13 +204,13 @@ def enrich_one_activity_with_refresh(
             )
             session.expire_all()
 
+            # Check if enrichment succeeded - only require essential fields
+            # suffer_score is optional (may not be available for all activities)
             enriched = (
                 session.query(Activity)
                 .filter(
                     Activity.activity_id == activity_id,
                     Activity.average_speed.isnot(None),
-                    Activity.suffer_score.isnot(None),
-                    Activity.average_heartrate.isnot(None),
                     Activity.max_speed.isnot(None),
                     Activity.calories.isnot(None),
                 )
@@ -225,10 +225,25 @@ def enrich_one_activity_with_refresh(
                 )
                 return True
 
+            # Check what fields are actually missing for better logging
+            activity_check = (
+                session.query(Activity)
+                .filter(Activity.activity_id == activity_id)
+                .first()
+            )
+            missing_fields = []
+            if not activity_check or activity_check.average_speed is None:
+                missing_fields.append("average_speed")
+            if not activity_check or activity_check.max_speed is None:
+                missing_fields.append("max_speed")
+            if not activity_check or activity_check.calories is None:
+                missing_fields.append("calories")
+
             log.warning(
-                "Enrichment fields missing on attempt %d for %s. Retrying in 5s...",
+                "Enrichment fields missing on attempt %d for %s. Missing: %s. Retrying...",
                 attempt,
                 activity_id,
+                missing_fields,
             )
             time.sleep(1)
 
