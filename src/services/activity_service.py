@@ -38,20 +38,35 @@ def log_strava_payload(activity_id, activity_json, zones_data, streams):
         log.warning("Could not write debug payload for %s: %s", activity_id, e)
 
 
-def get_activities_to_enrich(session, athlete_id, limit):
-    """Get recent activities (with start dates) for enrichment."""
-    result = session.execute(
-        text(
-            """
-            SELECT activity_id, start_date
-            FROM activities
-            WHERE athlete_id = :athlete_id AND type = 'Run'
-            ORDER BY start_date DESC
-            LIMIT :limit
-        """
-        ),
-        {"athlete_id": athlete_id, "limit": limit},
-    )
+def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None):
+    """
+    Get activities (with start dates) for enrichment.
+
+    Args:
+        session: Database session
+        athlete_id: Strava athlete ID
+        limit: Maximum number of activities to return
+        after: Optional Unix timestamp - only get activities after this time
+        before: Optional Unix timestamp - only get activities before this time
+    """
+    query = """
+        SELECT activity_id, start_date
+        FROM activities
+        WHERE athlete_id = :athlete_id AND type = 'Run'
+    """
+    params = {"athlete_id": athlete_id, "limit": limit}
+
+    # Add date range filters if provided
+    if after is not None:
+        query += " AND start_date >= to_timestamp(:after)"
+        params["after"] = after
+    if before is not None:
+        query += " AND start_date <= to_timestamp(:before)"
+        params["before"] = before
+
+    query += " ORDER BY start_date DESC LIMIT :limit"
+
+    result = session.execute(text(query), params)
     rows = result.fetchall()
     return [
         {"activity_id": row.activity_id, "start_date": row.start_date} for row in rows
@@ -475,13 +490,27 @@ class ActivityIngestionService:
         return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
 
 
-def run_enrichment_batch(session, athlete_id, batch_size=10, *, split_cutoff=None):
-    """Batch enrichment job for activities."""
+def run_enrichment_batch(
+    session, athlete_id, batch_size=10, *, split_cutoff=None, after=None, before=None
+):
+    """
+    Batch enrichment job for activities.
+
+    Args:
+        session: Database session
+        athlete_id: Strava athlete ID
+        batch_size: Number of activities to enrich
+        split_cutoff: Optional datetime - activities before this won't fetch streams
+        after: Optional Unix timestamp - only enrich activities after this time
+        before: Optional Unix timestamp - only enrich activities before this time
+    """
     log.info(
         f"🔄 [Enrichment Batch] Starting enrichment for athlete {athlete_id}, "
-        f"batch_size={batch_size}"
+        f"batch_size={batch_size}, after={after}, before={before}"
     )
-    activities = get_activities_to_enrich(session, athlete_id, batch_size)
+    activities = get_activities_to_enrich(
+        session, athlete_id, batch_size, after=after, before=before
+    )
     log.info(f"📋 [Enrichment Batch] Found {len(activities)} activities to enrich")
     if not activities:
         log.warning(

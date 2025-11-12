@@ -481,6 +481,8 @@ def run_full_ingestion_and_enrichment(
                     athlete_id,
                     batch_size=batch_size,
                     split_cutoff=two_week_cutoff_dt,
+                    after=after,  # Pass date range to enrichment
+                    before=before,  # Pass date range to enrichment
                 )
                 or 0
             )
