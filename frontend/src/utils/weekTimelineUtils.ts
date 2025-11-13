@@ -23,6 +23,7 @@ export interface Activity {
   activity_id: number;
   date: string; // YYYY-MM-DD format (normalized)
   distance_miles: number;
+  moving_time?: number; // Moving time in seconds
   name: string;
   type: string;
 }

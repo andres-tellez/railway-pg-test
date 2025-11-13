@@ -21,7 +21,9 @@ interface Activity {
   activity_id: number;
   date: string;
   distance_miles: number;
+  moving_time?: number; // Moving time in seconds
   name: string;
+  type?: string;
 }
 
 interface WorkoutDetailsProps {
@@ -105,7 +107,15 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
               {activity.distance_miles.toFixed(1)} miles
             </div>
             <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
-              Pace: N/A
+              {activity.moving_time && activity.distance_miles > 0
+                ? (() => {
+                    // Calculate pace: seconds per mile
+                    const secondsPerMile = activity.moving_time / activity.distance_miles;
+                    const minutes = Math.floor(secondsPerMile / 60);
+                    const seconds = Math.floor(secondsPerMile % 60);
+                    return `Pace: ${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
+                  })()
+                : 'Pace: N/A'}
             </div>
           </div>
         </div>
