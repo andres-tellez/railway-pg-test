@@ -86,12 +86,27 @@ export const WEEK_TIMELINE_STYLES = {
   coachNoteText: "text-sm text-gray-700 mb-3",
   coachNoteLink: "text-sm text-blue-600 hover:underline",
 
-  // Empty state
-  emptyStateSection: "bg-white rounded-lg shadow-sm p-8 md:p-12 text-center",
-  emptyStateIcon: "text-6xl mb-4",
-  emptyStateTitle: "text-2xl font-bold text-gray-900 mb-2",
-  emptyStateText: "text-gray-600 mb-6 max-w-md mx-auto",
+  // Empty state / Activity summary
+  emptyStateSection: "bg-white rounded-lg shadow-sm p-6 md:p-8",
+  emptyStateIcon: "text-4xl mb-3",
+  emptyStateTitle: "text-xl font-semibold text-gray-900 mb-4",
+  emptyStateText: "text-gray-600 mb-4",
   emptyStateButton: "inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl",
+
+  // Activity summary
+  activitySummarySection: "space-y-4",
+  activitySummaryRow: "flex justify-between items-center py-2 border-b border-gray-100 last:border-0",
+  activitySummaryLabel: "text-sm text-gray-600",
+  activitySummaryValue: "text-sm font-semibold text-gray-900",
+  activitySummaryStats: "grid grid-cols-2 gap-4 mb-4",
+  activitySummaryStat: "bg-gray-50 rounded-lg p-3",
+  activitySummaryStatLabel: "text-xs text-gray-600 mb-1",
+  activitySummaryStatValue: "text-lg font-semibold text-gray-900",
+  activitySummaryLinks: "flex flex-wrap gap-3 mt-4 pt-4 border-t border-gray-200",
+  activitySummaryLink: "text-sm text-blue-600 hover:underline",
+  recentActivityItem: "bg-gray-50 rounded-lg p-3 mb-2",
+  recentActivityName: "text-sm font-medium text-gray-900 mb-1",
+  recentActivityDetails: "text-xs text-gray-600",
 } as const;
 
 /**

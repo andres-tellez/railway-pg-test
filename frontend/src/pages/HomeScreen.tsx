@@ -79,16 +79,17 @@ const HomeScreen: React.FC = () => {
         setAllActivities(fetchedActivities);
 
         // Filter activities for this week
-        // Normalize dates to date-only (midnight local) to avoid timezone issues
+        // Parse dates as local dates (not UTC) to avoid timezone issues
+        const weekStartOnly = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
+        const weekEndOnly = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate());
+
         const weekActivities = fetchedActivities.filter((act: Activity) => {
-          const actDateStr = act.date.split('T')[0]; // Get date part only
-          const actDate = parseISO(actDateStr);
-          const actDateOnly = new Date(actDate.getFullYear(), actDate.getMonth(), actDate.getDate());
+          const actDateStr = act.date.split('T')[0]; // Get date part only (YYYY-MM-DD)
+          // Parse as local date by splitting and creating Date directly (not using parseISO)
+          const [year, month, day] = actDateStr.split('-').map(Number);
+          const actDateLocal = new Date(year, month - 1, day); // month is 0-indexed
 
-          const weekStartOnly = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
-          const weekEndOnly = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate());
-
-          return actDateOnly >= weekStartOnly && actDateOnly <= weekEndOnly;
+          return actDateLocal >= weekStartOnly && actDateLocal <= weekEndOnly;
         });
 
         // Process week data
@@ -218,14 +219,15 @@ const HomeScreen: React.FC = () => {
             const { weekStart: thisWeekStart } = weekRange;
             const now = new Date();
 
-            // Normalize dates to date-only (midnight local) for comparison
+            // Parse dates as local dates (not UTC) to avoid timezone issues
             const thisWeekStartOnly = new Date(thisWeekStart.getFullYear(), thisWeekStart.getMonth(), thisWeekStart.getDate());
 
             const thisWeekActivities = allActivities.filter((act: Activity) => {
-              const actDateStr = act.date.split('T')[0]; // Get date part only
-              const actDate = parseISO(actDateStr);
-              const actDateOnly = new Date(actDate.getFullYear(), actDate.getMonth(), actDate.getDate());
-              return actDateOnly >= thisWeekStartOnly;
+              const actDateStr = act.date.split('T')[0]; // Get date part only (YYYY-MM-DD)
+              // Parse as local date by splitting and creating Date directly
+              const [year, month, day] = actDateStr.split('-').map(Number);
+              const actDateLocal = new Date(year, month - 1, day); // month is 0-indexed
+              return actDateLocal >= thisWeekStartOnly;
             });
 
             const last30Days = new Date(now);
@@ -233,10 +235,11 @@ const HomeScreen: React.FC = () => {
             const last30DaysOnly = new Date(last30Days.getFullYear(), last30Days.getMonth(), last30Days.getDate());
 
             const last30DaysActivities = allActivities.filter((act: Activity) => {
-              const actDateStr = act.date.split('T')[0]; // Get date part only
-              const actDate = parseISO(actDateStr);
-              const actDateOnly = new Date(actDate.getFullYear(), actDate.getMonth(), actDate.getDate());
-              return actDateOnly >= last30DaysOnly;
+              const actDateStr = act.date.split('T')[0]; // Get date part only (YYYY-MM-DD)
+              // Parse as local date by splitting and creating Date directly
+              const [year, month, day] = actDateStr.split('-').map(Number);
+              const actDateLocal = new Date(year, month - 1, day); // month is 0-indexed
+              return actDateLocal >= last30DaysOnly;
             });
 
             const thisWeekMiles = thisWeekActivities.reduce((sum, act) => sum + (act.distance_miles || 0), 0);

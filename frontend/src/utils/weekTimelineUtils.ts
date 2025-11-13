@@ -50,19 +50,20 @@ export function matchActivityToWorkout(
   activity: Activity,
   workout: Workout
 ): boolean {
-  // Parse dates and normalize to date-only (midnight local time) for comparison
+  // Extract date strings (YYYY-MM-DD format) - compare strings directly to avoid timezone issues
   const activityDateStr = activity.date.split('T')[0]; // Get date part only
   const workoutDateStr = workout.date.split('T')[0]; // Get date part only
 
-  const activityDate = parseISO(activityDateStr);
-  const workoutDate = parseISO(workoutDateStr);
+  // Parse dates as local dates (not UTC) by creating Date objects directly
+  // This avoids parseISO which interprets date-only strings as UTC
+  const [activityYear, activityMonth, activityDay] = activityDateStr.split('-').map(Number);
+  const [workoutYear, workoutMonth, workoutDay] = workoutDateStr.split('-').map(Number);
 
-  // Normalize to date-only (midnight local time) to avoid timezone issues
-  const activityDateOnly = new Date(activityDate.getFullYear(), activityDate.getMonth(), activityDate.getDate());
-  const workoutDateOnly = new Date(workoutDate.getFullYear(), workoutDate.getMonth(), workoutDate.getDate());
+  const activityDateLocal = new Date(activityYear, activityMonth - 1, activityDay);
+  const workoutDateLocal = new Date(workoutYear, workoutMonth - 1, workoutDay);
 
   const daysDiff = Math.abs(
-    (activityDateOnly.getTime() - workoutDateOnly.getTime()) / (1000 * 60 * 60 * 24)
+    (activityDateLocal.getTime() - workoutDateLocal.getTime()) / (1000 * 60 * 60 * 24)
   );
 
   if (daysDiff > 1) return false;
