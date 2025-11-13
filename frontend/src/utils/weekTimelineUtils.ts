@@ -3,7 +3,7 @@
  * Optimized helper functions for week timeline data processing
  */
 
-import { startOfWeek, endOfWeek, eachDayOfInterval, parseISO, isToday as isTodayDate } from 'date-fns';
+import { startOfWeek, endOfWeek, eachDayOfInterval, parseISO, isToday as isTodayDate, format } from 'date-fns';
 
 export interface Workout {
   date: string;
@@ -50,10 +50,19 @@ export function matchActivityToWorkout(
   activity: Activity,
   workout: Workout
 ): boolean {
-  const activityDate = parseISO(activity.date);
-  const workoutDate = parseISO(workout.date);
+  // Parse dates and normalize to date-only (midnight local time) for comparison
+  const activityDateStr = activity.date.split('T')[0]; // Get date part only
+  const workoutDateStr = workout.date.split('T')[0]; // Get date part only
+
+  const activityDate = parseISO(activityDateStr);
+  const workoutDate = parseISO(workoutDateStr);
+
+  // Normalize to date-only (midnight local time) to avoid timezone issues
+  const activityDateOnly = new Date(activityDate.getFullYear(), activityDate.getMonth(), activityDate.getDate());
+  const workoutDateOnly = new Date(workoutDate.getFullYear(), workoutDate.getMonth(), workoutDate.getDate());
+
   const daysDiff = Math.abs(
-    (activityDate.getTime() - workoutDate.getTime()) / (1000 * 60 * 60 * 24)
+    (activityDateOnly.getTime() - workoutDateOnly.getTime()) / (1000 * 60 * 60 * 24)
   );
 
   if (daysDiff > 1) return false;
@@ -74,7 +83,9 @@ export function processWeekData(
   const days = eachDayOfInterval({ start: weekStart, end: weekEnd });
 
   return days.map((date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    // Use format instead of toISOString to avoid UTC conversion issues
+    // format() uses local time, so dates stay on the correct day
+    const dateStr = format(date, 'yyyy-MM-dd');
     const workout = workouts.find((w) => w.date === dateStr);
 
     // Try to match activity to workout

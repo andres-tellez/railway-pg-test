@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { useApiClient } from '../utils/apiClient';
 import { useAuthSetup } from '../hooks/useAuthSetup';
 import { AuthGuard } from '../components/AuthGuard';
@@ -36,6 +36,7 @@ const HomeScreen: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasPlan, setHasPlan] = useState<boolean>(true);
+  const [allActivities, setAllActivities] = useState<Activity[]>([]);
 
   // Memoize week range calculation
   const weekRange = useMemo(() => getThisWeekRange(), []);
@@ -74,12 +75,20 @@ const HomeScreen: React.FC = () => {
 
         // Fetch activities regardless of plan status
         const activitiesRes = await api.get('/api/activities/');
-        const allActivities: Activity[] = activitiesRes.data?.activities || [];
+        const fetchedActivities: Activity[] = activitiesRes.data?.activities || [];
+        setAllActivities(fetchedActivities);
 
         // Filter activities for this week
-        const weekActivities = allActivities.filter((act: Activity) => {
-          const actDate = new Date(act.date);
-          return actDate >= weekStart && actDate <= weekEnd;
+        // Normalize dates to date-only (midnight local) to avoid timezone issues
+        const weekActivities = fetchedActivities.filter((act: Activity) => {
+          const actDateStr = act.date.split('T')[0]; // Get date part only
+          const actDate = parseISO(actDateStr);
+          const actDateOnly = new Date(actDate.getFullYear(), actDate.getMonth(), actDate.getDate());
+
+          const weekStartOnly = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
+          const weekEndOnly = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate());
+
+          return actDateOnly >= weekStartOnly && actDateOnly <= weekEndOnly;
         });
 
         // Process week data
@@ -203,27 +212,95 @@ const HomeScreen: React.FC = () => {
             )}
           </div>
 
-          {/* Empty State - No Plan */}
-          {!hasPlan && (
-            <div className={WEEK_TIMELINE_STYLES.emptyStateSection}>
-              <div className={WEEK_TIMELINE_STYLES.emptyStateIcon}>📅</div>
-              <h3 className={WEEK_TIMELINE_STYLES.emptyStateTitle}>
-                No Training Plan
-              </h3>
-              <p className={WEEK_TIMELINE_STYLES.emptyStateText}>
-                You don't have an active training plan yet. Create a personalized plan to start tracking your workouts and progress toward your race goals.
-              </p>
-              <Link
-                to="/plan/new"
-                className={WEEK_TIMELINE_STYLES.emptyStateButton}
-              >
-                Create Training Plan
-                <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                </svg>
-              </Link>
-            </div>
-          )}
+          {/* Activity Summary - No Plan */}
+          {!hasPlan && (() => {
+            // Calculate stats from activities
+            const { weekStart: thisWeekStart } = weekRange;
+            const now = new Date();
+
+            // Normalize dates to date-only (midnight local) for comparison
+            const thisWeekStartOnly = new Date(thisWeekStart.getFullYear(), thisWeekStart.getMonth(), thisWeekStart.getDate());
+
+            const thisWeekActivities = allActivities.filter((act: Activity) => {
+              const actDateStr = act.date.split('T')[0]; // Get date part only
+              const actDate = parseISO(actDateStr);
+              const actDateOnly = new Date(actDate.getFullYear(), actDate.getMonth(), actDate.getDate());
+              return actDateOnly >= thisWeekStartOnly;
+            });
+
+            const last30Days = new Date(now);
+            last30Days.setDate(now.getDate() - 30);
+            const last30DaysOnly = new Date(last30Days.getFullYear(), last30Days.getMonth(), last30Days.getDate());
+
+            const last30DaysActivities = allActivities.filter((act: Activity) => {
+              const actDateStr = act.date.split('T')[0]; // Get date part only
+              const actDate = parseISO(actDateStr);
+              const actDateOnly = new Date(actDate.getFullYear(), actDate.getMonth(), actDate.getDate());
+              return actDateOnly >= last30DaysOnly;
+            });
+
+            const thisWeekMiles = thisWeekActivities.reduce((sum, act) => sum + (act.distance_miles || 0), 0);
+            const last30DaysMiles = last30DaysActivities.reduce((sum, act) => sum + (act.distance_miles || 0), 0);
+
+            const lastRun = allActivities
+              .filter((act: Activity) => act.type === 'Run')
+              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+            return (
+              <div className={WEEK_TIMELINE_STYLES.emptyStateSection}>
+                <h3 className={WEEK_TIMELINE_STYLES.emptyStateTitle}>
+                  Your Recent Activity
+                </h3>
+
+                <div className={WEEK_TIMELINE_STYLES.activitySummaryStats}>
+                  <div className={WEEK_TIMELINE_STYLES.activitySummaryStat}>
+                    <div className={WEEK_TIMELINE_STYLES.activitySummaryStatLabel}>This Week</div>
+                    <div className={WEEK_TIMELINE_STYLES.activitySummaryStatValue}>
+                      {thisWeekActivities.length} {thisWeekActivities.length === 1 ? 'run' : 'runs'}
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {thisWeekMiles.toFixed(1)} miles
+                    </div>
+                  </div>
+
+                  <div className={WEEK_TIMELINE_STYLES.activitySummaryStat}>
+                    <div className={WEEK_TIMELINE_STYLES.activitySummaryStatLabel}>Last 30 Days</div>
+                    <div className={WEEK_TIMELINE_STYLES.activitySummaryStatValue}>
+                      {last30DaysActivities.length} {last30DaysActivities.length === 1 ? 'run' : 'runs'}
+                    </div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {last30DaysMiles.toFixed(1)} miles
+                    </div>
+                  </div>
+                </div>
+
+                {lastRun && (
+                  <div className={WEEK_TIMELINE_STYLES.recentActivityItem}>
+                    <div className={WEEK_TIMELINE_STYLES.recentActivityName}>
+                      {lastRun.name || 'Run'}
+                    </div>
+                    <div className={WEEK_TIMELINE_STYLES.recentActivityDetails}>
+                      {format(new Date(lastRun.date), 'MMM d')} • {lastRun.distance_miles.toFixed(1)} miles
+                    </div>
+                  </div>
+                )}
+
+                <div className={WEEK_TIMELINE_STYLES.activitySummaryLinks}>
+                  <Link to="/metrics" className={WEEK_TIMELINE_STYLES.activitySummaryLink}>
+                    View Metrics →
+                  </Link>
+                  <Link to="/ask" className={WEEK_TIMELINE_STYLES.activitySummaryLink}>
+                    Ask Coach →
+                  </Link>
+                  {allActivities.length === 0 && (
+                    <Link to="/plan/new" className={WEEK_TIMELINE_STYLES.activitySummaryLink}>
+                      Create Training Plan →
+                    </Link>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Details Panel - Only show if plan exists */}
           {hasPlan && selectedDay && (
