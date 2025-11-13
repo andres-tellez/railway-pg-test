@@ -448,13 +448,23 @@ def calculate_hr_zones_from_streams(
         log.debug("No valid heartrate values in stream")
         return [0.0] * 5
 
-    # Estimate max HR from stream if not provided (use 95th percentile + 5%)
+    # Estimate max HR from stream if not provided
+    # Use actual maximum HR from stream + 10% buffer (more accurate than percentile)
     # Note: This is less accurate than using activity's max_heartrate or user's configured max HR
     if max_heartrate is None or max_heartrate == 0:
-        sorted_hr = sorted(hr_values)
-        percentile_95 = sorted_hr[int(len(sorted_hr) * 0.95)]
-        max_heartrate = percentile_95 * 1.05
-        log.debug(f"Estimated max HR from stream: {max_heartrate:.1f} bpm")
+        if not hr_values:
+            log.warning("Cannot estimate max HR - no valid HR values")
+            return [0.0] * 5
+
+        max_hr_from_stream = max(hr_values)
+        # Add 10% buffer to account for activities that don't reach true max HR
+        # This prevents underestimating max HR which would push zones too high
+        max_heartrate = max_hr_from_stream * 1.10
+
+        log.info(
+            f"Estimated max HR from stream: {max_heartrate:.1f} bpm "
+            f"(max in activity: {max_hr_from_stream:.0f} bpm + 10% buffer)"
+        )
         log.warning(
             "Using estimated max HR from stream - accuracy may be reduced. "
             "Consider using activity's max_heartrate or user's configured max HR for better accuracy."
