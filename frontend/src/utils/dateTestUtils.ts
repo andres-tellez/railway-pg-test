@@ -1,12 +1,12 @@
 /**
  * Date Testing Utilities
- * 
+ *
  * Test date matching logic before deployment.
  * Run these tests in the browser console or use the test page.
  */
 
 import { format } from 'date-fns';
-import { getThisWeekRange, processWeekData, matchActivityToWorkout } from './weekTimelineUtils';
+import { getThisWeekRange, processWeekData, matchesWorkout } from './weekTimelineUtils';
 import type { Workout, Activity, WeekDay } from './weekTimelineUtils';
 
 /**
@@ -19,20 +19,20 @@ export function createTestData(testDate: string = '2024-11-12'): {
   // Parse test date
   const [year, month, day] = testDate.split('-').map(Number);
   const baseDate = new Date(year, month - 1, day);
-  
+
   // Create workouts for the week (Monday to Sunday)
   const workouts: Workout[] = [];
   const activities: Activity[] = [];
-  
+
   // Monday (workout)
   const monday = new Date(baseDate);
   monday.setDate(baseDate.getDate() - (baseDate.getDay() === 0 ? 6 : baseDate.getDay() - 1));
-  
+
   for (let i = 0; i < 7; i++) {
     const date = new Date(monday);
     date.setDate(monday.getDate() + i);
     const dateStr = format(date, 'yyyy-MM-dd');
-    
+
     // Add workout on Mon, Wed, Fri
     if (i % 2 === 0) {
       workouts.push({
@@ -41,7 +41,7 @@ export function createTestData(testDate: string = '2024-11-12'): {
         miles: 5 + i * 2,
         description: `Test workout for ${dateStr}`,
       });
-      
+
       // Add activity for Monday (completed)
       if (i === 0) {
         activities.push({
@@ -54,7 +54,7 @@ export function createTestData(testDate: string = '2024-11-12'): {
       }
     }
   }
-  
+
   return { workouts, activities };
 }
 
@@ -69,13 +69,13 @@ export function testDateMatching(): {
   const results: Array<{ test: string; passed: boolean; details: string }> = [];
   let passed = 0;
   let failed = 0;
-  
+
   // Test 1: Date-only string matching
   const test1 = {
     workout: { date: '2024-11-12', workout_type: 'Easy', miles: 5 } as Workout,
     activity: { activity_id: 1, date: '2024-11-12T00:00:00', distance_miles: 5, name: 'Test', type: 'Run' } as Activity,
   };
-  const match1 = matchActivityToWorkout(test1.activity, test1.workout);
+  const match1 = matchesWorkout(test1.activity, test1.workout);
   const passed1 = match1 === true;
   results.push({
     test: 'Date-only string matching (same day)',
@@ -83,13 +83,13 @@ export function testDateMatching(): {
     details: `Workout: ${test1.workout.date}, Activity: ${test1.activity.date}, Match: ${match1}`,
   });
   if (passed1) passed++; else failed++;
-  
+
   // Test 2: Datetime string matching
   const test2 = {
     workout: { date: '2024-11-12', workout_type: 'Easy', miles: 5 } as Workout,
     activity: { activity_id: 2, date: '2024-11-12T14:30:00', distance_miles: 5, name: 'Test', type: 'Run' } as Activity,
   };
-  const match2 = matchActivityToWorkout(test2.activity, test2.workout);
+  const match2 = matchesWorkout(test2.activity, test2.workout);
   const passed2 = match2 === true;
   results.push({
     test: 'Datetime string matching (same day, different time)',
@@ -97,13 +97,13 @@ export function testDateMatching(): {
     details: `Workout: ${test2.workout.date}, Activity: ${test2.activity.date}, Match: ${match2}`,
   });
   if (passed2) passed++; else failed++;
-  
+
   // Test 3: Next day (should not match)
   const test3 = {
     workout: { date: '2024-11-12', workout_type: 'Easy', miles: 5 } as Workout,
     activity: { activity_id: 3, date: '2024-11-13T00:00:00', distance_miles: 5, name: 'Test', type: 'Run' } as Activity,
   };
-  const match3 = matchActivityToWorkout(test3.activity, test3.workout);
+  const match3 = matchesWorkout(test3.activity, test3.workout);
   const passed3 = match3 === false;
   results.push({
     test: 'Next day (should not match)',
@@ -111,13 +111,13 @@ export function testDateMatching(): {
     details: `Workout: ${test3.workout.date}, Activity: ${test3.activity.date}, Match: ${match3} (should be false)`,
   });
   if (passed3) passed++; else failed++;
-  
+
   // Test 4: Previous day (should not match)
   const test4 = {
     workout: { date: '2024-11-12', workout_type: 'Easy', miles: 5 } as Workout,
     activity: { activity_id: 4, date: '2024-11-11T00:00:00', distance_miles: 5, name: 'Test', type: 'Run' } as Activity,
   };
-  const match4 = matchActivityToWorkout(test4.activity, test4.workout);
+  const match4 = matchesWorkout(test4.activity, test4.workout);
   const passed4 = match4 === false;
   results.push({
     test: 'Previous day (should not match)',
@@ -125,7 +125,7 @@ export function testDateMatching(): {
     details: `Workout: ${test4.workout.date}, Activity: ${test4.activity.date}, Match: ${match4} (should be false)`,
   });
   if (passed4) passed++; else failed++;
-  
+
   return { passed, failed, results };
 }
 
@@ -144,7 +144,7 @@ export function testWeekRange(testDate: string = '2024-11-12'): {
 } {
   const [year, month, day] = testDate.split('-').map(Number);
   const testDateObj = new Date(year, month - 1, day);
-  
+
   // Override getThisWeekRange to use test date
   const today = testDateObj;
   const weekStart = new Date(today);
@@ -153,15 +153,15 @@ export function testWeekRange(testDate: string = '2024-11-12'): {
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekStart.getDate() + 6);
   weekEnd.setHours(23, 59, 59, 999);
-  
+
   const weekStartStr = format(weekStart, 'yyyy-MM-dd');
   const weekEndStr = format(weekEnd, 'yyyy-MM-dd');
-  
+
   // Verify weekStart is Monday (day 1)
   const weekStartDay = weekStart.getDay();
   const weekEndDay = weekEnd.getDay();
   const passed = weekStartDay === 1 && weekEndDay === 0;
-  
+
   return {
     passed,
     details: {
@@ -187,7 +187,7 @@ export function testProcessWeekData(testDate: string = '2024-11-12'): {
   };
 } {
   const { workouts, activities } = createTestData(testDate);
-  
+
   // Calculate week range
   const [year, month, day] = testDate.split('-').map(Number);
   const testDateObj = new Date(year, month - 1, day);
@@ -197,13 +197,13 @@ export function testProcessWeekData(testDate: string = '2024-11-12'): {
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekStart.getDate() + 6);
   weekEnd.setHours(23, 59, 59, 999);
-  
+
   const weekDays = processWeekData(workouts, activities, weekStart, weekEnd);
-  
+
   const workoutsMatched = weekDays.filter(d => d.workout).length;
   const expectedWorkouts = workouts.length;
   const passed = workoutsMatched === expectedWorkouts;
-  
+
   return {
     passed,
     details: {
@@ -226,7 +226,7 @@ export function testProcessWeekData(testDate: string = '2024-11-12'): {
 export function runAllDateTests(testDate: string = '2024-11-12'): void {
   console.log('🧪 Running Date Matching Tests...');
   console.log('='.repeat(60));
-  
+
   const matchingTests = testDateMatching();
   console.log(`\n📋 Date Matching Tests: ${matchingTests.passed}/${matchingTests.passed + matchingTests.failed} passed`);
   matchingTests.results.forEach((result, idx) => {
@@ -234,14 +234,14 @@ export function runAllDateTests(testDate: string = '2024-11-12'): void {
     console.log(`${icon} Test ${idx + 1}: ${result.test}`);
     console.log(`   ${result.details}`);
   });
-  
+
   console.log('\n' + '='.repeat(60));
   const weekRangeTest = testWeekRange(testDate);
   console.log(`\n📅 Week Range Test: ${weekRangeTest.passed ? '✅ PASSED' : '❌ FAILED'}`);
   console.log(`   Test Date: ${weekRangeTest.details.testDate}`);
   console.log(`   Week Start: ${weekRangeTest.details.weekStart} (Day: ${weekRangeTest.details.weekStartDay}, should be 1=Monday)`);
   console.log(`   Week End: ${weekRangeTest.details.weekEnd} (Day: ${weekRangeTest.details.weekEndDay}, should be 0=Sunday)`);
-  
+
   console.log('\n' + '='.repeat(60));
   const processTest = testProcessWeekData(testDate);
   console.log(`\n🔄 Process Week Data Test: ${processTest.passed ? '✅ PASSED' : '❌ FAILED'}`);
@@ -249,18 +249,18 @@ export function runAllDateTests(testDate: string = '2024-11-12'): void {
   console.log(`   Workouts Matched: ${processTest.details.workoutsMatched}/${processTest.details.expectedWorkouts}`);
   console.log(`   Week Days:`);
   processTest.details.weekDays.forEach(day => {
-    const workoutInfo = day.hasWorkout 
+    const workoutInfo = day.hasWorkout
       ? `Workout: ${day.workoutDate} ${day.isCompleted ? '✓' : ''}`
       : 'No workout';
     console.log(`     ${day.dateStr}: ${workoutInfo}`);
   });
-  
+
   console.log('\n' + '='.repeat(60));
   console.log('\n✨ Test Summary:');
   const totalPassed = matchingTests.passed + (weekRangeTest.passed ? 1 : 0) + (processTest.passed ? 1 : 0);
   const totalTests = matchingTests.passed + matchingTests.failed + 2;
   console.log(`   ${totalPassed}/${totalTests} test suites passed`);
-  
+
   if (totalPassed === totalTests) {
     console.log('   🎉 All tests passed!');
   } else {
@@ -281,4 +281,3 @@ if (typeof window !== 'undefined') {
   };
   console.log('🧪 Date test utilities loaded! Run window.dateTestUtils.runAllDateTests() in the console.');
 }
-
