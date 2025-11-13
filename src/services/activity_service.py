@@ -136,27 +136,13 @@ def enrich_one_activity(
             zones_data = client.get_hr_zones(activity_id)
             streams = {}
 
-            # Always fetch heartrate stream if zones API unavailable (for HR zone calculation)
-            # Even if outside split lookback window
-            # Check for any HR data indicators (has_heartrate, average_heartrate, or max_heartrate)
-            has_hr_data = (
-                activity_json.get("has_heartrate")
-                or activity_json.get("average_heartrate") is not None
-                or activity_json.get("max_heartrate") is not None
-            )
-            need_hr_stream = zones_data is None and has_hr_data
-
-            if fetch_streams or need_hr_stream:
-                stream_keys = ["distance", "time", "velocity_smooth", "heartrate"]
-                if not fetch_streams and need_hr_stream:
-                    # Only fetch heartrate if we just need it for zones
-                    stream_keys = ["heartrate"]
-                    log.info(
-                        "Fetching heartrate stream for HR zone calculation "
-                        "(zones API unavailable for activity %s)",
-                        activity_id,
-                    )
-                streams = client.get_streams(activity_id, keys=stream_keys)
+            # Fetch streams only if needed for splits (not for HR zone calculation)
+            # HR zones are only available via Strava's zones API (paid users only)
+            if fetch_streams:
+                streams = client.get_streams(
+                    activity_id,
+                    keys=["distance", "time", "velocity_smooth", "heartrate"],
+                )
             else:
                 log.info(
                     "Skipping stream fetch for activity %s (outside split lookback window)",
