@@ -25,10 +25,7 @@ Supported Events:
 from src.db.models.webhook_events import WebhookEvent, WebhookEventStatus
 from src.db.models.user_athletes import UserAthleteLink
 from src.db.models.activities import Activity
-from src.services.activity_service import (
-    ActivityIngestionService,
-    enrich_one_activity_with_refresh,
-)
+from src.services.activity_service import enrich_one_activity_with_refresh
 from src.db.dao.activity_dao import ActivityDAO
 from src.services.strava_access_service import StravaClient
 from src.services.token_service import get_valid_token
@@ -199,8 +196,7 @@ def _handle_activity_create(session: Session, event: WebhookEvent, user_id):
 
         # Enrich the activity
         try:
-            service = ActivityIngestionService(session, athlete_id)
-            service.enrich_single_activity(activity_id)
+            enrich_one_activity_with_refresh(session, athlete_id, activity_id)
             logger.info(f"Successfully enriched activity {activity_id}")
         except Exception as e:
             logger.warning(f"Failed to enrich activity {activity_id}: {e}")
