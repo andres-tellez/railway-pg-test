@@ -28,7 +28,9 @@ const WeekDayButton: React.FC<WeekDayButtonProps> = memo(({
   workout,
   onClick,
 }) => {
-  const dayName = format(date, 'EEE').toUpperCase();
+  // Show full day name on larger screens, single letter on mobile
+  const dayNameFull = format(date, 'EEE').toUpperCase();
+  const dayNameShort = format(date, 'E').toUpperCase(); // Single letter (M, T, W, etc.)
   const dayNum = format(date, 'd');
 
   const handleClick = () => {
@@ -39,10 +41,13 @@ const WeekDayButton: React.FC<WeekDayButtonProps> = memo(({
     <button
       onClick={handleClick}
       className={getDayButtonClasses(isSelected, isCompleted, isRestDay)}
-      aria-label={`${dayName} ${dayNum}${workout ? ` - ${workout.workout_type}` : ''}`}
+      aria-label={`${dayNameFull} ${dayNum}${workout ? ` - ${workout.workout_type}` : ''}`}
       aria-pressed={isSelected}
     >
-      <div className={getDayNameClasses(isRestDay)}>{dayName}</div>
+      <div className={getDayNameClasses(isRestDay)}>
+        <span className="hidden sm:inline">{dayNameFull}</span>
+        <span className="sm:hidden">{dayNameShort}</span>
+      </div>
       <div className={getDayNumberClasses(isCompleted, isRestDay)}>
         {dayNum}
       </div>

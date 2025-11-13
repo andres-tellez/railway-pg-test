@@ -5,17 +5,17 @@
 
 export const WEEK_TIMELINE_STYLES = {
   // Container
-  container: "bg-white rounded-lg shadow-sm",
-  containerPadding: "p-4 md:p-6",
+  container: "bg-white rounded-lg shadow-sm overflow-hidden",
+  containerPadding: "p-3 sm:p-4 md:p-6",
 
   // Title
-  title: "text-xl md:text-2xl font-semibold text-gray-900 mb-4",
+  title: "text-lg sm:text-xl md:text-2xl font-semibold text-gray-900 mb-3 sm:mb-4",
 
   // Day grid
-  dayGrid: "grid grid-cols-7 gap-2 md:gap-3 mb-4",
+  dayGrid: "grid grid-cols-7 gap-1 sm:gap-2 md:gap-3 mb-4",
 
   // Day button base
-  dayButtonBase: "p-2 md:p-3 rounded-lg border-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2",
+  dayButtonBase: "p-1.5 sm:p-2 md:p-3 rounded-lg border-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 sm:focus:ring-offset-2 min-w-0 flex flex-col items-center justify-center relative",
 
   // Day button states
   dayButtonDefault: "border-blue-300 hover:border-blue-400 bg-blue-50",
@@ -24,15 +24,15 @@ export const WEEK_TIMELINE_STYLES = {
   dayButtonRest: "bg-gray-200 border-gray-300",
 
   // Day content
-  dayName: "text-sm font-medium text-gray-700 mb-1",
-  dayNameRest: "text-sm font-medium text-gray-500 mb-1",
-  dayNumber: "text-base md:text-lg font-semibold mb-1",
+  dayName: "text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1 leading-tight",
+  dayNameRest: "text-xs sm:text-sm font-medium text-gray-500 mb-0.5 sm:mb-1 leading-tight",
+  dayNumber: "text-sm sm:text-base md:text-lg font-semibold mb-0.5 sm:mb-1 leading-tight",
   dayNumberCompleted: "text-gray-900",
   dayNumberRest: "text-gray-500",
   dayNumberDefault: "text-gray-900",
 
   // Day indicators
-  indicatorCompleted: "text-green-700 text-xs font-bold",
+  indicatorCompleted: "text-green-700 text-xs sm:text-sm font-bold absolute top-0.5 right-0.5 sm:top-1 sm:right-1",
   indicatorRest: "text-gray-400 text-xs opacity-60",
 
   // Day workout info
@@ -49,7 +49,7 @@ export const WEEK_TIMELINE_STYLES = {
   progressMiles: "text-sm text-gray-600",
 
   // Details panel
-  detailsPanel: "bg-white rounded-lg shadow-sm p-4 md:p-6",
+  detailsPanel: "bg-white rounded-lg shadow-sm p-3 sm:p-4 md:p-6",
   detailsTitle: "text-2xl font-semibold text-gray-900 mb-4",
   detailsSubtitle: "text-lg font-medium text-gray-900",
   detailsText: "text-base text-gray-600",
@@ -72,8 +72,8 @@ export const WEEK_TIMELINE_STYLES = {
   link: "text-blue-600 hover:underline text-sm",
 
   // Comparison grid
-  comparisonGrid: "grid grid-cols-2 gap-4 mb-4",
-  comparisonColumn: "border border-gray-200 rounded-lg p-3",
+  comparisonGrid: "grid grid-cols-2 gap-2 sm:gap-4 mb-4",
+  comparisonColumn: "border border-gray-200 rounded-lg p-2 sm:p-3",
   comparisonHeader: "text-sm font-semibold text-gray-600 mb-2 uppercase tracking-wide",
   comparisonValue: "text-lg font-medium text-gray-900",
   comparisonSubValue: "text-sm text-gray-600 mt-1",
