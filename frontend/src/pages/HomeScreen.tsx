@@ -59,6 +59,11 @@ const HomeScreen: React.FC = () => {
           workouts = planRes.data.workouts || [];
           planExists = true;
           setHasPlan(true);
+
+          // Debug: Log workout dates to verify format
+          if (workouts.length > 0) {
+            console.log('[Workout Dates] First 3 workouts:', workouts.slice(0, 3).map(w => ({ date: w.date, type: w.workout_type })));
+          }
         } catch (planError: any) {
           // Check if it's a 404 (no plan) vs other error
           if (planError.response?.status === 404) {
