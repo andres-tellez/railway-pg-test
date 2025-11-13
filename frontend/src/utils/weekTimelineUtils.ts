@@ -73,6 +73,14 @@ export function matchActivityToWorkout(
 }
 
 /**
+ * Normalize a date string to YYYY-MM-DD format, handling both date-only and datetime strings
+ */
+function normalizeDateString(dateStr: string): string {
+  // Handle both "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SS" formats
+  return dateStr.split('T')[0];
+}
+
+/**
  * Process week data: create week days with matched activities
  */
 export function processWeekData(
@@ -87,7 +95,16 @@ export function processWeekData(
     // Use format instead of toISOString to avoid UTC conversion issues
     // format() uses local time, so dates stay on the correct day
     const dateStr = format(date, 'yyyy-MM-dd');
-    const workout = workouts.find((w) => w.date === dateStr);
+    // Normalize workout dates to ensure consistent comparison
+    // Debug: Log first few matches to verify date comparison
+    const workout = workouts.find((w) => {
+      const normalizedWorkoutDate = normalizeDateString(w.date);
+      const matches = normalizedWorkoutDate === dateStr;
+      if (matches && date.getDate() <= 15) { // Only log first few days
+        console.log(`[Date Match] Day: ${dateStr}, Workout date: ${w.date} (normalized: ${normalizedWorkoutDate}), Match: ${matches}`);
+      }
+      return matches;
+    });
 
     // Try to match activity to workout
     const activity = workout
