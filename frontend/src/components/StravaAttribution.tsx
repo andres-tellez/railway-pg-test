@@ -19,3 +19,4 @@ const StravaAttribution: React.FC<StravaAttributionProps> = ({
 };
 
 export default StravaAttribution;
+

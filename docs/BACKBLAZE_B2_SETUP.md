@@ -262,3 +262,4 @@ python scripts/restore_database.py \
 **Cost:** ~$0.06/month (vs $3/month for Railway Volumes)
 **Storage:** 10 GB free forever
 **Reliability:** Enterprise-grade cloud storage
+

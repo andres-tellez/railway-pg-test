@@ -167,3 +167,4 @@ For detailed information, see:
 
 - Check `STRAVA_COMPLIANCE_IMPLEMENTATION_GUIDE.md`
 - Email `support@smartcoach.app` (that's you! 😊)
+

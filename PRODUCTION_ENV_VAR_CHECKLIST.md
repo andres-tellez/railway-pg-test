@@ -81,3 +81,4 @@
 - **403 Forbidden:** Usually means `VITE_AUTH0_REDIRECT_URI` doesn't match Auth0's allowed callbacks (but you already added it)
 - **Build-time embedding:** Vite embeds `VITE_*` vars at build time - must rebuild after changing
 - **Cache issues:** Browser cache might serve old JavaScript - clear cache or use incognito
+

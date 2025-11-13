@@ -26,3 +26,4 @@ const StravaLink: React.FC<StravaLinkProps> = ({
 };
 
 export default StravaLink;
+

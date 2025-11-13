@@ -410,3 +410,4 @@
 ---
 
 **This analysis is based on the Strava API Agreement effective October 9, 2025. Requirements may change - always check the latest version at https://developers.strava.com/.**
+

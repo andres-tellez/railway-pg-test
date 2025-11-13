@@ -178,3 +178,4 @@ After adding the cron job, Railway will run it automatically. Check the logs:
 ## ✅ Done!
 
 Your daily migration will now run automatically at 1 AM Central Time. You'll see execution logs in Railway's **Logs** view.
+
