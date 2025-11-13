@@ -32,7 +32,7 @@ export const WEEK_TIMELINE_STYLES = {
   dayNumberDefault: "text-gray-900",
 
   // Day indicators
-  indicatorCompleted: "absolute top-1 right-1 sm:top-1.5 sm:right-1.5 text-green-600 text-sm sm:text-base font-bold bg-white rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center shadow-sm border border-green-200 z-10",
+  indicatorCompleted: "absolute -top-2 right-1 sm:-top-2.5 sm:right-1.5 text-green-600 text-xl sm:text-2xl md:text-3xl font-bold z-10 pointer-events-none leading-none",
   indicatorRest: "text-gray-400 text-xs opacity-60",
 
   // Day workout info
