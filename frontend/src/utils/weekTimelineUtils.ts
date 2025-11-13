@@ -40,6 +40,10 @@ export function getThisWeekRange(): { weekStart: Date; weekEnd: Date } {
   const today = new Date();
   const weekStart = startOfWeek(today, { weekStartsOn: 1 }); // Monday
   const weekEnd = endOfWeek(today, { weekStartsOn: 1 }); // Sunday
+
+  // Debug: Log week range
+  console.log('[Week Range] Today:', format(today, 'yyyy-MM-dd'), 'Week Start:', format(weekStart, 'yyyy-MM-dd'), 'Week End:', format(weekEnd, 'yyyy-MM-dd'));
+
   return { weekStart, weekEnd };
 }
 
