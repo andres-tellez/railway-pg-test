@@ -191,44 +191,17 @@ def enrich_one_activity(
 
         log.info("Enriching activity %s - %s", activity_id, activity_json.get("name"))
 
-        # Extract HR zones from zones endpoint if available
+        # Extract HR zones from zones endpoint if available (paid users only)
+        # Free users will have hr_zone_pcts = [0.0] * 5 (zones API returns 402)
         hr_zone_pcts = extract_hr_zone_percentages(zones_data)
 
-        # Fallback: Calculate HR zones from heartrate streams if zones endpoint unavailable
-        if (
-            hr_zone_pcts == [0.0] * 5
-            and zones_data is None
-            and streams.get("heartrate")
-        ):
+        # Note: We no longer calculate HR zones from streams for free users
+        # HR zones are only available for paid Strava subscribers via the zones API
+        if hr_zone_pcts == [0.0] * 5 and zones_data is None:
             log.info(
-                "HR zones unavailable from API, attempting to calculate from heartrate streams"
+                "HR zones unavailable (402 Payment Required) - skipping calculation. "
+                "HR zones are only available for paid Strava subscribers."
             )
-
-            # Try to get max_heartrate from database if not in activity_json
-            max_hr = activity_json.get("max_heartrate")
-            if not max_hr or max_hr == 0:
-                db_activity = (
-                    session.query(Activity)
-                    .filter(Activity.activity_id == activity_id)
-                    .first()
-                )
-                if db_activity and db_activity.max_heartrate:
-                    max_hr = db_activity.max_heartrate
-                    log.info(
-                        f"Using max_heartrate from database: {max_hr:.0f} bpm "
-                        f"(more accurate than stream estimation)"
-                    )
-
-            # Use time-weighted calculation if time stream is available
-            hr_zone_pcts = calculate_hr_zones_from_streams(
-                streams.get("heartrate", []),
-                max_heartrate=max_hr,
-                time_stream=streams.get("time"),
-            )
-
-        # Final fallback: use default if still no zones
-        if hr_zone_pcts == [0.0] * 5:
-            hr_zone_pcts = [0.0] * 5
 
         update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
 
