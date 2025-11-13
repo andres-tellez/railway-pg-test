@@ -83,14 +83,14 @@ def get_activities():
             """
             SELECT
                 activity_id,
-                CASE 
+                CASE
                     WHEN timezone IS NOT NULL AND timezone LIKE '%America/%' THEN
                         -- Extract timezone name after ") " (e.g., "America/Chicago")
-                        DATE((start_date AT TIME ZONE 'UTC') AT TIME ZONE 
+                        DATE((start_date AT TIME ZONE 'UTC') AT TIME ZONE
                             SUBSTRING(timezone FROM POSITION(') ' IN timezone) + 2))
                     WHEN timezone IS NOT NULL THEN
                         -- Try to extract timezone name, fallback to UTC conversion
-                        DATE((start_date AT TIME ZONE 'UTC') AT TIME ZONE 
+                        DATE((start_date AT TIME ZONE 'UTC') AT TIME ZONE
                             COALESCE(
                                 NULLIF(SUBSTRING(timezone FROM POSITION(') ' IN timezone) + 2), ''),
                                 'UTC'
@@ -117,7 +117,9 @@ def get_activities():
         activities = [
             {
                 "activity_id": row[0],
-                "date": row[1].isoformat() if row[1] else None,  # Already converted to local date by PostgreSQL
+                "date": (
+                    row[1].isoformat() if row[1] else None
+                ),  # Already converted to local date by PostgreSQL
                 "distance_miles": (
                     float(row[2] * 0.000621371) if row[2] else 0
                 ),  # Convert meters to miles
