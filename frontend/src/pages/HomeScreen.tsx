@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { useApiClient } from '../utils/apiClient';
 import { useAuthSetup } from '../hooks/useAuthSetup';
 import { AuthGuard } from '../components/AuthGuard';
@@ -23,6 +23,7 @@ import {
   type Activity,
   type WeekDay,
 } from '../utils/weekTimelineUtils';
+import { toDateString, dateStringToDate } from '../utils/dateUtils';
 import { WEEK_TIMELINE_STYLES } from '../utils/weekTimelineStyles';
 // Import test utilities (available in browser console)
 import '../utils/dateTestUtils';
@@ -62,10 +63,6 @@ const HomeScreen: React.FC = () => {
           planExists = true;
           setHasPlan(true);
 
-          // Debug: Log workout dates to verify format
-          if (workouts.length > 0) {
-            console.log('[Workout Dates] First 3 workouts:', workouts.slice(0, 3).map(w => ({ date: w.date, type: w.workout_type })));
-          }
         } catch (planError: any) {
           // Check if it's a 404 (no plan) vs other error
           if (planError.response?.status === 404) {
@@ -85,18 +82,10 @@ const HomeScreen: React.FC = () => {
         const fetchedActivities: Activity[] = activitiesRes.data?.activities || [];
         setAllActivities(fetchedActivities);
 
-        // Filter activities for this week
-        // Parse dates as local dates (not UTC) to avoid timezone issues
-        const weekStartOnly = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
-        const weekEndOnly = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate());
-
+        // Filter activities for this week - SIMPLE string comparison
         const weekActivities = fetchedActivities.filter((act: Activity) => {
-          const actDateStr = act.date.split('T')[0]; // Get date part only (YYYY-MM-DD)
-          // Parse as local date by splitting and creating Date directly (not using parseISO)
-          const [year, month, day] = actDateStr.split('-').map(Number);
-          const actDateLocal = new Date(year, month - 1, day); // month is 0-indexed
-
-          return actDateLocal >= weekStartOnly && actDateLocal <= weekEndOnly;
+          const actDate = toDateString(act.date);
+          return actDate >= weekStart && actDate <= weekEnd;
         });
 
         // Process week data
@@ -222,39 +211,32 @@ const HomeScreen: React.FC = () => {
 
           {/* Activity Summary - No Plan */}
           {!hasPlan && (() => {
-            // Calculate stats from activities
+            // Calculate stats from activities - SIMPLE string comparisons
             const { weekStart: thisWeekStart } = weekRange;
-            const now = new Date();
-
-            // Parse dates as local dates (not UTC) to avoid timezone issues
-            const thisWeekStartOnly = new Date(thisWeekStart.getFullYear(), thisWeekStart.getMonth(), thisWeekStart.getDate());
+            const today = toDateString(new Date());
+            
+            // Calculate 30 days ago as date string
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const thirtyDaysAgoStr = toDateString(thirtyDaysAgo);
 
             const thisWeekActivities = allActivities.filter((act: Activity) => {
-              const actDateStr = act.date.split('T')[0]; // Get date part only (YYYY-MM-DD)
-              // Parse as local date by splitting and creating Date directly
-              const [year, month, day] = actDateStr.split('-').map(Number);
-              const actDateLocal = new Date(year, month - 1, day); // month is 0-indexed
-              return actDateLocal >= thisWeekStartOnly;
+              const actDate = toDateString(act.date);
+              return actDate >= thisWeekStart;
             });
 
-            const last30Days = new Date(now);
-            last30Days.setDate(now.getDate() - 30);
-            const last30DaysOnly = new Date(last30Days.getFullYear(), last30Days.getMonth(), last30Days.getDate());
-
             const last30DaysActivities = allActivities.filter((act: Activity) => {
-              const actDateStr = act.date.split('T')[0]; // Get date part only (YYYY-MM-DD)
-              // Parse as local date by splitting and creating Date directly
-              const [year, month, day] = actDateStr.split('-').map(Number);
-              const actDateLocal = new Date(year, month - 1, day); // month is 0-indexed
-              return actDateLocal >= last30DaysOnly;
+              const actDate = toDateString(act.date);
+              return actDate >= thirtyDaysAgoStr;
             });
 
             const thisWeekMiles = thisWeekActivities.reduce((sum, act) => sum + (act.distance_miles || 0), 0);
             const last30DaysMiles = last30DaysActivities.reduce((sum, act) => sum + (act.distance_miles || 0), 0);
 
+            // Sort by date string (YYYY-MM-DD format sorts correctly)
             const lastRun = allActivities
               .filter((act: Activity) => act.type === 'Run')
-              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+              .sort((a, b) => toDateString(b.date).localeCompare(toDateString(a.date)))[0];
 
             return (
               <div className={WEEK_TIMELINE_STYLES.emptyStateSection}>
@@ -290,7 +272,7 @@ const HomeScreen: React.FC = () => {
                       {lastRun.name || 'Run'}
                     </div>
                     <div className={WEEK_TIMELINE_STYLES.recentActivityDetails}>
-                      {format(new Date(lastRun.date), 'MMM d')} • {lastRun.distance_miles.toFixed(1)} miles
+                      {format(dateStringToDate(toDateString(lastRun.date)), 'MMM d')} • {lastRun.distance_miles.toFixed(1)} miles
                     </div>
                   </div>
                 )}
