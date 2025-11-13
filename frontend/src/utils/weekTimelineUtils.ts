@@ -35,16 +35,29 @@ export interface WeekDay {
 
 /**
  * Get this week's date range (Monday to Sunday)
+ * Ensures dates are date-only (no time component) to avoid timezone issues
  */
 export function getThisWeekRange(): { weekStart: Date; weekEnd: Date } {
   const today = new Date();
-  const weekStart = startOfWeek(today, { weekStartsOn: 1 }); // Monday
-  const weekEnd = endOfWeek(today, { weekStartsOn: 1 }); // Sunday
+  // Normalize today to date-only (midnight local) to avoid time component issues
+  const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  
+  const weekStart = startOfWeek(todayOnly, { weekStartsOn: 1 }); // Monday
+  const weekEnd = endOfWeek(todayOnly, { weekStartsOn: 1 }); // Sunday
 
-  // Debug: Log week range
-  console.log('[Week Range] Today:', format(today, 'yyyy-MM-dd'), 'Week Start:', format(weekStart, 'yyyy-MM-dd'), 'Week End:', format(weekEnd, 'yyyy-MM-dd'));
+  // Ensure these are also date-only (no time component)
+  const weekStartOnly = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
+  const weekEndOnly = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate());
 
-  return { weekStart, weekEnd };
+  // Debug: Log week range with detailed info
+  console.log('[Week Range] Today:', format(todayOnly, 'yyyy-MM-dd'), 
+              'Week Start:', format(weekStartOnly, 'yyyy-MM-dd'), 
+              'Week End:', format(weekEndOnly, 'yyyy-MM-dd'));
+  console.log('[Week Range Debug] Today day of week:', todayOnly.getDay(), 
+              'Week start day:', weekStartOnly.getDay(), 
+              'Week end day:', weekEndOnly.getDay());
+
+  return { weekStart: weekStartOnly, weekEnd: weekEndOnly };
 }
 
 /**
@@ -96,16 +109,23 @@ export function processWeekData(
   const days = eachDayOfInterval({ start: weekStart, end: weekEnd });
 
   return days.map((date) => {
+    // Normalize date to date-only (midnight local) to ensure consistent comparison
+    const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     // Use format instead of toISOString to avoid UTC conversion issues
     // format() uses local time, so dates stay on the correct day
-    const dateStr = format(date, 'yyyy-MM-dd');
+    const dateStr = format(dateOnly, 'yyyy-MM-dd');
+    
     // Normalize workout dates to ensure consistent comparison
-    // Debug: Log first few matches to verify date comparison
+    // Debug: Log ALL comparisons for the first week to verify date matching
     const workout = workouts.find((w) => {
       const normalizedWorkoutDate = normalizeDateString(w.date);
       const matches = normalizedWorkoutDate === dateStr;
-      if (matches && date.getDate() <= 15) { // Only log first few days
-        console.log(`[Date Match] Day: ${dateStr}, Workout date: ${w.date} (normalized: ${normalizedWorkoutDate}), Match: ${matches}`);
+      
+      // Log all comparisons for debugging (limit to first 7 days to avoid spam)
+      if (dateOnly.getDate() <= 20) {
+        console.log(`[Date Compare] Day: ${dateStr} (Date object: ${format(date, 'yyyy-MM-dd HH:mm:ss')}), ` +
+                    `Workout: ${w.date} (normalized: ${normalizedWorkoutDate}), ` +
+                    `Match: ${matches}`);
       }
       return matches;
     });

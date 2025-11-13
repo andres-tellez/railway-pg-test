@@ -24,6 +24,8 @@ import {
   type WeekDay,
 } from '../utils/weekTimelineUtils';
 import { WEEK_TIMELINE_STYLES } from '../utils/weekTimelineStyles';
+// Import test utilities (available in browser console)
+import '../utils/dateTestUtils';
 
 const HomeScreen: React.FC = () => {
   const { isReady, userId } = useAuthSetup();
