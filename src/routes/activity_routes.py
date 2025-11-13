@@ -77,11 +77,28 @@ def get_activities():
         athlete_id = athlete_row.athlete_id
 
         # Fetch activities from the last 30 days (4 weeks)
+        # Use PostgreSQL to convert UTC datetime to activity's local timezone and extract date
+        # Timezone format: "(GMT-06:00) America/Chicago" -> extract "America/Chicago"
         activities_stmt = text(
             """
             SELECT
                 activity_id,
-                start_date,
+                CASE 
+                    WHEN timezone IS NOT NULL AND timezone LIKE '%America/%' THEN
+                        -- Extract timezone name after ") " (e.g., "America/Chicago")
+                        DATE((start_date AT TIME ZONE 'UTC') AT TIME ZONE 
+                            SUBSTRING(timezone FROM POSITION(') ' IN timezone) + 2))
+                    WHEN timezone IS NOT NULL THEN
+                        -- Try to extract timezone name, fallback to UTC conversion
+                        DATE((start_date AT TIME ZONE 'UTC') AT TIME ZONE 
+                            COALESCE(
+                                NULLIF(SUBSTRING(timezone FROM POSITION(') ' IN timezone) + 2), ''),
+                                'UTC'
+                            ))
+                    ELSE
+                        -- No timezone: assume start_date is already in local time, extract date directly
+                        DATE(start_date)
+                END as local_date,
                 distance,
                 moving_time,
                 name,
@@ -100,7 +117,7 @@ def get_activities():
         activities = [
             {
                 "activity_id": row[0],
-                "date": row[1].isoformat() if row[1] else None,
+                "date": row[1].isoformat() if row[1] else None,  # Already converted to local date by PostgreSQL
                 "distance_miles": (
                     float(row[2] * 0.000621371) if row[2] else 0
                 ),  # Convert meters to miles
