@@ -74,6 +74,7 @@ from src.routes.webhook_routes import webhook_bp
 from src.routes.longest_runs_routes import longest_runs_bp
 from src.routes.gyr_metrics_routes import gyr_metrics_bp
 from src.routes.plan_routes import plan_bp
+from src.routes.plan_routes_v2 import plan_bp_v2
 from src.routes.conversation_routes import conversation_bp
 
 
@@ -151,6 +152,7 @@ def create_app(test_config=None):
     app.register_blueprint(longest_runs_bp)
     app.register_blueprint(gyr_metrics_bp)
     app.register_blueprint(plan_bp)
+    app.register_blueprint(plan_bp_v2)
     app.register_blueprint(webhook_bp)
     app.register_blueprint(conversation_bp)
 

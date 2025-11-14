@@ -49,6 +49,57 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
   nextWorkoutDay,
 }) => {
   if (isRestDay) {
+    // If there's an activity on a rest day, show it
+    if (isCompleted && activity) {
+      return (
+        <div>
+          <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
+            Rest Day
+          </h3>
+          <p className={WEEK_TIMELINE_STYLES.detailsText + ' mb-4 text-base'}>
+            No workout planned for {format(date, 'EEEE')}, but you completed an activity.
+          </p>
+
+          {/* Show activity details */}
+          <div className={WEEK_TIMELINE_STYLES.comparisonGrid}>
+            <div className={WEEK_TIMELINE_STYLES.comparisonColumn}>
+              <div className={WEEK_TIMELINE_STYLES.comparisonHeader}>Planned</div>
+              <div className={WEEK_TIMELINE_STYLES.comparisonValue}>
+                Rest Day
+              </div>
+            </div>
+            <div className={WEEK_TIMELINE_STYLES.comparisonColumn}>
+              <div className={WEEK_TIMELINE_STYLES.comparisonHeader}>Actual</div>
+              <div className={WEEK_TIMELINE_STYLES.comparisonValue}>
+                {activity.distance_miles.toFixed(1)} miles
+              </div>
+              <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
+                {activity.moving_time && activity.distance_miles > 0
+                  ? (() => {
+                      const secondsPerMile = activity.moving_time / activity.distance_miles;
+                      const minutes = Math.floor(secondsPerMile / 60);
+                      const seconds = Math.floor(secondsPerMile % 60);
+                      return `Pace: ${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
+                    })()
+                  : 'Pace: N/A'}
+              </div>
+            </div>
+          </div>
+
+          {/* Strava link */}
+          <a
+            href={`https://www.strava.com/activities/${activity.activity_id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={WEEK_TIMELINE_STYLES.link}
+          >
+            View activity on Strava →
+          </a>
+        </div>
+      );
+    }
+
+    // No activity on rest day - show default rest day message
     return (
       <div>
         <h3 className={WEEK_TIMELINE_STYLES.detailsTitle + ' mb-4'}>Rest Day</h3>

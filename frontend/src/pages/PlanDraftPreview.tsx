@@ -11,6 +11,7 @@ type DraftState = {
     validation?: any;
   };
   plan_request?: any;
+  plan_source?: "v1" | "v2";
 };
 
 export default function PlanDraftPreview() {
@@ -18,11 +19,13 @@ export default function PlanDraftPreview() {
   const navigate = useNavigate();
   const api = useApiClient();
 
-  const { draft, plan_request } = (location.state || {}) as DraftState;
+  const { draft, plan_request, plan_source } = (location.state || {}) as DraftState;
   const [currentDraft, setCurrentDraft] = useState(draft);
   const [regenLoading, setRegenLoading] = useState(false);
   const generated = currentDraft?.generated_plan || {};
   const validation = currentDraft?.validation || {};
+  const planSource = plan_source === "v2" ? "v2" : "v1";
+  const isV2 = planSource === "v2";
 
   const violations: any[] = validation?.violations || [];
   const hasErrors = violations.some((v) => (v?.severity || "").toLowerCase() === "error");
@@ -48,6 +51,10 @@ export default function PlanDraftPreview() {
     browserTimezone;
 
   const handleApprove = async () => {
+    if (isV2) {
+      alert("Saving is disabled for v2 beta plans. This view is read-only for now.");
+      return;
+    }
     try {
       const res = await api.post("/api/plan/approve", {
         validation: {
@@ -74,7 +81,8 @@ export default function PlanDraftPreview() {
   const handleRegenerateConservative = async () => {
     try {
       setRegenLoading(true);
-      const res = await api.post("/api/plan/draft", {
+      const endpoint = isV2 ? "/api/plan-v2/draft" : "/api/plan/draft";
+      const res = await api.post(endpoint, {
         ...planRequestWithTimezone,
       });
       setCurrentDraft(res.data?.draft);
@@ -90,7 +98,14 @@ export default function PlanDraftPreview() {
       <div className="min-h-screen bg-gray-50 py-10">
         <div className="max-w-4xl mx-auto bg-white shadow p-6 rounded-lg">
           <div className="flex items-center justify-between mb-4">
-            <h1 className="text-2xl font-bold text-gray-800">Draft Plan Preview</h1>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800">Draft Plan Preview</h1>
+              {isV2 && (
+                <p className="text-xs uppercase tracking-wide text-indigo-600 font-semibold">
+                  V2 beta – view only
+                </p>
+              )}
+            </div>
             <div className="space-x-3 flex items-center">
               <button
                 onClick={handleBack}
@@ -100,11 +115,21 @@ export default function PlanDraftPreview() {
               </button>
               <button
                 onClick={handleApprove}
-                disabled={hasErrors}
-                className={`px-4 py-2 rounded-lg text-white ${hasErrors ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"}`}
-                title={hasErrors ? "Fix errors before approving" : "Approve & Save"}
+                disabled={hasErrors || isV2}
+                className={`px-4 py-2 rounded-lg text-white ${
+                  hasErrors || isV2
+                    ? "bg-gray-400 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-700"
+                }`}
+                title={
+                  isV2
+                    ? "Saving is disabled for v2 beta plans"
+                    : hasErrors
+                    ? "Fix errors before approving"
+                    : "Approve & Save"
+                }
               >
-                Approve & Save
+                {isV2 ? "View Only" : "Approve & Save"}
               </button>
               {hasErrors && (
                 <span
@@ -352,13 +377,28 @@ export default function PlanDraftPreview() {
                     const total = Number(w?.weekly_mileage ?? 0) || 0;
                     // Get week label (e.g., "Week 1 of Nov 4")
                     const weekLabel = w?.week_label || `Week ${w?.week_number ?? idx + 1}`;
+                    const weekDisplay = formatMDY(mondayDate) || weekLabel;
 
-                    return (
-                      <tr key={idx} className="hover:bg-gray-50">
+                const isRaceWeek = (w?.phase || "").toLowerCase() === "race week";
+                return (
+                  <tr
+                    key={idx}
+                    className={
+                      isRaceWeek
+                        ? "bg-amber-100 border-l-4 border-amber-400"
+                        : "hover:bg-gray-50"
+                    }
+                  >
                         <td className="border p-2 align-top">
-                          <div className="font-medium">{formatMDY(mondayDate)}</div>
+                          <div className="font-medium">{weekDisplay}</div>
                         </td>
-                        <td className="border p-2 align-top">{w?.phase || ''}</td>
+                    <td
+                      className={`border p-2 align-top ${
+                        isRaceWeek ? "text-amber-900 font-semibold tracking-wide" : ""
+                      }`}
+                    >
+                      {isRaceWeek ? "Race Week 🎉" : w?.phase || ""}
+                    </td>
                         {dayKeys.map((d) => (
                           <td key={d} className="border p-2 align-top text-center">
                             {dayToItems[d] && dayToItems[d].length > 0 ? (

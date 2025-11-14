@@ -1,8 +1,14 @@
+/* eslint-env node */
 // vite.config.js
 import fs from "fs";
+import process from "process";
+import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 import path from "path";
 import tailwindcss from "@tailwindcss/vite";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
@@ -23,7 +29,7 @@ export default defineConfig(({ mode }) => {
         key: fs.readFileSync("./localhost-key.pem"),
         cert: fs.readFileSync("./localhost.pem"),
       };
-    } catch (e) {
+    } catch {
       // Certificates not found, use HTTP (fallback)
       console.warn("⚠️  SSL certificates not found, using HTTP for dev server");
     }

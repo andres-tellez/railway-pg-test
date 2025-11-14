@@ -1,3 +1,5 @@
+/* eslint-env node */
+import process from "node:process";
 /**
  * Node.js test script for date matching logic
  * Run with: node test-date-logic.js
@@ -37,27 +39,27 @@ function normalizeDateString(dateStr) {
 function testGetThisWeekRange(testDate = '2024-11-12') {
   console.log('\n🧪 Testing getThisWeekRange()');
   console.log('='.repeat(60));
-  
+
   const [year, month, day] = testDate.split('-').map(Number);
   const today = new Date(year, month - 1, day);
   const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  
+
   const weekStart = startOfWeek(todayOnly, { weekStartsOn: 1 });
   const weekEnd = endOfWeek(todayOnly, { weekStartsOn: 1 });
-  
+
   const weekStartOnly = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
   const weekEndOnly = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate());
-  
+
   const weekStartStr = format(weekStartOnly, 'yyyy-MM-dd');
   const weekEndStr = format(weekEndOnly, 'yyyy-MM-dd');
-  
+
   console.log(`Test Date: ${testDate}`);
   console.log(`Week Start: ${weekStartStr} (Day: ${weekStartOnly.getDay()}, should be 1=Monday)`);
   console.log(`Week End: ${weekEndStr} (Day: ${weekEndOnly.getDay()}, should be 0=Sunday)`);
-  
+
   const passed = weekStartOnly.getDay() === 1 && weekEndOnly.getDay() === 0;
   console.log(`Result: ${passed ? '✅ PASSED' : '❌ FAILED'}`);
-  
+
   return passed;
 }
 
@@ -65,27 +67,27 @@ function testGetThisWeekRange(testDate = '2024-11-12') {
 function testDateMatching() {
   console.log('\n🧪 Testing Date Matching');
   console.log('='.repeat(60));
-  
+
   function matchActivityToWorkout(activity, workout) {
     const activityDateStr = activity.date.split('T')[0];
     const workoutDateStr = workout.date.split('T')[0];
-    
+
     const [activityYear, activityMonth, activityDay] = activityDateStr.split('-').map(Number);
     const [workoutYear, workoutMonth, workoutDay] = workoutDateStr.split('-').map(Number);
-    
+
     const activityDateLocal = new Date(activityYear, activityMonth - 1, activityDay);
     const workoutDateLocal = new Date(workoutYear, workoutMonth - 1, workoutDay);
-    
+
     const daysDiff = Math.abs(
       (activityDateLocal.getTime() - workoutDateLocal.getTime()) / (1000 * 60 * 60 * 24)
     );
-    
+
     if (daysDiff > 1) return false;
-    
+
     const distanceDiff = Math.abs(activity.distance_miles - workout.miles) / workout.miles;
     return distanceDiff <= 0.3;
   }
-  
+
   const tests = [
     {
       name: 'Same day (date-only)',
@@ -112,25 +114,25 @@ function testDateMatching() {
       expected: false,
     },
   ];
-  
+
   let passed = 0;
   let failed = 0;
-  
+
   tests.forEach((test, idx) => {
     const result = matchActivityToWorkout(test.activity, test.workout);
     const testPassed = result === test.expected;
-    
+
     console.log(`\nTest ${idx + 1}: ${test.name}`);
     console.log(`  Workout: ${test.workout.date}, Activity: ${test.activity.date}`);
     console.log(`  Expected: ${test.expected}, Got: ${result}`);
     console.log(`  Result: ${testPassed ? '✅ PASSED' : '❌ FAILED'}`);
-    
+
     if (testPassed) passed++;
     else failed++;
   });
-  
+
   console.log(`\nSummary: ${passed}/${tests.length} tests passed`);
-  
+
   return failed === 0;
 }
 
@@ -138,27 +140,27 @@ function testDateMatching() {
 function testDateNormalization() {
   console.log('\n🧪 Testing Date Normalization');
   console.log('='.repeat(60));
-  
+
   const tests = [
     { input: '2024-11-12', expected: '2024-11-12' },
     { input: '2024-11-12T00:00:00', expected: '2024-11-12' },
     { input: '2024-11-12T14:30:00', expected: '2024-11-12' },
   ];
-  
+
   let passed = 0;
-  
+
   tests.forEach((test, idx) => {
     const result = normalizeDateString(test.input);
     const testPassed = result === test.expected;
-    
+
     console.log(`Test ${idx + 1}: "${test.input}" -> "${result}" (expected: "${test.expected}")`);
     console.log(`  Result: ${testPassed ? '✅ PASSED' : '❌ FAILED'}`);
-    
+
     if (testPassed) passed++;
   });
-  
+
   console.log(`\nSummary: ${passed}/${tests.length} tests passed`);
-  
+
   return passed === tests.length;
 }
 
@@ -187,4 +189,3 @@ console.log(`Overall: ${allPassed ? '✅ ALL TESTS PASSED' : '❌ SOME TESTS FAI
 console.log('='.repeat(60));
 
 process.exit(allPassed ? 0 : 1);
-
