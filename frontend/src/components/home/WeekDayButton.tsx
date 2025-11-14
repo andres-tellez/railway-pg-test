@@ -52,8 +52,8 @@ const WeekDayButton: React.FC<WeekDayButtonProps> = memo(({
         {dayNum}
       </div>
 
-      {/* Status indicator */}
-      {isCompleted && !isRestDay && (
+      {/* Status indicator - show checkmark if completed (including rest days with activities) */}
+      {isCompleted && (
         <div className={WEEK_TIMELINE_STYLES.indicatorCompleted}>✓</div>
       )}
     </button>

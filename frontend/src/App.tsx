@@ -33,6 +33,7 @@ import UserProfile from "./pages/UserProfile";
 import PlanPage from "./pages/PlanPage";
 import MyPlan from "./pages/MyPlan";
 import NewPlanForm from "./pages/NewPlanForm";
+import NewPlanFormV2 from "./pages/NewPlanFormV2";
 import PlansManagement from "./pages/PlansManagement";
 import PlanDraftPreview from "./pages/PlanDraftPreview";
 import SetupPage from "./pages/LandingPage";
@@ -184,6 +185,14 @@ export default function App() {
         element={
           <Layout>
             <NewPlanForm />
+          </Layout>
+        }
+      />
+      <Route
+        path="/plan/new-v2"
+        element={
+          <Layout>
+            <NewPlanFormV2 />
           </Layout>
         }
       />
