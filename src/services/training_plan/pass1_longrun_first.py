@@ -9,6 +9,7 @@ from src.services.training_plan.insights_calculation_service import (
     InsightsCalculationService,
 )
 from src.services.training_plan.long_run_spine import generate_long_run_spine
+from src.services.training_plan.calculations.week_utils import get_complete_weeks
 
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,141 @@ def recent_longest_3w(activities: List[Dict[str, Any]], *, days: int = 21) -> fl
         if miles > longest:
             longest = miles
     return round(longest, 2)
+
+
+def detect_consecutive_long_runs(
+    activities: List[Dict[str, Any]], *, min_consecutive_weeks: int = 3
+) -> Dict[str, Any]:
+    """Detect if user has been doing consecutive long runs that warrant a recovery week.
+
+    Analyzes recent weeks to find longest run per week and checks for consecutive weeks
+    with long runs (indicating fatigue accumulation).
+
+    Args:
+        activities: List of activity dictionaries
+        min_consecutive_weeks: Minimum number of consecutive weeks to trigger recovery (default: 3)
+
+    Returns:
+        Dictionary with:
+            - "has_consecutive_runs": bool - True if 3+ consecutive weeks detected
+            - "consecutive_count": int - Number of consecutive weeks
+            - "weekly_long_runs": List[float] - Longest run per week (most recent first)
+            - "longest_recent": float - Longest run in the consecutive period
+    """
+    if not activities:
+        return {
+            "has_consecutive_runs": False,
+            "consecutive_count": 0,
+            "weekly_long_runs": [],
+            "longest_recent": 0.0,
+        }
+
+    # Group activities by complete weeks (Mon-Sun)
+    weekly_data = get_complete_weeks(activities, max_weeks=4)
+
+    if len(weekly_data) < min_consecutive_weeks:
+        return {
+            "has_consecutive_runs": False,
+            "consecutive_count": 0,
+            "weekly_long_runs": [],
+            "longest_recent": 0.0,
+        }
+
+    # Extract longest run per week (most recent first)
+    # Include all weeks to detect gaps (weeks with activities but no long runs)
+    weekly_long_runs = []
+    for week_id, week_activities in list(weekly_data.items())[:4]:  # Check last 4 weeks
+        longest_in_week = 0.0
+        has_any_runs = False
+
+        for activity in week_activities:
+            # Extract distance (try multiple field names)
+            miles = 0.0
+            for key in ("miles", "distance_miles", "distance"):
+                v = activity.get(key)
+                if isinstance(v, (int, float)) and v > 0:
+                    miles = float(v)
+                    has_any_runs = True
+                    break
+            if miles == 0.0:
+                meters = activity.get("distance_meters") or activity.get("meters")
+                if isinstance(meters, (int, float)) and meters > 0:
+                    miles = float(meters) / 1609.34
+                    has_any_runs = True
+
+            # Track longest run in week (including runs < 8 miles for context)
+            if miles > longest_in_week:
+                longest_in_week = miles
+
+        # Append longest run for this week (0.0 if no runs, or < 8.0 if no long runs)
+        # This preserves week ordering and allows gap detection
+        if has_any_runs or longest_in_week > 0:
+            weekly_long_runs.append(round(longest_in_week, 2))
+
+    # Check for consecutive weeks with long runs
+    # We need at least min_consecutive_weeks consecutive weeks
+    if len(weekly_long_runs) < min_consecutive_weeks:
+        return {
+            "has_consecutive_runs": False,
+            "consecutive_count": len(weekly_long_runs),
+            "weekly_long_runs": weekly_long_runs,
+            "longest_recent": max(weekly_long_runs) if weekly_long_runs else 0.0,
+        }
+
+    # Check if the most recent weeks are consecutive (no gaps)
+    # Since weekly_long_runs is ordered most recent first, check if first N weeks all have long runs
+    consecutive_count = 0
+    for lr in weekly_long_runs:
+        if lr >= 8.0:  # Long run threshold
+            consecutive_count += 1
+        else:
+            break  # Gap found, stop counting
+
+    has_consecutive = consecutive_count >= min_consecutive_weeks
+    longest_recent = (
+        max(weekly_long_runs[:consecutive_count]) if consecutive_count > 0 else 0.0
+    )
+
+    return {
+        "has_consecutive_runs": has_consecutive,
+        "consecutive_count": consecutive_count,
+        "weekly_long_runs": weekly_long_runs,
+        "longest_recent": longest_recent,
+    }
+
+
+def _round_half(x: float) -> float:
+    return round(x * 2) / 2.0
+
+
+def calculate_recovery_week_long_run(longest_recent: float) -> float:
+    """Calculate appropriate long run distance for a recovery week.
+
+    Recovery week should be ~30-35% reduction from recent longest run.
+    Similar to Garmin's approach: after consecutive long runs, reduce by 3-5 miles
+    or ~70% of longest, whichever results in a more conservative value.
+
+    Args:
+        longest_recent: Longest run in the consecutive period
+
+    Returns:
+        Recovery week long run distance (rounded to 0.5)
+    """
+    # Option 1: Reduce by 3-5 miles (more aggressive for longer runs)
+    reduction_miles = min(5.0, max(3.0, longest_recent * 0.30))
+    recovery_by_reduction = longest_recent - reduction_miles
+
+    # Option 2: 70% of longest (more conservative)
+    recovery_by_percent = longest_recent * 0.70
+
+    # Use the more conservative (lower) value
+    recovery = min(recovery_by_reduction, recovery_by_percent)
+
+    # Ensure minimum of 8 miles (still a meaningful long run)
+    recovery = max(8.0, recovery)
+
+    # Round to nearest 0.5
+    return _round_half(recovery)
 
 
 def build_spine(
@@ -142,10 +278,6 @@ def validate_spine(
                 )
 
 
-def _round_half(x: float) -> float:
-    return round(x * 2) / 2.0
-
-
 class Pass1LongRunFirst:
     """Derive plan duration and long-run progression first, then weekly totals.
 
@@ -198,18 +330,43 @@ class Pass1LongRunFirst:
         base_mpw = float(current.get("weekly_mileage", 0) or 0)
         longest_recent = float(current.get("longest_run", 0) or 0)
 
-        # Compute recent-3w longest; Week 1 MUST be this + 1.0 (rounded to 0.5)
+        # Check for consecutive long runs that warrant a recovery week
+        consecutive_analysis = detect_consecutive_long_runs(
+            raw.get("strava_activities", []), min_consecutive_weeks=3
+        )
+
+        # Compute recent-3w longest for baseline
         recent3w = recent_longest_3w(raw.get("strava_activities", []), days=21)
         if not recent3w or recent3w <= 0:
             raise ValueError(
                 "Insufficient recent data: need at least one long run in last 21 days to set Week 1."
             )
-        trusted_start = recent3w + 1.0
-        logger.info(
-            "LR-first signals: recent_3w_longest=%.2f, trusted_start=%.2f",
-            recent3w,
-            trusted_start,
-        )
+
+        # Determine Week 1 long run based on consecutive run detection
+        if consecutive_analysis["has_consecutive_runs"]:
+            # User has been doing consecutive long runs - schedule recovery week
+            recovery_lr = calculate_recovery_week_long_run(
+                consecutive_analysis["longest_recent"]
+            )
+            trusted_start = recovery_lr
+            start_rule = "recovery_week_after_consecutive_runs"
+            logger.info(
+                "LR-first: Detected %d consecutive weeks with long runs (longest=%.2f). "
+                "Setting Week 1 as recovery week: %.2f miles",
+                consecutive_analysis["consecutive_count"],
+                consecutive_analysis["longest_recent"],
+                recovery_lr,
+            )
+        else:
+            # Normal progression: longest + 1.0
+            trusted_start = recent3w + 1.0
+            start_rule = "recent_3w_longest + 1.0"
+            logger.info(
+                "LR-first signals: recent_3w_longest=%.2f, trusted_start=%.2f",
+                recent3w,
+                trusted_start,
+            )
+
         start_rule_miles = trusted_start
         # Use a 3-week taper (≈70%, 50%, 25% of peak → 14, 10, 5 for 20)
         preferred_taper = 3
@@ -226,6 +383,7 @@ class Pass1LongRunFirst:
         desired_total_weeks = len(weeks)
 
         # Validate (no mutation) – but don't block LR-only drafts
+        # Note: Validation expects exact match, but recovery weeks may differ from standard rule
         try:
             validate_spine(
                 weeks,
@@ -234,9 +392,15 @@ class Pass1LongRunFirst:
                 cfg=cfg,
             )
         except ValueError as e:
-            logger.warning(
-                "LR-first validation warning (non-blocking for LR-only): %s", e
-            )
+            # If recovery week was applied, validation mismatch is expected and OK
+            if consecutive_analysis["has_consecutive_runs"]:
+                logger.info(
+                    "LR-first: Validation note (expected for recovery week): %s", e
+                )
+            else:
+                logger.warning(
+                    "LR-first validation warning (non-blocking for LR-only): %s", e
+                )
 
         recommended_weeks = weeks[-1]["week_number"] if weeks else 0
         if desired_total_weeks:
@@ -246,10 +410,13 @@ class Pass1LongRunFirst:
             "base_mpw": base_mpw,
             "longest_recent": longest_recent,
             "recent_longest_3w": recent3w,
-            "start_rule": "recent_3w_longest + 1.0",
+            "start_rule": start_rule,
             "start_lr": weeks[0]["long_run_miles"] if weeks else None,
             "peak_cap": target_peak_miles,
             "cfg": cfg,
+            "consecutive_runs_detected": consecutive_analysis["has_consecutive_runs"],
+            "consecutive_count": consecutive_analysis["consecutive_count"],
+            "weekly_long_runs": consecutive_analysis["weekly_long_runs"],
         }
 
         return {
