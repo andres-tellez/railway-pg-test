@@ -6,7 +6,6 @@ import uuid
 import logging
 
 from src.db.db_session import get_session
-import os
 from src.db.models.plans import Plan
 from src.utils.auth0_jwt import requires_auth
 from src.db.dao.plans_dao import (
@@ -17,26 +16,12 @@ from src.db.dao.plans_dao import (
     delete_plan,
 )
 from src.schemas.plan_schema import PlanCreateSchema
-from src.services.training_plan.orchestrator_three_pass import ThreePassOrchestrator
-from src.services.training_plan.data_collection_service import DataCollectionService
-from src.services.training_plan.insights_calculation_service import (
-    InsightsCalculationService,
-)
 from datetime import datetime, date, timedelta
-import pytz
-from src.services.training_plan.pass1_weeks_selector import Pass1WeeksSelector
-from src.services.training_plan.weekly_total_calculator import (
-    calculate_weekly_totals_from_long_runs,
-)
-from src.services.training_plan.pass3_workout_distribution import (
-    Pass3WorkoutDistribution,
-)
-from src.utils.date_helpers import (
-    DAY_NAMES_ABBREV,
-    DEFAULT_TRAINING_DAYS,
-    get_next_monday,
-)
 from src.utils.timezone_helpers import resolve_timezone
+from src.routes.plan_generation_v2 import (
+    run_v2_plan_generation,
+    build_standard_draft_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -422,21 +407,14 @@ def create_plan_route():
         return jsonify({"error": "Unauthorized"}), 401
 
     try:
-        # Validate request data
         data = request.get_json()
         if not data:
             return jsonify({"error": "Request body is required"}), 400
 
-        # Validate with Pydantic schema
         validated_data = PlanCreateSchema.model_validate(data)
         plan_dict = validated_data.model_dump()
 
-        # Temporarily restrict Target Time flow
-        if str(plan_dict.get("primary_goal", "")) in [
-            "Target Time",
-            "TARGET_TIME",
-            "target_time",
-        ]:
+        if str(plan_dict.get("primary_goal", "")).lower() == "target time":
             return (
                 jsonify(
                     {
@@ -446,82 +424,67 @@ def create_plan_route():
                 400,
             )
 
+        user_timezone = resolve_timezone(plan_dict) or "UTC"
+        plan_dict["user_timezone"] = user_timezone
+
         logger.info(f"Creating new training plan for user {user_id}")
-        logger.debug(f"Plan data: {plan_dict}")
 
-        # Create plan using deterministic LR-first path (unconditional)
+        activity_weeks = int(data.get("activity_weeks", 12) or 12)
+
         with get_session() as session:
-            # Run three-pass and save immediately
-            dc = DataCollectionService()
-            ic = InsightsCalculationService()
-            raw = dc.collect_all_data(
+            result = run_v2_plan_generation(
                 session=session,
                 user_id=str(user_id),
                 plan_request=plan_dict,
-                activity_weeks=12,
+                activity_weeks=activity_weeks,
+                mode="prefill",
             )
-            insights = ic.calculate_all_insights(raw)
 
-            # Use Pass 1 to compute weeks
-            p1_selector = Pass1WeeksSelector()
-            p1 = p1_selector.select_weeks(
-                session=session,
-                user_id=str(user_id),
-                plan_request=plan_dict,
-            )
-            recom_weeks = int(p1.get("weeks", 16))
+            if not result.get("valid") or not result.get("validated_plan"):
+                violations = result.get("violations", [])
+                logger.error(
+                    "V2 plan generation failed validation for user %s: %s",
+                    user_id,
+                    violations,
+                )
+                return (
+                    jsonify(
+                        {
+                            "error": "Generated plan failed validation.",
+                            "violations": violations,
+                        }
+                    ),
+                    400,
+                )
 
-            ctx = {
-                "session": session,
-                "user_id": str(user_id),
-                "plan_request": plan_dict,
-                "weeks": recom_weeks,
-                "current_weekly_mileage": insights.get("current_fitness", {}).get(
-                    "weekly_mileage", 0
-                ),
-                "longest_recent_run": insights.get("current_fitness", {}).get(
-                    "longest_run", 0
-                ),
-                "training_days": plan_dict.get("training_days")
-                or DEFAULT_TRAINING_DAYS,
-            }
             from src.services.training_plan.plan_storage_service import (
                 PlanStorageService,
             )
-            from src.services.training_plan.plan_validation_service import (
-                PlanValidationService,
-            )
 
-            tp = ThreePassOrchestrator()
-            # Generate plan with details (Pass 4) in prefill mode
-            result = tp.generate_longrun_first(ctx, mode="prefill")
-            if not result.get("valid"):
-                raise ValueError("Generated plan failed validation in three-pass mode")
-            validation = {
+            plan_storage = PlanStorageService()
+            validation_payload = {
                 "valid": True,
                 "validated_plan": result["validated_plan"],
-                "violations": [],
+                "violations": result.get("violations", []),
             }
-            plan_storage = PlanStorageService()
             plan_id = plan_storage.save_validated_plan(
                 session=session,
                 user_id=str(user_id),
-                validated_plan=validation,
+                validated_plan=validation_payload,
                 plan_request=plan_dict,
             )
 
-            logger.info(f"Successfully created plan {plan_id}")
-
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "plan_id": plan_id,
-                        "message": "Training plan created successfully",
-                    }
-                ),
-                201,
-            )
+        logger.info(f"Successfully created plan {plan_id}")
+        return (
+            jsonify(
+                {
+                    "status": "success",
+                    "plan_id": plan_id,
+                    "message": "Training plan created successfully",
+                }
+            ),
+            201,
+        )
 
     except ValueError as e:
         logger.error(f"Validation error: {e}")
@@ -547,30 +510,10 @@ def create_plan_draft_route():
         if not data:
             return jsonify({"error": "Request body is required"}), 400
 
-        # Validate basic required fields via existing schema
         validated = PlanCreateSchema.model_validate(data)
         plan_request = validated.model_dump()
 
-        user_timezone = resolve_timezone(plan_request)
-        plan_request["user_timezone"] = user_timezone
-        try:
-            tz = pytz.timezone(user_timezone)
-        except Exception:
-            logger.warning(
-                "Invalid timezone '%s' provided. Falling back to UTC.", user_timezone
-            )
-            user_timezone = "UTC"
-            plan_request["user_timezone"] = user_timezone
-            tz = pytz.timezone(user_timezone)
-
-        today_local = datetime.now(tz).date()
-
-        # Temporarily restrict Target Time flow for draft as well
-        if str(plan_request.get("primary_goal", "")) in [
-            "Target Time",
-            "TARGET_TIME",
-            "target_time",
-        ]:
+        if str(plan_request.get("primary_goal", "")).lower() == "target time":
             return (
                 jsonify(
                     {
@@ -580,506 +523,24 @@ def create_plan_draft_route():
                 400,
             )
 
+        user_timezone = resolve_timezone(plan_request) or "UTC"
+        plan_request["user_timezone"] = user_timezone
+        activity_weeks = int(data.get("activity_weeks", 12) or 12)
+
         with get_session() as session:
-            # L1 + L2 to build minimal context
-            dc = DataCollectionService()
-            ic = InsightsCalculationService()
-            raw = dc.collect_all_data(
+            result = run_v2_plan_generation(
                 session=session,
                 user_id=str(user_id),
                 plan_request=plan_request,
-                activity_weeks=12,
+                activity_weeks=activity_weeks,
+                mode="prefill",
             )
-            insights = ic.calculate_all_insights(raw)
-
-            use_longrun_first = True
-
-            # Use Pass1WeeksSelector to compute recommended weeks
-            p1_selector = Pass1WeeksSelector()
-            p1 = p1_selector.select_weeks(
-                session=session,
-                user_id=str(user_id),
-                plan_request=plan_request,
+            draft_payload = build_standard_draft_payload(
+                validation_result=result, timezone=user_timezone
             )
-            recom_weeks = int(p1.get("weeks", 16))
+            draft_payload["plan_request"] = plan_request
 
-            ctx = {
-                "session": session,
-                "user_id": str(user_id),
-                "plan_request": plan_request,
-                "weeks": recom_weeks,
-                "current_weekly_mileage": insights.get("current_fitness", {}).get(
-                    "weekly_mileage", 0
-                ),
-                "longest_recent_run": insights.get("current_fitness", {}).get(
-                    "longest_run", 0
-                ),
-                "training_days": plan_request.get("training_days")
-                or DEFAULT_TRAINING_DAYS,
-            }
-
-            tp = ThreePassOrchestrator()
-            # LR-only draft with correctness validation surfaced to UI
-            from src.services.training_plan.pass1_longrun_first import (
-                Pass1LongRunFirst,
-            )
-
-            lr_first = Pass1LongRunFirst()
-            lr_out = lr_first.build(
-                session=session,
-                user_id=str(user_id),
-                plan_request=plan_request,
-            )
-
-            # Compute simple validation for Week 1 against recent_3w_longest
-            def _round_half(x: float) -> float:
-                return round(x * 2) / 2.0
-
-            recent_3w = lr_first._recent_longest_run_last_days(raw.get("strava_activities", []), days=21)  # type: ignore[attr-defined]
-
-            # Calculate weekly totals from long runs (NEW: uses finisher-friendly calculator)
-            training_days = plan_request.get("training_days") or DEFAULT_TRAINING_DAYS
-            runs_per_week = len(training_days) if training_days else 4
-            weeks_with_totals = calculate_weekly_totals_from_long_runs(
-                weeks=lr_out.get("weeks", []),
-                runs_per_week=runs_per_week,
-            )
-            if True:
-                # Generate workout distributions using Pass3 (distributes remaining days)
-                pass3 = Pass3WorkoutDistribution()
-                pass3_result = pass3.run(weeks_with_totals, training_days)
-                weeks_with_workouts = pass3_result.get("weeks", [])
-
-                # Pass 4: Add detailed segments, pace guidance, and cues
-                from src.services.training_plan.pass4_workout_details import (
-                    Pass4WorkoutDetails,
-                )
-                from src.services.training_plan.pace_seed_service import (
-                    get_initial_pace_seed,
-                )
-
-                # Generate initial pace seed using Strava activities collected earlier
-                week1_total = (
-                    float(weeks_with_workouts[0].get("weekly_mileage", 0) or 0)
-                    if weeks_with_workouts
-                    else 0
-                )
-                week1_long = (
-                    float(weeks_with_workouts[0].get("long_run_miles", 0) or 0)
-                    if weeks_with_workouts
-                    else 0
-                )
-
-                # Extract Strava activities from raw data (already collected by DataCollectionService)
-                strava_activities = raw.get("strava_activities", [])
-
-                initial_seed = get_initial_pace_seed(
-                    strava_activities=strava_activities,
-                    plan_week1_total=week1_total,
-                    plan_week1_long=week1_long,
-                    goal_mp_sec_per_mi=None,  # Could extract from plan_request if available
-                )
-
-                # Add details to all workouts (prefill mode)
-                pass4 = Pass4WorkoutDetails()
-                plan_with_details = {
-                    "weeks": weeks_with_workouts,
-                }
-                plan_with_details = pass4.add_details_to_plan(
-                    plan=plan_with_details,
-                    seed=initial_seed,
-                    mode="rolling",
-                    week_logs=None,
-                )
-                weeks_with_workouts = plan_with_details.get("weeks", [])
-
-                # Build final weeks structure with all fields
-                weeks_simple = [
-                    {
-                        "week_number": w.get("week_number"),
-                        "phase": w.get("phase", ""),
-                        "long_run_miles": w.get("long_run_miles"),
-                        "weekly_mileage": w.get("weekly_mileage", 0),
-                        "workouts": w.get(
-                            "workouts", []
-                        ),  # Include workout distributions
-                    }
-                    for w in weeks_with_workouts
-                ]
-                violations = []
-                if recent_3w and recent_3w > 0 and weeks_simple:
-                    expected_w1 = _round_half(recent_3w + 1.0)
-                    got_w1 = float(weeks_simple[0]["long_run_miles"] or 0)
-                    if abs(got_w1 - expected_w1) > 1e-6:
-                        violations.append(
-                            {
-                                "code": "WEEK1_MISMATCH",
-                                "rule": "Week 1 baseline",
-                                "details": f"Week 1 long run {got_w1:.1f} ≠ recent_3w_longest+1 ({expected_w1:.1f}).",
-                                "suggestion": "Set Week 1 to last 3-week max + 1 mile (rounded to 0.5).",
-                                "severity": "error",
-                                "week": 1,
-                            }
-                        )
-                if not recent_3w or recent_3w <= 0:
-                    violations.append(
-                        {
-                            "code": "INSUFFICIENT_RECENT_DATA",
-                            "rule": "Recent data missing",
-                            "details": "No long run detected in the last 21 days to set Week 1 baseline.",
-                            "suggestion": "Log a recent long run or start conservatively (8–12 mi) and rebuild.",
-                            "week": 1,
-                            "severity": "warning",
-                        }
-                    )
-
-                # Sustained high-mileage long runs: warn if >=5 of any 6-week window are 19-20 miles
-                lr_series = [
-                    float(w.get("long_run_miles") or 0.0) for w in weeks_simple
-                ]
-                window = 6
-                threshold = 19.0
-                for start_idx in range(0, max(0, len(lr_series) - window + 1)):
-                    segment = lr_series[start_idx : start_idx + window]
-                    high_count = sum(1 for x in segment if x >= threshold)
-                    if high_count >= 5:
-                        violations.append(
-                            {
-                                "code": "SUSTAINED_HIGH_LONG_RUNS",
-                                "rule": "Sustained peak long runs",
-                                "details": f"{high_count}/{window} consecutive weeks at ≥{threshold:.0f} miles increases injury/overtraining risk.",
-                                "suggestion": "Insert a cutback (−25% LR) and cap post‑peak weeks at 19 before taper.",
-                                "week": start_idx + 1,
-                                "severity": "error",
-                            }
-                        )
-                        break
-
-                # Taper quality checks
-                if lr_series:
-                    peak_val = max(lr_series)
-                    peak_idx = lr_series.index(peak_val)
-                    # 1) Taper must be non-increasing after peak
-                    post_peak = lr_series[peak_idx + 1 :]
-                    for i in range(1, len(post_peak)):
-                        if post_peak[i] > post_peak[i - 1] + 1e-6:
-                            violations.append(
-                                {
-                                    "code": "NON_MONOTONIC_TAPER",
-                                    "rule": "Taper progression",
-                                    "details": f"Long runs increase after peak (week {peak_idx+1}). Week {peak_idx+1+i} {post_peak[i-1]:.0f} → Week {peak_idx+2+i} {post_peak[i]:.0f}.",
-                                    "suggestion": "Ensure each post‑peak week is ≤ previous week.",
-                                    "week": peak_idx + 2 + i,
-                                    "severity": "error",
-                                }
-                            )
-                            break
-
-                    # 2) Last 3 weeks should approximate 70/50/25% of peak (±1 mile tolerance)
-                    if len(lr_series) >= 3:
-                        last3 = lr_series[-3:]
-                        targets = [
-                            0.70 * peak_val,
-                            0.50 * peak_val,
-                            0.25 * peak_val,
-                        ]
-                        ok = all(abs(last3[i] - targets[i]) <= 1.0 for i in range(3))
-                        if not ok:
-                            violations.append(
-                                {
-                                    "code": "SUBOPTIMAL_TAPER_PATTERN",
-                                    "rule": "3‑week taper targets",
-                                    "details": f"Final weeks {last3} do not follow ≈[70%,50%,25%] of peak {peak_val:.0f}.",
-                                    "suggestion": "Aim for ~14, 10, 5 after a 20‑mile peak (±1 mile tolerance).",
-                                    "week": len(lr_series) - 2,
-                                    "severity": "warning",
-                                }
-                            )
-
-                    # 3) High long runs too close to race (≥18 within last 5 weeks excluding taper block)
-                    last5_idx = max(0, len(lr_series) - 5)
-                    last5 = lr_series[last5_idx:]
-                    # Exclude final 3 taper weeks from this check
-                    pre_taper_block = last5[:-3] if len(last5) > 3 else []
-                    if any(x >= 18.0 for x in pre_taper_block):
-                        violations.append(
-                            {
-                                "code": "HIGH_LR_TOO_CLOSE",
-                                "rule": "High LR near race",
-                                "details": "Detected ≥18‑mile long run within the last 5 weeks before race (outside taper).",
-                                "suggestion": "Move remaining ≥18‑mile long runs earlier or reduce to ≤16 before taper.",
-                                "week": last5_idx + 1,
-                                "severity": "warning",
-                            }
-                        )
-
-                # Check if plan duration fits before race date (post-generation validation)
-                plan_duration_weeks = len(weeks_simple)
-                race_date = plan_request.get("race_date")
-                time_warning = None
-                stretched_metadata = None
-                start_date = get_next_monday(today_local, include_today=True)
-
-                if race_date:
-                    try:
-                        if isinstance(race_date, str):
-                            rd = datetime.fromisoformat(race_date.split("T")[0]).date()
-                        elif isinstance(race_date, date):
-                            rd = race_date
-                        else:
-                            rd = None
-
-                        if rd:
-                            # Calculate weeks available ensuring the week containing race day is included.
-                            # OLD LOGIC (BUGGY):
-                            #   weeks_available = (rd - start_date).days / 7.0
-                            #   Problem: If race day is Saturday and plan ends earlier, fractional calculation
-                            #            might not include the race week (e.g., 14.86 weeks - 14 = 0.86 → int(0.86) = 0)
-                            #
-                            # NEW LOGIC (FIXED):
-                            #   Calculate Monday of week containing race day, then calculate weeks to that Monday.
-                            #   Use ceiling to ensure we include the complete week containing race day.
-                            #   This ensures the plan always includes the week containing race day.
-                            import math
-
-                            # Calculate Monday of the week containing race day
-                            race_day_weekday = rd.weekday()  # 0=Monday, 6=Sunday
-                            monday_of_race_week = rd - timedelta(days=race_day_weekday)
-
-                            # Calculate weeks from start to Monday of race week
-                            days_to_race_week_monday = (
-                                monday_of_race_week - start_date
-                            ).days
-                            weeks_to_race_week = days_to_race_week_monday / 7.0
-
-                            # We need AT LEAST ceil(weeks_to_race_week) weeks to reach the race week
-                            # Plus 1 to include the race week itself (since weeks are 0-indexed from start)
-                            # Example: If Monday of race week is 98 days from start = 14 weeks exactly,
-                            #          we need 15 total weeks (14 to reach it + 1 for the race week itself)
-                            weeks_available = math.ceil(weeks_to_race_week) + 1
-
-                            weeks_needed = plan_duration_weeks
-
-                            # Apply recovery week insertion if plan is shorter than available weeks
-                            recovery_metadata = None
-                            # Calculate extra weeks (how many recovery weeks to insert)
-                            extra_weeks_calc = int(weeks_available - weeks_needed)
-
-                            if extra_weeks_calc > 0:
-                                logger.info(
-                                    f"Plan has {weeks_needed} weeks but {weeks_available:.1f} weeks available. Inserting {extra_weeks_calc} recovery weeks."
-                                )
-
-                            if weeks_needed < weeks_available:
-                                from src.services.training_plan.recovery_week_insertion_service import (
-                                    apply_recovery_week_insertion_if_needed,
-                                )
-
-                                weeks_with_recovery, recovery_metadata = (
-                                    apply_recovery_week_insertion_if_needed(
-                                        weeks_simple,
-                                        race_date,
-                                        start_date,
-                                        user_timezone,
-                                    )
-                                )
-
-                                if recovery_metadata.get("inserted"):
-                                    # Replace weeks_simple with version that includes recovery weeks
-                                    weeks_simple = weeks_with_recovery
-
-                                    # Recalculate workouts for ALL recovery weeks using Pass3
-                                    # This ensures proper progression (Mon < Wed < Thu) for recovery weeks
-                                    recovery_week_indices = [
-                                        i
-                                        for i, w in enumerate(weeks_simple)
-                                        if w.get("phase") == "Recovery"
-                                    ]
-
-                                    if recovery_week_indices:
-                                        # Recalculate workouts for all recovery weeks
-                                        pass3 = Pass3WorkoutDistribution()
-                                        for idx in recovery_week_indices:
-                                            recovery_week = weeks_simple[idx]
-                                            # Use Pass3 to generate workouts for recovery week with proper progression
-                                            recovery_week_input = [
-                                                {
-                                                    "week_number": recovery_week[
-                                                        "week_number"
-                                                    ],
-                                                    "phase": recovery_week["phase"],
-                                                    "long_run_miles": recovery_week[
-                                                        "long_run_miles"
-                                                    ],
-                                                    "weekly_mileage": recovery_week[
-                                                        "weekly_mileage"
-                                                    ],
-                                                }
-                                            ]
-                                            pass3_result = pass3.run(
-                                                recovery_week_input, training_days
-                                            )
-                                            if pass3_result.get(
-                                                "weeks"
-                                            ) and pass3_result["weeks"][0].get(
-                                                "workouts"
-                                            ):
-                                                weeks_simple[idx]["workouts"] = (
-                                                    pass3_result["weeks"][0]["workouts"]
-                                                )
-
-                                                # Verify progression: Mon < Wed < Thu
-                                                workouts = weeks_simple[idx]["workouts"]
-                                                mon_miles = next(
-                                                    (
-                                                        w.get("distance_miles", 0)
-                                                        for w in workouts
-                                                        if w.get("day")
-                                                        == DAY_NAMES_ABBREV[0]  # Monday
-                                                    ),
-                                                    0,
-                                                )
-                                                wed_miles = next(
-                                                    (
-                                                        w.get("distance_miles", 0)
-                                                        for w in workouts
-                                                        if w.get("day")
-                                                        == DAY_NAMES_ABBREV[
-                                                            2
-                                                        ]  # Wednesday
-                                                    ),
-                                                    0,
-                                                )
-                                                thu_miles = next(
-                                                    (
-                                                        w.get("distance_miles", 0)
-                                                        for w in workouts
-                                                        if w.get("day")
-                                                        == DAY_NAMES_ABBREV[
-                                                            3
-                                                        ]  # Thursday
-                                                    ),
-                                                    0,
-                                                )
-
-                                                if not (
-                                                    mon_miles < wed_miles < thu_miles
-                                                ):
-                                                    logger.warning(
-                                                        f"Recovery week {idx+1} does not have strict progression: Mon={mon_miles}, Wed={wed_miles}, Thu={thu_miles}"
-                                                    )
-
-                                    plan_duration_weeks = len(weeks_simple)
-                                    weeks_needed = plan_duration_weeks
-
-                            # Recalculate time assessment with updated weeks
-                            buffer_weeks = weeks_available - weeks_needed
-                            if weeks_available < weeks_needed:
-                                # Not enough time
-                                shortfall_weeks = weeks_needed - weeks_available
-                                time_warning = {
-                                    "code": "INSUFFICIENT_TIME",
-                                    "type": "warning",
-                                    "message": f"This plan requires {weeks_needed} weeks, but only {weeks_available:.1f} weeks are available before the race ({rd.strftime('%Y-%m-%d')}). You are {shortfall_weeks:.1f} weeks short for safe training.",
-                                    "suggestion": "Consider starting training earlier or selecting a later race date. This plan was generated without considering your race date to ensure optimal progression.",
-                                }
-                            elif weeks_available < weeks_needed + 2:
-                                # Tight but workable
-                                buffer = weeks_available - weeks_needed
-                                time_warning = {
-                                    "code": "TIGHT_SCHEDULE",
-                                    "type": "info",
-                                    "message": f"This plan requires {weeks_needed} weeks. You have {weeks_available:.1f} weeks available before the race ({rd.strftime('%Y-%m-%d')})—approximately {buffer:.1f} weeks of buffer.",
-                                    "suggestion": "This plan was generated without considering your race date. Ensure you can start training immediately to have enough time.",
-                                }
-                            else:
-                                # Plenty of time
-                                buffer = weeks_available - weeks_needed
-                                recovery_msg = ""
-                                if recovery_metadata and recovery_metadata.get(
-                                    "inserted"
-                                ):
-                                    extra_weeks = recovery_metadata.get(
-                                        "extra_weeks", 0
-                                    )
-                                    recovery_msg = f" {extra_weeks} recovery week(s) have been inserted to fill available training time."
-                                time_warning = {
-                                    "code": "SUFFICIENT_TIME",
-                                    "type": "info",
-                                    "message": f"This plan requires {weeks_needed} weeks. You have {weeks_available:.1f} weeks available before the race ({rd.strftime('%Y-%m-%d')})—{buffer:.1f} weeks of buffer.{recovery_msg}",
-                                    "suggestion": "This plan was generated without considering your race date to ensure optimal progression.",
-                                }
-                    except Exception as e:
-                        logger.warning(f"Error calculating time until race: {e}")
-
-                # Add start date and race date to weeks for frontend
-                # Calculate week start dates
-                if start_date and race_date:
-                    try:
-                        if isinstance(race_date, str):
-                            rd = datetime.fromisoformat(race_date.split("T")[0]).date()
-                        elif isinstance(race_date, date):
-                            rd = race_date
-                        else:
-                            rd = None
-
-                        if rd:
-                            # Add week_start_date and week_label to each week
-                            for i, week in enumerate(weeks_simple):
-                                week_start = start_date + timedelta(weeks=i)
-                                month_name = week_start.strftime("%b")  # Jan, Feb, etc.
-                                day = week_start.strftime("%d").lstrip(
-                                    "0"
-                                )  # Remove leading zero
-                                week_num = week.get("week_number", i + 1)
-                                week["week_start_date"] = week_start.isoformat()
-                                week["week_label"] = (
-                                    f"Week {week_num} of {month_name} {day}"
-                                )
-
-                            # Add race date info and race metadata from plan_request
-                            race_metadata = {
-                                "race_date": rd.isoformat(),
-                                "race_date_label": rd.strftime("%b %d, %Y"),
-                                "start_date": start_date.isoformat(),
-                                "start_date_label": start_date.strftime("%b %d, %Y"),
-                            }
-                            # Include race metadata (terrain, elevation, etc.) if present
-                            if plan_request.get("race_metadata"):
-                                race_metadata["race_details"] = plan_request[
-                                    "race_metadata"
-                                ]
-                    except Exception as e:
-                        logger.warning(f"Error calculating week dates: {e}")
-                        race_metadata = None
-                else:
-                    race_metadata = None
-
-                draft = {
-                    "generated_plan": {
-                        "weeks": weeks_simple,
-                        "race_metadata": race_metadata,
-                        "timezone": user_timezone,
-                    },
-                    "validation": {
-                        "valid": len(violations) == 0,
-                        "violations": violations,
-                    },
-                    "time_assessment": time_warning,  # Add time assessment to draft
-                    "recovery_metadata": recovery_metadata,  # Add recovery insertion metadata if applied
-                    "plan_request": plan_request,  # Include plan_request with race_metadata for saving later
-                }
-                return (jsonify({"status": "success", "draft": draft}), 200)
-
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "draft": draft,
-                }
-            ),
-            200,
-        )
+        return jsonify({"status": "success", "draft": draft_payload}), 200
 
     except ValueError as e:
         logger.error(f"Validation error: {e}")
@@ -1089,7 +550,6 @@ def create_plan_draft_route():
         return jsonify({"error": "Failed to generate draft plan"}), 500
 
 
-# ✅ POST /api/plan/approve — approve and save a validated draft
 @plan_bp.route("/approve", methods=["POST"])
 @requires_auth
 def approve_plan_route():

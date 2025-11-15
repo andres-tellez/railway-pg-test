@@ -5,7 +5,7 @@
 // A/B compare outputs while keeping the original path untouched.
 
 import React, { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useForm, FormProvider } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
@@ -134,26 +134,19 @@ const NewPlanFormV2: React.FC = () => {
         user_timezone: userTimezone,
       };
 
-      const draftRes = await api.post("/api/plan-v2/draft", requestPayload);
-      const v2Payload = draftRes.data?.draft || {};
-      const normalizedDraft = {
-        generated_plan: v2Payload.draft || {},
-        validation: {
-          valid: Boolean(v2Payload.valid),
-          violations: v2Payload.violations || [],
-        },
-        recovery_metadata: v2Payload.recovery_metadata,
-        pass1_rationale: v2Payload.pass1_rationale,
-      };
+      const draftRes = await api.post("/api/plan/draft", requestPayload);
+      const draftPayload = draftRes.data?.draft;
+      if (!draftPayload) {
+        throw new Error("Draft response missing payload");
+      }
 
       navigate("/plan/draft", {
         replace: false,
         state: {
-          draft: normalizedDraft,
+          draft: draftPayload,
           plan_request: {
             ...requestPayload,
           },
-          plan_source: "v2",
         },
       });
     } catch (e: any) {
@@ -180,18 +173,15 @@ const NewPlanFormV2: React.FC = () => {
             >
               <div className="space-y-2 text-center border-b pb-6">
                 <p className="text-xs uppercase tracking-widest text-indigo-600 font-semibold">
-                  Experimental • V2 Pipeline
+                  Deterministic Plan Pipeline
                 </p>
                 <h1 className="text-3xl font-bold text-gray-800">
-                  Generate New Training Plan (v2)
+                  Generate New Training Plan
                 </h1>
                 <p className="text-gray-600 text-sm">
-                  This page uses the refactored /api/plan-v2/draft endpoint for side-by-side
-                  testing. The original generator remains available at{" "}
-                  <Link to="/plan/new" className="text-blue-600 underline">
-                    /plan/new
-                  </Link>
-                  .
+                  This experience uses the refactored /api/plan/draft endpoint for all plan
+                  requests. Provide your race details below to get a personalized preview
+                  before saving.
                 </p>
               </div>
 
