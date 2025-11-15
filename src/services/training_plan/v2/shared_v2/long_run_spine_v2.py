@@ -176,7 +176,7 @@ def generate_long_run_spine(
         total_weeks_in_plan = wu if wu is not None else 16
         total_weeks_in_plan = max(12, min(24, total_weeks_in_plan))
 
-    peak = float(min(20.0, peak_long_run_target))
+    peak = float(max(0.0, peak_long_run_target))
     current_longest = float(max(0.0, starting_long_run_miles))
     if round_to_half:
         current_longest = round_half(current_longest)

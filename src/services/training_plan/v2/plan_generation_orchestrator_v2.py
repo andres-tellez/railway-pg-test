@@ -230,19 +230,15 @@ class PlanGenerationOrchestratorV2:
         if not weeks:
             return weeks
 
+        template = self.config.race_week_template()
         race_week = {
             "week_number": len(weeks) + 1,
-            "phase": "Race Week",
-            "weekly_mileage": 8,
-            "long_run_miles": 0.0,
+            "phase": template.get("phase", "Race Week"),
+            "weekly_mileage": template.get("weekly_mileage", 0),
+            "long_run_miles": template.get("long_run_miles", 0),
             "workouts": [
-                self._easy_workout("Mon", 3.0, note="Keep it conversational"),
-                self._easy_workout("Wed", 3.0, note="Include 4×20s relaxed strides"),
-                self._easy_workout("Thu", 2.0, note="Stay loose, no pushing"),
-                self._easy_workout(
-                    "Fri", 2.0, note="Optional shakeout; skip if tired", shakeout=True
-                ),
-                self._race_day_workout(),
+                self._build_race_week_workout(workout_spec)
+                for workout_spec in template.get("workouts", [])
             ],
         }
         weeks.append(race_week)
@@ -269,18 +265,26 @@ class PlanGenerationOrchestratorV2:
             workout["notes"] = note
         return workout
 
-    @staticmethod
-    def _race_day_workout() -> Dict[str, Any]:
-        return {
-            "day": "Sun",
-            "type": "Race",
-            "workout_type": "Race Day",
-            "label": "Race Day",
-            "miles": 26.2,
-            "distance_miles": 26.2,
-            "pace_guidance": "Celebrate",
-            "notes": "Marathon – trust your training and enjoy the experience!",
-        }
+    def _build_race_week_workout(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+        kind = str(spec.get("kind", "easy")).lower()
+        day = spec.get("day") or "Mon"
+        miles = float(spec.get("miles", 0) or 0)
+        note = spec.get("note")
+        if kind == "race":
+            race_distance = miles or self.config.race_distance_miles
+            return {
+                "day": day,
+                "type": "Race",
+                "workout_type": spec.get("workout_type", "Race Day"),
+                "label": spec.get("label", "Race Day"),
+                "miles": race_distance,
+                "distance_miles": race_distance,
+                "pace_guidance": spec.get("pace_guidance", "Celebrate"),
+                "notes": note,
+            }
+        return self._easy_workout(
+            day, miles, note=note, shakeout=bool(spec.get("shakeout"))
+        )
 
     def _derive_pace_seed(
         self,
