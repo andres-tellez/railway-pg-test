@@ -1269,7 +1269,7 @@ from .weekly_metrics_service import WeeklyMetricsService
 
 # Existing services
 from .pace_seed_service import PaceSeed, get_initial_pace_seed
-from .pass4_workout_details import Pass4WorkoutDetails
+from .v2/pass4_workout_details_v2 import Pass4WorkoutDetails
 from .workout_comparison_service import WorkoutComparisonService
 
 logger = logging.getLogger(__name__)

@@ -82,7 +82,7 @@
 
 **Files:**
 
-- `src/services/training_plan/orchestrator_three_pass.py` → `generate()` method
+- `src/services/training_plan/v2/plan_generation_orchestrator_v2.py` → `generate()` method
 - `src/services/training_plan/gpt_coach_pass1_weekly.py` (deterministic, not LLM)
 - `src/services/training_plan/gpt_coach_pass2_longrun.py` (deterministic, not LLM)
 
@@ -110,7 +110,7 @@
 
 **Files:**
 
-- `src/services/training_plan/orchestrator_three_pass.py` → `generate_longrun_first()` method
+- `src/services/training_plan/v2/plan_generation_orchestrator_v2.py` → `generate_longrun_first()` method
 - Same deterministic services as draft path
 
 **Status:** ✅ **SAME LOGIC AS DRAFT - But saves immediately (no preview)**
@@ -163,4 +163,3 @@
 - `TRAINING_PLAN_LR_ONLY_DRAFT` - Not used in routes (hardcoded in code)
 
 **Note:** In the draft route, these flags are essentially hardcoded to use the deterministic LR-first path.
-

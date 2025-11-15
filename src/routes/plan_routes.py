@@ -475,6 +475,7 @@ def create_plan_route():
             )
 
         logger.info(f"Successfully created plan {plan_id}")
+
         return (
             jsonify(
                 {

@@ -28,7 +28,7 @@ Invariants:
     I5. Works for any run_days order and any long_idx (3/4/5 runs)
 
 Usage:
-    Used by orchestrator_three_pass.py to assign workout roles and distances
+    Used by plan_generation_orchestrator_v2.py to assign workout roles and distances
     based on forward-distance from the long run day.
 
 Author: SmartCoach Development Team

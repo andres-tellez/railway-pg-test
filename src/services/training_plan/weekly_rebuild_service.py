@@ -31,7 +31,11 @@ from .weekly_metrics_service import WeeklyMetricsService
 
 # Existing services
 from .pace_seed_service import PaceSeed, get_initial_pace_seed, _time_add
-from .pass4_workout_details import Pass4WorkoutDetails
+
+# Use the refactored v2 workout detail service for rebuilds
+from src.services.training_plan.v2.pass4_workout_details_v2 import (
+    Pass4WorkoutDetails,
+)
 from .workout_comparison_service import WorkoutComparisonService
 from .workout_utils import extract_pace_zone_from_workout, normalize_segments
 

@@ -6,7 +6,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useForm, FormProvider } from "react-hook-form";
+import { useForm, FormProvider, Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import {
@@ -21,13 +21,33 @@ import { AuthGuard } from "@/components/AuthGuard";
 import { RaceNameAutocomplete } from "@/components/RaceNameAutocomplete";
 import { LocationAutocomplete } from "@/components/LocationAutocomplete";
 
+const googlePlacesApiKey =
+  (
+    (import.meta as unknown as {
+      env?: { VITE_GOOGLE_PLACES_API_KEY?: string };
+    })?.env || {}
+  ).VITE_GOOGLE_PLACES_API_KEY;
+
+interface MetricsSummaryResponse {
+  weekly_trends?: {
+    week: string;
+    distance: number;
+    runs: number;
+    avgPace: string;
+  }[];
+  longest_runs?: {
+    week_start: string;
+    distance: number;
+  }[];
+}
+
 const NewPlanFormV2: React.FC = () => {
   const { isReady, userId } = useAuthSetup();
   const api = useApiClient();
   const navigate = useNavigate();
 
   const methods = useForm<PlanFormData>({
-    resolver: zodResolver(planSchema),
+    resolver: zodResolver(planSchema) as Resolver<PlanFormData>,
     mode: "onBlur",
     defaultValues: {
       race_distance: "Marathon",
@@ -52,38 +72,15 @@ const NewPlanFormV2: React.FC = () => {
     const fetchStravaData = async () => {
       try {
         setLoadingStrava(true);
-        const response = await api.get("/api/activities/");
+        const response = await api.get<MetricsSummaryResponse>("/api/metrics/all-metrics");
 
-        const now = new Date();
-        const dayOfWeek = now.getDay();
-        const lastSunday = new Date(now);
-        lastSunday.setDate(now.getDate() - dayOfWeek);
-        lastSunday.setHours(23, 59, 59, 999);
-        const lastMonday = new Date(lastSunday);
-        lastMonday.setDate(lastSunday.getDate() - 6);
-        lastMonday.setHours(0, 0, 0, 0);
+        const weeklyTrends = response.data?.weekly_trends || [];
+        // Backend filters current week, so the first entry is the most recent completed week
+        const lastCompletedWeek = weeklyTrends.length > 0 ? weeklyTrends[0] : null;
+        const weeklyMileage = lastCompletedWeek?.distance ?? 0;
 
-        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-        const lastWeekActivities =
-          response.data?.activities?.filter((act: any) => {
-            const actDate = new Date(act.date);
-            return actDate >= lastMonday && actDate <= lastSunday;
-          }) || [];
-
-        const weeklyMileage = lastWeekActivities.reduce(
-          (sum: number, act: any) => sum + (act.distance_miles || 0),
-          0
-        );
-
-        const activitiesLast30Days =
-          response.data?.activities?.filter(
-            (act: any) => new Date(act.date) >= thirtyDaysAgo
-          ) || [];
-        const longestRun = Math.max(
-          ...activitiesLast30Days.map((act: any) => act.distance_miles || 0),
-          0
-        );
+        const longestRuns = response.data?.longest_runs || [];
+        const recentLongestRun = longestRuns.length > 0 ? longestRuns[0].distance : 0;
 
         let baseLevel = "Unknown";
         if (weeklyMileage > 0 && weeklyMileage < 10) baseLevel = "Low";
@@ -93,7 +90,7 @@ const NewPlanFormV2: React.FC = () => {
 
         setStravaData({
           recent_weekly_mileage: Math.round(weeklyMileage * 10) / 10,
-          longest_recent_run: Math.round(longestRun * 10) / 10,
+          longest_recent_run: Math.round(recentLongestRun * 10) / 10,
           base_level: baseLevel,
         });
       } catch (err) {
@@ -312,7 +309,7 @@ const NewPlanFormV2: React.FC = () => {
                       name="race_location"
                       placeholder="e.g., Chicago, IL"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                      apiKey={import.meta.env.VITE_GOOGLE_PLACES_API_KEY}
+                      apiKey={googlePlacesApiKey}
                     />
                   </div>
                 </div>

@@ -6,9 +6,9 @@
 
 **Direct Dependencies:**
 
-- `Pass1LongRunFirst` from `pass1_longrun_first.py`
-- `calculate_weekly_totals_from_long_runs` from `weekly_total_calculator.py`
-- `Pass3WorkoutDistribution` from `pass3_workout_distribution.py`
+- `Pass1LongRunFirst` from `v2/marathon/v2/marathon/pass1_longrun_first_v2_v2.py`
+- `calculate_weekly_totals_from_long_runs` from `v2/marathon/weekly_total_calculator_v2.py`
+- `Pass3WorkoutDistribution` from `v2/v2/pass3_workout_distribution_v2_v2.py`
 - `DataCollectionService`, `InsightsCalculationService` (L1/L2)
 
 **Does NOT use:**
@@ -166,4 +166,3 @@
 **Will deleting them break the good path?** ❌ **NO**
 
 **Do the legacy paths have dependencies on the good path?** ⚠️ **Only shared services (L1/L2), but those won't break**
-

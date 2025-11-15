@@ -37,14 +37,14 @@ The Training Plan Generation System is a sophisticated multi-pass architecture t
 ### 1.1 Current Components
 
 #### **Core Orchestration (Python/Flask)**
-- ✅ **`src/services/training_plan/orchestrator_three_pass.py`** - Main orchestrator (ThreePassOrchestrator)
+- ✅ **`src/services/training_plan/v2/plan_generation_orchestrator_v2.py`** - Main orchestrator (ThreePassOrchestrator)
 - ✅ **`src/services/training_plan/weekly_rebuild_service.py`** - Weekly adaptive rebuild orchestrator
 
 #### **Pass Services (Generation Pipeline)**
-- ✅ **`src/services/training_plan/pass1_longrun_first.py`** - Long-run spine generation
+- ✅ **`src/services/training_plan/v2/marathon/pass1_longrun_first_v2.py`** - Long-run spine generation
 - ✅ **`src/services/training_plan/pass1_weeks_selector.py`** - Week selection logic
-- ✅ **`src/services/training_plan/pass3_workout_distribution.py`** - Workout distribution across days
-- ✅ **`src/services/training_plan/pass4_workout_details.py`** - Detailed segments and pace guidance
+- ✅ **`src/services/training_plan/v2/pass3_workout_distribution_v2.py`** - Workout distribution across days
+- ✅ **`src/services/training_plan/v2/pass4_workout_details_v2.py`** - Detailed segments and pace guidance
 
 #### **Supporting Services**
 - ✅ **`src/services/training_plan/data_collection_service.py`** - Layer 1: Data collection
@@ -61,10 +61,10 @@ The Training Plan Generation System is a sophisticated multi-pass architecture t
 
 #### **Utility Services**
 - ✅ **`src/services/training_plan/pace_seed_service.py`** - Pace zone calculation
-- ✅ **`src/services/training_plan/weekly_total_calculator.py`** - Weekly total calculations
+- ✅ **`src/services/training_plan/v2/marathon/weekly_total_calculator_v2.py`** - Weekly total calculations
 - ✅ **`src/services/training_plan/workout_utils.py`** - Workout utilities
 - ✅ **`src/services/training_plan/workout_comparison_service.py`** - Workout comparison
-- ✅ **`src/services/training_plan/micro_stretch_service.py`** - Plan stretching
+
 - ✅ **`src/services/training_plan/recovery_week_insertion_service.py`** - Recovery week logic
 
 #### **Backend Routes (Python/Flask)**
@@ -109,7 +109,7 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 
 **Examples:**
 - `plan_routes.py`: Lines 81, 120, 145, 180 (similar error responses)
-- `orchestrator_three_pass.py`: Lines 65-75 (repeated error dict structure)
+- `v2/plan_generation_orchestrator_v2.py`: Lines 65-75 (repeated error dict structure)
 - `plan_storage_service.py`: Lines 157-160, 200-203 (similar error handling)
 - `weekly_rebuild_service.py`: Multiple try/except blocks with similar patterns
 
@@ -140,10 +140,10 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 **Issue:** Some services don't validate input parameters.
 
 **Examples:**
-- `orchestrator_three_pass.py`: `generate_longrun_first()` doesn't validate `runner_ctx` structure
+- `v2/plan_generation_orchestrator_v2.py`: `generate_longrun_first()` doesn't validate `runner_ctx` structure
 - `plan_storage_service.py`: `save_validated_plan()` doesn't validate plan structure before processing
 - `weekly_rebuild_service.py`: No validation of `plan_id`, `week_num` parameters
-- `pass4_workout_details.py`: No validation of workout data structure
+- `v2/pass4_workout_details_v2.py`: No validation of workout data structure
 
 **Impact:** Potential runtime errors, unexpected behavior
 
@@ -156,10 +156,10 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 **Issue:** Some error paths don't handle all edge cases.
 
 **Examples:**
-- `orchestrator_three_pass.py` line 65: Returns error dict but doesn't log the error
+- `v2/plan_generation_orchestrator_v2.py` line 65: Returns error dict but doesn't log the error
 - `plan_storage_service.py` line 200: Generic exception handling loses error context
 - `weekly_rebuild_service.py`: Some database errors not handled gracefully
-- `pass4_workout_details.py`: GPT API failures not handled with retry
+- `v2/pass4_workout_details_v2.py`: GPT API failures not handled with retry
 
 **Impact:** Harder to debug, poor user experience
 
@@ -172,10 +172,10 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 **Issue:** Some modules lack comprehensive docstrings.
 
 **Examples:**
-- `pass3_workout_distribution.py`: No module docstring
-- `weekly_total_calculator.py`: No module docstring
+- `v2/pass3_workout_distribution_v2.py`: No module docstring
+- `v2/marathon/weekly_total_calculator_v2.py`: No module docstring
 - `workout_utils.py`: No module docstring
-- `micro_stretch_service.py`: No module docstring
+- : No module docstring
 
 **Impact:** Reduced code clarity, harder for new developers
 
@@ -189,7 +189,7 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 
 **Examples:**
 - `plan_routes.py`: Uses `get_session()` with context manager
-- `orchestrator_three_pass.py`: Receives session from caller (no management)
+- `v2/plan_generation_orchestrator_v2.py`: Receives session from caller (no management)
 - `plan_storage_service.py`: Receives session from caller (no management)
 - `weekly_rebuild_service.py`: Receives session from caller (no management)
 
@@ -204,10 +204,10 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 **Issue:** Some magic numbers and hardcoded values.
 
 **Examples:**
-- `orchestrator_three_pass.py` line 84: `activity_weeks=12` (hardcoded)
-- `pass1_longrun_first.py`: Various hardcoded progression percentages
-- `pass3_workout_distribution.py`: Hardcoded minimum distances
-- `pass4_workout_details.py`: Hardcoded pace adjustments
+- `v2/plan_generation_orchestrator_v2.py` line 84: `activity_weeks=12` (hardcoded)
+- `v2/marathon/pass1_longrun_first_v2.py`: Various hardcoded progression percentages
+- `v2/pass3_workout_distribution_v2.py`: Hardcoded minimum distances
+- `v2/pass4_workout_details_v2.py`: Hardcoded pace adjustments
 
 **Impact:** Hard to configure, test, or adjust
 
@@ -220,7 +220,7 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 **Issue:** GPT API calls don't have standardized retry logic.
 
 **Examples:**
-- `pass4_workout_details.py`: GPT API calls have no retry mechanism
+- `v2/pass4_workout_details_v2.py`: GPT API calls have no retry mechanism
 - `insights_calculation_service.py`: No retry for external API calls (if any)
 
 **Impact:** Failures on transient network issues
@@ -234,9 +234,9 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 **Issue:** Some functions have too many parameters or complex dict structures.
 
 **Examples:**
-- `orchestrator_three_pass.py`: `generate_longrun_first()` takes `runner_ctx` dict (unclear structure)
+- `v2/plan_generation_orchestrator_v2.py`: `generate_longrun_first()` takes `runner_ctx` dict (unclear structure)
 - `weekly_rebuild_service.py`: `rebuild_week()` has many optional parameters
-- `pass4_workout_details.py`: Complex nested dict structures
+- `v2/pass4_workout_details_v2.py`: Complex nested dict structures
 
 **Impact:** Hard to understand, easy to misuse
 
@@ -251,7 +251,7 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 **Examples:**
 - `plan_storage_service.py`: Assumes plan structure is correct
 - `weekly_rebuild_service.py`: Assumes week_logs structure is correct
-- `pass4_workout_details.py`: Assumes workout data structure is correct
+- `v2/pass4_workout_details_v2.py`: Assumes workout data structure is correct
 
 **Impact:** Runtime errors, hard to debug
 
@@ -300,7 +300,7 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 **Examples:**
 - `plan_routes.py` line 180: May expose database structure
 - `plan_validation_service.py`: Validation errors may expose internal logic
-- `orchestrator_three_pass.py`: Error messages may contain implementation details
+- `v2/plan_generation_orchestrator_v2.py`: Error messages may contain implementation details
 
 **Impact:** Information disclosure
 
@@ -324,7 +324,7 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 
 **Issue:** GPT API calls may log sensitive data.
 
-**Location:** `pass4_workout_details.py`, any GPT service calls
+**Location:** `v2/pass4_workout_details_v2.py`, any GPT service calls
 
 **Impact:** API keys or user data in logs
 
@@ -346,7 +346,7 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 
 **Issue:** Plan generation recalculates everything each time.
 
-**Location:** `orchestrator_three_pass.py`, `weekly_rebuild_service.py`
+**Location:** `v2/plan_generation_orchestrator_v2.py`, `weekly_rebuild_service.py`
 
 **Impact:** Slow plan generation, especially for complex plans
 
@@ -359,7 +359,7 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 **Issue:** Some operations process sequentially when they could be parallel.
 
 **Examples:**
-- `pass4_workout_details.py`: Workout details generated sequentially
+- `v2/pass4_workout_details_v2.py`: Workout details generated sequentially
 - `weekly_rebuild_service.py`: Week analysis done sequentially
 
 **Impact:** Slower processing for large plans
@@ -386,7 +386,7 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 
 **Issue:** GPT API calls are synchronous and block the request.
 
-**Location:** `pass4_workout_details.py`
+**Location:** `v2/pass4_workout_details_v2.py`
 
 **Impact:** Slow plan generation, poor user experience
 
@@ -411,7 +411,7 @@ Weekly Rebuild: Week Logs → Analysis → Trends → Adjustments → Rebuild
 ### ⚠️ **Testing Gaps:**
 
 1. **No Integration Tests for Full Plan Generation**
-   - `orchestrator_three_pass.py` has no end-to-end tests
+   - `v2/plan_generation_orchestrator_v2.py` has no end-to-end tests
    - Plan generation flow not tested with real data
    - Validation → storage flow not tested
 

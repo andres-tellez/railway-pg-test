@@ -65,7 +65,7 @@ def set_plan_active(plan_id):
 
 #### 1.2 Session Management in Background Jobs
 
-**Location:** `src/services/training_plan/orchestrator_three_pass.py`, `weekly_rebuild_service.py`
+**Location:** `src/services/training_plan/v2/plan_generation_orchestrator_v2.py`, `weekly_rebuild_service.py`
 
 **Issue:** Background jobs may use sessions outside Flask application context, leading to potential session leaks or errors.
 
@@ -112,7 +112,7 @@ def generate_longrun_first(self, runner_ctx: Dict[str, Any], ...):
    - Batch inserts for workouts (`insert_batch`)
 
 2. **Data Reuse**
-   - `orchestrator_three_pass.py` reuses `strava_activities` for pace seeding (avoids duplicate queries)
+   - `v2/plan_generation_orchestrator_v2.py` reuses `strava_activities` for pace seeding (avoids duplicate queries)
    - Raw data collected once and passed through pipeline
 
 3. **Lazy Loading**
@@ -159,7 +159,7 @@ workouts = sorted(plan.workouts, key=lambda w: w.date)  # May trigger additional
 
 #### 2.3 Repeated Data Collection
 
-**Location:** `src/services/training_plan/orchestrator_three_pass.py`
+**Location:** `src/services/training_plan/v2/plan_generation_orchestrator_v2.py`
 
 **Issue:** `Pass1LongRunFirst.build()` may collect data again even though `raw_data` was already collected.
 
@@ -220,7 +220,7 @@ violations.extend(PlanValidationService._validate_long_run_progression(weeks))
 **Issue:** Some functions return error dictionaries, others raise exceptions.
 
 **Examples:**
-- `orchestrator_three_pass.py`: Returns `{"valid": False, "violations": [...]}`
+- `v2/plan_generation_orchestrator_v2.py`: Returns `{"valid": False, "violations": [...]}`
 - `data_collection_service.py`: Raises `ValueError`, `RuntimeError`
 - `plan_storage_service.py`: Raises exceptions, uses try/except
 
@@ -310,9 +310,9 @@ def sort_weeks_by_number(weeks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 **Pattern:** Summing workout distances to calculate weekly mileage
 
 **Locations:**
-- `orchestrator_three_pass.py` - `_autofix()` method
+- `v2/plan_generation_orchestrator_v2.py` - `_autofix()` method
 - `plan_validation_service.py` - `_validate_week_structure()`
-- `weekly_total_calculator.py` - Main calculation
+- `v2/marathon/weekly_total_calculator_v2.py` - Main calculation
 
 **Example:**
 ```python
@@ -452,7 +452,7 @@ def create_violation(
 **Examples:**
 - `plan_validation_service.py`: `0.80` (cutback threshold), `0.95` (taper threshold)
 - `data_collection_service.py`: `12` (default weeks), `500` (MAX_ACTIVITIES)
-- `orchestrator_three_pass.py`: `12` (activity_weeks)
+- `v2/plan_generation_orchestrator_v2.py`: `12` (activity_weeks)
 
 **Recommendation:**
 ```python
@@ -471,7 +471,7 @@ MAX_ACTIVITIES = 500
 
 **Examples:**
 - `data_collection_service.py`: Uses `logger.info()`, `logger.debug()`, `logger.warning()`
-- `orchestrator_three_pass.py`: Minimal logging
+- `v2/plan_generation_orchestrator_v2.py`: Minimal logging
 - Some files: Use `print()` for debugging
 
 **Recommendation:**
@@ -481,7 +481,7 @@ MAX_ACTIVITIES = 500
 
 #### 5.3 Missing Input Validation
 
-**Location:** `src/services/training_plan/orchestrator_three_pass.py`
+**Location:** `src/services/training_plan/v2/plan_generation_orchestrator_v2.py`
 
 **Issue:** `generate_longrun_first()` doesn't validate `runner_ctx` structure thoroughly.
 
@@ -628,4 +628,3 @@ The system is production-ready but would benefit from the recommended improvemen
 - `docs/training-plan-architecture-v3.md`
 - `docs/CODEBASE_ANALYSIS.md`
 - `src/services/training_plan/README.md`
-

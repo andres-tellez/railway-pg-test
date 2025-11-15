@@ -49,7 +49,7 @@
 
 ## Unit Invariant Documentation
 
-- [x] **Unit invariant documented**: Added to `pass4_workout_details.py` header
+- [x] **Unit invariant documented**: Added to `v2/v2/pass4_workout_details_v2_v2.py` header
   - "All pace targets are in seconds per mile (sec/mi) as integers"
   - "If/when km support is added, convert centrally in this module"
 

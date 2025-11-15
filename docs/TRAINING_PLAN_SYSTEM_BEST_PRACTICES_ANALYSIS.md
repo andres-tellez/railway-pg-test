@@ -57,7 +57,7 @@ return not_found_response("No plan found")
 
 ### 2. Missing Input Validation
 
-**Location:** `src/services/training_plan/orchestrator_three_pass.py`, `plan_storage_service.py`
+**Location:** `src/services/training_plan/v2/plan_generation_orchestrator_v2.py`, `plan_storage_service.py`
 
 **Issue:**
 ```python
@@ -174,11 +174,11 @@ def save_validated_plan(self, session, plan: Dict[str, Any], ...):
 
 ### 5. Incomplete Error Handling
 
-**Location:** `src/services/training_plan/orchestrator_three_pass.py`, `plan_storage_service.py`
+**Location:** `src/services/training_plan/v2/plan_generation_orchestrator_v2.py`, `plan_storage_service.py`
 
 **Issue:**
 ```python
-# orchestrator_three_pass.py line 65
+# v2/plan_generation_orchestrator_v2.py line 65
 if session is None or user_id is None:
     return {
         "valid": False,
@@ -221,7 +221,7 @@ if session is None or user_id is None:
 
 **Issue:**
 ```python
-# Repeated in plan_routes.py, orchestrator_three_pass.py, etc.
+# Repeated in plan_routes.py, v2/plan_generation_orchestrator_v2.py, etc.
 try:
     # Some operation
     result = do_something()
@@ -266,11 +266,11 @@ def handle_plan_errors(f):
 
 ### 7. Missing Module Docstrings
 
-**Location:** `pass3_workout_distribution.py`, `weekly_total_calculator.py`, `workout_utils.py`, `micro_stretch_service.py`
+**Location:** `v2/pass3_workout_distribution_v2.py`, `v2/marathon/weekly_total_calculator_v2.py`, `workout_utils.py`
 
 **Issue:**
 ```python
-# pass3_workout_distribution.py
+# v2/pass3_workout_distribution_v2.py
 # No module docstring
 def calculate_workout_distribution(...):
     """Function docstring exists but no module-level docstring"""
@@ -298,7 +298,7 @@ Key Functions:
     - validate_workout_distribution(): Validation checks
 
 Usage:
-    from src.services.training_plan.pass3_workout_distribution import Pass3WorkoutDistribution
+    from src.services.training_plan.v2/pass3_workout_distribution_v2 import Pass3WorkoutDistribution
 
     dist = Pass3WorkoutDistribution()
     schedule = dist.run(skel_long, training_days)
@@ -319,11 +319,11 @@ Architecture:
 
 ### 8. No Standardized Retry Mechanism
 
-**Location:** `src/services/training_plan/pass4_workout_details.py` - GPT API calls
+**Location:** `src/services/training_plan/v2/pass4_workout_details_v2.py` - GPT API calls
 
 **Issue:**
 ```python
-# pass4_workout_details.py
+# v2/pass4_workout_details_v2.py
 # GPT API calls have no retry mechanism
 response = gpt_client.generate(prompt)
 # If network error or rate limit, fails immediately
@@ -365,13 +365,13 @@ def call_gpt_api(prompt):
 
 **Issue:**
 ```python
-# orchestrator_three_pass.py line 84
+# v2/plan_generation_orchestrator_v2.py line 84
 activity_weeks=12  # Hardcoded
 
-# pass1_longrun_first.py
+# v2/marathon/v2/marathon/pass1_longrun_first_v2.py
 progression_rate = 0.10  # Hardcoded 10%
 
-# pass3_workout_distribution.py
+# v2/pass3_workout_distribution_v2.py
 MIN_NON_LONG_DAY = 3.0  # Hardcoded minimum
 ```
 
@@ -458,4 +458,3 @@ activity_weeks = PlanConfig.DEFAULT_ACTIVITY_WEEKS
 
 **Analysis Date:** November 2026
 **Next Review:** After Phase 1 completion
-

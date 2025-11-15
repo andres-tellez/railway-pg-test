@@ -123,7 +123,7 @@
 | **2. Check Taper Rules** | Volume: 0.0% < 50% | If `< 50%` → reduce volume | Decision: `-5.0%` | ✅ Done | `adaptive_adjustment_service.py` |
 | **3. Save Decision** | Decision calculated | Save to database | Saved to DB | ✅ Done | `weekly_metrics_service.py` |
 | **4. Apply to Distances** | `volume_change = -5.0%` | `miles × (1 + -5.0/100)` | **NOT APPLIED** | ❌ **Missing** | `weekly_rebuild_service.py` line 433 |
-| **5. Regenerate Details** | Same distances + pace seed | Pass4 regenerates | Details updated | ✅ Done | `pass4_workout_details.py` |
+| **5. Regenerate Details** | Same distances + pace seed | Pass4 regenerates | Details updated | ✅ Done | `v2/v2/pass4_workout_details_v2_v2.py` |
 
 ## The Missing Code (Line 433)
 

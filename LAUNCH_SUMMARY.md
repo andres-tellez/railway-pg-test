@@ -63,7 +63,7 @@
 #### Unit Tests (All passing)
 
 - ✅ `test_pace_seed_service.py` - 7 tests
-- ✅ `test_pass4_workout_details.py` - 9 tests
+- ✅ `test_v2/v2/pass4_workout_details_v2_v2.py` - 9 tests
 - ✅ `test_weekly_rebuild_service.py` - 8 tests
 
 ### 5. **Documentation Created**

@@ -177,7 +177,7 @@ app.register_blueprint(plan_bp, url_prefix="/api/plan")  # Don't do this
 ```
 src/services/training_plan/
 ├── __init__.py
-├── orchestrator_three_pass.py
+├── v2/plan_generation_orchestrator_v2.py
 ├── pass1_weeks_selector.py
 ├── pass2_workout_distribution.py
 └── ...

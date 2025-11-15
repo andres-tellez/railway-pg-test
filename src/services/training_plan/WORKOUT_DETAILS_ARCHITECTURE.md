@@ -55,7 +55,7 @@ This document describes the architecture for adding detailed workout segments, p
 
 ---
 
-### 3. Pass 4 Workout Details (`pass4_workout_details.py`)
+### 3. Pass 4 Workout Details (`v2/v2/pass4_workout_details_v2_v2.py`)
 
 **Purpose:** Generate detailed segments, pace guidance, and cues for each workout.
 
@@ -83,12 +83,12 @@ This document describes the architecture for adding detailed workout segments, p
 **Integration:**
 
 - Uses existing `workout_types.py` constants (EASY, STEADY, ENDURANCE, LONG)
-- Called by `orchestrator_three_pass.py` after Pass 3
+- Called by `v2/plan_generation_orchestrator_v2.py` after Pass 3
 - Supports both "prefill" and "rolling" modes
 
 ---
 
-### 4. Orchestrator Integration (`orchestrator_three_pass.py`)
+### 4. Orchestrator Integration (`v2/plan_generation_orchestrator_v2.py`)
 
 **Flow:**
 
@@ -115,7 +115,7 @@ This document describes the architecture for adding detailed workout segments, p
 ### Prefill Mode (All Weeks)
 
 ```python
-from src.services.training_plan.orchestrator_three_pass import ThreePassOrchestrator
+from src.services.training_plan.v2/plan_generation_orchestrator_v2 import ThreePassOrchestrator
 
 orchestrator = ThreePassOrchestrator()
 result = orchestrator.generate_longrun_first(
@@ -140,7 +140,7 @@ result = orchestrator.generate_longrun_first(
 
 # Later: rebuild Week 2 based on Week 1 logs
 from src.services.training_plan.weekly_adjuster import adjust_seed_from_week, WeekLogRun
-from src.services.training_plan.pass4_workout_details import Pass4WorkoutDetails
+from src.services.training_plan.v2/pass4_workout_details_v2 import Pass4WorkoutDetails
 
 week1_logs = [
     WeekLogRun(run_type="easy", planned_mi=4.0, done_mi=4.0, rpe=3),
@@ -201,7 +201,7 @@ See:
 
 - `tests/services/training_plan/test_pace_seed_service.py`
 - `tests/services/training_plan/test_weekly_adjuster.py`
-- `tests/services/training_plan/test_pass4_workout_details.py`
+- `tests/services/training_plan/test_v2/v2/pass4_workout_details_v2_v2.py`
 
 ---
 

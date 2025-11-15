@@ -44,13 +44,13 @@
 - **Progress:** 0% complete
 
 ### 7. Add Module Docstrings ⏳
-- **Files:** `pass3_workout_distribution.py`, `weekly_total_calculator.py`, `workout_utils.py`, `micro_stretch_service.py`
+- **Files:** `v2/pass3_workout_distribution_v2.py`, `v2/marathon/weekly_total_calculator_v2.py`, `workout_utils.py`
 - **Status:** Not Started
 - **Implementation:** Add comprehensive module docstrings
 - **Progress:** 0/4 files completed
 
 ### 8. Add Retry Mechanism ⏳
-- **File:** `src/services/training_plan/pass4_workout_details.py`
+- **File:** `src/services/training_plan/v2/pass4_workout_details_v2.py`
 - **Status:** Not Started
 - **Implementation:** Retry with exponential backoff for GPT API calls
 - **Progress:** 0% complete
@@ -113,16 +113,15 @@
   - [ ] Test refactored code
 
 - [ ] **Add Module Docstrings**
-  - [ ] Add docstring to `pass3_workout_distribution.py`
-  - [ ] Add docstring to `weekly_total_calculator.py`
+  - [ ] Add docstring to `v2/pass3_workout_distribution_v2.py`
+  - [ ] Add docstring to `v2/marathon/weekly_total_calculator_v2.py`
   - [ ] Add docstring to `workout_utils.py`
-  - [ ] Add docstring to `micro_stretch_service.py`
 
 ### Phase 3: Medium/Low Priority (Week 3-4)
 
 - [ ] **Add Retry Mechanism**
   - [ ] Create `retry_utils.py` (or use existing)
-  - [ ] Add retry to GPT API calls in `pass4_workout_details.py`
+  - [ ] Add retry to GPT API calls in `v2/pass4_workout_details_v2.py`
   - [ ] Test retry mechanism
 
 - [ ] **Move Hardcoded Values to Config**
@@ -154,4 +153,3 @@
 
 **Completion Date:** TBD
 **Last Updated:** November 2026
-

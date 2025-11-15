@@ -49,8 +49,8 @@ This document describes the **current working plan generation process** that run
      - Single peak at 20 miles
      - 3-week taper: 70%, 50%, 25% of peak
    - **Output:** List of weeks with `long_run_miles` + `phase` (Base/Build/Peak/Taper)
-   - **File:** `src/services/training_plan/pass1_longrun_first.py`
-   - **Core Logic:** `src/services/training_plan/long_run_spine.py` → `generate_long_run_spine()`
+   - **File:** `src/services/training_plan/v2/marathon/v2/marathon/pass1_longrun_first_v2.py`
+   - **Core Logic:** `src/services/training_plan/v2/shared_v2/shared_v2/long_run_spine_v2.py` → `generate_v2/shared_v2/long_run_spine_v2()`
 
 ---
 
@@ -68,7 +68,7 @@ This document describes the **current working plan generation process** that run
        - Peak caps: 42/46/50 miles (for 3/4/5 days)
        - Minimum: ≥3 miles per non-long run
    - **Output:** `weekly_mileage` for each week
-   - **File:** `src/services/training_plan/weekly_total_calculator.py` → `calculate_weekly_totals_from_long_runs()`
+   - **File:** `src/services/training_plan/v2/marathon/weekly_total_calculator_v2.py` → `calculate_weekly_totals_from_long_runs()`
 
 ---
 
@@ -91,7 +91,7 @@ This document describes the **current working plan generation process** that run
      - Minimum 3 miles per non-long run
      - Adjust rounding to match `total_weekly_miles` exactly
    - **Output:** `workouts` array with `{day, workout_type, distance_miles}` for each week
-   - **File:** `src/services/training_plan/pass3_workout_distribution.py` → `calculate_workout_distribution()`
+   - **File:** `src/services/training_plan/v2/pass3_workout_distribution_v2.py` → `calculate_workout_distribution()`
 
 ---
 
@@ -200,10 +200,10 @@ This document describes the **current working plan generation process** that run
 - `src/services/training_plan/data_collection_service.py` (Layer 1)
 - `src/services/training_plan/insights_calculation_service.py` (Layer 2)
 - `src/services/training_plan/pass1_weeks_selector.py` (weeks recommendation)
-- `src/services/training_plan/pass1_longrun_first.py` (Pass 1: Long runs)
-- `src/services/training_plan/long_run_spine.py` (LR progression logic)
-- `src/services/training_plan/weekly_total_calculator.py` (Pass 2: Weekly totals)
-- `src/services/training_plan/pass3_workout_distribution.py` (Pass 3: Workout distribution)
+- `src/services/training_plan/v2/marathon/v2/marathon/pass1_longrun_first_v2.py` (Pass 1: Long runs)
+- `src/services/training_plan/v2/shared_v2/shared_v2/long_run_spine_v2.py` (LR progression logic)
+- `src/services/training_plan/v2/marathon/weekly_total_calculator_v2.py` (Pass 2: Weekly totals)
+- `src/services/training_plan/v2/pass3_workout_distribution_v2.py` (Pass 3: Workout distribution)
 - `src/services/training_plan/recovery_week_insertion_service.py` (Recovery week insertion)
 
 ### **Legacy (Not Used in This Flow):**
@@ -211,7 +211,7 @@ This document describes the **current working plan generation process** that run
 - `src/services/training_plan/gpt_coach_pass1_weekly.py` (old LLM-based Pass 1)
 - `src/services/training_plan/gpt_coach_pass2_longrun.py` (old LLM-based Pass 2)
 - `src/services/training_plan/training_plan_orchestrator_service.py` (old 6-layer orchestrator)
-- `src/services/training_plan/orchestrator_three_pass.py` (old 3-pass orchestrator - not used in draft route)
+- `src/services/training_plan/v2/plan_generation_orchestrator_v2.py` (old 3-pass orchestrator - not used in draft route)
 
 ---
 
@@ -228,4 +228,3 @@ This document describes the **current working plan generation process** that run
 7. **Return** draft plan with all fields populated
 
 **All steps are 100% code-based, deterministic, and testable.**
-
