@@ -79,7 +79,7 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
     });
 
     return { maxDistance, barColors, barData };
-  }, [data, weeklyGoals]);
+  }, [data, longRunGoals]);
 
   if (!chartData) {
     return (
