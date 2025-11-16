@@ -216,11 +216,6 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
 
               return (
                 <div key={index} className={CHART_BASE_CLASSES.BAR_CONTAINER}>
-                  {/* Distance Label */}
-                  <div className={getNumberDisplayClasses('medium')}>
-                    {formatChartNumber(week.distance, 'distance')}
-                  </div>
-
                   {/* Bars container (Actual + Planned side-by-side) */}
                   <div className="relative w-full" style={{ height: `${Math.max(barInfo.heightPixels, barInfo.plannedTotalMilesHeightPixels)}px` }}>
                     {/* Actual Bar (left, wider) */}
@@ -244,7 +239,15 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                         });
                       }}
                       onMouseLeave={() => setHoveredBar(null)}
-                    />
+                    >
+                      {/* Actual miles label inside bar */}
+                      <div
+                        className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-semibold text-white drop-shadow"
+                        aria-hidden="true"
+                      >
+                        {formatChartNumber(week.distance, 'distance')}
+                      </div>
+                    </div>
 
                     {/* Planned Bar (right, thinner) */}
                     {barInfo.plannedTotalMiles && (
@@ -267,7 +270,15 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                         onMouseLeave={() => setHoveredBar(null)}
                         aria-label={`Planned ${barInfo.plannedTotalMiles.toFixed(1)} miles`}
                         role="img"
-                      />
+                      >
+                        {/* Planned miles label inside bar */}
+                        <div
+                          className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-semibold text-gray-900"
+                          aria-hidden="true"
+                        >
+                          {barInfo.plannedTotalMiles.toFixed(1)}
+                        </div>
+                      </div>
                     )}
                   </div>
 
