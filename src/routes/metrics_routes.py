@@ -216,44 +216,8 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
     else:
         weekly_goals = result.weekly_goals if result.weekly_goals else []
 
-    # For previous week (leftmost bar), update weekly_goals with planned miles from training plan
-    if user_id and weekly_data:
-        planned_miles = get_planned_miles_for_current_week(session, user_id)
-        if planned_miles > 0 and weekly_data:
-            # Find previous week in weekly_data (now the leftmost bar)
-            from datetime import datetime, timedelta
-
-            from src.utils.date_helpers import get_current_week_start
-
-            today = datetime.now().date()
-            current_week_start = get_current_week_start()
-            previous_week_start = current_week_start - timedelta(days=7)
-            previous_week_str = previous_week_start.isoformat()
-
-            # Update previous week goal (handle both date formats)
-            goal_found = False
-            for goal in weekly_goals:
-                goal_week = goal.get("week", "")
-                # Check both formats: '2025-10-06' and '2025-10-06T00:00:00'
-                if goal_week == previous_week_str or goal_week.startswith(
-                    previous_week_str + "T"
-                ):
-                    goal["goal_miles"] = planned_miles
-                    goal_found = True
-                    logger.info(f"📊 Updated existing goal: {goal}")
-                    break
-
-            if not goal_found:
-                weekly_goals.append(
-                    {"week": previous_week_str, "goal_miles": planned_miles}
-                )
-                logger.info(
-                    f"📊 Added new goal: week={previous_week_str}, goal_miles={planned_miles}"
-                )
-
-            logger.info(
-                f"📊 Updated weekly_goals with planned miles for previous week: {planned_miles}"
-            )
+    # NOTE: Do not inject next week's planned miles into the previous (leftmost) week.
+    # Keep weekly_goals strictly tied to plan_workouts that actually fall within each week.
 
     # Process weekly trends and HR zones
     weekly_trends = []
