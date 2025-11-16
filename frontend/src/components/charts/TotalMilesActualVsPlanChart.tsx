@@ -230,7 +230,8 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                         ...staticBarStyle,
                         position: 'absolute',
                         left: 0,
-                        width: barInfo.plannedTotalMiles ? '62%' : '100%',
+                        bottom: 0,
+                        width: barInfo.plannedTotalMiles ? '48%' : '100%',
                         height: `${barInfo.heightPixels}px`,
                         boxShadow: getBarShadowForTotalMiles(barInfo.barColor, index, barInfo.exceededPlannedTotalMiles)
                       }}
@@ -251,7 +252,8 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                         className="absolute right-0 bg-gray-400/70 ring-1 ring-gray-300"
                         style={{
                           borderRadius: '0.5rem 0.5rem 0 0',
-                          width: '30%',
+                          bottom: 0,
+                          width: '48%',
                           height: `${barInfo.plannedTotalMilesHeightPixels}px`
                         }}
                         onMouseEnter={(e) => {
