@@ -162,11 +162,14 @@ export function calculateWeeklyProgress(weekDays: WeekDay[]): {
   milesCompleted: number;
   milesTotal: number;
 } {
-  const completedWorkouts = weekDays.filter(d => d.isCompleted && !d.isRestDay).length;
-  const totalWorkouts = weekDays.filter(d => !d.isRestDay && d.workout).length;
+  // Count any activity (planned or unplanned) as a completed workout
+  const completedWorkouts = weekDays.filter(d => !!d.activity).length;
+
+  // Denominator remains the number of planned workouts (non-rest days with a workout)
+  const totalWorkouts = weekDays.filter(d => d.workout && !d.isRestDay).length;
 
   const milesCompleted = weekDays
-    .filter(d => d.isCompleted && d.activity)
+    .filter(d => d.activity)
     .reduce((sum, d) => sum + (d.activity?.distance_miles || 0), 0);
 
   const milesTotal = weekDays
