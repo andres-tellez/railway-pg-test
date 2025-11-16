@@ -21,13 +21,16 @@ interface LongestRunData {
   prev_week_distance: number | null;
 }
 
+type WeeklyLongRunGoal = { week: string; long_run_miles: number };
+
 interface LongestRunsChartProps {
   data: LongestRunData[];
   title?: string;
   showHeader?: boolean;
+  longRunGoals?: WeeklyLongRunGoal[];
 }
 
-export default function LongestRunsChart({ data, title = "Weekly Longest Runs", showHeader = true }: LongestRunsChartProps) {
+export default function LongestRunsChart({ data, title = "Weekly Longest Runs", showHeader = true, longRunGoals = [] }: LongestRunsChartProps) {
   const [hoveredRun, setHoveredRun] = useState<{ index: number; x: number; y: number } | null>(null);
 
   // Centralized tooltip behavior - hide on scroll
@@ -37,31 +40,46 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return null;
 
-    // Calculate chart maximum from actual distances only
-    const maxDistance = Math.max(...data.map(run => run.distance));
+    // Helper to find a planned value for the week (match both YYYY-MM-DD and with 'T')
+    const findPlannedForWeek = (week: string): number | null => {
+      const goal = longRunGoals.find(g => {
+        const gw = g.week;
+        if (gw === week) return true;
+        if (week.includes('T') && gw === week.split('T')[0]) return true;
+        if (gw.includes('T') && week === gw.split('T')[0]) return true;
+        return false;
+      });
+      return goal ? goal.long_run_miles : null;
+    };
+
+    // Calculate chart maximum considering both actual longest run and planned miles
+    const allActual = data.map(run => run.distance);
+    const allPlanned = data.map(run => findPlannedForWeek(run.week_start) || 0);
+    const maxDistance = Math.max(...allActual, ...allPlanned, 1);
 
     // Calculate bar colors based on data
-    const barColors = data.map((run) => {
-      if (run.is_personal_record) return 'personal_record';
-      if (run.is_significant_drop) return 'significant_drop';
-      return 'normal';
-    });
+    // Per request: remove special colors (no green PR or red drop) → always normal (blue)
+    const barColors = data.map(() => 'normal');
 
     // Pre-calculate all bar data to avoid calculations in render loop
     const barData = data.map((run, index) => {
       const heightPixels = calculateBarHeight(run.distance, maxDistance);
+      const planned = findPlannedForWeek(run.week_start);
+      const plannedHeightPixels = planned ? calculateBarHeight(planned, maxDistance) : 0;
       const isCurrentWeek = index === 0;
       const barColor = barColors[index];
 
       return {
         heightPixels,
         isCurrentWeek,
-        barColor
+        barColor,
+        planned,
+        plannedHeightPixels
       };
     });
 
     return { maxDistance, barColors, barData };
-  }, [data]);
+  }, [data, longRunGoals]);
 
   if (!chartData) {
     return (
@@ -140,28 +158,53 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
                 key={run.activity_id}
                 className={CHART_BASE_CLASSES.BAR_CONTAINER}
               >
-                {/* Distance number above bar */}
-                <div className={getNumberDisplayClasses('medium')}>
-                  {formatChartNumber(run.distance, 'distance')}
-                </div>
+                {/* Bars container (Actual + Planned side-by-side, equal widths) */}
+                <div className="relative w-full" style={{ height: `${Math.max(heightPixels, barData[index].plannedHeightPixels)}px` }}>
+                  {/* Actual (left) */}
+                  <div
+                    className={colorClasses}
+                    onMouseEnter={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setHoveredRun({
+                        index,
+                        x: rect.left + rect.width / 2,
+                        y: rect.top - 10,
+                      });
+                    }}
+                    onMouseLeave={() => setHoveredRun(null)}
+                    style={{
+                      ...staticBarStyle,
+                      position: 'absolute',
+                      left: 0,
+                      bottom: 0,
+                      width: barData[index].planned ? '48%' : '100%',
+                      height: `${heightPixels}px`
+                    }}
+                  >
+                    {/* Label inside actual bar */}
+                    <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-semibold text-white drop-shadow" aria-hidden="true">
+                      {formatChartNumber(run.distance, 'distance')}
+                    </div>
+                  </div>
 
-                {/* Bar */}
-                <div
-                  className={colorClasses}
-                  onMouseEnter={(e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setHoveredRun({
-                      index,
-                      x: rect.left + rect.width / 2,
-                      y: rect.top - 10,
-                    });
-                  }}
-                  onMouseLeave={() => setHoveredRun(null)}
-                  style={{
-                    ...staticBarStyle,
-                    height: `${heightPixels}px`
-                  }}
-                >
+                  {/* Planned (right) */}
+                  {barData[index].planned && (
+                    <div
+                      className="absolute right-0 bg-gray-400/70 ring-1 ring-gray-300"
+                      style={{
+                        borderRadius: '0.5rem 0.5rem 0 0',
+                        bottom: 0,
+                        width: '48%',
+                        height: `${barData[index].plannedHeightPixels}px`
+                      }}
+                      aria-label={`Planned ${barData[index].planned?.toFixed(1)} miles`}
+                      role="img"
+                    >
+                      <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-semibold text-gray-900" aria-hidden="true">
+                        {barData[index].planned?.toFixed(1)}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Labels */}
@@ -195,17 +238,19 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
             }}
           />
 
-          {/* Legend positioned below bars on the right */}
+          {/* Legend positioned below bars on the right (no Significant Drop) */}
           <div className="flex justify-end mt-4">
             <div className="flex gap-6 text-sm text-gray-600">
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 bg-blue-500 rounded"></div>
                 <span>Actual</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 bg-red-600 rounded"></div>
-                <span>Significant Drop</span>
-              </div>
+              {longRunGoals && longRunGoals.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gray-400 rounded ring-1 ring-gray-300"></div>
+                  <span>Planned</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

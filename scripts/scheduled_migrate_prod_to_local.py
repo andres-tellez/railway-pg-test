@@ -45,9 +45,18 @@ if not local_db_url:
     print("❌ DATABASE_URL (local) not set")
     sys.exit(1)
 
-# Athlete IDs - can be overridden via environment variables
-source_athlete_id = int(os.getenv("SOURCE_ATHLETE_ID", "347085"))
-target_athlete_id = int(os.getenv("TARGET_ATHLETE_ID", "347085"))
+# Athlete IDs - MUST be provided via environment to prevent copying others
+if not os.getenv("SOURCE_ATHLETE_ID") or not os.getenv("TARGET_ATHLETE_ID"):
+    print(
+        "❌ SOURCE_ATHLETE_ID and TARGET_ATHLETE_ID are required environment variables"
+    )
+    sys.exit(1)
+try:
+    source_athlete_id = int(os.getenv("SOURCE_ATHLETE_ID"))
+    target_athlete_id = int(os.getenv("TARGET_ATHLETE_ID"))
+except ValueError:
+    print("❌ Invalid SOURCE_ATHLETE_ID or TARGET_ATHLETE_ID (must be integers)")
+    sys.exit(1)
 
 # Logging setup
 log_file = Path("logs") / "migration.log"
@@ -121,6 +130,11 @@ def main():
         env["SOURCE_ATHLETE_ID"] = str(source_athlete_id)
         env["TARGET_ATHLETE_ID"] = str(target_athlete_id)
 
+        # Extra safety: log current env used
+        log(
+            f"   Using SOURCE_ATHLETE_ID={env['SOURCE_ATHLETE_ID']} TARGET_ATHLETE_ID={env['TARGET_ATHLETE_ID']}"
+        )
+
         # Run the migration script
         result = subprocess.run(
             [sys.executable, str(migration_script)],
@@ -156,4 +170,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
