@@ -377,9 +377,7 @@ export default function SimpleMetrics() {
               <TotalMilesActualVsPlanChart
                 data={filteredWeeklyTrends}
                 weeklyGoals={filteredWeeklyGoals}
-                title={filteredWeeklyGoals.length
-                  ? "Total Miles - Actual vs Plan"
-                  : "Total Miles"}
+                title="Total Miles"
                 showHeader={true}
                 helpTooltip={mileageHelpContent}
               />
