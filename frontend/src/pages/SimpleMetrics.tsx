@@ -391,6 +391,7 @@ export default function SimpleMetrics() {
                 data={filteredLongestRuns}
                 title="Longest Runs"
                 showHeader={true}
+                weeklyGoals={filteredWeeklyGoals}
               />
             )}
 
