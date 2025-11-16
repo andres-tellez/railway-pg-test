@@ -245,7 +245,7 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
                 <div className="w-4 h-4 bg-blue-500 rounded"></div>
                 <span>Actual</span>
               </div>
-              {weeklyGoals && weeklyGoals.length > 0 && (
+              {longRunGoals && longRunGoals.length > 0 && (
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 bg-gray-400 rounded ring-1 ring-gray-300"></div>
                   <span>Planned</span>
