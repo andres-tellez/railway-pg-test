@@ -33,9 +33,12 @@ if not prod_db_url or not local_db_url:
     sys.exit(1)
 
 # Athlete IDs (allow override via environment)
+if not os.getenv("SOURCE_ATHLETE_ID") or not os.getenv("TARGET_ATHLETE_ID"):
+    print("❌ SOURCE_ATHLETE_ID and TARGET_ATHLETE_ID are required")
+    sys.exit(1)
 try:
-    source_athlete_id = int(os.getenv("SOURCE_ATHLETE_ID", "347085"))
-    target_athlete_id = int(os.getenv("TARGET_ATHLETE_ID", "347085"))
+    source_athlete_id = int(os.getenv("SOURCE_ATHLETE_ID"))
+    target_athlete_id = int(os.getenv("TARGET_ATHLETE_ID"))
 except ValueError:
     print("❌ Invalid SOURCE_ATHLETE_ID or TARGET_ATHLETE_ID")
     sys.exit(1)
@@ -127,6 +130,16 @@ try:
             {"athlete_id": source_athlete_id},
         ).fetchall()
 
+    # Safety check: ensure all selected activities belong to the source athlete
+    bad = [
+        a.activity_id for a in activities if int(a.athlete_id) != int(source_athlete_id)
+    ]
+    if bad:
+        print(
+            f"❌ Safety check failed: found {len(bad)} activities not matching SOURCE_ATHLETE_ID. Aborting."
+        )
+        sys.exit(2)
+
     migrated_activities = 0
     for activity in activities:
         # Insert only (delta). If race condition, ON CONFLICT would be better,
@@ -189,6 +202,16 @@ try:
 
     local_session.commit()
     print(f"   ✅ Migrated {migrated_activities} activities")
+
+    # Post-check: ensure local activities only contain target athlete for newly inserted rows context
+    # (non-fatal warning if others exist from earlier runs)
+    distinct_local = local_session.execute(
+        text("SELECT COUNT(DISTINCT athlete_id) FROM activities")
+    ).fetchone()[0]
+    if distinct_local and distinct_local > 1:
+        print(
+            "⚠️  Warning: local activities contain multiple athlete_ids. Ensure other jobs are not writing data."
+        )
 
     # Migrate splits (only for newly inserted activity_ids)
     print("\n5. Migrating splits (delta-only)...")
