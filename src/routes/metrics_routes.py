@@ -392,16 +392,14 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
                     text(
                         """
                         SELECT DATE_TRUNC('week', pw.date)::date AS week_start,
-                               MAX(pw.miles) FILTER (WHERE LOWER(pw.workout_type) LIKE 'long run%'
-                                                    OR LOWER(pw.workout_type) = 'long run') AS long_run_miles
+                               MAX(pw.miles) AS long_run_miles
                         FROM plan_workouts pw
                         WHERE pw.plan_id = :pid
                         GROUP BY DATE_TRUNC('week', pw.date)
                         ORDER BY week_start DESC
-                        LIMIT :weeks
                     """
                     ),
-                    {"pid": plan_id_val, "weeks": 20},
+                    {"pid": plan_id_val},
                 ).fetchall()
                 weekly_long_run_goals = [
                     {

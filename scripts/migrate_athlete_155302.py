@@ -309,7 +309,7 @@ try:
     local_session.commit()
     print(f"   ✅ Migrated {total_splits} splits")
 
-    # Migrate plans
+    # Migrate plans (idempotent: reuse matching plan if it already exists)
     print("\n6. Migrating plans...")
     plans = prod_session.execute(
         text("SELECT * FROM plans WHERE user_id = :user_id"),
@@ -326,39 +326,92 @@ try:
         # training_days is a PostgreSQL ARRAY, so keep it as a list
         training_days = plan.training_days
 
-        result = local_session.execute(
+        # Try to find an existing local plan for this user with same name + race_date
+        existing_plan_row = local_session.execute(
             text(
                 """
-                INSERT INTO plans (
-                    user_id, plan_name, race_date, race_distance, race_name,
-                    race_location, race_metadata, primary_goal, target_time,
-                    training_days, notes, is_active, created_by, created_at
-                ) VALUES (
-                    :user_id, :plan_name, :race_date, :race_distance, :race_name,
-                    :race_location, :race_metadata, :primary_goal, :target_time,
-                    :training_days, :notes, :is_active, :created_by, :created_at
-                )
-                RETURNING id
-            """
+                SELECT id FROM plans
+                WHERE user_id = :user_id
+                  AND plan_name = :plan_name
+                  AND race_date = :race_date
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
             ),
             {
                 "user_id": target_user_id,
                 "plan_name": plan.plan_name,
                 "race_date": plan.race_date,
-                "race_distance": plan.race_distance,
-                "race_name": plan.race_name,
-                "race_location": plan.race_location,
-                "race_metadata": race_metadata,
-                "primary_goal": plan.primary_goal,
-                "target_time": plan.target_time,
-                "training_days": training_days,
-                "notes": plan.notes,
-                "is_active": plan.is_active,
-                "created_by": plan.created_by,
-                "created_at": plan.created_at,
             },
-        )
-        new_plan_id = result.fetchone()[0]
+        ).fetchone()
+
+        if existing_plan_row:
+            # Optional: update metadata of the existing plan to keep it fresh
+            new_plan_id = existing_plan_row[0]
+            local_session.execute(
+                text(
+                    """
+                    UPDATE plans
+                    SET race_distance = :race_distance,
+                        race_name = :race_name,
+                        race_location = :race_location,
+                        race_metadata = :race_metadata,
+                        primary_goal = :primary_goal,
+                        target_time = :target_time,
+                        training_days = :training_days,
+                        notes = :notes,
+                        is_active = :is_active
+                    WHERE id = :plan_id
+                    """
+                ),
+                {
+                    "plan_id": new_plan_id,
+                    "race_distance": plan.race_distance,
+                    "race_name": plan.race_name,
+                    "race_location": plan.race_location,
+                    "race_metadata": race_metadata,
+                    "primary_goal": plan.primary_goal,
+                    "target_time": plan.target_time,
+                    "training_days": training_days,
+                    "notes": plan.notes,
+                    "is_active": plan.is_active,
+                },
+            )
+        else:
+            # Insert new plan
+            result = local_session.execute(
+                text(
+                    """
+                    INSERT INTO plans (
+                        user_id, plan_name, race_date, race_distance, race_name,
+                        race_location, race_metadata, primary_goal, target_time,
+                        training_days, notes, is_active, created_by, created_at
+                    ) VALUES (
+                        :user_id, :plan_name, :race_date, :race_distance, :race_name,
+                        :race_location, :race_metadata, :primary_goal, :target_time,
+                        :training_days, :notes, :is_active, :created_by, :created_at
+                    )
+                    RETURNING id
+                """
+                ),
+                {
+                    "user_id": target_user_id,
+                    "plan_name": plan.plan_name,
+                    "race_date": plan.race_date,
+                    "race_distance": plan.race_distance,
+                    "race_name": plan.race_name,
+                    "race_location": plan.race_location,
+                    "race_metadata": race_metadata,
+                    "primary_goal": plan.primary_goal,
+                    "target_time": plan.target_time,
+                    "training_days": training_days,
+                    "notes": plan.notes,
+                    "is_active": plan.is_active,
+                    "created_by": plan.created_by,
+                    "created_at": plan.created_at,
+                },
+            )
+            new_plan_id = result.fetchone()[0]
         plan_id_map[plan.id] = new_plan_id
 
     local_session.commit()

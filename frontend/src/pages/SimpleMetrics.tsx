@@ -137,6 +137,7 @@ export default function SimpleMetrics() {
         const loadTime = performance.now() - startTime;
         console.log(`📊 All metrics loaded in ${loadTime.toFixed(0)}ms`);
         console.log("📊 Complete response:", response.data);
+        console.log("📊 weekly_long_run_goals (raw):", response.data?.weekly_long_run_goals);
 
         const data = response.data;
 
@@ -219,20 +220,26 @@ export default function SimpleMetrics() {
   const filteredWeeklyHRZones = allWeeklyData.hrZones.slice(0, selectedWeeks);
   const filteredLongestRuns = allWeeklyData.longestRuns.slice(0, selectedWeeks);
 
-  // Normalize weeks to YYYY-MM-DD and build the set used for goal alignment
-  // This ensures planned bars appear for the same week columns at 4w/8w/16w.
+  // Normalize weeks to YYYY-MM-DD and build the sets used for goal alignment
+  // For Total Miles, align to weekly_trends. For Longest Runs, align to the longest runs weeks.
   const displayedWeeks = new Set(
     filteredWeeklyTrends.map((w) => (w.week.includes("T") ? w.week.split("T")[0] : w.week))
+  );
+  const displayedLongestRunWeeks = new Set(
+    filteredLongestRuns.map((r) => (r.week_start.includes("T") ? r.week_start.split("T")[0] : r.week_start))
   );
   const filteredWeeklyGoals = allWeeklyData.goals.filter((g) => {
     const gw = g.week.includes("T") ? g.week.split("T")[0] : g.week;
     return displayedWeeks.has(gw);
   });
-  // Align long-run goals to the displayed weeks (normalize dates)
+  // Align long-run goals to the displayed longest-run weeks (normalize dates)
   const filteredWeeklyLongRunGoals = (allWeeklyData.longRunGoals || []).filter((g) => {
     const gw = g.week.includes("T") ? g.week.split("T")[0] : g.week;
-    return displayedWeeks.has(gw);
+    return displayedLongestRunWeeks.has(gw);
   });
+  console.log("📊 displayedWeeks:", Array.from(displayedWeeks));
+  console.log("📊 displayedLongestRunWeeks:", Array.from(displayedLongestRunWeeks));
+  console.log("📊 filteredWeeklyLongRunGoals:", filteredWeeklyLongRunGoals);
 
   // Helper function to format date as M/D (same as other charts)
   const formatDate = (dateString: string) => {
@@ -396,7 +403,7 @@ export default function SimpleMetrics() {
                 data={filteredLongestRuns}
                 title="Longest Runs"
                 showHeader={true}
-                longRunGoals={filteredWeeklyLongRunGoals}
+                longRunGoals={allWeeklyData.longRunGoals || []}
               />
             )}
 
