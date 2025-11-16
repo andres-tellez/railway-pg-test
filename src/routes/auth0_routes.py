@@ -110,8 +110,25 @@ def login_callback():
 
         user_id, error = get_user_id_from_request(user_profile, create_if_missing=True)
         if error:
-            log_login_failure(auth0_sub=auth0_sub, reason="user_id_resolution_failed")
-            return error
+            # Graceful fallback: try a direct resolve/create to avoid 404s
+            try:
+                from src.db.dao.user_identity_dao import (
+                    resolve_user_id_from_auth_provider,
+                )
+
+                fallback_user_id = resolve_user_id_from_auth_provider(
+                    auth0_sub, decoded_jwt, create_if_missing=True
+                )
+            except Exception as _e:  # pragma: no cover - defensive
+                fallback_user_id = None
+
+            if not fallback_user_id:
+                log_login_failure(
+                    auth0_sub=auth0_sub, reason="user_id_resolution_failed"
+                )
+                return error
+            else:
+                user_id = str(fallback_user_id)
 
         user_jwt = id_token  # Use the token we just verified
 
