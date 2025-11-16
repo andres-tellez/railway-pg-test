@@ -218,18 +218,18 @@ export default function SimpleMetrics() {
   const filteredWeeklyTrends = allWeeklyData.trends.slice(0, selectedWeeks);
   const filteredWeeklyHRZones = allWeeklyData.hrZones.slice(0, selectedWeeks);
   const filteredLongestRuns = allWeeklyData.longestRuns.slice(0, selectedWeeks);
-  // Align long-run goals to the displayed weeks (normalize dates)
-  const filteredWeeklyLongRunGoals = (allWeeklyData.longRunGoals || []).filter((g) => {
-    const gw = g.week.includes("T") ? g.week.split("T")[0] : g.week;
-    return displayedWeeks.has(gw);
-  });
 
-  // Normalize weeks to YYYY-MM-DD and filter goals by the displayed trend weeks.
+  // Normalize weeks to YYYY-MM-DD and build the set used for goal alignment
   // This ensures planned bars appear for the same week columns at 4w/8w/16w.
   const displayedWeeks = new Set(
     filteredWeeklyTrends.map((w) => (w.week.includes("T") ? w.week.split("T")[0] : w.week))
   );
   const filteredWeeklyGoals = allWeeklyData.goals.filter((g) => {
+    const gw = g.week.includes("T") ? g.week.split("T")[0] : g.week;
+    return displayedWeeks.has(gw);
+  });
+  // Align long-run goals to the displayed weeks (normalize dates)
+  const filteredWeeklyLongRunGoals = (allWeeklyData.longRunGoals || []).filter((g) => {
     const gw = g.week.includes("T") ? g.week.split("T")[0] : g.week;
     return displayedWeeks.has(gw);
   });
