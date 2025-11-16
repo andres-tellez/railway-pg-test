@@ -32,9 +32,16 @@ if not prod_db_url or not local_db_url:
     print("❌ Database URLs not set")
     sys.exit(1)
 
-# Athlete IDs
-source_athlete_id = 347085  # Production athlete_id to copy
-target_athlete_id = 347085  # Local test account athlete_id (same ID)
+# Athlete IDs (allow override via environment)
+if not os.getenv("SOURCE_ATHLETE_ID") or not os.getenv("TARGET_ATHLETE_ID"):
+    print("❌ SOURCE_ATHLETE_ID and TARGET_ATHLETE_ID are required")
+    sys.exit(1)
+try:
+    source_athlete_id = int(os.getenv("SOURCE_ATHLETE_ID"))
+    target_athlete_id = int(os.getenv("TARGET_ATHLETE_ID"))
+except ValueError:
+    print("❌ Invalid SOURCE_ATHLETE_ID or TARGET_ATHLETE_ID")
+    sys.exit(1)
 
 print("=" * 60)
 print(f"🔄 Migrating athlete_id {source_athlete_id} → {target_athlete_id}")
@@ -98,138 +105,116 @@ try:
     split_count = result.fetchone()[0]
     print(f"   Splits: {split_count}")
 
-    # Migrate activities
-    print("\n4. Migrating activities...")
-    activities = prod_session.execute(
-        text("SELECT * FROM activities WHERE athlete_id = :athlete_id"),
-        {"athlete_id": source_athlete_id},
+    # Migrate activities (delta-only)
+    print("\n4. Migrating activities (delta-only)...")
+
+    # Fetch existing local activity_ids for the target user to avoid re-copy
+    existing_ids_rows = local_session.execute(
+        text("SELECT activity_id FROM activities WHERE athlete_id = :athlete_id"),
+        {"athlete_id": target_athlete_id},
     ).fetchall()
+    existing_ids = {row[0] for row in existing_ids_rows}
+
+    # Pull only prod activities that are not already present locally
+    if existing_ids:
+        # Build a parameterized NOT IN list safely by batching
+        # For simplicity, fetch all and filter in Python (safe and still fast for typical sizes)
+        prod_all = prod_session.execute(
+            text("SELECT * FROM activities WHERE athlete_id = :athlete_id"),
+            {"athlete_id": source_athlete_id},
+        ).fetchall()
+        activities = [a for a in prod_all if a.activity_id not in existing_ids]
+    else:
+        activities = prod_session.execute(
+            text("SELECT * FROM activities WHERE athlete_id = :athlete_id"),
+            {"athlete_id": source_athlete_id},
+        ).fetchall()
+
+    # Safety check: ensure all selected activities belong to the source athlete
+    bad = [
+        a.activity_id for a in activities if int(a.athlete_id) != int(source_athlete_id)
+    ]
+    if bad:
+        print(
+            f"❌ Safety check failed: found {len(bad)} activities not matching SOURCE_ATHLETE_ID. Aborting."
+        )
+        sys.exit(2)
 
     migrated_activities = 0
     for activity in activities:
-        # Check if exists
-        existing = local_session.execute(
-            text("SELECT activity_id FROM activities WHERE activity_id = :activity_id"),
-            {"activity_id": activity.activity_id},
-        ).fetchone()
-
-        if existing:
-            # Update
-            local_session.execute(
-                text(
-                    """
-                    UPDATE activities
-                    SET athlete_id = :athlete_id, user_id = :user_id,
-                        name = :name, type = :type, start_date = :start_date,
-                        distance = :distance, elapsed_time = :elapsed_time,
-                        moving_time = :moving_time, total_elevation_gain = :total_elevation_gain,
-                        external_id = :external_id, timezone = :timezone,
-                        average_speed = :average_speed, max_speed = :max_speed,
-                        suffer_score = :suffer_score, average_heartrate = :average_heartrate,
-                        max_heartrate = :max_heartrate, calories = :calories,
-                        conv_distance = :conv_distance, conv_elevation_feet = :conv_elevation_feet,
-                        conv_avg_speed = :conv_avg_speed, conv_max_speed = :conv_max_speed,
-                        conv_moving_time = :conv_moving_time, conv_elapsed_time = :conv_elapsed_time,
-                        hr_zone_1 = :hr_zone_1, hr_zone_2 = :hr_zone_2,
-                        hr_zone_3 = :hr_zone_3, hr_zone_4 = :hr_zone_4, hr_zone_5 = :hr_zone_5
-                    WHERE activity_id = :activity_id
+        # Insert only (delta). If race condition, ON CONFLICT would be better,
+        # but we already filtered by existing_ids above.
+        local_session.execute(
+            text(
                 """
-                ),
-                {
-                    "activity_id": activity.activity_id,
-                    "athlete_id": target_athlete_id,
-                    "user_id": target_user_id,
-                    "name": activity.name,
-                    "type": activity.type,
-                    "start_date": activity.start_date,
-                    "distance": activity.distance,
-                    "elapsed_time": activity.elapsed_time,
-                    "moving_time": activity.moving_time,
-                    "total_elevation_gain": activity.total_elevation_gain,
-                    "external_id": activity.external_id,
-                    "timezone": activity.timezone,
-                    "average_speed": activity.average_speed,
-                    "max_speed": activity.max_speed,
-                    "suffer_score": activity.suffer_score,
-                    "average_heartrate": activity.average_heartrate,
-                    "max_heartrate": activity.max_heartrate,
-                    "calories": activity.calories,
-                    "conv_distance": activity.conv_distance,
-                    "conv_elevation_feet": activity.conv_elevation_feet,
-                    "conv_avg_speed": activity.conv_avg_speed,
-                    "conv_max_speed": activity.conv_max_speed,
-                    "conv_moving_time": activity.conv_moving_time,
-                    "conv_elapsed_time": activity.conv_elapsed_time,
-                    "hr_zone_1": activity.hr_zone_1,
-                    "hr_zone_2": activity.hr_zone_2,
-                    "hr_zone_3": activity.hr_zone_3,
-                    "hr_zone_4": activity.hr_zone_4,
-                    "hr_zone_5": activity.hr_zone_5,
-                },
-            )
-        else:
-            # Insert
-            local_session.execute(
-                text(
-                    """
-                    INSERT INTO activities (
-                        activity_id, athlete_id, user_id, name, type, start_date,
-                        distance, elapsed_time, moving_time, total_elevation_gain,
-                        external_id, timezone, average_speed, max_speed,
-                        suffer_score, average_heartrate, max_heartrate, calories,
-                        conv_distance, conv_elevation_feet, conv_avg_speed,
-                        conv_max_speed, conv_moving_time, conv_elapsed_time,
-                        hr_zone_1, hr_zone_2, hr_zone_3, hr_zone_4, hr_zone_5
-                    ) VALUES (
-                        :activity_id, :athlete_id, :user_id, :name, :type, :start_date,
-                        :distance, :elapsed_time, :moving_time, :total_elevation_gain,
-                        :external_id, :timezone, :average_speed, :max_speed,
-                        :suffer_score, :average_heartrate, :max_heartrate, :calories,
-                        :conv_distance, :conv_elevation_feet, :conv_avg_speed,
-                        :conv_max_speed, :conv_moving_time, :conv_elapsed_time,
-                        :hr_zone_1, :hr_zone_2, :hr_zone_3, :hr_zone_4, :hr_zone_5
-                    )
-                """
-                ),
-                {
-                    "activity_id": activity.activity_id,
-                    "athlete_id": target_athlete_id,
-                    "user_id": target_user_id,
-                    "name": activity.name,
-                    "type": activity.type,
-                    "start_date": activity.start_date,
-                    "distance": activity.distance,
-                    "elapsed_time": activity.elapsed_time,
-                    "moving_time": activity.moving_time,
-                    "total_elevation_gain": activity.total_elevation_gain,
-                    "external_id": activity.external_id,
-                    "timezone": activity.timezone,
-                    "average_speed": activity.average_speed,
-                    "max_speed": activity.max_speed,
-                    "suffer_score": activity.suffer_score,
-                    "average_heartrate": activity.average_heartrate,
-                    "max_heartrate": activity.max_heartrate,
-                    "calories": activity.calories,
-                    "conv_distance": activity.conv_distance,
-                    "conv_elevation_feet": activity.conv_elevation_feet,
-                    "conv_avg_speed": activity.conv_avg_speed,
-                    "conv_max_speed": activity.conv_max_speed,
-                    "conv_moving_time": activity.conv_moving_time,
-                    "conv_elapsed_time": activity.conv_elapsed_time,
-                    "hr_zone_1": activity.hr_zone_1,
-                    "hr_zone_2": activity.hr_zone_2,
-                    "hr_zone_3": activity.hr_zone_3,
-                    "hr_zone_4": activity.hr_zone_4,
-                    "hr_zone_5": activity.hr_zone_5,
-                },
-            )
+                INSERT INTO activities (
+                    activity_id, athlete_id, user_id, name, type, start_date,
+                    distance, elapsed_time, moving_time, total_elevation_gain,
+                    external_id, timezone, average_speed, max_speed,
+                    suffer_score, average_heartrate, max_heartrate, calories,
+                    conv_distance, conv_elevation_feet, conv_avg_speed,
+                    conv_max_speed, conv_moving_time, conv_elapsed_time,
+                    hr_zone_1, hr_zone_2, hr_zone_3, hr_zone_4, hr_zone_5
+                ) VALUES (
+                    :activity_id, :athlete_id, :user_id, :name, :type, :start_date,
+                    :distance, :elapsed_time, :moving_time, :total_elevation_gain,
+                    :external_id, :timezone, :average_speed, :max_speed,
+                    :suffer_score, :average_heartrate, :max_heartrate, :calories,
+                    :conv_distance, :conv_elevation_feet, :conv_avg_speed,
+                    :conv_max_speed, :conv_moving_time, :conv_elapsed_time,
+                    :hr_zone_1, :hr_zone_2, :hr_zone_3, :hr_zone_4, :hr_zone_5
+                )
+            """
+            ),
+            {
+                "activity_id": activity.activity_id,
+                "athlete_id": target_athlete_id,
+                "user_id": target_user_id,
+                "name": activity.name,
+                "type": activity.type,
+                "start_date": activity.start_date,
+                "distance": activity.distance,
+                "elapsed_time": activity.elapsed_time,
+                "moving_time": activity.moving_time,
+                "total_elevation_gain": activity.total_elevation_gain,
+                "external_id": activity.external_id,
+                "timezone": activity.timezone,
+                "average_speed": activity.average_speed,
+                "max_speed": activity.max_speed,
+                "suffer_score": activity.suffer_score,
+                "average_heartrate": activity.average_heartrate,
+                "max_heartrate": activity.max_heartrate,
+                "calories": activity.calories,
+                "conv_distance": activity.conv_distance,
+                "conv_elevation_feet": activity.conv_elevation_feet,
+                "conv_avg_speed": activity.conv_avg_speed,
+                "conv_max_speed": activity.conv_max_speed,
+                "conv_moving_time": activity.conv_moving_time,
+                "conv_elapsed_time": activity.conv_elapsed_time,
+                "hr_zone_1": activity.hr_zone_1,
+                "hr_zone_2": activity.hr_zone_2,
+                "hr_zone_3": activity.hr_zone_3,
+                "hr_zone_4": activity.hr_zone_4,
+                "hr_zone_5": activity.hr_zone_5,
+            },
+        )
         migrated_activities += 1
 
     local_session.commit()
     print(f"   ✅ Migrated {migrated_activities} activities")
 
-    # Migrate splits
-    print("\n5. Migrating splits...")
+    # Post-check: ensure local activities only contain target athlete for newly inserted rows context
+    # (non-fatal warning if others exist from earlier runs)
+    distinct_local = local_session.execute(
+        text("SELECT COUNT(DISTINCT athlete_id) FROM activities")
+    ).fetchone()[0]
+    if distinct_local and distinct_local > 1:
+        print(
+            "⚠️  Warning: local activities contain multiple athlete_ids. Ensure other jobs are not writing data."
+        )
+
+    # Migrate splits (only for newly inserted activity_ids)
+    print("\n5. Migrating splits (delta-only)...")
     activity_ids = [a.activity_id for a in activities]
     total_splits = 0
 
@@ -324,7 +309,7 @@ try:
     local_session.commit()
     print(f"   ✅ Migrated {total_splits} splits")
 
-    # Migrate plans
+    # Migrate plans (idempotent: reuse matching plan if it already exists)
     print("\n6. Migrating plans...")
     plans = prod_session.execute(
         text("SELECT * FROM plans WHERE user_id = :user_id"),
@@ -341,39 +326,92 @@ try:
         # training_days is a PostgreSQL ARRAY, so keep it as a list
         training_days = plan.training_days
 
-        result = local_session.execute(
+        # Try to find an existing local plan for this user with same name + race_date
+        existing_plan_row = local_session.execute(
             text(
                 """
-                INSERT INTO plans (
-                    user_id, plan_name, race_date, race_distance, race_name,
-                    race_location, race_metadata, primary_goal, target_time,
-                    training_days, notes, is_active, created_by, created_at
-                ) VALUES (
-                    :user_id, :plan_name, :race_date, :race_distance, :race_name,
-                    :race_location, :race_metadata, :primary_goal, :target_time,
-                    :training_days, :notes, :is_active, :created_by, :created_at
-                )
-                RETURNING id
-            """
+                SELECT id FROM plans
+                WHERE user_id = :user_id
+                  AND plan_name = :plan_name
+                  AND race_date = :race_date
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
             ),
             {
                 "user_id": target_user_id,
                 "plan_name": plan.plan_name,
                 "race_date": plan.race_date,
-                "race_distance": plan.race_distance,
-                "race_name": plan.race_name,
-                "race_location": plan.race_location,
-                "race_metadata": race_metadata,
-                "primary_goal": plan.primary_goal,
-                "target_time": plan.target_time,
-                "training_days": training_days,
-                "notes": plan.notes,
-                "is_active": plan.is_active,
-                "created_by": plan.created_by,
-                "created_at": plan.created_at,
             },
-        )
-        new_plan_id = result.fetchone()[0]
+        ).fetchone()
+
+        if existing_plan_row:
+            # Optional: update metadata of the existing plan to keep it fresh
+            new_plan_id = existing_plan_row[0]
+            local_session.execute(
+                text(
+                    """
+                    UPDATE plans
+                    SET race_distance = :race_distance,
+                        race_name = :race_name,
+                        race_location = :race_location,
+                        race_metadata = :race_metadata,
+                        primary_goal = :primary_goal,
+                        target_time = :target_time,
+                        training_days = :training_days,
+                        notes = :notes,
+                        is_active = :is_active
+                    WHERE id = :plan_id
+                    """
+                ),
+                {
+                    "plan_id": new_plan_id,
+                    "race_distance": plan.race_distance,
+                    "race_name": plan.race_name,
+                    "race_location": plan.race_location,
+                    "race_metadata": race_metadata,
+                    "primary_goal": plan.primary_goal,
+                    "target_time": plan.target_time,
+                    "training_days": training_days,
+                    "notes": plan.notes,
+                    "is_active": plan.is_active,
+                },
+            )
+        else:
+            # Insert new plan
+            result = local_session.execute(
+                text(
+                    """
+                    INSERT INTO plans (
+                        user_id, plan_name, race_date, race_distance, race_name,
+                        race_location, race_metadata, primary_goal, target_time,
+                        training_days, notes, is_active, created_by, created_at
+                    ) VALUES (
+                        :user_id, :plan_name, :race_date, :race_distance, :race_name,
+                        :race_location, :race_metadata, :primary_goal, :target_time,
+                        :training_days, :notes, :is_active, :created_by, :created_at
+                    )
+                    RETURNING id
+                """
+                ),
+                {
+                    "user_id": target_user_id,
+                    "plan_name": plan.plan_name,
+                    "race_date": plan.race_date,
+                    "race_distance": plan.race_distance,
+                    "race_name": plan.race_name,
+                    "race_location": plan.race_location,
+                    "race_metadata": race_metadata,
+                    "primary_goal": plan.primary_goal,
+                    "target_time": plan.target_time,
+                    "training_days": training_days,
+                    "notes": plan.notes,
+                    "is_active": plan.is_active,
+                    "created_by": plan.created_by,
+                    "created_at": plan.created_at,
+                },
+            )
+            new_plan_id = result.fetchone()[0]
         plan_id_map[plan.id] = new_plan_id
 
     local_session.commit()

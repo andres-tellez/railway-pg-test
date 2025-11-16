@@ -103,7 +103,8 @@ export default function SimpleMetrics() {
     hrZones: WeeklyHRZoneData[];
     goals: WeeklyGoalData[];
     longestRuns: LongestRunData[];
-  }>({ trends: [], hrZones: [], goals: [], longestRuns: [] });
+    longRunGoals?: { week: string; long_run_miles: number }[];
+  }>({ trends: [], hrZones: [], goals: [], longestRuns: [], longRunGoals: [] });
 
   // Handle window resize to update default weeks
   useEffect(() => {
@@ -131,11 +132,12 @@ export default function SimpleMetrics() {
         const startTime = performance.now();
 
         // Single API call for everything (always fetch all 20 weeks)
-        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_goals: WeeklyGoalData[], longest_runs: LongestRunData[]}>("/api/metrics/all-metrics");
+        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_goals: WeeklyGoalData[], longest_runs: LongestRunData[], weekly_long_run_goals?: { week: string; long_run_miles: number }[]}>("/api/metrics/all-metrics");
 
         const loadTime = performance.now() - startTime;
         console.log(`📊 All metrics loaded in ${loadTime.toFixed(0)}ms`);
         console.log("📊 Complete response:", response.data);
+        console.log("📊 weekly_long_run_goals (raw):", response.data?.weekly_long_run_goals);
 
         const data = response.data;
 
@@ -172,7 +174,8 @@ export default function SimpleMetrics() {
           trends: data.weekly_trends,
           hrZones: data.weekly_hr_zones,
           goals: data.weekly_goals || [],
-          longestRuns: data.longest_runs || []
+          longestRuns: data.longest_runs || [],
+          longRunGoals: data.weekly_long_run_goals || []
         });
 
       } catch (err) {
@@ -215,8 +218,28 @@ export default function SimpleMetrics() {
   // Compute filtered data based on selected weeks (instant filtering)
   const filteredWeeklyTrends = allWeeklyData.trends.slice(0, selectedWeeks);
   const filteredWeeklyHRZones = allWeeklyData.hrZones.slice(0, selectedWeeks);
-  const filteredWeeklyGoals = allWeeklyData.goals.slice(0, selectedWeeks);
   const filteredLongestRuns = allWeeklyData.longestRuns.slice(0, selectedWeeks);
+
+  // Normalize weeks to YYYY-MM-DD and build the sets used for goal alignment
+  // For Total Miles, align to weekly_trends. For Longest Runs, align to the longest runs weeks.
+  const displayedWeeks = new Set(
+    filteredWeeklyTrends.map((w) => (w.week.includes("T") ? w.week.split("T")[0] : w.week))
+  );
+  const displayedLongestRunWeeks = new Set(
+    filteredLongestRuns.map((r) => (r.week_start.includes("T") ? r.week_start.split("T")[0] : r.week_start))
+  );
+  const filteredWeeklyGoals = allWeeklyData.goals.filter((g) => {
+    const gw = g.week.includes("T") ? g.week.split("T")[0] : g.week;
+    return displayedWeeks.has(gw);
+  });
+  // Align long-run goals to the displayed longest-run weeks (normalize dates)
+  const filteredWeeklyLongRunGoals = (allWeeklyData.longRunGoals || []).filter((g) => {
+    const gw = g.week.includes("T") ? g.week.split("T")[0] : g.week;
+    return displayedLongestRunWeeks.has(gw);
+  });
+  console.log("📊 displayedWeeks:", Array.from(displayedWeeks));
+  console.log("📊 displayedLongestRunWeeks:", Array.from(displayedLongestRunWeeks));
+  console.log("📊 filteredWeeklyLongRunGoals:", filteredWeeklyLongRunGoals);
 
   // Helper function to format date as M/D (same as other charts)
   const formatDate = (dateString: string) => {
@@ -368,7 +391,7 @@ export default function SimpleMetrics() {
               <TotalMilesActualVsPlanChart
                 data={filteredWeeklyTrends}
                 weeklyGoals={filteredWeeklyGoals}
-                title="Total Miles - Actual vs Plan"
+                title="Total Miles"
                 showHeader={true}
                 helpTooltip={mileageHelpContent}
               />
@@ -380,6 +403,7 @@ export default function SimpleMetrics() {
                 data={filteredLongestRuns}
                 title="Longest Runs"
                 showHeader={true}
+                longRunGoals={allWeeklyData.longRunGoals || []}
               />
             )}
 
