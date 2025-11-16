@@ -304,6 +304,88 @@ class WeeklyRebuildService:
                     f"[Adaptive Pipeline] Created {len(previous_week_logs)} week log entries"
                 )
 
+        # Lean aggregate-based seed nudge (matcher-independent)
+        try:
+            if (
+                previous_week_logs
+                and previous_week_workouts
+                and initial_seed is not None
+            ):
+                from .data_collection_service import DataCollectionService
+                from .pacing_config import CONFIG
+                from .weekly_aggregates import compute_weekly_aggregates_from_activities
+
+                # Determine previous week bounds
+                prev_week_start = min(w.date for w in previous_week_workouts)
+                prev_week_end = max(w.date for w in previous_week_workouts)
+
+                # Fetch a small recent window and filter to previous week
+                activities_all = DataCollectionService.fetch_strava_activities(
+                    session=session,
+                    user_id=str(plan.user_id),
+                    weeks=4,
+                    activity_type="Run",
+                )
+                prev_week_acts = [
+                    a
+                    for a in activities_all
+                    if a.get("date")
+                    and prev_week_start.isoformat()
+                    <= a["date"]
+                    <= prev_week_end.isoformat()
+                ]
+
+                aggs = compute_weekly_aggregates_from_activities(
+                    prev_week_acts,
+                    easyish_min_mi=CONFIG.easyish_min_mi,
+                    easyish_max_mi=CONFIG.easyish_max_mi,
+                    lr_min_mi=CONFIG.lr_min_qualifying_mi,
+                )
+
+                current_seed = initial_seed
+                easy_med = aggs.get("weekly_easyish_median_sec")
+                # Optionally include LR if it was executed aerobically (within easy band)
+                lr_pace = aggs.get("weekly_lr_pace_sec")
+                if lr_pace is not None:
+                    e_min = current_seed.E_min
+                    e_max = current_seed.E_max
+                    if e_min <= float(lr_pace) <= e_max:
+                        if easy_med:
+                            easy_med = (float(easy_med) + float(lr_pace)) / 2.0
+                        else:
+                            easy_med = float(lr_pace)
+
+                if easy_med:
+                    seed_center = (current_seed.E_min + current_seed.E_max) / 2.0
+                    diff = float(easy_med) - float(seed_center)
+                    if abs(diff) > CONFIG.easy_diff_trigger_sec:
+                        # Clamp to weekly cap
+                        delta = max(
+                            -CONFIG.weekly_adjust_cap_sec,
+                            min(CONFIG.weekly_adjust_cap_sec, diff),
+                        )
+                        logger.info(
+                            f"[Adaptive Pipeline] Aggregate-based pace nudge: "
+                            f"weekly_median_effective={easy_med:.1f}s/mi, seed_center={seed_center:.1f}s/mi, "
+                            f"delta={delta:.1f}s"
+                        )
+                        current_seed = PaceSeed(
+                            E_min=_time_add(current_seed.E_min, delta),
+                            E_max=_time_add(current_seed.E_max, delta),
+                            S_min=_time_add(current_seed.S_min, delta),
+                            S_max=_time_add(current_seed.S_max, delta),
+                            M=_time_add(current_seed.M, delta),
+                            T_min=_time_add(current_seed.T_min, delta),
+                            T_max=_time_add(current_seed.T_max, delta),
+                            week1_long_cap=current_seed.week1_long_cap,
+                        )
+                        # Update initial_seed so downstream stages use the nudged seed
+                        initial_seed = current_seed
+        except Exception as e:
+            logger.warning(
+                f"[Adaptive Pipeline] Skipping aggregate-based nudge due to error: {e}"
+            )
+
         # STAGE 2: Analyze current week (previous week's performance)
         analysis = None
         trends = None
@@ -525,6 +607,18 @@ class WeeklyRebuildService:
                 "target_zone": new_target_zone or None,  # Save extracted target zone
                 "target_hr": new_target_hr or None,  # Save target HR if available
             }
+
+            # Keep pace_ranges in sync with the active seed so table and UI match
+            try:
+                update_data["pace_ranges"] = {
+                    "E": [float(current_seed.E_min), float(current_seed.E_max)],
+                    "S": [float(current_seed.S_min), float(current_seed.S_max)],
+                    "M": [float(current_seed.M), float(current_seed.M)],
+                    "T": [float(current_seed.T_min), float(current_seed.T_max)],
+                }
+            except Exception:
+                # If seed not available for any reason, skip syncing pace_ranges
+                pass
 
             # ALWAYS save segments if they exist (critical for Garmin automation)
             # Segments should be a dict with "steps" array from pass4_workout_details

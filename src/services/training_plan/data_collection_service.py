@@ -84,7 +84,11 @@ class DataCollectionService:
 
     @staticmethod
     def fetch_strava_activities(
-        session: Session, user_id: str, weeks: int = 12, activity_type: str = "Run"
+        session: Session,
+        user_id: str,
+        weeks: int = 12,
+        activity_type: str = "Run",
+        source: str = "auto",  # "auto" | "view" | "table"
     ) -> List[Dict[str, Any]]:
         """
         Fetch Strava running activities for the specified time period.
@@ -139,53 +143,127 @@ class DataCollectionService:
         cutoff_date = datetime.now() - timedelta(weeks=weeks)
         current_time = datetime.now()
 
-        # Query activities with safety limits
-        try:
-            activities = (
-                session.query(Activity)
-                .filter(
-                    and_(
-                        Activity.user_id == user_uuid,
-                        Activity.type == activity_type,
-                        Activity.start_date >= cutoff_date,
-                        Activity.start_date <= current_time,  # Filter out future dates
+        # Try view first (if enabled), then fall back to table
+        result: List[Dict[str, Any]] = []
+        view_error: Optional[Exception] = None
+
+        if source in ("auto", "view"):
+            try:
+                # Use a lightweight SQL query against a curated view
+                from sqlalchemy import text
+
+                rows = (
+                    session.execute(
+                        text(
+                            """
+                            SELECT
+                                activity_id,
+                                activity_date,
+                                distance AS distance_miles,
+                                moving_time,
+                                avg_hr AS average_heartrate
+                            FROM v_completed_activities
+                            WHERE user_id = :uid
+                              AND activity_date >= :cutoff_date
+                              AND activity_date <= :now_date
+                            ORDER BY activity_date DESC
+                            LIMIT :lim
+                            """
+                        ),
+                        {
+                            "uid": str(user_uuid),
+                            "cutoff_date": cutoff_date.date(),
+                            "now_date": current_time.date(),
+                            "lim": MAX_ACTIVITIES,
+                        },
                     )
+                    .mappings()
+                    .all()
                 )
-                .order_by(Activity.start_date.desc())
-                .limit(MAX_ACTIVITIES)  # Safety limit for performance
-                .all()
-            )
 
-            logger.debug(
-                f"Fetched {len(activities)} activities for user {user_id} (last {weeks} weeks)"
-            )
+                for r in rows:
+                    sd = r["activity_date"]
+                    date_str = (
+                        sd.strftime("%Y-%m-%d") if hasattr(sd, "strftime") else str(sd)
+                    )
+                    result.append(
+                        {
+                            "activity_id": r.get("activity_id"),
+                            "date": date_str,
+                            "distance": float(r.get("distance_miles") or 0.0),  # miles
+                            "moving_time": int(r.get("moving_time") or 0),
+                            "average_heartrate": r.get("average_heartrate"),
+                        }
+                    )
+                logger.debug(
+                    f"Fetched {len(result)} activities from view for user {user_id} (last {weeks} weeks)"
+                )
+            except Exception as e:
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
+                view_error = e
+                logger.debug(
+                    f"View fetch failed or not available, will fall back to table: {e}"
+                )
 
-        except Exception as e:
-            logger.error(f"Database error fetching activities for user {user_id}: {e}")
-            raise RuntimeError("Failed to fetch activities from database") from e
+        if (source in ("auto", "table")) and not result:
+            # Query activities table with safety limits
+            try:
+                activities = (
+                    session.query(Activity)
+                    .filter(
+                        and_(
+                            Activity.user_id == user_uuid,
+                            Activity.type == activity_type,
+                            Activity.start_date >= cutoff_date,
+                            Activity.start_date
+                            <= current_time,  # Filter out future dates
+                        )
+                    )
+                    .order_by(Activity.start_date.desc())
+                    .limit(MAX_ACTIVITIES)  # Safety limit for performance
+                    .all()
+                )
 
-        # Convert to dictionaries
-        result = []
-        for activity in activities:
-            result.append(
-                {
-                    "activity_id": activity.activity_id,
-                    "date": (
-                        activity.start_date.strftime("%Y-%m-%d")
-                        if activity.start_date
-                        else None
-                    ),
-                    "distance": activity.conv_distance,  # Already converted to miles
-                    "moving_time": activity.moving_time,  # seconds
-                    "elapsed_time": activity.elapsed_time,  # seconds
-                    "average_heartrate": activity.average_heartrate,  # bpm
-                    "max_heartrate": activity.max_heartrate,  # bpm
-                    "average_speed": activity.average_speed,  # m/s
-                    "max_speed": activity.max_speed,  # m/s
-                    "total_elevation_gain": activity.total_elevation_gain,  # meters
-                    "suffer_score": activity.suffer_score,
-                }
-            )
+                logger.debug(
+                    f"Fetched {len(activities)} activities from table for user {user_id} (last {weeks} weeks)"
+                )
+
+                for activity in activities:
+                    result.append(
+                        {
+                            "activity_id": activity.activity_id,
+                            "date": (
+                                activity.start_date.strftime("%Y-%m-%d")
+                                if activity.start_date
+                                else None
+                            ),
+                            "distance": activity.conv_distance,  # Already converted to miles
+                            "moving_time": activity.moving_time,  # seconds
+                            "elapsed_time": activity.elapsed_time,  # seconds
+                            "average_heartrate": activity.average_heartrate,  # bpm
+                            "max_heartrate": activity.max_heartrate,  # bpm
+                            "average_speed": activity.average_speed,  # m/s
+                            "max_speed": activity.max_speed,  # m/s
+                            "total_elevation_gain": activity.total_elevation_gain,  # meters
+                            "suffer_score": activity.suffer_score,
+                        }
+                    )
+
+            except Exception as e:
+                # If we already tried the view, include that error context
+                if view_error:
+                    logger.error(
+                        f"Database error fetching activities for user {user_id}. "
+                        f"View error: {view_error}. Table error: {e}"
+                    )
+                else:
+                    logger.error(
+                        f"Database error fetching activities for user {user_id}: {e}"
+                    )
+                raise RuntimeError("Failed to fetch activities from database") from e
 
         return result
 
