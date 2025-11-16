@@ -103,7 +103,8 @@ export default function SimpleMetrics() {
     hrZones: WeeklyHRZoneData[];
     goals: WeeklyGoalData[];
     longestRuns: LongestRunData[];
-  }>({ trends: [], hrZones: [], goals: [], longestRuns: [] });
+    longRunGoals?: { week: string; long_run_miles: number }[];
+  }>({ trends: [], hrZones: [], goals: [], longestRuns: [], longRunGoals: [] });
 
   // Handle window resize to update default weeks
   useEffect(() => {
@@ -131,7 +132,7 @@ export default function SimpleMetrics() {
         const startTime = performance.now();
 
         // Single API call for everything (always fetch all 20 weeks)
-        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_goals: WeeklyGoalData[], longest_runs: LongestRunData[]}>("/api/metrics/all-metrics");
+        const response = await api.get<DashboardMetrics & {weekly_trends: WeeklyTrendData[], weekly_hr_zones: WeeklyHRZoneData[], weekly_goals: WeeklyGoalData[], longest_runs: LongestRunData[], weekly_long_run_goals?: { week: string; long_run_miles: number }[]}>("/api/metrics/all-metrics");
 
         const loadTime = performance.now() - startTime;
         console.log(`📊 All metrics loaded in ${loadTime.toFixed(0)}ms`);
@@ -172,7 +173,8 @@ export default function SimpleMetrics() {
           trends: data.weekly_trends,
           hrZones: data.weekly_hr_zones,
           goals: data.weekly_goals || [],
-          longestRuns: data.longest_runs || []
+          longestRuns: data.longest_runs || [],
+          longRunGoals: data.weekly_long_run_goals || []
         });
 
       } catch (err) {
@@ -216,6 +218,7 @@ export default function SimpleMetrics() {
   const filteredWeeklyTrends = allWeeklyData.trends.slice(0, selectedWeeks);
   const filteredWeeklyHRZones = allWeeklyData.hrZones.slice(0, selectedWeeks);
   const filteredLongestRuns = allWeeklyData.longestRuns.slice(0, selectedWeeks);
+  const filteredWeeklyLongRunGoals = (allWeeklyData.longRunGoals || []).slice(0, selectedWeeks);
 
   // Normalize weeks to YYYY-MM-DD and filter goals by the displayed trend weeks.
   // This ensures planned bars appear for the same week columns at 4w/8w/16w.
@@ -389,7 +392,7 @@ export default function SimpleMetrics() {
                 data={filteredLongestRuns}
                 title="Longest Runs"
                 showHeader={true}
-                weeklyGoals={filteredWeeklyGoals}
+                longRunGoals={filteredWeeklyLongRunGoals}
               />
             )}
 

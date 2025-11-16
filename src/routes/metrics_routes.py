@@ -371,6 +371,48 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
                 }
             )
 
+    # Compute planned long-run per week (based on latest plan)
+    weekly_long_run_goals = []
+    try:
+        if user_id:
+            plan_id_row = session.execute(
+                text(
+                    """
+                    SELECT id FROM plans
+                    WHERE user_id = :uid
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """
+                ),
+                {"uid": str(user_id)},
+            ).fetchone()
+            if plan_id_row:
+                plan_id_val = plan_id_row[0]
+                rows = session.execute(
+                    text(
+                        """
+                        SELECT DATE_TRUNC('week', pw.date)::date AS week_start,
+                               MAX(pw.miles) FILTER (WHERE LOWER(pw.workout_type) LIKE 'long run%'
+                                                    OR LOWER(pw.workout_type) = 'long run') AS long_run_miles
+                        FROM plan_workouts pw
+                        WHERE pw.plan_id = :pid
+                        GROUP BY DATE_TRUNC('week', pw.date)
+                        ORDER BY week_start DESC
+                        LIMIT :weeks
+                    """
+                    ),
+                    {"pid": plan_id_val, "weeks": 20},
+                ).fetchall()
+                weekly_long_run_goals = [
+                    {
+                        "week": r[0].isoformat(),
+                        "long_run_miles": float(r[1] or 0.0),
+                    }
+                    for r in rows
+                ]
+    except Exception as e:
+        logger.warning(f"[Longest Runs] Failed to compute weekly long run goals: {e}")
+
     return {
         "weekly_distance": {
             "current": current_distance,
@@ -392,6 +434,7 @@ def get_all_metrics_ultra_optimized(session, athlete_id, user_id=None, weeks=8):
         "weekly_hr_zones": weekly_hr_zones,
         "weekly_goals": weekly_goals,  # NEW: Include weekly_goals from materialized view
         "longest_runs": longest_runs,  # NEW: Include longest_runs from materialized view
+        "weekly_long_run_goals": weekly_long_run_goals,  # NEW: planned long-run per week
     }
 
 

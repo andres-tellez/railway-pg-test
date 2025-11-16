@@ -21,14 +21,16 @@ interface LongestRunData {
   prev_week_distance: number | null;
 }
 
+type WeeklyLongRunGoal = { week: string; long_run_miles: number };
+
 interface LongestRunsChartProps {
   data: LongestRunData[];
   title?: string;
   showHeader?: boolean;
-  weeklyGoals?: { week: string; goal_miles: number }[];
+  longRunGoals?: WeeklyLongRunGoal[];
 }
 
-export default function LongestRunsChart({ data, title = "Weekly Longest Runs", showHeader = true, weeklyGoals = [] }: LongestRunsChartProps) {
+export default function LongestRunsChart({ data, title = "Weekly Longest Runs", showHeader = true, longRunGoals = [] }: LongestRunsChartProps) {
   const [hoveredRun, setHoveredRun] = useState<{ index: number; x: number; y: number } | null>(null);
 
   // Centralized tooltip behavior - hide on scroll
@@ -40,14 +42,14 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
 
     // Helper to find a planned value for the week (match both YYYY-MM-DD and with 'T')
     const findPlannedForWeek = (week: string): number | null => {
-      const goal = weeklyGoals.find(g => {
+      const goal = longRunGoals.find(g => {
         const gw = g.week;
         if (gw === week) return true;
         if (week.includes('T') && gw === week.split('T')[0]) return true;
         if (gw.includes('T') && week === gw.split('T')[0]) return true;
         return false;
       });
-      return goal ? goal.goal_miles : null;
+      return goal ? goal.long_run_miles : null;
     };
 
     // Calculate chart maximum considering both actual longest run and planned miles
