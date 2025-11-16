@@ -33,6 +33,11 @@ export interface WeekDay {
   date: Date; // For display/formatting only
   workout?: Workout;
   activity?: Activity;
+  /**
+   * True when there was no planned workout but an activity exists
+   * (i.e., activity on a rest day). Useful for UI badges/messages.
+   */
+  isUnplanned?: boolean;
   isCompleted: boolean;
   isRestDay: boolean;
   isToday: boolean;
@@ -127,6 +132,7 @@ export function processWeekData(
   return weekDays.map(dateStr => {
     const workout = normalizedWorkouts.find(w => w.date === dateStr);
     const activity = dayAssignments.get(dateStr);
+    const isRest = !workout || workout.workout_type?.toLowerCase().includes('rest');
 
     return {
       dateStr,
@@ -134,7 +140,8 @@ export function processWeekData(
       workout,
       activity,
       isCompleted: !!activity,
-      isRestDay: !workout || workout.workout_type?.toLowerCase().includes('rest'),
+      isRestDay: isRest,
+      isUnplanned: !workout && !!activity,
       isToday: isToday(dateStr),
     };
   });
