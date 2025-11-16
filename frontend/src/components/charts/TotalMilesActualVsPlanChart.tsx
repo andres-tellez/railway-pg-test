@@ -259,15 +259,8 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                           width: '48%',
                           height: `${barInfo.plannedTotalMilesHeightPixels}px`
                         }}
-                        onMouseEnter={(e) => {
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          setHoveredBar({
-                            index,
-                            x: rect.left + rect.width / 2,
-                            y: rect.top - 10
-                          });
-                        }}
-                        onMouseLeave={() => setHoveredBar(null)}
+                        // Do not trigger tooltip for planned bars
+                        // (intentionally no onMouseEnter/Leave)
                         aria-label={`Planned ${barInfo.plannedTotalMiles.toFixed(1)} miles`}
                         role="img"
                       >
@@ -342,12 +335,7 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                         <span className="text-gray-300">Actual:</span>
                         <span className="text-white font-semibold">{week.distance.toFixed(1)} mi</span>
                       </div>
-                      {barInfo.plannedTotalMiles && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-300">Planned:</span>
-                          <span className="text-white font-semibold">{barInfo.plannedTotalMiles.toFixed(1)}</span>
-                        </div>
-                      )}
+                      {/* Optional: omit planned miles from tooltip per request */}
                       <div className="flex items-center justify-between">
                         <span className="text-gray-300">Runs:</span>
                         <span className="text-white font-semibold">{week.runs}</span>
@@ -364,21 +352,7 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                           </span>
                         </div>
                       )}
-                      {barInfo.exceededPlannedTotalMiles && (
-                        <div className="mt-2 pt-2 border-t border-gray-600 text-green-400 font-bold text-center text-sm bg-green-900/20 rounded px-2 py-1">
-                          🎯 Goal Achieved!
-                        </div>
-                      )}
-                      {barInfo.plannedTotalMiles && !barInfo.exceededPlannedTotalMiles && (
-                        <div className="mt-2 pt-2 border-t border-gray-600 text-orange-400 font-semibold text-center text-sm bg-orange-900/20 rounded px-2 py-1">
-                          Planned: {barInfo.plannedTotalMiles.toFixed(1)}
-                        </div>
-                      )}
-                      {barInfo.barColor === 'significant_drop' && (
-                        <div className="mt-2 pt-2 border-t border-gray-600 text-red-400 font-bold text-center text-sm bg-red-900/20 rounded px-2 py-1">
-                          ⚠️ Significant Drop
-                        </div>
-                      )}
+                      {/* Removed planned/goal and significant drop badges per request */}
                     </div>
                   </>
                 );
@@ -400,17 +374,7 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                 <span>Planned</span>
               </div>
             )}
-            <div className="flex items-center gap-2 relative group">
-              <div className="w-4 h-4 bg-red-600 rounded"></div>
-              <span>Significant Drop</span>
-              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-72 bg-gray-900 border border-gray-600 rounded-lg p-3 text-xs text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                <strong>Significant Drop:</strong> Red flags indicate concerning patterns:<br/>
-                • Two consecutive weeks dropping &gt;30% and &gt;15%<br/>
-                • Single week dropping &gt;40%<br/>
-                <br/>
-                <em>Note: Intentional race tapers (single-week drops) typically won't trigger this</em>
-              </div>
-            </div>
+            {/* Removed Significant Drop legend and hover help per request */}
           </div>
         </div>
       </div>
