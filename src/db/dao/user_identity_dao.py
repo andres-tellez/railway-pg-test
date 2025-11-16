@@ -103,7 +103,18 @@ def resolve_user_id_from_auth_provider(
     if not sub:
         return None
 
-    provider_name, provider_user_id = sub.split("|", 1)
+    # Be defensive: some identity providers or misconfigured clients may
+    # provide a sub without a 'provider|' prefix. In that case, fall back
+    # to a sane default so we can still create/link an identity.
+    try:
+        provider_name, provider_user_id = sub.split("|", 1)
+    except ValueError:
+        logger.warning(
+            "resolve_user_id_from_auth_provider: unexpected sub format '%s' "
+            "(expected 'provider|id'). Falling back to provider_name='unknown'.",
+            sub,
+        )
+        provider_name, provider_user_id = "unknown", sub
     claims = normalize_claims(userinfo or {})
 
     email = claims.get("email")

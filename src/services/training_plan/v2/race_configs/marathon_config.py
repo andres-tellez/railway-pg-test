@@ -4,7 +4,7 @@ Marathon Race Distance Configuration
 Marathon-specific configuration values extracted from existing hardcoded values.
 """
 
-from typing import Dict, Tuple, List
+from typing import Any, Dict, Tuple, List
 from .base_config import RaceDistanceConfig
 
 
@@ -12,6 +12,21 @@ class MarathonConfig(RaceDistanceConfig):
     """Marathon-specific configuration."""
 
     # Long Run Progression
+    @property
+    def long_run_increment(self) -> float:
+        """Default +1 mile build step during Base/Build."""
+        return 1.0
+
+    @property
+    def cutback_every(self) -> int:
+        """Run a cutback approximately every 3 build weeks."""
+        return 3
+
+    @property
+    def cutback_factor(self) -> float:
+        """Reduce volume ~30% on cutback weeks."""
+        return 0.70
+
     @property
     def target_peak_miles(self) -> float:
         return 20.0
@@ -23,6 +38,16 @@ class MarathonConfig(RaceDistanceConfig):
     @property
     def taper_ratios(self) -> List[float]:
         return [0.70, 0.50, 0.25]  # 70%, 50%, 25% of peak
+
+    @property
+    def recovery_long_run_floor(self) -> float:
+        """Minimum long run used when scheduling a recovery week."""
+        return 8.0
+
+    @property
+    def recovery_reduction_ratio(self) -> float:
+        """Percentage of the longest recent run to target for recovery."""
+        return 0.70
 
     # Weekly Totals
     @property
@@ -99,3 +124,44 @@ class MarathonConfig(RaceDistanceConfig):
     def race_distance_miles(self) -> float:
         """Marathon distance in miles."""
         return 26.2
+
+    def race_week_template(self) -> Dict[str, Any]:
+        """Canonical marathon race week layout."""
+        return {
+            "weekly_mileage": 8,
+            "long_run_miles": 0.0,
+            "workouts": [
+                {
+                    "day": "Mon",
+                    "miles": 3.0,
+                    "note": "Keep it conversational",
+                    "kind": "easy",
+                },
+                {
+                    "day": "Wed",
+                    "miles": 3.0,
+                    "note": "Include 4×20s relaxed strides",
+                    "kind": "easy",
+                },
+                {
+                    "day": "Thu",
+                    "miles": 2.0,
+                    "note": "Stay loose, no pushing",
+                    "kind": "easy",
+                },
+                {
+                    "day": "Fri",
+                    "miles": 2.0,
+                    "note": "Optional shakeout; skip if tired",
+                    "kind": "easy",
+                    "shakeout": True,
+                },
+                {
+                    "day": "Sun",
+                    "miles": self.race_distance_miles,
+                    "note": "Marathon – trust your training and enjoy the experience!",
+                    "kind": "race",
+                    "label": "Race Day",
+                },
+            ],
+        }
