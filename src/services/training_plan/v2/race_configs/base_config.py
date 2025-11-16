@@ -5,7 +5,7 @@ Abstract base class for race-distance-specific configurations.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Any
 
 
 class RaceDistanceConfig(ABC):
@@ -28,6 +28,37 @@ class RaceDistanceConfig(ABC):
     @abstractmethod
     def taper_ratios(self) -> List[float]:
         """Taper ratios (e.g., [0.70, 0.50, 0.25] for 3-week taper)."""
+        pass
+
+    # Long Run Progression tuning
+    @property
+    @abstractmethod
+    def long_run_increment(self) -> float:
+        """Default growth per build week (e.g., +1 mile)."""
+        pass
+
+    @property
+    @abstractmethod
+    def cutback_every(self) -> int:
+        """Frequency (in weeks) between cutbacks during build."""
+        pass
+
+    @property
+    @abstractmethod
+    def cutback_factor(self) -> float:
+        """Multiplier applied during cutback weeks (e.g., 0.70)."""
+        pass
+
+    @property
+    @abstractmethod
+    def recovery_long_run_floor(self) -> float:
+        """Minimum allowable recovery long run distance."""
+        pass
+
+    @property
+    @abstractmethod
+    def recovery_reduction_ratio(self) -> float:
+        """Percent of longest recent run used for recovery weeks."""
         pass
 
     # Weekly Totals
@@ -97,4 +128,9 @@ class RaceDistanceConfig(ABC):
     @abstractmethod
     def race_distance_miles(self) -> float:
         """Race distance in miles (e.g., 26.2 for marathon, 13.1 for half)."""
+        pass
+
+    @abstractmethod
+    def race_week_template(self) -> Dict[str, Any]:
+        """Return canonical race-week structure used by the orchestrator."""
         pass
