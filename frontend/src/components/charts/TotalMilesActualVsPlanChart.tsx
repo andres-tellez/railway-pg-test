@@ -221,38 +221,52 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                     {formatChartNumber(week.distance, 'distance')}
                   </div>
 
-                  {/* Actual Bar */}
-                  <div
-                    className={colorClasses}
-                    style={{
-                      ...staticBarStyle,
-                      height: `${barInfo.heightPixels}px`,
-                      boxShadow: getBarShadowForTotalMiles(barInfo.barColor, index, barInfo.exceededPlannedTotalMiles)
-                    }}
-                    onMouseEnter={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      setHoveredBar({
-                        index,
-                        x: rect.left + rect.width / 2,
-                        y: rect.top - 10
-                      });
-                    }}
-                    onMouseLeave={() => setHoveredBar(null)}
-                  >
+                  {/* Bars container (Actual + Planned side-by-side) */}
+                  <div className="relative w-full" style={{ height: `${Math.max(barInfo.heightPixels, barInfo.plannedTotalMilesHeightPixels)}px` }}>
+                    {/* Actual Bar (left, wider) */}
+                    <div
+                      className={colorClasses}
+                      style={{
+                        ...staticBarStyle,
+                        position: 'absolute',
+                        left: 0,
+                        width: barInfo.plannedTotalMiles ? '62%' : '100%',
+                        height: `${barInfo.heightPixels}px`,
+                        boxShadow: getBarShadowForTotalMiles(barInfo.barColor, index, barInfo.exceededPlannedTotalMiles)
+                      }}
+                      onMouseEnter={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setHoveredBar({
+                          index,
+                          x: rect.left + rect.width / 2,
+                          y: rect.top - 10
+                        });
+                      }}
+                      onMouseLeave={() => setHoveredBar(null)}
+                    />
 
-                    {/* PLANNED MILES: Shaded area represents planned miles proportionally to chart maximum */}
+                    {/* Planned Bar (right, thinner) */}
                     {barInfo.plannedTotalMiles && (
                       <div
-                        className="absolute left-0 right-0"
+                        className="absolute right-0 bg-gray-400/70 ring-1 ring-gray-300"
                         style={{
-                          bottom: '0px',
-                          height: `${barInfo.plannedTotalMilesHeightPixels}px`,
-                          background: 'rgba(0, 0, 0, 0.25)', // Darker overlay shows planned miles
-                          zIndex: 1
+                          borderRadius: '0.5rem 0.5rem 0 0',
+                          width: '30%',
+                          height: `${barInfo.plannedTotalMilesHeightPixels}px`
                         }}
+                        onMouseEnter={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setHoveredBar({
+                            index,
+                            x: rect.left + rect.width / 2,
+                            y: rect.top - 10
+                          });
+                        }}
+                        onMouseLeave={() => setHoveredBar(null)}
+                        aria-label={`Planned ${barInfo.plannedTotalMiles.toFixed(1)} miles`}
+                        role="img"
                       />
                     )}
-
                   </div>
 
                   {/* Date Label */}
@@ -367,6 +381,12 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
               <div className="w-4 h-4 bg-blue-400 rounded"></div>
               <span>Actual</span>
             </div>
+            {weeklyGoals && weeklyGoals.length > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-gray-400 rounded ring-1 ring-gray-300"></div>
+                <span>Planned</span>
+              </div>
+            )}
             <div className="flex items-center gap-2 relative group">
               <div className="w-4 h-4 bg-red-600 rounded"></div>
               <span>Significant Drop</span>
