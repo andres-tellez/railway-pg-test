@@ -285,7 +285,7 @@ export default function PlanOverviewTable() {
                   <thead>
                     <tr className="bg-gray-50 text-gray-700">
                       <th className="border p-2 text-center" style={{ width: '90px' }}>Week</th>
-                      <th className="border p-2 text-center" style={{ width: '80px' }}>Phase</th>
+                      <th className="border p-2 text-center hidden sm:table-cell" style={{ width: '80px' }}>Phase</th>
                       {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
                         <th key={d} className="border p-2 text-center" style={{ width: '50px' }}>
                           <span className="block sm:hidden">{d[0]}</span>
@@ -296,7 +296,7 @@ export default function PlanOverviewTable() {
                     </tr>
                     <tr className="bg-gray-100 text-gray-600 text-xs hidden sm:table-row">
                       <th className="border p-1" style={{ width: '90px' }}></th>
-                      <th className="border p-1" style={{ width: '80px' }}></th>
+                      <th className="border p-1 hidden sm:table-cell" style={{ width: '80px' }}></th>
                       {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
                         <th key={d} className="border p-1 text-center font-normal" style={{ width: '50px' }}>
                           {workoutTypes[d] || ""}
@@ -340,11 +340,11 @@ export default function PlanOverviewTable() {
                             <div className="font-medium">{formatMDY(week.weekStartDate)}</div>
                           </td>
                           <td
-                            className={`border p-2 align-top text-center whitespace-nowrap ${
+                            className={`border p-2 align-top text-center whitespace-nowrap hidden sm:table-cell ${
                               isRaceWeek ? "text-amber-900 font-semibold tracking-wide" : ""
                             }`}
                           >
-                            {isRaceWeek ? "Race Wk 🎉" : week.phase || ""}
+                            {isRaceWeek ? "Race" : week.phase || ""}
                           </td>
                           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => {
                             // Hide workouts on the day before the race in Race Week
