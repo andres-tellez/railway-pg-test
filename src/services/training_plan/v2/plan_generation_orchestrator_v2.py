@@ -111,6 +111,25 @@ class PlanGenerationOrchestratorV2:
 
         runs_per_week = len(training_days)
 
+        # Auto-sync max HR from Strava if available (ensures HR zones match Strava)
+        try:
+            from src.services.strava_sync_service import sync_max_hr_from_strava
+
+            success, error_msg = sync_max_hr_from_strava(session, str(user_id))
+            if success:
+                logger.debug(
+                    f"Successfully synced max HR from Strava during plan generation"
+                )
+            else:
+                logger.debug(
+                    f"Could not sync max HR from Strava during plan generation: {error_msg}"
+                )
+        except Exception as e:
+            # Log but don't fail plan generation if sync fails
+            logger.debug(
+                f"Could not sync max HR from Strava during plan generation: {e}"
+            )
+
         # Pass 1 Weeks selector for recommended plan length
         lr_output = self.pass1.build(
             session=session,

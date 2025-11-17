@@ -15,6 +15,7 @@ const UserProfile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editingField, setEditingField] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [syncingMaxHr, setSyncingMaxHr] = useState(false);
 
   useEffect(() => {
     if (!isReady || !userId) return;
@@ -79,6 +80,7 @@ const UserProfile: React.FC = () => {
       payload.ageGroup = profile.age_group;
       payload.trainingDays = profile.training_days;
       payload.weight = profile.weight;
+      payload.max_hr = profile.max_hr;
       payload.motivation = profile.motivation;
       payload.height = {
         feet: profile.height_feet || 5,
@@ -99,6 +101,8 @@ const UserProfile: React.FC = () => {
         payload.weight = value;
       } else if (field === "motivation") {
         payload.motivation = value;
+      } else if (field === "max_hr") {
+        payload.max_hr = value;
       }
 
       console.log("Sending payload:", payload);
@@ -106,15 +110,21 @@ const UserProfile: React.FC = () => {
       // Send update to backend
       await api.post("/api/onboarding", payload);
 
-      // Update local state
-      if (field === "height") {
-        setProfile({ ...profile, height_feet: value.height_feet, height_inches: value.height_inches });
-      } else if (field === "height_feet") {
-        setProfile({ ...profile, height_feet: value });
-      } else if (field === "height_inches") {
-        setProfile({ ...profile, height_inches: value });
+      // Refresh profile from server to ensure we have the latest data
+      const response = await api.get("/api/onboarding");
+      if (response.data?.data) {
+        setProfile(response.data.data);
       } else {
-        setProfile({ ...profile, [field]: value });
+        // Fallback: update local state if server response is unexpected
+        if (field === "height") {
+          setProfile({ ...profile, height_feet: value.height_feet, height_inches: value.height_inches });
+        } else if (field === "height_feet") {
+          setProfile({ ...profile, height_feet: value });
+        } else if (field === "height_inches") {
+          setProfile({ ...profile, height_inches: value });
+        } else {
+          setProfile({ ...profile, [field]: value });
+        }
       }
 
       setEditingField(null);
@@ -131,6 +141,29 @@ const UserProfile: React.FC = () => {
 
   const handleCancelEdit = () => {
     setEditingField(null);
+  };
+
+  const handleSyncMaxHr = async () => {
+    setError(null);
+    setSyncingMaxHr(true);
+    try {
+      const response = await api.post("/api/profile/sync-max-hr");
+      if (response.data?.status === "success") {
+        // Refresh profile to show updated max_hr
+        const profileResponse = await api.get("/api/onboarding");
+        if (profileResponse.data?.data) {
+          setProfile(profileResponse.data.data);
+        }
+        alert("✅ Max HR synced from Strava! Your plan's HR zones have been updated.");
+      } else {
+        setError(response.data?.message || "Could not sync max HR from Strava");
+      }
+    } catch (e: any) {
+      console.error("Error syncing max HR:", e);
+      setError(e.response?.data?.message || "Failed to sync max HR from Strava. Make sure you have Strava connected and max HR set in your Strava profile.");
+    } finally {
+      setSyncingMaxHr(false);
+    }
   };
 
   return (
@@ -191,6 +224,42 @@ const UserProfile: React.FC = () => {
               max={400}
               unit="lbs"
             />
+
+            <InlineEditableField
+              label="Max Heart Rate"
+              field="max_hr"
+              value={profile.max_hr}
+              editing={editingField === "max_hr"}
+              onEdit={() => handleEditField("max_hr")}
+              onSave={(value) => handleSaveField("max_hr", value)}
+              onCancel={handleCancelEdit}
+              type="number"
+              min={120}
+              max={220}
+              unit="bpm"
+            />
+            <div className="mb-4 pb-4 border-b last:border-b-0">
+              <div className="flex items-start gap-4">
+                <span className="font-medium text-gray-700 w-32 flex-shrink-0"></span>
+                <div className="flex-1 flex items-center justify-between">
+                  <span className="text-sm text-gray-600">
+                    Or sync from Strava automatically
+                  </span>
+                  <button
+                    onClick={handleSyncMaxHr}
+                    disabled={syncingMaxHr}
+                    className="text-sm px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed ml-4"
+                  >
+                    {syncingMaxHr ? "Syncing..." : "Sync from Strava"}
+                  </button>
+                </div>
+              </div>
+              {profile.max_hr && (
+                <p className="text-xs text-gray-500 mt-1 ml-36">
+                  HR zones in your plan will use this max HR value.
+                </p>
+              )}
+            </div>
           </div>
 
           {/* Training Schedule Section */}

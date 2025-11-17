@@ -173,6 +173,51 @@ def get_current_plan():
                 logger.warning(f"Failed to parse segments: {e}")
                 return None
 
+        # Calculate HR zones on-the-fly if missing
+        from src.db.dao.user_profile_dao import get_user_profile
+        from src.services.training_plan.plan_storage_service import PlanStorageService
+
+        user_profile = get_user_profile(session, user_id)
+
+        workouts_data = []
+        for w in workouts:
+            target_hr = w.target_hr
+            # Calculate HR zone if missing
+            if not target_hr and w.run_type_key:
+                target_hr = PlanStorageService._calculate_hr_zone(
+                    w.run_type_key, user_profile
+                )
+            elif not target_hr:
+                # Try to infer from workout_type
+                workout_type_lower = (w.workout_type or "").lower()
+                if "threshold" in workout_type_lower or "tempo" in workout_type_lower:
+                    run_type_key = "threshold"
+                elif "steady" in workout_type_lower or "aerobic" in workout_type_lower:
+                    run_type_key = "steady"
+                elif "long" in workout_type_lower or "endurance" in workout_type_lower:
+                    run_type_key = "long"
+                elif "easy" in workout_type_lower or "recovery" in workout_type_lower:
+                    run_type_key = "easy"
+                else:
+                    run_type_key = "easy"  # default
+                target_hr = PlanStorageService._calculate_hr_zone(
+                    run_type_key, user_profile
+                )
+
+            workouts_data.append(
+                {
+                    "date": w.date.isoformat(),
+                    "workout_type": w.workout_type,
+                    "intensity": w.intensity,
+                    "description": w.description,
+                    "miles": w.miles,
+                    "target_zone": w.target_zone,
+                    "target_hr": target_hr,
+                    "focus": w.focus,
+                    "segments": parse_segments(w.segments),
+                }
+            )
+
         return (
             jsonify(
                 {
@@ -180,20 +225,7 @@ def get_current_plan():
                     "start_date": workouts[0].date.isoformat() if workouts else None,
                     "race_date": plan.race_date.isoformat() if plan.race_date else None,
                     "notes": plan.notes,
-                    "workouts": [
-                        {
-                            "date": w.date.isoformat(),
-                            "workout_type": w.workout_type,
-                            "intensity": w.intensity,
-                            "description": w.description,
-                            "miles": w.miles,
-                            "target_zone": w.target_zone,
-                            "target_hr": w.target_hr,
-                            "focus": w.focus,
-                            "segments": parse_segments(w.segments),
-                        }
-                        for w in workouts
-                    ],
+                    "workouts": workouts_data,
                 }
             ),
             200,

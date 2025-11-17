@@ -43,6 +43,7 @@ from .workout_utils import extract_pace_zone_from_workout, normalize_segments
 from src.db.models.plans import Plan
 from src.db.models.plan_workouts import PlanWorkout
 from src.db.dao.plan_workouts_dao import get_workouts_for_week, update_workout
+from src.db.dao.user_profile_dao import get_user_profile
 from src.utils.date_helpers import date_to_day_name, get_week_start_for_date
 
 logger = logging.getLogger(__name__)
@@ -586,6 +587,12 @@ class WeeklyRebuildService:
             new_target_zone = extract_pace_zone_from_workout(workout_data)
             new_target_hr = workout_data.get("target_hr")
 
+            # Calculate HR zone if not provided by Pass4
+            if not new_target_hr:
+                new_target_hr = WeeklyRebuildService._calculate_hr_zone_for_workout(
+                    db_workout, str(plan.user_id), session
+                )
+
             # Always store change record (include all workouts, even if no changes)
             workout_changes.append(
                 {
@@ -721,6 +728,38 @@ class WeeklyRebuildService:
             "updated_workouts": updated_workouts,  # Updated plan after rebuild
             "adjustment_decision": decision,  # Include decision for debugging/email
         }
+
+    @staticmethod
+    def _calculate_hr_zone_for_workout(
+        db_workout: PlanWorkout, user_id: str, session: Session
+    ) -> Optional[str]:
+        """
+        Calculate HR zone for a workout if not already set.
+        Uses the same logic as plan_storage_service.
+        """
+        # Import here to avoid circular dependency
+        from src.services.training_plan.plan_storage_service import PlanStorageService
+
+        # Get user profile
+        user_profile = get_user_profile(session, user_id)
+
+        # Use run_type_key if available, otherwise infer from workout_type
+        run_type_key = db_workout.run_type_key
+        if not run_type_key:
+            # Infer from workout_type
+            workout_type_lower = (db_workout.workout_type or "").lower()
+            if "threshold" in workout_type_lower or "tempo" in workout_type_lower:
+                run_type_key = "threshold"
+            elif "steady" in workout_type_lower or "aerobic" in workout_type_lower:
+                run_type_key = "steady"
+            elif "long" in workout_type_lower or "endurance" in workout_type_lower:
+                run_type_key = "long"
+            elif "easy" in workout_type_lower or "recovery" in workout_type_lower:
+                run_type_key = "easy"
+            else:
+                run_type_key = "easy"  # default
+
+        return PlanStorageService._calculate_hr_zone(run_type_key, user_profile)
 
 
 def _apply_decision_to_seed(

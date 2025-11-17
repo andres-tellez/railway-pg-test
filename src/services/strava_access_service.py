@@ -217,6 +217,11 @@ class StravaClient:
         url = f"{config.STRAVA_API_BASE_URL}/activities/{activity_id}"
         return self._request_with_backoff("GET", url)
 
+    def get_athlete(self):
+        """Get authenticated athlete's profile including max_heartrate."""
+        url = f"{config.STRAVA_API_BASE_URL}/athlete"
+        return self._request_with_backoff("GET", url)
+
     def get_hr_zones(self, activity_id):
         url = f"{config.STRAVA_API_BASE_URL}/activities/{activity_id}/zones"
         try:

@@ -44,6 +44,12 @@ from src.db.dao.user_profile_dao import save_user_profile, get_user_profile
 from src.schemas.user_profile_schema import UserProfileSchema
 from src.utils.auth0_jwt import requires_auth
 from src.db.db_session import get_session
+from src.services.strava_sync_service import sync_max_hr_from_strava
+from src.services.training_plan.recalculate_hr_zones_service import (
+    recalculate_hr_zones_for_user,
+    recalculate_hr_zones_for_plan,
+)
+from src.db.models.plans import Plan
 
 user_profile_bp = Blueprint("user_profile", __name__, url_prefix="/api")
 
@@ -125,7 +131,31 @@ def submit_user_profile():
 
         session = get_session()
         try:
+            # Check if max_hr is being updated (for HR zone recalculation)
+            old_profile = get_user_profile(session, str(internal_user_id))
+            old_max_hr = old_profile.get("max_hr") if old_profile else None
+            new_max_hr = user_dict.get("max_hr")
+
             save_user_profile(session, user_dict)
+
+            # If max_hr was updated, recalculate HR zones for active plans
+            if new_max_hr and new_max_hr != old_max_hr:
+                try:
+                    from src.services.training_plan.recalculate_hr_zones_service import (
+                        recalculate_hr_zones_for_user,
+                    )
+
+                    recalc_results = recalculate_hr_zones_for_user(
+                        session, str(internal_user_id)
+                    )
+                    current_app.logger.info(
+                        f"Recalculated HR zones after max_hr update: {len(recalc_results)} plans updated"
+                    )
+                except Exception as e:
+                    # Log but don't fail the save if recalculation fails
+                    current_app.logger.warning(
+                        f"Could not recalculate HR zones after max_hr update: {e}"
+                    )
         finally:
             session.close()
 
@@ -171,5 +201,123 @@ def get_user_profile_route():
             "get_user_profile failed for user_id=%s", internal_user_id
         )
         return jsonify({"status": "error", "message": "Failed to fetch profile"}), 500
+    finally:
+        session.close()
+
+
+@user_profile_bp.post("/profile/sync-max-hr")
+@requires_auth
+def sync_max_hr():
+    """
+    Sync max heart rate from Strava to user profile.
+    This ensures HR zones match Strava's zones.
+    """
+    internal_user_id = getattr(g, "user_id", None)
+    if not internal_user_id:
+        return jsonify({"status": "error", "message": "No user"}), 401
+
+    session = get_session()
+    try:
+        success, error_message = sync_max_hr_from_strava(session, str(internal_user_id))
+        if success:
+            # Return updated profile
+            profile_dict = get_user_profile(session, str(internal_user_id))
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": "Max HR synced from Strava",
+                        "data": profile_dict,
+                    }
+                ),
+                200,
+            )
+        else:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": error_message
+                        or "Could not sync max HR from Strava. Make sure you have Strava connected and max HR set in your Strava profile.",
+                    }
+                ),
+                400,
+            )
+    except Exception as e:
+        current_app.logger.exception(
+            "sync_max_hr failed for user_id=%s", internal_user_id
+        )
+        return (
+            jsonify({"status": "error", "message": f"Failed to sync max HR: {str(e)}"}),
+            500,
+        )
+    finally:
+        session.close()
+
+
+@user_profile_bp.post("/profile/recalculate-hr-zones")
+@requires_auth
+def recalculate_hr_zones():
+    """
+    Recalculate HR zones for all workouts in active plans.
+    Useful when max HR changes or HR zone calculation logic is updated.
+    """
+    internal_user_id = getattr(g, "user_id", None)
+    if not internal_user_id:
+        return jsonify({"status": "error", "message": "No user"}), 401
+
+    session = get_session()
+    try:
+        # Optional: allow specifying a plan_id, otherwise recalculate all active plans
+        data = request.get_json(silent=True) or {}
+        plan_id = data.get("plan_id")
+
+        if plan_id:
+            # Recalculate for specific plan
+            result = recalculate_hr_zones_for_plan(session, plan_id)
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": f"Recalculated HR zones for plan {plan_id}",
+                        "data": result,
+                    }
+                ),
+                200,
+            )
+        else:
+            # Recalculate for all active plans
+            results = recalculate_hr_zones_for_user(session, str(internal_user_id))
+            total_updated = sum(
+                r.get("updated", 0) for r in results.values() if isinstance(r, dict)
+            )
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": f"Recalculated HR zones for {len(results)} plan(s)",
+                        "data": {
+                            "plans": results,
+                            "total_workouts_updated": total_updated,
+                        },
+                    }
+                ),
+                200,
+            )
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    except Exception as e:
+        current_app.logger.exception(
+            "recalculate_hr_zones failed for user_id=%s", internal_user_id
+        )
+        return (
+            jsonify(
+                {
+                    "status": "error",
+                    "message": f"Failed to recalculate HR zones: {str(e)}",
+                }
+            ),
+            500,
+        )
     finally:
         session.close()

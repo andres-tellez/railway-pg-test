@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from src.db.dao.plans_dao import create_plan
 from src.db.dao.plan_workouts_dao import insert_batch
+from src.db.dao.user_profile_dao import get_user_profile
 from src.db.models.plans import Plan
 from src.services.training_plan.workout_detail_rules import (
     INTENSITY_MAP,
@@ -126,9 +127,12 @@ class PlanStorageService:
 
             logger.debug(f"Created plan record {plan_id}")
 
+            # Fetch user profile for HR zone calculation
+            user_profile = get_user_profile(session, user_id)
+
             # Convert weeks/workouts to dated workout records
             workouts_to_insert = PlanStorageService._convert_workouts_to_db_format(
-                plan_id, plan_data, race_date
+                plan_id, plan_data, race_date, user_profile
             )
 
             if workouts_to_insert:
@@ -151,7 +155,10 @@ class PlanStorageService:
 
     @staticmethod
     def _convert_workouts_to_db_format(
-        plan_id: int, plan_data: Dict[str, Any], race_date: date
+        plan_id: int,
+        plan_data: Dict[str, Any],
+        race_date: date,
+        user_profile: Dict[str, Any] = None,
     ) -> List[Dict[str, Any]]:
         """
         Convert plan weeks/workouts structure to dated workout records.
@@ -267,6 +274,7 @@ class PlanStorageService:
                     run=run,
                     seed=seed,
                     details=details,
+                    user_profile=user_profile,
                 )
 
                 # Validate before adding
@@ -306,6 +314,79 @@ class PlanStorageService:
         return False
 
     @staticmethod
+    def _calculate_hr_zone(
+        run_type_key: str, user_profile: Dict[str, Any] = None
+    ) -> str:
+        """
+        Calculate HR zone string (e.g., "Z2 (120-150 bpm)") from workout type.
+
+        Args:
+            run_type_key: Workout type key (easy, steady, long, etc.)
+            user_profile: User profile dict with max_hr or age_group
+
+        Returns:
+            HR zone string like "Z2 (120-150 bpm)" or empty string if can't calculate
+        """
+        # Standard Strava HR zones (as percentages)
+        hr_zones = {
+            "Z1": (0.50, 0.60),  # Recovery
+            "Z2": (0.60, 0.75),  # Easy/Aerobic
+            "Z3": (0.75, 0.85),  # Threshold
+            "Z4": (0.85, 0.95),  # VO2 Max
+            "Z5": (0.95, 1.00),  # Neuromuscular
+        }
+
+        # Map workout type to HR zone based on training philosophy
+        # Reference: workout_types.py - INTENSITY_ZONE definitions
+        # EASY: "E" -> Z1-Z2 (recovery/easy aerobic)
+        # STEADY: "E/steady" -> Z2 (aerobic steady, not hard)
+        # ENDURANCE: "E→steady" -> Z2 (easy transitioning to steady)
+        # LONG: "E" -> Z2 (easy aerobic)
+        # THRESHOLD/TEMPO: -> Z3 (threshold pace)
+        # VO2/INTERVALS: -> Z4 (hard intervals)
+        run_type_lower = run_type_key.lower()
+        if run_type_lower in ["threshold", "tempo"]:
+            zone_key = "Z3"  # Threshold pace (75-85% max HR)
+        elif run_type_lower in ["vo2", "intervals", "repetitions", "race"]:
+            zone_key = "Z4"  # VO2 max intervals (85-95% max HR)
+        elif run_type_lower in ["steady"]:
+            zone_key = "Z2"  # Aerobic steady (60-75% max HR) - controlled, not hard
+        elif run_type_lower in ["long", "endurance"]:
+            zone_key = "Z2"  # Easy/steady aerobic (60-75% max HR)
+        else:  # easy, recovery, or default
+            zone_key = "Z2"  # Easy aerobic (60-75% max HR)
+
+        # Get max HR from user profile or estimate
+        max_hr = None
+        if user_profile:
+            max_hr = user_profile.get("max_hr")
+            if not max_hr or max_hr == 0:
+                # Try to estimate from age_group
+                age_group = user_profile.get("age_group", "")
+                if age_group:
+                    # Extract age from age_group (e.g., "30-39" -> 35)
+                    try:
+                        if "-" in str(age_group):
+                            age_range = str(age_group).split("-")
+                            age = (int(age_range[0]) + int(age_range[1])) // 2
+                        else:
+                            age = int(str(age_group).replace("+", "").split("-")[0])
+                        max_hr = 220 - age
+                    except (ValueError, IndexError):
+                        pass
+
+        # Default max HR if still not available
+        if not max_hr or max_hr == 0:
+            max_hr = 190  # Conservative default
+
+        # Calculate HR range
+        hr_lo, hr_hi = hr_zones[zone_key]
+        hr_min = int(hr_lo * max_hr)
+        hr_max = int(hr_hi * max_hr)
+
+        return f"{zone_key} ({hr_min}–{hr_max} bpm)"
+
+    @staticmethod
     def _workout_to_row(
         plan_id: int,
         date: date,
@@ -313,6 +394,7 @@ class PlanStorageService:
         run: dict,
         seed: PaceSeed,
         details: dict,
+        user_profile: Dict[str, Any] = None,
     ) -> dict:
         """
         Convert workout data to database row format.
@@ -342,6 +424,9 @@ class PlanStorageService:
         # Get workout label
         workout_label = run.get("label") or TYPE_DISPLAY.get(run_type_key, "Easy Run")
 
+        # Calculate HR zone
+        target_hr = PlanStorageService._calculate_hr_zone(run_type_key, user_profile)
+
         return {
             "plan_id": plan_id,
             "date": date,
@@ -351,7 +436,7 @@ class PlanStorageService:
             "miles": run.get("miles", 0.0),
             "intensity": intensity,
             "target_zone": target_zone,
-            "target_hr": None,  # Future: calculate from intensity
+            "target_hr": target_hr,
             "focus": FOCUS_TAGS.get(run_type_key, "Run"),
             "description": details.get("cues", ""),
             "cues": details.get("cues", ""),

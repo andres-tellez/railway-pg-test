@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { AuthGuard } from "@/components/AuthGuard";
 import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
-import { normalizeWorkoutTypeDisplay } from "@/utils/workoutTypeUtils";
 
 type PlanResponse = {
   plan_id: string;
@@ -26,6 +25,7 @@ type WeekData = {
   weekStartDate: Date;
   phase: string;
   workouts: Record<string, number>; // day -> miles
+  workoutDetails: Record<string, { workout_type: string; target_hr?: string; target_zone?: string }>; // day -> workout details
   total: number;
 };
 
@@ -117,6 +117,15 @@ export default function PlanOverviewTable() {
             Sat: 0,
             Sun: 0,
           },
+          workoutDetails: {
+            Mon: { workout_type: "", target_hr: undefined, target_zone: undefined },
+            Tue: { workout_type: "", target_hr: undefined, target_zone: undefined },
+            Wed: { workout_type: "", target_hr: undefined, target_zone: undefined },
+            Thu: { workout_type: "", target_hr: undefined, target_zone: undefined },
+            Fri: { workout_type: "", target_hr: undefined, target_zone: undefined },
+            Sat: { workout_type: "", target_hr: undefined, target_zone: undefined },
+            Sun: { workout_type: "", target_hr: undefined, target_zone: undefined },
+          },
           total: 0,
         });
       }
@@ -125,6 +134,14 @@ export default function PlanOverviewTable() {
       const dayName = dayNames[workoutDate.getDay()];
       week.workouts[dayName] = (week.workouts[dayName] || 0) + workout.miles;
       week.total += workout.miles;
+      // Store workout details including HR zone
+      if (workout.workout_type || workout.target_hr || workout.target_zone) {
+        week.workoutDetails[dayName] = {
+          workout_type: workout.workout_type || "",
+          target_hr: workout.target_hr,
+          target_zone: workout.target_zone,
+        };
+      }
     });
 
     // Sort weeks by date and assign week numbers
@@ -174,44 +191,26 @@ export default function PlanOverviewTable() {
     return sortedWeeks;
   }, [plan]);
 
-  // Get workout types for header sub-row from first week
-  const workoutTypes = useMemo(() => {
-    if (!plan || !plan.workouts || plan.workouts.length === 0) return {};
 
-    const typeMap: Record<string, string> = {};
-    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-    // Get first week's Monday
-    const firstWeek = weeks[0];
-    if (!firstWeek) return {};
-
-    // Find workouts in the first week
-    plan.workouts.forEach((workout) => {
-      const workoutDate = parseISODate(workout.date);
-      const workoutMonday = getMondayOfWeek(workoutDate);
-
-      // Check if this workout is in the first week
-      if (workoutMonday.getTime() === firstWeek.weekStartDate.getTime()) {
-        const dayName = dayNames[workoutDate.getDay()];
-        const workoutType = workout.workout_type || "";
-
-        // Map to single-word display names (standardized)
-        const shortType = normalizeWorkoutTypeDisplay(workoutType);
-
-        if (shortType && !typeMap[dayName]) {
-          typeMap[dayName] = shortType;
-        }
-      }
-    });
-
-    return typeMap;
-  }, [plan, weeks]);
 
   const formatMDY = (date: Date) => {
     const mm = String(date.getMonth() + 1).padStart(2, "0");
     const dd = String(date.getDate()).padStart(2, "0");
     const yy = String(date.getFullYear()).slice(-2);
     return `${mm}/${dd}/${yy}`;
+  };
+
+  // Helper to extract just the HR zone (Z1, Z2, etc.) from target_hr
+  const extractHRZone = (target_hr?: string): string => {
+    if (!target_hr) return "";
+
+    // Extract zone pattern from target_hr (usually "Z2 (120-150 bpm)" or "Z2-Z3 (120-150 bpm)")
+    const zoneMatch = target_hr.match(/Z[1-5](-Z[1-5])?/);
+    if (zoneMatch) {
+      return zoneMatch[0];
+    }
+
+    return "";
   };
 
   if (loading) {
@@ -294,16 +293,6 @@ export default function PlanOverviewTable() {
                       ))}
                       <th className="border p-2 text-center" style={{ width: '60px' }}>Total</th>
                     </tr>
-                    <tr className="bg-gray-100 text-gray-600 text-xs hidden sm:table-row">
-                      <th className="border p-1" style={{ width: '90px' }}></th>
-                      <th className="border p-1 hidden sm:table-cell" style={{ width: '80px' }}></th>
-                      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-                        <th key={d} className="border p-1 text-center font-normal" style={{ width: '50px' }}>
-                          {workoutTypes[d] || ""}
-                        </th>
-                      ))}
-                      <th className="border p-1" style={{ width: '60px' }}></th>
-                    </tr>
                   </thead>
                   <tbody>
                     {weeks.map((week, idx) => {
@@ -351,15 +340,28 @@ export default function PlanOverviewTable() {
                             const shouldHide = isRaceWeek && day === dayBeforeRace;
                             // Show 26.2 on the race day
                             const isRaceDay = isRaceWeek && day === raceDayName;
+                            const hasWorkout = week.workouts[day] > 0;
+                            const workoutDetail = week.workoutDetails[day];
+                            const hrZone = extractHRZone(workoutDetail?.target_hr);
 
                             return (
-                              <td key={day} className="border p-2 align-top text-center">
+                              <td
+                                key={day}
+                                className="border p-2 align-top text-center"
+                              >
                                 {shouldHide ? (
                                   <span className="text-gray-400">—</span>
                                 ) : isRaceDay ? (
                                   <div className="font-bold text-amber-900">26.2</div>
-                                ) : week.workouts[day] > 0 ? (
-                                  <div>{week.workouts[day]}</div>
+                                ) : hasWorkout ? (
+                                  <div className="flex flex-col items-center">
+                                    <div>{week.workouts[day]}</div>
+                                    {hrZone && (
+                                      <div className="text-[10px] text-gray-500 mt-0.5 leading-tight">
+                                        {hrZone}
+                                      </div>
+                                    )}
+                                  </div>
                                 ) : (
                                   <span className="text-gray-400">—</span>
                                 )}

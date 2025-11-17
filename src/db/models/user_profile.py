@@ -147,6 +147,9 @@ class UserProfile(Base):
     height_feet = Column(Integer, nullable=False)
     height_inches = Column(Integer, nullable=False)
     weight = Column(Float)
+    max_hr = Column(
+        Integer, nullable=True
+    )  # Max heart rate (from Strava or user input)
 
     # Motivation
     motivation = Column(

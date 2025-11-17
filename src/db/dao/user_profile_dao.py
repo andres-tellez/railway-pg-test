@@ -70,6 +70,7 @@ def save_user_profile(session: Session, profile_data: dict):
         existing_profile.height_feet = profile_data.get("height_feet")
         existing_profile.height_inches = profile_data.get("height_inches")
         existing_profile.weight = profile_data.get("weight")
+        existing_profile.max_hr = profile_data.get("max_hr")
 
         # For motivation, use raw SQL with proper enum casting
         if motivation_values is not None:
@@ -97,8 +98,8 @@ def save_user_profile(session: Session, profile_data: dict):
             session.execute(
                 text(
                     """
-                INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, motivation)
-                VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, CAST(:motivation AS motivation[]))
+                INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, max_hr, motivation)
+                VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr, CAST(:motivation AS motivation[]))
                 """
                 ),
                 {
@@ -107,6 +108,7 @@ def save_user_profile(session: Session, profile_data: dict):
                     "height_feet": profile_data.get("height_feet"),
                     "height_inches": profile_data.get("height_inches"),
                     "weight": profile_data.get("weight"),
+                    "max_hr": profile_data.get("max_hr"),
                     "motivation": motivation_values,
                 },
             )
@@ -114,8 +116,8 @@ def save_user_profile(session: Session, profile_data: dict):
             session.execute(
                 text(
                     """
-                INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, motivation)
-                VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, NULL)
+                INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, max_hr, motivation)
+                VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr, NULL)
                 """
                 ),
                 {
@@ -124,6 +126,7 @@ def save_user_profile(session: Session, profile_data: dict):
                     "height_feet": profile_data.get("height_feet"),
                     "height_inches": profile_data.get("height_inches"),
                     "weight": profile_data.get("weight"),
+                    "max_hr": profile_data.get("max_hr"),
                 },
             )
         session.commit()

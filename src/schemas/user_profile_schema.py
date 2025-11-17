@@ -23,3 +23,4 @@ class UserProfileSchema(BaseModel):
     )
     height: Height
     weight: Optional[int]
+    max_hr: Optional[int] = Field(None, ge=120, le=220)  # Max heart rate in bpm

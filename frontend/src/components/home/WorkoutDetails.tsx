@@ -6,6 +6,7 @@ import React, { memo } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { WEEK_TIMELINE_STYLES } from '../../utils/weekTimelineStyles';
+import { normalizeWorkoutTypeDisplay } from '../../utils/workoutTypeUtils';
 
 interface Workout {
   date: string;
@@ -48,6 +49,23 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
   isRestDay,
   nextWorkoutDay,
 }) => {
+  // Helper to extract just the HR zone (Z1, Z2, etc.) from target_hr
+  // Note: target_zone contains pace, not HR zone
+  const extractHRZone = (target_hr?: string): string => {
+    if (!target_hr) return "";
+
+    // Handle different formats:
+    // - "Z2 (120-150 bpm)"
+    // - "Z2-Z3 (120-150 bpm)"
+    // - "Z2"
+    // - "Z2-Z3"
+    const zoneMatch = target_hr.match(/Z[1-5](-Z[1-5])?/);
+    if (zoneMatch) {
+      return zoneMatch[0];
+    }
+
+    return "";
+  };
   if (isRestDay) {
     // If there's an activity on a rest day, show it
     if (isCompleted && activity) {
@@ -133,10 +151,23 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
   }
 
   if (isCompleted && activity) {
+    const normalizedWorkoutType = normalizeWorkoutTypeDisplay(workout.workout_type || "") || workout.workout_type;
+    const hrZone = extractHRZone(workout.target_hr);
+
+    // Debug logging
+    if (process.env.NODE_ENV === 'development') {
+      console.log('WorkoutDetails - Completed workout:', {
+        workout_type: workout.workout_type,
+        target_hr: workout.target_hr,
+        target_zone: workout.target_zone,
+        extracted_hrZone: hrZone,
+      });
+    }
+
     return (
       <div>
         <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
-          {workout.workout_type}
+          {normalizedWorkoutType}
         </h3>
 
         {/* Side-by-side comparison */}
@@ -148,7 +179,12 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
             </div>
             {workout.target_zone && (
               <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
-                {workout.target_zone}
+                Pace: {workout.target_zone}
+              </div>
+            )}
+            {hrZone && (
+              <div className={WEEK_TIMELINE_STYLES.comparisonSubValue + " text-blue-600 font-medium mt-1"}>
+                HR Zone: {hrZone}
               </div>
             )}
           </div>
@@ -199,18 +235,41 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
   }
 
   // Upcoming workout
+  const normalizedWorkoutType = normalizeWorkoutTypeDisplay(workout.workout_type || "") || workout.workout_type;
+  const hrZone = extractHRZone(workout.target_hr);
+
+  // Debug logging
+  if (process.env.NODE_ENV === 'development') {
+    console.log('WorkoutDetails - Upcoming workout:', {
+      workout_type: workout.workout_type,
+      target_hr: workout.target_hr,
+      target_zone: workout.target_zone,
+      extracted_hrZone: hrZone,
+    });
+  }
+
   return (
     <div>
       <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
-        {workout.workout_type}
+        {normalizedWorkoutType}
       </h3>
       <div className={WEEK_TIMELINE_STYLES.detailsSection}>
         <div className="text-lg font-medium text-gray-900">
           {workout.miles} miles
         </div>
-        {workout.target_hr && (
-          <div className="text-sm text-gray-600">
-            Target HR: {workout.target_hr}
+        {workout.target_zone && (
+          <div className="text-sm text-gray-600 mt-1">
+            Pace: {workout.target_zone}
+          </div>
+        )}
+        {hrZone && (
+          <div className="text-sm text-blue-600 font-medium mt-1">
+            HR Zone: {hrZone}
+          </div>
+        )}
+        {!hrZone && workout.target_hr && (
+          <div className="text-sm text-gray-500 text-xs mt-1">
+            Debug: target_hr = "{workout.target_hr}"
           </div>
         )}
       </div>
