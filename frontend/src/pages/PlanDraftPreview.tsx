@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AuthGuard } from "@/components/AuthGuard";
 import { useApiClient } from "@/utils/apiClient";
+import { normalizeWorkoutTypeDisplay } from "@/utils/workoutTypeUtils";
 
 type DraftState = {
   draft?: {
@@ -243,14 +244,8 @@ export default function PlanDraftPreview() {
                         const day = normalize(workout.day);
                         if (day) {
                           const workoutType = workout.workout_type || '';
-                          // Map to display names:
-                          // "Easy / Recovery" -> "Easy/Recovery"
-                          // "Aerobic" -> "Aerobic"
-                          // "Endurance" -> "Endurance"
-                          // "Long Run" -> "Long"
-                          const shortType = workoutType
-                            .replace('Easy / Recovery', 'Easy/Recovery')
-                            .replace('Long Run', 'Long');
+                          // Map to single-word display names (standardized)
+                          const shortType = normalizeWorkoutTypeDisplay(workoutType);
                           runTypeMap[day] = shortType || workoutType;
                         }
                       });

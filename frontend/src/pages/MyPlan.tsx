@@ -19,6 +19,7 @@ import PlanLayout from '@/components/layout/PlanLayout';
 import { useApiClient } from '@/utils/apiClient';
 import { useAuthSetup } from '@/hooks/useAuthSetup';
 import { AuthGuard } from '@/components/AuthGuard';
+import { normalizeWorkoutTypeDisplay } from '@/utils/workoutTypeUtils';
 
 type Workout = {
   date: string;
@@ -81,7 +82,7 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
       <div className="space-y-3">
         {/* Workout Header */}
         <div className="font-semibold text-lg text-gray-900">
-          {workout.workout_type?.toUpperCase() || workout.type} - {workout.miles} MILES
+          {normalizeWorkoutTypeDisplay(workout.workout_type || "")?.toUpperCase() || workout.type} - {workout.miles} MILES
         </div>
 
         {/* Target Zone */}
@@ -104,7 +105,7 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
     <div className="space-y-4">
       {/* Workout Header */}
       <div className="font-semibold text-lg text-gray-900">
-        {workout.workout_type?.toUpperCase() || workout.type} - {workout.miles} MILES
+        {normalizeWorkoutTypeDisplay(workout.workout_type || "")?.toUpperCase() || workout.type} - {workout.miles} MILES
       </div>
 
       {/* Target Zone */}
@@ -325,6 +326,14 @@ const MyPlan: React.FC = () => {
 
           {/* Plan Selector & Actions */}
           <div className="flex items-center gap-2">
+            {/* View Toggle */}
+            <button
+              onClick={() => navigate('/plan/overview-table')}
+              className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              title="Switch to table view"
+            >
+              Table View
+            </button>
             {/* Plan Selector Dropdown */}
             {availablePlans.length > 1 && (
               <div className="relative flex-1">
