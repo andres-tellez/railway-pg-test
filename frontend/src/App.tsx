@@ -36,6 +36,7 @@ import NewPlanForm from "./pages/NewPlanForm";
 import NewPlanFormV2 from "./pages/NewPlanFormV2";
 import PlansManagement from "./pages/PlansManagement";
 import PlanDraftPreview from "./pages/PlanDraftPreview";
+import PlanOverviewTable from "./pages/PlanOverviewTable";
 import SetupPage from "./pages/LandingPage";
 import PostOAuth from "./pages/PostOAuth";
 import HomeScreen from "./pages/HomeScreen";
@@ -177,6 +178,14 @@ export default function App() {
         element={
           <Layout>
             <MyPlan />
+          </Layout>
+        }
+      />
+      <Route
+        path="/plan/overview-table"
+        element={
+          <Layout>
+            <PlanOverviewTable />
           </Layout>
         }
       />
