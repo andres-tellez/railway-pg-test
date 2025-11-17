@@ -44,7 +44,8 @@ from src.db.dao.user_profile_dao import save_user_profile, get_user_profile
 from src.schemas.user_profile_schema import UserProfileSchema
 from src.utils.auth0_jwt import requires_auth
 from src.db.db_session import get_session
-from src.services.strava_sync_service import sync_max_hr_from_strava
+
+# Note: sync_max_hr_from_strava removed - Strava API doesn't return max_heartrate
 from src.services.training_plan.recalculate_hr_zones_service import (
     recalculate_hr_zones_for_user,
     recalculate_hr_zones_for_plan,
@@ -209,50 +210,23 @@ def get_user_profile_route():
 @requires_auth
 def sync_max_hr():
     """
-    Sync max heart rate from Strava to user profile.
-    This ensures HR zones match Strava's zones.
+    Note: This endpoint is not functional - Strava API doesn't return max_heartrate.
+    Users must enter max HR manually. This endpoint returns an informative error.
     """
-    internal_user_id = getattr(g, "user_id", None)
-    if not internal_user_id:
-        return jsonify({"status": "error", "message": "No user"}), 401
-
-    session = get_session()
-    try:
-        success, error_message = sync_max_hr_from_strava(session, str(internal_user_id))
-        if success:
-            # Return updated profile
-            profile_dict = get_user_profile(session, str(internal_user_id))
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "message": "Max HR synced from Strava",
-                        "data": profile_dict,
-                    }
+    return (
+        jsonify(
+            {
+                "status": "error",
+                "message": (
+                    "Strava API doesn't provide max heart rate. "
+                    "Please enter your max HR manually. "
+                    "To find it: Go to Strava → Settings → My Performance → Heart Rate Zones. "
+                    "Look for 'Based on Max Heart Rate' and enter that value in your profile."
                 ),
-                200,
-            )
-        else:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": error_message
-                        or "Could not sync max HR from Strava. Make sure you have Strava connected and max HR set in your Strava profile.",
-                    }
-                ),
-                400,
-            )
-    except Exception as e:
-        current_app.logger.exception(
-            "sync_max_hr failed for user_id=%s", internal_user_id
-        )
-        return (
-            jsonify({"status": "error", "message": f"Failed to sync max HR: {str(e)}"}),
-            500,
-        )
-    finally:
-        session.close()
+            }
+        ),
+        400,
+    )
 
 
 @user_profile_bp.post("/profile/recalculate-hr-zones")

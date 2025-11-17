@@ -20,6 +20,7 @@ import { useApiClient } from '@/utils/apiClient';
 import { useAuthSetup } from '@/hooks/useAuthSetup';
 import { AuthGuard } from '@/components/AuthGuard';
 import { normalizeWorkoutTypeDisplay } from '@/utils/workoutTypeUtils';
+import MaxHrBanner from '@/components/MaxHrBanner';
 
 type Workout = {
   date: string;
@@ -310,6 +311,7 @@ const MyPlan: React.FC = () => {
     <AuthGuard>
       <PlanLayout>
       <div className="w-full max-w-lg mx-auto">
+      <MaxHrBanner />
       {/* Plan Header with Actions */}
       {plan && (
         <div className="mb-6">

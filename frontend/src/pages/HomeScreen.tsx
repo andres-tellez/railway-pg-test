@@ -36,6 +36,7 @@ import {
 import { WEEK_TIMELINE_STYLES } from '../utils/weekTimelineStyles';
 // Import test utilities (available in browser console)
 import '../utils/dateTestUtils';
+import MaxHrBanner from '../components/MaxHrBanner';
 
 const HomeScreen: React.FC = () => {
   const { isReady, userId } = useAuthSetup();
@@ -240,6 +241,7 @@ const HomeScreen: React.FC = () => {
     <AuthGuard>
       <div className="min-h-screen bg-gray-50">
         <div className="max-w-4xl mx-auto px-2 sm:px-4 py-4 sm:py-6">
+          <MaxHrBanner />
           {/* Week Timeline */}
           <div className={`${WEEK_TIMELINE_STYLES.container} ${WEEK_TIMELINE_STYLES.containerPadding} mb-6`}>
             {/* Week Navigation Header */}

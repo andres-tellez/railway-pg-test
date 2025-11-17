@@ -15,7 +15,6 @@ const UserProfile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editingField, setEditingField] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [syncingMaxHr, setSyncingMaxHr] = useState(false);
 
   useEffect(() => {
     if (!isReady || !userId) return;
@@ -143,28 +142,6 @@ const UserProfile: React.FC = () => {
     setEditingField(null);
   };
 
-  const handleSyncMaxHr = async () => {
-    setError(null);
-    setSyncingMaxHr(true);
-    try {
-      const response = await api.post("/api/profile/sync-max-hr");
-      if (response.data?.status === "success") {
-        // Refresh profile to show updated max_hr
-        const profileResponse = await api.get("/api/onboarding");
-        if (profileResponse.data?.data) {
-          setProfile(profileResponse.data.data);
-        }
-        alert("✅ Max HR synced from Strava! Your plan's HR zones have been updated.");
-      } else {
-        setError(response.data?.message || "Could not sync max HR from Strava");
-      }
-    } catch (e: any) {
-      console.error("Error syncing max HR:", e);
-      setError(e.response?.data?.message || "Failed to sync max HR from Strava. Make sure you have Strava connected and max HR set in your Strava profile.");
-    } finally {
-      setSyncingMaxHr(false);
-    }
-  };
 
   return (
     <AuthGuard>
@@ -241,24 +218,29 @@ const UserProfile: React.FC = () => {
             <div className="mb-4 pb-4 border-b last:border-b-0">
               <div className="flex items-start gap-4">
                 <span className="font-medium text-gray-700 w-32 flex-shrink-0"></span>
-                <div className="flex-1 flex items-center justify-between">
-                  <span className="text-sm text-gray-600">
-                    Or sync from Strava automatically
-                  </span>
-                  <button
-                    onClick={handleSyncMaxHr}
-                    disabled={syncingMaxHr}
-                    className="text-sm px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed ml-4"
-                  >
-                    {syncingMaxHr ? "Syncing..." : "Sync from Strava"}
-                  </button>
+                <div className="flex-1">
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
+                    <p className="text-sm text-blue-900 font-medium mb-1">
+                      How to find your Max HR in Strava:
+                    </p>
+                    <ol className="text-xs text-blue-800 list-decimal list-inside space-y-1 ml-2">
+                      <li>Go to <strong>Strava.com</strong> and log in</li>
+                      <li>Click your profile picture → <strong>Settings</strong></li>
+                      <li>Go to <strong>My Performance</strong> → <strong>Heart Rate Zones</strong></li>
+                      <li>Look for <strong>"Based on Max Heart Rate"</strong> - that's your value</li>
+                      <li>Enter that number (e.g., 185) in the field above</li>
+                    </ol>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2">
+                    <strong>Note:</strong> Strava API doesn't provide this value, so manual entry is required.
+                  </p>
+                  {profile.max_hr && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      ✓ HR zones in your plan will use this max HR value ({profile.max_hr} bpm).
+                    </p>
+                  )}
                 </div>
               </div>
-              {profile.max_hr && (
-                <p className="text-xs text-gray-500 mt-1 ml-36">
-                  HR zones in your plan will use this max HR value.
-                </p>
-              )}
             </div>
           </div>
 
