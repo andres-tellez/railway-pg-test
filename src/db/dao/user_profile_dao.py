@@ -49,13 +49,6 @@ def save_user_profile(session: Session, profile_data: dict):
     Inserts or updates a user profile record in the database.
     Uses ORM merge() instead of raw insert/update.
     """
-    # Prepare motivation data - map human-readable values to database enum labels
-    motivation_raw = profile_data.get("motivation", [])
-    motivation_values = None
-    if motivation_raw:
-        # Map human-readable values to database enum labels
-        motivation_values = [_map_motivation_to_db_enum(x) for x in motivation_raw]
-
     # ageGroup is now a string (e.g., "30-39") - no enum conversion needed
     age_group_value = profile_data.get("ageGroup", "30-39")
 
@@ -64,71 +57,33 @@ def save_user_profile(session: Session, profile_data: dict):
     existing_profile = session.query(UserProfile).filter_by(user_id=user_id).first()
 
     if existing_profile:
-        # Update existing profile - use raw SQL for motivation to handle enum array casting
-        # Update other fields with ORM
+        # Update existing profile
         existing_profile.age_group = age_group_value
         existing_profile.height_feet = profile_data.get("height_feet")
         existing_profile.height_inches = profile_data.get("height_inches")
         existing_profile.weight = profile_data.get("weight")
         existing_profile.max_hr = profile_data.get("max_hr")
 
-        # For motivation, use raw SQL with proper enum casting
-        if motivation_values is not None:
-            session.execute(
-                text(
-                    """
-                UPDATE user_profile
-                SET motivation = CAST(:motivation AS motivation[])
-                WHERE user_id = :user_id
-                """
-                ),
-                {
-                    "user_id": user_id,
-                    "motivation": motivation_values,
-                },
-            )
-        else:
-            existing_profile.motivation = None
-
         session.commit()
         return session.query(UserProfile).filter_by(user_id=user_id).first()
     else:
-        # Create new profile - use raw SQL to properly handle enum array
-        if motivation_values is not None:
-            session.execute(
-                text(
-                    """
-                INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, max_hr, motivation)
-                VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr, CAST(:motivation AS motivation[]))
+        # Create new profile
+        session.execute(
+            text(
                 """
-                ),
-                {
-                    "user_id": user_id,
-                    "age_group": age_group_value,
-                    "height_feet": profile_data.get("height_feet"),
-                    "height_inches": profile_data.get("height_inches"),
-                    "weight": profile_data.get("weight"),
-                    "max_hr": profile_data.get("max_hr"),
-                    "motivation": motivation_values,
-                },
-            )
-        else:
-            session.execute(
-                text(
-                    """
-                INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, max_hr, motivation)
-                VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr, NULL)
-                """
-                ),
-                {
-                    "user_id": user_id,
-                    "age_group": age_group_value,
-                    "height_feet": profile_data.get("height_feet"),
-                    "height_inches": profile_data.get("height_inches"),
-                    "weight": profile_data.get("weight"),
-                    "max_hr": profile_data.get("max_hr"),
-                },
-            )
+            INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, max_hr)
+            VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr)
+            """
+            ),
+            {
+                "user_id": user_id,
+                "age_group": age_group_value,
+                "height_feet": profile_data.get("height_feet"),
+                "height_inches": profile_data.get("height_inches"),
+                "weight": profile_data.get("weight"),
+                "max_hr": profile_data.get("max_hr"),
+            },
+        )
         session.commit()
         return session.query(UserProfile).filter_by(user_id=user_id).first()
 
@@ -143,14 +98,24 @@ def get_user_profile(session: Session, user_id: str) -> dict:
         return None
 
     # Normalize the profile data
-    profile_dict = normalize_postgres_row(profile.__dict__)
+    # Use getattr to safely access columns that might not exist in the database
+    profile_dict = {}
+    for key in [
+        "user_id",
+        "age_group",
+        "height_feet",
+        "height_inches",
+        "weight",
+        "max_hr",
+    ]:
+        if hasattr(profile, key):
+            profile_dict[key] = getattr(profile, key)
 
-    # Map motivation database enum labels back to human-readable values
-    if profile_dict.get("motivation") and isinstance(profile_dict["motivation"], list):
-        profile_dict["motivation"] = [
-            _map_db_enum_to_motivation(db_value)
-            for db_value in profile_dict["motivation"]
-        ]
+    # Normalize any enum/array values
+    profile_dict = normalize_postgres_row(profile_dict)
+
+    # Note: motivation and training_days columns have been removed from user_profile table
+    # They are no longer stored in user_profile
 
     # No reverse mapping needed - age_group is already a user-friendly string like "30-39"
 

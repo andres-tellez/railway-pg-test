@@ -214,6 +214,7 @@ const UserProfile: React.FC = () => {
               min={120}
               max={220}
               unit="bpm"
+              isRequired={!profile.max_hr}
             />
             <div className="mb-4 pb-4 border-b last:border-b-0">
               <div className="flex items-start gap-4">
@@ -243,41 +244,6 @@ const UserProfile: React.FC = () => {
               </div>
             </div>
           </div>
-
-          {/* Training Schedule Section */}
-          <div className="border border-gray-200 rounded-lg p-6">
-            <h2 className="text-xl font-semibold text-gray-800 mb-4">Training Schedule</h2>
-
-            <InlineEditableField
-              label="Training Days"
-              field="training_days"
-              value={profile.training_days}
-              editing={editingField === "training_days"}
-              onEdit={() => handleEditField("training_days")}
-              onSave={(value) => handleSaveField("training_days", value)}
-              onCancel={handleCancelEdit}
-              type="multiselect"
-              options={Days.map(d => ({
-                value: d,
-                label: DayLabels[d]
-              }))}
-            />
-
-            <InlineEditableField
-              label="Motivation"
-              field="motivation"
-              value={profile.motivation}
-              editing={editingField === "motivation"}
-              onEdit={() => handleEditField("motivation")}
-              onSave={(value) => handleSaveField("motivation", value)}
-              onCancel={handleCancelEdit}
-              type="multiselect"
-              options={Motivations.map(m => ({
-                value: m,
-                label: MotivationLabels[m as keyof typeof MotivationLabels]
-              }))}
-            />
-          </div>
         </div>
       </div>
     </AuthGuard>
@@ -297,6 +263,7 @@ interface InlineEditableFieldProps {
   min?: number;
   max?: number;
   unit?: string;
+  isRequired?: boolean;
 }
 
 const InlineEditableField: React.FC<InlineEditableFieldProps> = ({
@@ -312,6 +279,7 @@ const InlineEditableField: React.FC<InlineEditableFieldProps> = ({
   min,
   max,
   unit,
+  isRequired = false,
 }) => {
   const [tempValue, setTempValue] = useState<any>(value);
 
@@ -341,7 +309,12 @@ const InlineEditableField: React.FC<InlineEditableFieldProps> = ({
       const option = options.find(opt => opt.value === value);
       return option ? option.label : value;
     }
-    return value || "Not set";
+    // For missing values, show placeholder-style text
+    // Use subtle orange/red for required fields to indicate needs attention (not an error)
+    if (!value && isRequired) {
+      return <span className="text-orange-600 italic">Not specified</span>;
+    }
+    return value || <span className="text-gray-400 italic">Not set</span>;
   };
 
   const renderEditField = () => {
@@ -443,7 +416,9 @@ const InlineEditableField: React.FC<InlineEditableFieldProps> = ({
   return (
     <div className="mb-4 pb-4 border-b last:border-b-0">
       <div className="flex items-start gap-4">
-        <span className="font-medium text-gray-700 w-32 flex-shrink-0">{label}:</span>
+        <div className="font-medium text-gray-700 w-32 flex-shrink-0">
+          <span>{label}:</span>
+        </div>
 
         {editing ? (
           <div className="flex-1">
@@ -465,7 +440,9 @@ const InlineEditableField: React.FC<InlineEditableFieldProps> = ({
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-between">
-            <span className="text-gray-900">{renderDisplayValue()}</span>
+            <span className="text-gray-900">
+              {renderDisplayValue()}
+            </span>
             <button
               onClick={onEdit}
               className="text-sm text-blue-600 hover:text-blue-800 ml-4"

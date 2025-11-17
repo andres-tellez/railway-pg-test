@@ -151,7 +151,5 @@ class UserProfile(Base):
         Integer, nullable=True
     )  # Max heart rate (from Strava or user input)
 
-    # Motivation
-    motivation = Column(
-        SqliteArray(), nullable=True  # Use SQLite-compatible array type
-    )
+    # Note: motivation and training_days columns have been removed from user_profile table
+    # They are no longer stored in user_profile

@@ -11,21 +11,37 @@ const MaxHrBanner: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isReady || !userId) return;
+    if (!isReady || !userId) {
+      console.log('🔍 MaxHrBanner: Waiting for auth - isReady:', isReady, 'userId:', userId);
+      return;
+    }
 
     const checkMaxHr = async () => {
       try {
+        console.log('🔍 MaxHrBanner: Checking max_hr...');
         const response = await api.get('/api/onboarding');
+        console.log('🔍 MaxHrBanner: Full response:', response);
+        console.log('🔍 MaxHrBanner: response.data:', response.data);
+
         const profileData = response.data?.data;
+        console.log('🔍 MaxHrBanner: profileData:', profileData);
+        console.log('🔍 MaxHrBanner: max_hr value:', profileData?.max_hr);
+        console.log('🔍 MaxHrBanner: max_hr type:', typeof profileData?.max_hr);
+        console.log('🔍 MaxHrBanner: max_hr is null?', profileData?.max_hr === null);
+        console.log('🔍 MaxHrBanner: max_hr is undefined?', profileData?.max_hr === undefined);
 
         // Show banner if max_hr is null or undefined
-        setShowBanner(!profileData?.max_hr);
+        const shouldShow = !profileData?.max_hr;
+        console.log('🔍 MaxHrBanner: Should show banner?', shouldShow);
+        setShowBanner(shouldShow);
       } catch (e: any) {
         // If we can't fetch profile, don't show banner
-        console.error('Error checking max_hr:', e);
+        console.error('❌ MaxHrBanner: Error checking max_hr:', e);
+        console.error('❌ MaxHrBanner: Error response:', e.response);
         setShowBanner(false);
       } finally {
         setLoading(false);
+        console.log('🔍 MaxHrBanner: Loading complete, showBanner:', showBanner);
       }
     };
 
