@@ -288,12 +288,13 @@ export default function PlanOverviewTable() {
                       <th className="border p-2 text-center" style={{ width: '80px' }}>Phase</th>
                       {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
                         <th key={d} className="border p-2 text-center" style={{ width: '50px' }}>
-                          {d}
+                          <span className="block sm:hidden">{d[0]}</span>
+                          <span className="hidden sm:block">{d}</span>
                         </th>
                       ))}
                       <th className="border p-2 text-center" style={{ width: '60px' }}>Total</th>
                     </tr>
-                    <tr className="bg-gray-100 text-gray-600 text-xs">
+                    <tr className="bg-gray-100 text-gray-600 text-xs hidden sm:table-row">
                       <th className="border p-1" style={{ width: '90px' }}></th>
                       <th className="border p-1" style={{ width: '80px' }}></th>
                       {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
