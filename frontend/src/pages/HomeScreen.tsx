@@ -23,7 +23,16 @@ import {
   type Activity,
   type WeekDay,
 } from '../utils/weekTimelineUtils';
-import { toDateString, dateStringToDate } from '../utils/dateUtils';
+import {
+  toDateString,
+  dateStringToDate,
+  getWeekRange,
+  getPreviousWeek,
+  getNextWeek,
+  isSundayEvening,
+  isFutureWeek,
+  isPastWeek,
+} from '../utils/dateUtils';
 import { WEEK_TIMELINE_STYLES } from '../utils/weekTimelineStyles';
 // Import test utilities (available in browser console)
 import '../utils/dateTestUtils';
@@ -41,8 +50,13 @@ const HomeScreen: React.FC = () => {
   const [hasPlan, setHasPlan] = useState<boolean>(true);
   const [allActivities, setAllActivities] = useState<Activity[]>([]);
 
-  // Memoize week range calculation
-  const weekRange = useMemo(() => getThisWeekRange(), []);
+  // Track the current week being viewed (starts with this week)
+  const [currentWeekStart, setCurrentWeekStart] = useState<string>(() => {
+    return getThisWeekRange().weekStart;
+  });
+
+  // Memoize week range calculation based on current week
+  const weekRange = useMemo(() => getWeekRange(currentWeekStart), [currentWeekStart]);
 
   // Fetch week data
   useEffect(() => {
@@ -59,7 +73,12 @@ const HomeScreen: React.FC = () => {
 
         try {
           const planRes = await api.get('/api/plan/current');
-          workouts = planRes.data.workouts || [];
+          const allWorkouts = planRes.data.workouts || [];
+          // Filter workouts for the current week being viewed
+          workouts = allWorkouts.filter((w: Workout) => {
+            const workoutDate = toDateString(w.date);
+            return workoutDate >= weekStart && workoutDate <= weekEnd;
+          });
           planExists = true;
           setHasPlan(true);
 
@@ -95,7 +114,7 @@ const HomeScreen: React.FC = () => {
         // Calculate progress
         const progress = calculateWeeklyProgress(processedDays);
 
-        // Set selected date to today if it has a workout, otherwise first day with workout
+        // Set selected date: prefer today if in this week, otherwise first day with workout, otherwise first day
         const todayDay = processedDays.find((d) => d.isToday);
         if (todayDay) {
           setSelectedDate(todayDay.dateStr);
@@ -104,8 +123,8 @@ const HomeScreen: React.FC = () => {
           if (firstWorkoutDay) {
             setSelectedDate(firstWorkoutDay.dateStr);
           } else if (processedDays.length > 0) {
-            // If no workouts, select today
-            setSelectedDate(todayDay?.dateStr || processedDays[0].dateStr);
+            // If no workouts, select first day of the week
+            setSelectedDate(processedDays[0].dateStr);
           }
         }
       } catch (error) {
@@ -116,7 +135,7 @@ const HomeScreen: React.FC = () => {
     };
 
     fetchWeekData();
-  }, [isReady, userId, api, weekRange]);
+  }, [isReady, userId, api, weekRange, currentWeekStart]);
 
   // Welcome modal logic
   useEffect(() => {
@@ -142,6 +161,48 @@ const HomeScreen: React.FC = () => {
   const handleDayClick = useCallback((dateStr: string) => {
     setSelectedDate(dateStr);
   }, []);
+
+  // Week navigation handlers
+  const handlePreviousWeek = useCallback(() => {
+    const prevWeekStart = getPreviousWeek(currentWeekStart);
+    setCurrentWeekStart(prevWeekStart);
+    setSelectedDate(null); // Reset selection, will be set in useEffect
+  }, [currentWeekStart]);
+
+  const handleNextWeek = useCallback(() => {
+    const nextWeekStart = getNextWeek(currentWeekStart);
+    setCurrentWeekStart(nextWeekStart);
+    setSelectedDate(null); // Reset selection, will be set in useEffect
+  }, [currentWeekStart]);
+
+  // Check if viewing next week and if details are available
+  const isViewingNextWeek = useMemo(() => {
+    return isFutureWeek(currentWeekStart);
+  }, [currentWeekStart]);
+
+  const isViewingPastWeek = useMemo(() => {
+    return isPastWeek(currentWeekStart);
+  }, [currentWeekStart]);
+
+  // Check if next week details should be available (after Sunday evening)
+  const nextWeekDetailsAvailable = useMemo(() => {
+    if (!isViewingNextWeek) return true;
+    return isSundayEvening();
+  }, [isViewingNextWeek]);
+
+  // Format week display (e.g., "Nov 10 - Nov 16")
+  const weekDisplayText = useMemo(() => {
+    const { weekStart, weekEnd } = weekRange;
+    const startDate = dateStringToDate(weekStart);
+    const endDate = dateStringToDate(weekEnd);
+
+    const thisWeekRange = getThisWeekRange();
+    if (weekStart === thisWeekRange.weekStart) {
+      return 'THIS WEEK';
+    }
+
+    return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
+  }, [weekRange]);
 
   // Memoized computed values
   const selectedDay = useMemo(
@@ -181,7 +242,44 @@ const HomeScreen: React.FC = () => {
         <div className="max-w-4xl mx-auto px-2 sm:px-4 py-4 sm:py-6">
           {/* Week Timeline */}
           <div className={`${WEEK_TIMELINE_STYLES.container} ${WEEK_TIMELINE_STYLES.containerPadding} mb-6`}>
-            <h2 className={WEEK_TIMELINE_STYLES.title}>THIS WEEK</h2>
+            {/* Week Navigation Header */}
+            <div className="flex items-center justify-between mb-4">
+              <button
+                onClick={handlePreviousWeek}
+                className="px-3 py-1 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                aria-label="Previous week"
+              >
+                ← Previous
+              </button>
+
+              <h2 className={WEEK_TIMELINE_STYLES.title}>{weekDisplayText}</h2>
+
+              <button
+                onClick={handleNextWeek}
+                className="px-3 py-1 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                aria-label="Next week"
+              >
+                Next →
+              </button>
+            </div>
+
+            {/* Next Week Message */}
+            {isViewingNextWeek && !nextWeekDetailsAvailable && hasPlan && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-sm text-blue-800">
+                  <strong>Next week's workout details will be available Sunday evening</strong> after your weekly plan update. You can scroll back to view how you did against your plan.
+                </p>
+              </div>
+            )}
+
+            {/* Past Week Message */}
+            {isViewingPastWeek && hasPlan && (
+              <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
+                <p className="text-sm text-gray-700">
+                  Viewing past week: See how you performed against your plan.
+                </p>
+              </div>
+            )}
 
             <div className={WEEK_TIMELINE_STYLES.dayGrid}>
               {weekDays.map((day) => (
@@ -214,7 +312,7 @@ const HomeScreen: React.FC = () => {
             // Calculate stats from activities - SIMPLE string comparisons
             const { weekStart: thisWeekStart } = weekRange;
             const today = toDateString(new Date());
-            
+
             // Calculate 30 days ago as date string
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
