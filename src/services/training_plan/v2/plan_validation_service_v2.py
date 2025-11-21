@@ -26,8 +26,10 @@ Last Updated: October 29, 2025
 
 import logging
 from typing import Dict, List, Any, Optional
+from datetime import datetime, date, timedelta
 
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
+from src.utils.date_helpers import get_week_start_for_date
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +131,7 @@ class PlanValidationServiceV2:
         violations.extend(self._validate_taper(weeks))
         violations.extend(self._validate_long_run_bounds(weeks))
         violations.extend(self._validate_week_completeness(weeks))
+        violations.extend(self._validate_race_date_timing(plan))
 
         # Check if there are any ERROR-level violations
         errors = [v for v in violations if v.get("severity") == "error"]
@@ -586,6 +589,69 @@ class PlanValidationServiceV2:
                     "suggestion": f"Add missing weeks: {missing_weeks}",
                 }
             )
+
+        return violations
+
+    def _validate_race_date_timing(self, plan: Dict[str, Any]) -> List[Dict[str, str]]:
+        """
+        Validate that plan has enough time before race date.
+
+        If the plan would extend past the race date, this adds a warning
+        indicating the user doesn't have enough time to prepare.
+        """
+        violations = []
+
+        race_date = plan.get("race_date")
+        start_date = plan.get("start_date")
+        weeks = plan.get("weeks", [])
+
+        if not race_date or not start_date or not weeks:
+            # Can't validate if missing required data
+            return violations
+
+        try:
+            # Parse dates
+            if isinstance(race_date, str):
+                race_date = datetime.fromisoformat(race_date.split("T")[0]).date()
+            elif isinstance(race_date, datetime):
+                race_date = race_date.date()
+
+            if isinstance(start_date, str):
+                start_date = datetime.fromisoformat(start_date.split("T")[0]).date()
+            elif isinstance(start_date, datetime):
+                start_date = start_date.date()
+
+            # Calculate plan end date: start date + number of weeks
+            plan_weeks_count = len(weeks)
+            plan_end_date = start_date + timedelta(weeks=plan_weeks_count)
+
+            # Check if plan would end after race date
+            if plan_end_date > race_date:
+                violations.append(
+                    {
+                        "rule": "insufficient_time_before_race",
+                        "severity": "warning",
+                        "location": "plan",
+                        "details": (
+                            f"Plan requires {plan_weeks_count} weeks but would extend past race date. "
+                            f"Race date: {race_date.isoformat()}, "
+                            f"Plan would end: {plan_end_date.isoformat()}. "
+                            f"You don't have enough time to fully prepare with this {plan_weeks_count}-week plan."
+                        ),
+                        "suggestion": (
+                            "Consider choosing a later race date, or the system will adjust the plan "
+                            "to fit the available time. The plan will still be created but may not be "
+                            "ideal for full preparation."
+                        ),
+                    }
+                )
+                logger.warning(
+                    f"Plan timing issue: {plan_weeks_count}-week plan starting {start_date} "
+                    f"would end {plan_end_date} but race is {race_date}"
+                )
+        except Exception as e:
+            logger.warning(f"Error validating race date timing: {e}")
+            # Don't add violation if we can't parse dates - let other validations handle it
 
         return violations
 

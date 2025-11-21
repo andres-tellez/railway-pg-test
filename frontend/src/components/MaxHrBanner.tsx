@@ -67,12 +67,18 @@ const MaxHrBanner: React.FC = () => {
           <p className="mt-1 text-sm text-yellow-700">
             Your max heart rate is missing. Add it to get personalized HR zone targets in your training plan.
           </p>
-          <div className="mt-2">
+          <div className="mt-2 flex gap-4">
             <Link
               to="/profile"
               className="text-sm font-medium text-yellow-800 underline hover:text-yellow-900"
             >
               Add Max Heart Rate in Profile →
+            </Link>
+            <Link
+              to="/heart-rate-zones"
+              className="text-sm font-medium text-yellow-800 underline hover:text-yellow-900"
+            >
+              Learn about HR zones →
             </Link>
           </div>
         </div>

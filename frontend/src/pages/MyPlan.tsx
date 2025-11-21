@@ -14,7 +14,7 @@ import {
   isToday,
   parseISO,
 } from 'date-fns';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import PlanLayout from '@/components/layout/PlanLayout';
 import { useApiClient } from '@/utils/apiClient';
 import { useAuthSetup } from '@/hooks/useAuthSetup';
@@ -93,8 +93,17 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
           </div>
         )}
         {workout.target_hr && workout.target_zone && (
-          <div className="text-sm text-gray-800">
+          <div className="text-sm text-gray-800 flex items-center gap-2">
             <span className="font-semibold">Target HR:</span> {workout.target_hr}
+            <Link
+              to="/heart-rate-zones"
+              className="text-blue-600 hover:text-blue-800"
+              title="Learn about HR zones"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </Link>
           </div>
         )}
       </div>
@@ -116,8 +125,17 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
         </div>
       )}
       {workout.target_hr && workout.target_zone && (
-        <div className="text-sm text-gray-800">
+        <div className="text-sm text-gray-800 flex items-center gap-2">
           <span className="font-semibold">Target HR:</span> {workout.target_hr}
+          <Link
+            to="/heart-rate-zones"
+            className="text-blue-600 hover:text-blue-800"
+            title="Learn about HR zones"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </Link>
         </div>
       )}
 

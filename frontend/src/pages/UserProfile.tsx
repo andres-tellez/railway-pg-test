@@ -1,6 +1,6 @@
 // src/pages/UserProfile.tsx
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
 import { AuthGuard } from "@/components/AuthGuard";
@@ -202,20 +202,38 @@ const UserProfile: React.FC = () => {
               unit="lbs"
             />
 
-            <InlineEditableField
-              label="Max Heart Rate"
-              field="max_hr"
-              value={profile.max_hr}
-              editing={editingField === "max_hr"}
-              onEdit={() => handleEditField("max_hr")}
-              onSave={(value) => handleSaveField("max_hr", value)}
-              onCancel={handleCancelEdit}
-              type="number"
-              min={120}
-              max={220}
-              unit="bpm"
-              isRequired={!profile.max_hr}
-            />
+            <div className="mb-4 pb-4 border-b last:border-b-0">
+              <div className="flex items-start gap-4">
+                <div className="font-medium text-gray-700 w-32 flex-shrink-0"></div>
+                <div className="flex-1">
+                  <InlineEditableField
+                    label="Max Heart Rate"
+                    field="max_hr"
+                    value={profile.max_hr}
+                    editing={editingField === "max_hr"}
+                    onEdit={() => handleEditField("max_hr")}
+                    onSave={(value) => handleSaveField("max_hr", value)}
+                    onCancel={handleCancelEdit}
+                    type="number"
+                    min={120}
+                    max={220}
+                    unit="bpm"
+                    isRequired={!profile.max_hr}
+                  />
+                  <div className="ml-36 mt-2">
+                    <Link
+                      to="/heart-rate-zones"
+                      className="text-sm text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      What are HR zones?
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div className="mb-4 pb-4 border-b last:border-b-0">
               <div className="flex items-start gap-4">
                 <span className="font-medium text-gray-700 w-32 flex-shrink-0"></span>

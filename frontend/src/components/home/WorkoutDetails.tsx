@@ -97,9 +97,9 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
                       const secondsPerMile = activity.moving_time / activity.distance_miles;
                       const minutes = Math.floor(secondsPerMile / 60);
                       const seconds = Math.floor(secondsPerMile % 60);
-                      return `Pace: ${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
+                      return `Actual Pace: ${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
                     })()
-                  : 'Pace: N/A'}
+                  : 'Actual Pace: N/A'}
               </div>
             </div>
           </div>
@@ -167,7 +167,7 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
     return (
       <div>
         <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
-          {normalizedWorkoutType}
+          {normalizedWorkoutType}{hrZone && ` (${hrZone})`}
         </h3>
 
         {/* Side-by-side comparison */}
@@ -179,12 +179,7 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
             </div>
             {workout.target_zone && (
               <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
-                Pace: {workout.target_zone}
-              </div>
-            )}
-            {hrZone && (
-              <div className={WEEK_TIMELINE_STYLES.comparisonSubValue + " text-blue-600 font-medium mt-1"}>
-                HR Zone: {hrZone}
+                Target Pace: {workout.target_zone}
               </div>
             )}
           </div>
@@ -200,9 +195,9 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
                     const secondsPerMile = activity.moving_time / activity.distance_miles;
                     const minutes = Math.floor(secondsPerMile / 60);
                     const seconds = Math.floor(secondsPerMile % 60);
-                    return `Pace: ${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
+                    return `Actual Pace: ${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
                   })()
-                : 'Pace: N/A'}
+                : 'Actual Pace: N/A'}
             </div>
           </div>
         </div>
@@ -251,7 +246,7 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
   return (
     <div>
       <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
-        {normalizedWorkoutType}
+        {normalizedWorkoutType}{hrZone && ` (${hrZone})`}
       </h3>
       <div className={WEEK_TIMELINE_STYLES.detailsSection}>
         <div className="text-lg font-medium text-gray-900">
@@ -259,12 +254,7 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
         </div>
         {workout.target_zone && (
           <div className="text-sm text-gray-600 mt-1">
-            Pace: {workout.target_zone}
-          </div>
-        )}
-        {hrZone && (
-          <div className="text-sm text-blue-600 font-medium mt-1">
-            HR Zone: {hrZone}
+            Target Pace: {workout.target_zone}
           </div>
         )}
         {!hrZone && workout.target_hr && (

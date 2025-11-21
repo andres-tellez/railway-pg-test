@@ -240,14 +240,14 @@ class DataMigrator:
             ).fetchone()
 
             if local_profile:
-                # Update existing
+                # Update existing (removed motivation and training_days columns, added max_hr)
                 self.local_session.execute(
                     text(
                         """
                         UPDATE user_profile
                         SET age_group = :age_group, height_feet = :height_feet,
                             height_inches = :height_inches, weight = :weight,
-                            motivation = :motivation
+                            max_hr = :max_hr
                         WHERE user_id = :user_id
                     """
                     ),
@@ -257,16 +257,18 @@ class DataMigrator:
                         "height_feet": prod_profile.height_feet,
                         "height_inches": prod_profile.height_inches,
                         "weight": prod_profile.weight,
-                        "motivation": prod_profile.motivation,
+                        "max_hr": getattr(
+                            prod_profile, "max_hr", None
+                        ),  # Safely get max_hr if it exists
                     },
                 )
             else:
-                # Insert new
+                # Insert new (removed motivation and training_days columns, added max_hr)
                 self.local_session.execute(
                     text(
                         """
-                        INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, motivation)
-                        VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :motivation)
+                        INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, max_hr)
+                        VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr)
                     """
                     ),
                     {
@@ -275,7 +277,9 @@ class DataMigrator:
                         "height_feet": prod_profile.height_feet,
                         "height_inches": prod_profile.height_inches,
                         "weight": prod_profile.weight,
-                        "motivation": prod_profile.motivation,
+                        "max_hr": getattr(
+                            prod_profile, "max_hr", None
+                        ),  # Safely get max_hr if it exists
                     },
                 )
 

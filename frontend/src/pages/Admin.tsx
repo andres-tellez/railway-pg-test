@@ -27,6 +27,9 @@ const Admin: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
   const [refreshingMetrics, setRefreshingMetrics] = useState(false);
+  const [migrating, setMigrating] = useState(false);
+  const [migrationResult, setMigrationResult] = useState<any>(null);
+  const [fullMigration, setFullMigration] = useState(false);
 
   // Set default date range (last 7 days)
   useEffect(() => {
@@ -109,12 +112,112 @@ const Admin: React.FC = () => {
     }
   };
 
+  const handleMigrateProdToLocal = async () => {
+    setMigrating(true);
+    setMigrationResult(null);
+
+    try {
+      const response = await apiClient.post('/admin/migrate-prod-to-local', {
+        full: fullMigration
+      });
+      setMigrationResult(response.data);
+    } catch (error: any) {
+      console.error('Migration failed:', error);
+      setMigrationResult({
+        status: 'error',
+        message: error.response?.data?.message || 'Migration failed',
+        error: error.response?.data
+      });
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   return (
     <AuthGuard>
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-2xl mx-auto px-4">
         <div className="bg-white rounded-lg shadow p-6">
           <h1 className="text-2xl font-bold text-gray-900 mb-6">Admin Tools</h1>
+
+          {/* Database Migration Section */}
+          <div className="mb-8 p-4 bg-purple-50 rounded-lg border border-purple-200">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Database Migration</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              <strong>What this does:</strong> This tool copies data from your production database (main Strava account)
+              to your local development database (test Strava account). It automatically maps all user IDs, athlete IDs,
+              and other identifiers to work with your local test account.
+            </p>
+            <div className="mb-3 p-3 bg-purple-100 rounded border border-purple-300">
+              <p className="text-xs text-gray-700 mb-2">
+                <strong>Data copied:</strong>
+              </p>
+              <ul className="text-xs text-gray-600 list-disc list-inside space-y-1">
+                <li>User profile, identity, and athlete links</li>
+                <li>All Strava activities and splits</li>
+                <li>Training plans and workouts</li>
+                <li>Weekly metrics and decision logs</li>
+                <li>Conversations and sync status</li>
+              </ul>
+            </div>
+            <div className="mb-3 flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="fullMigration"
+                checked={fullMigration}
+                onChange={(e) => setFullMigration(e.target.checked)}
+                className="rounded border-gray-300"
+                disabled={migrating}
+              />
+              <label htmlFor="fullMigration" className="text-sm text-gray-700">
+                Force full migration (ignore last migration timestamp)
+              </label>
+            </div>
+            <button
+              onClick={handleMigrateProdToLocal}
+              disabled={migrating}
+              className="bg-purple-600 text-white py-2 px-4 rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              {migrating ? 'Migrating...' : '🔄 Migrate Production → Local'}
+            </button>
+
+            {migrationResult && (
+              <div className={`mt-4 p-3 rounded-md ${
+                migrationResult.status === 'success'
+                  ? 'bg-green-50 border border-green-200'
+                  : migrationResult.status === 'partial'
+                  ? 'bg-yellow-50 border border-yellow-200'
+                  : 'bg-red-50 border border-red-200'
+              }`}>
+                <h3 className={`font-medium text-sm ${
+                  migrationResult.status === 'success' ? 'text-green-800'
+                  : migrationResult.status === 'partial' ? 'text-yellow-800'
+                  : 'text-red-800'
+                }`}>
+                  {migrationResult.status === 'success' ? '✅ Migration Successful'
+                   : migrationResult.status === 'partial' ? '⚠️ Migration Partially Successful'
+                   : '❌ Migration Failed'}
+                </h3>
+                {migrationResult.message && (
+                  <p className={`mt-1 text-xs ${
+                    migrationResult.status === 'success' ? 'text-green-700'
+                    : migrationResult.status === 'partial' ? 'text-yellow-700'
+                    : 'text-red-700'
+                  }`}>
+                    {migrationResult.message}
+                  </p>
+                )}
+                {migrationResult.results && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-gray-600 cursor-pointer">Show details</summary>
+                    <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto">
+                      {JSON.stringify(migrationResult.results, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Refresh Metrics Section */}
           <div className="mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">

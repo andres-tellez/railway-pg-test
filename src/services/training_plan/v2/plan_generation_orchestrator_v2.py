@@ -209,25 +209,69 @@ class PlanGenerationOrchestratorV2:
     def _compute_aligned_start_date(
         self, *, race_date: Any, weeks_count: int, fallback_start: Any
     ) -> Optional[date]:
+        """
+        Compute start date for plan, ensuring it's never in the past.
+
+        Priority:
+        1. If race_date provided: Calculate backwards from race date (for alignment)
+        2. Ensure minimum start is the week AFTER current week (no past dates)
+        3. Fallback to provided start_date if available
+        4. Default to next Monday if all else fails
+
+        This ensures plans always start in the future, regardless of marathon date.
+        """
         if weeks_count <= 0:
             return self._parse_date_like(fallback_start)
+
+        # Calculate minimum start date: week AFTER current week (next Monday)
+        from src.utils.date_helpers import get_current_week_start, get_next_monday
+
+        today = datetime.now().date()
+        current_week_start = get_current_week_start()
+        # Get Monday of the week AFTER current week (next Monday)
+        min_start_date = get_next_monday(today, include_today=False)
+
+        calculated_start = None
 
         if race_date:
             try:
                 race_week_start = get_week_start_for_date(race_date)
                 offset_weeks = max(0, weeks_count - 1)
-                return race_week_start - timedelta(weeks=offset_weeks)
-            except Exception:
+                calculated_start = race_week_start - timedelta(weeks=offset_weeks)
+                logger.info(
+                    f"Calculated start from race date: {calculated_start} "
+                    f"(race_week_start={race_week_start}, weeks_count={weeks_count})"
+                )
+            except Exception as e:
                 logger.warning(
-                    "Failed to align start date from race_date=%s", race_date
+                    f"Failed to align start date from race_date={race_date}: {e}"
                 )
 
-        parsed_fallback = self._parse_date_like(fallback_start)
-        if parsed_fallback:
-            return parsed_fallback
+        # Use calculated start if available, otherwise try fallback
+        if calculated_start:
+            start_date = calculated_start
+        else:
+            parsed_fallback = self._parse_date_like(fallback_start)
+            if parsed_fallback:
+                start_date = parsed_fallback
+            else:
+                # Default to next Monday
+                start_date = min_start_date
 
-        # Default to today if all else fails
-        return datetime.utcnow().date()
+        # CRITICAL: Ensure start date is never in the past
+        # Use the later of: calculated/fallback start OR minimum (next Monday)
+        if start_date < min_start_date:
+            logger.warning(
+                f"Start date {start_date} is in the past. "
+                f"Adjusting to minimum start date: {min_start_date} (week after current week)"
+            )
+            start_date = min_start_date
+
+        logger.info(
+            f"Final aligned start date: {start_date} "
+            f"(min_start={min_start_date}, calculated={calculated_start})"
+        )
+        return start_date
 
     def _append_race_week(self, weeks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not weeks:

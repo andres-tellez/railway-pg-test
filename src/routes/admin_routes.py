@@ -577,6 +577,134 @@ def sync_activities():
         session.close()
 
 
+@admin_bp.route("/migrate-prod-to-local", methods=["POST"])
+@requires_auth
+def migrate_prod_to_local():
+    """
+    Trigger migration from production database to local database.
+
+    This endpoint copies data from production (main Strava account) to local
+    (test Strava account) and updates all IDs to work with the local environment.
+
+    The migration copies:
+    - user_identity, user_athletes, user_profile
+    - activities, splits
+    - plans, plan_workouts, weekly_metrics, weekly_decision_log
+    - strava_sync_status, conversations
+
+    Request body (optional):
+        - full (boolean): If true, force full migration (ignore last migration timestamp)
+                          If false or omitted, uses incremental/delta migration
+
+    Returns:
+        JSON response with migration status and summary
+    """
+    logger.info("🔄 [Migration] Production to local migration requested")
+
+    try:
+        data = request.get_json() or {}
+        full_migration = data.get("full", False)
+
+        if full_migration:
+            logger.info("🔄 [Migration] Full migration mode (all data)")
+        else:
+            logger.info("🔄 [Migration] Incremental migration mode (delta only)")
+
+        # Import required modules
+        import os
+        import sys
+        from pathlib import Path
+        from dotenv import load_dotenv
+
+        # Load environment variables
+        env_local = Path(".env.local")
+        env_prod = Path(".env.prod")
+
+        if env_local.exists():
+            load_dotenv(env_local, override=False)
+
+        if env_prod.exists():
+            load_dotenv(env_prod, override=False)
+
+        # Get database URLs
+        prod_db_url = os.getenv("PROD_DATABASE_URL") or os.getenv("DATABASE_URL")
+        local_db_url = os.getenv("DATABASE_URL")
+
+        if not prod_db_url:
+            return (
+                jsonify(
+                    {"status": "error", "message": "PROD_DATABASE_URL not configured"}
+                ),
+                400,
+            )
+
+        if not local_db_url:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "DATABASE_URL (local) not configured",
+                    }
+                ),
+                400,
+            )
+
+        # Import DataMigrator class (dynamically to avoid import issues at module load)
+        try:
+            # Add scripts to path if needed
+            scripts_path = str(Path(__file__).resolve().parent.parent / "scripts")
+            if scripts_path not in sys.path:
+                sys.path.insert(0, scripts_path)
+
+            from migrate_prod_to_local import DataMigrator
+        except ImportError as e:
+            logger.error(f"❌ [Migration] Could not import DataMigrator: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": f"Could not import migration script: {str(e)}",
+                    }
+                ),
+                500,
+            )
+
+        # Run migration using the script's run_migration method
+        try:
+            with DataMigrator(prod_db_url, local_db_url) as migrator:
+                # Run complete migration process
+                migrator.run_migration()
+
+            logger.info("✅ [Migration] Migration completed successfully")
+            return (
+                jsonify(
+                    {
+                        "status": "success",
+                        "message": "Migration completed successfully. Data copied from production to local database.",
+                        "mode": "full" if full_migration else "incremental",
+                    }
+                ),
+                200,
+            )
+
+        except Exception as e:
+            logger.exception(f"❌ [Migration] Error during migration: {e}")
+            import traceback
+
+            traceback.print_exc()
+            return (
+                jsonify({"status": "error", "message": f"Migration failed: {str(e)}"}),
+                500,
+            )
+
+    except Exception as e:
+        logger.exception(f"❌ [Migration] Exception during migration: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @admin_bp.route("/backup-database", methods=["POST"])
 @requires_auth
 def backup_database():

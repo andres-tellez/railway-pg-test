@@ -53,6 +53,7 @@ import DataUsage from "./pages/DataUsage";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import DateTestPage from "./pages/DateTestPage";
+import HeartRateZones from "./pages/HeartRateZones";
 
 import Layout from "./components/Layout";
 import SmartRouter from "./components/SmartRouter";
@@ -162,6 +163,14 @@ export default function App() {
         element={
           <Layout>
             <Settings />
+          </Layout>
+        }
+      />
+      <Route
+        path="/heart-rate-zones"
+        element={
+          <Layout>
+            <HeartRateZones />
           </Layout>
         }
       />
