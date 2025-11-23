@@ -10,43 +10,61 @@ from datetime import datetime, timedelta
 from .week_utils import get_complete_weeks, calculate_week_mileage
 
 
-def calculate_weekly_mileage(activities: List[Dict[str, Any]]) -> float:
+def calculate_weekly_mileage(activities: List[Dict[str, Any]], weeks: int = 4) -> float:
     """
-    Get weekly mileage from the most recent complete Mon-Sun week.
+    Get average weekly mileage from the last N complete weeks.
 
-    This is the simple approach used by running coaches:
-    "What did you run last week?"
+    Uses the average of last 3-4 weeks to provide a more stable baseline
+    that represents the user's current fitness level, rather than just
+    one week which may be higher or lower than normal.
+
+    This aligns with plan generation logic which looks at recent activity
+    patterns over multiple weeks.
 
     Args:
         activities: List of activity dictionaries
+        weeks: Number of complete weeks to analyze (default: 4)
 
     Returns:
-        Total mileage in miles for last complete week
+        Average weekly mileage in miles over the last N complete weeks
     """
     if not activities:
         return 0.0
 
-    # Get the most recent complete week
-    weekly_data = get_complete_weeks(activities, max_weeks=1)
+    # Get the last N complete weeks
+    weekly_data = get_complete_weeks(activities, max_weeks=weeks)
 
     if not weekly_data:
         return 0.0
 
-    # Get mileage from last complete week
-    most_recent_week = list(weekly_data.values())[0]
-    return calculate_week_mileage(most_recent_week)
+    # Calculate mileage for each week
+    weekly_mileages = []
+    for week_activities in weekly_data.values():
+        week_mileage = calculate_week_mileage(week_activities)
+        if week_mileage > 0:
+            weekly_mileages.append(week_mileage)
+
+    if not weekly_mileages:
+        return 0.0
+
+    # Return average of last N weeks
+    return sum(weekly_mileages) / len(weekly_mileages)
 
 
-def find_longest_run(activities: List[Dict[str, Any]], weeks: int = 12) -> float:
+def find_longest_run(activities: List[Dict[str, Any]], weeks: int = 4) -> float:
     """
     Find the longest run in the last N complete weeks.
 
+    Uses last 3-4 weeks (default: 4) to align with plan generation logic
+    which looks at recent activity patterns. This provides a more relevant
+    "recent longest run" metric for establishing baseline fitness.
+
     Args:
         activities: List of activity dictionaries
-        weeks: Number of complete weeks to analyze (default: 12)
+        weeks: Number of complete weeks to analyze (default: 4)
 
     Returns:
-        Longest run distance in miles
+        Longest run distance in miles from the last N weeks
     """
     if not activities:
         return 0.0

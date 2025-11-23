@@ -19,8 +19,8 @@ class MarathonConfig(RaceDistanceConfig):
 
     @property
     def cutback_every(self) -> int:
-        """Run a cutback approximately every 3 build weeks."""
-        return 3
+        """Run a cutback every 4 build weeks."""
+        return 4
 
     @property
     def cutback_factor(self) -> float:

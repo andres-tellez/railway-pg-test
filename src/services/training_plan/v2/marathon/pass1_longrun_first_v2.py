@@ -145,8 +145,18 @@ class Pass1LongRunFirstV2:
         user_id: str,
         plan_request: Dict[str, Any],
         activity_weeks: int = 12,
+        recommended_weeks: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Compute long-run progression and recommended duration.
+
+        Args:
+            session: Database session
+            user_id: User ID
+            plan_request: Plan request dictionary
+            activity_weeks: Number of weeks of activity history to analyze
+            recommended_weeks: Readiness-based recommended plan length (from Pass1WeeksSelector).
+                              If provided, plan will be built to fit within this timeframe.
+                              If None, uses dynamic length mode (builds organically to peak).
 
         Returns:
             {
@@ -183,19 +193,47 @@ class Pass1LongRunFirstV2:
 
         # Determine Week 1 long run based on consecutive run detection
         if consecutive_analysis["has_consecutive_runs"]:
-            # User has been doing consecutive long runs - schedule recovery week
-            recovery_lr = calculate_recovery_week_long_run(
-                consecutive_analysis["longest_recent"], config=self.config
+            # Check if user has already self-regulated (recent reduction from peak)
+            # Pattern detection: if most recent week is significantly lower than peak,
+            # user may have already done a recovery - don't force double recovery
+            has_recent_reduction = consecutive_analysis.get(
+                "has_recent_reduction", False
             )
-            trusted_start = recovery_lr
-            start_rule = "recovery_week_after_consecutive_runs"
-            logger.info(
-                "LR-first: Detected %d consecutive weeks with long runs (longest=%.2f). "
-                "Setting Week 1 as recovery week: %.2f miles",
-                consecutive_analysis["consecutive_count"],
-                consecutive_analysis["longest_recent"],
-                recovery_lr,
-            )
+            most_recent_long_run = consecutive_analysis.get("most_recent_long_run", 0.0)
+
+            if has_recent_reduction and most_recent_long_run > 0:
+                # User already self-regulated - apply normal progression from baseline
+                # Don't force another recovery that would set them back further
+                # Baseline = most recent level (user's current baseline) or recent3w (whichever is higher)
+                # Then apply standard +1.0 progression rule (same as normal progression)
+                baseline = max(most_recent_long_run, recent3w)
+                trusted_start = baseline + 1.0  # Apply standard progression rule
+                start_rule = "continue_at_current_level_after_self_regulation"
+                logger.info(
+                    "LR-first: Detected %d consecutive weeks with long runs, "
+                    "but user has already self-regulated (recent: %.2f, peak: %.2f). "
+                    "Baseline: %.2f miles, Week 1: %.2f miles (+1.0 progression, avoiding double recovery)",
+                    consecutive_analysis["consecutive_count"],
+                    most_recent_long_run,
+                    consecutive_analysis["longest_recent"],
+                    baseline,
+                    trusted_start,
+                )
+            else:
+                # User has consecutive runs but no recent reduction - schedule recovery week
+                # This is a build pattern (increasing) or flat at peak - recovery needed
+                recovery_lr = calculate_recovery_week_long_run(
+                    consecutive_analysis["longest_recent"], config=self.config
+                )
+                trusted_start = recovery_lr
+                start_rule = "recovery_week_after_consecutive_runs"
+                logger.info(
+                    "LR-first: Detected %d consecutive weeks with long runs (longest=%.2f). "
+                    "Setting Week 1 as recovery week: %.2f miles",
+                    consecutive_analysis["consecutive_count"],
+                    consecutive_analysis["longest_recent"],
+                    recovery_lr,
+                )
         else:
             # Normal progression: longest + 1.0
             trusted_start = recent3w + 1.0
@@ -211,14 +249,37 @@ class Pass1LongRunFirstV2:
         target_peak_miles = self.config.target_peak_miles
         cfg = _build_lr_config(self.config)
 
-        # Use dynamic length mode: spine derives length organically from build to peak + recovery + taper
-        weeks = build_spine(
-            start_rule_miles,
-            total_weeks=0,  # Dynamic length: derive from policy
-            peak=target_peak_miles,
-            cfg=cfg,
-            race_date=plan_request.get("race_date"),
-        )
+        # Use readiness-based recommended weeks if provided, otherwise use dynamic length mode
+        # recommended_weeks comes from Pass1WeeksSelector based on user's weekly mileage
+        if recommended_weeks and recommended_weeks > 0:
+            logger.info(
+                f"📏 Building FIXED-LENGTH plan: {recommended_weeks} weeks "
+                f"(based on readiness: {base_mpw:.1f}mpw weekly mileage) "
+                f"start_lr={start_rule_miles:.1f}mi → peak={target_peak_miles:.1f}mi"
+            )
+            # Fixed length mode: build within recommended timeframe
+            # The spine will fit progression within recommended_weeks weeks
+            weeks = build_spine(
+                start_rule_miles,
+                total_weeks=recommended_weeks,  # Use readiness-based recommendation
+                peak=target_peak_miles,
+                cfg=cfg,
+                race_date=plan_request.get("race_date"),
+            )
+        else:
+            logger.info(
+                f"📏 Building DYNAMIC-LENGTH plan (no readiness recommendation) "
+                f"start_lr={start_rule_miles:.1f}mi → peak={target_peak_miles:.1f}mi "
+                f"(will build organically to peak + taper)"
+            )
+            # Dynamic length mode: spine derives length organically from build to peak + recovery + taper
+            weeks = build_spine(
+                start_rule_miles,
+                total_weeks=0,  # Dynamic length: derive from policy
+                peak=target_peak_miles,
+                cfg=cfg,
+                race_date=plan_request.get("race_date"),
+            )
         desired_total_weeks = len(weeks)
 
         # Validate (no mutation) – but don't block LR-only drafts
@@ -256,6 +317,12 @@ class Pass1LongRunFirstV2:
             "consecutive_runs_detected": consecutive_analysis["has_consecutive_runs"],
             "consecutive_count": consecutive_analysis["consecutive_count"],
             "weekly_long_runs": consecutive_analysis["weekly_long_runs"],
+            "recommended_weeks": recommended_weeks,  # Log the readiness-based recommendation used
+            "mode": (
+                "fixed_length"
+                if recommended_weeks and recommended_weeks > 0
+                else "dynamic_length"
+            ),
         }
 
         return {

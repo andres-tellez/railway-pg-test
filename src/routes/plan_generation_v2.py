@@ -76,6 +76,7 @@ def build_standard_draft_payload(
         },
         "recovery_metadata": validation_result.get("recovery_metadata"),
         "pass1_rationale": validation_result.get("pass1_rationale"),
+        "race_date_validation": validation_result.get("race_date_validation"),
     }
 
     # Backwards-compatibility for clients that used the beta /plan-v2/draft payload

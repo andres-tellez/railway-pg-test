@@ -292,9 +292,10 @@ def generate_long_run_spine(
 
         return weeks
 
-    # Fixed length mode (legacy): use provided total_weeks_in_plan
-    # Place peak at total_weeks - taper_weeks - peak_offset_before_taper
-    peak_build_last = max(
+    # Fixed length mode: use provided total_weeks_in_plan as a MINIMUM, not a constraint
+    # Priority: Safety - always reach peak safely, even if it extends past requested weeks or race date
+    # Place peak at total_weeks - taper_weeks - peak_offset_before_taper (initial estimate)
+    initial_peak_build_last = max(
         1, total_weeks_in_plan - taper_weeks - max(1, peak_offset_before_taper)
     )
 
@@ -305,8 +306,21 @@ def generate_long_run_spine(
     if lr >= peak - 1e-6:
         peaked = True
 
-    # Grow from Week 2 onward
-    for i in range(2, peak_build_last + 1):
+    # Count build weeks (not absolute week numbers) for proper cutback timing
+    # Week 1 is the starting week, so build_counter starts at 1 for Week 2
+    build_counter = 1
+
+    # Grow from Week 2 onward until we reach peak
+    # SAFETY FIRST: Continue building until peak is reached, even if it exceeds initial_peak_build_last
+    # The race date is a "nice to have" - preparation and safety are the priority
+    i = 2
+    max_weeks_to_build = max(
+        initial_peak_build_last + 10, 30
+    )  # Safety limit: allow 10 extra weeks beyond initial estimate
+
+    # Build until peak is reached, prioritizing safety over requested plan length
+    # Continue until we've reached peak (peaked = True), with safety limit to prevent infinite loops
+    while i <= max_weeks_to_build and not peaked:
         if last_was_cutback:
             # Resume week: increase from the cutback week more gently (+2.0),
             # and also cap against pre-cutback + 2 to avoid aggressive jumps.
@@ -316,14 +330,19 @@ def generate_long_run_spine(
             target = min(gentle_step, upper_bound)
             lr = min(cap_val, target)
             last_was_cutback = False
+            build_counter = 1  # Reset counter after resume week
         else:
-            if (i % cutback_every) == 0 and lr < peak:
+            # Check if cutback time: every cutback_every build weeks (not absolute week numbers)
+            # This ensures cutbacks happen every 4th build week (e.g., build weeks 4, 8, 12)
+            if build_counter > 0 and (build_counter % cutback_every) == 0 and lr < peak:
                 pre_cutback_lr = lr
-                lr = lr * cutback_factor
+                lr = round_half(max(5.0, lr * cutback_factor))
                 last_was_cutback = True
+                build_counter = 0  # Reset counter after cutback
             else:
                 cap = peak if not (single_peak and peaked) else max(0.0, peak - 1.0)
                 lr = min(cap, lr + inc_miles)
+                build_counter += 1  # Increment build counter on normal build weeks
 
         if round_to_half:
             lr = round_half(lr)
@@ -331,45 +350,58 @@ def generate_long_run_spine(
         if not peaked and lr >= peak - 1e-6:
             peaked = True
 
-    # Ensure peak present at end of build
+        i += 1
+
+    # Ensure peak present at end of build (safety check)
     if not weeks or weeks[-1]["long_run_miles"] < peak:
+        peak_week_num = len(weeks) + 1
         weeks.append(
             {
-                "week_number": len(weeks) + 1,
+                "week_number": peak_week_num,
                 "long_run_miles": round_half(peak),
                 "phase": "",
             }
         )
+        peaked = True
 
-    # Pre-taper fill (maintenance) + Taper weeks to exactly hit total_weeks_in_plan
+    # Update total_weeks_in_plan to reflect actual plan length (may be longer than requested)
+    actual_weeks_so_far = len(weeks)
+    # Ensure we have at least the minimum requested weeks, but allow extension for safety
+    actual_total_weeks = max(
+        total_weeks_in_plan,
+        actual_weeks_so_far + taper_weeks + max(1, peak_offset_before_taper),
+    )
+
+    # Pre-taper fill (maintenance) + Taper weeks
+    # Use actual_total_weeks (may be extended for safety) instead of requested total_weeks_in_plan
     wk = len(weeks) + 1
-    rem = total_weeks_in_plan - len(weeks)
+    rem = actual_total_weeks - len(weeks)
     if rem > 0:
         taper_slots = taper_weeks
         # Use a safer maintenance target (peak - 2) to avoid sustained 19/20 blocks
         maintenance_target = round_half(max(0.0, peak - 2.0))
 
         # 1) Immediate recovery week after peak (~25% reduction)
-        if rem > 0 and (total_weeks_in_plan - len(weeks)) > taper_slots:
+        if rem > 0 and (actual_total_weeks - len(weeks)) > taper_slots:
             recovery = round_half(max(5.0, peak * 0.75))
             weeks.append({"week_number": wk, "long_run_miles": recovery, "phase": ""})
             wk += 1
 
         # 2) One sub-peak cap week (peak - 2) if time remains before taper
-        if (total_weeks_in_plan - len(weeks)) > taper_slots:
+        if (actual_total_weeks - len(weeks)) > taper_slots:
             weeks.append(
                 {"week_number": wk, "long_run_miles": maintenance_target, "phase": ""}
             )
             wk += 1
 
         # 3) Fill any remaining pre-taper weeks with maintenance_target
-        while (total_weeks_in_plan - len(weeks)) > taper_slots:
+        while (actual_total_weeks - len(weeks)) > taper_slots:
             weeks.append(
                 {"week_number": wk, "long_run_miles": maintenance_target, "phase": ""}
             )
             wk += 1
 
-        rem_after_fill = total_weeks_in_plan - len(weeks)
+        rem_after_fill = actual_total_weeks - len(weeks)
 
         # Enforce post-peak monotonic decrease through pre-taper segment
         # Find peak index in current weeks (should exist by construction)
@@ -400,14 +432,14 @@ def generate_long_run_spine(
                 weeks.append({"week_number": wk, "long_run_miles": t, "phase": ""})
                 wk += 1
 
-    # Label phases
+    # Label phases using actual plan length
     for w in weeks:
         i = int(w["week_number"])
-        if i <= max(1, total_weeks_in_plan // 4):
+        if i <= max(1, actual_total_weeks // 4):
             w["phase"] = "Base"
-        elif i <= max(2, total_weeks_in_plan // 2):
+        elif i <= max(2, actual_total_weeks // 2):
             w["phase"] = "Build"
-        elif i <= total_weeks_in_plan - taper_weeks - 1:
+        elif i <= actual_total_weeks - taper_weeks - 1:
             w["phase"] = "Peak"
         else:
             w["phase"] = "Taper"

@@ -20,6 +20,7 @@ import { useAuthSetup } from "@/hooks/useAuthSetup";
 import { AuthGuard } from "@/components/AuthGuard";
 import { RaceNameAutocomplete } from "@/components/RaceNameAutocomplete";
 import { LocationAutocomplete } from "@/components/LocationAutocomplete";
+import RaceDateValidationDialog from "@/components/RaceDateValidationDialog";
 
 const googlePlacesApiKey =
   (
@@ -39,6 +40,10 @@ interface MetricsSummaryResponse {
     week_start: string;
     distance: number;
   }[];
+  fitness_summary?: {
+    current_weekly_mileage: number;
+    current_long_run: number;
+  };
 }
 
 const NewPlanFormV2: React.FC = () => {
@@ -74,13 +79,11 @@ const NewPlanFormV2: React.FC = () => {
         setLoadingStrava(true);
         const response = await api.get<MetricsSummaryResponse>("/api/metrics/all-metrics");
 
-        const weeklyTrends = response.data?.weekly_trends || [];
-        // Backend filters current week, so the first entry is the most recent completed week
-        const lastCompletedWeek = weeklyTrends.length > 0 ? weeklyTrends[0] : null;
-        const weeklyMileage = lastCompletedWeek?.distance ?? 0;
-
-        const longestRuns = response.data?.longest_runs || [];
-        const recentLongestRun = longestRuns.length > 0 ? longestRuns[0].distance : 0;
+        // Use pre-calculated fitness values from backend (same source as validation)
+        // This ensures consistency and eliminates duplicate calculation logic
+        const fitnessSummary = response.data?.fitness_summary;
+        const weeklyMileage = fitnessSummary?.current_weekly_mileage ?? 0;
+        const recentLongestRun = fitnessSummary?.current_long_run ?? 0;
 
         let baseLevel = "Unknown";
         if (weeklyMileage > 0 && weeklyMileage < 10) baseLevel = "Low";
@@ -89,8 +92,8 @@ const NewPlanFormV2: React.FC = () => {
         else if (weeklyMileage >= 40) baseLevel = "Excellent";
 
         setStravaData({
-          recent_weekly_mileage: Math.round(weeklyMileage * 10) / 10,
-          longest_recent_run: Math.round(recentLongestRun * 10) / 10,
+          recent_weekly_mileage: weeklyMileage,
+          longest_recent_run: recentLongestRun,
           base_level: baseLevel,
         });
       } catch (err) {
@@ -108,10 +111,15 @@ const NewPlanFormV2: React.FC = () => {
     fetchStravaData();
   }, [isReady, userId, api]);
 
+  const [raceDateValidation, setRaceDateValidation] = useState<any>(null);
+  const [pendingDraftData, setPendingDraftData] = useState<any>(null);
+  const [pendingRequestPayload, setPendingRequestPayload] = useState<any>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setRaceDateValidation(null);
 
     const isValid = await methods.trigger();
     if (!isValid) {
@@ -133,6 +141,21 @@ const NewPlanFormV2: React.FC = () => {
 
       const draftRes = await api.post("/api/plan/draft", requestPayload);
       const draftPayload = draftRes.data?.draft;
+
+      // Check for race date validation results (may be in draft or top-level response)
+      const validation = draftRes.data?.race_date_validation ||
+                        draftRes.data?.draft?.race_date_validation ||
+                        draftPayload?.race_date_validation;
+
+      if (validation) {
+        // Store draft data for later use
+        setPendingDraftData(draftPayload);
+        setPendingRequestPayload(requestPayload);
+        setRaceDateValidation(validation);
+        setLoading(false);
+        return; // Don't navigate yet, show dialog
+      }
+
       if (!draftPayload) {
         throw new Error("Draft response missing payload");
       }
@@ -141,9 +164,7 @@ const NewPlanFormV2: React.FC = () => {
         replace: false,
         state: {
           draft: draftPayload,
-          plan_request: {
-            ...requestPayload,
-          },
+          plan_request: requestPayload,
         },
       });
     } catch (e: any) {
@@ -157,10 +178,46 @@ const NewPlanFormV2: React.FC = () => {
     }
   };
 
+  const handleValidationProceed = () => {
+    if (pendingDraftData && pendingRequestPayload) {
+      navigate("/plan/draft", {
+        replace: false,
+        state: {
+          draft: pendingDraftData,
+          plan_request: pendingRequestPayload,
+        },
+      });
+    }
+    setRaceDateValidation(null);
+    setPendingDraftData(null);
+    setPendingRequestPayload(null);
+  };
+
+  const handleValidationCancel = () => {
+    setRaceDateValidation(null);
+    setPendingDraftData(null);
+    setPendingRequestPayload(null);
+  };
+
+  const handleAskGPT = () => {
+    // TODO: Navigate to GPT chat interface
+    // For now, just close the dialog
+    console.log("Navigate to GPT chat - TODO: implement");
+    handleValidationCancel();
+  };
+
   const selectedGoal = methods.watch("primary_goal");
 
   return (
     <AuthGuard>
+      {raceDateValidation && (
+        <RaceDateValidationDialog
+          validation={raceDateValidation}
+          onProceed={handleValidationProceed}
+          onCancel={handleValidationCancel}
+          onAskGPT={handleAskGPT}
+        />
+      )}
       <div className="min-h-screen bg-gray-50 py-12">
         <div className="max-w-3xl mx-auto px-4">
           <FormProvider {...methods}>

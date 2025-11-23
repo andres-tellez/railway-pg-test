@@ -522,6 +522,10 @@ def get_all_metrics_combined():
                         "weekly_trends": [],
                         "weekly_hr_zones": [],
                         "weekly_goals": [],
+                        "fitness_summary": {
+                            "current_weekly_mileage": 0.0,
+                            "current_long_run": 0.0,
+                        },
                     }
                 ),
                 200,
@@ -546,6 +550,21 @@ def get_all_metrics_combined():
         result = get_all_metrics_ultra_optimized(
             session, athlete_id, user_id=user_id, weeks=20
         )
+
+        # Add pre-calculated fitness values (reuse same calculation as plan generation)
+        # This ensures consistency across UI and validation
+        from src.services.metrics_helper_service import (
+            get_weekly_fitness_from_materialized_view,
+        )
+
+        weekly_mileage, longest_run = get_weekly_fitness_from_materialized_view(
+            session=session, user_id=str(user_id), athlete_id=athlete_id
+        )
+
+        result["fitness_summary"] = {
+            "current_weekly_mileage": weekly_mileage,
+            "current_long_run": longest_run,
+        }
 
         weekly_goals = result.get("weekly_goals", [])
         print(f"[DEBUG] Weekly goals for user {user_id}: {weekly_goals}")

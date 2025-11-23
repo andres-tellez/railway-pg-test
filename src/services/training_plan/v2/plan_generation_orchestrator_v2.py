@@ -5,7 +5,7 @@ Wires together the race-distance-aware services (Pass1, weekly totals, Pass3, Pa
 recovery insertion, validation) to produce a deterministic draft plan.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import logging
 from datetime import datetime, date, timedelta
 
@@ -39,11 +39,17 @@ from src.services.training_plan.v2.shared_v2.pace_seed_service import (
 from src.services.training_plan.v2.shared_v2.pass1_weeks_selector_v2 import (
     Pass1WeeksSelector as Pass1WeeksSelectorV2,
 )
+from src.services.training_plan.v2.race_date_validation_service import (
+    RaceDateValidationService,
+)
 from src.utils.date_helpers import get_week_start_for_date
 from src.services.training_plan.v2.marathon.workout_types_v2 import (
     EASY,
     TYPE_DISPLAY,
     PACE_GUIDANCE,
+)
+from src.services.metrics_helper_service import (
+    get_weekly_fitness_from_materialized_view,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,6 +77,7 @@ class PlanGenerationOrchestratorV2:
             data_collector=self.data_collector,
             insights_service=self.insights_service,
         )
+        self.race_date_validator = RaceDateValidationService()
 
     def generate_longrun_first(
         self,
@@ -114,12 +121,84 @@ class PlanGenerationOrchestratorV2:
         # Note: Max HR sync from Strava is not available - Strava API doesn't return max_heartrate
         # Users must enter max HR manually in their profile
 
-        # Pass 1 Weeks selector for recommended plan length
+        # Step 0: Validate race date readiness (NEW)
+        # This checks if user has sufficient time and base fitness before generating plan
+        race_date_validation = None
+        race_date = plan_request.get("race_date")
+        start_date = plan_request.get("start_date")
+
+        if race_date:
+            # Use materialized view for validation to match UI display
+            # This ensures the numbers shown to the user match what's used for validation
+            # Uses the same calculation as the metrics endpoint
+            current_weekly_mileage, current_long_run = (
+                get_weekly_fitness_from_materialized_view(
+                    session=session, user_id=str(user_id)
+                )
+            )
+
+            # Fallback to insights calculation if materialized view is not available
+            if current_weekly_mileage == 0:
+                logger.warning(
+                    "Materialized view returned 0 weekly mileage, falling back to insights calculation"
+                )
+                raw = self.data_collector.collect_all_data(
+                    session=session,
+                    user_id=user_id,
+                    plan_request=plan_request,
+                    activity_weeks=runner_ctx.get("activity_weeks", 12),
+                )
+                insights = self.insights_service.calculate_all_insights(raw)
+                current_fitness = insights.get("current_fitness", {})
+                current_weekly_mileage = float(
+                    current_fitness.get("weekly_mileage", 0) or 0
+                )
+                current_long_run = float(current_fitness.get("longest_run", 0) or 0)
+
+            race_date_validation = self.race_date_validator.validate(
+                race_date=race_date,
+                plan_start_date=start_date,
+                current_weekly_mileage=current_weekly_mileage,
+                current_long_run=current_long_run,
+            )
+
+            logger.info(
+                f"🎯 Race date validation: status={race_date_validation.get('status')}, "
+                f"available={race_date_validation.get('available_weeks')} weeks, "
+                f"required={race_date_validation.get('required_weeks')} weeks, "
+                f"can_proceed={race_date_validation.get('can_proceed', False)}"
+            )
+
+            # Always generate plan and include validation results
+            # Frontend will show dialog based on validation status and let user decide
+            # Don't block plan generation here - user can still view the plan even if timeline is tight
+
+        # Step 1: Get readiness-based plan length recommendation
+        # This uses user's weekly mileage to recommend appropriate plan length
+        # Mapping: <15mpw→24w, 15-<20mpw→20w, 20-30mpw→16w, >30mpw→12w
+        weeks_recommendation = self.pass1_selector.select_weeks(
+            session=session,
+            user_id=str(user_id),
+            plan_request=plan_request,
+            activity_weeks=runner_ctx.get("activity_weeks", 12),
+        )
+        recommended_weeks = weeks_recommendation.get("weeks")
+        rationale = weeks_recommendation.get("rationale", {})
+        base_mileage = rationale.get("base_mileage_mpw", 0)
+        logger.info(
+            f"✅ Readiness-based plan length: {recommended_weeks} weeks "
+            f"(weekly_mileage={base_mileage:.1f}mpw, "
+            f"longest_run={rationale.get('longest_recent_run_miles', 0):.1f}mi)"
+        )
+
+        # Step 2: Build long run progression using recommended plan length
+        # Pass recommended_weeks to ensure plan fits within readiness-based timeframe
         lr_output = self.pass1.build(
             session=session,
             user_id=str(user_id),
             plan_request=plan_request,
             activity_weeks=runner_ctx.get("activity_weeks", 12),
+            recommended_weeks=recommended_weeks,  # Use readiness-based recommendation
         )
         weeks_long = lr_output.get("weeks", [])
 
@@ -191,6 +270,9 @@ class PlanGenerationOrchestratorV2:
         validation["draft"] = plan_with_details
         validation["recovery_metadata"] = recovery_meta
         validation["pass1_rationale"] = lr_output.get("rationale")
+        # Include race date validation results if available
+        if race_date_validation:
+            validation["race_date_validation"] = race_date_validation
         return validation
 
     @staticmethod

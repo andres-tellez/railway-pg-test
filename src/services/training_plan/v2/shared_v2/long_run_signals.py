@@ -49,6 +49,9 @@ def detect_consecutive_long_runs(
     """
     Detect whether the athlete has accumulated consecutive long runs that should
     trigger a recovery week.
+
+    Also detects if the athlete has already self-regulated (recent reduction from peak)
+    to avoid forcing a double recovery.
     """
     if not activities:
         return {
@@ -56,6 +59,8 @@ def detect_consecutive_long_runs(
             "consecutive_count": 0,
             "weekly_long_runs": [],
             "longest_recent": 0.0,
+            "has_recent_reduction": False,
+            "most_recent_long_run": 0.0,
         }
 
     weekly_data = get_complete_weeks(activities, max_weeks=4)
@@ -65,6 +70,8 @@ def detect_consecutive_long_runs(
             "consecutive_count": 0,
             "weekly_long_runs": [],
             "longest_recent": 0.0,
+            "has_recent_reduction": False,
+            "most_recent_long_run": 0.0,
         }
 
     weekly_long_runs: List[float] = []
@@ -83,11 +90,14 @@ def detect_consecutive_long_runs(
             weekly_long_runs.append(round(longest_in_week, 2))
 
     if len(weekly_long_runs) < min_consecutive_weeks:
+        most_recent = weekly_long_runs[0] if weekly_long_runs else 0.0
         return {
             "has_consecutive_runs": False,
             "consecutive_count": len(weekly_long_runs),
             "weekly_long_runs": weekly_long_runs,
             "longest_recent": max(weekly_long_runs) if weekly_long_runs else 0.0,
+            "has_recent_reduction": False,
+            "most_recent_long_run": most_recent,
         }
 
     consecutive_count = 0
@@ -102,11 +112,40 @@ def detect_consecutive_long_runs(
         max(weekly_long_runs[:consecutive_count]) if consecutive_count > 0 else 0.0
     )
 
+    # Detect if user has already self-regulated (recent reduction from peak)
+    # Pattern: [most_recent, ...previous weeks]
+    # If most_recent < peak, user may have already reduced
+    most_recent_long_run = weekly_long_runs[0] if weekly_long_runs else 0.0
+    has_recent_reduction = False
+
+    if len(weekly_long_runs) >= 2 and most_recent_long_run > 0 and longest_recent > 0:
+        # Check if most recent week is lower than peak
+        # Any reduction suggests user may have intentionally self-regulated
+        # This avoids forcing double recovery when user already pulled back
+
+        # If most recent is at least 5% lower than peak, it's likely intentional
+        reduction_threshold = 0.05  # 5% reduction suggests intentional adjustment
+        reduction_pct = (longest_recent - most_recent_long_run) / longest_recent
+
+        if reduction_pct >= reduction_threshold:
+            # Check if it's part of a downward trend (most recent < previous)
+            # Pattern [14, 15, 15, 14] means most recent (14) < previous week (15)
+            if (
+                len(weekly_long_runs) >= 2
+                and most_recent_long_run < weekly_long_runs[1]
+            ):
+                has_recent_reduction = True
+            # Or if reduction is substantial (15%+), definitely intentional
+            elif reduction_pct >= 0.15:
+                has_recent_reduction = True
+
     return {
         "has_consecutive_runs": has_consecutive,
         "consecutive_count": consecutive_count,
         "weekly_long_runs": weekly_long_runs,
         "longest_recent": longest_recent,
+        "has_recent_reduction": has_recent_reduction,
+        "most_recent_long_run": most_recent_long_run,
     }
 
 
