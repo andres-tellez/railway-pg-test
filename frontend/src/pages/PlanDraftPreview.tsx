@@ -28,6 +28,11 @@ export default function PlanDraftPreview() {
   const violations: any[] = validation?.violations || [];
   const hasErrors = violations.some((v) => (v?.severity || "").toLowerCase() === "error");
 
+  // Spine quality validation (cutback spacing, progression safety, etc.)
+  const spineQuality = validation?.spine_quality;
+  const spineQualityIssues = spineQuality?.issues || [];
+  const hasSpineQualityIssues = !spineQuality?.is_valid && spineQualityIssues.length > 0;
+
   const browserTimezone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
     []
@@ -172,20 +177,47 @@ export default function PlanDraftPreview() {
           {/* Validation */}
           <div className="mb-6">
             <h2 className="text-lg font-semibold text-gray-800">Validation</h2>
+
+            {/* Plan Safety Validation (from PlanValidationServiceV2) */}
             {violations.length === 0 ? (
-              <p className="text-green-700">No issues detected.</p>
+              <p className="text-green-700">✅ No safety issues detected.</p>
             ) : (
-              <ul className="space-y-2">
-                {violations.map((v, i) => (
-                  <li key={i} className={`p-3 rounded ${ (v?.severity||"").toLowerCase()==="error" ? "bg-red-50 border border-red-200" : "bg-yellow-50 border border-yellow-200" }`}>
-                    <div className="font-medium text-gray-800">{v?.rule || "Rule"} ({v?.severity})</div>
-                    <div className="text-gray-700 text-sm">{v?.details}</div>
-                    {v?.suggestion && (
-                      <div className="text-gray-600 text-sm mt-1">Suggestion: {v.suggestion}</div>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              <div className="mb-4">
+                <h3 className="text-md font-medium text-gray-700 mb-2">Plan Safety Checks</h3>
+                <ul className="space-y-2">
+                  {violations.map((v, i) => (
+                    <li key={i} className={`p-3 rounded ${ (v?.severity||"").toLowerCase()==="error" ? "bg-red-50 border border-red-200" : "bg-yellow-50 border border-yellow-200" }`}>
+                      <div className="font-medium text-gray-800">{v?.rule || "Rule"} ({v?.severity})</div>
+                      <div className="text-gray-700 text-sm">{v?.details}</div>
+                      {v?.suggestion && (
+                        <div className="text-gray-600 text-sm mt-1">Suggestion: {v.suggestion}</div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Spine Quality Validation (cutback spacing, progression, etc.) */}
+            {spineQuality && (
+              <div className="mt-4">
+                <h3 className="text-md font-medium text-gray-700 mb-2">Plan Structure Quality</h3>
+                {!hasSpineQualityIssues ? (
+                  <p className="text-green-700">✅ Plan structure is correct (cutbacks, progression, peak).</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {spineQualityIssues.map((issue: string, i: number) => (
+                      <li key={i} className="p-3 rounded bg-orange-50 border border-orange-200">
+                        <div className="font-medium text-gray-800">⚠️ Structure Issue</div>
+                        <div className="text-gray-700 text-sm">{issue}</div>
+                        <div className="text-gray-600 text-xs mt-1 italic">
+                          This indicates a bug in plan generation logic.
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
           </div>
 
@@ -210,12 +242,12 @@ export default function PlanDraftPreview() {
           {/* Weeks Table */}
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-gray-800">Weeks</h2>
-            <div className="overflow-x-auto">
-              <table className="min-w-full border border-gray-200 text-sm">
+            <div className="overflow-x-auto flex justify-center">
+              <table className="border border-gray-200 text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-gray-700">
-                    <th className="border p-2 text-left">Week</th>
-                    <th className="border p-2 text-left">Phase</th>
+                    <th className="border p-2 text-center">Week</th>
+                    <th className="border p-2 text-center whitespace-nowrap">Phase</th>
                     {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => (
                       <th key={d} className="border p-2 text-center">{d}</th>
                     ))}
@@ -367,15 +399,15 @@ export default function PlanDraftPreview() {
                         : "hover:bg-gray-50"
                     }
                   >
-                        <td className="border p-2 align-top">
+                        <td className="border p-2 align-middle text-center">
                           <div className="font-medium">{weekDisplay}</div>
                         </td>
                     <td
-                      className={`border p-2 align-top ${
-                        isRaceWeek ? "text-amber-900 font-semibold tracking-wide" : ""
+                      className={`border p-2 align-middle text-center whitespace-nowrap ${
+                        isRaceWeek ? "text-amber-900 font-semibold" : ""
                       }`}
                     >
-                      {isRaceWeek ? "Race Week 🎉" : w?.phase || ""}
+                      {isRaceWeek ? "Race Week 🎉" : (w?.phase || "").trim()}
                     </td>
                         {dayKeys.map((d) => (
                           <td key={d} className="border p-2 align-top text-center">

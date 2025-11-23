@@ -131,7 +131,9 @@ class PlanValidationServiceV2:
         violations.extend(self._validate_taper(weeks))
         violations.extend(self._validate_long_run_bounds(weeks))
         violations.extend(self._validate_week_completeness(weeks))
-        violations.extend(self._validate_race_date_timing(plan))
+        # Skip race date timing validation - this is already handled by RaceDateValidationService
+        # which shows a dialog to the user before plan generation. This check is redundant.
+        # violations.extend(self._validate_race_date_timing(plan))
 
         # Check if there are any ERROR-level violations
         errors = [v for v in violations if v.get("severity") == "error"]
@@ -539,15 +541,22 @@ class PlanValidationServiceV2:
                         }
                     )
                 elif share < lo:
-                    violations.append(
-                        {
-                            "rule": "long_run_share_too_low",
-                            "severity": "warning",
-                            "location": f"week {w.get('week_number')}",
-                            "details": f"Long run is {share*100:.1f}% of weekly mileage (<{lo*100:.0f}%)",
-                            "suggestion": "Consider adjusting long run to fall inside expected percentage range",
-                        }
+                    # Add tolerance for rounding - only warn if significantly below minimum
+                    # This prevents false warnings for minor differences (e.g., 29.4% vs 30%)
+                    # that are due to rounding or constraint balancing
+                    tolerance = (
+                        0.01  # 1% tolerance for rounding/calculation differences
                     )
+                    if share < (lo - tolerance):
+                        violations.append(
+                            {
+                                "rule": "long_run_share_too_low",
+                                "severity": "warning",
+                                "location": f"week {w.get('week_number')}",
+                                "details": f"Long run is {share*100:.1f}% of weekly mileage (<{lo*100:.0f}%)",
+                                "suggestion": "Consider adjusting long run to fall inside expected percentage range",
+                            }
+                        )
         return violations
 
     @staticmethod

@@ -61,6 +61,43 @@ class RaceDistanceConfig(ABC):
         """Percent of longest recent run used for recovery weeks."""
         pass
 
+    # Post-Peak Configuration
+    @property
+    @abstractmethod
+    def post_peak_recovery_ratio(self) -> float:
+        """Percentage of peak used for immediate post-peak recovery week (e.g., 0.75 for 75%)."""
+        pass
+
+    @property
+    @abstractmethod
+    def maintenance_reduction(self) -> float:
+        """Miles to reduce from peak for maintenance weeks (e.g., 2.0 miles)."""
+        pass
+
+    @property
+    @abstractmethod
+    def pre_taper_cap_weeks(self) -> int:
+        """Number of weeks before taper to cap long runs (e.g., 5 weeks)."""
+        pass
+
+    @property
+    @abstractmethod
+    def pre_taper_cap_miles(self) -> float:
+        """Maximum long run miles in pre-taper weeks (e.g., 16.0). Should be < target_peak_miles."""
+        pass
+
+    @property
+    @abstractmethod
+    def min_long_run_miles(self) -> float:
+        """Absolute minimum long run distance allowed (e.g., 5.0 miles)."""
+        pass
+
+    @property
+    @abstractmethod
+    def resume_week_increment(self) -> float:
+        """Miles to add after cutback week during resume (e.g., 2.0 miles)."""
+        pass
+
     # Weekly Totals
     @property
     @abstractmethod

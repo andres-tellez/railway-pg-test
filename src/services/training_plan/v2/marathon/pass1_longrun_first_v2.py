@@ -51,6 +51,7 @@ def build_spine(
     peak: float,
     cfg: LRConfig,
     race_date: Any,
+    config: Optional[Any] = None,  # RaceDistanceConfig
 ) -> List[Dict[str, Any]]:
     return generate_long_run_spine(
         starting_long_run_miles=start,
@@ -63,6 +64,7 @@ def build_spine(
         cutback_every=cfg["cutEvery"],
         cutback_factor=cfg["cutFactor"],
         peak_offset_before_taper=4 if (total_weeks or 0) >= 15 else 1,
+        config=config,  # Pass config to spine generator
     )
 
 
@@ -265,6 +267,7 @@ class Pass1LongRunFirstV2:
                 peak=target_peak_miles,
                 cfg=cfg,
                 race_date=plan_request.get("race_date"),
+                config=self.config,  # Pass config for removing hardcoded values
             )
         else:
             logger.info(
@@ -279,6 +282,7 @@ class Pass1LongRunFirstV2:
                 peak=target_peak_miles,
                 cfg=cfg,
                 race_date=plan_request.get("race_date"),
+                config=self.config,  # Pass config for removing hardcoded values
             )
         desired_total_weeks = len(weeks)
 

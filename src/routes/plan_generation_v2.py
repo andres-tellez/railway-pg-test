@@ -73,6 +73,9 @@ def build_standard_draft_payload(
             "valid": bool(validation_result.get("valid")),
             "violations": validation_result.get("violations", []),
             "validated_plan": validation_result.get("validated_plan"),
+            "spine_quality": validation_result.get(
+                "spine_quality"
+            ),  # Include spine quality validation (cutback spacing, progression, etc.)
         },
         "recovery_metadata": validation_result.get("recovery_metadata"),
         "pass1_rationale": validation_result.get("pass1_rationale"),

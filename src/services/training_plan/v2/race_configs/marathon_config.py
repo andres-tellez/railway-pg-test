@@ -24,8 +24,8 @@ class MarathonConfig(RaceDistanceConfig):
 
     @property
     def cutback_factor(self) -> float:
-        """Reduce volume ~30% on cutback weeks."""
-        return 0.70
+        """Reduce volume ~25% on cutback weeks."""
+        return 0.75
 
     @property
     def target_peak_miles(self) -> float:
@@ -48,6 +48,37 @@ class MarathonConfig(RaceDistanceConfig):
     def recovery_reduction_ratio(self) -> float:
         """Percentage of the longest recent run to target for recovery."""
         return 0.70
+
+    # Post-Peak Configuration
+    @property
+    def post_peak_recovery_ratio(self) -> float:
+        """75% of peak for immediate post-peak recovery week."""
+        return 0.75
+
+    @property
+    def maintenance_reduction(self) -> float:
+        """Reduce 2 miles from peak for maintenance weeks."""
+        return 2.0
+
+    @property
+    def pre_taper_cap_weeks(self) -> int:
+        """Cap long runs in last 5 weeks before taper."""
+        return 5
+
+    @property
+    def pre_taper_cap_miles(self) -> float:
+        """Cap at 16 miles in pre-taper weeks (below 20-mile peak)."""
+        return 16.0
+
+    @property
+    def min_long_run_miles(self) -> float:
+        """Absolute minimum long run distance (5 miles)."""
+        return 5.0
+
+    @property
+    def resume_week_increment(self) -> float:
+        """Add 2 miles after cutback during resume week."""
+        return 2.0
 
     # Weekly Totals
     @property
