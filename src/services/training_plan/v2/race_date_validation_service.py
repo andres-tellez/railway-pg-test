@@ -182,7 +182,9 @@ class RaceDateValidationService:
         """Calculate available weeks until race date."""
         delta = race_date - start_date
         weeks = delta.days / 7.0
-        return max(0, int(weeks))
+        # Use round() instead of int() to avoid truncation issues
+        # e.g., 11.86 weeks should round to 12, not truncate to 11
+        return max(0, round(weeks))
 
     def _estimate_weeks_to_peak(
         self, current_long_run: float, target_peak: float = 20.0
@@ -192,7 +194,7 @@ class RaceDateValidationService:
 
         Based on safe progression:
         - +1 mile/week progression
-        - Cutback every 4th week (30% reduction)
+        - Cutback every 4th week (25% reduction)
         - Resume after cutback (+2 miles from cutback)
         - Starting point: current_long_run + 1.0 mile (Week 1)
 
@@ -200,11 +202,11 @@ class RaceDateValidationService:
         - Week 1: 16 -> 17 (+1)
         - Week 2: 17 -> 18 (+1)
         - Week 3: 18 -> 19 (+1)
-        - Week 4: Cutback ~13.3 (19 * 0.70)
-        - Week 5: Resume ~15 (+2 from 13.3)
-        - Week 6: 15 -> 16 (+1)
-        - Week 7: 16 -> 17 (+1)
-        - Week 8: Cutback ~11.9 (17 * 0.70)
+        - Week 4: Cutback ~14.25 (19 * 0.75)
+        - Week 5: Resume ~16 (+2 from 14.25)
+        - Week 6: 16 -> 17 (+1)
+        - Week 7: 17 -> 18 (+1)
+        - Week 8: Cutback ~13.5 (18 * 0.75)
         ... continues
 
         Conservative estimate accounting for cutbacks:
@@ -472,8 +474,10 @@ class RaceDateValidationService:
         )
 
         # 4. OPTIONS (clear and concise, references ready date above)
-        # Skip options for strong runners with 11 weeks - they can proceed safely
-        options = self._build_compact_options(status, optimal_ready_date, reason)
+        # Skip options for strong runners with 11 weeks or when user has adequate time - they can proceed safely
+        options = self._build_compact_options(
+            status, optimal_ready_date, reason, available_weeks, required_weeks
+        )
 
         # Combine components
         components = [status_line, when_ready]
@@ -494,12 +498,17 @@ class RaceDateValidationService:
         reason: Optional[str] = None,
     ) -> str:
         """One-line status followed by fitness section with bullets."""
-        if status == "reject" or status == "warn":
+        # If user has adequate time (available >= required), message should be positive
+        # even if status is "warn" (warning might be about fitness, not time)
+        if available_weeks >= required_weeks:
+            # When user has adequate time, always show positive, confident message
+            status_line = "✅ **You're all set!** — You have sufficient time and fitness for marathon training."
+        elif status == "reject" or status == "warn":
             gap = abs(available_weeks - required_weeks)
             if available_weeks < required_weeks:
                 if status == "warn" and reason == "strong_base_11_weeks_allowed":
-                    # Special case: Strong runners allowed 11 weeks with warning
-                    status_line = f"⚠️ **Tight timeline** — You have {available_weeks} weeks (ideal is {required_weeks} weeks), but your strong base allows you to proceed safely."
+                    # Special case: Strong runners allowed 11 weeks - positive message since they can proceed safely
+                    status_line = f"✅ **You're ready to proceed** — You have {available_weeks} weeks (ideal is {required_weeks} weeks), and your strong base allows you to train safely."
                 else:
                     status_line = f"⚠️ **Not enough time** — You have {available_weeks} weeks but need {required_weeks} weeks."
             else:
@@ -539,7 +548,8 @@ class RaceDateValidationService:
             return "**Why:** A 5+ mile long run base ensures your muscles and body are ready for the progression ahead."
 
         if reason == "strong_base_11_weeks_allowed":
-            return "**Why:** While 12 weeks is ideal, your strong base (30+ mpw, 10+ mi long run) allows you to safely proceed with 11 weeks. Still, be extra mindful of recovery and listen to your body."
+            # Skip "Why" section - the status line already explains this clearly
+            return ""
 
         if available_weeks < 12:
             return "**Why:** 12 weeks is the minimum because your body needs time for bone/tendon strengthening, cardiovascular adaptation, safe long run progression, and taper."
@@ -550,7 +560,12 @@ class RaceDateValidationService:
         return ""
 
     def _build_compact_options(
-        self, status: str, optimal_ready_date: date, reason: Optional[str] = None
+        self,
+        status: str,
+        optimal_ready_date: date,
+        reason: Optional[str] = None,
+        available_weeks: Optional[int] = None,
+        required_weeks: Optional[int] = None,
     ) -> str:
         """Clear, concise options."""
         if status == "approve":
@@ -559,6 +574,11 @@ class RaceDateValidationService:
         # For strong runners with 11 weeks, skip options - they can proceed safely
         if reason == "strong_base_11_weeks_allowed":
             return "**Next:** Your training plan is ready to review!"
+
+        # If user has adequate time (available >= required), they can proceed - no options needed
+        if available_weeks is not None and required_weeks is not None:
+            if available_weeks >= required_weeks:
+                return "**Next:** Your training plan is ready to review!"
 
         ready_date_str = optimal_ready_date.strftime("%B %d, %Y")
         return f"""**Your Options:**

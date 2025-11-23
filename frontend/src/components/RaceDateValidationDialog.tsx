@@ -30,10 +30,14 @@ const RaceDateValidationDialog: React.FC<RaceDateValidationDialogProps> = ({
   onCancel,
   onAskGPT,
 }) => {
-  const { status, message, ready_date, timeline_gap_weeks, can_proceed } = validation;
+  const { status, message, ready_date, timeline_gap_weeks, can_proceed, available_weeks, required_weeks } = validation;
+
+  // Check if message is positive (for dynamic styling)
+  const isPositiveMessage = message.includes('✅') || message.includes('ready to proceed') || message.includes("You're ready");
+  const effectiveStatus = (can_proceed && isPositiveMessage) ? 'approve' : status;
 
   const getStatusIcon = () => {
-    switch (status) {
+    switch (effectiveStatus) {
       case 'approve':
         return (
           <svg className="h-6 w-6 text-green-500" fill="currentColor" viewBox="0 0 20 20">
@@ -58,7 +62,7 @@ const RaceDateValidationDialog: React.FC<RaceDateValidationDialogProps> = ({
   };
 
   const getStatusColor = () => {
-    switch (status) {
+    switch (effectiveStatus) {
       case 'approve':
         return 'bg-green-50 border-green-200';
       case 'reject':
@@ -71,7 +75,7 @@ const RaceDateValidationDialog: React.FC<RaceDateValidationDialogProps> = ({
   };
 
   const getStatusTextColor = () => {
-    switch (status) {
+    switch (effectiveStatus) {
       case 'approve':
         return 'text-green-800';
       case 'reject':
@@ -117,9 +121,24 @@ const RaceDateValidationDialog: React.FC<RaceDateValidationDialogProps> = ({
           <div className="flex items-center gap-3">
             {getStatusIcon()}
             <h2 className={`text-xl font-semibold ${getStatusTextColor()}`}>
-              {status === 'approve' && 'Great News!'}
-              {status === 'reject' && 'Timeline Concern'}
-              {status === 'warn' && 'Training Plan Alert'}
+              {(() => {
+                // Dynamic header based on message content and context
+                // If message is positive (starts with ✅ or contains "ready to proceed"), show positive header
+                const isPositiveMessage = message.includes('✅') || message.includes('ready to proceed') || message.includes("You're ready");
+
+                if (status === 'approve' || (can_proceed && isPositiveMessage)) {
+                  return 'Great News!';
+                }
+                if (status === 'reject') {
+                  return 'Timeline Concern';
+                }
+                // For "warn" status with positive message, show encouraging header
+                if (can_proceed && isPositiveMessage) {
+                  return 'Ready to Train';
+                }
+                // Only show "Training Plan Alert" for actual concerns
+                return 'Training Plan Alert';
+              })()}
             </h2>
           </div>
         </div>
