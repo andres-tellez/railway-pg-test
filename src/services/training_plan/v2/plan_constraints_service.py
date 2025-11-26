@@ -33,18 +33,35 @@ class PlanConstraints:
         recommended_weeks: Optional[int] = None,
         min_start_date: Optional[date] = None,
         race_date: Optional[date] = None,
+        generation_weeks: Optional[int] = None,
+        fitness_recommended_weeks: Optional[int] = None,
     ):
         self.target_weeks = target_weeks
         self.available_weeks = available_weeks
         self.recommended_weeks = recommended_weeks
         self.min_start_date = min_start_date
         self.race_date = race_date
+        self.generation_weeks = generation_weeks
+        self.fitness_recommended_weeks = fitness_recommended_weeks
 
     def __repr__(self) -> str:
         return (
             f"PlanConstraints(target={self.target_weeks}, "
-            f"available={self.available_weeks}, recommended={self.recommended_weeks})"
+            f"available={self.available_weeks}, recommended={self.recommended_weeks}, "
+            f"fitness={self.fitness_recommended_weeks})"
         )
+
+    @property
+    def structural_weeks(self) -> Optional[int]:
+        """
+        Single source of truth for plan generation length.
+
+        Order of precedence:
+        1. generation_weeks (explicitly calculated)
+        2. target_weeks (final constrained length)
+        3. recommended_weeks (fitness-based fallback)
+        """
+        return self.generation_weeks or self.target_weeks or self.recommended_weeks
 
 
 class PlanConstraintsService:
@@ -73,6 +90,51 @@ class PlanConstraintsService:
         except Exception:
             return None
 
+    def calculate_available_weeks(
+        self,
+        *,
+        race_date: Any,
+        min_start_date: Optional[date] = None,
+    ) -> Optional[int]:
+        """
+        Calculate available training weeks from race date.
+        
+        This is used BEFORE the selector makes its recommendation, so the selector
+        can consider available time when making its decision.
+        
+        Args:
+            race_date: Race date (any format)
+            min_start_date: Minimum start date (if None, calculates from today)
+            
+        Returns:
+            Available training weeks (None if no race_date), or None if race_date invalid
+        """
+        if min_start_date is None:
+            today = datetime.now().date()
+            min_start_date = get_next_monday(today, include_today=False)
+        
+        if not race_date:
+            return None
+            
+        race_d = self._parse_date(race_date)
+        if not race_d:
+            return None
+            
+        race_week_start = get_week_start_for_date(race_d)
+        days_to_race = (race_week_start - min_start_date).days
+        
+        # Calculate available training weeks (race week is added separately later)
+        # Use integer division: days_to_race // 7 gives training weeks
+        available_weeks = max(1, days_to_race // 7)
+        
+        logger.info(
+            f"📅 Available weeks calculation: {available_weeks} weeks "
+            f"(race_date={race_d.isoformat()}, min_start={min_start_date.isoformat()}, "
+            f"days_to_race={days_to_race})"
+        )
+        
+        return available_weeks
+
     def calculate_plan_constraints(
         self,
         *,
@@ -81,46 +143,62 @@ class PlanConstraintsService:
         min_start_date: Optional[date] = None,
     ) -> PlanConstraints:
         """
-        Calculate final plan constraints considering both fitness and race date.
-
+        Calculate plan constraints for validation and date alignment.
+        
+        NOTE: The selector (Pass1WeeksSelector) now handles the time-aware decision.
+        This method primarily validates and stores values for date alignment.
+        
         Args:
             race_date: Race date (any format)
-            recommended_weeks: Fitness-based recommended plan length
+            recommended_weeks: Time-aware recommended plan length (from selector)
             min_start_date: Minimum start date (if None, calculates from today)
 
         Returns:
-            PlanConstraints with target_weeks constrained by race date
+            PlanConstraints with validated constraints
         """
         if min_start_date is None:
             today = datetime.now().date()
             min_start_date = get_next_monday(today, include_today=False)
 
-        target_weeks = recommended_weeks  # Start with fitness-based recommendation
+        # recommended_weeks already includes time-aware adjustment from selector
+        target_weeks = recommended_weeks
+        generation_weeks = recommended_weeks
         available_weeks = None
         race_d = None
 
         if race_date:
             race_d = self._parse_date(race_date)
             if race_d:
-                race_week_start = get_week_start_for_date(race_d)
-                days_to_race = (race_week_start - min_start_date).days
-                available_weeks = max(1, int(days_to_race / 7))
-
-                # Constrain: Use minimum of fitness-based recommendation and available weeks
-                target_weeks = min(recommended_weeks, available_weeks)
-
-                logger.info(
-                    f"📅 Race date constraint: {recommended_weeks} weeks recommended (fitness), "
-                    f"{available_weeks} weeks available (race date: {race_d.isoformat()}), "
-                    f"using {target_weeks} weeks"
+                # Calculate available_weeks for validation (should match selector's calculation)
+                available_weeks = self.calculate_available_weeks(
+                    race_date=race_date,
+                    min_start_date=min_start_date,
                 )
+                
+                # Validate that recommended_weeks doesn't exceed available_weeks
+                if available_weeks is not None and recommended_weeks > available_weeks:
+                    logger.warning(
+                        f"⚠️ Recommended weeks ({recommended_weeks}) exceeds available weeks "
+                        f"({available_weeks}). This should not happen if selector logic is correct. "
+                        f"Using available_weeks as constraint."
+                    )
+                    target_weeks = available_weeks
+                    generation_weeks = available_weeks
+                else:
+                    # recommended_weeks is valid (<= available_weeks or no constraint)
+                    target_weeks = recommended_weeks
+                    generation_weeks = recommended_weeks
 
+        # Store recommended_weeks as-is (selector already made the decision)
+        # fitness_recommended_weeks is stored separately in orchestrator
         return PlanConstraints(
             target_weeks=target_weeks,
             available_weeks=available_weeks,
             recommended_weeks=recommended_weeks,
             min_start_date=min_start_date,
             race_date=race_d,
+            generation_weeks=generation_weeks,
+            fitness_recommended_weeks=recommended_weeks,  # Will be overridden by orchestrator if needed
         )
 
     def calculate_start_date(
@@ -174,9 +252,41 @@ class PlanConstraintsService:
                         f"Failed to align start date from race_date={race_date}: {e}"
                     )
 
-        # Use calculated start if available, otherwise try fallback
+        # Priority: Start as soon as possible (next Monday) when there's enough time
+        # Strategy: Use min_start_date when there's enough time, then adjust dates forward to align race week
         if calculated_start:
-            start_date = calculated_start
+            race_week_start = get_week_start_for_date(race_d) if race_d else None
+            if race_week_start:
+                # Calculate where the race week would be if we start on min_start_date
+                plan_end_from_min_start = min_start_date + timedelta(weeks=plan_length_weeks - 1)
+                
+                logger.info(
+                    f"Date check: min_start={min_start_date}, plan_length={plan_length_weeks}, "
+                    f"plan_end_from_min_start={plan_end_from_min_start}, race_week_start={race_week_start}"
+                )
+                
+                # If starting on min_start_date would end before or on the race week, use min_start_date
+                # The date adjustment code will align the race week later
+                if plan_end_from_min_start <= race_week_start:
+                    # Starting on next Monday fits - use it (start as soon as possible)
+                    start_date = min_start_date
+                    logger.info(
+                        f"✅ Using minimum start date {min_start_date} (next Monday) - "
+                        f"plan fits before race week {race_week_start} "
+                        f"(plan would end on {plan_end_from_min_start}, race week starts {race_week_start}). "
+                        f"Dates will be adjusted forward to align race week."
+                    )
+                else:
+                    # Plan wouldn't fit - must use calculated start to align with race
+                    start_date = max(calculated_start, min_start_date)
+                    logger.info(
+                        f"⚠️ Using calculated start {calculated_start} to ensure plan fits before race. "
+                        f"Adjusted to {start_date} (max of calculated and min_start). "
+                        f"Reason: plan_end_from_min_start ({plan_end_from_min_start}) > race_week_start ({race_week_start})"
+                    )
+            else:
+                # No race date - use calculated start if available, otherwise min_start
+                start_date = max(calculated_start, min_start_date) if calculated_start else min_start_date
         else:
             parsed_fallback = self._parse_date(fallback_start)
             if parsed_fallback:
@@ -186,7 +296,6 @@ class PlanConstraintsService:
                 start_date = min_start_date
 
         # CRITICAL: Ensure start date is never in the past
-        # Use the later of: calculated/fallback start OR minimum (next Monday)
         if start_date < min_start_date:
             logger.warning(
                 f"Start date {start_date} is in the past. "
@@ -252,6 +361,74 @@ class PlanConstraintsService:
         )
 
         return trimmed_weeks, updated_start_date or start_date
+
+    def align_weeks_with_dates(
+        self,
+        weeks: List[Dict[str, Any]],
+        *,
+        race_date: Any,
+        min_start_date: date,
+        fallback_start: Any = None,
+    ) -> Tuple[List[Dict[str, Any]], Optional[date]]:
+        """
+        Centralized date alignment workflow:
+        1. Calculate start date using actual plan length
+        2. Trim weeks if they exceed race date constraints
+        3. Assign sequential week_start_date/week_label values
+        4. Adjust all weeks so the final week aligns with the race week
+        """
+        if not weeks:
+            return weeks, None
+
+        actual_plan_length = len(weeks)
+        aligned_start_date = self.calculate_start_date(
+            race_date=race_date,
+            plan_length_weeks=actual_plan_length,
+            min_start_date=min_start_date,
+            fallback_start=fallback_start,
+        )
+
+        if not aligned_start_date:
+            return weeks, None
+
+        weeks_aligned, aligned_start_date = self.trim_plan_to_constraints(
+            weeks=weeks,
+            race_date=race_date,
+            start_date=aligned_start_date,
+        )
+
+        current = aligned_start_date
+        for week in weeks_aligned:
+            week["week_start_date"] = current.isoformat()
+            week["week_label"] = current.strftime("%Y-%m-%d")
+            current += timedelta(days=7)
+
+        if race_date:
+            race_d = self._parse_date(race_date)
+            if race_d:
+                race_week_start = get_week_start_for_date(race_d)
+                last_week_start = weeks_aligned[-1].get("week_start_date")
+                if last_week_start:
+                    last_week_date = datetime.fromisoformat(last_week_start).date()
+                    if last_week_date != race_week_start:
+                        date_offset = (race_week_start - last_week_date).days
+                        logger.info(
+                            f"Adjusting plan dates by {date_offset} days to align race week "
+                            f"({last_week_date}) with race date week ({race_week_start})"
+                        )
+                        for week in weeks_aligned:
+                            current_date = datetime.fromisoformat(
+                                week["week_start_date"]
+                            ).date()
+                            adjusted_date = current_date + timedelta(days=date_offset)
+                            week["week_start_date"] = adjusted_date.isoformat()
+                            week["week_label"] = adjusted_date.strftime("%Y-%m-%d")
+
+                        aligned_start_date = datetime.fromisoformat(
+                            weeks_aligned[0]["week_start_date"]
+                        ).date()
+
+        return weeks_aligned, aligned_start_date
 
     def get_min_start_date(self) -> date:
         """

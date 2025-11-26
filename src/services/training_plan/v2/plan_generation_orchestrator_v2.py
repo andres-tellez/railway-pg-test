@@ -7,19 +7,16 @@ recovery insertion, validation) to produce a deterministic draft plan.
 
 from typing import Any, Dict, List, Optional, Tuple
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from sqlalchemy.orm import Session
 
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
     validate_phase_quality,
 )
 
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
-from src.services.training_plan.v2.shared_v2.data_collection_service_v2 import (
-    DataCollectionService as DataCollectionServiceV2,
-)
-from src.services.training_plan.v2.shared_v2.insights_calculation_service_v2 import (
-    InsightsCalculationService as InsightsCalculationServiceV2,
-)
+# DataCollectionService and InsightsCalculationService no longer needed
+# All data now comes from materialized view (same as metrics page)
 from src.services.training_plan.v2.marathon.pass1_longrun_first_v2 import (
     Pass1LongRunFirstV2,
 )
@@ -48,6 +45,9 @@ from src.services.training_plan.v2.race_date_validation_service import (
 from src.services.training_plan.v2.plan_constraints_service import (
     PlanConstraintsService,
 )
+from src.services.training_plan.v2.scenario_adjustments_service import (
+    ScenarioAdjustmentsService,
+)
 from src.services.training_plan.v2.marathon.workout_types_v2 import (
     EASY,
     TYPE_DISPLAY,
@@ -67,23 +67,19 @@ class PlanGenerationOrchestratorV2:
 
     def __init__(self, config: RaceDistanceConfig) -> None:
         self.config = config
-        self.data_collector = DataCollectionServiceV2()
-        self.insights_service = InsightsCalculationServiceV2()
+        # DataCollectionService and InsightsCalculationService removed
+        # All data now comes from materialized view (same as metrics page)
 
         self.pass1 = Pass1LongRunFirstV2(
             config=config,
-            data_collector=self.data_collector,
-            insights_service=self.insights_service,
         )
         self.pass3 = Pass3WorkoutDistribution(config=config)
         self.pass4 = Pass4WorkoutDetails()
         self.validator = PlanValidationServiceV2(config=config)
-        self.pass1_selector = Pass1WeeksSelectorV2(
-            data_collector=self.data_collector,
-            insights_service=self.insights_service,
-        )
-        self.race_date_validator = RaceDateValidationService()
+        self.pass1_selector = Pass1WeeksSelectorV2()
+        self.race_date_validator = RaceDateValidationService(config=config)
         self.constraints_service = PlanConstraintsService()
+        self.scenario_adjustments = ScenarioAdjustmentsService()
 
     def generate_longrun_first(
         self,
@@ -127,98 +123,153 @@ class PlanGenerationOrchestratorV2:
         # Note: Max HR must be entered manually in user profile
         # Strava API doesn't return max_heartrate, so manual entry is required
 
-        # Step 0: Validate race date readiness (NEW)
-        # This checks if user has sufficient time and base fitness before generating plan
-        race_date_validation = None
+        # Step 1: Assess Physical Level (NEW - using materialized view)
+        # Use the same process as metrics page for consistency
+        # This ensures the numbers shown to the user match what's used for plan generation
+        weekly_mileage, longest_run = get_weekly_fitness_from_materialized_view(
+            session=session,
+            user_id=str(user_id),
+        )
+
+        logger.info(
+            f"📊 Step 1: Physical assessment complete - {weekly_mileage:.1f} mpw, "
+            f"longest_run={longest_run:.1f}mi (from materialized view, same as metrics page)"
+        )
+
+        # Store for subsequent steps
+        fitness_data = {
+            "weekly_mileage": weekly_mileage,
+            "longest_run": longest_run,
+        }
+
+        # Step 2: Calculate training weeks needed (fitness-based only, no dates)
+        # Determine how many weeks of training the user needs to safely complete a marathon
+        # Based solely on their current fitness level from Step 1
+        fitness_recommended_weeks = self.pass1_selector._map_weeks(base_mileage=weekly_mileage)
+        
+        logger.info(
+            f"📊 Step 2: Training weeks needed - {fitness_recommended_weeks} weeks "
+            f"(based on {weekly_mileage:.1f} mpw, no date constraints)"
+        )
+        
+        # Store fitness recommendation for later steps
+        fitness_data["fitness_recommended_weeks"] = fitness_recommended_weeks
+
+        # Step 3: Calculate available time
+        # Calculate available weeks between earliest start date and race date
+        # This is the calendar constraint (time available)
         race_date = plan_request.get("race_date")
         start_date = plan_request.get("start_date")
-
-        if race_date:
-            # Use materialized view for validation to match UI display
-            # This ensures the numbers shown to the user match what's used for validation
-            # Uses the same calculation as the metrics endpoint
-            current_weekly_mileage, current_long_run = (
-                get_weekly_fitness_from_materialized_view(
-                    session=session, user_id=str(user_id)
-                )
+        min_start_date = self.constraints_service.get_min_start_date()
+        available_weeks = self.constraints_service.calculate_available_weeks(
+            race_date=race_date,
+            min_start_date=min_start_date,
+        )
+        if available_weeks is not None:
+            logger.info(
+                f"📅 Step 3: Calculated {available_weeks} available training weeks "
+                f"(race_date={race_date}, min_start={min_start_date.isoformat()})"
             )
+        else:
+            logger.info("📅 Step 3: No race date provided, no time constraint")
 
-            # Fallback to insights calculation if materialized view is not available
-            if current_weekly_mileage == 0:
-                logger.warning(
-                    "Materialized view returned 0 weekly mileage, falling back to insights calculation"
-                )
-                raw = self.data_collector.collect_all_data(
-                    session=session,
-                    user_id=user_id,
-                    plan_request=plan_request,
-                    activity_weeks=runner_ctx.get("activity_weeks", 12),
-                )
-                insights = self.insights_service.calculate_all_insights(raw)
-                current_fitness = insights.get("current_fitness", {})
-                current_weekly_mileage = float(
-                    current_fitness.get("weekly_mileage", 0) or 0
-                )
-                current_long_run = float(current_fitness.get("longest_run", 0) or 0)
+        # Step 4: Determine plan length based on scenario
+        # Calculate what we'll actually BUILD
+        # Scenarios:
+        # 1. Time-constrained (available < fitness): Build with available_weeks
+        # 2. Extra time (available > fitness): Build with available_weeks (fill all time)
+        # 3. Perfect match (available == fitness): Build with available_weeks
+        # 4. No time constraint (available is None): Build with fitness_recommended_weeks
+        plan_length_weeks = available_weeks if available_weeks is not None else fitness_recommended_weeks
+        
+        if not plan_length_weeks:
+            raise ValueError("Plan length weeks must be provided")
+        
+        logger.info(
+            f"✅ Step 4: Plan length determined - {plan_length_weeks} weeks "
+            f"(fitness recommendation: {fitness_recommended_weeks} weeks, "
+            f"available: {available_weeks} weeks)"
+        )
 
+        # Step 4.5: Get scenario-specific adjustments
+        scenario_adjustments = self.scenario_adjustments.get_adjustments(
+            fitness_recommended_weeks=fitness_recommended_weeks,
+            available_weeks=available_weeks,
+            base_weekly_mileage=weekly_mileage,
+            plan_length_weeks=plan_length_weeks,
+        )
+        scenario = scenario_adjustments["scenario"]
+        
+        logger.info(
+            f"📊 Step 4.5: Scenario adjustments determined - {scenario}, "
+            f"starting_mileage_adjustment={scenario_adjustments['starting_mileage_adjustment']:.2f}"
+        )
+
+        # Step 5: Build long run progression (scenario-aware)
+        
+        # Validate time constraints ONLY for time-constrained scenario
+        # This is where the popup/warning should be shown
+        race_date_validation = None
+        if scenario == ScenarioAdjustmentsService.TIME_CONSTRAINED and race_date:
+            # Use actual calculated values from Steps 2-4 for accuracy
+            # Use start_date from plan_request or min_start_date as fallback
+            plan_start_date = start_date or min_start_date
             race_date_validation = self.race_date_validator.validate(
                 race_date=race_date,
-                plan_start_date=start_date,
-                current_weekly_mileage=current_weekly_mileage,
-                current_long_run=current_long_run,
+                plan_start_date=plan_start_date,
+                current_weekly_mileage=weekly_mileage,
+                current_long_run=longest_run,
             )
-
+            
             logger.info(
-                f"🎯 Race date validation: status={race_date_validation.get('status')}, "
+                f"⚠️ Time-constrained scenario detected: "
+                f"status={race_date_validation.get('status')}, "
                 f"available={race_date_validation.get('available_weeks')} weeks, "
                 f"required={race_date_validation.get('required_weeks')} weeks, "
                 f"can_proceed={race_date_validation.get('can_proceed', False)}"
             )
-
-            # Always generate plan and include validation results
-            # Frontend will show dialog based on validation status and let user decide
-            # Don't block plan generation here - user can still view the plan even if timeline is tight
-
-        # Step 1: Get readiness-based plan length recommendation
-        # This uses user's weekly mileage to recommend appropriate plan length
-        # Mapping: <15mpw→24w, 15-<20mpw→20w, 20-30mpw→16w, >30mpw→12w
-        weeks_recommendation = self.pass1_selector.select_weeks(
-            session=session,
-            user_id=str(user_id),
-            plan_request=plan_request,
-            activity_weeks=runner_ctx.get("activity_weeks", 12),
-        )
-        recommended_weeks = weeks_recommendation.get("weeks")
-        rationale = weeks_recommendation.get("rationale", {})
-        base_mileage = rationale.get("base_mileage_mpw", 0)
-        logger.info(
-            f"✅ Readiness-based plan length: {recommended_weeks} weeks "
-            f"(weekly_mileage={base_mileage:.1f}mpw, "
-            f"longest_run={rationale.get('longest_recent_run_miles', 0):.1f}mi)"
-        )
-
-        # Step 1.5: Calculate plan constraints (fitness-based vs race date)
-        # Use PlanConstraintsService to centralize constraint logic
-        min_start_date = self.constraints_service.get_min_start_date()
-        constraints = self.constraints_service.calculate_plan_constraints(
-            race_date=race_date,
-            recommended_weeks=recommended_weeks,
-            min_start_date=min_start_date,
-        )
-
-        # Step 2: Build long run progression
-        # GUARDRAIL: Pass available_weeks (not target_weeks) to let spine generator
-        # handle extra weeks naturally with gradual progression, not post-processing
-        # This ensures single source of truth for progression logic
-        available_weeks = constraints.available_weeks or constraints.target_weeks
+            
+            # BLOCK plan generation if validation says we cannot proceed
+            if not race_date_validation.get('can_proceed', False):
+                logger.error(
+                    f"❌ Plan generation blocked: insufficient time/fitness. "
+                    f"Status: {race_date_validation.get('status')}, "
+                    f"Available: {race_date_validation.get('available_weeks')} weeks, "
+                    f"Required: {race_date_validation.get('required_weeks')} weeks"
+                )
+                # Return early with validation result (no plan generated)
+                return {
+                    "valid": False,
+                    "violations": [
+                        {
+                            "rule": "insufficient_time",
+                            "severity": "error",
+                            "location": "plan_generation",
+                            "details": race_date_validation.get('message', 'Insufficient time to safely prepare for race'),
+                            "suggestion": race_date_validation.get('recommendation', 'Adjust race date or build base fitness first'),
+                        }
+                    ],
+                    "validated_plan": None,
+                    "race_date_validation": race_date_validation,
+                }
+        
+        # Build spine (scenario-specific configuration will be added later)
         lr_output = self.pass1.build(
             session=session,
             user_id=str(user_id),
+            weekly_mileage=weekly_mileage,
+            longest_run=longest_run,
             plan_request=plan_request,
-            activity_weeks=runner_ctx.get("activity_weeks", 12),
-            recommended_weeks=available_weeks,  # Use available weeks - spine handles progression
+            recommended_weeks=plan_length_weeks,
         )
         weeks_long = lr_output.get("weeks", [])
+
+        if len(weeks_long) != plan_length_weeks:
+            logger.warning(
+                "Spine length mismatch: requested %s weeks, generated %s weeks",
+                plan_length_weeks,
+                len(weeks_long),
+            )
 
         # GUARDRAIL: Validate spine immutability - no modifications after generation
         self._validate_spine_immutability(weeks_long)
@@ -239,14 +290,15 @@ class PlanGenerationOrchestratorV2:
                 f"Attempting self-correction..."
             )
             corrected_weeks, remaining_issues = self._self_correct_spine(
+                session=session,
+                user_id=str(user_id),
+                weekly_mileage=weekly_mileage,
+                longest_run=longest_run,
                 weeks_long=weeks_long,
                 quality_issues=quality_issues,
                 plan_request=plan_request,
-                session=session,
-                user_id=str(user_id),
-                runner_ctx=runner_ctx,
-                available_weeks=available_weeks,
-                constraints=constraints,
+                recommended_weeks=plan_length_weeks,  # Use actual plan length for self-correction
+                scenario_adjustments=scenario_adjustments,
                 max_attempts=2,
             )
             weeks_long = corrected_weeks
@@ -262,11 +314,12 @@ class PlanGenerationOrchestratorV2:
             else:
                 logger.info("✅ Self-correction successful - all issues resolved")
 
-        # Weekly totals from long runs
+        # Weekly totals from long runs (with scenario adjustments)
         weeks_with_totals = calculate_weekly_totals_from_long_runs(
             weeks=weeks_long,
             runs_per_week=runs_per_week,
             config=self.config,
+            scenario_adjustments=scenario_adjustments,
         )
 
         # Pass3 distribution
@@ -281,32 +334,23 @@ class PlanGenerationOrchestratorV2:
         # If plan needs adjustment, regenerate with different parameters, don't modify
 
         weeks_out = self._append_race_week(weeks_out)
+        logger.info("After race week append: %s total weeks", len(weeks_out))
 
-        # Step 5.5: Calculate start date and trim plan if needed
-        # Use PlanConstraintsService for consistent date calculation and trimming
-        aligned_start_date = self.constraints_service.calculate_start_date(
+        weeks_out, aligned_start_date = self.constraints_service.align_weeks_with_dates(
+            weeks=weeks_out,
             race_date=race_date,
-            plan_length_weeks=len(weeks_out),
             min_start_date=min_start_date,
             fallback_start=start_date,
         )
-
         if aligned_start_date:
-            # Trim plan if it exceeds race date constraint
-            weeks_out, aligned_start_date = (
-                self.constraints_service.trim_plan_to_constraints(
-                    weeks=weeks_out,
-                    race_date=race_date,
-                    start_date=aligned_start_date,
-                )
+            logger.info(
+                "Aligned plan dates: start=%s end=%s length=%s",
+                aligned_start_date,
+                weeks_out[-1].get("week_start_date") if weeks_out else None,
+                len(weeks_out),
             )
 
-            # Assign dates to weeks
-            current = aligned_start_date
-            for week in weeks_out:
-                week["week_start_date"] = current.isoformat()
-                week["week_label"] = current.strftime("%Y-%m-%d")
-                current += timedelta(days=7)
+        if aligned_start_date:
             plan_request["start_date"] = aligned_start_date.isoformat()
 
         # Pace seed (use collected data via Pass1)
@@ -343,6 +387,26 @@ class PlanGenerationOrchestratorV2:
 
     # NOTE: Date parsing and start date calculation moved to PlanConstraintsService
     # for better separation of concerns and consistency across components
+
+    def _determine_scenario(
+        self,
+        fitness_recommended_weeks: int,
+        available_weeks: Optional[int],
+    ) -> str:
+        """
+        Determine which scenario we're in based on Step 4 comparison.
+        
+        Returns:
+            "time_constrained" | "extra_time" | "perfect_match" | "no_constraint"
+        """
+        if available_weeks is None:
+            return "no_constraint"
+        elif available_weeks < fitness_recommended_weeks:
+            return "time_constrained"
+        elif available_weeks > fitness_recommended_weeks:
+            return "extra_time"
+        else:
+            return "perfect_match"
 
     def _validate_spine_immutability(self, weeks: List[Dict[str, Any]]) -> None:
         """
@@ -448,17 +512,15 @@ class PlanGenerationOrchestratorV2:
         plan_request: Dict[str, Any],
         weeks_out: List[Dict[str, Any]],
     ) -> PaceSeed:
-        """Create an initial pace seed using the raw data from Pass1."""
-        # Reuse data collected in Pass1 (if stored) or fallback
+        """Create an initial pace seed using plan data only (no raw activities)."""
+        # Use plan data only - no raw activities needed
         week1 = weeks_out[0] if weeks_out else {}
         week1_total = float(week1.get("weekly_mileage", 0) or 0)
         week1_long = float(week1.get("long_run_miles", 0) or 0)
 
-        # If Pass1 stored raw data, use it; otherwise, we only have plan_request
-        strava_activities = lr_output.get("strava_activities", [])
-
+        # Create pace seed without strava_activities (uses calibration-based defaults)
         seed = get_initial_pace_seed(
-            strava_activities=strava_activities,
+            strava_activities=[],  # Empty - will use calibration-based defaults
             plan_week1_total=week1_total,
             plan_week1_long=week1_long,
             goal_mp_sec_per_mi=None,
@@ -467,18 +529,21 @@ class PlanGenerationOrchestratorV2:
 
     def _self_correct_spine(
         self,
+        session: Session,
+        user_id: str,
+        weekly_mileage: float,
+        longest_run: float,
         weeks_long: List[Dict[str, Any]],
         quality_issues: List[str],
         plan_request: Dict[str, Any],
-        session: Any,
-        user_id: str,
-        runner_ctx: Dict[str, Any],
-        available_weeks: int,
-        constraints: Any,
+        recommended_weeks: int,
+        scenario_adjustments: Optional[Dict[str, Any]] = None,
         max_attempts: int = 2,
     ) -> Tuple[List[Dict[str, Any]], List[str]]:
         """
         Attempt to fix validation issues by adjusting parameters and regenerating.
+
+        Uses the actual plan length to maintain correct plan structure.
 
         Returns:
             (corrected_weeks, remaining_issues)
@@ -486,7 +551,7 @@ class PlanGenerationOrchestratorV2:
         attempts = 0
         current_weeks = weeks_long
         current_issues = quality_issues
-        adjusted_available_weeks = available_weeks
+        adjusted_recommended_weeks = recommended_weeks
 
         while attempts < max_attempts and current_issues:
             # Analyze issues and determine fixes
@@ -503,8 +568,8 @@ class PlanGenerationOrchestratorV2:
             )
 
             # Apply fixes to parameters
-            adjusted_available_weeks = self._apply_fixes_to_weeks(
-                fixes, adjusted_available_weeks, current_weeks
+            adjusted_recommended_weeks = self._apply_fixes_to_weeks(
+                fixes, adjusted_recommended_weeks, current_weeks
             )
 
             # Regenerate spine with adjusted parameters
@@ -512,9 +577,10 @@ class PlanGenerationOrchestratorV2:
                 lr_output = self.pass1.build(
                     session=session,
                     user_id=user_id,
+                    weekly_mileage=weekly_mileage,
+                    longest_run=longest_run,
                     plan_request=plan_request,
-                    activity_weeks=runner_ctx.get("activity_weeks", 12),
-                    recommended_weeks=adjusted_available_weeks,
+                    recommended_weeks=adjusted_recommended_weeks,
                 )
                 new_weeks = lr_output.get("weeks", [])
 
@@ -570,34 +636,6 @@ class PlanGenerationOrchestratorV2:
         fixes = {}
 
         for issue in issues:
-            # Fix: "Final taper week too high" - taper is incomplete
-            if (
-                "Final taper week too high" in issue
-                or "taper week too high" in issue.lower()
-            ):
-                # Check if we have fewer taper weeks than expected
-                lr_values = [float(w.get("long_run_miles", 0)) for w in weeks]
-                if not lr_values:
-                    continue
-
-                peak_idx = lr_values.index(max(lr_values))
-                taper_phase = (
-                    lr_values[peak_idx + 1 :] if peak_idx + 1 < len(lr_values) else []
-                )
-
-                expected_taper_weeks = self.config.taper_weeks
-                actual_taper_weeks = len(taper_phase)
-
-                if actual_taper_weeks < expected_taper_weeks:
-                    fixes["taper_too_short"] = True
-                    fixes["missing_taper_weeks"] = (
-                        expected_taper_weeks - actual_taper_weeks
-                    )
-                    logger.info(
-                        f"Detected incomplete taper: {actual_taper_weeks} weeks, "
-                        f"expected {expected_taper_weeks}. Need to reduce build phase."
-                    )
-
             # Fix: "Taper too short" - need more taper weeks
             if "Taper: Too short" in issue:
                 fixes["taper_too_short"] = True
@@ -606,15 +644,17 @@ class PlanGenerationOrchestratorV2:
         return fixes
 
     def _apply_fixes_to_weeks(
-        self, fixes: Dict[str, Any], available_weeks: int, weeks: List[Dict[str, Any]]
+        self, fixes: Dict[str, Any], recommended_weeks: int, weeks: List[Dict[str, Any]]
     ) -> int:
         """
-        Apply fixes to adjust available_weeks parameter.
+        Apply fixes to adjust recommended_weeks parameter.
+
+        ARCHITECTURAL GUARDRAIL: Works with recommended_weeks (fitness-based), not available_weeks (date-constrained)
 
         Returns:
-            Adjusted available_weeks value.
+            Adjusted recommended_weeks value.
         """
-        adjusted = available_weeks
+        adjusted = recommended_weeks
 
         # Fix: Taper too short - reduce build weeks to make room for full taper
         if fixes.get("taper_too_short"):
@@ -622,9 +662,9 @@ class PlanGenerationOrchestratorV2:
             reduce_by = fixes.get("reduce_build_weeks", missing_weeks)
             # Ensure we don't go below minimum plan length (typically 12 weeks)
             min_plan_length = getattr(self.config, "min_plan_length_weeks", 12)
-            adjusted = max(min_plan_length, available_weeks - reduce_by)
+            adjusted = max(min_plan_length, recommended_weeks - reduce_by)
             logger.info(
-                f"Adjusting available_weeks: {available_weeks} → {adjusted} "
+                f"Adjusting recommended_weeks: {recommended_weeks} → {adjusted} "
                 f"(reducing by {reduce_by} to make room for full taper)"
             )
 

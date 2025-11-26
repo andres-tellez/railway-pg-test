@@ -258,12 +258,15 @@ def validate_phase_quality(
                     )
 
         # Check if first cutback happens at correct interval
+        # First cutback should happen at build week 3 (absolute Week 4) for proper spacing
+        # Subsequent cutbacks happen every 4th build week (4, 8, 12...)
         if len(build_week_numbers) > 0:
             first_cutback_week = build_week_numbers[0]
-            if first_cutback_week != cutback_every:
+            expected_first_cutback = cutback_every - 1  # Build week 3 for cutback_every=4
+            if first_cutback_week != expected_first_cutback:
                 issues.append(
                     f"Phase 1 (Build): First cutback at build week {first_cutback_week} (Week {cutback_weeks[0]}), "
-                    f"expected at build week {cutback_every}"
+                    f"expected at build week {expected_first_cutback}"
                 )
 
         # Check 2: Has adequate cutbacks (every cutback_every weeks)
@@ -317,51 +320,29 @@ def validate_phase_quality(
                 )
 
     # Phase 3: Taper Quality Checks
+    # NOTE: Taper validation is now handled by PlanValidationServiceV2 with phase-aware
+    # and distance-specific rules. The checks here focus only on safety-critical issues.
     if taper_phase:
-        # Check 1: Taper length is appropriate
+        # Check 1: Taper length is appropriate (safety-critical)
         if len(taper_phase) < 2:
             issues.append(
                 f"Phase 3 (Taper): Too short ({len(taper_phase)} weeks, minimum: 2)"
             )
 
-        # Check 2: Taper ratios are correct (should match config taper_ratios)
-        if len(taper_phase) == len(taper_ratios):
-            expected = [peak * ratio for ratio in taper_ratios]
-            for i, (actual, exp) in enumerate(zip(taper_phase, expected)):
-                week_num = len(weeks) - len(taper_phase) + i + 1
-                if abs(actual - exp) > 2.0:  # Allow 2-mile tolerance
-                    issues.append(
-                        f"Phase 3 (Taper): Week {week_num} ratio off (got {actual:.1f}, expected ~{exp:.1f})"
-                    )
-
-        # Check 3: Taper is strictly decreasing
+        # Check 2: Taper is generally decreasing (safety-critical)
+        # Allow small fluctuations but flag major increases
         for i in range(1, len(taper_phase)):
-            if taper_phase[i] >= taper_phase[i - 1]:
+            if taper_phase[i] > taper_phase[i - 1] + 1.0:  # Allow 1-mile tolerance
                 week_num = len(weeks) - len(taper_phase) + i + 1
                 issues.append(
-                    f"Phase 3 (Taper): Week {week_num} not decreasing ({taper_phase[i-1]:.1f} → {taper_phase[i]:.1f})"
+                    f"Phase 3 (Taper): Week {week_num} increases significantly "
+                    f"({taper_phase[i-1]:.1f} → {taper_phase[i]:.1f})"
                 )
 
-        # Check 4: Final week should match expected taper ratio
-        # Use the last ratio from taper_ratios (e.g., 0.25 for 25% of peak = 5 miles for 20-mile peak)
-        if len(taper_phase) == len(taper_ratios):
-            expected_final = peak * taper_ratios[-1]
-            actual_final = taper_phase[-1]
-            # Allow 1-mile tolerance for rounding
-            if abs(actual_final - expected_final) > 1.0:
-                issues.append(
-                    f"Phase 3 (Taper): Final taper week too high ({actual_final:.1f} miles, "
-                    f"expected ~{expected_final:.1f} based on {taper_ratios[-1]*100:.0f}% of peak)"
-                )
-        elif len(taper_phase) < len(taper_ratios):
-            # Plan has fewer taper weeks than expected - check if final week is reasonable
-            # For a 3-week taper, final week should be ~25% of peak (5 miles for 20-mile peak)
-            expected_final = peak * taper_ratios[-1]
-            if taper_phase[-1] > expected_final + 1.0:  # Allow 1-mile tolerance
-                issues.append(
-                    f"Phase 3 (Taper): Final taper week too high ({taper_phase[-1]:.1f} miles, "
-                    f"expected ~{expected_final:.1f} for final taper week before race)"
-                )
+        # REMOVED: Static taper ratio checks (lines 330-338, 348-367)
+        # These used peak * taper_ratios which produced unrealistic expectations
+        # (e.g., 5 mi final taper for marathon). Now handled by dynamic ratio
+        # validation in PlanValidationServiceV2 using final_taper_long_run_range config.
 
     is_valid = len(issues) == 0
     if not is_valid:
@@ -619,8 +600,9 @@ def generate_long_run_spine(
         peaked = True
 
     # Count build weeks (not absolute week numbers) for proper cutback timing
-    # Week 1 is the starting week, so build_counter starts at 1 for Week 2
-    build_counter = 1
+    # Week 1 is the starting week, so build_counter starts at 0 for Week 2
+    # This ensures first cutback happens at Week 4 (build_counter = 3, then increments to 4)
+    build_counter = 0
 
     # Grow from Week 2 onward until we reach peak
     # RESPECT CONSTRAINT: Build until peak is reached, but STAY within total_weeks_in_plan
@@ -675,17 +657,26 @@ def generate_long_run_spine(
             last_was_cutback = False
             # GUARDRAIL: Resume week does NOT count toward cutback cycle
             # We need at least cutback_every build weeks AFTER resume before next cutback
-            # Start at 1 so we need 3 more build weeks (total 4) before next cutback
-            build_counter = 1
+            # Start at 0 so we need 4 build weeks (total 4) before next cutback
+            build_counter = 0
         else:
+            # Increment build counter first, then check for cutback
+            # This ensures first cutback happens at Week 4 (after 3 build weeks: Week 2, 3, 4)
+            build_counter += 1
+            
             # Check if cutback time: every cutback_every build weeks (not absolute week numbers)
-            # This ensures cutbacks happen every 4th build week (e.g., build weeks 4, 8, 12)
-            # CRITICAL FIX: build_counter must be >= cutback_every to prevent consecutive cutbacks
-            # After a resume (build_counter=1), we need 3 more weeks (total 4) before cutback
+            # First cutback at build week 3 (absolute Week 4), then every 4th build week after that
+            # Logic: First cutback when build_counter == 3 (after 3 build weeks)
+            #        Subsequent cutbacks when build_counter is a multiple of 4 (4, 8, 12...)
+            #        But we need to account for the offset: after first cutback, counter resets to 0
+            #        So next cutback should be when counter reaches 4 again (which is 4 build weeks after reset)
             # ADDITIONAL SAFETY: Never allow cutback if we just had a cutback (defensive check)
+            is_first_cutback = (build_counter == cutback_every - 1)  # Week 4: build_counter = 3
+            # For subsequent cutbacks: after reset, we need 4 more build weeks (counter = 4, 8, 12...)
+            is_subsequent_cutback = (build_counter >= cutback_every and (build_counter % cutback_every) == 0)
+            
             if (
-                build_counter >= cutback_every
-                and (build_counter % cutback_every) == 0
+                (is_first_cutback or is_subsequent_cutback)
                 and lr < peak
                 and not last_was_cutback
             ):
@@ -723,7 +714,6 @@ def generate_long_run_spine(
                     )
 
                 lr = new_lr
-                build_counter += 1  # Increment build counter on normal build weeks
 
         if round_to_half:
             lr = round_half(lr)

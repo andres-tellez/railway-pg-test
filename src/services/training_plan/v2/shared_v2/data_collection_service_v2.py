@@ -26,7 +26,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from uuid import UUID
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, text
 
 from src.db.dao.user_profile_dao import get_user_profile
 from src.db.models.activities import Activity
@@ -139,53 +139,127 @@ class DataCollectionService:
         cutoff_date = datetime.now() - timedelta(weeks=weeks)
         current_time = datetime.now()
 
-        # Query activities with safety limits
+        # Try view first (v_completed_activities), then fall back to table
+        result: List[Dict[str, Any]] = []
+        view_error: Optional[Exception] = None
+
+        # Try view first (v_completed_activities)
         try:
-            activities = (
-                session.query(Activity)
-                .filter(
-                    and_(
-                        Activity.user_id == user_uuid,
-                        Activity.type == activity_type,
-                        Activity.start_date >= cutoff_date,
-                        Activity.start_date <= current_time,  # Filter out future dates
-                    )
+            rows = (
+                session.execute(
+                    text(
+                        """
+                        SELECT
+                            activity_id,
+                            activity_date,
+                            distance AS distance_miles,
+                            moving_time,
+                            avg_hr AS average_heartrate,
+                            max_hr AS max_heartrate,
+                            avg_speed AS average_speed,
+                            max_speed,
+                            elevation AS total_elevation_gain
+                        FROM v_completed_activities
+                        WHERE user_id = :uid
+                          AND activity_date >= :cutoff_date
+                          AND activity_date <= :now_date
+                        ORDER BY activity_date DESC
+                        LIMIT :lim
+                        """
+                    ),
+                    {
+                        "uid": str(user_uuid),
+                        "cutoff_date": cutoff_date.date(),
+                        "now_date": current_time.date(),
+                        "lim": MAX_ACTIVITIES,
+                    },
                 )
-                .order_by(Activity.start_date.desc())
-                .limit(MAX_ACTIVITIES)  # Safety limit for performance
+                .mappings()
                 .all()
             )
 
+            for r in rows:
+                activity_date = r.get("activity_date")
+                date_str = (
+                    activity_date.strftime("%Y-%m-%d")
+                    if hasattr(activity_date, "strftime")
+                    else str(activity_date)
+                )
+                result.append(
+                    {
+                        "activity_id": r.get("activity_id"),
+                        "date": date_str,
+                        "distance": float(r.get("distance_miles") or 0.0),  # miles
+                        "moving_time": int(r.get("moving_time") or 0),  # seconds
+                        "average_heartrate": r.get("average_heartrate"),  # bpm
+                        "max_heartrate": r.get("max_heartrate"),  # bpm
+                        "average_speed": r.get("average_speed"),  # m/s
+                        "max_speed": r.get("max_speed"),  # m/s
+                        "total_elevation_gain": r.get("total_elevation_gain"),  # meters
+                    }
+                )
             logger.debug(
-                f"Fetched {len(activities)} activities for user {user_id} (last {weeks} weeks)"
+                f"Fetched {len(result)} activities from v_completed_activities view for user {user_id} (last {weeks} weeks)"
             )
-
         except Exception as e:
-            logger.error(f"Database error fetching activities for user {user_id}: {e}")
-            raise RuntimeError("Failed to fetch activities from database") from e
-
-        # Convert to dictionaries
-        result = []
-        for activity in activities:
-            result.append(
-                {
-                    "activity_id": activity.activity_id,
-                    "date": (
-                        activity.start_date.strftime("%Y-%m-%d")
-                        if activity.start_date
-                        else None
-                    ),
-                    "distance": activity.conv_distance,  # Already converted to miles
-                    "moving_time": activity.moving_time,  # seconds
-                    "elapsed_time": activity.elapsed_time,  # seconds
-                    "average_heartrate": activity.average_heartrate,  # bpm
-                    "max_heartrate": activity.max_heartrate,  # bpm
-                    "average_speed": activity.average_speed,  # m/s
-                    "max_speed": activity.max_speed,  # m/s
-                    "total_elevation_gain": activity.total_elevation_gain,  # meters
-                    "suffer_score": activity.suffer_score,
-                }
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            view_error = e
+            logger.debug(
+                f"View fetch failed or not available, will fall back to activities table: {e}"
             )
+
+        # Fall back to activities table if view failed or returned no results
+        if not result:
+            try:
+                activities = (
+                    session.query(Activity)
+                    .filter(
+                        and_(
+                            Activity.user_id == user_uuid,
+                            Activity.type == activity_type,
+                            Activity.start_date >= cutoff_date,
+                            Activity.start_date <= current_time,  # Filter out future dates
+                        )
+                    )
+                    .order_by(Activity.start_date.desc())
+                    .limit(MAX_ACTIVITIES)  # Safety limit for performance
+                    .all()
+                )
+
+                logger.debug(
+                    f"Fetched {len(activities)} activities from activities table for user {user_id} (last {weeks} weeks)"
+                )
+
+                # Convert to dictionaries
+                for activity in activities:
+                    result.append(
+                        {
+                            "activity_id": activity.activity_id,
+                            "date": (
+                                activity.start_date.strftime("%Y-%m-%d")
+                                if activity.start_date
+                                else None
+                            ),
+                            "distance": activity.conv_distance,  # Already converted to miles
+                            "moving_time": activity.moving_time,  # seconds
+                            "elapsed_time": activity.elapsed_time,  # seconds
+                            "average_heartrate": activity.average_heartrate,  # bpm
+                            "max_heartrate": activity.max_heartrate,  # bpm
+                            "average_speed": activity.average_speed,  # m/s
+                            "max_speed": activity.max_speed,  # m/s
+                            "total_elevation_gain": activity.total_elevation_gain,  # meters
+                            "suffer_score": activity.suffer_score,
+                        }
+                    )
+
+            except Exception as e:
+                logger.error(f"Database error fetching activities for user {user_id}: {e}")
+                if view_error:
+                    logger.error(f"Original view error: {view_error}")
+                raise RuntimeError("Failed to fetch activities from database") from e
 
         return result
 

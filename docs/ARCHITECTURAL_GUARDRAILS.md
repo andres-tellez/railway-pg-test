@@ -114,6 +114,59 @@ def function_name(...) -> ReturnType:
     """
 ```
 
+## Extended Plan Logic Guardrails
+
+### Fitness-Based Branching (CRITICAL)
+**Rule:** Extended plan logic branches on **fitness-based recommendation**, NOT date constraint.
+
+**Problem:**
+- Extended plans are for users with MORE time (fitness-based), not less time (date-constrained)
+- Branching on `available_weeks` (date-constrained) causes wrong plan structure
+- Start date calculation uses wrong plan length
+
+**Solution:**
+```python
+# ✅ CORRECT: Branch on fitness-based recommendation
+use_extended_logic = constraints.recommended_weeks >= 16
+
+if use_extended_logic:
+    # Generate using fitness-based length
+    weeks_long = generate_long_run_spine_extended(
+        total_weeks_in_plan=constraints.recommended_weeks,  # Fitness-based!
+        ...
+    )
+else:
+    # Standard plan (may be constrained by race date)
+    weeks_long = pass1.build(recommended_weeks=constraints.target_weeks)
+```
+
+**Enforcement:**
+- Branching condition: `constraints.recommended_weeks >= threshold`
+- Extended generator receives: `constraints.recommended_weeks` (fitness-based)
+- Standard generator receives: `constraints.target_weeks` (may be date-constrained)
+- Date calculation uses: `len(weeks_out)` (actual generated length)
+- Trimming happens AFTER generation (preserves taper)
+
+**Why This Matters:**
+- Extended plans need proper structure (6-8 week base phase, gradual progression)
+- Race date constraint only affects trimming, not structure
+- Start date must align with actual generated plan length, not target length
+
+### Plan Length Semantics
+**Rule:** Distinguish between fitness-based recommendation and date-constrained target.
+
+**Definitions:**
+- `recommended_weeks`: Fitness-based recommendation (e.g., 16 weeks for 20-30 mpw)
+- `available_weeks`: Weeks available until race date (e.g., 12 weeks)
+- `target_weeks`: Minimum of recommendation and available (e.g., min(16, 12) = 12)
+
+**Usage:**
+- **Extended plan branching:** Use `recommended_weeks` (fitness-based)
+- **Extended plan generation:** Use `recommended_weeks` (fitness-based)
+- **Standard plan generation:** Use `target_weeks` (may be date-constrained)
+- **Start date calculation:** Use `len(weeks_out)` (actual generated length)
+- **Trimming:** Use `available_weeks` (date constraint)
+
 ## Removed Components
 
 ### Recovery Week Insertion Service
@@ -126,7 +179,7 @@ def function_name(...) -> ReturnType:
 
 **Replacement:**
 - Spine generator now handles extra weeks naturally
-- Pass `available_weeks` to spine generator
+- Pass `recommended_weeks` (fitness-based) to extended spine generator
 - Spine extends build phase with gradual progression
 
 ## Validation Points

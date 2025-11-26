@@ -2,24 +2,21 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, TypedDict
 import logging
-from sqlalchemy.orm import Session
+# Removed Session import - no longer needed (receives data as parameters)
 
-from src.services.training_plan.v2.shared_v2.data_collection_service_v2 import (
-    DataCollectionService as DataCollectionServiceV2,
-)
-from src.services.training_plan.v2.shared_v2.insights_calculation_service_v2 import (
-    InsightsCalculationService as InsightsCalculationServiceV2,
-)
+# Removed imports: DataCollectionServiceV2, InsightsCalculationServiceV2
+# This class no longer collects data - it receives raw_data and insights from Step 1
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
     generate_long_run_spine,
 )
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
 from src.services.training_plan.v2.shared_v2.long_run_signals import (
     calculate_recovery_week_long_run,
-    detect_consecutive_long_runs,
-    recent_longest_3w,
+    detect_consecutive_long_runs_from_materialized_view,
+    recent_longest_3w_from_materialized_view,
     round_to_half,
 )
+from sqlalchemy.orm import Session
 
 
 logger = logging.getLogger(__name__)
@@ -133,29 +130,30 @@ class Pass1LongRunFirstV2:
         self,
         *,
         config: RaceDistanceConfig,
-        data_collector: Optional[DataCollectionServiceV2] = None,
-        insights_service: Optional[InsightsCalculationServiceV2] = None,
     ) -> None:
         self.config = config
-        self.data_collector = data_collector or DataCollectionServiceV2()
-        self.insights_service = insights_service or InsightsCalculationServiceV2()
+        # No dependencies needed - receives raw_data and insights as parameters
 
     def build(
         self,
         *,
         session: Session,
         user_id: str,
+        weekly_mileage: float,
+        longest_run: float,
         plan_request: Dict[str, Any],
-        activity_weeks: int = 12,
         recommended_weeks: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Compute long-run progression and recommended duration.
+        
+        NOTE: This function uses materialized view for data (same as metrics page).
 
         Args:
             session: Database session
-            user_id: User ID
+            user_id: User ID for querying materialized view
+            weekly_mileage: Average weekly mileage (from materialized view)
+            longest_run: Longest run distance (from materialized view)
             plan_request: Plan request dictionary
-            activity_weeks: Number of weeks of activity history to analyze
             recommended_weeks: Readiness-based recommended plan length (from Pass1WeeksSelector).
                               If provided, plan will be built to fit within this timeframe.
                               If None, uses dynamic length mode (builds organically to peak).
@@ -168,26 +166,18 @@ class Pass1LongRunFirstV2:
               "signals": {...}
             }
         """
-        # L1 + L2
-        raw = self.data_collector.collect_all_data(
-            session=session,
-            user_id=user_id,
-            plan_request=plan_request,
-            activity_weeks=activity_weeks,
-        )
-        insights = self.insights_service.calculate_all_insights(raw)
-        current = insights.get("current_fitness", {})
+        base_mpw = weekly_mileage
+        longest_recent = longest_run
 
-        base_mpw = float(current.get("weekly_mileage", 0) or 0)
-        longest_recent = float(current.get("longest_run", 0) or 0)
-
-        # Check for consecutive long runs that warrant a recovery week
-        consecutive_analysis = detect_consecutive_long_runs(
-            raw.get("strava_activities", []), min_consecutive_weeks=3
+        # Check for consecutive long runs that warrant a recovery week (using materialized view)
+        consecutive_analysis = detect_consecutive_long_runs_from_materialized_view(
+            session=session, user_id=user_id, min_consecutive_weeks=3
         )
 
-        # Compute recent-3w longest for baseline
-        recent3w = recent_longest_3w(raw.get("strava_activities", []), days=21)
+        # Compute recent-3w longest for baseline (using materialized view)
+        recent3w = recent_longest_3w_from_materialized_view(
+            session=session, user_id=user_id, days=21
+        )
         if not recent3w or recent3w <= 0:
             raise ValueError(
                 "Insufficient recent data: need at least one long run in last 21 days to set Week 1."

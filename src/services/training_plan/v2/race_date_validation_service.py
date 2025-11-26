@@ -14,11 +14,22 @@ from typing import Dict, Any, Optional
 from datetime import date, datetime, timedelta
 import logging
 
+from .race_configs.base_config import RaceDistanceConfig
+
 logger = logging.getLogger(__name__)
 
 
 class RaceDateValidationService:
     """Validates race date readiness based on user's current fitness and available time."""
+
+    def __init__(self, config: RaceDistanceConfig):
+        """
+        Initialize validation service with race distance configuration.
+        
+        Args:
+            config: Race distance configuration containing validation thresholds
+        """
+        self.config = config
 
     def validate(
         self,
@@ -93,18 +104,19 @@ class RaceDateValidationService:
                 f"Race date ({race_d.isoformat()}) is before or same as plan start date ({start_d.isoformat()})"
             )
 
-        # If available_weeks < 12, use 12 as the absolute minimum (research-backed)
+        # If available_weeks < min_training_weeks, use min_training_weeks as the absolute minimum
         # (calculated_required_weeks already calculated above)
-        # This ensures consistency in messaging - when rejecting due to <12 weeks,
-        # we should say "need 12 weeks" everywhere, not the calculated value
-        if available_weeks < 12:
-            required_weeks = 12  # Absolute minimum for any marathon training
-            # Recalculate start_date to align with race_date using 12 weeks
+        # This ensures consistency in messaging - when rejecting due to <min_training_weeks,
+        # we should say "need {min_training_weeks} weeks" everywhere, not the calculated value
+        min_weeks = self.config.min_training_weeks
+        if available_weeks < min_weeks:
+            required_weeks = min_weeks  # Absolute minimum for training
+            # Recalculate start_date to align with race_date using min_training_weeks
             # This ensures ready_date matches what we're telling the user
             from src.utils.date_helpers import get_week_start_for_date
 
             race_week_start = get_week_start_for_date(race_d)
-            offset_weeks = max(0, required_weeks - 1)
+            offset_weeks = max(0, min_weeks - 1)
             recalculated_start = race_week_start - timedelta(weeks=offset_weeks)
             # Ensure not in the past
             from src.utils.date_helpers import get_next_monday
@@ -125,6 +137,17 @@ class RaceDateValidationService:
         ready_date = start_d + timedelta(weeks=required_weeks)
         timeline_gap_weeks = available_weeks - required_weeks
 
+        # Special case: If available_weeks == strong_base_exception_weeks with strong base, user can proceed
+        # In this case, ready_date should be the race_date (they'll be ready by race day)
+        # We need to cap it BEFORE building the message so the message shows the correct date
+        strong_base = (
+            current_weekly_mileage >= self.config.strong_base_weekly_mileage
+            and current_long_run >= self.config.strong_base_long_run
+        )
+        exception_weeks = self.config.strong_base_exception_weeks
+        if available_weeks == exception_weeks and strong_base and ready_date > race_d:
+            ready_date = race_d
+
         # Validate (values are already rounded from get_weekly_fitness_from_materialized_view)
         validation_result = self._validate_against_requirements(
             available_weeks=available_weeks,
@@ -133,8 +156,12 @@ class RaceDateValidationService:
             current_long_run=current_long_run,
             race_date=race_d,
             plan_start_date=start_d,
-            optimal_ready_date=ready_date,
+            optimal_ready_date=ready_date,  # Now this will be race_d for 11-week case
         )
+
+        # Also cap for other can_proceed=True cases (defensive check)
+        if validation_result.get('can_proceed', False) and ready_date > race_d:
+            ready_date = race_d
 
         # Build result (use values as-is - already rounded from helper function)
         result = {
@@ -244,29 +271,30 @@ class RaceDateValidationService:
         optimal_ready_date: date,
     ) -> Dict[str, Any]:
         """
-        Validate against research-based requirements.
+        Validate against research-based requirements from config.
 
-        Based on established methodologies:
-        - <12 weeks: Not enough time (REJECT)
-        - 12-14 weeks: Need 30+ mpw, 10+ mi LR (WARN/REJECT if lower)
-        - 14-16 weeks: Need 25+ mpw, 8+ mi LR (REJECT if lower)
-        - 16-18 weeks: Need 20+ mpw, 6+ mi LR (WARN if lower)
-        - 18+ weeks: 15+ mpw, 5+ mi LR acceptable (WARN if lower)
+        Thresholds are defined in RaceDistanceConfig.fitness_requirements_by_weeks
+        and other validation properties. This makes the validation race-distance-aware.
         """
         # Absolute minimums
-        # If available_weeks < 12, use 12 as the required_weeks (research-backed absolute minimum)
-        # However, for runners with strong bases (30+ mpw, 10+ mi LR), allow 11 weeks with warning
+        # If available_weeks < min_training_weeks, use min_training_weeks as the required_weeks
+        # However, for runners with strong bases, allow strong_base_exception_weeks with warning
         # This makes the validation fitness-aware rather than strictly calendar-based
-        if available_weeks < 12:
-            # Check if runner has strong enough base to safely do 11 weeks
-            strong_base = current_weekly_mileage >= 30 and current_long_run >= 10
+        min_weeks = self.config.min_training_weeks
+        if available_weeks < min_weeks:
+            # Check if runner has strong enough base to safely do exception_weeks
+            strong_base = (
+                current_weekly_mileage >= self.config.strong_base_weekly_mileage
+                and current_long_run >= self.config.strong_base_long_run
+            )
+            exception_weeks = self.config.strong_base_exception_weeks
 
-            if available_weeks == 11 and strong_base:
-                # Strong runners can safely do 11 weeks - warn but allow
+            if available_weeks == exception_weeks and strong_base:
+                # Strong runners can safely do exception_weeks - warn but allow
                 message = self._build_message_with_structure(
                     status="warn",
                     available_weeks=available_weeks,
-                    required_weeks=12,  # Still recommend 12, but allow 11
+                    required_weeks=min_weeks,  # Still recommend min_weeks, but allow exception_weeks
                     current_weekly_mileage=current_weekly_mileage,
                     current_long_run=current_long_run,
                     race_date=race_date,
@@ -276,12 +304,12 @@ class RaceDateValidationService:
                 )
                 return self._warn_result(message, can_proceed=True)
             else:
-                # Weak base or <11 weeks: hard minimum of 12 weeks
-                absolute_minimum_weeks = 12
+                # Weak base or <exception_weeks: hard minimum of min_training_weeks
+                absolute_minimum_weeks = min_weeks
                 message = self._build_message_with_structure(
                     status="reject",
                     available_weeks=available_weeks,
-                    required_weeks=absolute_minimum_weeks,  # Use 12, not calculated value
+                    required_weeks=absolute_minimum_weeks,  # Use min_weeks, not calculated value
                     current_weekly_mileage=current_weekly_mileage,
                     current_long_run=current_long_run,
                     race_date=race_date,
@@ -290,7 +318,7 @@ class RaceDateValidationService:
                 )
                 return self._reject_result(message, can_proceed=False)
 
-        if current_weekly_mileage < 15:
+        if current_weekly_mileage < self.config.absolute_min_weekly_mileage:
             message = self._build_message_with_structure(
                 status="reject",
                 available_weeks=available_weeks,
@@ -304,7 +332,7 @@ class RaceDateValidationService:
             )
             return self._reject_result(message, can_proceed=False)
 
-        if current_long_run < 5:
+        if current_long_run < self.config.absolute_min_long_run:
             message = self._build_message_with_structure(
                 status="reject",
                 available_weeks=available_weeks,
@@ -318,9 +346,19 @@ class RaceDateValidationService:
             )
             return self._reject_result(message, can_proceed=False)
 
+        # Check week range requirements from config
+        reqs = self.config.fitness_requirements_by_weeks
+        min_weeks = self.config.min_training_weeks
+
         # 12-14 weeks: Need strong base
-        if 12 <= available_weeks < 14:
-            if current_weekly_mileage < 30 or current_long_run < 10:
+        if min_weeks <= available_weeks < 14:
+            range_reqs = reqs.get("12_14", {})
+            min_mpw = range_reqs.get("min_weekly_mileage", 30.0)
+            min_lr = range_reqs.get("min_long_run", 10.0)
+            warn_mpw = range_reqs.get("warn_weekly_mileage")
+            warn_lr = range_reqs.get("warn_long_run")
+
+            if current_weekly_mileage < min_mpw or current_long_run < min_lr:
                 message = self._build_message_with_structure(
                     status="reject",
                     available_weeks=available_weeks,
@@ -332,7 +370,7 @@ class RaceDateValidationService:
                     optimal_ready_date=optimal_ready_date,
                 )
                 return self._reject_result(message, can_proceed=True)
-            elif current_weekly_mileage < 35 or current_long_run < 12:
+            elif warn_mpw and warn_lr and (current_weekly_mileage < warn_mpw or current_long_run < warn_lr):
                 message = self._build_message_with_structure(
                     status="warn",
                     available_weeks=available_weeks,
@@ -347,7 +385,11 @@ class RaceDateValidationService:
 
         # 14-16 weeks: Need moderate base
         if 14 <= available_weeks < 16:
-            if current_weekly_mileage < 25 or current_long_run < 8:
+            range_reqs = reqs.get("14_16", {})
+            min_mpw = range_reqs.get("min_weekly_mileage", 25.0)
+            min_lr = range_reqs.get("min_long_run", 8.0)
+
+            if current_weekly_mileage < min_mpw or current_long_run < min_lr:
                 message = self._build_message_with_structure(
                     status="reject",
                     available_weeks=available_weeks,
@@ -362,7 +404,11 @@ class RaceDateValidationService:
 
         # 16-18 weeks: Need minimum base
         if 16 <= available_weeks < 18:
-            if current_weekly_mileage < 20 or current_long_run < 6:
+            range_reqs = reqs.get("16_18", {})
+            min_mpw = range_reqs.get("min_weekly_mileage", 20.0)
+            min_lr = range_reqs.get("min_long_run", 6.0)
+
+            if current_weekly_mileage < min_mpw or current_long_run < min_lr:
                 message = self._build_message_with_structure(
                     status="warn",
                     available_weeks=available_weeks,
@@ -377,7 +423,11 @@ class RaceDateValidationService:
 
         # 18+ weeks: More flexible
         if available_weeks >= 18:
-            if current_weekly_mileage < 20 or current_long_run < 6:
+            range_reqs = reqs.get("18_plus", {})
+            min_mpw = range_reqs.get("min_weekly_mileage", 20.0)
+            min_lr = range_reqs.get("min_long_run", 6.0)
+
+            if current_weekly_mileage < min_mpw or current_long_run < min_lr:
                 message = self._build_message_with_structure(
                     status="warn",
                     available_weeks=available_weeks,
@@ -542,17 +592,20 @@ class RaceDateValidationService:
             return ""
 
         if reason == "insufficient_weekly_mileage":
-            return "**Why:** Your body needs a base of 15+ mpw to safely handle marathon training volume and reduce injury risk."
+            min_mpw = self.config.absolute_min_weekly_mileage
+            return f"**Why:** Your body needs a base of {min_mpw:.0f}+ mpw to safely handle marathon training volume and reduce injury risk."
 
         if reason == "insufficient_long_run":
-            return "**Why:** A 5+ mile long run base ensures your muscles and body are ready for the progression ahead."
+            min_lr = self.config.absolute_min_long_run
+            return f"**Why:** A {min_lr:.0f}+ mile long run base ensures your muscles and body are ready for the progression ahead."
 
         if reason == "strong_base_11_weeks_allowed":
             # Skip "Why" section - the status line already explains this clearly
             return ""
 
-        if available_weeks < 12:
-            return "**Why:** 12 weeks is the minimum because your body needs time for bone/tendon strengthening, cardiovascular adaptation, safe long run progression, and taper."
+        min_weeks = self.config.min_training_weeks
+        if available_weeks < min_weeks:
+            return f"**Why:** {min_weeks} weeks is the minimum because your body needs time for bone/tendon strengthening, cardiovascular adaptation, safe long run progression, and taper."
 
         if available_weeks < required_weeks:
             return f"**Why:** Building from your current fitness to marathon-ready requires {required_weeks} weeks, including gradual progression, recovery weeks, and taper."

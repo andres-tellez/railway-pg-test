@@ -118,6 +118,31 @@ class MarathonConfig(RaceDistanceConfig):
         """Maximum weekly mileage increase (8%)."""
         return 0.08
 
+    @property
+    def phase_delta_caps(self) -> Dict[str, float]:
+        """Maximum allowed week-over-week change per training phase."""
+        return {
+            "Base": 0.10,
+            "Build": 0.10,
+            "Peak": 0.05,
+            "Taper": -0.10,
+        }
+
+    @property
+    def max_long_run_share_by_phase(self) -> Dict[str, float]:
+        """Maximum long run share of weekly mileage per phase."""
+        return {
+            "Base": 0.40,
+            "Build": 0.40,
+            "Peak": 0.40,
+            "Taper": 0.55,
+        }
+
+    @property
+    def final_taper_long_run_range(self) -> Tuple[float, float]:
+        """Acceptable ratio (current / previous) for final taper long run."""
+        return (0.45, 0.65)
+
     # Workout Distribution
     @property
     def non_long_shares(self) -> Dict[int, List[float]]:
@@ -155,6 +180,69 @@ class MarathonConfig(RaceDistanceConfig):
     def race_distance_miles(self) -> float:
         """Marathon distance in miles."""
         return 26.2
+
+    # Race Date Validation Thresholds
+    @property
+    def min_training_weeks(self) -> int:
+        """Absolute minimum training weeks required for marathon (12 weeks)."""
+        return 12
+
+    @property
+    def strong_base_exception_weeks(self) -> int:
+        """Weeks allowed with strong base for marathon (11 weeks)."""
+        return 11
+
+    @property
+    def strong_base_weekly_mileage(self) -> float:
+        """Minimum weekly mileage to qualify as strong base (30.0 mpw)."""
+        return 30.0
+
+    @property
+    def strong_base_long_run(self) -> float:
+        """Minimum long run to qualify as strong base (10.0 miles)."""
+        return 10.0
+
+    @property
+    def absolute_min_weekly_mileage(self) -> float:
+        """Absolute minimum weekly mileage required (15.0 mpw)."""
+        return 15.0
+
+    @property
+    def absolute_min_long_run(self) -> float:
+        """Absolute minimum long run required (5.0 miles)."""
+        return 5.0
+
+    @property
+    def fitness_requirements_by_weeks(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Fitness requirements by week range for marathon training.
+        
+        Based on established methodologies:
+        - 12-14 weeks: Need strong base (30+ mpw, 10+ mi LR)
+        - 14-16 weeks: Need moderate base (25+ mpw, 8+ mi LR)
+        - 16-18 weeks: Need minimum base (20+ mpw, 6+ mi LR)
+        - 18+ weeks: More flexible (20+ mpw, 6+ mi LR acceptable)
+        """
+        return {
+            "12_14": {
+                "min_weekly_mileage": 30.0,
+                "min_long_run": 10.0,
+                "warn_weekly_mileage": 35.0,
+                "warn_long_run": 12.0,
+            },
+            "14_16": {
+                "min_weekly_mileage": 25.0,
+                "min_long_run": 8.0,
+            },
+            "16_18": {
+                "min_weekly_mileage": 20.0,
+                "min_long_run": 6.0,
+            },
+            "18_plus": {
+                "min_weekly_mileage": 20.0,
+                "min_long_run": 6.0,
+            },
+        }
 
     def race_week_template(self) -> Dict[str, Any]:
         """Canonical marathon race week layout."""

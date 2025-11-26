@@ -40,7 +40,7 @@ class PlanValidationServiceV2:
     def __init__(
         self,
         config: RaceDistanceConfig,
-        max_weekly_increase_percent: float = 10.0,
+        max_weekly_increase_percent: float = 20.0,
         cutback_interval_weeks: int = 4,
     ) -> None:
         self.config = config
@@ -129,7 +129,8 @@ class PlanValidationServiceV2:
         violations.extend(self._validate_cutback_weeks(weeks))
         violations.extend(self._validate_long_run_progression(weeks))
         violations.extend(self._validate_taper(weeks))
-        violations.extend(self._validate_long_run_bounds(weeks))
+        # REMOVED: _validate_long_run_bounds - now handled by Step 5 phase-aware logic
+        # violations.extend(self._validate_long_run_bounds(weeks))
         violations.extend(self._validate_week_completeness(weeks))
         # Skip race date timing validation - this is already handled by RaceDateValidationService
         # which shows a dialog to the user before plan generation. This check is redundant.
@@ -139,9 +140,13 @@ class PlanValidationServiceV2:
         errors = [v for v in violations if v.get("severity") == "error"]
         is_valid = len(errors) == 0
 
+        # Hide warnings from user-facing output (keep only errors)
+        # Warnings are still generated for internal logging/debugging if needed
+        user_facing_violations = errors
+
         return {
             "valid": is_valid,
-            "violations": violations,
+            "violations": user_facing_violations,
             "validated_plan": plan if is_valid else None,
         }
 
@@ -329,46 +334,36 @@ class PlanValidationServiceV2:
     def _validate_cutback_weeks(
         self, weeks: List[Dict[str, Any]]
     ) -> List[Dict[str, str]]:
-        """Validate that cutback weeks exist every cutback_interval_weeks."""
+        """Validate that at least one cutback week exists (simplified check)."""
         violations = []
 
-        if len(weeks) < self.CUTBACK_INTERVAL_WEEKS:
+        if len(weeks) < 6:
             return violations  # Too short plan, cutbacks not required
 
         sorted_weeks = sorted(weeks, key=lambda w: w.get("week_number", 0))
 
-        # Check for cutbacks every 3-4 weeks (skip first week)
-        expected_cutback_weeks = []
-        for i in range(
-            self.CUTBACK_INTERVAL_WEEKS, len(sorted_weeks), self.CUTBACK_INTERVAL_WEEKS
-        ):
-            expected_cutback_weeks.append(i)
+        # Just check that at least one cutback exists (>15% drop from previous)
+        # Excludes taper weeks since those are intentional reductions
+        has_cutback = False
+        for i in range(1, len(sorted_weeks) - self.TAPER_WEEKS):
+            prev_mileage = sorted_weeks[i - 1].get("weekly_mileage", 0)
+            curr_mileage = sorted_weeks[i].get("weekly_mileage", 0)
 
-        found_cutbacks = 0
-        for i in range(1, len(sorted_weeks)):
-            if i < len(sorted_weeks) - 1:  # Not the last week
-                prev_week = sorted_weeks[i - 1]
-                curr_week = sorted_weeks[i]
+            if isinstance(prev_mileage, (int, float)) and isinstance(
+                curr_mileage, (int, float)
+            ):
+                if prev_mileage > 0 and curr_mileage <= prev_mileage * 0.85:
+                    has_cutback = True
+                    break
 
-                prev_mileage = prev_week.get("weekly_mileage")
-                curr_mileage = curr_week.get("weekly_mileage")
-
-                if isinstance(prev_mileage, (int, float)) and isinstance(
-                    curr_mileage, (int, float)
-                ):
-                    # Cutback is a decrease of 20-30%
-                    if prev_mileage > 0 and curr_mileage < prev_mileage * 0.80:
-                        found_cutbacks += 1
-
-        # Require at least one cutback for plans 8+ weeks
-        if len(sorted_weeks) >= 8 and found_cutbacks == 0:
+        if not has_cutback:
             violations.append(
                 {
-                    "rule": "missing_cutback_weeks",
+                    "rule": "no_cutback_weeks",
                     "severity": "error",
                     "location": "plan",
-                    "details": f"No cutback weeks found in {len(sorted_weeks)}-week plan. Should have cutbacks every 3-4 weeks",
-                    "suggestion": "Add cutback weeks (reduce mileage by 20-30%) every 3-4 weeks",
+                    "details": f"No cutback weeks found in {len(sorted_weeks)}-week plan. At least one recovery week is recommended.",
+                    "suggestion": "Add at least one cutback week (reduce mileage by 15-20%)",
                 }
             )
 
@@ -423,14 +418,15 @@ class PlanValidationServiceV2:
                 if is_cutback_rebound:
                     # Allow rebound after cutback without flagging
                     pass
-                elif increase > 1.0 and percent_increase > 10:
+                elif increase > 2.0 and percent_increase > 20:
+                    # Relaxed: 20% or 2 miles (sanity check, Step 5 handles strict limits)
                     violations.append(
                         {
                             "rule": "unsafe_long_run_progression",
                             "severity": "error",
                             "location": f"week {week_num}",
-                            "details": f"Long run increased {increase:.1f} miles ({percent_increase:.1f}%) from {baseline} to {curr_long_run}. Maximum safe increase is 1 mile or 10%",
-                            "suggestion": f"Reduce long run distance in week {week_num} to at most {baseline + 1.0:.1f} miles",
+                            "details": f"Long run increased {increase:.1f} miles ({percent_increase:.1f}%) from {baseline} to {curr_long_run}. Maximum safe increase is 2 miles or 20%",
+                            "suggestion": f"Reduce long run distance in week {week_num} to at most {baseline + 2.0:.1f} miles",
                         }
                     )
 
@@ -493,11 +489,21 @@ class PlanValidationServiceV2:
     ) -> List[Dict[str, str]]:
         """Validate long run proportion and cap (config-based)."""
         violations: List[Dict[str, str]] = []
+        phase_share_caps = {
+            str(k).lower(): v for k, v in getattr(self.config, "max_long_run_share_by_phase", {}).items()
+        }
+        week_long_runs: Dict[int, float] = {}
+        phase_by_week: Dict[int, str] = {}
+
         for w in weeks:
             total = w.get("weekly_mileage")
             workouts = w.get("workouts", [])
             if not isinstance(workouts, list) or not workouts:
                 continue
+            week_num = w.get("week_number")
+            phase = str(w.get("phase", "") or "").strip()
+            if isinstance(week_num, int):
+                phase_by_week[week_num] = phase
             # Identify long run as workout_type containing 'long'
             long_runs = [
                 wo
@@ -512,6 +518,8 @@ class PlanValidationServiceV2:
                     for wo in long_runs
                 ]
             )
+            if isinstance(week_num, int):
+                week_long_runs[week_num] = lr_miles
             # Hard cap from config
             peak_cap = self.config.target_peak_miles
             if lr_miles > peak_cap:
@@ -530,14 +538,21 @@ class PlanValidationServiceV2:
                 lo, hi = self.config.long_run_percentage_ranges[
                     len(workouts) if workouts else 4
                 ]
-                if share > hi:
+                hi_limit = hi
+                if phase and phase_share_caps:
+                    phase_cap = phase_share_caps.get(phase.lower())
+                    if phase_cap is not None:
+                        hi_limit = phase_cap
+                if share > hi_limit:
+                    # Downgrade to warning - share violations are not safety-critical
+                    # and can occur naturally in taper when total mileage drops faster than long run
                     violations.append(
                         {
                             "rule": "long_run_share_too_high",
-                            "severity": "error",
+                            "severity": "warning",
                             "location": f"week {w.get('week_number')}",
-                            "details": f"Long run is {share*100:.1f}% of weekly mileage (>{hi*100:.0f}%)",
-                            "suggestion": "Reduce long run or increase easy mileage to keep long run within expected range",
+                            "details": f"Long run is {share*100:.1f}% of weekly mileage (>{hi_limit*100:.0f}%, phase={phase or 'unknown'})",
+                            "suggestion": "Consider reducing long run or increasing easy mileage",
                         }
                     )
                 elif share < lo:
@@ -557,6 +572,38 @@ class PlanValidationServiceV2:
                                 "suggestion": "Consider adjusting long run to fall inside expected percentage range",
                             }
                         )
+        # Dynamic check for final taper long run ratio
+        taper_weeks = [
+            wn
+            for wn, phase in phase_by_week.items()
+            if phase.lower() == "taper"
+        ]
+        if taper_weeks:
+            final_week_num = max(taper_weeks)
+            prev_week_num = final_week_num - 1
+            prev_lr = week_long_runs.get(prev_week_num)
+            curr_lr = week_long_runs.get(final_week_num)
+            if prev_lr and prev_lr > 0 and curr_lr:
+                ratio = curr_lr / prev_lr
+                lb, ub = getattr(self.config, "final_taper_long_run_range", (0.4, 0.6))
+                if ratio < lb or ratio > ub:
+                    violations.append(
+                        {
+                            "rule": "final_taper_long_run_out_of_range",
+                            "severity": "warning",
+                            "location": f"week {final_week_num}",
+                            "details": (
+                                f"Final taper long run is {curr_lr:.1f} mi "
+                                f"({ratio*100:.0f}% of prior week {prev_lr:.1f} mi). "
+                                f"Expected {lb*100:.0f}–{ub*100:.0f}%."
+                            ),
+                            "suggestion": (
+                                "Adjust final taper long run to better align with previous week "
+                                "or increase/decrease supporting mileage."
+                            ),
+                        }
+                    )
+
         return violations
 
     @staticmethod

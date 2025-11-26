@@ -167,6 +167,105 @@ class RaceDistanceConfig(ABC):
         """Race distance in miles (e.g., 26.2 for marathon, 13.1 for half)."""
         pass
 
+    # Race Date Validation Thresholds
+    @property
+    @abstractmethod
+    def min_training_weeks(self) -> int:
+        """Absolute minimum training weeks required (e.g., 12 for marathon)."""
+        pass
+
+    @property
+    @abstractmethod
+    def strong_base_exception_weeks(self) -> int:
+        """Weeks allowed with strong base (e.g., 11 for marathon, must be < min_training_weeks)."""
+        pass
+
+    @property
+    @abstractmethod
+    def strong_base_weekly_mileage(self) -> float:
+        """Minimum weekly mileage to qualify as strong base (e.g., 30.0 for marathon)."""
+        pass
+
+    @property
+    @abstractmethod
+    def strong_base_long_run(self) -> float:
+        """Minimum long run to qualify as strong base (e.g., 10.0 for marathon)."""
+        pass
+
+    @property
+    @abstractmethod
+    def absolute_min_weekly_mileage(self) -> float:
+        """Absolute minimum weekly mileage required (e.g., 15.0 for marathon)."""
+        pass
+
+    @property
+    @abstractmethod
+    def absolute_min_long_run(self) -> float:
+        """Absolute minimum long run required (e.g., 5.0 for marathon)."""
+        pass
+
+    @property
+    @abstractmethod
+    def fitness_requirements_by_weeks(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Fitness requirements by week range.
+        
+        Returns:
+            Dict mapping week range keys to requirement dicts.
+            Example:
+            {
+                "12_14": {
+                    "min_weekly_mileage": 30.0,
+                    "min_long_run": 10.0,
+                    "warn_weekly_mileage": 35.0,
+                    "warn_long_run": 12.0,
+                },
+                "14_16": {
+                    "min_weekly_mileage": 25.0,
+                    "min_long_run": 8.0,
+                },
+                ...
+            }
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def phase_delta_caps(self) -> Dict[str, float]:
+        """
+        Maximum allowed week-over-week change (as decimal) per training phase.
+
+        Example:
+            {
+                "Base": 0.10,   # allow up to +10%
+                "Build": 0.10,
+                "Peak": 0.05,
+                "Taper": -0.10  # taper weeks should not exceed 90% of prior week
+            }
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def max_long_run_share_by_phase(self) -> Dict[str, float]:
+        """
+        Maximum allowed long run share of weekly mileage per phase.
+
+        Values are expressed as decimals (e.g., 0.40 = 40% of weekly mileage).
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def final_taper_long_run_range(self) -> Tuple[float, float]:
+        """
+        Acceptable ratio (current / previous week) for the final taper long run.
+
+        Returns:
+            (min_ratio, max_ratio) expressed as decimals (e.g., (0.45, 0.65)).
+        """
+        pass
+
     @abstractmethod
     def race_week_template(self) -> Dict[str, Any]:
         """Return canonical race-week structure used by the orchestrator."""

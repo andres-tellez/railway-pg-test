@@ -133,3 +133,4 @@ def recalculate_hr_zones_for_user(session: Session, user_id: str) -> dict:
             results[plan.id] = {"error": str(e)}
 
     return results
+
