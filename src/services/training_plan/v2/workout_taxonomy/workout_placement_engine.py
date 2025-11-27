@@ -235,14 +235,17 @@ class WorkoutPlacementEngine:
         """
         Map template workout slots to actual training days.
         
-        The template is an ordered list ending with "long_run".
-        We need to map this to the user's actual training days,
-        ensuring the long_run lands on the correct day.
+        IMPROVED: Prevents back-to-back hard days by ensuring quality workouts
+        are not placed on adjacent days.
         
         Strategy:
         1. Place long_run on long_run_day
-        2. Distribute remaining workouts to other days
-        3. Prioritize placing quality workouts away from long run
+        2. Sort remaining days by distance from long run
+        3. Place quality workouts first:
+           - Choose days furthest from long_run
+           - Avoid adjacent quality days
+           - Avoid adjacent to long run (if possible)
+        4. Fill remaining days with easy/steady
         
         Args:
             template: Ordered list of workout types
@@ -255,54 +258,115 @@ class WorkoutPlacementEngine:
         # Find long run index in training days
         long_idx = training_days.index(long_run_day)
         
-        # Get non-long-run workouts from template (all but last)
+        # Get non-long-run workouts from template
         non_long_template = [w for w in template if w != "long_run"]
+        quality_workouts = [w for w in non_long_template if is_quality_workout(w)]
+        non_quality_workouts = [w for w in non_long_template if not is_quality_workout(w)]
         
         # Get non-long-run days
         non_long_days = [d for d in training_days if d != long_run_day]
         
-        # Build mapping
-        day_to_type: Dict[str, str] = {}
-        
-        # Place long run
-        day_to_type[long_run_day] = "long_run"
-        
-        # Place remaining workouts
-        # Strategy: quality workouts go on days furthest from long run
-        # Easy workouts go on days closest to long run
-        
-        # Sort non-long days by distance from long run (furthest first)
+        # Utility: circular distance from long run day
         def distance_from_long(day: str) -> int:
-            day_idx = training_days.index(day)
-            # Circular distance
-            forward = (long_idx - day_idx) % len(training_days)
-            backward = (day_idx - long_idx) % len(training_days)
+            idx = training_days.index(day)
+            forward = (idx - long_idx) % len(training_days)
+            backward = (long_idx - idx) % len(training_days)
             return min(forward, backward)
         
-        # Separate quality and non-quality workouts
-        quality_workouts = [w for w in non_long_template if is_quality_workout(w)]
-        non_quality_workouts = [w for w in non_long_template if not is_quality_workout(w)]
-        
-        # Sort days: furthest from long run first (for quality workouts)
+        # Sort days by distance from long run (furthest first)
         sorted_days = sorted(non_long_days, key=distance_from_long, reverse=True)
         
-        # Assign quality workouts to furthest days
-        for i, workout in enumerate(quality_workouts):
-            if i < len(sorted_days):
-                day_to_type[sorted_days[i]] = workout
+        # Initialize assignment with long run
+        assigned: Dict[str, str] = {long_run_day: "long_run"}
+        used_days: set = set()
         
-        # Assign non-quality workouts to remaining days
-        remaining_days = [d for d in sorted_days if d not in day_to_type]
-        for i, workout in enumerate(non_quality_workouts):
-            if i < len(remaining_days):
-                day_to_type[remaining_days[i]] = workout
+        # -------------------------------------------------------
+        # 1. Assign QUALITY WORKOUTS safely (prevents back-to-back)
+        # -------------------------------------------------------
+        def is_adjacent(dayA: str, dayB: str) -> bool:
+            """Check if two days are adjacent in the training schedule."""
+            a = training_days.index(dayA)
+            b = training_days.index(dayB)
+            return abs(a - b) == 1
         
-        # Fill any remaining days with "easy"
-        for day in training_days:
-            if day not in day_to_type:
-                day_to_type[day] = "easy"
+        def find_non_adjacent_pair(days: List[str], count: int) -> List[str]:
+            """Find a set of days that are not adjacent to each other."""
+            if count <= 0:
+                return []
+            if count == 1:
+                return [days[0]] if days else []
+            
+            # Try to find non-adjacent combinations
+            from itertools import combinations
+            for combo in combinations(days, count):
+                # Check if any pair in combo is adjacent
+                is_valid = True
+                for i in range(len(combo)):
+                    for j in range(i + 1, len(combo)):
+                        if is_adjacent(combo[i], combo[j]):
+                            is_valid = False
+                            break
+                    if not is_valid:
+                        break
+                if is_valid:
+                    return list(combo)
+            
+            # No perfect solution, return first N days
+            return days[:count]
         
-        return day_to_type
+        # Day immediately before long run (in training_days order)
+        day_before_long = training_days[long_idx - 1] if long_idx > 0 else None
+        
+        # Filter out days adjacent to long run and immediately before long run
+        safe_days = [
+            d for d in sorted_days 
+            if not is_adjacent(d, long_run_day) and d != day_before_long
+        ]
+        
+        # Find non-adjacent days for quality workouts
+        quality_days = find_non_adjacent_pair(safe_days, len(quality_workouts))
+        
+        # If we couldn't find enough safe days, expand to include days adjacent to long run
+        # (but still not immediately before)
+        if len(quality_days) < len(quality_workouts):
+            expanded_days = [d for d in sorted_days if d != day_before_long]
+            quality_days = find_non_adjacent_pair(expanded_days, len(quality_workouts))
+        
+        # Assign quality workouts to selected days
+        quality_assigned: List[str] = []
+        for i, w in enumerate(quality_workouts):
+            if i < len(quality_days):
+                day = quality_days[i]
+                assigned[day] = w
+                used_days.add(day)
+                quality_assigned.append(day)
+            else:
+                # Ultimate fallback: find any unused day
+                for day in sorted_days:
+                    if day not in used_days:
+                        assigned[day] = w
+                        used_days.add(day)
+                        quality_assigned.append(day)
+                        break
+        
+        # -------------------------------------------------------
+        # 2. Fill remaining days with NON-QUALITY WORKOUTS
+        # -------------------------------------------------------
+        for w in non_quality_workouts:
+            for day in sorted_days:
+                if day not in used_days:
+                    assigned[day] = w
+                    used_days.add(day)
+                    break
+        
+        # -------------------------------------------------------
+        # 3. Fill leftovers with 'easy' (rare edge case)
+        # -------------------------------------------------------
+        for day in non_long_days:
+            if day not in assigned:
+                assigned[day] = "easy"
+        
+        return assigned
     
     def _distribute_mileage(
         self,
@@ -386,13 +450,19 @@ class WorkoutPlacementEngine:
             else:
                 miles = day_miles.get(day, MIN_NON_LONG_MILES)
             
+            # Use capitalized workout type as label (e.g., "Easy", "Tempo", "Long")
+            if workout_type == "long_run":
+                short_label = "Long"
+            else:
+                short_label = workout_type.capitalize()
+            
             result[day] = {
                 "day": day,
                 "type": workout_type,
                 "miles": int(round(miles)),
                 "distance_miles": float(miles),
-                "label": defn.get("description", workout_type),
-                "workout_type": defn.get("description", workout_type),
+                "label": short_label,
+                "workout_type": short_label,
                 "pace_guidance": defn.get("pace_guidance", "Easy"),
                 "is_quality": defn.get("is_quality", False),
                 "intensity": defn.get("intensity", "easy"),

@@ -652,7 +652,7 @@ def migrate_prod_to_local():
         # Import DataMigrator class (dynamically to avoid import issues at module load)
         try:
             # Add scripts to path if needed
-            scripts_path = str(Path(__file__).resolve().parent.parent / "scripts")
+            scripts_path = str(Path(__file__).resolve().parent.parent.parent / "scripts")
             if scripts_path not in sys.path:
                 sys.path.insert(0, scripts_path)
 

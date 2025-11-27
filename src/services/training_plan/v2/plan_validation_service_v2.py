@@ -296,10 +296,13 @@ class PlanValidationServiceV2:
             if prev_mileage <= 0:
                 continue  # Skip if previous week had no mileage
 
-            # Check if previous week was a deliberate cutback (>20% drop)
-            is_after_cutback = False
+            # PRIMARY: Use is_cutback flag from spine (authoritative truth)
+            # FALLBACK: Detect cutback by mileage pattern (for legacy plans)
+            is_after_cutback = prev_week.get("is_cutback", False)
             baseline_mileage = prev_mileage
-            if i >= 2:
+            
+            # Fallback detection if flag not present
+            if not is_after_cutback and i >= 2:
                 week_before_prev = sorted_weeks[i - 2]
                 week_before_prev_mileage = week_before_prev.get("weekly_mileage")
                 if (
@@ -308,7 +311,13 @@ class PlanValidationServiceV2:
                 ):
                     if prev_mileage <= week_before_prev_mileage * 0.8:
                         is_after_cutback = True
-                        baseline_mileage = week_before_prev_mileage
+            
+            # Use pre-cutback baseline for rebound comparison
+            if is_after_cutback and i >= 2:
+                week_before_prev = sorted_weeks[i - 2]
+                week_before_prev_mileage = week_before_prev.get("weekly_mileage")
+                if isinstance(week_before_prev_mileage, (int, float)) and week_before_prev_mileage > 0:
+                    baseline_mileage = week_before_prev_mileage
 
             # Calculate percentage increase vs baseline (prev week or pre-cutback week)
             increase = ((curr_mileage - baseline_mileage) / baseline_mileage) * 100
@@ -334,7 +343,11 @@ class PlanValidationServiceV2:
     def _validate_cutback_weeks(
         self, weeks: List[Dict[str, Any]]
     ) -> List[Dict[str, str]]:
-        """Validate that at least one cutback week exists (simplified check)."""
+        """Validate that at least one cutback week exists.
+        
+        PRIMARY: Uses is_cutback flag from spine (authoritative truth)
+        FALLBACK: Detects cutback by mileage pattern (for legacy plans)
+        """
         violations = []
 
         if len(weeks) < 6:
@@ -342,19 +355,21 @@ class PlanValidationServiceV2:
 
         sorted_weeks = sorted(weeks, key=lambda w: w.get("week_number", 0))
 
-        # Just check that at least one cutback exists (>15% drop from previous)
-        # Excludes taper weeks since those are intentional reductions
-        has_cutback = False
-        for i in range(1, len(sorted_weeks) - self.TAPER_WEEKS):
-            prev_mileage = sorted_weeks[i - 1].get("weekly_mileage", 0)
-            curr_mileage = sorted_weeks[i].get("weekly_mileage", 0)
+        # PRIMARY: Check for is_cutback flag (authoritative from spine)
+        has_cutback = any(w.get("is_cutback", False) for w in sorted_weeks)
+        
+        # FALLBACK: Detect by mileage pattern if no flags found
+        if not has_cutback:
+            for i in range(1, len(sorted_weeks) - self.TAPER_WEEKS):
+                prev_mileage = sorted_weeks[i - 1].get("weekly_mileage", 0)
+                curr_mileage = sorted_weeks[i].get("weekly_mileage", 0)
 
-            if isinstance(prev_mileage, (int, float)) and isinstance(
-                curr_mileage, (int, float)
-            ):
-                if prev_mileage > 0 and curr_mileage <= prev_mileage * 0.85:
-                    has_cutback = True
-                    break
+                if isinstance(prev_mileage, (int, float)) and isinstance(
+                    curr_mileage, (int, float)
+                ):
+                    if prev_mileage > 0 and curr_mileage <= prev_mileage * 0.85:
+                        has_cutback = True
+                        break
 
         if not has_cutback:
             violations.append(
@@ -402,15 +417,23 @@ class PlanValidationServiceV2:
 
             if prev_long_run is not None and prev_long_run > 0:
                 baseline = prev_long_run
-                is_cutback_rebound = False
-                if (
+                
+                # PRIMARY: Use is_cutback flag from spine (authoritative truth)
+                # FALLBACK: Detect cutback by mileage pattern
+                prev_week = sorted_weeks[sorted_weeks.index(week) - 1] if sorted_weeks.index(week) > 0 else None
+                is_cutback_rebound = prev_week.get("is_cutback", False) if prev_week else False
+                
+                # Fallback detection if flag not present
+                if not is_cutback_rebound and (
                     long_run_two_back is not None
                     and long_run_two_back > 0
                     and prev_long_run <= long_run_two_back * 0.8
                 ):
-                    # Previous week was a cutback; compare against week before it
-                    baseline = long_run_two_back
                     is_cutback_rebound = True
+                
+                # Use pre-cutback baseline for rebound comparison
+                if is_cutback_rebound and long_run_two_back is not None and long_run_two_back > 0:
+                    baseline = long_run_two_back
 
                 increase = curr_long_run - baseline
                 percent_increase = (increase / baseline * 100) if baseline > 0 else 0

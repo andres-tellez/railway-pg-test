@@ -61,6 +61,7 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "description": "Steady easy long run for aerobic endurance",
         "pace_guidance": "Easy",
         "ideal_for_races": ["5k", "10k", "half", "marathon"],
+        "detail_archetype": "LONG",  # Step 7 segment generator to use
     },
     
     # -------------------------------------------------------------------------
@@ -75,6 +76,7 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "description": "Easy aerobic run for recovery and base building",
         "pace_guidance": "Easy",
         "ideal_for_races": ["5k", "10k", "half", "marathon"],
+        "detail_archetype": "EASY",
     },
     
     # -------------------------------------------------------------------------
@@ -89,6 +91,7 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "description": "Very easy jog for active recovery",
         "pace_guidance": "Very Easy (slower than easy pace)",
         "ideal_for_races": ["5k", "10k", "half", "marathon"],
+        "detail_archetype": "EASY",  # Use easy generator with shorter distance
     },
     
     # -------------------------------------------------------------------------
@@ -103,6 +106,7 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "description": "Controlled aerobic run at steady effort; not hard",
         "pace_guidance": "Steady (comfortably moderate)",
         "ideal_for_races": ["10k", "half", "marathon"],
+        "detail_archetype": "STEADY",
     },
     
     # -------------------------------------------------------------------------
@@ -117,6 +121,7 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "description": "Sustained effort at lactate threshold pace",
         "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
         "ideal_for_races": ["10k", "half", "marathon"],
+        "detail_archetype": "TEMPO",  # NEW: Continuous tempo block
     },
     
     # -------------------------------------------------------------------------
@@ -131,6 +136,7 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "description": "High-intensity repeats with recovery jogs between",
         "pace_guidance": "Interval (hard effort, 3-5 min repeats)",
         "ideal_for_races": ["5k", "10k", "half"],
+        "detail_archetype": "INTERVALS",  # NEW: Repeats with recovery
     },
     
     # -------------------------------------------------------------------------
@@ -145,6 +151,7 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "description": "Hill repeats for running-specific strength and power",
         "pace_guidance": "Hard effort uphill, easy jog recovery down",
         "ideal_for_races": ["5k", "10k", "half", "marathon"],
+        "detail_archetype": "HILLS",  # Use intervals pattern with hill notes
     },
     
     # -------------------------------------------------------------------------
@@ -159,6 +166,7 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "description": "Cruise intervals at threshold pace with short recovery",
         "pace_guidance": "Threshold (slightly faster than tempo)",
         "ideal_for_races": ["10k", "half", "marathon"],
+        "detail_archetype": "TEMPO",  # Use tempo generator (cruise intervals)
     },
     
     # -------------------------------------------------------------------------
@@ -173,6 +181,7 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "description": "Unstructured speed play mixing easy and moderate efforts",
         "pace_guidance": "Varied (mix of easy and moderate surges)",
         "ideal_for_races": ["5k", "10k", "half"],
+        "detail_archetype": "STEADY",  # Use steady with fartlek cues
     },
 }
 
@@ -223,6 +232,28 @@ def get_recovery_days(workout_type: str) -> int:
         Number of recovery days needed (0-2 typically)
     """
     return WORKOUT_DEFINITIONS.get(workout_type, {}).get("recovery_days", 0)
+
+
+def get_detail_archetype(workout_type: str) -> str:
+    """
+    Get the detail archetype for Step 7 segment generation.
+    
+    Archetypes tell Pass4 which segment generator to use:
+    - EASY: Simple easy run
+    - STEADY: Controlled aerobic run
+    - ENDURANCE: Medium-long run
+    - LONG: Long run with optional MP finish
+    - TEMPO: Continuous tempo block
+    - INTERVALS: Repeats with recovery
+    - HILLS: Hill repeats
+    
+    Args:
+        workout_type: The workout type key
+        
+    Returns:
+        Archetype string, defaults to "EASY" if not found
+    """
+    return WORKOUT_DEFINITIONS.get(workout_type, {}).get("detail_archetype", "EASY")
 
 
 def get_intensity(workout_type: str) -> str:
@@ -285,9 +316,11 @@ def _validate_definitions() -> None:
         "description",
         "pace_guidance",
         "ideal_for_races",
+        "detail_archetype",  # NEW: Required for Step 7 segment generation
     ]
     
     valid_intensities = {"very_easy", "easy", "moderate", "hard", "very_hard"}
+    valid_archetypes = {"EASY", "STEADY", "ENDURANCE", "LONG", "TEMPO", "INTERVALS", "HILLS"}
     
     for workout_type, defn in WORKOUT_DEFINITIONS.items():
         # Check required fields
@@ -299,6 +332,11 @@ def _validate_definitions() -> None:
         # Validate intensity value
         assert defn["intensity"] in valid_intensities, (
             f"Workout '{workout_type}' has invalid intensity '{defn['intensity']}'"
+        )
+        
+        # Validate detail_archetype
+        assert defn["detail_archetype"] in valid_archetypes, (
+            f"Workout '{workout_type}' has invalid detail_archetype '{defn['detail_archetype']}'"
         )
         
         # Quality workouts must have recovery days

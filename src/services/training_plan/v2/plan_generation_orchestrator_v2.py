@@ -65,7 +65,8 @@ from src.services.training_plan.v2.workout_taxonomy.workout_definitions import (
 
 # Workout type constants (for backward compatibility)
 EASY = "easy"
-TYPE_DISPLAY = {k: v["description"] for k, v in WORKOUT_DEFINITIONS.items()}
+# Short labels for workout types (e.g., "Easy", "Tempo", "Intervals")
+TYPE_DISPLAY = {k: k.capitalize() for k in WORKOUT_DEFINITIONS.keys()}
 PACE_GUIDANCE = {k: v["pace_guidance"] for k, v in WORKOUT_DEFINITIONS.items()}
 from src.services.metrics_helper_service import (
     get_weekly_fitness_from_materialized_view,
@@ -381,6 +382,9 @@ class PlanGenerationOrchestratorV2:
         if aligned_start_date:
             plan_request["start_date"] = aligned_start_date.isoformat()
 
+        # Post-race cleanse: Remove any workout scheduled for the day after race
+        weeks_out = self._remove_post_race_workouts(weeks_out, race_date)
+
         # Pace seed (use collected data via Pass1)
         pace_seed = self._derive_pace_seed(lr_output, plan_request, weeks_out)
 
@@ -485,12 +489,65 @@ class PlanGenerationOrchestratorV2:
             "phase": template.get("phase", "Race Week"),
             "weekly_mileage": template.get("weekly_mileage", 0),
             "long_run_miles": template.get("long_run_miles", 0),
+            "is_cutback": False,  # Race week is NOT a cutback
             "workouts": [
                 self._build_race_week_workout(workout_spec)
                 for workout_spec in template.get("workouts", [])
             ],
         }
         weeks.append(race_week)
+        return weeks
+
+    def _remove_post_race_workouts(
+        self, weeks: List[Dict[str, Any]], race_date: Any
+    ) -> List[Dict[str, Any]]:
+        """
+        Remove any workout scheduled for the day after race day.
+        
+        The runner should NEVER have a run the day after the race,
+        regardless of whether the race is on Saturday or Sunday.
+        
+        Args:
+            weeks: List of week dicts with workouts
+            race_date: Race date (any format)
+            
+        Returns:
+            Updated weeks with post-race day workouts removed
+        """
+        from datetime import timedelta
+        
+        if not weeks or not race_date:
+            return weeks
+        
+        # Parse race date
+        race_d = self.constraints_service._parse_date(race_date)
+        if not race_d:
+            return weeks
+        
+        # Day after race = REST
+        day_after_race = race_d + timedelta(days=1)
+        day_after_iso = day_after_race.isoformat()
+        
+        # Find and remove workouts on the day after race
+        removed_count = 0
+        for week in weeks:
+            workouts = week.get("workouts", [])
+            original_count = len(workouts)
+            
+            # Filter out workouts on day after race
+            week["workouts"] = [
+                w for w in workouts
+                if w.get("date") != day_after_iso
+            ]
+            
+            removed_count += original_count - len(week["workouts"])
+        
+        if removed_count > 0:
+            logger.info(
+                f"Post-race cleanse: Removed {removed_count} workout(s) "
+                f"scheduled for {day_after_iso} (day after race)"
+            )
+        
         return weeks
 
     @staticmethod

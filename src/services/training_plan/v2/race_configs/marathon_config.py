@@ -247,7 +247,7 @@ class MarathonConfig(RaceDistanceConfig):
     def race_week_template(self) -> Dict[str, Any]:
         """Canonical marathon race week layout."""
         return {
-            "weekly_mileage": 8,
+            "weekly_mileage": 8 + self.race_distance_miles,  # Include race distance in total
             "long_run_miles": 0.0,
             "workouts": [
                 {
