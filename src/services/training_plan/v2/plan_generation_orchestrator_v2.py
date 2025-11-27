@@ -1,8 +1,18 @@
 """
 Plan Generation Orchestrator V2
 
-Wires together the race-distance-aware services (Pass1, weekly totals, Pass3, Pass4,
-recovery insertion, validation) to produce a deterministic draft plan.
+Wires together the race-distance-aware services to produce a deterministic draft plan.
+
+Pipeline Steps:
+  Step 1: Assess Physical Level (fitness data from materialized view)
+  Step 2: Calculate training weeks needed (fitness-based)
+  Step 3: Calculate available time (calendar constraint)
+  Step 4: Determine plan length based on scenario
+  Step 4.5: Get scenario-specific adjustments
+  Step 5: Build long-run progression + weekly totals
+  Step 6: Distribute workouts to training days
+  Step 7: Add workout details (paces, intervals, notes)
+  Step 8: Final validation
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -48,11 +58,15 @@ from src.services.training_plan.v2.plan_constraints_service import (
 from src.services.training_plan.v2.scenario_adjustments_service import (
     ScenarioAdjustmentsService,
 )
-from src.services.training_plan.v2.marathon.workout_types_v2 import (
-    EASY,
-    TYPE_DISPLAY,
-    PACE_GUIDANCE,
+from src.services.training_plan.v2.workout_taxonomy.workout_definitions import (
+    WORKOUT_DEFINITIONS,
+    get_workout_definition,
 )
+
+# Workout type constants (for backward compatibility)
+EASY = "easy"
+TYPE_DISPLAY = {k: v["description"] for k, v in WORKOUT_DEFINITIONS.items()}
+PACE_GUIDANCE = {k: v["pace_guidance"] for k, v in WORKOUT_DEFINITIONS.items()}
 from src.services.metrics_helper_service import (
     get_weekly_fitness_from_materialized_view,
 )
@@ -65,15 +79,28 @@ class PlanGenerationOrchestratorV2:
     Race-distance-aware orchestrator for the long-run-first deterministic pipeline.
     """
 
-    def __init__(self, config: RaceDistanceConfig) -> None:
+    def __init__(
+        self,
+        config: RaceDistanceConfig,
+        race_type: str = "marathon",
+        scenario: str = None,
+    ) -> None:
         self.config = config
+        self.race_type = race_type
+        self.scenario = scenario
         # DataCollectionService and InsightsCalculationService removed
         # All data now comes from materialized view (same as metrics page)
 
         self.pass1 = Pass1LongRunFirstV2(
             config=config,
         )
-        self.pass3 = Pass3WorkoutDistribution(config=config)
+        # Pass3 now uses the new WorkoutPlacementEngine with phase-aware templates
+        self.pass3 = Pass3WorkoutDistribution(
+            config=config,
+            race_type=race_type,
+            scenario=scenario,
+            use_new_engine=True,  # Enable new taxonomy-based placement
+        )
         self.pass4 = Pass4WorkoutDetails()
         self.validator = PlanValidationServiceV2(config=config)
         self.pass1_selector = Pass1WeeksSelectorV2()
@@ -322,10 +349,11 @@ class PlanGenerationOrchestratorV2:
             scenario_adjustments=scenario_adjustments,
         )
 
-        # Pass3 distribution
+        # Step 6: Distribute workouts to training days
         pass3_plan = self.pass3.run(
             weeks_with_totals,
             training_days,
+            total_weeks=plan_length_weeks,
         )
 
         weeks_out = pass3_plan.get("weeks", [])
@@ -356,7 +384,7 @@ class PlanGenerationOrchestratorV2:
         # Pace seed (use collected data via Pass1)
         pace_seed = self._derive_pace_seed(lr_output, plan_request, weeks_out)
 
-        # Pass4 - add workout details
+        # Step 7: Add workout details (paces, intervals, notes)
         plan_with_details = {
             "weeks": weeks_out,
             "start_date": plan_request.get("start_date"),
@@ -369,6 +397,7 @@ class PlanGenerationOrchestratorV2:
             week_logs=week_logs or {},
         )
 
+        # Step 8: Final validation
         validation = self.validator.validate_plan(plan_with_details)
         validation["draft"] = plan_with_details
         validation["pass1_rationale"] = lr_output.get("rationale")

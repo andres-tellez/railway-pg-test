@@ -20,13 +20,24 @@ Last Updated: January 2026
 from typing import Dict, Any, List
 import logging
 
-from src.services.training_plan.v2.marathon.workout_types_v2 import (
-    EASY,
-    STEADY,
-    ENDURANCE,
-    LONG,
-    TYPE_DISPLAY,
+from src.services.training_plan.v2.workout_taxonomy.workout_definitions import (
+    WORKOUT_DEFINITIONS,
+    get_workout_definition,
 )
+
+# Workout type constants (for backward compatibility)
+EASY = "easy"
+STEADY = "steady"
+ENDURANCE = "endurance"
+LONG = "long_run"
+
+# Build TYPE_DISPLAY from taxonomy
+TYPE_DISPLAY = {
+    EASY: WORKOUT_DEFINITIONS["easy"]["description"],
+    STEADY: WORKOUT_DEFINITIONS["steady"]["description"],
+    ENDURANCE: "Endurance (Medium-Long)",  # Keep legacy display name
+    LONG: WORKOUT_DEFINITIONS["long_run"]["description"],
+}
 from src.services.training_plan.v2.shared_v2.pace_seed_service import PaceSeed
 from src.services.training_plan.v2.shared_v2.workout_detail_rules import (
     PHASE,
