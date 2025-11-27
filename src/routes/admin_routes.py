@@ -674,7 +674,7 @@ def migrate_prod_to_local():
 
         # Run migration using the script's run_migration method
         try:
-            with DataMigrator(prod_db_url, local_db_url) as migrator:
+            with DataMigrator(prod_db_url, local_db_url, force=full_migration) as migrator:
                 # Run complete migration process
                 migrator.run_migration()
 

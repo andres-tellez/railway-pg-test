@@ -14,6 +14,7 @@ Requirements:
     - Both databases accessible
 """
 
+import json
 import os
 import sys
 import uuid
@@ -31,14 +32,24 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 
 
+def to_json(val):
+    """Convert dict/list to JSON string for JSONB columns."""
+    if val is None:
+        return None
+    if isinstance(val, (dict, list)):
+        return json.dumps(val)
+    return val
+
+
 class DataMigrator:
     """Handles migration of data from production to local with ID remapping."""
 
-    def __init__(self, prod_db_url: str, local_db_url: str):
+    def __init__(self, prod_db_url: str, local_db_url: str, force: bool = False):
         self.prod_engine = create_engine(prod_db_url, echo=False)
         self.local_engine = create_engine(local_db_url, echo=False)
         self.prod_session = sessionmaker(bind=self.prod_engine)()
         self.local_session = sessionmaker(bind=self.local_engine)()
+        self.force = force  # If True, delete local data before copying
 
         # ID mappings
         self.user_id_map: Dict[str, str] = {}  # prod_user_id -> local_user_id
@@ -55,6 +66,9 @@ class DataMigrator:
         self.prod_engine.dispose()
         self.local_engine.dispose()
 
+    # Hardcoded prod athlete_id - your real Strava account
+    PROD_ATHLETE_ID = 347085
+
     def get_prod_user_and_athlete(self) -> Optional[Tuple[str, int]]:
         """Get the production user_id and athlete_id (main account)."""
         try:
@@ -63,13 +77,15 @@ class DataMigrator:
                     """
                     SELECT ua.user_id, ua.athlete_id
                     FROM user_athletes ua
-                    ORDER BY ua.created_at DESC
+                    WHERE ua.athlete_id = :athlete_id
                     LIMIT 1
                 """
-                )
+                ),
+                {"athlete_id": self.PROD_ATHLETE_ID},
             ).fetchone()
             if result:
                 return (str(result[0]), int(result[1]))
+            print(f"⚠️  No user found in prod for athlete_id {self.PROD_ATHLETE_ID}")
             return None
         except Exception as e:
             print(f"❌ Error getting prod user/athlete: {e}")
@@ -302,10 +318,19 @@ class DataMigrator:
             prod_athlete_id = list(self.athlete_id_map.keys())[0]
             local_athlete_id = self.athlete_id_map[prod_athlete_id]
 
-            # Get all prod activities
+            # If force mode, delete existing local activities first
+            if self.force:
+                deleted = self.local_session.execute(
+                    text("DELETE FROM activities WHERE athlete_id = :athlete_id"),
+                    {"athlete_id": local_athlete_id},
+                )
+                self.local_session.commit()
+                print(f"   🗑️  Deleted {deleted.rowcount} existing local activities")
+
+            # Get all prod activities by athlete_id (not user_id) to capture all activities
             prod_activities = self.prod_session.execute(
-                text("SELECT * FROM activities WHERE user_id = :user_id"),
-                {"user_id": prod_user_id},
+                text("SELECT * FROM activities WHERE athlete_id = :athlete_id"),
+                {"athlete_id": prod_athlete_id},
             ).fetchall()
 
             if not prod_activities:
@@ -451,6 +476,23 @@ class DataMigrator:
         print("\n📋 Migrating splits...")
         try:
             prod_user_id = list(self.user_id_map.keys())[0]
+            local_user_id = self.user_id_map[prod_user_id]
+
+            # If force mode, delete existing local splits first
+            if self.force:
+                # Get local activity_ids to delete their splits
+                local_activity_ids = self.local_session.execute(
+                    text("SELECT activity_id FROM activities WHERE user_id = :user_id"),
+                    {"user_id": local_user_id},
+                ).fetchall()
+                if local_activity_ids:
+                    local_ids = [row[0] for row in local_activity_ids]
+                    deleted = self.local_session.execute(
+                        text("DELETE FROM splits WHERE activity_id = ANY(:ids)"),
+                        {"ids": local_ids},
+                    )
+                    self.local_session.commit()
+                    print(f"   🗑️  Deleted {deleted.rowcount} existing local splits")
 
             # Get activity_ids for this user
             activity_ids = self.prod_session.execute(
@@ -614,7 +656,7 @@ class DataMigrator:
                         "race_distance": plan.race_distance,
                         "race_name": plan.race_name,
                         "race_location": plan.race_location,
-                        "race_metadata": plan.race_metadata,
+                        "race_metadata": to_json(plan.race_metadata),
                         "primary_goal": plan.primary_goal,
                         "target_time": plan.target_time,
                         "training_days": plan.training_days,
@@ -637,6 +679,27 @@ class DataMigrator:
             traceback.print_exc()
             self.local_session.rollback()
             return False
+
+    def _workout_params(self, workout, local_plan_id):
+        """Build params dict for plan_workouts INSERT/UPDATE."""
+        return {
+            "plan_id": local_plan_id,
+            "date": workout.date,
+            "workout_type": workout.workout_type,
+            "description": workout.description,
+            "miles": workout.miles,
+            "intensity": workout.intensity,
+            "target_zone": workout.target_zone,
+            "target_hr": workout.target_hr,
+            "focus": workout.focus,
+            "segments": to_json(workout.segments),
+            "run_type_key": workout.run_type_key,
+            "phase": workout.phase,
+            "pace_ranges": to_json(workout.pace_ranges),
+            "allow_quality": workout.allow_quality,
+            "cues": workout.cues,
+            "quality_insert": workout.quality_insert,
+        }
 
     def migrate_plan_workouts(self):
         """Copy plan_workouts with plan_id mapping."""
@@ -680,24 +743,7 @@ class DataMigrator:
                                 WHERE plan_id = :plan_id AND date = :date
                             """
                             ),
-                            {
-                                "plan_id": local_plan_id,
-                                "date": workout.date,
-                                "workout_type": workout.workout_type,
-                                "description": workout.description,
-                                "miles": workout.miles,
-                                "intensity": workout.intensity,
-                                "target_zone": workout.target_zone,
-                                "target_hr": workout.target_hr,
-                                "focus": workout.focus,
-                                "segments": workout.segments,
-                                "run_type_key": workout.run_type_key,
-                                "phase": workout.phase,
-                                "pace_ranges": workout.pace_ranges,
-                                "allow_quality": workout.allow_quality,
-                                "cues": workout.cues,
-                                "quality_insert": workout.quality_insert,
-                            },
+                            self._workout_params(workout, local_plan_id),
                         )
                     else:
                         # Insert new
@@ -717,24 +763,7 @@ class DataMigrator:
                                 )
                             """
                             ),
-                            {
-                                "plan_id": local_plan_id,
-                                "date": workout.date,
-                                "workout_type": workout.workout_type,
-                                "description": workout.description,
-                                "miles": workout.miles,
-                                "intensity": workout.intensity,
-                                "target_zone": workout.target_zone,
-                                "target_hr": workout.target_hr,
-                                "focus": workout.focus,
-                                "segments": workout.segments,
-                                "run_type_key": workout.run_type_key,
-                                "phase": workout.phase,
-                                "pace_ranges": workout.pace_ranges,
-                                "allow_quality": workout.allow_quality,
-                                "cues": workout.cues,
-                                "quality_insert": workout.quality_insert,
-                            },
+                            self._workout_params(workout, local_plan_id),
                         )
                     total_workouts += 1
 
@@ -922,8 +951,8 @@ class DataMigrator:
                                 "week_start_date": log.week_start_date,
                                 "decision_type": log.decision_type,
                                 "trigger_reason": log.trigger_reason,
-                                "metrics_json": log.metrics_json,
-                                "adjustments_json": log.adjustments_json,
+                                "metrics_json": to_json(log.metrics_json),
+                                "adjustments_json": to_json(log.adjustments_json),
                                 "match_score": log.match_score,
                                 "phase": log.phase,
                                 "weeks_remaining": log.weeks_remaining,
@@ -953,8 +982,8 @@ class DataMigrator:
                                 "week_start_date": log.week_start_date,
                                 "decision_type": log.decision_type,
                                 "trigger_reason": log.trigger_reason,
-                                "metrics_json": log.metrics_json,
-                                "adjustments_json": log.adjustments_json,
+                                "metrics_json": to_json(log.metrics_json),
+                                "adjustments_json": to_json(log.adjustments_json),
                                 "match_score": log.match_score,
                                 "phase": log.phase,
                                 "weeks_remaining": log.weeks_remaining,
@@ -1148,6 +1177,8 @@ class DataMigrator:
         """Run the complete migration process."""
         print("=" * 60)
         print("🚀 Production to Local Data Migration")
+        if self.force:
+            print("⚠️  FORCE MODE: Local data will be deleted before copying")
         print("=" * 60)
 
         steps = [
@@ -1171,6 +1202,17 @@ class DataMigrator:
             else:
                 print(f"\n⚠️  Migration stopped at {step_name}")
                 break
+
+        # Refresh materialized views after migration
+        if success_count == len(steps):
+            print("\n📋 Refreshing materialized views...")
+            try:
+                self.local_session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics"))
+                self.local_session.execute(text("REFRESH MATERIALIZED VIEW mv_longest_runs"))
+                self.local_session.commit()
+                print("✅ Materialized views refreshed")
+            except Exception as e:
+                print(f"⚠️  Could not refresh materialized views: {e}")
 
         print("\n" + "=" * 60)
         if success_count == len(steps):
