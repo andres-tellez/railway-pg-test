@@ -3,6 +3,9 @@
 import { z } from "zod";
 
 export const planSchema = z.object({
+  // Plan identification
+  plan_name: z.string().max(50, "Plan name must be 50 characters or less").optional(),
+
   // Race details (required)
   race_date: z.string().min(1, "Race date is required"),
   race_distance: z.string().default("Marathon"),
@@ -24,8 +27,10 @@ export const planSchema = z.object({
   }),
   target_time: z.string().optional(),
 
-  // Training schedule (required)
-  training_days: z.array(z.string()).min(1, "Select at least one training day"),
+  // Training schedule (required) - must be 3, 4, or 5 days
+  training_days: z.array(z.string())
+    .min(3, "Please select at least 3 training days")
+    .max(5, "Please select no more than 5 training days"),
 
   // Additional notes (optional)
   notes: z.string().optional(),

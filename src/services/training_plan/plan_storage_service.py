@@ -100,12 +100,30 @@ class PlanStorageService:
             user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
 
             # Prepare plan record
+            # Use custom plan_name from request, or generate smart default
+            custom_plan_name = plan_request.get("plan_name")
+            race_name = plan_request.get("race_name")
+            race_distance = plan_request.get("race_distance", "Marathon")
+            training_days = plan_request.get("training_days", [])
+            days_count = len(training_days) if training_days else 0
+
+            if custom_plan_name:
+                final_plan_name = custom_plan_name
+            elif race_name and days_count:
+                final_plan_name = f"{race_name} - {days_count} day plan"
+            elif race_name:
+                final_plan_name = f"{race_name} Training Plan"
+            elif days_count:
+                final_plan_name = f"{race_distance} {days_count}-day Plan - {race_date}"
+            else:
+                final_plan_name = f"{race_distance} Plan - {race_date}"
+
             plan_dict = {
                 "user_id": user_uuid,
-                "plan_name": plan_data.get("plan_name", f"Marathon Plan - {race_date}"),
+                "plan_name": final_plan_name,
                 "race_date": race_date,
-                "race_distance": plan_request.get("race_distance", "Marathon"),
-                "race_name": plan_request.get("race_name"),
+                "race_distance": race_distance,
+                "race_name": race_name,
                 "race_location": plan_request.get("race_location"),
                 "race_metadata": plan_request.get("race_metadata"),
                 "primary_goal": plan_request.get("primary_goal"),

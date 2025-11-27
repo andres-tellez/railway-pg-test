@@ -74,7 +74,10 @@ export default function PlanDraftPreview() {
   };
 
   const handleBack = () => {
-    navigate(-1);
+    // Pass form data back so user doesn't have to re-enter
+    navigate("/plan/new-v2", {
+      state: { savedFormData: plan_request }
+    });
   };
 
   const handleRegenerateConservative = async () => {
@@ -134,15 +137,16 @@ export default function PlanDraftPreview() {
             </div>
           </div>
 
-          {/* Summary */}
+          {/* Plan Name */}
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-800">Summary</h2>
-            <p className="text-gray-700">{generated?.plan_name || "Unnamed Plan"}</p>
-            {displayedTimezone && (
-              <p className="text-sm text-gray-500 mt-1">
-                Plan dates shown in <span className="font-medium">{displayedTimezone}</span>.
-              </p>
-            )}
+            <p className="text-lg font-semibold text-gray-800">
+              {plan_request?.plan_name ||
+               (plan_request?.race_name && plan_request?.training_days?.length
+                 ? `${plan_request.race_name} - ${plan_request.training_days.length} day plan`
+                 : plan_request?.race_name
+                   ? `${plan_request.race_name} Training Plan`
+                   : `${plan_request?.race_distance || "Marathon"} Plan`)}
+            </p>
           </div>
 
           {/* Time Assessment */}
@@ -174,52 +178,41 @@ export default function PlanDraftPreview() {
             </div>
           )}
 
-          {/* Validation */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-800">Validation</h2>
+          {/* Validation - Only show if there are issues */}
+          {(violations.length > 0 || hasSpineQualityIssues) && (
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold text-gray-800">Validation Issues</h2>
 
-            {/* Plan Safety Validation (from PlanValidationServiceV2) */}
-            {violations.length === 0 ? (
-              <p className="text-green-700">✅ No safety issues detected.</p>
-            ) : (
-              <div className="mb-4">
-                <h3 className="text-md font-medium text-gray-700 mb-2">Plan Safety Checks</h3>
-                <ul className="space-y-2">
-                  {violations.map((v, i) => (
-                    <li key={i} className={`p-3 rounded ${ (v?.severity||"").toLowerCase()==="error" ? "bg-red-50 border border-red-200" : "bg-yellow-50 border border-yellow-200" }`}>
-                      <div className="font-medium text-gray-800">{v?.rule || "Rule"} ({v?.severity})</div>
-                      <div className="text-gray-700 text-sm">{v?.details}</div>
-                      {v?.suggestion && (
-                        <div className="text-gray-600 text-sm mt-1">Suggestion: {v.suggestion}</div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Spine Quality Validation (cutback spacing, progression, etc.) */}
-            {spineQuality && (
-              <div className="mt-4">
-                <h3 className="text-md font-medium text-gray-700 mb-2">Plan Structure Quality</h3>
-                {!hasSpineQualityIssues ? (
-                  <p className="text-green-700">✅ Plan structure is correct (cutbacks, progression, peak).</p>
-                ) : (
+              {/* Plan Safety Validation (from PlanValidationServiceV2) */}
+              {violations.length > 0 && (
+                <div className="mb-4">
                   <ul className="space-y-2">
-                    {spineQualityIssues.map((issue: string, i: number) => (
-                      <li key={i} className="p-3 rounded bg-orange-50 border border-orange-200">
-                        <div className="font-medium text-gray-800">⚠️ Structure Issue</div>
-                        <div className="text-gray-700 text-sm">{issue}</div>
-                        <div className="text-gray-600 text-xs mt-1 italic">
-                          This indicates a bug in plan generation logic.
-                        </div>
+                    {violations.map((v, i) => (
+                      <li key={i} className={`p-3 rounded ${ (v?.severity||"").toLowerCase()==="error" ? "bg-red-50 border border-red-200" : "bg-yellow-50 border border-yellow-200" }`}>
+                        <div className="font-medium text-gray-800">{v?.rule || "Rule"} ({v?.severity})</div>
+                        <div className="text-gray-700 text-sm">{v?.details}</div>
+                        {v?.suggestion && (
+                          <div className="text-gray-600 text-sm mt-1">Suggestion: {v.suggestion}</div>
+                        )}
                       </li>
                     ))}
                   </ul>
-                )}
-              </div>
-            )}
-          </div>
+                </div>
+              )}
+
+              {/* Spine Quality Issues */}
+              {hasSpineQualityIssues && (
+                <ul className="space-y-2">
+                  {spineQualityIssues.map((issue: string, i: number) => (
+                    <li key={i} className="p-3 rounded bg-orange-50 border border-orange-200">
+                      <div className="font-medium text-gray-800">⚠️ Structure Issue</div>
+                      <div className="text-gray-700 text-sm">{issue}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           {hasErrors && (
             <div className="mb-6 p-4 rounded border border-red-200 bg-red-50">
@@ -241,65 +234,20 @@ export default function PlanDraftPreview() {
 
           {/* Weeks Table */}
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-gray-800">Weeks</h2>
             <div className="overflow-x-auto flex justify-center">
-              <table className="border border-gray-200 text-sm">
+              <table className="border-collapse text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-gray-700">
-                    <th className="border p-2 text-center">Week</th>
-                    <th className="border p-2 text-center whitespace-nowrap">Phase</th>
-                    {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => (
-                      <th key={d} className="border p-2 text-center">{d}</th>
+                  <tr className="bg-slate-800 text-white">
+                    <th className="py-2 px-3 text-center font-medium border border-slate-700">Week</th>
+                    <th className="py-2 px-3 text-center font-medium border border-slate-700 whitespace-nowrap">Phase</th>
+                    {['M','T','W','T','F','S','S'].map((d, i) => (
+                      <th key={i} className="py-2 px-3 text-center font-medium border border-slate-700">{d}</th>
                     ))}
-                    <th className="border p-2 text-center">Total</th>
+                    <th className="py-2 px-3 text-center font-medium border border-slate-700">Total</th>
                   </tr>
-                  {(() => {
-                    // Extract run types from first week's workouts to display in header
-                    const firstWeek = (generated?.weeks || [])[0];
-                    const runTypeMap: Record<string, string> = {};
-
-                    if (firstWeek?.workouts && Array.isArray(firstWeek.workouts)) {
-                      const normalize = (day: string | undefined) => {
-                        if (!day) return '';
-                        const d = day.toLowerCase();
-                        if (d.startsWith('mon')) return 'Mon';
-                        if (d.startsWith('tue')) return 'Tue';
-                        if (d.startsWith('wed')) return 'Wed';
-                        if (d.startsWith('thu')) return 'Thu';
-                        if (d.startsWith('fri')) return 'Fri';
-                        if (d.startsWith('sat')) return 'Sat';
-                        if (d.startsWith('sun')) return 'Sun';
-                        return '';
-                      };
-
-                      firstWeek.workouts.forEach((workout: any) => {
-                        const day = normalize(workout.day);
-                        if (day) {
-                          const workoutType = workout.workout_type || '';
-                          // Map to single-word display names (standardized)
-                          const shortType = normalizeWorkoutTypeDisplay(workoutType);
-                          runTypeMap[day] = shortType || workoutType;
-                        }
-                      });
-                    }
-
-                    return (
-                      <tr className="bg-gray-100 text-gray-600 text-xs">
-                        <th className="border p-1"></th>
-                        <th className="border p-1"></th>
-                        {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => (
-                          <th key={d} className="border p-1 text-center font-normal">
-                            {runTypeMap[d] || ''}
-                          </th>
-                        ))}
-                        <th className="border p-1"></th>
-                      </tr>
-                    );
-                  })()}
                 </thead>
                 <tbody>
                   {(generated?.weeks || []).map((w: any, idx: number) => {
-                    // Helper: format date as MM/DD/YY
                     const formatMDY = (d?: Date) => {
                       if (!d) return '';
                       const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -307,11 +255,9 @@ export default function PlanDraftPreview() {
                       const yy = String(d.getFullYear()).slice(-2);
                       return `${mm}/${dd}/${yy}`;
                     };
-                    // Determine Monday for this week
                     const parseISODate = (s?: string) => {
                       try {
                         if (!s) return undefined;
-                        // Force UTC midnight parse safety
                         return new Date(`${s}T00:00:00`);
                       } catch {
                         return undefined;
@@ -341,17 +287,13 @@ export default function PlanDraftPreview() {
                       if (d.startsWith('sun')) return 'Sun';
                       return '';
                     };
-                    // Build day-to-items map from workouts
                     const dayToItems: Record<string, string[]> = { Mon: [], Tue: [], Wed: [], Thu: [], Fri: [], Sat: [], Sun: [] };
 
-                    // Populate dayToItems from workouts if available
                     if (w?.workouts && Array.isArray(w.workouts)) {
                       w.workouts.forEach((workout: any) => {
                         const day = normalize(workout.day);
                         if (day && dayToItems[day] !== undefined) {
                           const miles = workout.distance_miles || workout.miles || 0;
-                          const workoutType = workout.workout_type || '';
-                          // Show miles for all workouts (not just long runs)
                           const displayText = miles > 0 ? `${miles}` : '';
                           if (displayText && miles > 0) {
                             dayToItems[day].push(displayText);
@@ -360,22 +302,16 @@ export default function PlanDraftPreview() {
                       });
                     }
 
-                    // Fallback: if no workouts but we have long_run_miles, show it in Sat or Sun
-                    // This handles LR-only drafts where workouts haven't been generated yet
                     if ((!w?.workouts || w.workouts.length === 0) && w?.long_run_miles) {
                       const lr = Number(w.long_run_miles);
                       if (lr > 0) {
-                        // Get training days from plan_request if available
                         const trainingDays = location.state?.plan_request?.training_days || [];
                         const normalizedTrainingDays = trainingDays.map((d: string) => normalize(d)).filter(Boolean);
-
-                        // Prefer Sat, then Sun if they're in training days
                         if (normalizedTrainingDays.includes('Sat')) {
                           dayToItems['Sat'].push(`${lr}`);
                         } else if (normalizedTrainingDays.includes('Sun')) {
                           dayToItems['Sun'].push(`${lr}`);
                         } else if (normalizedTrainingDays.length > 0) {
-                          // Fallback to last training day if no weekend days
                           const lastDay = normalizedTrainingDays[normalizedTrainingDays.length - 1];
                           if (dayToItems[lastDay] !== undefined) {
                             dayToItems[lastDay].push(`${lr}`);
@@ -384,97 +320,52 @@ export default function PlanDraftPreview() {
                       }
                     }
 
-                    const total = Number(w?.weekly_mileage ?? 0) || 0;
-                    // Get week label (e.g., "Week 1 of Nov 4")
                     const weekLabel = w?.week_label || `Week ${w?.week_number ?? idx + 1}`;
                     const weekDisplay = formatMDY(mondayDate) || weekLabel;
+                    const phase = (w?.phase || "").toLowerCase();
+                    const isRaceWeek = phase === "race week";
 
-                const isRaceWeek = (w?.phase || "").toLowerCase() === "race week";
-                return (
-                  <tr
-                    key={idx}
-                    className={
-                      isRaceWeek
-                        ? "bg-amber-100 border-l-4 border-amber-400"
-                        : "hover:bg-gray-50"
-                    }
-                  >
-                        <td className="border p-2 align-middle text-center">
-                          <div className="font-medium">{weekDisplay}</div>
-                        </td>
-                    <td
-                      className={`border p-2 align-middle text-center whitespace-nowrap ${
-                        isRaceWeek ? "text-amber-900 font-semibold" : ""
-                      }`}
-                    >
-                      {isRaceWeek ? "Race Week 🎉" : (w?.phase || "").trim()}
-                    </td>
-                        {dayKeys.map((d) => (
-                          <td key={d} className="border p-2 align-top text-center">
-                            {dayToItems[d] && dayToItems[d].length > 0 ? (
-                              <div className="space-y-1">
-                                {dayToItems[d].map((t, i) => (
-                                  <div key={i}>{t}</div>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">—</span>
-                            )}
-                          </td>
-                        ))}
-                        <td className="border p-2 align-top text-center">{(typeof w?.weekly_mileage === 'number' ? Number(w.weekly_mileage) : <span className="text-gray-400">—</span>)}</td>
-                      </tr>
-                    );
-                  })}
-
-                  {/* Marathon Day Row */}
-                  {currentDraft?.generated_plan?.race_metadata && (() => {
-                    const raceDateStr = currentDraft.generated_plan.race_metadata.race_date;
-                    let raceDate: Date | undefined;
-                    try {
-                      if (raceDateStr) {
-                        raceDate = new Date(raceDateStr + 'T00:00:00');
-                      }
-                    } catch (e) {
-                      // Ignore date parsing errors
-                    }
-
-                    const getRaceDayName = () => {
-                      if (!raceDate) return '';
-                      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                      return dayNames[raceDate.getDay()];
+                    // Phase icons
+                    const getPhaseIcon = () => {
+                      if (isRaceWeek) return "🏁";
+                      if (phase.includes("taper")) return "🔋";
+                      if (phase.includes("peak")) return "⚡";
+                      if (phase.includes("build")) return "🔥";
+                      if (phase.includes("base")) return "🧱";
+                      return "";
                     };
 
-                    const formatMDY = (d?: Date) => {
-                      if (!d) return '';
-                      const mm = String(d.getMonth() + 1).padStart(2, '0');
-                      const dd = String(d.getDate()).padStart(2, '0');
-                      const yy = String(d.getFullYear()).slice(-2);
-                      return `${mm}/${dd}/${yy}`;
+                    // Clean row styling - only highlight race week
+                    const getRowStyle = () => {
+                      if (isRaceWeek) return "bg-amber-50 hover:bg-amber-100";
+                      return "bg-white hover:bg-gray-50";
                     };
 
                     return (
-                      <tr className="bg-purple-50 border-t-2 border-purple-300">
-                        <td className="border p-2 align-top font-semibold text-purple-800">
-                          <div className="font-medium">{formatMDY(raceDate)}</div>
+                      <tr key={idx} className={`${getRowStyle()} transition-colors`}>
+                        <td className="py-2 px-3 text-center border border-slate-200">
+                          <span className="font-medium text-slate-700">{weekDisplay}</span>
                         </td>
-                        <td className="border p-2 align-top font-semibold text-purple-800">Race Day</td>
-                        {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((d) => {
-                          const isRaceDay = getRaceDayName() === d;
-                          return (
-                            <td key={d} className="border p-2 align-top text-center">
-                              {isRaceDay ? (
-                                <div className="font-bold text-purple-800">26.2</div>
-                              ) : (
-                                <span className="text-gray-400">—</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                        <td className="border p-2 align-top text-center font-semibold text-purple-800">26.2</td>
+                        <td className={`py-2 px-3 text-center border border-slate-200 whitespace-nowrap font-medium ${
+                          isRaceWeek ? "text-amber-700" : "text-slate-600"
+                        }`}>
+                          {isRaceWeek ? "Race" : (w?.phase || "").trim()} {getPhaseIcon()}
+                        </td>
+                        {dayKeys.map((d) => (
+                          <td key={d} className="py-2 px-3 text-center border border-slate-200 tabular-nums">
+                            {dayToItems[d] && dayToItems[d].length > 0 ? (
+                              <span className="text-slate-800">{dayToItems[d].join(', ')}</span>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                        ))}
+                        <td className="py-2 px-3 text-center border border-slate-200 tabular-nums font-semibold text-slate-800">
+                          {typeof w?.weekly_mileage === 'number' ? w.weekly_mileage : <span className="text-slate-300">—</span>}
+                        </td>
                       </tr>
                     );
-                  })()}
+                  })}
                 </tbody>
               </table>
             </div>
