@@ -25,6 +25,7 @@ from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
 )
 
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
+
 # DataCollectionService and InsightsCalculationService no longer needed
 # All data now comes from materialized view (same as metrics page)
 from src.services.training_plan.v2.marathon.pass1_longrun_first_v2 import (
@@ -112,7 +113,7 @@ class PlanGenerationOrchestratorV2:
     def generate_longrun_first(
         self,
         runner_ctx: Dict[str, Any],
-        mode: str = "prefill",
+        mode: str = "rolling",  # Only add details to week 1
         week_logs: Optional[Dict[int, List]] = None,
     ) -> Dict[str, Any]:
         """
@@ -173,13 +174,15 @@ class PlanGenerationOrchestratorV2:
         # Step 2: Calculate training weeks needed (fitness-based only, no dates)
         # Determine how many weeks of training the user needs to safely complete a marathon
         # Based solely on their current fitness level from Step 1
-        fitness_recommended_weeks = self.pass1_selector._map_weeks(base_mileage=weekly_mileage)
-        
+        fitness_recommended_weeks = self.pass1_selector._map_weeks(
+            base_mileage=weekly_mileage
+        )
+
         logger.info(
             f"📊 Step 2: Training weeks needed - {fitness_recommended_weeks} weeks "
             f"(based on {weekly_mileage:.1f} mpw, no date constraints)"
         )
-        
+
         # Store fitness recommendation for later steps
         fitness_data["fitness_recommended_weeks"] = fitness_recommended_weeks
 
@@ -208,11 +211,15 @@ class PlanGenerationOrchestratorV2:
         # 2. Extra time (available > fitness): Build with available_weeks (fill all time)
         # 3. Perfect match (available == fitness): Build with available_weeks
         # 4. No time constraint (available is None): Build with fitness_recommended_weeks
-        plan_length_weeks = available_weeks if available_weeks is not None else fitness_recommended_weeks
-        
+        plan_length_weeks = (
+            available_weeks
+            if available_weeks is not None
+            else fitness_recommended_weeks
+        )
+
         if not plan_length_weeks:
             raise ValueError("Plan length weeks must be provided")
-        
+
         logger.info(
             f"✅ Step 4: Plan length determined - {plan_length_weeks} weeks "
             f"(fitness recommendation: {fitness_recommended_weeks} weeks, "
@@ -227,14 +234,14 @@ class PlanGenerationOrchestratorV2:
             plan_length_weeks=plan_length_weeks,
         )
         scenario = scenario_adjustments["scenario"]
-        
+
         logger.info(
             f"📊 Step 4.5: Scenario adjustments determined - {scenario}, "
             f"starting_mileage_adjustment={scenario_adjustments['starting_mileage_adjustment']:.2f}"
         )
 
         # Step 5: Build long run progression (scenario-aware)
-        
+
         # Validate time constraints ONLY for time-constrained scenario
         # This is where the popup/warning should be shown
         race_date_validation = None
@@ -248,7 +255,7 @@ class PlanGenerationOrchestratorV2:
                 current_weekly_mileage=weekly_mileage,
                 current_long_run=longest_run,
             )
-            
+
             logger.info(
                 f"⚠️ Time-constrained scenario detected: "
                 f"status={race_date_validation.get('status')}, "
@@ -256,9 +263,9 @@ class PlanGenerationOrchestratorV2:
                 f"required={race_date_validation.get('required_weeks')} weeks, "
                 f"can_proceed={race_date_validation.get('can_proceed', False)}"
             )
-            
+
             # BLOCK plan generation if validation says we cannot proceed
-            if not race_date_validation.get('can_proceed', False):
+            if not race_date_validation.get("can_proceed", False):
                 logger.error(
                     f"❌ Plan generation blocked: insufficient time/fitness. "
                     f"Status: {race_date_validation.get('status')}, "
@@ -273,14 +280,20 @@ class PlanGenerationOrchestratorV2:
                             "rule": "insufficient_time",
                             "severity": "error",
                             "location": "plan_generation",
-                            "details": race_date_validation.get('message', 'Insufficient time to safely prepare for race'),
-                            "suggestion": race_date_validation.get('recommendation', 'Adjust race date or build base fitness first'),
+                            "details": race_date_validation.get(
+                                "message",
+                                "Insufficient time to safely prepare for race",
+                            ),
+                            "suggestion": race_date_validation.get(
+                                "recommendation",
+                                "Adjust race date or build base fitness first",
+                            ),
                         }
                     ],
                     "validated_plan": None,
                     "race_date_validation": race_date_validation,
                 }
-        
+
         # Build spine (scenario-specific configuration will be added later)
         lr_output = self.pass1.build(
             session=session,
@@ -385,8 +398,10 @@ class PlanGenerationOrchestratorV2:
         # Post-race cleanse: Remove any workout scheduled for the day after race
         weeks_out = self._remove_post_race_workouts(weeks_out, race_date)
 
-        # Pace seed (use collected data via Pass1)
-        pace_seed = self._derive_pace_seed(lr_output, plan_request, weeks_out)
+        # Pace seed (use real Strava activities for accurate pacing)
+        pace_seed = self._derive_pace_seed(
+            lr_output, plan_request, weeks_out, user_id=str(user_id), session=session
+        )
 
         # Step 7: Add workout details (paces, intervals, notes)
         plan_with_details = {
@@ -428,7 +443,7 @@ class PlanGenerationOrchestratorV2:
     ) -> str:
         """
         Determine which scenario we're in based on Step 4 comparison.
-        
+
         Returns:
             "time_constrained" | "extra_time" | "perfect_match" | "no_constraint"
         """
@@ -503,51 +518,48 @@ class PlanGenerationOrchestratorV2:
     ) -> List[Dict[str, Any]]:
         """
         Remove any workout scheduled for the day after race day.
-        
+
         The runner should NEVER have a run the day after the race,
         regardless of whether the race is on Saturday or Sunday.
-        
+
         Args:
             weeks: List of week dicts with workouts
             race_date: Race date (any format)
-            
+
         Returns:
             Updated weeks with post-race day workouts removed
         """
         from datetime import timedelta
-        
+
         if not weeks or not race_date:
             return weeks
-        
+
         # Parse race date
         race_d = self.constraints_service._parse_date(race_date)
         if not race_d:
             return weeks
-        
+
         # Day after race = REST
         day_after_race = race_d + timedelta(days=1)
         day_after_iso = day_after_race.isoformat()
-        
+
         # Find and remove workouts on the day after race
         removed_count = 0
         for week in weeks:
             workouts = week.get("workouts", [])
             original_count = len(workouts)
-            
+
             # Filter out workouts on day after race
-            week["workouts"] = [
-                w for w in workouts
-                if w.get("date") != day_after_iso
-            ]
-            
+            week["workouts"] = [w for w in workouts if w.get("date") != day_after_iso]
+
             removed_count += original_count - len(week["workouts"])
-        
+
         if removed_count > 0:
             logger.info(
                 f"Post-race cleanse: Removed {removed_count} workout(s) "
                 f"scheduled for {day_after_iso} (day after race)"
             )
-        
+
         return weeks
 
     @staticmethod
@@ -597,16 +609,27 @@ class PlanGenerationOrchestratorV2:
         lr_output: Dict[str, Any],
         plan_request: Dict[str, Any],
         weeks_out: List[Dict[str, Any]],
+        user_id: str,
+        session: Session,
     ) -> PaceSeed:
-        """Create an initial pace seed using plan data only (no raw activities)."""
-        # Use plan data only - no raw activities needed
+        """Create an initial pace seed using real Strava activity data."""
         week1 = weeks_out[0] if weeks_out else {}
         week1_total = float(week1.get("weekly_mileage", 0) or 0)
         week1_long = float(week1.get("long_run_miles", 0) or 0)
 
-        # Create pace seed without strava_activities (uses calibration-based defaults)
+        # Fetch real Strava activities for accurate pace seeding
+        from src.services.training_plan.data_collection_service import (
+            DataCollectionService,
+        )
+
+        strava_activities = (
+            DataCollectionService.fetch_strava_activities(session, user_id) or []
+        )
+
+        logger.info(f"Pace seed using {len(strava_activities)} Strava activities")
+
         seed = get_initial_pace_seed(
-            strava_activities=[],  # Empty - will use calibration-based defaults
+            strava_activities=strava_activities,
             plan_week1_total=week1_total,
             plan_week1_long=week1_long,
             goal_mp_sec_per_mi=None,

@@ -566,7 +566,7 @@ def create_plan_draft_route():
                 user_id=str(user_id),
                 plan_request=plan_request,
                 activity_weeks=activity_weeks,
-                mode="prefill",
+                mode="rolling",  # Only add details to week 1
             )
             draft_payload = build_standard_draft_payload(
                 validation_result=result, timezone=user_timezone

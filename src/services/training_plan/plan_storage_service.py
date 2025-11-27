@@ -478,7 +478,22 @@ class PlanStorageService:
 
         # Validate run_type_key
         run_type_key = row.get("run_type_key")
-        if run_type_key not in ("easy", "steady", "endurance", "long"):
+        if run_type_key not in (
+            "easy",
+            "steady",
+            "endurance",
+            "long",
+            "long_run",
+            "tempo",
+            "intervals",
+            "hills",
+            "recovery",
+            "threshold",
+            "fartlek",
+            "race",
+            "Race",
+            "shakeout",
+        ):
             raise ValueError(f"Invalid run_type_key: {run_type_key}")
 
     @staticmethod

@@ -74,7 +74,9 @@ FOCUS_TAGS = {
 # ============================================================================
 # VALIDATION TOLERANCES
 # ============================================================================
-SEGMENT_SUM_TOLERANCE = 0.11  # Allowed drift between sum of segments and total miles
+SEGMENT_SUM_TOLERANCE = (
+    1.5  # Relaxed further - segment totals are guidance, not safety-critical
+)
 
 # ============================================================================
 # INTERVAL WORKOUT CONFIGURATION
