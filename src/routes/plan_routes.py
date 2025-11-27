@@ -597,11 +597,19 @@ def approve_plan_route():
         if not payload:
             return jsonify({"error": "Request body is required"}), 400
 
-        # Expect client to send back { validation, plan_request }
+        # Expect client to send back { validation: { validated_plan: ... }, plan_request }
         validation = payload.get("validation")
         plan_request = payload.get("plan_request")
         if not isinstance(validation, dict) or not isinstance(plan_request, dict):
             return jsonify({"error": "validation and plan_request are required"}), 400
+
+        # Extract validated_plan from validation object (frontend sends validation.validated_plan)
+        validated_plan = validation.get("validated_plan") or validation
+        if not isinstance(validated_plan, dict):
+            return (
+                jsonify({"error": "validated_plan is required in validation object"}),
+                400,
+            )
 
         from src.services.training_plan.plan_storage_service import PlanStorageService
 
@@ -611,7 +619,7 @@ def approve_plan_route():
             plan_id = plan_storage.save_validated_plan(
                 session=session,
                 user_id=str(user_id),
-                validated_plan=validation,
+                validated_plan=validated_plan,
                 plan_request=plan_request,
             )
 
