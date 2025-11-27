@@ -167,7 +167,6 @@ class SmartDataService:
                 text(
                     """
                 SELECT
-                    motivation,
                     age_group,
                     height_feet,
                     height_inches,
@@ -181,7 +180,6 @@ class SmartDataService:
 
             if result:
                 profile_data = {
-                    "motivation": result.motivation,
                     "age_group": result.age_group,
                     "height_feet": result.height_feet,
                     "height_inches": result.height_inches,

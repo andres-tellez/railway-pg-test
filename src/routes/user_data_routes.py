@@ -78,7 +78,6 @@ def export_user_data():
                 "height_feet": user_profile.height_feet,
                 "height_inches": user_profile.height_inches,
                 "weight": user_profile.weight,
-                "motivation": user_profile.motivation,
             }
 
         # 3. Athlete Links (Strava connection)

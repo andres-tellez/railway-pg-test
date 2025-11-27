@@ -64,7 +64,6 @@ class DataCollectionService:
                 "height_feet": 5,
                 "height_inches": 10,
                 "weight": 165.0,
-                "motivation": ["Health", "Enjoyment"],
             }
         """
         # Use existing DAO to fetch profile
@@ -79,7 +78,6 @@ class DataCollectionService:
             "height_feet": profile_dict.get("height_feet"),
             "height_inches": profile_dict.get("height_inches"),
             "weight": profile_dict.get("weight"),
-            "motivation": profile_dict.get("motivation") or [],
         }
 
     @staticmethod
@@ -221,7 +219,8 @@ class DataCollectionService:
                             Activity.user_id == user_uuid,
                             Activity.type == activity_type,
                             Activity.start_date >= cutoff_date,
-                            Activity.start_date <= current_time,  # Filter out future dates
+                            Activity.start_date
+                            <= current_time,  # Filter out future dates
                         )
                     )
                     .order_by(Activity.start_date.desc())
@@ -256,7 +255,9 @@ class DataCollectionService:
                     )
 
             except Exception as e:
-                logger.error(f"Database error fetching activities for user {user_id}: {e}")
+                logger.error(
+                    f"Database error fetching activities for user {user_id}: {e}"
+                )
                 if view_error:
                     logger.error(f"Original view error: {view_error}")
                 raise RuntimeError("Failed to fetch activities from database") from e

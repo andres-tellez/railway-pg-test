@@ -1,9 +1,5 @@
 from typing import List, Optional, Union, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator, StrictInt
-from src.db.models.user_profile import (
-    Motivation,
-    TrainingDay,
-)
 
 
 class Height(BaseModel):
@@ -14,13 +10,10 @@ class Height(BaseModel):
 class UserProfileSchema(BaseModel):
     user_id: str
 
-    # Motivation
-    motivation: Optional[List[Motivation]] = None
-
     # Physical Stats
-    ageGroup: (
-        str  # Changed from enum to string to store user-friendly ranges like "30-39"
+    ageGroup: Optional[str] = (
+        None  # Changed from enum to string to store user-friendly ranges like "30-39"
     )
-    height: Height
-    weight: Optional[int]
+    height: Optional[Height] = None
+    weight: Optional[int] = None
     max_hr: Optional[int] = Field(None, ge=120, le=220)  # Max heart rate in bpm

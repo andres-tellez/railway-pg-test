@@ -64,7 +64,6 @@ class DataCollectionService:
                 "height_feet": 5,
                 "height_inches": 10,
                 "weight": 165.0,
-                "motivation": ["Health", "Enjoyment"],
             }
         """
         # Use existing DAO to fetch profile
@@ -79,7 +78,6 @@ class DataCollectionService:
             "height_feet": profile_dict.get("height_feet"),
             "height_inches": profile_dict.get("height_inches"),
             "weight": profile_dict.get("weight"),
-            "motivation": profile_dict.get("motivation") or [],
         }
 
     @staticmethod

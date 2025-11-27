@@ -4,7 +4,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
 import { AuthGuard } from "@/components/AuthGuard";
-import { AgeGroupLabels, DayLabels, Days, Motivations, MotivationLabels, AgeGroups } from "@/schemas/onboardingSchema";
+import { AgeGroupLabels, DayLabels, Days, AgeGroups } from "@/schemas/onboardingSchema";
 
 const UserProfile: React.FC = () => {
   const { isReady, userId } = useAuthSetup();
@@ -28,22 +28,22 @@ const UserProfile: React.FC = () => {
         const profileData = response.data?.data;
         console.log("Profile data:", profileData);
         if (!profileData) {
-          console.log("No profile found - redirecting to /onboarding");
-          // No profile exists - redirect to create profile
-          navigate("/onboarding", { replace: true });
-          return;
+          console.log("No profile found - showing empty form for new user");
+          // No profile exists - show empty form (new user)
+          setProfile({});
+        } else {
+          setProfile(profileData);
         }
-        setProfile(profileData);
       } catch (e: any) {
         console.error("Error fetching profile:", e);
         // Check if it's a 404 (no profile exists) vs other error
         if (e.response?.status === 404) {
-          console.log("404 - No profile found - redirecting to /onboarding");
-          navigate("/onboarding", { replace: true });
+          console.log("404 - No profile found - showing empty form for new user");
+          setProfile({});
         } else {
-          // Other error - don't redirect, just set profile to null
-          console.log("Error fetching profile, but not redirecting");
-          setProfile(null);
+          // Other error - show empty form
+          console.log("Error fetching profile - showing empty form");
+          setProfile({});
         }
       } finally {
         setLoading(false);
@@ -62,8 +62,10 @@ const UserProfile: React.FC = () => {
   }
 
   if (!profile) {
-    return null; // Will redirect
+    return null; // Loading
   }
+
+  const isNewUser = Object.keys(profile).length === 0 || !profile.age_group;
 
   const handleEditField = (field: string) => {
     setEditingField(field);
@@ -80,7 +82,6 @@ const UserProfile: React.FC = () => {
       payload.trainingDays = profile.training_days;
       payload.weight = profile.weight;
       payload.max_hr = profile.max_hr;
-      payload.motivation = profile.motivation;
       payload.height = {
         feet: profile.height_feet || 5,
         inches: profile.height_inches || 0,
@@ -98,8 +99,6 @@ const UserProfile: React.FC = () => {
         payload.trainingDays = value;
       } else if (field === "weight") {
         payload.weight = value;
-      } else if (field === "motivation") {
-        payload.motivation = value;
       } else if (field === "max_hr") {
         payload.max_hr = value;
       }
@@ -147,8 +146,8 @@ const UserProfile: React.FC = () => {
     <AuthGuard>
       <div className="max-w-2xl mx-auto mt-10 bg-white shadow-xl rounded-xl p-8 space-y-6 border">
         <div className="space-y-1 text-center">
-          <h1 className="text-3xl font-bold text-gray-800">My Profile</h1>
-          <p className="text-gray-500 text-sm">View and edit your profile information</p>
+          <h1 className="text-3xl font-bold text-gray-800">{isNewUser ? "Complete Your Profile" : "My Profile"}</h1>
+          <p className="text-gray-500 text-sm">{isNewUser ? "Tell us a bit about yourself to get started" : "View and edit your profile information"}</p>
         </div>
 
         {error && (
@@ -312,10 +311,13 @@ const InlineEditableField: React.FC<InlineEditableFieldProps> = ({
   };
 
   const renderDisplayValue = () => {
-    if (type === "height" && value && (value.height_feet || value.height_inches)) {
-      const feet = value.height_feet || 0;
-      const inches = value.height_inches || 0;
-      return `${feet}'${inches}"`;
+    if (type === "height") {
+      if (value && (value.height_feet || value.height_inches)) {
+        const feet = value.height_feet || 0;
+        const inches = value.height_inches || 0;
+        return `${feet}'${inches}"`;
+      }
+      return <span className="text-gray-400 italic">Not set</span>;
     }
     if (type === "number" && value !== null && value !== undefined) {
       return unit ? `${value} ${unit}` : value;
@@ -332,7 +334,11 @@ const InlineEditableField: React.FC<InlineEditableFieldProps> = ({
     if (!value && isRequired) {
       return <span className="text-orange-600 italic">Not specified</span>;
     }
-    return value || <span className="text-gray-400 italic">Not set</span>;
+    // Handle empty objects and falsy values
+    if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) {
+      return <span className="text-gray-400 italic">Not set</span>;
+    }
+    return value;
   };
 
   const renderEditField = () => {

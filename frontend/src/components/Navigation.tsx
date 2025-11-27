@@ -61,7 +61,7 @@ const Navigation: React.FC = () => {
 
   // Add navigation items based on user state
   // Don't show "Complete Profile" on setup or onboarding pages - they handle profile completion themselves
-  const isOnSetupOrOnboarding = location.pathname === '/setup' || location.pathname === '/onboarding';
+  const isOnSetupOrOnboarding = location.pathname === '/setup' || location.pathname === '/profile';
 
   if (userState) {
     if (userState.hasOnboarded) {
@@ -73,9 +73,9 @@ const Navigation: React.FC = () => {
         { label: 'Settings', path: '/settings', icon: '⚙️' }
       );
     } else if (userState.hasStrava && !isOnSetupOrOnboarding) {
-      // Has Strava but not onboarded - only show "Complete Profile" if not already on setup/onboarding pages
+      // Has Strava but not onboarded - only show "Complete Profile" if not already on setup/profile pages
       navItems.push(
-        { label: 'Complete Profile', path: '/onboarding', icon: '⚙️' }
+        { label: 'Complete Profile', path: '/profile', icon: '⚙️' }
       );
     }
     // New users without Strava - no navigation items (they're on setup page)

@@ -67,9 +67,9 @@ const SmartRouter: React.FC = () => {
           console.log('✅ User has onboarded, redirecting to /home');
           navigate('/home', { replace: true });
         } else if (hasStrava) {
-          // Has Strava but not onboarded - go to onboarding
-          console.log('⚙️ User has Strava but not onboarded, redirecting to /onboarding');
-          navigate('/onboarding', { replace: true });
+          // Has Strava but not onboarded - go to profile
+          console.log('⚙️ User has Strava but not onboarded, redirecting to /profile');
+          navigate('/profile', { replace: true });
         } else {
           // New user - go to setup
           console.log('🆕 New user, redirecting to /setup');

@@ -113,15 +113,6 @@ def ArrayType(base_type):
 # ---------------------------
 # Enumerations
 # ---------------------------
-class Motivation(str, enum.Enum):
-    Health = "Health"
-    Competition = "Competition"
-    StressRelief = "Stress relief"
-    Enjoyment = "Enjoyment"
-    WeightLoss = "Weight loss"
-    Other = "Other"
-
-
 class TrainingDay(str, enum.Enum):
     MON = "Mon"
     TUE = "Tue"

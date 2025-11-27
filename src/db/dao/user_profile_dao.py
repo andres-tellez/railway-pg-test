@@ -5,45 +5,6 @@ from src.db.models.user_profile import UserProfile
 from src.utils.normalize import normalize_postgres_row
 
 
-def _empty_list_to_none(val):
-    return val if val else None
-
-
-def _map_motivation_to_db_enum(human_readable_value: str) -> str:
-    """
-    Maps human-readable motivation values to PostgreSQL enum labels.
-
-    Database enum values: 'Health', 'Competition', 'StressRelief', 'Enjoyment', 'Other'
-    Frontend sends: 'Health', 'Stress relief', 'Competition', 'Enjoyment', 'Weight loss', 'Other'
-    """
-    mapping = {
-        "Health": "Health",
-        "Stress relief": "StressRelief",
-        "Competition": "Competition",
-        "Enjoyment": "Enjoyment",
-        "Weight loss": "Other",  # Map to Other since WeightLoss doesn't exist in DB enum
-        "Other": "Other",
-    }
-    return mapping.get(human_readable_value, "Other")
-
-
-def _map_db_enum_to_motivation(db_enum_value: str) -> str:
-    """
-    Maps PostgreSQL enum labels back to human-readable motivation values.
-
-    Database enum values: 'Health', 'Competition', 'StressRelief', 'Enjoyment', 'Other'
-    Frontend expects: 'Health', 'Stress relief', 'Competition', 'Enjoyment', 'Weight loss', 'Other'
-    """
-    mapping = {
-        "Health": "Health",
-        "StressRelief": "Stress relief",
-        "Competition": "Competition",
-        "Enjoyment": "Enjoyment",
-        "Other": "Other",
-    }
-    return mapping.get(db_enum_value, "Other")
-
-
 def save_user_profile(session: Session, profile_data: dict):
     """
     Inserts or updates a user profile record in the database.

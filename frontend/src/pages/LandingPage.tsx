@@ -27,7 +27,7 @@ const SetupPage: React.FC = () => {
 
   // Memoize navigation callback to prevent recreation on every render
   const handleNavigateToOnboarding = useCallback(() => {
-    navigate("/onboarding");
+    navigate("/profile");
   }, [navigate]);
 
   // Memoize feature cards data to prevent recreation
