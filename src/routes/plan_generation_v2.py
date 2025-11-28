@@ -24,7 +24,7 @@ def run_v2_plan_generation(
     user_id: str,
     plan_request: Dict[str, Any],
     activity_weeks: int = 12,
-    mode: str = "rolling",  # Only add details to week 1
+    mode: str = "prefill",  # Default to detailing every week
 ) -> Dict[str, Any]:
     """
     Execute the v2 LR-first deterministic pipeline and return the validation payload.

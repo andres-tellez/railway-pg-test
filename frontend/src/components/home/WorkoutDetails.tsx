@@ -35,6 +35,7 @@ interface WorkoutDetailsProps {
   isCompleted: boolean;
   isRestDay: boolean;
   hasPlan?: boolean;
+  planStartDate?: string | null;
   nextWorkoutDay?: {
     date: Date;
     workout: Workout;
@@ -49,8 +50,11 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
   isCompleted,
   isRestDay,
   hasPlan = true,
+  planStartDate,
   nextWorkoutDay,
 }) => {
+  // Check if this date is before the plan starts
+  const isBeforePlanStart = planStartDate && dateStr < planStartDate;
   // Helper to extract just the HR zone (Z1, Z2, etc.) from target_hr
   // Note: target_zone contains pace, not HR zone
   const extractHRZone = (target_hr?: string): string => {
@@ -68,7 +72,64 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
 
     return "";
   };
-  // Only show rest day messaging when there's a plan
+  // If date is before plan starts, show simple activity card without comparison grid
+  if (isBeforePlanStart && activity && activity.distance_miles > 0) {
+    const paceDisplay = activity.moving_time && activity.distance_miles > 0
+      ? (() => {
+          const secondsPerMile = activity.moving_time / activity.distance_miles;
+          const minutes = Math.floor(secondsPerMile / 60);
+          const seconds = Math.floor(secondsPerMile % 60);
+          return `${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
+        })()
+      : null;
+
+    return (
+      <div>
+        <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
+          {format(date, 'EEEE, MMMM d')}
+        </h3>
+
+        <div className="mb-4">
+          <div className="text-lg font-semibold text-gray-900 mb-2">
+            {activity.name || 'Run'}
+          </div>
+          <div className="text-2xl font-bold text-gray-900 mb-1">
+            {activity.distance_miles.toFixed(1)} miles
+          </div>
+          {paceDisplay && (
+            <div className="text-sm text-gray-600">
+              Pace: {paceDisplay}
+            </div>
+          )}
+        </div>
+
+        <a
+          href={`https://www.strava.com/activities/${activity.activity_id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={WEEK_TIMELINE_STYLES.link}
+        >
+          View activity on Strava →
+        </a>
+      </div>
+    );
+  }
+
+  // If date is before plan starts and no activity, show simple message
+  if (isBeforePlanStart) {
+    return (
+      <div>
+        <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
+          {format(date, 'EEEE, MMMM d')}
+        </h3>
+        <p className={WEEK_TIMELINE_STYLES.detailsText + ' mb-4 text-base'}>
+          No activity recorded for this day.
+        </p>
+      </div>
+    );
+  }
+
+  // Only show rest day messaging when there's a plan and date is not before plan start
   if (isRestDay && hasPlan) {
     // If there's an activity on a rest day, show it
     if (isCompleted && activity) {

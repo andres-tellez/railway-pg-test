@@ -50,6 +50,7 @@ const HomeScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [hasPlan, setHasPlan] = useState<boolean>(true);
   const [allActivities, setAllActivities] = useState<Activity[]>([]);
+  const [planStartDate, setPlanStartDate] = useState<string | null>(null);
 
   // Track the current week being viewed (starts with this week)
   const [currentWeekStart, setCurrentWeekStart] = useState<string>(() => {
@@ -75,6 +76,10 @@ const HomeScreen: React.FC = () => {
         try {
           const planRes = await api.get('/api/plan/current');
           const allWorkouts = planRes.data.workouts || [];
+          // Store plan start date
+          if (planRes.data.start_date) {
+            setPlanStartDate(planRes.data.start_date);
+          }
           // Filter workouts for the current week being viewed
           workouts = allWorkouts.filter((w: Workout) => {
             const workoutDate = toDateString(w.date);
@@ -88,11 +93,13 @@ const HomeScreen: React.FC = () => {
           if (planError.response?.status === 404) {
             planExists = false;
             setHasPlan(false);
+            setPlanStartDate(null);
             workouts = [];
           } else {
             // Other error - log it but continue
             console.error('Error fetching plan:', planError);
             setHasPlan(false);
+            setPlanStartDate(null);
             workouts = [];
           }
         }
@@ -265,15 +272,6 @@ const HomeScreen: React.FC = () => {
               </button>
             </div>
 
-            {/* Next Week Message */}
-            {isViewingNextWeek && !nextWeekDetailsAvailable && hasPlan && (
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <p className="text-sm text-blue-800">
-                  <strong>Next week's workout details will be available Sunday evening</strong> after your weekly plan update. You can scroll back to view how you did against your plan.
-                </p>
-              </div>
-            )}
-
             {/* Past Week Message */}
             {isViewingPastWeek && hasPlan && (
               <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
@@ -321,6 +319,7 @@ const HomeScreen: React.FC = () => {
                 isCompleted={selectedDay.isCompleted}
                 isRestDay={selectedDay.isRestDay}
                 hasPlan={hasPlan}
+                planStartDate={planStartDate}
                 nextWorkoutDay={nextWorkoutDay ? {
                   date: nextWorkoutDay.date,
                   workout: nextWorkoutDay.workout!,

@@ -113,7 +113,7 @@ class PlanGenerationOrchestratorV2:
     def generate_longrun_first(
         self,
         runner_ctx: Dict[str, Any],
-        mode: str = "rolling",  # Only add details to week 1
+        mode: str = "prefill",  # Default: detail every week
         week_logs: Optional[Dict[int, List]] = None,
     ) -> Dict[str, Any]:
         """
