@@ -34,6 +34,7 @@ interface WorkoutDetailsProps {
   activity?: Activity;
   isCompleted: boolean;
   isRestDay: boolean;
+  hasPlan?: boolean;
   nextWorkoutDay?: {
     date: Date;
     workout: Workout;
@@ -47,6 +48,7 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
   activity,
   isCompleted,
   isRestDay,
+  hasPlan = true,
   nextWorkoutDay,
 }) => {
   // Helper to extract just the HR zone (Z1, Z2, etc.) from target_hr
@@ -66,7 +68,8 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
 
     return "";
   };
-  if (isRestDay) {
+  // Only show rest day messaging when there's a plan
+  if (isRestDay && hasPlan) {
     // If there's an activity on a rest day, show it
     if (isCompleted && activity) {
       return (
@@ -140,12 +143,103 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
   }
 
   if (!workout) {
+    // If there's an activity but no workout, show the activity details
+    if (activity && activity.distance_miles > 0) {
+      const paceDisplay = activity.moving_time && activity.distance_miles > 0
+        ? (() => {
+            const secondsPerMile = activity.moving_time / activity.distance_miles;
+            const minutes = Math.floor(secondsPerMile / 60);
+            const seconds = Math.floor(secondsPerMile % 60);
+            return `${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
+          })()
+        : null;
+
+      // Different layout and messaging for no-plan vs plan-without-workout
+      if (!hasPlan) {
+        // No plan scenario - simple, clean activity display
+        return (
+          <div>
+            <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
+              {format(date, 'EEEE, MMMM d')}
+            </h3>
+
+            <div className="mb-4">
+              <div className="text-lg font-semibold text-gray-900 mb-2">
+                {activity.name || 'Run'}
+              </div>
+              <div className="text-2xl font-bold text-gray-900 mb-1">
+                {activity.distance_miles.toFixed(1)} miles
+              </div>
+              {paceDisplay && (
+                <div className="text-sm text-gray-600">
+                  Pace: {paceDisplay}
+                </div>
+              )}
+            </div>
+
+            {/* Strava link */}
+            <a
+              href={`https://www.strava.com/activities/${activity.activity_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={WEEK_TIMELINE_STYLES.link}
+            >
+              View activity on Strava →
+            </a>
+          </div>
+        );
+      } else {
+        // Plan exists but no workout this day - use comparison layout
+        return (
+          <div>
+            <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
+              {format(date, 'EEEE, MMMM d')}
+            </h3>
+            <p className={WEEK_TIMELINE_STYLES.detailsText + ' mb-4 text-base'}>
+              No workout planned for this day, but you completed an activity.
+            </p>
+
+            {/* Show activity details */}
+            <div className={WEEK_TIMELINE_STYLES.comparisonGrid}>
+              <div className={WEEK_TIMELINE_STYLES.comparisonColumn}>
+                <div className={WEEK_TIMELINE_STYLES.comparisonHeader}>Activity</div>
+                <div className={WEEK_TIMELINE_STYLES.comparisonValue}>
+                  {activity.distance_miles.toFixed(1)} miles
+                </div>
+                <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
+                  {paceDisplay ? `Pace: ${paceDisplay}` : 'Pace: N/A'}
+                </div>
+                {activity.name && (
+                  <div className="text-sm text-gray-600 mt-2">
+                    {activity.name}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Strava link */}
+            <a
+              href={`https://www.strava.com/activities/${activity.activity_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={WEEK_TIMELINE_STYLES.link}
+            >
+              View activity on Strava →
+            </a>
+          </div>
+        );
+      }
+    }
+
+    // No workout and no activity
     return (
       <div>
         <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
           {format(date, 'EEEE, MMMM d')}
         </h3>
-        <p className={WEEK_TIMELINE_STYLES.detailsText}>No workout planned for this day.</p>
+        <p className={WEEK_TIMELINE_STYLES.detailsText}>
+          {hasPlan ? 'No workout planned for this day.' : 'No activity recorded for this day.'}
+        </p>
       </div>
     );
   }

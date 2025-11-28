@@ -309,93 +309,9 @@ const HomeScreen: React.FC = () => {
             )}
           </div>
 
-          {/* Activity Summary - No Plan */}
-          {!hasPlan && (() => {
-            // Calculate stats from activities - SIMPLE string comparisons
-            const { weekStart: thisWeekStart } = weekRange;
-            const today = toDateString(new Date());
 
-            // Calculate 30 days ago as date string
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            const thirtyDaysAgoStr = toDateString(thirtyDaysAgo);
-
-            const thisWeekActivities = allActivities.filter((act: Activity) => {
-              const actDate = toDateString(act.date);
-              return actDate >= thisWeekStart;
-            });
-
-            const last30DaysActivities = allActivities.filter((act: Activity) => {
-              const actDate = toDateString(act.date);
-              return actDate >= thirtyDaysAgoStr;
-            });
-
-            const thisWeekMiles = thisWeekActivities.reduce((sum, act) => sum + (act.distance_miles || 0), 0);
-            const last30DaysMiles = last30DaysActivities.reduce((sum, act) => sum + (act.distance_miles || 0), 0);
-
-            // Sort by date string (YYYY-MM-DD format sorts correctly)
-            const lastRun = allActivities
-              .filter((act: Activity) => act.type === 'Run')
-              .sort((a, b) => toDateString(b.date).localeCompare(toDateString(a.date)))[0];
-
-            return (
-              <div className={WEEK_TIMELINE_STYLES.emptyStateSection}>
-                <h3 className={WEEK_TIMELINE_STYLES.emptyStateTitle}>
-                  Your Recent Activity
-                </h3>
-
-                <div className={WEEK_TIMELINE_STYLES.activitySummaryStats}>
-                  <div className={WEEK_TIMELINE_STYLES.activitySummaryStat}>
-                    <div className={WEEK_TIMELINE_STYLES.activitySummaryStatLabel}>This Week</div>
-                    <div className={WEEK_TIMELINE_STYLES.activitySummaryStatValue}>
-                      {thisWeekActivities.length} {thisWeekActivities.length === 1 ? 'run' : 'runs'}
-                    </div>
-                    <div className="text-xs text-gray-600 mt-1">
-                      {thisWeekMiles.toFixed(1)} miles
-                    </div>
-                  </div>
-
-                  <div className={WEEK_TIMELINE_STYLES.activitySummaryStat}>
-                    <div className={WEEK_TIMELINE_STYLES.activitySummaryStatLabel}>Last 30 Days</div>
-                    <div className={WEEK_TIMELINE_STYLES.activitySummaryStatValue}>
-                      {last30DaysActivities.length} {last30DaysActivities.length === 1 ? 'run' : 'runs'}
-                    </div>
-                    <div className="text-xs text-gray-600 mt-1">
-                      {last30DaysMiles.toFixed(1)} miles
-                    </div>
-                  </div>
-                </div>
-
-                {lastRun && (
-                  <div className={WEEK_TIMELINE_STYLES.recentActivityItem}>
-                    <div className={WEEK_TIMELINE_STYLES.recentActivityName}>
-                      {lastRun.name || 'Run'}
-                    </div>
-                    <div className={WEEK_TIMELINE_STYLES.recentActivityDetails}>
-                      {format(dateStringToDate(toDateString(lastRun.date)), 'MMM d')} • {lastRun.distance_miles.toFixed(1)} miles
-                    </div>
-                  </div>
-                )}
-
-                <div className={WEEK_TIMELINE_STYLES.activitySummaryLinks}>
-                  <Link to="/metrics" className={WEEK_TIMELINE_STYLES.activitySummaryLink}>
-                    View Metrics →
-                  </Link>
-                  <Link to="/ask" className={WEEK_TIMELINE_STYLES.activitySummaryLink}>
-                    Ask Coach →
-                  </Link>
-                  {allActivities.length === 0 && (
-                    <Link to="/plan/new" className={WEEK_TIMELINE_STYLES.activitySummaryLink}>
-                      Create Training Plan →
-                    </Link>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* Details Panel - Only show if plan exists */}
-          {hasPlan && selectedDay && (
+          {/* Details Panel - Show for both plan and no-plan scenarios */}
+          {selectedDay && (
             <div className={WEEK_TIMELINE_STYLES.detailsPanel}>
               <WorkoutDetails
                 date={selectedDay.date}
@@ -404,6 +320,7 @@ const HomeScreen: React.FC = () => {
                 activity={selectedDay.activity}
                 isCompleted={selectedDay.isCompleted}
                 isRestDay={selectedDay.isRestDay}
+                hasPlan={hasPlan}
                 nextWorkoutDay={nextWorkoutDay ? {
                   date: nextWorkoutDay.date,
                   workout: nextWorkoutDay.workout!,
