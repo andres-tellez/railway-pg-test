@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, TypedDict
 import logging
+
 # Removed Session import - no longer needed (receives data as parameters)
 
 # Removed imports: DataCollectionServiceV2, InsightsCalculationServiceV2
@@ -145,7 +146,7 @@ class Pass1LongRunFirstV2:
         recommended_weeks: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Compute long-run progression and recommended duration.
-        
+
         NOTE: This function uses materialized view for data (same as metrics page).
 
         Args:
@@ -236,10 +237,30 @@ class Pass1LongRunFirstV2:
                 trusted_start,
             )
 
-        start_rule_miles = trusted_start
         # Use config values for taper and peak
         target_peak_miles = self.config.target_peak_miles
         cfg = _build_lr_config(self.config)
+
+        # CRITICAL: Cap starting long run if user's fitness exceeds race-specific peak
+        # Example: User with 16mi LR doing half-marathon (peak=12mi) should start ~10-11mi, not 17mi
+        if trusted_start > target_peak_miles:
+            # User's current fitness exceeds race-specific peak
+            # Start at peak - 1 or peak - 2 to allow some progression
+            # For half-marathon: if peak=12 and user has 16mi, start at 10-11mi
+            capped_start = max(
+                target_peak_miles - 2.0,  # Allow 2-mile progression to peak
+                self.config.min_long_run_miles,  # Never below absolute minimum
+            )
+            original_start = trusted_start
+            trusted_start = round_to_half(capped_start)
+            start_rule = f"{start_rule} (capped from {original_start:.1f} to {trusted_start:.1f} for race peak {target_peak_miles:.1f}mi)"
+            logger.info(
+                f"🔄 Capping starting long run: User's fitness ({original_start:.1f}mi) exceeds "
+                f"race-specific peak ({target_peak_miles:.1f}mi). Starting at {trusted_start:.1f}mi "
+                f"to allow progression to peak."
+            )
+
+        start_rule_miles = trusted_start
 
         # Use readiness-based recommended weeks if provided, otherwise use dynamic length mode
         # recommended_weeks comes from Pass1WeeksSelector based on user's weekly mileage

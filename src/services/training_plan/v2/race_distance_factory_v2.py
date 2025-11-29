@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 
 from .race_configs.base_config import RaceDistanceConfig
 from .race_configs.marathon_config import MarathonConfig
+from .race_configs.half_marathon_config import HalfMarathonConfig
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,26 @@ def _is_half_marathon(race_distance: str) -> bool:
     return "half" in race_lower or "13.1" in race_lower
 
 
+def get_race_type_key(race_distance: str) -> str:
+    """
+    Convert normalized race distance to template key for WEEKLY_TEMPLATES lookup.
+
+    Args:
+        race_distance: Normalized race distance ("Marathon", "Half Marathon")
+
+    Returns:
+        Template key ("marathon", "half", etc.) used in WEEKLY_TEMPLATES dictionary
+    """
+    if not race_distance:
+        return "marathon"
+
+    race_lower = race_distance.lower()
+    if "half" in race_lower or "13.1" in race_lower:
+        return "half"
+    else:
+        return "marathon"
+
+
 def get_race_config(race_distance: str) -> RaceDistanceConfig:
     """
     Get race-distance-specific configuration.
@@ -42,8 +63,7 @@ def get_race_config(race_distance: str) -> RaceDistanceConfig:
     """
     if _is_half_marathon(race_distance):
         logger.info("Using half-marathon configuration")
-        # TODO: Implement HalfMarathonConfig when ready
-        raise NotImplementedError("Half marathon config not yet implemented")
+        return HalfMarathonConfig()
     else:
         logger.info("Using marathon configuration (default)")
         return MarathonConfig()
@@ -72,11 +92,19 @@ def normalize_race_distance(race_distance: str) -> str:
 
 def get_race_distance_services(race_distance: str) -> Dict[str, Any]:
     """
-    Return race-distance-specific services (currently config + normalized label).
+    Return race-distance-specific services (config + normalized label + template key).
+
+    Returns:
+        Dictionary containing:
+        - "race_config": RaceDistanceConfig instance
+        - "race_distance": Normalized race distance ("Marathon", "Half Marathon")
+        - "race_type": Template key ("marathon", "half") for WEEKLY_TEMPLATES lookup
     """
     normalized = normalize_race_distance(race_distance)
     config = get_race_config(race_distance)
+    race_type_key = get_race_type_key(normalized)
     return {
         "race_config": config,
         "race_distance": normalized,
+        "race_type": race_type_key,
     }

@@ -469,7 +469,7 @@ def create_plan_route():
                 user_id=str(user_id),
                 plan_request=plan_dict,
                 activity_weeks=activity_weeks,
-                mode="prefill",
+                mode="rolling",  # Only Week 1 gets details; weeks 2+ are basic workout types
             )
 
             if not result.get("valid") or not result.get("validated_plan"):
@@ -566,7 +566,7 @@ def create_plan_draft_route():
                 user_id=str(user_id),
                 plan_request=plan_request,
                 activity_weeks=activity_weeks,
-                mode="prefill",  # Generate full-detail drafts
+                mode="rolling",  # Only Week 1 gets details; weeks 2+ are basic workout types
             )
             draft_payload = build_standard_draft_payload(
                 validation_result=result, timezone=user_timezone

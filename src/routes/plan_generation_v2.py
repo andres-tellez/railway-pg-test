@@ -39,8 +39,12 @@ def run_v2_plan_generation(
 
     services = get_race_distance_services(race_label)
     config = services["race_config"]
+    race_type = services["race_type"]  # Extract race_type for template lookup
 
-    orchestrator = PlanGenerationOrchestratorV2(config=config)
+    orchestrator = PlanGenerationOrchestratorV2(
+        config=config,
+        race_type=race_type,  # Pass race_type so Step 6 uses correct templates
+    )
     runner_ctx = {
         "session": session,
         "user_id": str(user_id),
