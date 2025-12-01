@@ -279,7 +279,9 @@ export default function App() {
         path="/plan/:id"
         element={
           <Layout>
-            <PlanPage />
+            <PlanLayout>
+              <PlanPage />
+            </PlanLayout>
           </Layout>
         }
       />

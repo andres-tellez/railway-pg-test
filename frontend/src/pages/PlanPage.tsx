@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useApiClient } from "../utils/apiClient";
 import { useAuthSetup } from "../hooks/useAuthSetup";
 import { AuthGuard } from "../components/AuthGuard";
@@ -29,6 +29,7 @@ type Plan = {
 
 export default function PlanPage() {
   const { id } = useParams(); // plan id from URL
+  const navigate = useNavigate();
   const { isReady, userId } = useAuthSetup(); // ✅ Centralized auth (AuthGuard handles the rest)
   const api = useApiClient();
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -76,11 +77,21 @@ export default function PlanPage() {
   return (
     <AuthGuard>
       <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-2">{plan.plan_name}</h1>
-      <p className="mb-4 text-gray-700">{plan.notes}</p>
-      <p className="mb-6">
-        <strong>Race:</strong> {plan.race_distance} on {plan.race_date}
-      </p>
+      <div className="flex items-start justify-between mb-4">
+        <div>
+          <h1 className="text-2xl font-bold mb-2">{plan.plan_name}</h1>
+          <p className="mb-4 text-gray-700">{plan.notes}</p>
+          <p className="mb-6">
+            <strong>Race:</strong> {plan.race_distance} on {plan.race_date}
+          </p>
+        </div>
+        <button
+          onClick={() => navigate("/plan/overview")}
+          className="px-4 py-2 text-sm font-medium text-blue-600 border border-blue-600 rounded-lg hover:bg-blue-50 transition-colors ml-4 whitespace-nowrap"
+        >
+          📊 View as Table
+        </button>
+      </div>
 
       {weekKeys.map((week, weekIdx) => (
         <div key={week} className="mb-8">
