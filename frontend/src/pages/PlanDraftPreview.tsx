@@ -361,7 +361,21 @@ export default function PlanDraftPreview() {
                           </td>
                         ))}
                         <td className="py-2 px-3 text-center border border-slate-200 tabular-nums font-semibold text-slate-800">
-                          {typeof w?.weekly_mileage === 'number' ? w.weekly_mileage : <span className="text-slate-300">—</span>}
+                          {(() => {
+                            // Calculate actual total from workout miles (matches what's displayed in daily columns)
+                            let actualTotal = 0;
+                            if (w?.workouts && Array.isArray(w.workouts)) {
+                              actualTotal = w.workouts.reduce((sum: number, workout: any) => {
+                                const miles = workout.distance_miles || workout.miles || 0;
+                                return sum + (typeof miles === 'number' ? miles : 0);
+                              }, 0);
+                            }
+                            // Use calculated total if available, otherwise fallback to weekly_mileage
+                            const displayTotal = actualTotal > 0 ? actualTotal : (w?.weekly_mileage || 0);
+                            return typeof displayTotal === 'number' && displayTotal > 0
+                              ? Math.round(displayTotal)
+                              : <span className="text-slate-300">—</span>;
+                          })()}
                         </td>
                       </tr>
                     );

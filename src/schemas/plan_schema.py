@@ -44,6 +44,12 @@ class PlanCreateSchema(BaseModel):
         ..., min_length=1, description="Days of week to train"
     )
 
+    # Long run day (optional) - must be one of the selected training days
+    long_run_day: Optional[str] = Field(
+        None,
+        description="Preferred day for long runs (must be in training_days)",
+    )
+
     # User context (optional but recommended)
     notes: Optional[str] = Field(
         None, description="Additional notes for plan generation"
@@ -54,10 +60,17 @@ class PlanCreateSchema(BaseModel):
     )
 
     def model_post_init(self, __context):
-        """Validate target_time requirement based on primary_goal."""
+        """Validate target_time requirement and long_run_day consistency."""
         if self.primary_goal == PrimaryGoal.TARGET_TIME and not self.target_time:
             raise ValueError(
                 "target_time is required when primary_goal is 'Target Time'"
+            )
+
+        # Validate long_run_day is in training_days
+        if self.long_run_day and self.long_run_day not in self.training_days:
+            raise ValueError(
+                f"long_run_day '{self.long_run_day}' must be one of the selected "
+                f"training_days: {self.training_days}"
             )
 
     @field_validator("training_days")
@@ -71,6 +84,22 @@ class PlanCreateSchema(BaseModel):
                 raise ValueError(
                     f"Invalid training day: {day}. Must be one of: {valid_days}"
                 )
+        return v
+
+    @field_validator("long_run_day")
+    @classmethod
+    def validate_long_run_day(cls, v: Optional[str], info) -> Optional[str]:
+        """Validate that long_run_day is a valid day abbreviation."""
+        if v is None:
+            return v
+
+        # Check if it's a valid day abbreviation
+        if v not in DAY_NAMES_ABBREV:
+            raise ValueError(
+                f"Invalid long_run_day: {v}. Must be one of: {DAY_NAMES_ABBREV}"
+            )
+
+        # Cross-field validation (checking if in training_days) is done in model_post_init
         return v
 
     class Config:

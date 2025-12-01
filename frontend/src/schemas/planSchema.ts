@@ -32,6 +32,9 @@ export const planSchema = z.object({
     .min(3, "Please select at least 3 training days")
     .max(5, "Please select no more than 5 training days"),
 
+  // Long run day (optional) - must be one of the selected training days
+  long_run_day: z.string().optional(),
+
   // Additional notes (optional)
   notes: z.string().optional(),
   user_timezone: z.string().optional(),
@@ -44,6 +47,15 @@ export const planSchema = z.object({
 }, {
   message: "Target time is required when selecting 'Target Time' as your goal",
   path: ["target_time"]
+}).refine((data) => {
+  // If long_run_day is specified, it must be in training_days
+  if (data.long_run_day && !data.training_days.includes(data.long_run_day)) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Long run day must be one of your selected training days",
+  path: ["long_run_day"]
 });
 
 export type PlanFormData = z.infer<typeof planSchema>;

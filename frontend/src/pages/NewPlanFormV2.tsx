@@ -554,6 +554,36 @@ const NewPlanFormV2: React.FC = () => {
                     </p>
                   )}
                 </div>
+
+                {/* Long Run Day Selection */}
+                <div className="mt-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Long Run Day <span className="text-gray-400">(optional - defaults to Saturday or Sunday)</span>
+                  </label>
+                  <select
+                    {...methods.register("long_run_day")}
+                    className="w-full md:w-1/3 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    disabled={!isDaysValid || daysCount === 0}
+                  >
+                    <option value="">Auto-select (Saturday/Sunday)</option>
+                    {methods.watch("training_days")?.map((day) => {
+                      const dayOption = trainingDaysOptions.find(opt => opt.value === day);
+                      return (
+                        <option key={day} value={day}>
+                          {dayOption?.label || day}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Select which day of the week you want your long runs. If not specified, defaults to Saturday if available, otherwise Sunday.
+                  </p>
+                  {methods.formState.errors.long_run_day && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {methods.formState.errors.long_run_day.message}
+                    </p>
+                  )}
+                </div>
               </div>
 
               <div>

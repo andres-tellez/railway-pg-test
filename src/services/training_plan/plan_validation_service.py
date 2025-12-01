@@ -173,11 +173,13 @@ class PlanValidationService:
             workouts_for_sum = week.get("workouts", [])
             if isinstance(workouts_for_sum, list) and workouts_for_sum:
                 try:
-                    total = sum(
-                        float(w.get("distance_miles", w.get("miles", 0)) or 0)
-                        for w in workouts_for_sum
+                    from src.services.training_plan.workout_utils import (
+                        calculate_weekly_mileage_from_workouts,
                     )
-                    week["weekly_mileage"] = round(total, 1)
+
+                    week["weekly_mileage"] = calculate_weekly_mileage_from_workouts(
+                        workouts_for_sum
+                    )
                 except Exception:
                     violations.append(
                         {

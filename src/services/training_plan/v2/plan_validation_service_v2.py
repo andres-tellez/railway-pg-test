@@ -189,11 +189,13 @@ class PlanValidationServiceV2:
             workouts_for_sum = week.get("workouts", [])
             if isinstance(workouts_for_sum, list) and workouts_for_sum:
                 try:
-                    total = sum(
-                        float(w.get("distance_miles", w.get("miles", 0)) or 0)
-                        for w in workouts_for_sum
+                    from src.services.training_plan.workout_utils import (
+                        calculate_weekly_mileage_from_workouts,
                     )
-                    week["weekly_mileage"] = round(total, 1)
+
+                    week["weekly_mileage"] = calculate_weekly_mileage_from_workouts(
+                        workouts_for_sum
+                    )
                 except Exception:
                     violations.append(
                         {
@@ -300,7 +302,7 @@ class PlanValidationServiceV2:
             # FALLBACK: Detect cutback by mileage pattern (for legacy plans)
             is_after_cutback = prev_week.get("is_cutback", False)
             baseline_mileage = prev_mileage
-            
+
             # Fallback detection if flag not present
             if not is_after_cutback and i >= 2:
                 week_before_prev = sorted_weeks[i - 2]
@@ -311,12 +313,15 @@ class PlanValidationServiceV2:
                 ):
                     if prev_mileage <= week_before_prev_mileage * 0.8:
                         is_after_cutback = True
-            
+
             # Use pre-cutback baseline for rebound comparison
             if is_after_cutback and i >= 2:
                 week_before_prev = sorted_weeks[i - 2]
                 week_before_prev_mileage = week_before_prev.get("weekly_mileage")
-                if isinstance(week_before_prev_mileage, (int, float)) and week_before_prev_mileage > 0:
+                if (
+                    isinstance(week_before_prev_mileage, (int, float))
+                    and week_before_prev_mileage > 0
+                ):
                     baseline_mileage = week_before_prev_mileage
 
             # Calculate percentage increase vs baseline (prev week or pre-cutback week)
@@ -344,7 +349,7 @@ class PlanValidationServiceV2:
         self, weeks: List[Dict[str, Any]]
     ) -> List[Dict[str, str]]:
         """Validate that at least one cutback week exists.
-        
+
         PRIMARY: Uses is_cutback flag from spine (authoritative truth)
         FALLBACK: Detects cutback by mileage pattern (for legacy plans)
         """
@@ -357,7 +362,7 @@ class PlanValidationServiceV2:
 
         # PRIMARY: Check for is_cutback flag (authoritative from spine)
         has_cutback = any(w.get("is_cutback", False) for w in sorted_weeks)
-        
+
         # FALLBACK: Detect by mileage pattern if no flags found
         if not has_cutback:
             for i in range(1, len(sorted_weeks) - self.TAPER_WEEKS):
@@ -417,12 +422,18 @@ class PlanValidationServiceV2:
 
             if prev_long_run is not None and prev_long_run > 0:
                 baseline = prev_long_run
-                
+
                 # PRIMARY: Use is_cutback flag from spine (authoritative truth)
                 # FALLBACK: Detect cutback by mileage pattern
-                prev_week = sorted_weeks[sorted_weeks.index(week) - 1] if sorted_weeks.index(week) > 0 else None
-                is_cutback_rebound = prev_week.get("is_cutback", False) if prev_week else False
-                
+                prev_week = (
+                    sorted_weeks[sorted_weeks.index(week) - 1]
+                    if sorted_weeks.index(week) > 0
+                    else None
+                )
+                is_cutback_rebound = (
+                    prev_week.get("is_cutback", False) if prev_week else False
+                )
+
                 # Fallback detection if flag not present
                 if not is_cutback_rebound and (
                     long_run_two_back is not None
@@ -430,9 +441,13 @@ class PlanValidationServiceV2:
                     and prev_long_run <= long_run_two_back * 0.8
                 ):
                     is_cutback_rebound = True
-                
+
                 # Use pre-cutback baseline for rebound comparison
-                if is_cutback_rebound and long_run_two_back is not None and long_run_two_back > 0:
+                if (
+                    is_cutback_rebound
+                    and long_run_two_back is not None
+                    and long_run_two_back > 0
+                ):
                     baseline = long_run_two_back
 
                 increase = curr_long_run - baseline
@@ -513,7 +528,8 @@ class PlanValidationServiceV2:
         """Validate long run proportion and cap (config-based)."""
         violations: List[Dict[str, str]] = []
         phase_share_caps = {
-            str(k).lower(): v for k, v in getattr(self.config, "max_long_run_share_by_phase", {}).items()
+            str(k).lower(): v
+            for k, v in getattr(self.config, "max_long_run_share_by_phase", {}).items()
         }
         week_long_runs: Dict[int, float] = {}
         phase_by_week: Dict[int, str] = {}
@@ -597,9 +613,7 @@ class PlanValidationServiceV2:
                         )
         # Dynamic check for final taper long run ratio
         taper_weeks = [
-            wn
-            for wn, phase in phase_by_week.items()
-            if phase.lower() == "taper"
+            wn for wn, phase in phase_by_week.items() if phase.lower() == "taper"
         ]
         if taper_weeks:
             final_week_num = max(taper_weeks)

@@ -31,13 +31,16 @@ from typing import Any, Dict, List
 import logging
 
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
+from src.services.training_plan.workout_utils import (
+    calculate_weekly_mileage_from_workouts,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class Pass3WorkoutDistribution:
     """Pass 3 (Step 6) - Distribute workouts across training days.
-    
+
     Uses the WorkoutPlacementEngine from workout_taxonomy for phase-aware,
     template-based workout distribution.
     """
@@ -50,7 +53,7 @@ class Pass3WorkoutDistribution:
         use_new_engine: bool = True,  # Kept for compatibility, always True now
     ):
         """Initialize Pass 3 workout distribution calculator.
-        
+
         Args:
             config: Race distance configuration
             race_type: Race type for template lookup ("marathon", "half", etc.)
@@ -60,11 +63,12 @@ class Pass3WorkoutDistribution:
         self.config = config
         self.race_type = race_type
         self.scenario = scenario
-        
+
         # Initialize placement engine from workout_taxonomy
         from src.services.training_plan.v2.workout_taxonomy import (
             WorkoutPlacementEngine,
         )
+
         self.placement_engine = WorkoutPlacementEngine(
             race_type=race_type,
             scenario=scenario,
@@ -75,6 +79,7 @@ class Pass3WorkoutDistribution:
         skel_long: List[Dict[str, Any]],
         training_days: List[str],
         total_weeks: int = None,
+        long_run_day: str = None,
     ) -> Dict[str, Any]:
         """Distribute workouts across training days for each week.
 
@@ -82,6 +87,7 @@ class Pass3WorkoutDistribution:
             skel_long: List of weeks with week_number, phase, long_run_miles, weekly_mileage
             training_days: List of training days (e.g., ["Mon", "Wed", "Thu", "Sat"])
             total_weeks: Total weeks in plan (for calculating weeks_until_race)
+            long_run_day: Preferred day for long runs (if None, auto-selects)
 
         Returns:
             Dict with "weeks" list containing workout distributions
@@ -100,14 +106,23 @@ class Pass3WorkoutDistribution:
             runs_per_week = 4
             training_days = DEFAULT_TRAINING_DAYS
 
-        # Determine long run day (prefer Sat, then Sun, else last day)
-        long_run_day = None
-        if DAY_NAMES_ABBREV[5] in training_days:  # Saturday
-            long_run_day = DAY_NAMES_ABBREV[5]
-        elif DAY_NAMES_ABBREV[6] in training_days:  # Sunday
-            long_run_day = DAY_NAMES_ABBREV[6]
-        else:
-            long_run_day = training_days[-1]  # Default to last day
+        # Determine long run day (use provided, or auto-select)
+        if long_run_day is None:
+            # Auto-select (prefer Sat, then Sun, else last day)
+            if DAY_NAMES_ABBREV[5] in training_days:  # Saturday
+                long_run_day = DAY_NAMES_ABBREV[5]
+            elif DAY_NAMES_ABBREV[6] in training_days:  # Sunday
+                long_run_day = DAY_NAMES_ABBREV[6]
+            else:
+                long_run_day = training_days[-1]  # Default to last day
+
+        # Validate that long_run_day is in training_days (safety check)
+        if long_run_day not in training_days:
+            logger.warning(
+                f"long_run_day '{long_run_day}' not in training_days {training_days}, "
+                f"defaulting to last day"
+            )
+            long_run_day = training_days[-1]
 
         weeks_out: List[Dict[str, Any]] = []
         total_plan_weeks = total_weeks or len(skel_long)
@@ -118,7 +133,7 @@ class Pass3WorkoutDistribution:
             weekly_total = float(w.get("weekly_mileage", 0) or 0)
             phase = w.get("phase", "Build")
             is_cutback = w.get("is_cutback", False)
-            
+
             # Calculate weeks until race (for taper rules)
             weeks_until_race = total_plan_weeks - week_num
 
@@ -133,34 +148,36 @@ class Pass3WorkoutDistribution:
                 is_cutback=is_cutback,
                 weeks_until_race=weeks_until_race,
             )
-            
+
             # Convert to list format for backward compatibility
             workouts = []
             for day in training_days:
                 if day in schedule:
                     workout_data = schedule[day].copy()
                     workouts.append(workout_data)
-            
+
             logger.debug(
                 f"Week {week_num} ({phase}): Distributed {len(workouts)} workouts "
                 f"using template-based placement"
             )
 
-            # Verify total matches (sanity check) - log at debug level only
-            workout_sum = sum(
-                wk.get("distance_miles", wk.get("miles", 0)) for wk in workouts
-            )
-            if abs(workout_sum - weekly_total) > 0.1:
+            # Calculate actual weekly mileage from workout distances
+            # This ensures the displayed total matches what users see in daily columns
+            # After caps/redistribution, the actual sum may differ from the target
+            actual_weekly_mileage = calculate_weekly_mileage_from_workouts(workouts)
+
+            # Log if there's a significant difference from target (for debugging)
+            if abs(actual_weekly_mileage - weekly_total) > 0.5:
                 logger.debug(
-                    f"Week {week_num}: Workout sum {workout_sum} ≠ weekly_total {weekly_total} "
-                    f"(rounding variance, not user-facing)"
+                    f"Week {week_num}: Actual sum {actual_weekly_mileage} ≠ target {weekly_total} "
+                    f"(due to recovery caps and non-long-run caps, this is expected)"
                 )
 
             weeks_out.append(
                 {
                     "week_number": week_num,
                     "phase": phase,
-                    "weekly_mileage": weekly_total,
+                    "weekly_mileage": actual_weekly_mileage,  # Use actual sum, not target
                     "long_run_miles": long_run,
                     "workouts": workouts,
                     "is_cutback": is_cutback,

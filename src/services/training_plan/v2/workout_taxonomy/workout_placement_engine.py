@@ -114,6 +114,75 @@ class WorkoutPlacementEngine:
         self.scenario = scenario
         self.rules = get_rules(scenario)
 
+    def _get_adjacent_training_days(
+        self, training_days: List[str], long_run_day: str
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """
+        Get the training days immediately before/after the long run.
+
+        Uses TRAINING-DAYS adjacency (list-based), not calendar adjacency.
+        This correctly handles cases where users don't train every day.
+
+        Args:
+            training_days: Ordered list of training days
+            long_run_day: Which day is the long run
+
+        Returns:
+            Tuple of (day_before, day_after, two_days_after)
+            Returns None for any day not in training_days
+        """
+        if not long_run_day or long_run_day not in training_days:
+            return None, None, None
+
+        long_idx = training_days.index(long_run_day)
+        num_days = len(training_days)
+
+        # Day immediately BEFORE long run (in training schedule order)
+        day_before = training_days[long_idx - 1] if long_idx > 0 else training_days[-1]
+
+        # Day immediately AFTER long run
+        day_after = training_days[(long_idx + 1) % num_days]
+
+        # Two days AFTER long run
+        two_days_after = training_days[(long_idx + 2) % num_days]
+
+        return day_before, day_after, two_days_after
+
+    def _is_adjacent_by_training_schedule(
+        self, dayA: str, dayB: str, training_days: List[str]
+    ) -> bool:
+        """
+        Check if two days are adjacent in the training schedule.
+
+        Uses TRAINING-DAYS adjacency (list-based), not calendar adjacency.
+        This correctly handles cases where users don't train every day.
+
+        Example:
+            training_days = ["Mon", "Wed", "Fri", "Sat"]
+            - Mon and Wed are adjacent (next in list)
+            - Wed and Fri are adjacent
+            - Fri and Sat are adjacent
+            - Mon and Fri are NOT adjacent (skips Wed)
+
+        Args:
+            dayA: First day
+            dayB: Second day
+            training_days: Ordered list of training days
+
+        Returns:
+            True if days are adjacent in training schedule
+        """
+        if dayA not in training_days or dayB not in training_days:
+            return False
+
+        a_idx = training_days.index(dayA)
+        b_idx = training_days.index(dayB)
+
+        # Check if adjacent in list (wrapping around)
+        num_days = len(training_days)
+        diff = abs(a_idx - b_idx)
+        return diff == 1 or diff == (num_days - 1)
+
     def place_workouts(
         self,
         frequency: int,
@@ -177,6 +246,7 @@ class WorkoutPlacementEngine:
             training_days=training_days,
             weekly_mileage=weekly_mileage,
             long_run_miles=long_run_miles,
+            long_run_day=long_run_day,
         )
 
         # 5. Validate placement
@@ -220,6 +290,100 @@ class WorkoutPlacementEngine:
             Simplified template with quality workouts replaced by easy
         """
         return ["easy" if is_quality_workout(w) else w for w in template]
+
+    def _enforce_recovery_types(
+        self,
+        training_days: List[str],
+        long_run_day: str,
+        assigned: Dict[str, str],
+    ) -> Dict[str, str]:
+        """
+        Enforce that days before/after long run are 'easy' type.
+
+        This is a CRITICAL safety rule: recovery days must be easy runs.
+        Any quality workouts previously assigned to recovery days are
+        redistributed to safe days.
+
+        Args:
+            training_days: Ordered list of training days
+            long_run_day: Which day is the long run
+            assigned: Current workout type assignments
+
+        Returns:
+            Updated assignments with recovery days forced to 'easy'
+        """
+        day_before_long, day_after_long, _ = self._get_adjacent_training_days(
+            training_days, long_run_day
+        )
+
+        # Get all training days for redistribution logic
+        non_long_days = [d for d in training_days if d != long_run_day]
+        sorted_days = sorted(non_long_days)
+
+        # Helper to find safe day for redistributed workout
+        def find_safe_day_for_redistribution(
+            removed_type: str, excluded_days: set
+        ) -> Optional[str]:
+            """Find a safe day to place a quality workout."""
+            if not removed_type or not is_quality_workout(removed_type):
+                return None
+
+            for day in sorted_days:
+                if day in excluded_days:
+                    continue
+                if day not in assigned or assigned[day] == "easy":
+                    # Check not adjacent to long run or other recovery days
+                    if not self._is_adjacent_by_training_schedule(
+                        day, long_run_day, training_days
+                    ):
+                        if (
+                            not day_after_long
+                            or not self._is_adjacent_by_training_schedule(
+                                day, day_after_long, training_days
+                            )
+                        ):
+                            if (
+                                not day_before_long
+                                or not self._is_adjacent_by_training_schedule(
+                                    day, day_before_long, training_days
+                                )
+                            ):
+                                return day
+            return None
+
+        # Force day BEFORE long run to easy
+        if day_before_long:
+            if assigned.get(day_before_long) != "easy":
+                removed_type = assigned.get(day_before_long)
+                excluded = {day_before_long}
+                if day_after_long:
+                    excluded.add(day_after_long)
+                safe_day = find_safe_day_for_redistribution(removed_type, excluded)
+                if safe_day:
+                    assigned[safe_day] = removed_type
+                    logger.debug(
+                        f"Redistributed {removed_type} from {day_before_long} "
+                        f"(recovery day) to {safe_day}"
+                    )
+            assigned[day_before_long] = "easy"
+
+        # Force day AFTER long run to easy
+        if day_after_long:
+            if assigned.get(day_after_long) != "easy":
+                removed_type = assigned.get(day_after_long)
+                excluded = {day_after_long}
+                if day_before_long:
+                    excluded.add(day_before_long)
+                safe_day = find_safe_day_for_redistribution(removed_type, excluded)
+                if safe_day:
+                    assigned[safe_day] = removed_type
+                    logger.debug(
+                        f"Redistributed {removed_type} from {day_after_long} "
+                        f"(recovery day) to {safe_day}"
+                    )
+            assigned[day_after_long] = "easy"
+
+        return assigned
 
     def _map_to_days(
         self,
@@ -280,12 +444,6 @@ class WorkoutPlacementEngine:
         # -------------------------------------------------------
         # 1. Assign QUALITY WORKOUTS safely (prevents back-to-back)
         # -------------------------------------------------------
-        def is_adjacent(dayA: str, dayB: str) -> bool:
-            """Check if two days are adjacent in the training schedule."""
-            a = training_days.index(dayA)
-            b = training_days.index(dayB)
-            return abs(a - b) == 1
-
         def find_non_adjacent_pair(days: List[str], count: int) -> List[str]:
             """Find a set of days that are not adjacent to each other.
             Returns empty list if no valid non-adjacent combination exists."""
@@ -304,7 +462,9 @@ class WorkoutPlacementEngine:
                 is_valid = True
                 for i in range(len(combo)):
                     for j in range(i + 1, len(combo)):
-                        if is_adjacent(combo[i], combo[j]):
+                        if self._is_adjacent_by_training_schedule(
+                            combo[i], combo[j], training_days
+                        ):
                             is_valid = False
                             break
                     if not is_valid:
@@ -316,13 +476,18 @@ class WorkoutPlacementEngine:
             return []
 
         # Day immediately before long run (in training_days order)
-        day_before_long = training_days[long_idx - 1] if long_idx > 0 else None
+        day_before_long, _, _ = self._get_adjacent_training_days(
+            training_days, long_run_day
+        )
 
         # Filter out days adjacent to long run and immediately before long run
         safe_days = [
             d
             for d in sorted_days
-            if not is_adjacent(d, long_run_day) and d != day_before_long
+            if not self._is_adjacent_by_training_schedule(
+                d, long_run_day, training_days
+            )
+            and d != day_before_long
         ]
 
         # Find non-adjacent days for quality workouts
@@ -341,7 +506,9 @@ class WorkoutPlacementEngine:
             all_adjacent = True
             for i in range(len(non_long_days)):
                 for j in range(i + 1, len(non_long_days)):
-                    if not is_adjacent(non_long_days[i], non_long_days[j]):
+                    if not self._is_adjacent_by_training_schedule(
+                        non_long_days[i], non_long_days[j], training_days
+                    ):
                         all_adjacent = False
                         break
                 if not all_adjacent:
@@ -393,7 +560,260 @@ class WorkoutPlacementEngine:
             if day not in assigned:
                 assigned[day] = "easy"
 
+        # -------------------------------------------------------
+        # 4. ENFORCE RECOVERY DAYS AROUND LONG RUN (CRITICAL SAFETY RULE)
+        # -------------------------------------------------------
+        assigned = self._enforce_recovery_types(training_days, long_run_day, assigned)
+
         return assigned
+
+    def _allocate_non_recovery_day_miles(
+        self,
+        non_recovery_days: List[str],
+        remaining_miles: float,
+        day_to_type: Dict[str, str],
+    ) -> Dict[str, float]:
+        """Allocate initial miles to non-recovery days based on workout type shares."""
+        # Calculate shares for non-recovery days only
+        shares: Dict[str, float] = {}
+        for day in non_recovery_days:
+            workout_type = day_to_type[day]
+            defn = get_workout_definition(workout_type)
+            pct = defn.get("default_distribution_pct")
+            shares[day] = pct if pct is not None else 0.15
+
+        # Normalize shares
+        total_share = sum(shares.values())
+        if total_share > 0:
+            shares = {d: s / total_share for d, s in shares.items()}
+        else:
+            equal_share = 1.0 / len(non_recovery_days) if non_recovery_days else 0
+            shares = {d: equal_share for d in non_recovery_days}
+
+        # Calculate miles
+        day_miles: Dict[str, float] = {}
+        for day in non_recovery_days:
+            raw_miles = remaining_miles * shares[day]
+            day_miles[day] = max(MIN_NON_LONG_MILES, round(raw_miles))
+
+        return day_miles
+
+    def _apply_non_long_run_caps(
+        self,
+        day_miles: Dict[str, float],
+        non_long_days: List[str],
+        recovery_days_set: set,
+        long_run_day: str,
+        MAX_NON_LONG_RUN_MILES: float = 10.0,
+    ) -> Dict[str, float]:
+        """
+        Cap all non-long-run workouts at MAX_NON_LONG_RUN_MILES (default 10 miles).
+
+        Recovery days are excluded as they have their own caps (4-6 miles).
+        The long run day is excluded.
+
+        This ensures mid-week runs never exceed the cap, even when weekly totals
+        are high and share-based distribution would assign more.
+
+        Args:
+            day_miles: Current mileage assignments
+            non_long_days: List of non-long-run training days
+            recovery_days_set: Set of recovery days (excluded from cap)
+            long_run_day: Long run day (excluded)
+            MAX_NON_LONG_RUN_MILES: Maximum miles for any non-long-run workout
+
+        Returns:
+            Updated day_miles with caps applied and excess redistributed
+        """
+        capped_excess = 0.0
+        days_that_were_capped = []
+
+        for day in non_long_days:
+            # Skip recovery days (they have their own caps)
+            if day in recovery_days_set:
+                continue
+
+            if day in day_miles and day_miles[day] > MAX_NON_LONG_RUN_MILES:
+                original_miles = day_miles[day]
+                excess = original_miles - MAX_NON_LONG_RUN_MILES
+                day_miles[day] = MAX_NON_LONG_RUN_MILES
+                capped_excess += excess
+                days_that_were_capped.append(day)
+                logger.debug(
+                    f"Capped non-long-run workout ({day}) from {original_miles:.1f}mi "
+                    f"to {MAX_NON_LONG_RUN_MILES:.1f}mi (excess: {excess:.1f}mi)"
+                )
+
+        # Redistribute excess miles to other non-long-run, non-recovery days
+        if capped_excess > 0:
+            eligible_days = [
+                d
+                for d in non_long_days
+                if d not in recovery_days_set
+                and d not in days_that_were_capped
+                and day_miles.get(d, 0) < MAX_NON_LONG_RUN_MILES
+            ]
+
+            if eligible_days:
+                # Distribute excess proportionally to eligible days
+                # Try to distribute evenly, but respect the cap
+                excess_per_day = capped_excess / len(eligible_days)
+                total_redistributed = 0.0
+
+                for day in eligible_days:
+                    current_miles = day_miles.get(day, 0)
+                    new_miles = current_miles + excess_per_day
+                    # Don't exceed the cap when redistributing
+                    capped_new_miles = min(new_miles, MAX_NON_LONG_RUN_MILES)
+                    added_miles = capped_new_miles - current_miles
+                    day_miles[day] = capped_new_miles
+                    total_redistributed += added_miles
+
+                    if added_miles > 0.1:  # Only log if significant change
+                        logger.debug(
+                            f"Redistributed {added_miles:.1f}mi excess to {day} "
+                            f"(now {capped_new_miles:.1f}mi)"
+                        )
+
+                # If there's still excess after redistribution (e.g., all days hit cap),
+                # log a warning but don't adjust - this means the weekly total is very high
+                remaining_excess = capped_excess - total_redistributed
+                if remaining_excess > 0.1:
+                    logger.debug(
+                        f"Could not fully redistribute {remaining_excess:.1f}mi excess "
+                        f"(all non-recovery days at or near {MAX_NON_LONG_RUN_MILES}mi cap)"
+                    )
+            else:
+                logger.debug(
+                    f"No eligible days for redistributing {capped_excess:.1f}mi excess "
+                    f"(all non-recovery days already capped or excluded)"
+                )
+
+        return day_miles
+
+    def _apply_recovery_caps(
+        self,
+        day_miles: Dict[str, float],
+        day_before_long: Optional[str],
+        day_after_long: Optional[str],
+        two_days_after_long: Optional[str],
+        RECOVERY_DAY_MAX_MILES: float,
+        DAY_AFTER_LR_MAX_MILES: float,
+        TWO_DAYS_AFTER_LR_MAX_MILES: float,
+    ) -> Dict[str, float]:
+        """Apply mileage caps to recovery days.
+
+        Recovery days MUST be 4-6 miles (never more). This is a critical safety rule.
+        """
+        # Cap day BEFORE long run to 4-6 miles
+        if day_before_long and day_before_long in day_miles:
+            recovery_miles = day_miles[day_before_long]
+            capped_miles = min(recovery_miles, RECOVERY_DAY_MAX_MILES)
+            capped_miles = max(capped_miles, MIN_NON_LONG_MILES)
+
+            # Warn if recovery day somehow exceeded cap (shouldn't happen)
+            if recovery_miles > RECOVERY_DAY_MAX_MILES:
+                logger.warning(
+                    f"Recovery day ({day_before_long}) exceeded cap: {recovery_miles:.1f}mi > "
+                    f"{RECOVERY_DAY_MAX_MILES:.1f}mi. Capping to {capped_miles:.1f}mi."
+                )
+
+            day_miles[day_before_long] = capped_miles
+            if abs(recovery_miles - capped_miles) >= 0.1:  # Only log if changed
+                logger.debug(
+                    f"Capped day before long run ({day_before_long}) "
+                    f"from {recovery_miles:.1f}mi to {capped_miles:.1f}mi"
+                )
+
+        # Cap day AFTER long run to 4-6 miles
+        if day_after_long and day_after_long in day_miles:
+            recovery_miles = day_miles[day_after_long]
+            capped_miles = min(recovery_miles, DAY_AFTER_LR_MAX_MILES)
+            capped_miles = max(capped_miles, MIN_NON_LONG_MILES)
+
+            # Warn if recovery day somehow exceeded cap (shouldn't happen)
+            if recovery_miles > DAY_AFTER_LR_MAX_MILES:
+                logger.warning(
+                    f"Recovery day ({day_after_long}) exceeded cap: {recovery_miles:.1f}mi > "
+                    f"{DAY_AFTER_LR_MAX_MILES:.1f}mi. Capping to {capped_miles:.1f}mi."
+                )
+
+            day_miles[day_after_long] = capped_miles
+            if abs(recovery_miles - capped_miles) >= 0.1:  # Only log if changed
+                logger.debug(
+                    f"Capped day after long run ({day_after_long}) "
+                    f"from {recovery_miles:.1f}mi to {capped_miles:.1f}mi"
+                )
+
+        # Cap two days after long run to 7-8 miles max
+        if two_days_after_long and two_days_after_long in day_miles:
+            recovery_days_set = {d for d in [day_before_long, day_after_long] if d}
+            if two_days_after_long not in recovery_days_set:
+                current_miles = day_miles[two_days_after_long]
+                capped_miles = min(current_miles, TWO_DAYS_AFTER_LR_MAX_MILES)
+                day_miles[two_days_after_long] = capped_miles
+                logger.debug(
+                    f"Capped two days after long run ({two_days_after_long}) "
+                    f"from {current_miles:.1f}mi to {capped_miles:.1f}mi"
+                )
+
+        return day_miles
+
+    def _redistribute_remaining_miles(
+        self,
+        day_miles: Dict[str, float],
+        remaining_miles: float,
+        non_long_days: List[str],
+        recovery_days_set: set,
+        two_days_after_long: Optional[str],
+        TWO_DAYS_AFTER_LR_MAX_MILES: float,
+    ) -> Dict[str, float]:
+        """Redistribute leftover miles to non-recovery days only.
+
+        IMPORTANT: Recovery days are LOCKED and never adjusted - they must stay
+        within their 4-6 mile caps regardless of weekly total.
+        """
+        assigned_non_long = sum(day_miles.values())
+        diff = remaining_miles - assigned_non_long
+
+        if abs(diff) >= 1 and non_long_days:
+            # Get non-recovery days for redistribution (recovery days are fixed)
+            non_recovery_days = [d for d in non_long_days if d not in recovery_days_set]
+
+            if non_recovery_days:
+                sorted_days = sorted(
+                    non_recovery_days, key=lambda d: day_miles[d], reverse=True
+                )
+                adjustment = 1 if diff > 0 else -1
+                MAX_NON_LONG_RUN_MILES = (
+                    10.0  # General cap for all non-long-run workouts
+                )
+                for i in range(int(abs(diff))):
+                    day = sorted_days[i % len(sorted_days)]
+                    new_miles = day_miles[day] + adjustment
+                    if new_miles >= MIN_NON_LONG_MILES:
+                        # Don't exceed two-days-after cap if applicable
+                        if (
+                            day == two_days_after_long
+                            and two_days_after_long not in recovery_days_set
+                        ):
+                            new_miles = min(new_miles, TWO_DAYS_AFTER_LR_MAX_MILES)
+                        # Don't exceed general non-long-run cap (10 miles)
+                        new_miles = min(new_miles, MAX_NON_LONG_RUN_MILES)
+                        day_miles[day] = new_miles
+
+            # Recovery days are LOCKED - never adjust them, even if it means
+            # the weekly total doesn't match exactly. Safety rules override totals.
+            final_total = sum(day_miles.values())
+            final_diff = remaining_miles - final_total
+            if abs(final_diff) >= 0.1:  # Allow small rounding differences
+                logger.debug(
+                    f"Weekly total adjustment: {final_diff:.1f}mi difference after "
+                    f"redistribution (recovery days locked to caps). Weekly total is "
+                    f"{final_total:.1f}mi instead of {remaining_miles:.1f}mi"
+                )
+
+        return day_miles
 
     def _distribute_mileage(
         self,
@@ -401,6 +821,7 @@ class WorkoutPlacementEngine:
         training_days: List[str],
         weekly_mileage: float,
         long_run_miles: float,
+        long_run_day: str = None,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Distribute mileage across workouts based on type.
@@ -423,49 +844,102 @@ class WorkoutPlacementEngine:
         remaining_miles = weekly_mileage - long_run_miles
         non_long_days = [d for d in training_days if day_to_type[d] != "long_run"]
 
-        # Calculate shares based on workout type
-        shares: Dict[str, float] = {}
-        for day in non_long_days:
-            workout_type = day_to_type[day]
-            defn = get_workout_definition(workout_type)
-            pct = defn.get("default_distribution_pct")
+        # -------------------------------------------------------
+        # Identify recovery days FIRST (before calculating miles)
+        # Uses training-days adjacency, not calendar adjacency
+        # -------------------------------------------------------
+        RECOVERY_DAY_MAX_MILES = 6.0
+        DAY_AFTER_LR_MAX_MILES = 6.0
+        TWO_DAYS_AFTER_LR_MAX_MILES = 8.0
 
-            if pct is not None:
-                shares[day] = pct
-            else:
-                # Default share for easy/unspecified
-                shares[day] = 0.15
+        day_before_long, day_after_long, two_days_after_long = (
+            self._get_adjacent_training_days(training_days, long_run_day or "")
+        )
 
-        # Normalize shares to sum to 1.0
-        total_share = sum(shares.values())
-        if total_share > 0:
-            shares = {d: s / total_share for d, s in shares.items()}
-        else:
-            # Equal distribution if no shares defined
-            equal_share = 1.0 / len(non_long_days) if non_long_days else 0
-            shares = {d: equal_share for d in non_long_days}
+        # Set recovery days to target range (4-5 miles) BEFORE calculating shares
+        recovery_days_set = {
+            d for d in [day_before_long, day_after_long] if d is not None
+        }
+        recovery_day_target = 5.0  # Target 5 miles for recovery days (range 4-6)
 
-        # Calculate initial miles per day
         day_miles: Dict[str, float] = {}
-        for day in non_long_days:
-            raw_miles = remaining_miles * shares[day]
-            day_miles[day] = max(MIN_NON_LONG_MILES, round(raw_miles))
 
-        # Adjust to match total (handle rounding)
-        assigned_non_long = sum(day_miles.values())
-        diff = remaining_miles - assigned_non_long
+        # Reserve target miles for recovery days first
+        recovery_miles_reserved = 0
+        for day in recovery_days_set:
+            if day in non_long_days:
+                day_miles[day] = recovery_day_target
+                recovery_miles_reserved += recovery_day_target
 
-        if abs(diff) >= 1 and non_long_days:
-            # Distribute difference to largest workout(s)
-            sorted_days = sorted(
-                non_long_days, key=lambda d: day_miles[d], reverse=True
-            )
-            adjustment = 1 if diff > 0 else -1
-            for i in range(int(abs(diff))):
-                day = sorted_days[i % len(sorted_days)]
-                new_miles = day_miles[day] + adjustment
-                if new_miles >= MIN_NON_LONG_MILES:
-                    day_miles[day] = new_miles
+        # Calculate remaining miles for non-recovery days
+        remaining_after_recovery = remaining_miles - recovery_miles_reserved
+        non_recovery_days_for_shares = [
+            d for d in non_long_days if d not in recovery_days_set
+        ]
+
+        # Allocate miles to non-recovery days using helper
+        non_recovery_miles = self._allocate_non_recovery_day_miles(
+            non_recovery_days_for_shares,
+            remaining_after_recovery,
+            day_to_type,
+        )
+        day_miles.update(non_recovery_miles)
+
+        # Apply general cap for all non-long-run workouts (10 miles max)
+        # This ensures mid-week runs never exceed 10 miles, even in high-volume weeks
+        MAX_NON_LONG_RUN_MILES = 10.0
+        day_miles = self._apply_non_long_run_caps(
+            day_miles,
+            non_long_days,
+            recovery_days_set,
+            long_run_day or "",
+            MAX_NON_LONG_RUN_MILES,
+        )
+
+        # Apply recovery day caps using helper
+        day_miles = self._apply_recovery_caps(
+            day_miles,
+            day_before_long,
+            day_after_long,
+            two_days_after_long,
+            RECOVERY_DAY_MAX_MILES,
+            DAY_AFTER_LR_MAX_MILES,
+            TWO_DAYS_AFTER_LR_MAX_MILES,
+        )
+
+        # Redistribute remaining miles using helper
+        day_miles = self._redistribute_remaining_miles(
+            day_miles,
+            remaining_miles,
+            non_long_days,
+            recovery_days_set,
+            two_days_after_long,
+            TWO_DAYS_AFTER_LR_MAX_MILES,
+        )
+
+        # Re-apply caps as final safeguard (ensures they're never exceeded)
+        # This is critical because redistribution might have affected other days
+        MAX_NON_LONG_RUN_MILES = 10.0
+
+        # Re-apply non-long-run caps first
+        day_miles = self._apply_non_long_run_caps(
+            day_miles,
+            non_long_days,
+            recovery_days_set,
+            long_run_day or "",
+            MAX_NON_LONG_RUN_MILES,
+        )
+
+        # Re-apply recovery caps (recovery days must ALWAYS stay within 4-6 mile limits)
+        day_miles = self._apply_recovery_caps(
+            day_miles,
+            day_before_long,
+            day_after_long,
+            two_days_after_long,
+            RECOVERY_DAY_MAX_MILES,
+            DAY_AFTER_LR_MAX_MILES,
+            TWO_DAYS_AFTER_LR_MAX_MILES,
+        )
 
         # Build final assignments
         result: Dict[str, Dict[str, Any]] = {}

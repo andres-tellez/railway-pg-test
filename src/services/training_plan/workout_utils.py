@@ -422,3 +422,48 @@ def validate_pace_string(pace_str: str) -> bool:
         return minutes >= 0 and 0 <= seconds < 60
     except (ValueError, IndexError):
         return False
+
+
+# ============================================================================
+# WEEKLY MILEAGE CALCULATION
+# ============================================================================
+
+
+def calculate_weekly_mileage_from_workouts(workouts: list) -> float:
+    """
+    Calculate total weekly mileage from a list of workouts.
+
+    Single source of truth for summing workout distances.
+    Handles both 'distance_miles' and 'miles' field names.
+
+    Args:
+        workouts: List of workout dictionaries with distance fields
+
+    Returns:
+        Total weekly mileage rounded to 1 decimal place
+
+    Example:
+        >>> workouts = [
+        ...     {"distance_miles": 5.0, "type": "easy"},
+        ...     {"miles": 8.0, "type": "steady"},
+        ...     {"distance_miles": 17.0, "type": "long_run"}
+        ... ]
+        >>> calculate_weekly_mileage_from_workouts(workouts)
+        30.0
+    """
+    if not workouts:
+        return 0.0
+
+    total = 0.0
+    for workout in workouts:
+        if not isinstance(workout, dict):
+            continue
+        # Try distance_miles first, then miles, then default to 0
+        miles = workout.get("distance_miles") or workout.get("miles") or 0
+        try:
+            total += float(miles)
+        except (ValueError, TypeError):
+            # Skip invalid values
+            continue
+
+    return round(total, 1)
