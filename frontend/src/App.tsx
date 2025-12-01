@@ -55,6 +55,7 @@ import DateTestPage from "./pages/DateTestPage";
 import HeartRateZones from "./pages/HeartRateZones";
 
 import Layout from "./components/Layout";
+import PlanLayout from "./components/layout/PlanLayout";
 import SmartRouter from "./components/SmartRouter";
 
 // ---------------------------
@@ -181,7 +182,9 @@ export default function App() {
         path="/plan/overview"
         element={
           <Layout>
-            <PlanOverviewTable />
+            <PlanLayout>
+              <PlanOverviewTable />
+            </PlanLayout>
           </Layout>
         }
       />
@@ -191,7 +194,9 @@ export default function App() {
         path="/plan/overview-table"
         element={
           <Layout>
-            <MyPlan />
+            <PlanLayout>
+              <MyPlan />
+            </PlanLayout>
           </Layout>
         }
       />
@@ -200,7 +205,9 @@ export default function App() {
         path="/plan/new"
         element={
           <Layout>
-            <NewPlanForm />
+            <PlanLayout>
+              <NewPlanForm />
+            </PlanLayout>
           </Layout>
         }
       />
@@ -208,7 +215,9 @@ export default function App() {
         path="/plan/new-v2"
         element={
           <Layout>
-            <NewPlanFormV2 />
+            <PlanLayout>
+              <NewPlanFormV2 />
+            </PlanLayout>
           </Layout>
         }
       />
@@ -216,7 +225,9 @@ export default function App() {
         path="/plan/draft"
         element={
           <Layout>
-            <PlanDraftPreview />
+            <PlanLayout>
+              <PlanDraftPreview />
+            </PlanLayout>
           </Layout>
         }
       />
@@ -224,7 +235,9 @@ export default function App() {
         path="/plan/manage"
         element={
           <Layout>
-            <PlansManagement />
+            <PlanLayout>
+              <PlansManagement />
+            </PlanLayout>
           </Layout>
         }
       />

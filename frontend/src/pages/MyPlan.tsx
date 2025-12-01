@@ -15,7 +15,6 @@ import {
   parseISO,
 } from 'date-fns';
 import { useNavigate, Link } from 'react-router-dom';
-import PlanLayout from '@/components/layout/PlanLayout';
 import { useApiClient } from '@/utils/apiClient';
 import { useAuthSetup } from '@/hooks/useAuthSetup';
 import { AuthGuard } from '@/components/AuthGuard';
@@ -327,7 +326,6 @@ const MyPlan: React.FC = () => {
 
   return (
     <AuthGuard>
-      <PlanLayout>
       <div className="w-full max-w-lg mx-auto">
       <MaxHrBanner />
       {/* Plan Header with Actions */}
@@ -531,7 +529,6 @@ const MyPlan: React.FC = () => {
       )}
 
       </div>
-      </PlanLayout>
     </AuthGuard>
   );
 };

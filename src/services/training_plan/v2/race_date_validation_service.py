@@ -25,7 +25,7 @@ class RaceDateValidationService:
     def __init__(self, config: RaceDistanceConfig):
         """
         Initialize validation service with race distance configuration.
-        
+
         Args:
             config: Race distance configuration containing validation thresholds
         """
@@ -137,9 +137,23 @@ class RaceDateValidationService:
         ready_date = start_d + timedelta(weeks=required_weeks)
         timeline_gap_weeks = available_weeks - required_weeks
 
-        # Special case: If available_weeks == strong_base_exception_weeks with strong base, user can proceed
+        # Special case: If available_weeks == exception_weeks with strong base, user can proceed
         # In this case, ready_date should be the race_date (they'll be ready by race day)
         # We need to cap it BEFORE building the message so the message shows the correct date
+        # Check for 10-week exception first
+        very_strong_base = (
+            current_weekly_mileage >= self.config.very_strong_base_weekly_mileage
+            and current_long_run >= self.config.very_strong_base_long_run
+        )
+        very_strong_exception_weeks = self.config.very_strong_base_exception_weeks
+        if (
+            available_weeks == very_strong_exception_weeks
+            and very_strong_base
+            and ready_date > race_d
+        ):
+            ready_date = race_d
+
+        # Check for 11-week exception
         strong_base = (
             current_weekly_mileage >= self.config.strong_base_weekly_mileage
             and current_long_run >= self.config.strong_base_long_run
@@ -160,7 +174,7 @@ class RaceDateValidationService:
         )
 
         # Also cap for other can_proceed=True cases (defensive check)
-        if validation_result.get('can_proceed', False) and ready_date > race_d:
+        if validation_result.get("can_proceed", False) and ready_date > race_d:
             ready_date = race_d
 
         # Build result (use values as-is - already rounded from helper function)
@@ -282,7 +296,29 @@ class RaceDateValidationService:
         # This makes the validation fitness-aware rather than strictly calendar-based
         min_weeks = self.config.min_training_weeks
         if available_weeks < min_weeks:
-            # Check if runner has strong enough base to safely do exception_weeks
+            # Check for 10-week exception first (most restrictive)
+            very_strong_base = (
+                current_weekly_mileage >= self.config.very_strong_base_weekly_mileage
+                and current_long_run >= self.config.very_strong_base_long_run
+            )
+            very_strong_exception_weeks = self.config.very_strong_base_exception_weeks
+
+            if available_weeks == very_strong_exception_weeks and very_strong_base:
+                # Very strong runners can safely do 10 weeks - warn but allow
+                message = self._build_message_with_structure(
+                    status="warn",
+                    available_weeks=available_weeks,
+                    required_weeks=min_weeks,  # Still recommend min_weeks, but allow 10 weeks
+                    current_weekly_mileage=current_weekly_mileage,
+                    current_long_run=current_long_run,
+                    race_date=race_date,
+                    plan_start_date=plan_start_date,
+                    optimal_ready_date=optimal_ready_date,
+                    reason="very_strong_base_10_weeks_allowed",
+                )
+                return self._warn_result(message, can_proceed=True)
+
+            # Check for 11-week exception (existing logic)
             strong_base = (
                 current_weekly_mileage >= self.config.strong_base_weekly_mileage
                 and current_long_run >= self.config.strong_base_long_run
@@ -370,7 +406,11 @@ class RaceDateValidationService:
                     optimal_ready_date=optimal_ready_date,
                 )
                 return self._reject_result(message, can_proceed=True)
-            elif warn_mpw and warn_lr and (current_weekly_mileage < warn_mpw or current_long_run < warn_lr):
+            elif (
+                warn_mpw
+                and warn_lr
+                and (current_weekly_mileage < warn_mpw or current_long_run < warn_lr)
+            ):
                 message = self._build_message_with_structure(
                     status="warn",
                     available_weeks=available_weeks,
@@ -556,7 +596,10 @@ class RaceDateValidationService:
         elif status == "reject" or status == "warn":
             gap = abs(available_weeks - required_weeks)
             if available_weeks < required_weeks:
-                if status == "warn" and reason == "strong_base_11_weeks_allowed":
+                if status == "warn" and reason == "very_strong_base_10_weeks_allowed":
+                    # Special case: Very strong runners allowed 10 weeks - positive message since they can proceed safely
+                    status_line = f"✅ **You're ready to proceed** — You have {available_weeks} weeks (ideal is {required_weeks} weeks), and your very strong base allows you to train safely."
+                elif status == "warn" and reason == "strong_base_11_weeks_allowed":
                     # Special case: Strong runners allowed 11 weeks - positive message since they can proceed safely
                     status_line = f"✅ **You're ready to proceed** — You have {available_weeks} weeks (ideal is {required_weeks} weeks), and your strong base allows you to train safely."
                 else:
@@ -599,6 +642,10 @@ class RaceDateValidationService:
             min_lr = self.config.absolute_min_long_run
             return f"**Why:** A {min_lr:.0f}+ mile long run base ensures your muscles and body are ready for the progression ahead."
 
+        if reason == "very_strong_base_10_weeks_allowed":
+            # Skip "Why" section - the status line already explains this clearly
+            return ""
+
         if reason == "strong_base_11_weeks_allowed":
             # Skip "Why" section - the status line already explains this clearly
             return ""
@@ -622,6 +669,10 @@ class RaceDateValidationService:
     ) -> str:
         """Clear, concise options."""
         if status == "approve":
+            return "**Next:** Your training plan is ready to review!"
+
+        # For very strong runners with 10 weeks, skip options - they can proceed safely
+        if reason == "very_strong_base_10_weeks_allowed":
             return "**Next:** Your training plan is ready to review!"
 
         # For strong runners with 11 weeks, skip options - they can proceed safely

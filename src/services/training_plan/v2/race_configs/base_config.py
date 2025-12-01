@@ -193,6 +193,30 @@ class RaceDistanceConfig(ABC):
         pass
 
     @property
+    def very_strong_base_exception_weeks(self) -> int:
+        """Weeks allowed with very strong base (e.g., 10 for marathon, must be < strong_base_exception_weeks).
+
+        Default implementation returns 0 to disable 10-week exception for race types that don't override this.
+        """
+        return 0  # Disabled by default
+
+    @property
+    def very_strong_base_weekly_mileage(self) -> float:
+        """Minimum weekly mileage to qualify for very strong base exception (e.g., 35.0 for marathon).
+
+        Default implementation returns a very high value to effectively disable 10-week exception.
+        """
+        return 999.0  # Effectively disabled by default
+
+    @property
+    def very_strong_base_long_run(self) -> float:
+        """Minimum long run to qualify for very strong base exception (e.g., 12.0 for marathon).
+
+        Default implementation returns a very high value to effectively disable 10-week exception.
+        """
+        return 999.0  # Effectively disabled by default
+
+    @property
     @abstractmethod
     def absolute_min_weekly_mileage(self) -> float:
         """Absolute minimum weekly mileage required (e.g., 15.0 for marathon)."""
@@ -209,7 +233,7 @@ class RaceDistanceConfig(ABC):
     def fitness_requirements_by_weeks(self) -> Dict[str, Dict[str, Any]]:
         """
         Fitness requirements by week range.
-        
+
         Returns:
             Dict mapping week range keys to requirement dicts.
             Example:

@@ -5,7 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
 import { AuthGuard } from "@/components/AuthGuard";
-import PlanLayout from "@/components/layout/PlanLayout";
 import { format, parseISO } from "date-fns";
 
 type Plan = {
@@ -101,7 +100,6 @@ const PlansManagement: React.FC = () => {
 
   return (
     <AuthGuard>
-      <PlanLayout>
       <div className="min-h-screen bg-gray-50 py-8">
         <div className="max-w-4xl mx-auto px-4">
           {/* Header */}
@@ -238,7 +236,6 @@ const PlansManagement: React.FC = () => {
           )}
         </div>
       </div>
-      </PlanLayout>
     </AuthGuard>
   );
 };

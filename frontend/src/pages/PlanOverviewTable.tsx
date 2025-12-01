@@ -257,17 +257,17 @@ export default function PlanOverviewTable() {
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-50 py-10">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="bg-white shadow rounded-lg p-6">
+        <div className="max-w-7xl mx-auto px-4 md:px-8">
+          <div className="bg-white shadow rounded-lg p-4 sm:p-6 md:max-w-4xl md:mx-auto md:p-4">
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3">
               <div>
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Training Plan Overview</h1>
                 {plan.plan_name && (
-                  <p className="text-xs sm:text-sm font-semibold text-gray-500 mb-1">
+                  <p className="text-xs sm:text-sm font-semibold text-gray-500 mt-1">
                     {plan.plan_name}
                   </p>
                 )}
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">Training Plan Overview</h1>
                 {plan.race_date && (
                   <p className="text-xs sm:text-sm text-gray-600 mt-1">
                     Race Date: {formatMDY(parseISODate(plan.race_date))}
@@ -282,18 +282,18 @@ export default function PlanOverviewTable() {
                 No workouts found in this plan.
               </div>
             ) : (
-              <div className="overflow-x-auto -mx-4 sm:mx-0">
-                <div className="inline-block min-w-full align-middle">
+              <div className="overflow-x-auto -mx-4 sm:mx-0 md:flex md:justify-center">
+                <div className="inline-block min-w-full md:min-w-0 align-middle md:max-w-4xl">
                   <div className="overflow-hidden">
-                    <table className="border-collapse text-xs sm:text-sm w-full">
+                    <table className="border-collapse text-xs sm:text-sm w-full md:w-auto">
                   <thead>
                     <tr className="bg-slate-800 text-white">
-                      <th className="py-1.5 px-2 sm:py-2 sm:px-3 text-center font-medium border border-slate-700">Week</th>
-                      <th className="py-1.5 px-2 sm:py-2 sm:px-3 text-center font-medium border border-slate-700 whitespace-nowrap">Phase</th>
+                      <th className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center font-medium border border-slate-700">Week</th>
+                      <th className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center font-medium border border-slate-700 whitespace-nowrap">Phase</th>
                       {['M','T','W','T','F','S','S'].map((d, i) => (
-                        <th key={i} className="py-1.5 px-2 sm:py-2 sm:px-3 text-center font-medium border border-slate-700">{d}</th>
+                        <th key={i} className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center font-medium border border-slate-700">{d}</th>
                       ))}
-                      <th className="py-1.5 px-2 sm:py-2 sm:px-3 text-center font-medium border border-slate-700">Total</th>
+                      <th className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center font-medium border border-slate-700">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -352,10 +352,10 @@ export default function PlanOverviewTable() {
                           key={idx}
                           className={`${getRowStyle()} transition-colors`}
                         >
-                          <td className="py-1.5 px-2 sm:py-2 sm:px-3 text-center border border-slate-200">
+                          <td className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center border border-slate-200">
                             <span className="font-medium text-slate-700">{formatMDY(week.weekStartDate)}</span>
                           </td>
-                          <td className={`py-1.5 px-2 sm:py-2 sm:px-3 text-center border border-slate-200 whitespace-nowrap font-medium ${
+                          <td className={`py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center border border-slate-200 whitespace-nowrap font-medium ${
                             isRaceWeek ? "text-amber-700" : "text-slate-600"
                           }`}>
                             {isRaceWeek ? "Race" : (week.phase || "").trim()} {getPhaseIcon()}
@@ -370,7 +370,7 @@ export default function PlanOverviewTable() {
                             return (
                               <td
                                 key={day}
-                                className="py-1.5 px-2 sm:py-2 sm:px-3 text-center border border-slate-200 tabular-nums"
+                                className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center border border-slate-200 tabular-nums"
                               >
                                 {shouldHide ? (
                                   <span className="text-slate-300">—</span>
@@ -384,7 +384,7 @@ export default function PlanOverviewTable() {
                               </td>
                             );
                           })}
-                          <td className="py-1.5 px-2 sm:py-2 sm:px-3 text-center border border-slate-200 tabular-nums font-semibold text-slate-800">
+                          <td className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center border border-slate-200 tabular-nums font-semibold text-slate-800">
                             {displayTotal > 0 ? (
                               Math.round(displayTotal)
                             ) : (

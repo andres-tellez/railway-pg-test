@@ -203,6 +203,21 @@ class MarathonConfig(RaceDistanceConfig):
         return 10.0
 
     @property
+    def very_strong_base_exception_weeks(self) -> int:
+        """Weeks allowed with very strong base for marathon (10 weeks)."""
+        return 10
+
+    @property
+    def very_strong_base_weekly_mileage(self) -> float:
+        """Minimum weekly mileage to qualify for 10-week plan (35.0 mpw)."""
+        return 35.0
+
+    @property
+    def very_strong_base_long_run(self) -> float:
+        """Minimum long run to qualify for 10-week plan (12.0 miles)."""
+        return 12.0
+
+    @property
     def absolute_min_weekly_mileage(self) -> float:
         """Absolute minimum weekly mileage required (15.0 mpw)."""
         return 15.0
@@ -216,7 +231,7 @@ class MarathonConfig(RaceDistanceConfig):
     def fitness_requirements_by_weeks(self) -> Dict[str, Dict[str, Any]]:
         """
         Fitness requirements by week range for marathon training.
-        
+
         Based on established methodologies:
         - 12-14 weeks: Need strong base (30+ mpw, 10+ mi LR)
         - 14-16 weeks: Need moderate base (25+ mpw, 8+ mi LR)
@@ -247,7 +262,8 @@ class MarathonConfig(RaceDistanceConfig):
     def race_week_template(self) -> Dict[str, Any]:
         """Canonical marathon race week layout."""
         return {
-            "weekly_mileage": 8 + self.race_distance_miles,  # Include race distance in total
+            "weekly_mileage": 8
+            + self.race_distance_miles,  # Include race distance in total
             "long_run_miles": 0.0,
             "workouts": [
                 {
