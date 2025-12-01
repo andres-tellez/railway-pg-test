@@ -90,8 +90,9 @@ class PlanCreateSchema(BaseModel):
     @classmethod
     def validate_long_run_day(cls, v: Optional[str], info) -> Optional[str]:
         """Validate that long_run_day is a valid day abbreviation."""
-        if v is None:
-            return v
+        # Treat empty strings as None (optional field - empty string means "auto-select")
+        if v is None or v == "":
+            return None
 
         # Check if it's a valid day abbreviation
         if v not in DAY_NAMES_ABBREV:

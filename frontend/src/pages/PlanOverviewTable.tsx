@@ -8,6 +8,7 @@ type PlanResponse = {
   plan_id: string;
   start_date: string;
   race_date: string;
+  race_distance?: string;
   notes?: string;
   workouts: Array<{
     date: string;
@@ -17,6 +18,7 @@ type PlanResponse = {
     miles: number;
     target_zone?: string;
     target_hr?: string;
+    phase?: string;
   }>;
 };
 
@@ -142,6 +144,12 @@ export default function PlanOverviewTable() {
           target_zone: workout.target_zone,
         };
       }
+      // Store phase from workout (use the stored phase from database, not recalculated)
+      // If multiple workouts in the same week have different phases, use the first one
+      // (in practice, all workouts in a week should have the same phase)
+      if (workout.phase && !week.phase) {
+        week.phase = workout.phase;
+      }
     });
 
     // Sort weeks by date and assign week numbers
@@ -149,41 +157,36 @@ export default function PlanOverviewTable() {
       (a, b) => a.weekStartDate.getTime() - b.weekStartDate.getTime()
     );
 
-    // Determine phases based on weeks until race
+    // Assign week numbers and use stored phases from database
     const raceDate = plan.race_date ? parseISODate(plan.race_date) : null;
     sortedWeeks.forEach((week, idx) => {
       week.weekNumber = idx + 1;
       const isLastWeek = idx === sortedWeeks.length - 1;
 
-      if (raceDate) {
-        const weeksUntilRace = Math.ceil(
-          (raceDate.getTime() - week.weekStartDate.getTime()) / (7 * 24 * 60 * 60 * 1000)
-        );
-
-        // If it's the last week or race is within this week, mark as Race Week
-        if (isLastWeek || weeksUntilRace <= 0) {
-          week.phase = "Race Week";
-        } else if (weeksUntilRace <= 3) {
-          week.phase = "Taper";
-        } else if (weeksUntilRace <= 10) {
-          week.phase = "Peak";
-        } else if (weeksUntilRace <= 16) {
-          week.phase = "Build";
+      // Use stored phase from database
+      // If no phase stored (shouldn't happen for approved plans), use fallback
+      if (!week.phase) {
+        if (isLastWeek && raceDate) {
+          const weeksUntilRace = Math.ceil(
+            (raceDate.getTime() - week.weekStartDate.getTime()) / (7 * 24 * 60 * 60 * 1000)
+          );
+          // If race is within this week, mark as Race Week
+          if (weeksUntilRace <= 0) {
+            week.phase = "Race Week";
+          } else {
+            week.phase = "Taper"; // Fallback for last week
+          }
         } else {
-          week.phase = "Base";
+          week.phase = "Base"; // Fallback for other weeks
         }
       } else {
-        // Default phase assignment if no race date
-        if (isLastWeek) {
+        // Normalize phase name (database might have different casing)
+        const phaseLower = week.phase.toLowerCase();
+        if (phaseLower.includes("race")) {
           week.phase = "Race Week";
-        } else if (idx >= sortedWeeks.length - 3) {
-          week.phase = "Taper";
-        } else if (idx >= sortedWeeks.length - 10) {
-          week.phase = "Peak";
-        } else if (idx >= sortedWeeks.length - 16) {
-          week.phase = "Build";
         } else {
-          week.phase = "Base";
+          // Capitalize first letter: "base" -> "Base", "build" -> "Build", etc.
+          week.phase = week.phase.charAt(0).toUpperCase() + week.phase.slice(1).toLowerCase();
         }
       }
     });
@@ -200,18 +203,20 @@ export default function PlanOverviewTable() {
     return `${mm}/${dd}/${yy}`;
   };
 
-  // Helper to extract just the HR zone (Z1, Z2, etc.) from target_hr
-  const extractHRZone = (target_hr?: string): string => {
-    if (!target_hr) return "";
+  // Helper to get race distance in miles from race_distance string
+  const getRaceDistanceMiles = (raceDistance?: string): number => {
+    if (!raceDistance) return 26.2; // Default to marathon
 
-    // Extract zone pattern from target_hr (usually "Z2 (120-150 bpm)" or "Z2-Z3 (120-150 bpm)")
-    const zoneMatch = target_hr.match(/Z[1-5](-Z[1-5])?/);
-    if (zoneMatch) {
-      return zoneMatch[0];
+    const raceLower = raceDistance.toLowerCase();
+    if (raceLower.includes("half") || raceLower.includes("13.1")) {
+      return 13.1;
+    } else if (raceLower.includes("marathon") || raceLower.includes("26.2")) {
+      return 26.2;
     }
-
-    return "";
+    // Default to marathon if unknown
+    return 26.2;
   };
+
 
   if (loading) {
     return (
@@ -280,24 +285,49 @@ export default function PlanOverviewTable() {
               </div>
             ) : (
               <div className="overflow-x-auto flex justify-center">
-                <table className="border border-gray-200 text-sm" style={{ width: 'auto' }}>
+                <table className="border-collapse text-sm">
                   <thead>
-                    <tr className="bg-gray-50 text-gray-700">
-                      <th className="border p-2 text-center" style={{ width: '90px' }}>Week</th>
-                      <th className="border p-2 text-center hidden sm:table-cell" style={{ width: '80px' }}>Phase</th>
-                      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-                        <th key={d} className="border p-2 text-center" style={{ width: '50px' }}>
-                          <span className="block sm:hidden">{d[0]}</span>
-                          <span className="hidden sm:block">{d}</span>
-                        </th>
+                    <tr className="bg-slate-800 text-white">
+                      <th className="py-2 px-3 text-center font-medium border border-slate-700">Week</th>
+                      <th className="py-2 px-3 text-center font-medium border border-slate-700 whitespace-nowrap">Phase</th>
+                      {['M','T','W','T','F','S','S'].map((d, i) => (
+                        <th key={i} className="py-2 px-3 text-center font-medium border border-slate-700">{d}</th>
                       ))}
-                      <th className="border p-2 text-center" style={{ width: '60px' }}>Total</th>
+                      <th className="py-2 px-3 text-center font-medium border border-slate-700">Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {weeks.map((week, idx) => {
-                      const isRaceWeek = week.phase === "Race Week";
                       const raceDate = plan.race_date ? parseISODate(plan.race_date) : null;
+                      const isLastWeek = idx === weeks.length - 1;
+                      // Check if this is the race week: either phase is "Race Week" or it's the last week with race in it
+                      let isRaceWeek = week.phase === "Race Week" || week.phase?.toLowerCase().includes("race");
+                      if (!isRaceWeek && isLastWeek && raceDate) {
+                        const weeksUntilRace = Math.ceil(
+                          (raceDate.getTime() - week.weekStartDate.getTime()) / (7 * 24 * 60 * 60 * 1000)
+                        );
+                        if (weeksUntilRace <= 0) {
+                          isRaceWeek = true;
+                          week.phase = "Race Week"; // Update phase for display
+                        }
+                      }
+                      const phase = (week.phase || "").toLowerCase();
+
+                      // Phase icons (matching PlanDraftPreview)
+                      const getPhaseIcon = () => {
+                        if (isRaceWeek) return "🏁";
+                        if (phase.includes("taper")) return "🔋";
+                        if (phase.includes("peak")) return "⚡";
+                        if (phase.includes("build")) return "🔥";
+                        if (phase.includes("base")) return "🧱";
+                        return "";
+                      };
+
+                      // Row styling (matching PlanDraftPreview)
+                      const getRowStyle = () => {
+                        if (isRaceWeek) return "bg-amber-50 hover:bg-amber-100";
+                        return "bg-white hover:bg-gray-50";
+                      };
 
                       // Calculate which day of the week is the day before the race
                       let dayBeforeRace: string | null = null;
@@ -310,69 +340,55 @@ export default function PlanOverviewTable() {
                         raceDayName = dayNames[raceDate.getDay()];
                       }
 
-                      // Calculate total for Race Week including the marathon
+                      // Calculate total for Race Week including the race distance
+                      const raceDistanceMiles = getRaceDistanceMiles(plan.race_distance);
                       let displayTotal = week.total;
                       if (isRaceWeek && raceDayName) {
-                        displayTotal = week.total + 26.2;
+                        displayTotal = week.total + raceDistanceMiles;
                       }
 
                       return (
                         <tr
                           key={idx}
-                          className={
-                            isRaceWeek
-                              ? "bg-amber-100 border-l-4 border-amber-400"
-                              : "hover:bg-gray-50"
-                          }
+                          className={`${getRowStyle()} transition-colors`}
                         >
-                          <td className="border p-2 align-top text-center">
-                            <div className="font-medium">{formatMDY(week.weekStartDate)}</div>
+                          <td className="py-2 px-3 text-center border border-slate-200">
+                            <span className="font-medium text-slate-700">{formatMDY(week.weekStartDate)}</span>
                           </td>
-                          <td
-                            className={`border p-2 align-top text-center whitespace-nowrap hidden sm:table-cell ${
-                              isRaceWeek ? "text-amber-900 font-semibold tracking-wide" : ""
-                            }`}
-                          >
-                            {isRaceWeek ? "Race" : week.phase || ""}
+                          <td className={`py-2 px-3 text-center border border-slate-200 whitespace-nowrap font-medium ${
+                            isRaceWeek ? "text-amber-700" : "text-slate-600"
+                          }`}>
+                            {isRaceWeek ? "Race" : (week.phase || "").trim()} {getPhaseIcon()}
                           </td>
                           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => {
                             // Hide workouts on the day before the race in Race Week
                             const shouldHide = isRaceWeek && day === dayBeforeRace;
-                            // Show 26.2 on the race day
+                            // Show race distance on the race day
                             const isRaceDay = isRaceWeek && day === raceDayName;
                             const hasWorkout = week.workouts[day] > 0;
-                            const workoutDetail = week.workoutDetails[day];
-                            const hrZone = extractHRZone(workoutDetail?.target_hr);
 
                             return (
                               <td
                                 key={day}
-                                className="border p-2 align-top text-center"
+                                className="py-2 px-3 text-center border border-slate-200 tabular-nums"
                               >
                                 {shouldHide ? (
-                                  <span className="text-gray-400">—</span>
+                                  <span className="text-slate-300">—</span>
                                 ) : isRaceDay ? (
-                                  <div className="font-bold text-amber-900">26.2</div>
+                                  <span className="text-slate-800 font-bold">{raceDistanceMiles}</span>
                                 ) : hasWorkout ? (
-                                  <div className="flex flex-col items-center">
-                                    <div>{week.workouts[day]}</div>
-                                    {hrZone && (
-                                      <div className="text-[10px] text-gray-500 mt-0.5 leading-tight">
-                                        {hrZone}
-                                      </div>
-                                    )}
-                                  </div>
+                                  <span className="text-slate-800">{week.workouts[day]}</span>
                                 ) : (
-                                  <span className="text-gray-400">—</span>
+                                  <span className="text-slate-300">—</span>
                                 )}
                               </td>
                             );
                           })}
-                          <td className="border p-2 align-top text-center">
+                          <td className="py-2 px-3 text-center border border-slate-200 tabular-nums font-semibold text-slate-800">
                             {displayTotal > 0 ? (
                               Math.round(displayTotal)
                             ) : (
-                              <span className="text-gray-400">—</span>
+                              <span className="text-slate-300">—</span>
                             )}
                           </td>
                         </tr>

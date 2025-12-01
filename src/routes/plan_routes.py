@@ -215,6 +215,7 @@ def get_current_plan():
                     "target_hr": target_hr,
                     "focus": w.focus,
                     "segments": parse_segments(w.segments),
+                    "phase": w.phase,  # Include phase from database
                 }
             )
 
@@ -224,6 +225,7 @@ def get_current_plan():
                     "plan_id": plan.id,
                     "start_date": workouts[0].date.isoformat() if workouts else None,
                     "race_date": plan.race_date.isoformat() if plan.race_date else None,
+                    "race_distance": plan.race_distance,  # Include race distance for frontend
                     "notes": plan.notes,
                     "workouts": workouts_data,
                 }
