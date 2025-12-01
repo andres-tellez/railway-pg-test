@@ -9,7 +9,7 @@ const PlanLayout: React.FC<PlanLayoutProps> = ({ children }) => {
   const location = useLocation();
 
   const tabs = [
-    { label: 'Calendar', path: '/plan/overview', icon: '📅' },
+    { label: 'Overview', path: '/plan/overview', icon: '📊' },
     { label: 'Manage Plans', path: '/plan/manage', icon: '⚙️' },
     { label: 'Create New Plan', path: '/plan/new', icon: '➕' },
   ];

@@ -346,14 +346,6 @@ const MyPlan: React.FC = () => {
 
           {/* Plan Selector & Actions */}
           <div className="flex items-center gap-2">
-            {/* View Toggle */}
-            <button
-              onClick={() => navigate('/plan/overview-table')}
-              className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-              title="Switch to table view"
-            >
-              Table View
-            </button>
             {/* Plan Selector Dropdown */}
             {availablePlans.length > 1 && (
               <div className="relative flex-1">

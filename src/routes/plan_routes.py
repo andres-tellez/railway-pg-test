@@ -223,6 +223,7 @@ def get_current_plan():
             jsonify(
                 {
                     "plan_id": plan.id,
+                    "plan_name": plan.plan_name,  # Include plan name for frontend
                     "start_date": workouts[0].date.isoformat() if workouts else None,
                     "race_date": plan.race_date.isoformat() if plan.race_date else None,
                     "race_distance": plan.race_distance,  # Include race distance for frontend

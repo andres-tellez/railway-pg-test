@@ -181,18 +181,21 @@ export default function App() {
         path="/plan/overview"
         element={
           <Layout>
-            <MyPlan />
-          </Layout>
-        }
-      />
-      <Route
-        path="/plan/overview-table"
-        element={
-          <Layout>
             <PlanOverviewTable />
           </Layout>
         }
       />
+      {/* Calendar view - hidden but code preserved */}
+      {/*
+      <Route
+        path="/plan/overview-table"
+        element={
+          <Layout>
+            <MyPlan />
+          </Layout>
+        }
+      />
+      */}
       <Route
         path="/plan/new"
         element={
