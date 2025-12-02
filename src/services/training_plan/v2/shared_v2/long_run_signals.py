@@ -7,11 +7,7 @@ from sqlalchemy.orm import Session
 
 from src.services.training_plan.calculations.week_utils import get_complete_weeks
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
-
-
-def round_to_half(value: float) -> float:
-    """Round a float to the nearest 0.5 for presentation/plan values."""
-    return round(value * 2) / 2.0
+from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
 
 
 def recent_longest_3w(activities: List[Dict[str, Any]], *, days: int = 21) -> float:
@@ -168,7 +164,7 @@ def calculate_recovery_week_long_run(
     recovery = min(recovery_by_reduction, recovery_by_percent)
     recovery = max(config.recovery_long_run_floor, recovery)
 
-    return round_to_half(recovery)
+    return round_to_half_mile(recovery)
 
 
 def _extract_miles(activity: Dict[str, Any]) -> float:
@@ -244,12 +240,16 @@ def recent_longest_3w_from_materialized_view(
                     except ValueError:
                         # Try other common formats
                         dt = datetime.strptime(date_str, "%Y-%m-%d")
-                elif hasattr(date_str, 'date'):
+                elif hasattr(date_str, "date"):
                     # If it's already a date/datetime object
-                    dt = datetime.combine(date_str, datetime.min.time()) if isinstance(date_str, date) else date_str
+                    dt = (
+                        datetime.combine(date_str, datetime.min.time())
+                        if isinstance(date_str, date)
+                        else date_str
+                    )
                 else:
                     continue
-                
+
                 if dt < cutoff:
                     continue
 
@@ -270,7 +270,7 @@ def detect_consecutive_long_runs_from_materialized_view(
     """
     Detect consecutive long runs using materialized view.
     Uses mv_longest_runs for fast, consistent data (same as metrics page).
-    
+
     Returns same structure as detect_consecutive_long_runs() for compatibility.
     """
     try:
@@ -339,7 +339,11 @@ def detect_consecutive_long_runs_from_materialized_view(
         most_recent_long_run = weekly_long_runs[0] if weekly_long_runs else 0.0
         has_recent_reduction = False
 
-        if len(weekly_long_runs) >= 2 and most_recent_long_run > 0 and longest_recent > 0:
+        if (
+            len(weekly_long_runs) >= 2
+            and most_recent_long_run > 0
+            and longest_recent > 0
+        ):
             # Check if most recent week is lower than peak
             reduction_threshold = 0.05  # 5% reduction suggests intentional adjustment
             reduction_pct = (longest_recent - most_recent_long_run) / longest_recent

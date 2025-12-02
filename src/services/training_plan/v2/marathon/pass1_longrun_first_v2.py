@@ -15,8 +15,8 @@ from src.services.training_plan.v2.shared_v2.long_run_signals import (
     calculate_recovery_week_long_run,
     detect_consecutive_long_runs_from_materialized_view,
     recent_longest_3w_from_materialized_view,
-    round_to_half,
 )
+from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
 from sqlalchemy.orm import Session
 
 
@@ -98,10 +98,10 @@ def validate_spine(
                 last_was_cutback = True
             else:
                 if last_was_cutback:
-                    expected = round_to_half(min(cap, lr_two_back + cfg["inc"]))
+                    expected = round_to_half_mile(min(cap, lr_two_back + cfg["inc"]))
                     last_was_cutback = False
                 else:
-                    expected = round_to_half(min(cap, lr_prev + cfg["inc"]))
+                    expected = round_to_half_mile(min(cap, lr_prev + cfg["inc"]))
                 if abs(lr - expected) > 1e-6:
                     raise ValueError(
                         f"Week {i+1} invalid: got {lr:.1f}, expected {expected:.1f} (prev {lr_prev:.1f}, two_back {lr_two_back:.1f}, cap {cap:.1f})"
@@ -252,7 +252,7 @@ class Pass1LongRunFirstV2:
                 self.config.min_long_run_miles,  # Never below absolute minimum
             )
             original_start = trusted_start
-            trusted_start = round_to_half(capped_start)
+            trusted_start = round_to_half_mile(capped_start)
             start_rule = f"{start_rule} (capped from {original_start:.1f} to {trusted_start:.1f} for race peak {target_peak_miles:.1f}mi)"
             logger.info(
                 f"🔄 Capping starting long run: User's fitness ({original_start:.1f}mi) exceeds "
@@ -302,7 +302,7 @@ class Pass1LongRunFirstV2:
         try:
             validate_spine(
                 weeks,
-                expected_start=round_to_half(trusted_start),
+                expected_start=round_to_half_mile(trusted_start),
                 peak=target_peak_miles,
                 cfg=cfg,
             )
@@ -397,11 +397,11 @@ class Pass1LongRunFirstV2:
                 else:
                     if last_was_cutback:
                         # Resume: pre-cutback + 1.0
-                        expected = round_to_half(min(cap, lr_two_back + 1.0))
+                        expected = round_to_half_mile(min(cap, lr_two_back + 1.0))
                         last_was_cutback = False
                     else:
                         # Normal build: prior week + 1.0
-                        expected = round_to_half(min(cap, lr_prev + 1.0))
+                        expected = round_to_half_mile(min(cap, lr_prev + 1.0))
                     if abs(lr - expected) > 1e-6:
                         raise ValueError(
                             f"Week {i+1} invalid: got {lr:.1f}, expected {expected:.1f} (prev {lr_prev:.1f}, two_back {lr_two_back:.1f}, cap {cap:.1f})"
