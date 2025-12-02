@@ -93,7 +93,7 @@ export function formatPace(secondsPerMile: number, unitSystem: UnitSystem = 'imp
   const seconds = Math.floor(secondsPerUnit % 60);
   const unit = unitSystem === 'metric' ? 'min/km' : 'min/mi';
 
-  return `${minutes}:${seconds.toString().padStart(2, '0')}/${unit}`;
+  return `${minutes}:${seconds.toString().padStart(2, '0')} ${unit}`;
 }
 
 /**
@@ -102,7 +102,7 @@ export function formatPace(secondsPerMile: number, unitSystem: UnitSystem = 'imp
  * @param minSecondsPerMile - Minimum pace in seconds per mile
  * @param maxSecondsPerMile - Maximum pace in seconds per mile
  * @param unitSystem - User's preferred unit system
- * @returns Formatted string like "9:30—10:00/mi" or "6:00—6:12/km"
+ * @returns Formatted string like "9:30-10:00/min/mi" or "6:00-6:12/min/km"
  */
 export function formatPaceRange(
   minSecondsPerMile: number,
@@ -125,10 +125,10 @@ export function formatPaceRange(
 
   // If range is very small, show single pace
   if (Math.abs(minDisplay - maxDisplay) < 1.0) {
-    return `${minMinutes}:${minSeconds.toString().padStart(2, '0')}/${unit}`;
+    return `${minMinutes}:${minSeconds.toString().padStart(2, '0')} ${unit}`;
   }
 
-  return `${minMinutes}:${minSeconds.toString().padStart(2, '0')}—${maxMinutes}:${maxSeconds.toString().padStart(2, '0')}/${unit}`;
+  return `${minMinutes}:${minSeconds.toString().padStart(2, '0')}-${maxMinutes}:${maxSeconds.toString().padStart(2, '0')} ${unit}`;
 }
 
 /**
@@ -143,6 +143,75 @@ export function toDisplayPace(secondsPerMile: number, unitSystem: UnitSystem): n
     return Math.round(secondsPerMile * SEC_PER_MI_TO_SEC_PER_KM * 10) / 10;
   }
   return Math.round(secondsPerMile * 10) / 10;
+}
+
+/**
+ * Parse and convert pace string (e.g., "9:30-10:00/mi" or "9:30/mi")
+ * to user's preferred unit system
+ *
+ * @param paceString - Pace string like "9:30-10:00/mi" or "9:30/mi"
+ * @param unitSystem - User's preferred unit system
+ * @returns Formatted string like "9:30-10:00/min/mi" or "5:54-6:13/min/km"
+ *
+ * @example
+ * parseAndConvertPaceString("9:30-10:00/mi", "imperial") // "9:30-10:00/min/mi"
+ * parseAndConvertPaceString("9:30-10:00/mi", "metric")   // "5:54-6:13/min/km"
+ */
+export function parseAndConvertPaceString(
+  paceString: string,
+  unitSystem: UnitSystem = 'imperial'
+): string {
+  if (!paceString) return '';
+
+  // Handle range format: "9:23—9:53/mi" (backend uses em dash —) or "9:30-10:00/min/mi"
+  // Backend format: "9:23—9:53/mi" (em dash, no /min/)
+  const rangeMatch = paceString.match(/^(\d+:\d+)[-—](\d+:\d+)\/(?:min\/)?(mi|km)$/);
+  // Handle single format: "9:30/mi" or "9:30/min/mi"
+  const singleMatch = paceString.match(/^(\d+:\d+)\/(?:min\/)?(mi|km)$/);
+
+  if (rangeMatch) {
+    // Range format - convert both paces
+    const [, minPace, maxPace, originalUnit] = rangeMatch;
+    const minSeconds = parsePaceStringToSeconds(minPace);
+    const maxSeconds = parsePaceStringToSeconds(maxPace);
+
+    // Convert from original unit to seconds per mile
+    const minSecondsPerMile = originalUnit === 'mi'
+      ? minSeconds
+      : minSeconds / SEC_PER_MI_TO_SEC_PER_KM;
+    const maxSecondsPerMile = originalUnit === 'mi'
+      ? maxSeconds
+      : maxSeconds / SEC_PER_MI_TO_SEC_PER_KM;
+
+    // Format using formatPaceRange which handles conversion
+    return formatPaceRange(minSecondsPerMile, maxSecondsPerMile, unitSystem);
+  }
+
+  if (singleMatch) {
+    // Single pace format
+    const [, pace, originalUnit] = singleMatch;
+    const seconds = parsePaceStringToSeconds(pace);
+
+    // Convert from original unit to seconds per mile
+    const secondsPerMile = originalUnit === 'mi'
+      ? seconds
+      : seconds / SEC_PER_MI_TO_SEC_PER_KM;
+
+    // Format using formatPace which handles conversion
+    return formatPace(secondsPerMile, unitSystem);
+  }
+
+  // If format doesn't match, return as-is (fallback for edge cases)
+  return paceString;
+}
+
+/**
+ * Parse pace string (e.g., "9:30") to total seconds
+ * @internal - Helper function
+ */
+function parsePaceStringToSeconds(paceStr: string): number {
+  const [minutes, seconds] = paceStr.split(':').map(Number);
+  return (minutes * 60) + (seconds || 0);
 }
 
 // ============================================================================
