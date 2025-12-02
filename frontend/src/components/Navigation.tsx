@@ -11,7 +11,7 @@
  * - Active page highlighting
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useApiClient } from '../utils/apiClient';
@@ -28,6 +28,9 @@ const Navigation: React.FC = () => {
   } | null>(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  // TODO: Connect to UnitSystemContext when ready
+  const [unitSystem, setUnitSystem] = useState<'imperial' | 'metric'>('imperial');
+  const profileDropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch user state for smart navigation
   // Refresh when authenticated, when location changes (to catch onboarding completion), or when userState is null
@@ -44,6 +47,26 @@ const Navigation: React.FC = () => {
         });
     }
   }, [isAuthenticated, location.pathname]); // Refresh when route changes to catch onboarding completion
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        profileDropdownRef.current &&
+        !profileDropdownRef.current.contains(event.target as Node)
+      ) {
+        setShowProfileDropdown(false);
+      }
+    };
+
+    if (showProfileDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showProfileDropdown]);
 
   const handleLogout = () => {
     logout({
@@ -123,7 +146,7 @@ const Navigation: React.FC = () => {
           </div>
 
           {/* User Profile Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={profileDropdownRef}>
             <button
               onClick={() => setShowProfileDropdown(!showProfileDropdown)}
               className="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-50 transition-colors"
@@ -156,11 +179,78 @@ const Navigation: React.FC = () => {
 
             {/* Profile Dropdown */}
             {showProfileDropdown && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-50">
+              <div className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-50">
                 <div className="px-4 py-2 border-b border-gray-100">
                   <p className="text-sm font-medium text-gray-900">{user?.name}</p>
                   <p className="text-sm text-gray-500">{user?.email}</p>
                 </div>
+
+                {/* Unit System Toggle */}
+                <div className="px-4 py-2 border-b border-gray-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-gray-500">Units</span>
+                    <Link
+                      to="/settings"
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                      onClick={() => setShowProfileDropdown(false)}
+                    >
+                      Settings →
+                    </Link>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => {
+                        setUnitSystem('imperial');
+                        // TODO: Connect to UnitSystemContext when ready
+                        // Don't close dropdown - let user see the change
+                      }}
+                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors relative ${
+                        unitSystem === 'imperial'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                      title="Imperial (miles, min/mi)"
+                    >
+                      {unitSystem === 'imperial' && (
+                        <span className="absolute left-1 top-1">✓</span>
+                      )}
+                      <span className={unitSystem === 'imperial' ? 'ml-4' : ''}>Imperial</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setUnitSystem('metric');
+                        // TODO: Connect to UnitSystemContext when ready
+                        // Don't close dropdown - let user see the change
+                      }}
+                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors relative ${
+                        unitSystem === 'metric'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                      title="Metric (km, min/km)"
+                    >
+                      {unitSystem === 'metric' && (
+                        <span className="absolute left-1 top-1">✓</span>
+                      )}
+                      <span className={unitSystem === 'metric' ? 'ml-4' : ''}>Metric</span>
+                    </button>
+                  </div>
+                  {/* Small feedback text */}
+                  <p className="text-xs text-gray-500 mt-2">
+                    {unitSystem === 'imperial' ? 'Using miles, min/mi' : 'Using km, min/km'}
+                  </p>
+                </div>
+
+                {/* Settings Link */}
+                <Link
+                  to="/settings"
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  onClick={() => setShowProfileDropdown(false)}
+                >
+                  ⚙️ Settings
+                </Link>
+
+                {/* Sign out */}
                 <button
                   onClick={handleLogout}
                   className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"

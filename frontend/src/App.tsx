@@ -43,7 +43,7 @@ import AskGptMvpUI from "./pages/AskGptMvpUI";
 import AuthTestPage from "./pages/AuthTestPage";
 import WelcomePage from "./pages/WelcomePage";
 import SimpleMetrics from "./pages/SimpleMetrics";
-import GYRMetricsDemo from "./pages/GYRMetricsDemo";
+// import GYRMetricsDemo from "./pages/GYRMetricsDemo"; // GYR Scores page hidden
 import Metrics from "./pages/Metrics";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
@@ -265,6 +265,8 @@ export default function App() {
           </Layout>
         }
       />
+      {/* GYR Scores demo route - hidden */}
+      {/*
       <Route
         path="/gyr-demo"
         element={
@@ -273,6 +275,7 @@ export default function App() {
           </Layout>
         }
       />
+      */}
 
       {/* Legacy Routes */}
       <Route
