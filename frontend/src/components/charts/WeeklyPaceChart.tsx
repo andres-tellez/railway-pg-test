@@ -5,6 +5,8 @@ import { useStaticBarStyle, getNumberDisplayClasses, getChartContainerStyle } fr
 import { calculateChartContainerHeight, calculateBarHeight } from '../../utils/chartHelpers';
 import { CHART_LAYOUT, CHART_SHADOWS, CHART_BASE_CLASSES } from '../../utils/chartUtils';
 import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
+import { useUnitSystem } from '../../context/UnitSystemContext';
+import { formatPace, getUnitLabels } from '../../utils/unitFormatters';
 
 interface WeeklyPaceData {
   week: string;
@@ -31,6 +33,8 @@ export default function WeeklyPaceChart({
   helpTooltip
 }: WeeklyPaceChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
+  const { unitSystem } = useUnitSystem();
+  const unitLabels = getUnitLabels(unitSystem);
 
   // Centralized tooltip behavior - hide on scroll
   useScrollHideTooltip(hoveredBar !== null, () => setHoveredBar(null));
@@ -56,6 +60,19 @@ export default function WeeklyPaceChart({
     const seconds = Math.round((minutes - wholeMinutes) * 60);
     return `${wholeMinutes}:${seconds.toString().padStart(2, '0')}`;
   }, []);
+
+  // Helper to convert pace string (min/mi) to formatted pace based on unit system
+  const convertPaceString = useCallback((paceString: string, unitSystem: 'imperial' | 'metric'): string => {
+    if (!paceString || paceString === '0:00') return '0:00';
+    // Parse pace string to minutes per mile
+    const minutesPerMile = parsePaceToMinutes(paceString);
+    // Convert to seconds per mile
+    const secondsPerMile = minutesPerMile * 60;
+    // Format using utility (returns "8:45/min/mi" or "5:26/min/km")
+    const formatted = formatPace(secondsPerMile, unitSystem);
+    // Extract just the time portion (without "/min/mi" or "/min/km")
+    return formatted.split('/')[0];
+  }, [parsePaceToMinutes]);
 
   // Helper function to format dates as M/D
   const formatDate = useCallback((dateStr: string): string => {
@@ -148,7 +165,7 @@ export default function WeeklyPaceChart({
           </div>
           <div className="text-right">
             <div className="text-lg text-gray-700">
-              Units: min/mi
+              Units: {unitLabels.paceAbbrev}
             </div>
           </div>
         </div>
@@ -201,7 +218,7 @@ export default function WeeklyPaceChart({
               <div key={index} className={CHART_BASE_CLASSES.BAR_CONTAINER}>
                 {/* Pace value above bar */}
                 <div className={getNumberDisplayClasses('medium')}>
-                  {minutesToPaceString(paceInMinutes)}
+                  {convertPaceString(week.avgPace, unitSystem)}
                 </div>
 
                 <div
@@ -240,7 +257,7 @@ export default function WeeklyPaceChart({
           data={{
             week: hoveredBar ? data[hoveredBar.index].week : '',
             value: hoveredBar ? parsePaceToMinutes(data[hoveredBar.index].avgPace) : 0,
-            unit: 'min/mi',
+            unit: unitLabels.paceAbbrev,
             runs: hoveredBar ? data[hoveredBar.index].runs : undefined,
             distance: hoveredBar ? data[hoveredBar.index].distance : undefined,
             trend: hoveredBar && hoveredBar.index < data.length - 1 ?
