@@ -68,10 +68,11 @@ export default function WeeklyPaceChart({
     const minutesPerMile = parsePaceToMinutes(paceString);
     // Convert to seconds per mile
     const secondsPerMile = minutesPerMile * 60;
-    // Format using utility (returns "8:45/min/mi" or "5:26/min/km")
+    // Format using utility (returns "8:45 min/mi" or "5:26 min/km")
     const formatted = formatPace(secondsPerMile, unitSystem);
-    // Extract just the time portion (without "/min/mi" or "/min/km")
-    return formatted.split('/')[0];
+    // Extract just the time portion (without "min" and "/min/mi" or "/min/km")
+    // formatPace returns "9:45 min/mi", so split on space and take first part
+    return formatted.split(' ')[0];
   }, [parsePaceToMinutes]);
 
   // Helper function to format dates as M/D
@@ -216,13 +217,8 @@ export default function WeeklyPaceChart({
 
             return (
               <div key={index} className={CHART_BASE_CLASSES.BAR_CONTAINER}>
-                {/* Pace value above bar */}
-                <div className={getNumberDisplayClasses('medium')}>
-                  {convertPaceString(week.avgPace, unitSystem)}
-                </div>
-
                 <div
-                  className={`${CHART_BASE_CLASSES.BAR} bg-blue-500`}
+                  className={`${CHART_BASE_CLASSES.BAR} bg-blue-500 relative`}
                   style={{
                     ...staticBarStyle,
                     height: `${heightPixels}px`,
@@ -237,7 +233,12 @@ export default function WeeklyPaceChart({
                     });
                   }}
                   onMouseLeave={() => setHoveredBar(null)}
-                />
+                >
+                  {/* Pace value inside bar at top */}
+                  <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-semibold text-white drop-shadow" aria-hidden="true">
+                    {convertPaceString(week.avgPace, unitSystem)}
+                  </div>
+                </div>
 
                 {/* Date below bar */}
                 <div className="text-xs text-gray-500 mt-1">

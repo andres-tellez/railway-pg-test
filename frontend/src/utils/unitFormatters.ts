@@ -165,7 +165,8 @@ export function parseAndConvertPaceString(
 
   // Handle range format: "9:23—9:53/mi" (backend uses em dash —) or "9:30-10:00/min/mi"
   // Backend format: "9:23—9:53/mi" (em dash, no /min/)
-  const rangeMatch = paceString.match(/^(\d+:\d+)[-—](\d+:\d+)\/(?:min\/)?(mi|km)$/);
+  // Also handles en dash (–) used in HeartRateZones.tsx
+  const rangeMatch = paceString.match(/^(\d+:\d+)[-–—](\d+:\d+)\/(?:min\/)?(mi|km)$/);
   // Handle single format: "9:30/mi" or "9:30/min/mi"
   const singleMatch = paceString.match(/^(\d+:\d+)\/(?:min\/)?(mi|km)$/);
 

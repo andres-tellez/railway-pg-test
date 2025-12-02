@@ -155,6 +155,17 @@ const UserProfile: React.FC = () => {
   return (
     <AuthGuard>
       <div className="max-w-2xl mx-auto mt-10 bg-white shadow-xl rounded-xl p-8 space-y-6 border">
+        <div className="mb-4">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
+        </div>
         <div className="space-y-1 text-center">
           <h1 className="text-3xl font-bold text-gray-800">{isNewUser ? "Complete Your Profile" : "My Profile"}</h1>
           <p className="text-gray-500 text-sm">{isNewUser ? "Tell us a bit about yourself to get started" : "View and edit your profile information"}</p>
@@ -211,64 +222,52 @@ const UserProfile: React.FC = () => {
               unit="lbs"
             />
 
+            <InlineEditableField
+              label="Max Heart Rate"
+              field="max_hr"
+              value={profile.max_hr}
+              editing={editingField === "max_hr"}
+              onEdit={() => handleEditField("max_hr")}
+              onSave={(value) => handleSaveField("max_hr", value)}
+              onCancel={handleCancelEdit}
+              type="number"
+              min={120}
+              max={220}
+              unit="bpm"
+              isRequired={!profile.max_hr}
+            />
             <div className="mb-4 pb-4 border-b last:border-b-0">
-              <div className="flex items-start gap-4">
-                <div className="font-medium text-gray-700 w-32 flex-shrink-0"></div>
-                <div className="flex-1">
-                  <InlineEditableField
-                    label="Max Heart Rate"
-                    field="max_hr"
-                    value={profile.max_hr}
-                    editing={editingField === "max_hr"}
-                    onEdit={() => handleEditField("max_hr")}
-                    onSave={(value) => handleSaveField("max_hr", value)}
-                    onCancel={handleCancelEdit}
-                    type="number"
-                    min={120}
-                    max={220}
-                    unit="bpm"
-                    isRequired={!profile.max_hr}
-                  />
-                  <div className="ml-36 mt-2">
-                    <Link
-                      to="/heart-rate-zones"
-                      className="text-sm text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      What are HR zones?
-                    </Link>
-                  </div>
-                </div>
+              <div className="mt-2">
+                <Link
+                  to="/heart-rate-zones"
+                  className="text-sm text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  What are HR zones?
+                </Link>
               </div>
-            </div>
-            <div className="mb-4 pb-4 border-b last:border-b-0">
-              <div className="flex items-start gap-4">
-                <span className="font-medium text-gray-700 w-32 flex-shrink-0"></span>
-                <div className="flex-1">
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
-                    <p className="text-sm text-blue-900 font-medium mb-1">
-                      How to find your Max HR in Strava:
-                    </p>
-                    <ol className="text-xs text-blue-800 list-decimal list-inside space-y-1 ml-2">
-                      <li>Go to <strong>Strava.com</strong> and log in</li>
-                      <li>Click your profile picture → <strong>Settings</strong></li>
-                      <li>Go to <strong>My Performance</strong> → <strong>Heart Rate Zones</strong></li>
-                      <li>Look for <strong>"Based on Max Heart Rate"</strong> - that's your value</li>
-                      <li>Enter that number (e.g., 185) in the field above</li>
-                    </ol>
-                  </div>
-                  <p className="text-sm text-gray-600 mt-2">
-                    <strong>Note:</strong> Strava API doesn't provide this value, so manual entry is required.
-                  </p>
-                  {profile.max_hr && (
-                    <p className="text-xs text-gray-500 mt-2">
-                      ✓ HR zones in your plan will use this max HR value ({profile.max_hr} bpm).
-                    </p>
-                  )}
-                </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2 mt-4">
+                <p className="text-sm text-blue-900 font-medium mb-1">
+                  How to find your Max HR in Strava:
+                </p>
+                <ol className="text-xs text-blue-800 list-decimal list-inside space-y-1 ml-2">
+                  <li>Go to <strong>Strava.com</strong> and log in</li>
+                  <li>Click your profile picture → <strong>Settings</strong></li>
+                  <li>Go to <strong>My Performance</strong> → <strong>Heart Rate Zones</strong></li>
+                  <li>Look for <strong>"Based on Max Heart Rate"</strong> - that's your value</li>
+                  <li>Enter that number (e.g., 185) in the field above</li>
+                </ol>
               </div>
+              <p className="text-sm text-gray-600 mt-2">
+                <strong>Note:</strong> Strava API doesn't provide this value, so manual entry is required.
+              </p>
+              {profile.max_hr && (
+                <p className="text-xs text-gray-500 mt-2">
+                  ✓ HR zones in your plan will use this max HR value ({profile.max_hr} bpm).
+                </p>
+              )}
             </div>
           </div>
 

@@ -1,8 +1,12 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { AuthGuard } from '@/components/AuthGuard';
+import { useUnitSystem } from '@/context/UnitSystemContext';
+import { parseAndConvertPaceString } from '@/utils/unitFormatters';
 
 const HeartRateZones: React.FC = () => {
+  const { unitSystem } = useUnitSystem();
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-50 py-8">
@@ -139,7 +143,9 @@ const HeartRateZones: React.FC = () => {
                       <span className="text-2xl">🩵</span>
                       <span className="ml-2 font-semibold text-gray-900">Z1</span>
                     </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">10:30–12:00/mi</td>
+                    <td className="py-4 px-4 text-gray-700 font-medium">
+                      {parseAndConvertPaceString('10:30–12:00/mi', unitSystem)}
+                    </td>
                     <td className="py-4 px-4 text-gray-600">Recovery runs, warm-ups</td>
                   </tr>
                   <tr className="border-b border-gray-200 hover:bg-green-50 transition-colors">
@@ -147,7 +153,9 @@ const HeartRateZones: React.FC = () => {
                       <span className="text-2xl">💚</span>
                       <span className="ml-2 font-semibold text-gray-900">Z2</span>
                     </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">9:10–10:30/mi</td>
+                    <td className="py-4 px-4 text-gray-700 font-medium">
+                      {parseAndConvertPaceString('9:10–10:30/mi', unitSystem)}
+                    </td>
                     <td className="py-4 px-4 text-gray-600">Long runs, easy aerobic training</td>
                   </tr>
                   <tr className="border-b border-gray-200 hover:bg-yellow-50 transition-colors">
@@ -155,7 +163,9 @@ const HeartRateZones: React.FC = () => {
                       <span className="text-2xl">💛</span>
                       <span className="ml-2 font-semibold text-gray-900">Z3</span>
                     </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">8:00–9:10/mi</td>
+                    <td className="py-4 px-4 text-gray-700 font-medium">
+                      {parseAndConvertPaceString('8:00–9:10/mi', unitSystem)}
+                    </td>
                     <td className="py-4 px-4 text-gray-600">Tempo runs, steady efforts</td>
                   </tr>
                   <tr className="border-b border-gray-200 hover:bg-orange-50 transition-colors">
@@ -163,7 +173,9 @@ const HeartRateZones: React.FC = () => {
                       <span className="text-2xl">🧡</span>
                       <span className="ml-2 font-semibold text-gray-900">Z4</span>
                     </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">7:35–8:00/mi</td>
+                    <td className="py-4 px-4 text-gray-700 font-medium">
+                      {parseAndConvertPaceString('7:35–8:00/mi', unitSystem)}
+                    </td>
                     <td className="py-4 px-4 text-gray-600">Intervals, hill repeats</td>
                   </tr>
                   <tr className="border-b border-gray-200 hover:bg-red-50 transition-colors">
@@ -171,7 +183,9 @@ const HeartRateZones: React.FC = () => {
                       <span className="text-2xl">❤️</span>
                       <span className="ml-2 font-semibold text-gray-900">Z5</span>
                     </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">&lt;7:35/mi</td>
+                    <td className="py-4 px-4 text-gray-700 font-medium">
+                      &lt;{parseAndConvertPaceString('7:35/mi', unitSystem)}
+                    </td>
                     <td className="py-4 px-4 text-gray-600">Sprints, all-out efforts</td>
                   </tr>
                 </tbody>
