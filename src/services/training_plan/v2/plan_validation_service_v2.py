@@ -517,11 +517,6 @@ class PlanValidationServiceV2:
 
         return violations
 
-    @staticmethod
-    def _validate_weekly_caps(weeks: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-        """Deprecated: previously enforced a hard weekly cap. No longer used."""
-        return []
-
     def _validate_long_run_bounds(
         self, weeks: List[Dict[str, Any]]
     ) -> List[Dict[str, str]]:

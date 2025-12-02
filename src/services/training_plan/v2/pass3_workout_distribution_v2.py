@@ -50,7 +50,6 @@ class Pass3WorkoutDistribution:
         config: RaceDistanceConfig,
         race_type: str = "marathon",
         scenario: str = None,
-        use_new_engine: bool = True,  # Kept for compatibility, always True now
     ):
         """Initialize Pass 3 workout distribution calculator.
 
@@ -58,7 +57,6 @@ class Pass3WorkoutDistribution:
             config: Race distance configuration
             race_type: Race type for template lookup ("marathon", "half", etc.)
             scenario: Optional scenario for template/rule overrides
-            use_new_engine: Deprecated - always uses new engine
         """
         self.config = config
         self.race_type = race_type

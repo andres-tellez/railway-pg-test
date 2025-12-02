@@ -101,7 +101,6 @@ class PlanGenerationOrchestratorV2:
             config=config,
             race_type=race_type,
             scenario=scenario,
-            use_new_engine=True,  # Enable new taxonomy-based placement
         )
         self.pass4 = Pass4WorkoutDetails()
         self.validator = PlanValidationServiceV2(config=config)
