@@ -15,6 +15,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useApiClient } from '../utils/apiClient';
+import { useUnitSystem } from '../context/UnitSystemContext';
 
 const Navigation: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuth0();
@@ -28,8 +29,7 @@ const Navigation: React.FC = () => {
   } | null>(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  // TODO: Connect to UnitSystemContext when ready
-  const [unitSystem, setUnitSystem] = useState<'imperial' | 'metric'>('imperial');
+  const { unitSystem, setUnitSystem } = useUnitSystem();
   const profileDropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch user state for smart navigation
@@ -201,7 +201,6 @@ const Navigation: React.FC = () => {
                     <button
                       onClick={() => {
                         setUnitSystem('imperial');
-                        // TODO: Connect to UnitSystemContext when ready
                         // Don't close dropdown - let user see the change
                       }}
                       className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors relative ${
@@ -219,7 +218,6 @@ const Navigation: React.FC = () => {
                     <button
                       onClick={() => {
                         setUnitSystem('metric');
-                        // TODO: Connect to UnitSystemContext when ready
                         // Don't close dropdown - let user see the change
                       }}
                       className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors relative ${

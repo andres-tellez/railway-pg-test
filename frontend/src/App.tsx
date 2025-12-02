@@ -57,6 +57,7 @@ import HeartRateZones from "./pages/HeartRateZones";
 import Layout from "./components/Layout";
 import PlanLayout from "./components/layout/PlanLayout";
 import SmartRouter from "./components/SmartRouter";
+import { UnitSystemProvider } from "./context/UnitSystemContext";
 
 // ---------------------------
 // LoginPage
@@ -121,9 +122,10 @@ export default function App() {
   console.log("Auth0 Status →", { isLoading, isAuthenticated });
 
   return (
-    <Routes>
-      {/* Public Routes */}
-      <Route path="/welcome" element={<WelcomePage />} />
+    <UnitSystemProvider>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/welcome" element={<WelcomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
       <Route path="/terms-of-service" element={<TermsOfService />} />
@@ -320,6 +322,7 @@ export default function App() {
 
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </UnitSystemProvider>
   );
 }
