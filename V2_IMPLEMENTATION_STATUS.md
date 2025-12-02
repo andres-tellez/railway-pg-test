@@ -22,10 +22,9 @@
    - `race_distance_factory_v2.py` - Factory to get configs
 
 5. **Shared Services (Copied)**
-   - `shared_v2/data_collection_service_v2.py`
-   - `shared_v2/insights_calculation_service_v2.py`
    - `shared_v2/pass1_weeks_selector_v2.py`
    - `shared_v2/long_run_spine_v2.py`
+   - Note: `data_collection_service_v2.py` and `insights_calculation_service_v2.py` were removed (not used - orchestrator uses materialized view)
 
 6. **Marathon Services (Partially Copied)**
    - `marathon/pass1_longrun_first_v2.py` - Copied, needs adaptation
