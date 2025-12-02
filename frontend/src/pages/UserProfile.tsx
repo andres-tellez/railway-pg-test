@@ -5,11 +5,13 @@ import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
 import { AuthGuard } from "@/components/AuthGuard";
 import { AgeGroupLabels, DayLabels, Days, AgeGroups } from "@/schemas/onboardingSchema";
+import { useUnitSystem } from "@/context/UnitSystemContext";
 
 const UserProfile: React.FC = () => {
   const { isReady, userId } = useAuthSetup();
   const api = useApiClient();
   const navigate = useNavigate();
+  const { setUnitSystem } = useUnitSystem();
 
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -82,6 +84,7 @@ const UserProfile: React.FC = () => {
       payload.trainingDays = profile.training_days;
       payload.weight = profile.weight;
       payload.max_hr = profile.max_hr;
+      payload.unitSystem = profile.unit_system || 'imperial';
       payload.height = {
         feet: profile.height_feet || 5,
         inches: profile.height_inches || 0,
@@ -101,12 +104,19 @@ const UserProfile: React.FC = () => {
         payload.weight = value;
       } else if (field === "max_hr") {
         payload.max_hr = value;
+      } else if (field === "unit_system") {
+        payload.unitSystem = value;
       }
 
       console.log("Sending payload:", payload);
 
       // Send update to backend
       await api.post("/api/onboarding", payload);
+
+      // If unit system was changed, update the context immediately
+      if (field === "unit_system") {
+        setUnitSystem(value);
+      }
 
       // Refresh profile from server to ensure we have the latest data
       const response = await api.get("/api/onboarding");
@@ -260,6 +270,26 @@ const UserProfile: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Display Preferences Section */}
+          <div className="border border-gray-200 rounded-lg p-6">
+            <h2 className="text-xl font-semibold text-gray-800 mb-4">Display Preferences</h2>
+
+            <InlineEditableField
+              label="Unit System"
+              field="unit_system"
+              value={profile.unit_system || 'imperial'}
+              editing={editingField === "unit_system"}
+              onEdit={() => handleEditField("unit_system")}
+              onSave={(value) => handleSaveField("unit_system", value)}
+              onCancel={handleCancelEdit}
+              type="select"
+              options={[
+                { value: 'imperial', label: 'Imperial (miles, min/mi)' },
+                { value: 'metric', label: 'Metric (km, min/km)' }
+              ]}
+            />
           </div>
         </div>
       </div>

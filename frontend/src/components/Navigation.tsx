@@ -15,7 +15,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useApiClient } from '../utils/apiClient';
-import { useUnitSystem } from '../context/UnitSystemContext';
 
 const Navigation: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuth0();
@@ -29,7 +28,6 @@ const Navigation: React.FC = () => {
   } | null>(null);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  const { unitSystem, setUnitSystem } = useUnitSystem();
   const profileDropdownRef = useRef<HTMLDivElement>(null);
 
   // Fetch user state for smart navigation
@@ -185,59 +183,14 @@ const Navigation: React.FC = () => {
                   <p className="text-sm text-gray-500">{user?.email}</p>
                 </div>
 
-                {/* Unit System Toggle */}
-                <div className="px-4 py-2 border-b border-gray-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-gray-500">Units</span>
-                    <Link
-                      to="/settings"
-                      className="text-xs text-blue-600 hover:text-blue-800"
-                      onClick={() => setShowProfileDropdown(false)}
-                    >
-                      Settings →
-                    </Link>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => {
-                        setUnitSystem('imperial');
-                        // Don't close dropdown - let user see the change
-                      }}
-                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors relative ${
-                        unitSystem === 'imperial'
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                      title="Imperial (miles, min/mi)"
-                    >
-                      {unitSystem === 'imperial' && (
-                        <span className="absolute left-1 top-1">✓</span>
-                      )}
-                      <span className={unitSystem === 'imperial' ? 'ml-4' : ''}>Imperial</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setUnitSystem('metric');
-                        // Don't close dropdown - let user see the change
-                      }}
-                      className={`flex-1 px-3 py-1.5 text-xs font-medium rounded transition-colors relative ${
-                        unitSystem === 'metric'
-                          ? 'bg-blue-600 text-white shadow-sm'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
-                      title="Metric (km, min/km)"
-                    >
-                      {unitSystem === 'metric' && (
-                        <span className="absolute left-1 top-1">✓</span>
-                      )}
-                      <span className={unitSystem === 'metric' ? 'ml-4' : ''}>Metric</span>
-                    </button>
-                  </div>
-                  {/* Small feedback text */}
-                  <p className="text-xs text-gray-500 mt-2">
-                    {unitSystem === 'imperial' ? 'Using miles, min/mi' : 'Using km, min/km'}
-                  </p>
-                </div>
+                {/* Profile Link */}
+                <Link
+                  to="/profile"
+                  className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  onClick={() => setShowProfileDropdown(false)}
+                >
+                  👤 Profile
+                </Link>
 
                 {/* Settings Link */}
                 <Link

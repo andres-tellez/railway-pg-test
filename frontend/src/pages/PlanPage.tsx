@@ -4,6 +4,8 @@ import { useApiClient } from "../utils/apiClient";
 import { useAuthSetup } from "../hooks/useAuthSetup";
 import { AuthGuard } from "../components/AuthGuard";
 import { format, parseISO, startOfWeek } from "date-fns";
+import { useUnitSystem } from "../context/UnitSystemContext";
+import { formatDistance, parseAndConvertPaceString } from "../utils/unitFormatters";
 
 type Workout = {
   id: number;
@@ -136,6 +138,8 @@ const WorkoutRow: React.FC<WorkoutRowProps> = ({
   isExpanded,
   onToggle,
 }) => {
+  const { unitSystem } = useUnitSystem();
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!isInteractive) return;
     if (event.key === "Enter" || event.key === " ") {
@@ -159,11 +163,11 @@ const WorkoutRow: React.FC<WorkoutRowProps> = ({
     >
                   <p className="font-medium">
         {format(parseISO(workout.date), "EEE, MMM d")} — {workout.workout_type} (
-        {workout.miles} mi)
+        {formatDistance(workout.miles, unitSystem, 1)})
                   </p>
       {(!isInteractive || isExpanded) && workout.target_zone && (
                     <p className="text-sm text-blue-700 font-medium mt-1">
-          Target pace: {workout.target_zone}
+          Target pace: {parseAndConvertPaceString(workout.target_zone, unitSystem)}
                     </p>
                   )}
       {/* Only show description when no structured notes exist */}
@@ -179,10 +183,15 @@ const WorkoutRow: React.FC<WorkoutRowProps> = ({
                     <div className="mt-3 pt-3 border-t border-gray-200">
                       <p className="text-xs font-semibold text-gray-700 mb-2">Workout Structure:</p>
                       <div className="space-y-1">
-          {workout.segments.steps.map((step: any, idx: number) => (
+          {workout.segments.steps.map((step: any, idx: number) => {
+                            const formattedDistance = step.durationType === 'DISTANCE'
+                              ? formatDistance(step.value, unitSystem, 1)
+                              : `${step.value} ${step.value === 1 ? 'minute' : 'minutes'}`;
+
+                            return (
                           <div key={idx} className="flex justify-between items-start text-xs">
                             <span className="text-gray-700">
-                              {step.name} ({step.value} {step.durationType === 'DISTANCE' ? 'mi' : 'min'})
+                              {step.name} ({formattedDistance})
                             </span>
                             {step.intensity && (
                               <span className="ml-2 px-2 py-0.5 rounded bg-gray-100 text-gray-600">
@@ -190,7 +199,8 @@ const WorkoutRow: React.FC<WorkoutRowProps> = ({
                               </span>
                             )}
                           </div>
-                        ))}
+                        );
+                          })}
                       </div>
           {workout.segments.notes && (
             <p className="text-xs text-gray-600 mt-2 italic">{workout.segments.notes}</p>
