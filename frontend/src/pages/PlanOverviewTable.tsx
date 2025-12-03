@@ -4,7 +4,7 @@ import { AuthGuard } from "@/components/AuthGuard";
 import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
 import { useUnitSystem } from "@/context/UnitSystemContext";
-import { toDisplayDistance } from "@/utils/unitFormatters";
+import { formatDistanceNumber, toDisplayDistance } from "@/utils/unitFormatters";
 
 type PlanResponse = {
   plan_id: string;
@@ -390,11 +390,11 @@ export default function PlanOverviewTable() {
                                   <span className="text-slate-300">—</span>
                                 ) : isRaceDay ? (
                                   <span className="text-slate-800 font-bold">
-                                    {toDisplayDistance(raceDistanceMiles, unitSystem).toFixed(1)}
+                                    {formatDistanceNumber(raceDistanceMiles, unitSystem)}
                                   </span>
                                 ) : hasWorkout ? (
                                   <span className="text-slate-800">
-                                    {toDisplayDistance(week.workouts[day], unitSystem).toFixed(1)}
+                                    {formatDistanceNumber(week.workouts[day], unitSystem)}
                                   </span>
                                 ) : (
                                   <span className="text-slate-300">—</span>
