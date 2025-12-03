@@ -21,7 +21,7 @@ import { AuthGuard } from '@/components/AuthGuard';
 import { normalizeWorkoutTypeDisplay } from '@/utils/workoutTypeUtils';
 import MaxHrBanner from '@/components/MaxHrBanner';
 import { useUnitSystem } from '@/context/UnitSystemContext';
-import { formatDistance, formatPace, formatPaceRange, parseAndConvertPaceString } from '@/utils/unitFormatters';
+import { formatDistanceNumber, formatDistance, formatPace, formatPaceRange, parseAndConvertPaceString } from '@/utils/unitFormatters';
 
 type Workout = {
   date: string;
@@ -86,7 +86,7 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
       <div className="space-y-3">
         {/* Workout Header */}
         <div className="font-semibold text-lg text-gray-900">
-          {normalizeWorkoutTypeDisplay(workout.workout_type || "")?.toUpperCase() || workout.type} - {workout.miles ? formatDistance(workout.miles, unitSystem, 1) : '0.0 mi'}
+          {normalizeWorkoutTypeDisplay(workout.workout_type || "")?.toUpperCase() || workout.type} - {workout.miles ? `${formatDistanceNumber(workout.miles, unitSystem)} ${unitSystem === 'metric' ? 'km' : 'mi'}` : `0 ${unitSystem === 'metric' ? 'km' : 'mi'}`}
         </div>
 
         {/* Target Zone */}
@@ -118,7 +118,7 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
     <div className="space-y-4">
       {/* Workout Header */}
       <div className="font-semibold text-lg text-gray-900">
-        {normalizeWorkoutTypeDisplay(workout.workout_type || "")?.toUpperCase() || workout.type} - {workout.miles ? formatDistance(workout.miles, unitSystem, 1) : '0.0 mi'}
+        {normalizeWorkoutTypeDisplay(workout.workout_type || "")?.toUpperCase() || workout.type} - {workout.miles ? `${formatDistanceNumber(workout.miles, unitSystem)} ${unitSystem === 'metric' ? 'km' : 'mi'}` : `0 ${unitSystem === 'metric' ? 'km' : 'mi'}`}
       </div>
 
       {/* Target Zone */}
@@ -177,7 +177,7 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
               const distanceValue = step.value;
               const isDistance = step.durationType === 'DISTANCE';
               const formattedDistance = isDistance
-                ? formatDistance(distanceValue, unitSystem, 1)
+                ? `${formatDistanceNumber(distanceValue, unitSystem)} ${unitSystem === 'metric' ? 'km' : 'mi'}`
                 : `${distanceValue} ${distanceValue === 1 ? 'minute' : 'minutes'}`;
 
               return (

@@ -6,6 +6,57 @@
  *
  * Input: Values in base units (miles, seconds per mile) from backend
  * Output: Formatted strings in user's preferred unit system
+ *
+ * === DISTANCE FORMATTING GUIDELINES ===
+ *
+ * Two functions exist because training plans must use human-friendly,
+ * standardized distances, while other UI surfaces may require precision.
+ *
+ * 1. formatDistance()
+ * -------------------
+ * PURPOSE:
+ *   - General-purpose formatting
+ *   - Suitable for charts, metrics pages, and form fields
+ *
+ * OUTPUT:
+ *   - Includes decimals (default 1 decimal place)
+ *   - Includes unit label (e.g., "5.0 mi" or "8.0 km")
+ *   - Good for precise numeric reporting
+ *
+ * USE THIS IN:
+ *   - Charts (TotalMilesActualVsPlanChart, LongestRunsChart)
+ *   - Tooltip numeric displays
+ *   - Forms (NewPlanFormV2)
+ *   - Metrics pages
+ *   - Progress bars
+ *
+ *
+ * 2. formatDistanceNumber()
+ * -------------------------
+ * PURPOSE:
+ *   - Training-plan-specific smart rounding
+ *   - UX-first rounded display
+ *
+ * OUTPUT:
+ *   - Returns number string only (no unit label)
+ *   - Whole km (metric)
+ *   - Rounded-up miles for anything .5+ (imperial)
+ *   - Race-specific logic for 26.2 / 13.1
+ *
+ * USE THIS IN:
+ *   - PlanOverviewTable.tsx
+ *   - PlanPage.tsx
+ *   - MyPlan.tsx
+ *   - WorkoutDetails.tsx (for plan workout data only)
+ *   - Daily/weekly workout cards
+ *   - Plan draft previews
+ *
+ * IMPORTANT:
+ *   - formatDistanceNumber() returns ONLY the number (e.g., "5" or "8")
+ *   - You must manually add the unit: `${formatDistanceNumber(miles, unitSystem)} ${unitSystem === 'metric' ? 'km' : 'mi'}`
+ *
+ * NEVER USE formatDistance() INSIDE A TRAINING PLAN.
+ * NEVER USE formatDistanceNumber() INSIDE A CHART.
  */
 
 export type UnitSystem = 'imperial' | 'metric';
@@ -20,12 +71,14 @@ const SEC_PER_MI_TO_SEC_PER_KM = 1 / MI_TO_KM;
 // ============================================================================
 
 /**
- * Format distance for display
+ * Format distance for display (General-purpose)
+ *
+ * Use for: Charts, forms, metrics pages where decimals are acceptable
  *
  * @param miles - Distance in miles (from backend)
  * @param unitSystem - User's preferred unit system
  * @param precision - Number of decimal places (default: 1)
- * @returns Formatted string like "5.0 mi" or "8.0 km"
+ * @returns Formatted string like "5.0 mi" or "8.0 km" (includes unit label)
  *
  * @example
  * formatDistance(5.0, 'imperial') // "5.0 mi"
@@ -48,6 +101,15 @@ export function formatDistance(
 function isRaceDistance(km: number): boolean {
   const raceDistances = [42.2, 21.1, 10.0, 5.0];
   return raceDistances.some(race => Math.abs(km - race) < 0.1);
+}
+
+/**
+ * Check if a miles value matches a standard race distance
+ * @internal - Helper function
+ */
+function isRaceDistanceMiles(miles: number): boolean {
+  const raceDistancesMiles = [26.2, 13.1, 6.21371, 3.10686]; // Marathon, Half, 10K, 5K
+  return raceDistancesMiles.some(race => Math.abs(miles - race) < 0.1);
 }
 
 /**
@@ -82,39 +144,61 @@ export function toDisplayDistance(miles: number, unitSystem: UnitSystem): number
 }
 
 /**
- * Format distance as string with appropriate precision
- * - Metric: whole km (except race/intervals which get 1 decimal)
- * - Imperial: 1 decimal place
+ * Format distance for training plans (Smart rounding)
  *
- * @param miles - Distance in miles
+ * Use for: Plan tables, workout cards, user-facing plan displays
+ *
+ * Behavior:
+ * - Metric: Whole km (no decimals), except race distances (1 decimal)
+ * - Imperial: Round .5 up to whole miles, except race distances (1 decimal)
+ * - Returns number string only (no unit label - you must add it)
+ *
+ * @param miles - Distance in miles (from backend)
  * @param unitSystem - User's preferred unit system
- * @returns Formatted string (number only, no unit)
+ * @returns Formatted number string (no unit label)
  *
  * @example
  * formatDistanceNumber(6.835, 'metric') // "11" (whole km)
  * formatDistanceNumber(26.2, 'metric') // "42.2" (race distance)
- * formatDistanceNumber(0.621, 'metric') // "1.0" (interval)
- * formatDistanceNumber(5.0, 'imperial') // "5.0" (1 decimal)
+ * formatDistanceNumber(5.5, 'imperial') // "6" (rounded up from .5)
+ * formatDistanceNumber(13.5, 'imperial') // "14" (rounded up from .5)
+ * formatDistanceNumber(26.2, 'imperial') // "26.2" (race distance)
+ *
+ * Usage:
+ * const formatted = formatDistanceNumber(miles, unitSystem);
+ * const display = `${formatted} ${unitSystem === 'metric' ? 'km' : 'mi'}`;
  */
 export function formatDistanceNumber(miles: number, unitSystem: UnitSystem): string {
-  const displayValue = toDisplayDistance(miles, unitSystem);
-
   if (unitSystem === 'metric') {
     const km = miles * MI_TO_KM;
     const isRaceDist = isRaceDistance(km);
-    const isSmall = km < 2.0;
 
-    // Race distances and intervals: 1 decimal
-    if (isRaceDist || isSmall) {
-      return displayValue.toFixed(1);
+    // Race distances: keep 1 decimal (42.2, 21.1, 10.0, 5.0)
+    if (isRaceDist) {
+      return (Math.round(km * 10) / 10).toFixed(1);
     }
 
-    // Regular distances: whole number
-    return displayValue.toFixed(0);
+    // Everything else: whole number (no decimals)
+    return Math.round(km).toFixed(0);
   }
 
-  // Imperial: 1 decimal
-  return displayValue.toFixed(1);
+  // Imperial
+  const isRaceDist = isRaceDistanceMiles(miles);
+
+  // Race distances: keep 1 decimal (26.2, 13.1, etc.)
+  if (isRaceDist) {
+    return miles.toFixed(1);
+  }
+
+  // For .5 values, round up to next whole number
+  // Check if the value is exactly .5 (within floating point tolerance)
+  const remainder = miles % 1;
+  if (Math.abs(remainder - 0.5) < 0.01) {
+    return Math.ceil(miles).toFixed(0); // 5.5 → 6, 13.5 → 14
+  }
+
+  // Whole numbers or other decimals: round normally
+  return Math.round(miles).toFixed(0);
 }
 
 /**

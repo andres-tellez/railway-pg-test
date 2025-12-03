@@ -5,7 +5,7 @@ import { useAuthSetup } from "../hooks/useAuthSetup";
 import { AuthGuard } from "../components/AuthGuard";
 import { format, parseISO, startOfWeek } from "date-fns";
 import { useUnitSystem } from "../context/UnitSystemContext";
-import { formatDistance, parseAndConvertPaceString } from "../utils/unitFormatters";
+import { formatDistanceNumber, formatDistance, parseAndConvertPaceString } from "../utils/unitFormatters";
 
 type Workout = {
   id: number;
@@ -163,7 +163,7 @@ const WorkoutRow: React.FC<WorkoutRowProps> = ({
     >
                   <p className="font-medium">
         {format(parseISO(workout.date), "EEE, MMM d")} — {workout.workout_type} (
-        {formatDistance(workout.miles, unitSystem, 1)})
+        {formatDistanceNumber(workout.miles, unitSystem)} {unitSystem === 'metric' ? 'km' : 'mi'})
                   </p>
       {(!isInteractive || isExpanded) && workout.target_zone && (
                     <p className="text-sm text-blue-700 font-medium mt-1">
@@ -185,7 +185,7 @@ const WorkoutRow: React.FC<WorkoutRowProps> = ({
                       <div className="space-y-1">
           {workout.segments.steps.map((step: any, idx: number) => {
                             const formattedDistance = step.durationType === 'DISTANCE'
-                              ? formatDistance(step.value, unitSystem, 1)
+                              ? formatDistanceNumber(step.value, unitSystem) + (unitSystem === 'metric' ? ' km' : ' mi')
                               : `${step.value} ${step.value === 1 ? 'minute' : 'minutes'}`;
 
                             return (

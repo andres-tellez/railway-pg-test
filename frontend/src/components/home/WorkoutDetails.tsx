@@ -8,7 +8,7 @@ import { format } from 'date-fns';
 import { WEEK_TIMELINE_STYLES } from '../../utils/weekTimelineStyles';
 import { normalizeWorkoutTypeDisplay } from '../../utils/workoutTypeUtils';
 import { useUnitSystem } from '../../context/UnitSystemContext';
-import { formatDistance, formatPace, formatPaceRange, parseAndConvertPaceString } from '../../utils/unitFormatters';
+import { formatDistanceNumber, formatDistance, formatPace, formatPaceRange, parseAndConvertPaceString } from '../../utils/unitFormatters';
 
 interface Workout {
   date: string;
@@ -86,7 +86,8 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
 
   const workoutDistance = useMemo(() => {
     if (!workout?.miles) return null;
-    return formatDistance(workout.miles, unitSystem, 1);
+    const formatted = formatDistanceNumber(workout.miles, unitSystem);
+    return `${formatted} ${unitSystem === 'metric' ? 'km' : 'mi'}`;
   }, [workout?.miles, unitSystem]);
 
   const activityPace = useMemo(() => {
@@ -211,7 +212,7 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
           <div className={WEEK_TIMELINE_STYLES.detailsDivider}>
             <p className="text-sm text-gray-600 mb-1">Next workout:</p>
             <p className="text-sm font-medium text-gray-900">
-              {format(nextWorkoutDay.date, 'EEEE')} - {nextWorkoutDay.workout.workout_type} • {formatDistance(nextWorkoutDay.workout.miles, unitSystem, 1)}
+              {format(nextWorkoutDay.date, 'EEEE')} - {nextWorkoutDay.workout.workout_type} • {formatDistanceNumber(nextWorkoutDay.workout.miles, unitSystem)} {unitSystem === 'metric' ? 'km' : 'mi'}
             </p>
           </div>
         )}
@@ -439,7 +440,7 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
               const distanceValue = step.value;
               const isDistance = step.durationType === 'DISTANCE';
               const formattedDistance = isDistance
-                ? formatDistance(distanceValue, unitSystem, 1)
+                ? `${formatDistanceNumber(distanceValue, unitSystem)} ${unitSystem === 'metric' ? 'km' : 'mi'}`
                 : `${distanceValue} ${distanceValue === 1 ? 'minute' : 'minutes'}`;
 
               const intensity = step.intensity || '';
