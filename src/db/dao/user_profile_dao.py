@@ -24,6 +24,7 @@ def save_user_profile(session: Session, profile_data: dict):
         existing_profile.height_inches = profile_data.get("height_inches")
         existing_profile.weight = profile_data.get("weight")
         existing_profile.max_hr = profile_data.get("max_hr")
+        existing_profile.unit_system = profile_data.get("unit_system")
 
         session.commit()
         return session.query(UserProfile).filter_by(user_id=user_id).first()
@@ -32,8 +33,8 @@ def save_user_profile(session: Session, profile_data: dict):
         session.execute(
             text(
                 """
-            INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, max_hr)
-            VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr)
+            INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, max_hr, unit_system)
+            VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr, :unit_system)
             """
             ),
             {
@@ -43,6 +44,7 @@ def save_user_profile(session: Session, profile_data: dict):
                 "height_inches": profile_data.get("height_inches"),
                 "weight": profile_data.get("weight"),
                 "max_hr": profile_data.get("max_hr"),
+                "unit_system": profile_data.get("unit_system", "imperial"),
             },
         )
         session.commit()
@@ -68,6 +70,7 @@ def get_user_profile(session: Session, user_id: str) -> dict:
         "height_inches",
         "weight",
         "max_hr",
+        "unit_system",
     ]:
         if hasattr(profile, key):
             profile_dict[key] = getattr(profile, key)

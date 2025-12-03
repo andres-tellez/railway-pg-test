@@ -21,6 +21,8 @@ import { AuthGuard } from "@/components/AuthGuard";
 import { RaceNameAutocomplete } from "@/components/RaceNameAutocomplete";
 import { LocationAutocomplete } from "@/components/LocationAutocomplete";
 import RaceDateValidationDialog from "@/components/RaceDateValidationDialog";
+import { useUnitSystem } from "@/context/UnitSystemContext";
+import { formatDistance, getUnitLabels } from "@/utils/unitFormatters";
 
 const googlePlacesApiKey =
   (
@@ -51,6 +53,8 @@ const NewPlanFormV2: React.FC = () => {
   const api = useApiClient();
   const navigate = useNavigate();
   const location = useLocation();
+  const { unitSystem } = useUnitSystem();
+  const unitLabels = getUnitLabels(unitSystem);
 
   // Check if we have saved form data from Back navigation
   const savedFormData = (location.state as any)?.savedFormData;
@@ -278,17 +282,9 @@ const NewPlanFormV2: React.FC = () => {
               className="bg-white shadow-xl rounded-xl p-8 space-y-8 border border-indigo-100"
             >
               <div className="space-y-2 text-center border-b pb-6">
-                <p className="text-xs uppercase tracking-widest text-indigo-600 font-semibold">
-                  Deterministic Plan Pipeline
-                </p>
                 <h1 className="text-3xl font-bold text-gray-800">
                   Generate New Training Plan
                 </h1>
-                <p className="text-gray-600 text-sm">
-                  This experience uses the refactored /api/plan/draft endpoint for all plan
-                  requests. Provide your race details below to get a personalized preview
-                  before saving.
-                </p>
               </div>
 
               {/* Error shown in modal instead of inline banner */}
@@ -309,13 +305,13 @@ const NewPlanFormV2: React.FC = () => {
                       <div>
                         <div className="text-gray-600">Weekly Mileage</div>
                         <div className="text-lg font-bold text-indigo-900">
-                          {stravaData.recent_weekly_mileage} miles
+                          {formatDistance(stravaData.recent_weekly_mileage, unitSystem, 1)}
                         </div>
                       </div>
                       <div>
                         <div className="text-gray-600">Longest Run</div>
                         <div className="text-lg font-bold text-indigo-900">
-                          {stravaData.longest_recent_run} miles
+                          {formatDistance(stravaData.longest_recent_run, unitSystem, 1)}
                         </div>
                       </div>
                       <div>
@@ -392,8 +388,12 @@ const NewPlanFormV2: React.FC = () => {
                       {...methods.register("race_distance")}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                     >
-                      <option value="Marathon">Marathon (26.2 miles)</option>
-                      <option value="Half Marathon">Half Marathon (13.1 miles)</option>
+                      <option value="Marathon">
+                        Marathon ({unitSystem === 'metric' ? '42.2' : '26.2'} {unitLabels.distanceAbbrev})
+                      </option>
+                      <option value="Half Marathon">
+                        Half Marathon ({unitSystem === 'metric' ? '21.1' : '13.1'} {unitLabels.distanceAbbrev})
+                      </option>
                       <option value="Other">Other</option>
                     </select>
                   </div>
@@ -609,9 +609,9 @@ const NewPlanFormV2: React.FC = () => {
                 <button
                   type="submit"
                   disabled={loading || selectedGoal === "Target Time"}
-                  className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading ? "Generating…" : "Generate V2 Draft"}
+                  {loading ? "Generating…" : "Generate Plan"}
                 </button>
               </div>
             </form>

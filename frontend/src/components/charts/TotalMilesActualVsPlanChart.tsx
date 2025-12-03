@@ -4,6 +4,8 @@ import { useStaticBarStyle, useBarColorClasses, getChartContainerStyle, getNumbe
 import { getBarShadow, calculateChartContainerHeight, formatChartNumber, calculateBarHeight } from '../../utils/chartHelpers';
 import { CHART_SHADOWS, CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
 import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
+import { useUnitSystem } from '../../context/UnitSystemContext';
+import { formatDistance, getUnitLabels } from '../../utils/unitFormatters';
 
 interface WeeklyTrendData {
   week: string;
@@ -37,6 +39,8 @@ interface TotalMilesActualVsPlanChartProps {
 
 export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], title = "Total Miles - Actual vs Plan", hrZoneData, showHeader = true, helpTooltip }: TotalMilesActualVsPlanChartProps) {
   const [hoveredBar, setHoveredBar] = useState<{ index: number; x: number; y: number } | null>(null);
+  const { unitSystem } = useUnitSystem();
+  const unitLabels = getUnitLabels(unitSystem);
 
   // Centralized tooltip behavior - hide on scroll
   useScrollHideTooltip(hoveredBar !== null, () => setHoveredBar(null));
@@ -181,17 +185,22 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
     zone_5: '#8B5CF6'  // Purple - VO2 Max
   };
 
+  // Dynamic title based on unit system
+  const displayTitle = title.startsWith("Total Miles")
+    ? title.replace("Total Miles", `Total ${unitLabels.distance}`)
+    : title;
+
   return (
     <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
       {showHeader && (
         <div className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-3">
-            <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+            <h3 className="text-xl font-bold text-gray-900">{displayTitle}</h3>
             {helpTooltip && <ChartHelpTooltip helpContent={helpTooltip} />}
           </div>
           <div className="text-right">
             <div className="text-lg text-gray-700">
-              Units: mi
+              Units: {unitLabels.distanceAbbrev}
             </div>
           </div>
         </div>
@@ -240,12 +249,12 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                       }}
                       onMouseLeave={() => setHoveredBar(null)}
                     >
-                      {/* Actual miles label inside bar */}
+                      {/* Actual distance label inside bar */}
                       <div
                         className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-semibold text-white drop-shadow"
                         aria-hidden="true"
                       >
-                        {formatChartNumber(week.distance, 'distance')}
+                        {formatDistance(week.distance, unitSystem, 1).split(' ')[0]}
                       </div>
                     </div>
 
@@ -261,15 +270,15 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                         }}
                         // Do not trigger tooltip for planned bars
                         // (intentionally no onMouseEnter/Leave)
-                        aria-label={`Planned ${barInfo.plannedTotalMiles.toFixed(1)} miles`}
+                        aria-label={`Planned ${formatDistance(barInfo.plannedTotalMiles, unitSystem, 1)}`}
                         role="img"
                       >
-                        {/* Planned miles label inside bar */}
+                        {/* Planned distance label inside bar */}
                         <div
                           className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-semibold text-gray-900"
                           aria-hidden="true"
                         >
-                          {barInfo.plannedTotalMiles.toFixed(1)}
+                          {formatDistance(barInfo.plannedTotalMiles, unitSystem, 1).split(' ')[0]}
                         </div>
                       </div>
                     )}
@@ -333,7 +342,7 @@ export default function TotalMilesActualVsPlanChart({ data, weeklyGoals = [], ti
                     <div className="space-y-1.5 text-sm">
                       <div className="flex items-center justify-between">
                         <span className="text-gray-300">Actual:</span>
-                        <span className="text-white font-semibold">{week.distance.toFixed(1)} mi</span>
+                        <span className="text-white font-semibold">{formatDistance(week.distance, unitSystem, 1)}</span>
                       </div>
                       {/* Optional: omit planned miles from tooltip per request */}
                       <div className="flex items-center justify-between">

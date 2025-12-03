@@ -142,5 +142,10 @@ class UserProfile(Base):
         Integer, nullable=True
     )  # Max heart rate (from Strava or user input)
 
+    # Display Preferences
+    unit_system = Column(
+        String(10), nullable=True, default="imperial"
+    )  # 'imperial' or 'metric'
+
     # Note: motivation and training_days columns have been removed from user_profile table
     # They are no longer stored in user_profile

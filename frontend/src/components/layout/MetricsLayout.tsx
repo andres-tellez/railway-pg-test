@@ -5,7 +5,7 @@ interface MetricsLayoutProps {
   children: React.ReactNode;
 }
 
-type TabType = 'overview' | 'gyr';
+type TabType = 'overview';
 
 const MetricsLayout: React.FC<MetricsLayoutProps> = ({ children }) => {
   const location = useLocation();
@@ -16,7 +16,7 @@ const MetricsLayout: React.FC<MetricsLayoutProps> = ({ children }) => {
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const tab = searchParams.get('tab') as TabType;
-    if (tab && (tab === 'overview' || tab === 'gyr')) {
+    if (tab && tab === 'overview') {
       setActiveTab(tab);
     }
   }, [location.search]);
@@ -30,8 +30,7 @@ const MetricsLayout: React.FC<MetricsLayoutProps> = ({ children }) => {
   };
 
   const tabs = [
-    { id: 'overview' as TabType, label: 'Overview', icon: '📊' },
-    { id: 'gyr' as TabType, label: 'GYR Scores', icon: '🎯' }
+    { id: 'overview' as TabType, label: 'Overview', icon: '📊' }
   ];
 
   return (

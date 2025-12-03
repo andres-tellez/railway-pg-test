@@ -20,6 +20,8 @@ import { useAuthSetup } from '@/hooks/useAuthSetup';
 import { AuthGuard } from '@/components/AuthGuard';
 import { normalizeWorkoutTypeDisplay } from '@/utils/workoutTypeUtils';
 import MaxHrBanner from '@/components/MaxHrBanner';
+import { useUnitSystem } from '@/context/UnitSystemContext';
+import { formatDistance, formatPace, formatPaceRange, parseAndConvertPaceString } from '@/utils/unitFormatters';
 
 type Workout = {
   date: string;
@@ -59,6 +61,8 @@ const convertWorkoutType = (raw: string): Workout['type'] => {
 
 // Component to render structured workout data
 const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
+  const { unitSystem } = useUnitSystem();
+
   // Helper to get steps array from different segment formats
   const getSteps = () => {
     if (!workout.segments) return null;
@@ -82,13 +86,13 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
       <div className="space-y-3">
         {/* Workout Header */}
         <div className="font-semibold text-lg text-gray-900">
-          {normalizeWorkoutTypeDisplay(workout.workout_type || "")?.toUpperCase() || workout.type} - {workout.miles} MILES
+          {normalizeWorkoutTypeDisplay(workout.workout_type || "")?.toUpperCase() || workout.type} - {workout.miles ? formatDistance(workout.miles, unitSystem, 1) : '0.0 mi'}
         </div>
 
         {/* Target Zone */}
         {workout.target_zone && (
           <div className="text-sm text-blue-700 font-medium">
-            <span className="font-semibold">Target Pace:</span> {workout.target_zone}
+            <span className="font-semibold">Target Pace:</span> {parseAndConvertPaceString(workout.target_zone, unitSystem)}
           </div>
         )}
         {workout.target_hr && workout.target_zone && (
@@ -114,13 +118,13 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
     <div className="space-y-4">
       {/* Workout Header */}
       <div className="font-semibold text-lg text-gray-900">
-        {normalizeWorkoutTypeDisplay(workout.workout_type || "")?.toUpperCase() || workout.type} - {workout.miles} MILES
+        {normalizeWorkoutTypeDisplay(workout.workout_type || "")?.toUpperCase() || workout.type} - {workout.miles ? formatDistance(workout.miles, unitSystem, 1) : '0.0 mi'}
       </div>
 
       {/* Target Zone */}
       {workout.target_zone && (
         <div className="text-sm text-blue-700 font-medium">
-          <span className="font-semibold">Target Pace:</span> {workout.target_zone}
+          <span className="font-semibold">Target Pace:</span> {parseAndConvertPaceString(workout.target_zone, unitSystem)}
         </div>
       )}
       {workout.target_hr && workout.target_zone && (
@@ -159,25 +163,28 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
           <div className="divide-y divide-gray-200">
             {steps.map((step: any, index: number) => {
               // Format target from spec-compliant format {low: sec, high: sec}
+              // These are already in seconds per mile from backend
               let targetStr = '-';
               if (step.target) {
-                const formatPace = (sec: number) => {
-                  const min = Math.floor(sec / 60);
-                  const secRemainder = Math.round(sec % 60);
-                  return `${min}:${secRemainder.toString().padStart(2, '0')}`;
-                };
                 if (step.target.low && step.target.high) {
-                  targetStr = `${formatPace(step.target.low)}–${formatPace(step.target.high)}/mi`;
+                  targetStr = formatPaceRange(step.target.low, step.target.high, unitSystem);
                 } else if (step.target.low) {
-                  targetStr = `${formatPace(step.target.low)}/mi`;
+                  targetStr = formatPace(step.target.low, unitSystem);
                 }
               }
+
+              // Convert segment distance
+              const distanceValue = step.value;
+              const isDistance = step.durationType === 'DISTANCE';
+              const formattedDistance = isDistance
+                ? formatDistance(distanceValue, unitSystem, 1)
+                : `${distanceValue} ${distanceValue === 1 ? 'minute' : 'minutes'}`;
 
               return (
                 <div key={index} className="grid grid-cols-4 gap-3 px-4 py-2 hover:bg-gray-50 transition-colors items-center">
                   <div className="text-xs font-medium text-gray-900">{step.name}</div>
                   <div className="text-xs text-gray-700">
-                    {step.value} {step.durationType === 'DISTANCE' ? 'mi' : 'min'}
+                    {formattedDistance}
                   </div>
                   <div className="text-xs text-gray-700">{step.intensity || '-'}</div>
                   <div className="text-xs text-gray-700">{targetStr}</div>
@@ -198,24 +205,6 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
   );
 };
 
-// Helper function to convert distances to miles for US users
-const convertDistanceToMiles = (distance: string): string => {
-  // If already in miles, return as-is
-  if (distance.includes('mile')) {
-    return distance;
-  }
-
-  // Convert meters to miles
-  const metersMatch = distance.match(/(\d+)m/);
-  if (metersMatch) {
-    const meters = parseInt(metersMatch[1]);
-    const miles = meters * 0.000621371; // Convert meters to miles
-    return `${miles.toFixed(2)} miles`;
-  }
-
-  // If no conversion needed, return original
-  return distance;
-};
 
 const MyPlan: React.FC = () => {
   const { isReady, userId } = useAuthSetup(); // ✅ Centralized auth (AuthGuard handles the rest)

@@ -5,6 +5,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { AuthGuard } from "@/components/AuthGuard";
 import { useApiClient } from "@/utils/apiClient";
 import { normalizeWorkoutTypeDisplay } from "@/utils/workoutTypeUtils";
+import { useUnitSystem } from "@/context/UnitSystemContext";
+import { formatDistanceNumber, toDisplayDistance } from "@/utils/unitFormatters";
 
 type DraftState = {
   draft?: {
@@ -18,6 +20,7 @@ export default function PlanDraftPreview() {
   const location = useLocation();
   const navigate = useNavigate();
   const api = useApiClient();
+  const { unitSystem } = useUnitSystem();
 
   const { draft, plan_request } = (location.state || {}) as DraftState;
   const [currentDraft, setCurrentDraft] = useState(draft);
@@ -294,27 +297,28 @@ export default function PlanDraftPreview() {
                         const day = normalize(workout.day);
                         if (day && dayToItems[day] !== undefined) {
                           const miles = workout.distance_miles || workout.miles || 0;
-                          const displayText = miles > 0 ? `${miles}` : '';
-                          if (displayText && miles > 0) {
-                            dayToItems[day].push(displayText);
+                          if (miles > 0) {
+                            const formatted = formatDistanceNumber(miles, unitSystem);
+                            dayToItems[day].push(formatted);
                           }
                         }
                       });
                     }
 
                     if ((!w?.workouts || w.workouts.length === 0) && w?.long_run_miles) {
-                      const lr = Number(w.long_run_miles);
-                      if (lr > 0) {
-                        const trainingDays = location.state?.plan_request?.training_days || [];
+                        const lr = Number(w.long_run_miles);
+                        if (lr > 0) {
+                          const formatted = formatDistanceNumber(lr, unitSystem);
+                          const trainingDays = location.state?.plan_request?.training_days || [];
                         const normalizedTrainingDays = trainingDays.map((d: string) => normalize(d)).filter(Boolean);
                         if (normalizedTrainingDays.includes('Sat')) {
-                          dayToItems['Sat'].push(`${lr}`);
+                          dayToItems['Sat'].push(formatted);
                         } else if (normalizedTrainingDays.includes('Sun')) {
-                          dayToItems['Sun'].push(`${lr}`);
+                          dayToItems['Sun'].push(formatted);
                         } else if (normalizedTrainingDays.length > 0) {
                           const lastDay = normalizedTrainingDays[normalizedTrainingDays.length - 1];
                           if (dayToItems[lastDay] !== undefined) {
-                            dayToItems[lastDay].push(`${lr}`);
+                            dayToItems[lastDay].push(formatted);
                           }
                         }
                       }
@@ -365,14 +369,19 @@ export default function PlanDraftPreview() {
                             // Calculate actual total from workout miles (matches what's displayed in daily columns)
                             let actualTotal = 0;
                             if (w?.workouts && Array.isArray(w.workouts)) {
-                              actualTotal = w.workouts.reduce((sum: number, workout: any) => {
+                              w.workouts.forEach((workout: any) => {
                                 const miles = workout.distance_miles || workout.miles || 0;
-                                return sum + (typeof miles === 'number' ? miles : 0);
-                              }, 0);
+                                if (miles > 0) {
+                                  // Convert each distance to display units, then sum
+                                  actualTotal += toDisplayDistance(miles, unitSystem);
+                                }
+                              });
                             }
                             // Use calculated total if available, otherwise fallback to weekly_mileage
-                            const displayTotal = actualTotal > 0 ? actualTotal : (w?.weekly_mileage || 0);
-                            return typeof displayTotal === 'number' && displayTotal > 0
+                            const displayTotal = actualTotal > 0
+                              ? actualTotal
+                              : (w?.weekly_mileage ? toDisplayDistance(w.weekly_mileage, unitSystem) : 0);
+                            return displayTotal > 0
                               ? Math.round(displayTotal)
                               : <span className="text-slate-300">—</span>;
                           })()}

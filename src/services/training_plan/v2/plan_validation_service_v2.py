@@ -30,6 +30,10 @@ from datetime import datetime, date, timedelta
 
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
 from src.utils.date_helpers import get_week_start_for_date
+from src.services.training_plan.v2.shared_v2.rounding_utils import (
+    miles_to_km,
+    km_to_miles,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +46,23 @@ class PlanValidationServiceV2:
         config: RaceDistanceConfig,
         max_weekly_increase_percent: float = 20.0,
         cutback_interval_weeks: int = 4,
+        unit_system: str = "imperial",
     ) -> None:
         self.config = config
         self.MAX_WEEKLY_INCREASE_PERCENT = max_weekly_increase_percent
         self.CUTBACK_INTERVAL_WEEKS = cutback_interval_weeks
         self.TAPER_WEEKS = config.taper_weeks  # final taper weeks from config
+        self.unit_system = unit_system
 
-    def validate_plan(self, plan: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_plan(
+        self, plan: Dict[str, Any], unit_system: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Validate complete training plan against safety rules.
 
         Args:
             plan: Generated plan from Layer 4 GptCoachService
+            unit_system: Optional override for unit system (defaults to instance default)
 
         Returns:
             Validation result dictionary:
@@ -71,6 +80,8 @@ class PlanValidationServiceV2:
                     "validated_plan": Dict | None
                 }
         """
+        # Use provided unit_system or fall back to instance default
+        effective_unit_system = unit_system or self.unit_system
         violations: List[Dict[str, str]] = []
 
         # Basic structure validation
@@ -125,10 +136,14 @@ class PlanValidationServiceV2:
             violations.extend(self._validate_week_structure(week))
 
         # Validate plan-level safety rules
-        violations.extend(self._validate_mileage_progression(weeks))
+        violations.extend(
+            self._validate_mileage_progression(weeks, effective_unit_system)
+        )
         violations.extend(self._validate_cutback_weeks(weeks))
-        violations.extend(self._validate_long_run_progression(weeks))
-        violations.extend(self._validate_taper(weeks))
+        violations.extend(
+            self._validate_long_run_progression(weeks, effective_unit_system)
+        )
+        violations.extend(self._validate_taper(weeks, effective_unit_system))
         # REMOVED: _validate_long_run_bounds - now handled by Step 5 phase-aware logic
         # violations.extend(self._validate_long_run_bounds(weeks))
         violations.extend(self._validate_week_completeness(weeks))
@@ -271,8 +286,18 @@ class PlanValidationServiceV2:
 
         return violations
 
+    def _format_distance(
+        self, miles: float, unit_system: str, precision: int = 1
+    ) -> str:
+        """Format distance with correct unit label."""
+        if unit_system == "metric":
+            km = miles_to_km(miles)
+            return f"{km:.{precision}f} km"
+        else:
+            return f"{miles:.{precision}f} mi"
+
     def _validate_mileage_progression(
-        self, weeks: List[Dict[str, Any]]
+        self, weeks: List[Dict[str, Any]], unit_system: str = "imperial"
     ) -> List[Dict[str, str]]:
         """Validate 10% weekly mileage increase rule (except when returning from cutback)."""
         violations = []
@@ -333,13 +358,14 @@ class PlanValidationServiceV2:
 
             incr_cap = self.MAX_WEEKLY_INCREASE_PERCENT
             if increase > incr_cap + 0.05:
+                max_allowed = prev_mileage * (1 + incr_cap / 100)
                 violations.append(
                     {
                         "rule": "10_percent_rule_violation",
                         "severity": "error",
                         "location": f"week {curr_week.get('week_number')}",
-                        "details": f"Weekly mileage increased {increase:.1f}% (from {prev_mileage} to {curr_mileage}), maximum allowed is {incr_cap:.1f}%",
-                        "suggestion": f"Reduce week {curr_week.get('week_number')} mileage to at most {prev_mileage * (1 + incr_cap/100):.1f} miles",
+                        "details": f"Weekly mileage increased {increase:.1f}% (from {self._format_distance(prev_mileage, unit_system)} to {self._format_distance(curr_mileage, unit_system)}), maximum allowed is {incr_cap:.1f}%",
+                        "suggestion": f"Reduce week {curr_week.get('week_number')} mileage to at most {self._format_distance(max_allowed, unit_system)}",
                     }
                 )
 
@@ -390,9 +416,20 @@ class PlanValidationServiceV2:
         return violations
 
     def _validate_long_run_progression(
-        self, weeks: List[Dict[str, Any]]
+        self, weeks: List[Dict[str, Any]], unit_system: str = "imperial"
     ) -> List[Dict[str, str]]:
         """Validate long run progression is safe (no big jumps)."""
+        # Unit-aware thresholds: 2.0 miles = 3.2 km
+        MAX_ABSOLUTE_INCREASE_MILES = 2.0
+        MAX_ABSOLUTE_INCREASE_KM = 3.2
+        MAX_PERCENT_INCREASE = 20.0
+
+        # Convert threshold to miles for internal comparison
+        max_absolute_increase_miles = (
+            km_to_miles(MAX_ABSOLUTE_INCREASE_KM)
+            if unit_system == "metric"
+            else MAX_ABSOLUTE_INCREASE_MILES
+        )
         violations = []
 
         if len(weeks) < 2:
@@ -456,15 +493,24 @@ class PlanValidationServiceV2:
                 if is_cutback_rebound:
                     # Allow rebound after cutback without flagging
                     pass
-                elif increase > 2.0 and percent_increase > 20:
-                    # Relaxed: 20% or 2 miles (sanity check, Step 5 handles strict limits)
+                elif (
+                    increase > max_absolute_increase_miles
+                    and percent_increase > MAX_PERCENT_INCREASE
+                ):
+                    # Relaxed: 20% or unit-aware absolute limit (sanity check, Step 5 handles strict limits)
+                    max_allowed = baseline + max_absolute_increase_miles
+                    max_absolute_display = (
+                        MAX_ABSOLUTE_INCREASE_KM
+                        if unit_system == "metric"
+                        else MAX_ABSOLUTE_INCREASE_MILES
+                    )
                     violations.append(
                         {
                             "rule": "unsafe_long_run_progression",
                             "severity": "error",
                             "location": f"week {week_num}",
-                            "details": f"Long run increased {increase:.1f} miles ({percent_increase:.1f}%) from {baseline} to {curr_long_run}. Maximum safe increase is 2 miles or 20%",
-                            "suggestion": f"Reduce long run distance in week {week_num} to at most {baseline + 2.0:.1f} miles",
+                            "details": f"Long run increased {self._format_distance(increase, unit_system)} ({percent_increase:.1f}%) from {self._format_distance(baseline, unit_system)} to {self._format_distance(curr_long_run, unit_system)}. Maximum safe increase is {max_absolute_display:.1f} {'km' if unit_system == 'metric' else 'mi'} or {MAX_PERCENT_INCREASE}%",
+                            "suggestion": f"Reduce long run distance in week {week_num} to at most {self._format_distance(max_allowed, unit_system)}",
                         }
                     )
 
@@ -474,8 +520,10 @@ class PlanValidationServiceV2:
 
         return violations
 
-    def _validate_taper(self, weeks: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-        """Validate that final weeks taper (reduce volume)."""
+    def _validate_taper(
+        self, weeks: List[Dict[str, Any]], unit_system: str = "imperial"
+    ) -> List[Dict[str, str]]:
+        """Validate that final weeks taper (reduce volume) and phase structure."""
         violations = []
 
         if len(weeks) < self.TAPER_WEEKS:
@@ -483,7 +531,28 @@ class PlanValidationServiceV2:
 
         sorted_weeks = sorted(weeks, key=lambda w: w.get("week_number", 0))
 
-        # Check last 3 weeks
+        # PRIMARY: Check that exactly TAPER_WEEKS are marked as "Taper" phase
+        taper_phase_weeks = [
+            w
+            for w in sorted_weeks
+            if str(w.get("phase", "")).lower().strip() in ["taper", "taper week"]
+        ]
+
+        if len(taper_phase_weeks) != self.TAPER_WEEKS:
+            week_nums = [
+                w.get("week_number") for w in sorted_weeks[-self.TAPER_WEEKS :]
+            ]
+            violations.append(
+                {
+                    "rule": "incorrect_taper_weeks",
+                    "severity": "error",
+                    "location": f"weeks {week_nums[0]}-{week_nums[-1]}",
+                    "details": f"Plan has {len(taper_phase_weeks)} taper week(s) but should have {self.TAPER_WEEKS}. Found taper phases: {[w.get('week_number') for w in taper_phase_weeks]}",
+                    "suggestion": f"Ensure exactly {self.TAPER_WEEKS} weeks are marked as 'Taper' phase before the race week",
+                }
+            )
+
+        # SECONDARY: Check that taper weeks reduce mileage
         taper_weeks = sorted_weeks[-self.TAPER_WEEKS :]
         pre_taper_week = (
             sorted_weeks[-self.TAPER_WEEKS - 1]
@@ -510,17 +579,38 @@ class PlanValidationServiceV2:
                             "rule": "missing_taper",
                             "severity": "error",
                             "location": f"weeks {week_nums[0]}-{week_nums[-1]}",
-                            "details": f"Final weeks do not taper. Pre-taper: {pre_taper_mileage} mpw, taper average: {avg_taper_mileage:.1f} mpw. Should reduce by at least 20-30%",
+                            "details": f"Final weeks do not taper. Pre-taper: {self._format_distance(pre_taper_mileage, unit_system)}, taper average: {self._format_distance(avg_taper_mileage, unit_system)}. Should reduce by at least 20-30%",
                             "suggestion": f"Reduce mileage in final {self.TAPER_WEEKS} weeks by 20-30%",
                         }
                     )
 
-        return violations
+                # Check taper ratios match config (if available)
+                if hasattr(self.config, "taper_ratios") and self.config.taper_ratios:
+                    expected_ratios = self.config.taper_ratios
+                    if len(taper_week_mileages) == len(expected_ratios):
+                        for i, (actual_mileage, expected_ratio) in enumerate(
+                            zip(taper_week_mileages, expected_ratios)
+                        ):
+                            expected_mileage = pre_taper_mileage * expected_ratio
+                            actual_ratio = (
+                                actual_mileage / pre_taper_mileage
+                                if pre_taper_mileage > 0
+                                else 0
+                            )
+                            # Allow 10% tolerance for rounding differences
+                            if abs(actual_ratio - expected_ratio) > 0.10:
+                                week_num = taper_weeks[i].get("week_number")
+                                violations.append(
+                                    {
+                                        "rule": "taper_ratio_mismatch",
+                                        "severity": "warning",
+                                        "location": f"week {week_num}",
+                                        "details": f"Taper week {i+1} has {self._format_distance(actual_mileage, unit_system)} ({actual_ratio*100:.0f}% of pre-taper), expected {self._format_distance(expected_mileage, unit_system)} ({expected_ratio*100:.0f}%)",
+                                        "suggestion": f"Adjust week {week_num} mileage to match taper ratio of {expected_ratio*100:.0f}%",
+                                    }
+                                )
 
-    @staticmethod
-    def _validate_weekly_caps(weeks: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-        """Deprecated: previously enforced a hard weekly cap. No longer used."""
-        return []
+        return violations
 
     def _validate_long_run_bounds(
         self, weeks: List[Dict[str, Any]]

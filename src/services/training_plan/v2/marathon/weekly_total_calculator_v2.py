@@ -1,23 +1,24 @@
-""" 
-Marathon Finisher Weekly Mileage Calculator V2 
- 
-Given: 
-  - long_run (miles) for the week 
-  - runs_per_week (3, 4, or 5) 
-  - prev_week_total (optional, for safe ramping) 
-  - config: RaceDistanceConfig (provides race-distance-specific values) 
- 
-Returns a safe total weekly mileage target that minimizes injury risk 
-for a finisher-focused plan. 
- 
-V2: Uses RaceDistanceConfig instead of hardcoded values. 
-""" 
- 
-import logging 
-from typing import Any, Dict, List, Optional 
-from ..race_configs.base_config import RaceDistanceConfig 
- 
-logger = logging.getLogger(__name__) 
+"""
+Marathon Finisher Weekly Mileage Calculator V2
+
+Given:
+  - long_run (miles) for the week
+  - runs_per_week (3, 4, or 5)
+  - prev_week_total (optional, for safe ramping)
+  - config: RaceDistanceConfig (provides race-distance-specific values)
+
+Returns a safe total weekly mileage target that minimizes injury risk
+for a finisher-focused plan.
+
+V2: Uses RaceDistanceConfig instead of hardcoded values.
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+from ..race_configs.base_config import RaceDistanceConfig
+from ..shared_v2.rounding_utils import round_to_whole_mile
+
+logger = logging.getLogger(__name__)
 
 
 def clamp(n: float, lo: float, hi: float) -> float:
@@ -35,6 +36,7 @@ def recommend_weekly_total(
     peak_caps: Optional[Dict[int, int]] = None,
     starting_mileage_adjustment: float = 1.0,
     phase: Optional[str] = None,
+    unit_system: str = "imperial",  # Deprecated: kept for backward compatibility, no longer affects rounding
 ) -> int:
     """Compute a safe weekly total given the long run and frequency.
 
@@ -48,9 +50,11 @@ def recommend_weekly_total(
         peak_caps: Custom peak caps (defaults to config.peak_caps)
         starting_mileage_adjustment: Adjustment factor for Week 1 (default 1.0 = no adjustment)
         phase: Training phase label for the week (e.g., Base, Build, Peak, Taper)
+        unit_system: Deprecated - kept for backward compatibility. Weekly totals are always
+                     rounded to whole miles internally. Frontend handles unit conversion for display.
 
     Returns:
-        Safe weekly total in whole miles
+        Safe weekly total in whole miles (always rounded to whole miles, regardless of unit_system)
     """
     if runs_per_week not in (3, 4, 5):
         raise ValueError("runs_per_week must be 3, 4, or 5")
@@ -102,12 +106,7 @@ def recommend_weekly_total(
 
     # Apply phase-specific week-over-week caps (if configured)
     phase_caps = getattr(config, "phase_delta_caps", None)
-    if (
-        phase_caps
-        and phase
-        and prev_week_total is not None
-        and prev_week_total > 0
-    ):
+    if phase_caps and phase and prev_week_total is not None and prev_week_total > 0:
         normalized_phase = phase.lower()
         delta_cap = None
         for key, value in phase_caps.items():
@@ -128,7 +127,10 @@ def recommend_weekly_total(
                 )
             total = capped_total
 
-    return int(round(total))
+    # CRITICAL: Always round to whole miles for internal consistency
+    # Frontend will convert to km for display using toDisplayDistance()
+    # This prevents metric plans from diverging due to rounding differences
+    return round_to_whole_mile(total)
 
 
 def calculate_weekly_totals_from_long_runs(
@@ -137,6 +139,7 @@ def calculate_weekly_totals_from_long_runs(
     config: RaceDistanceConfig,
     peak_caps: Optional[Dict[int, int]] = None,
     scenario_adjustments: Optional[Dict[str, Any]] = None,
+    unit_system: str = "imperial",
 ) -> List[Dict[str, Any]]:
     """Calculate weekly totals for all weeks based on long runs.
 
@@ -174,8 +177,11 @@ def calculate_weekly_totals_from_long_runs(
                 prev_prev_week_total=prev_prev_total,
                 rebuild_after_cutback=rebuild_next_week,
                 peak_caps=peak_caps,
-                starting_mileage_adjustment=starting_mileage_adjustment if week_num == 1 else 1.0,
+                starting_mileage_adjustment=(
+                    starting_mileage_adjustment if week_num == 1 else 1.0
+                ),
                 phase=phase,
+                unit_system=unit_system,
             )
             prev_prev_total = prev_total
             prev_total = float(total)

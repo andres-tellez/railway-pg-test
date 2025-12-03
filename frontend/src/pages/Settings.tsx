@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useApiClient } from '@/utils/apiClient';
 import { useAuthSetup } from '@/hooks/useAuthSetup';
 import { AuthGuard } from '@/components/AuthGuard';
-import Layout from '@/components/Layout';
 
 interface StravaStatus {
   connected: boolean;
@@ -100,10 +99,9 @@ const Settings: React.FC = () => {
 
   return (
     <AuthGuard>
-      <Layout>
-        <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto">
-            <h1 className="text-3xl font-bold text-gray-900 mb-8">Settings</h1>
+      <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-3xl font-bold text-gray-900 mb-8">Settings</h1>
 
             {/* Strava Connection Section */}
             <div className="bg-white rounded-lg shadow-md p-6 mb-6">
@@ -258,7 +256,6 @@ const Settings: React.FC = () => {
             </div>
           </div>
         </div>
-      </Layout>
     </AuthGuard>
   );
 };
