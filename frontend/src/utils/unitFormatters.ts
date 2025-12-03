@@ -42,7 +42,18 @@ export function formatDistance(
 }
 
 /**
- * Convert miles to display value (without formatting)
+ * Check if a km value matches a standard race distance
+ * @internal - Helper function
+ */
+function isRaceDistance(km: number): boolean {
+  const raceDistances = [42.2, 21.1, 10.0, 5.0];
+  return raceDistances.some(race => Math.abs(km - race) < 0.1);
+}
+
+/**
+ * Convert miles to display value with smart rounding
+ * - Metric: whole km (except race distances and small intervals < 2 km)
+ * - Imperial: 1 decimal place
  *
  * @param miles - Distance in miles
  * @param unitSystem - User's preferred unit system
@@ -50,9 +61,60 @@ export function formatDistance(
  */
 export function toDisplayDistance(miles: number, unitSystem: UnitSystem): number {
   if (unitSystem === 'metric') {
-    return Math.round(miles * MI_TO_KM * 10) / 10; // Round to 1 decimal
+    const km = miles * MI_TO_KM;
+
+    // Race distances: preserve exact value (42.2, 21.1, 10.0, 5.0)
+    if (isRaceDistance(km)) {
+      return Math.round(km * 10) / 10; // 1 decimal
+    }
+
+    // Small distances (< 2 km): likely intervals, allow decimals
+    if (km < 2.0) {
+      return Math.round(km * 10) / 10; // 1 decimal
+    }
+
+    // Everything else: round to whole km
+    return Math.round(km);
   }
+
+  // Imperial: 1 decimal place
   return Math.round(miles * 10) / 10;
+}
+
+/**
+ * Format distance as string with appropriate precision
+ * - Metric: whole km (except race/intervals which get 1 decimal)
+ * - Imperial: 1 decimal place
+ *
+ * @param miles - Distance in miles
+ * @param unitSystem - User's preferred unit system
+ * @returns Formatted string (number only, no unit)
+ *
+ * @example
+ * formatDistanceNumber(6.835, 'metric') // "11" (whole km)
+ * formatDistanceNumber(26.2, 'metric') // "42.2" (race distance)
+ * formatDistanceNumber(0.621, 'metric') // "1.0" (interval)
+ * formatDistanceNumber(5.0, 'imperial') // "5.0" (1 decimal)
+ */
+export function formatDistanceNumber(miles: number, unitSystem: UnitSystem): string {
+  const displayValue = toDisplayDistance(miles, unitSystem);
+
+  if (unitSystem === 'metric') {
+    const km = miles * MI_TO_KM;
+    const isRaceDist = isRaceDistance(km);
+    const isSmall = km < 2.0;
+
+    // Race distances and intervals: 1 decimal
+    if (isRaceDist || isSmall) {
+      return displayValue.toFixed(1);
+    }
+
+    // Regular distances: whole number
+    return displayValue.toFixed(0);
+  }
+
+  // Imperial: 1 decimal
+  return displayValue.toFixed(1);
 }
 
 /**

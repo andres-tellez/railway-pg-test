@@ -103,7 +103,7 @@ class PlanGenerationOrchestratorV2:
             scenario=scenario,
         )
         self.pass4 = Pass4WorkoutDetails()
-        self.validator = PlanValidationServiceV2(config=config)
+        self.validator = PlanValidationServiceV2(config=config, unit_system="imperial")
         self.pass1_selector = Pass1WeeksSelectorV2()
         self.race_date_validator = RaceDateValidationService(config=config)
         self.constraints_service = PlanConstraintsService()
@@ -127,6 +127,7 @@ class PlanGenerationOrchestratorV2:
         user_id = runner_ctx.get("user_id")
         plan_request = runner_ctx.get("plan_request", {})
         training_days = runner_ctx.get("training_days")
+        unit_system = runner_ctx.get("unit_system", "imperial")
 
         if not session or not user_id:
             return {
@@ -301,6 +302,7 @@ class PlanGenerationOrchestratorV2:
             longest_run=longest_run,
             plan_request=plan_request,
             recommended_weeks=plan_length_weeks,
+            unit_system=unit_system,
         )
         weeks_long = lr_output.get("weeks", [])
 
@@ -340,6 +342,7 @@ class PlanGenerationOrchestratorV2:
                 recommended_weeks=plan_length_weeks,  # Use actual plan length for self-correction
                 scenario_adjustments=scenario_adjustments,
                 max_attempts=2,
+                unit_system=unit_system,
             )
             weeks_long = corrected_weeks
             quality_issues = remaining_issues
@@ -360,6 +363,7 @@ class PlanGenerationOrchestratorV2:
             runs_per_week=runs_per_week,
             config=self.config,
             scenario_adjustments=scenario_adjustments,
+            unit_system=unit_system,
         )
 
         # Step 6: Distribute workouts to training days
@@ -371,6 +375,7 @@ class PlanGenerationOrchestratorV2:
             training_days,
             total_weeks=plan_length_weeks,
             long_run_day=long_run_day,
+            unit_system=unit_system,
         )
 
         weeks_out = pass3_plan.get("weeks", [])
@@ -378,7 +383,7 @@ class PlanGenerationOrchestratorV2:
         # GUARDRAIL: No post-processing of spine - progression is calculated once in spine generator
         # If plan needs adjustment, regenerate with different parameters, don't modify
 
-        weeks_out = self._append_race_week(weeks_out)
+        weeks_out = self._append_race_week(weeks_out, unit_system=unit_system)
         logger.info("After race week append: %s total weeks", len(weeks_out))
 
         weeks_out, aligned_start_date = self.constraints_service.align_weeks_with_dates(
@@ -420,7 +425,9 @@ class PlanGenerationOrchestratorV2:
         )
 
         # Step 8: Final validation
-        validation = self.validator.validate_plan(plan_with_details)
+        validation = self.validator.validate_plan(
+            plan_with_details, unit_system=unit_system
+        )
         validation["draft"] = plan_with_details
         validation["pass1_rationale"] = lr_output.get("rationale")
         # Include race date validation results if available
@@ -536,7 +543,9 @@ class PlanGenerationOrchestratorV2:
             f"✅ Spine validation passed: {len(weeks)} weeks, peak {max_lr:.1f} miles"
         )
 
-    def _append_race_week(self, weeks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _append_race_week(
+        self, weeks: List[Dict[str, Any]], unit_system: str = "imperial"
+    ) -> List[Dict[str, Any]]:
         if not weeks:
             return weeks
 
@@ -548,7 +557,7 @@ class PlanGenerationOrchestratorV2:
             "long_run_miles": template.get("long_run_miles", 0),
             "is_cutback": False,  # Race week is NOT a cutback
             "workouts": [
-                self._build_race_week_workout(workout_spec)
+                self._build_race_week_workout(workout_spec, unit_system=unit_system)
                 for workout_spec in template.get("workouts", [])
             ],
         }
@@ -625,12 +634,21 @@ class PlanGenerationOrchestratorV2:
             workout["notes"] = note
         return workout
 
-    def _build_race_week_workout(self, spec: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_race_week_workout(
+        self,
+        spec: Dict[str, Any],
+        unit_system: str = "imperial",  # Deprecated: kept for backward compatibility
+    ) -> Dict[str, Any]:
+        from src.services.training_plan.v2.shared_v2.rounding_utils import (
+            round_workout_distance,
+        )
+
         kind = str(spec.get("kind", "easy")).lower()
         day = spec.get("day") or "Mon"
         miles = float(spec.get("miles", 0) or 0)
         note = spec.get("note")
         if kind == "race":
+            # Race distance should NOT be rounded (it's a specific distance like 26.2 miles)
             race_distance = miles or self.config.race_distance_miles
             return {
                 "day": day,
@@ -642,8 +660,11 @@ class PlanGenerationOrchestratorV2:
                 "pace_guidance": spec.get("pace_guidance", "Celebrate"),
                 "notes": note,
             }
+        # Round shakeout/easy runs in race week (but not the race distance itself)
+        # Frontend will convert to km for display using toDisplayDistance()
+        rounded_miles = round_workout_distance(miles)
         return self._easy_workout(
-            day, miles, note=note, shakeout=bool(spec.get("shakeout"))
+            day, rounded_miles, note=note, shakeout=bool(spec.get("shakeout"))
         )
 
     def _derive_pace_seed(
@@ -690,6 +711,7 @@ class PlanGenerationOrchestratorV2:
         recommended_weeks: int,
         scenario_adjustments: Optional[Dict[str, Any]] = None,
         max_attempts: int = 2,
+        unit_system: str = "imperial",
     ) -> Tuple[List[Dict[str, Any]], List[str]]:
         """
         Attempt to fix validation issues by adjusting parameters and regenerating.
@@ -732,6 +754,7 @@ class PlanGenerationOrchestratorV2:
                     longest_run=longest_run,
                     plan_request=plan_request,
                     recommended_weeks=adjusted_recommended_weeks,
+                    unit_system=unit_system,
                 )
                 new_weeks = lr_output.get("weeks", [])
 

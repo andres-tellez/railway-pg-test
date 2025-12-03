@@ -148,7 +148,7 @@ def detect_consecutive_long_runs(
 
 
 def calculate_recovery_week_long_run(
-    longest_recent: float, *, config: RaceDistanceConfig
+    longest_recent: float, *, config: RaceDistanceConfig, unit_system: str = "imperial"
 ) -> float:
     """Compute a safe recovery-week long run using config guardrails."""
     min_reduction = max(3.0, config.long_run_increment * 3)

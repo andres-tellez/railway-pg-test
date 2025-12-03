@@ -50,6 +50,7 @@ def build_spine(
     cfg: LRConfig,
     race_date: Any,
     config: Optional[Any] = None,  # RaceDistanceConfig
+    unit_system: str = "imperial",
 ) -> List[Dict[str, Any]]:
     return generate_long_run_spine(
         starting_long_run_miles=start,
@@ -63,6 +64,7 @@ def build_spine(
         cutback_factor=cfg["cutFactor"],
         peak_offset_before_taper=4 if (total_weeks or 0) >= 15 else 1,
         config=config,  # Pass config to spine generator
+        unit_system=unit_system,
     )
 
 
@@ -144,6 +146,7 @@ class Pass1LongRunFirstV2:
         longest_run: float,
         plan_request: Dict[str, Any],
         recommended_weeks: Optional[int] = None,
+        unit_system: str = "imperial",
     ) -> Dict[str, Any]:
         """Compute long-run progression and recommended duration.
 
@@ -216,7 +219,9 @@ class Pass1LongRunFirstV2:
                 # User has consecutive runs but no recent reduction - schedule recovery week
                 # This is a build pattern (increasing) or flat at peak - recovery needed
                 recovery_lr = calculate_recovery_week_long_run(
-                    consecutive_analysis["longest_recent"], config=self.config
+                    consecutive_analysis["longest_recent"],
+                    config=self.config,
+                    unit_system=unit_system,
                 )
                 trusted_start = recovery_lr
                 start_rule = "recovery_week_after_consecutive_runs"
@@ -279,6 +284,7 @@ class Pass1LongRunFirstV2:
                 cfg=cfg,
                 race_date=plan_request.get("race_date"),
                 config=self.config,  # Pass config for removing hardcoded values
+                unit_system=unit_system,
             )
         else:
             logger.info(
@@ -294,6 +300,7 @@ class Pass1LongRunFirstV2:
                 cfg=cfg,
                 race_date=plan_request.get("race_date"),
                 config=self.config,  # Pass config for removing hardcoded values
+                unit_system=unit_system,
             )
         desired_total_weeks = len(weeks)
 
