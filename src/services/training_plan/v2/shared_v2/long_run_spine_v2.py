@@ -14,10 +14,7 @@ try:
 except ImportError:
     RaceDistanceConfig = None  # type: ignore
 
-
-def round_half(x: float) -> float:
-    """Round to nearest whole number (no more .5 values)."""
-    return round(x)
+from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
 
 
 def calculate_dynamic_resume(
@@ -30,6 +27,7 @@ def calculate_dynamic_resume(
     inc_miles: float,
     base_resume_inc: float,
     config: Optional[RaceDistanceConfig],
+    unit_system: str = "imperial",
 ) -> float:
     """Calculate dynamic resume long run based on time constraints.
 
@@ -71,6 +69,8 @@ def calculate_dynamic_resume(
         inc_miles: Normal weekly increment (1.0 mile/week)
         base_resume_inc: Base resume increment (2.0 miles)
         config: RaceDistanceConfig for cutback_factor
+        unit_system: "imperial" or "metric" - determines max resume increment limit
+            (2.0 miles for metric, 3.0 miles for imperial)
 
     Returns:
         Calculated resume long run distance
@@ -120,9 +120,17 @@ def calculate_dynamic_resume(
     # Research shows 10-20% weekly increases are safe; 4 miles from 14 = 29% (too aggressive)
     # Recommended: 1-2 miles per week after cutback (14 → 16 → 18 → 20)
     # We allow up to 3 miles for time-constrained scenarios, but prefer gradual
-    max_resume_increment = (
-        3.0  # Maximum safe jump after cutback (was 4.0, too aggressive)
-    )
+    # CRITICAL: Unit-aware limit to match validation rules
+    # Metric: 3.2 km = 1.988 miles, use 2.0 miles to stay within validation limit
+    # Imperial: 3.0 miles is acceptable (validation allows cutback rebounds to pass)
+    if unit_system == "metric":
+        max_resume_increment = (
+            2.0  # 2.0 miles = 3.22 km (within 3.2 km validation limit)
+        )
+    else:
+        max_resume_increment = (
+            3.0  # Imperial: 3.0 miles (validation allows cutback rebounds)
+        )
     max_resume = lr + max_resume_increment
 
     # Option 1: Resume to pre-cutback + 1 (if close to peak), but cap at max_resume
@@ -136,8 +144,10 @@ def calculate_dynamic_resume(
         if weeks_needed_1 <= weeks_remaining:
             return min(peak, aggressive_resume_1)
 
-    # Option 2: Cutback + 3 miles (more aggressive than +2), but cap at max_resume
-    aggressive_resume_2 = min(max_resume, lr + 3.0)  # e.g., min(18, 17) = 17
+    # Option 2: Cutback + max_resume_increment (more aggressive than +2), but cap at max_resume
+    aggressive_resume_2 = min(
+        max_resume, lr + max_resume_increment
+    )  # e.g., min(18, 17) = 17
     miles_after_aggressive_2 = peak - aggressive_resume_2
 
     if miles_after_aggressive_2 > 0:
@@ -155,9 +165,15 @@ def calculate_dynamic_resume(
     # Very time-constrained: resume to pre-cutback level (safety fallback)
     # GUARDRAIL: Ensure we never return a value <= lr (cutback value) - this would look like another cutback
     # Also cap at max_resume to prevent dangerous jumps
-    max_resume_increment = (
-        3.0  # Maximum safe jump after cutback (was 4.0, too aggressive)
-    )
+    # Use same unit-aware limit as above
+    if unit_system == "metric":
+        max_resume_increment = (
+            2.0  # 2.0 miles = 3.22 km (within 3.2 km validation limit)
+        )
+    else:
+        max_resume_increment = (
+            3.0  # Imperial: 3.0 miles (validation allows cutback rebounds)
+        )
     max_resume = lr + max_resume_increment
 
     if pre_cutback_lr is not None and pre_cutback_lr > lr:
@@ -263,7 +279,9 @@ def validate_phase_quality(
         # Subsequent cutbacks happen every 4th build week (4, 8, 12...)
         if len(build_week_numbers) > 0:
             first_cutback_week = build_week_numbers[0]
-            expected_first_cutback = cutback_every - 1  # Build week 3 for cutback_every=4
+            expected_first_cutback = (
+                cutback_every - 1
+            )  # Build week 3 for cutback_every=4
             if first_cutback_week != expected_first_cutback:
                 issues.append(
                     f"Phase 1 (Build): First cutback at build week {first_cutback_week} (Week {cutback_weeks[0]}), "
@@ -368,6 +386,7 @@ def generate_long_run_spine(
     single_peak: bool = True,
     peak_offset_before_taper: int = 1,
     config: Optional[RaceDistanceConfig] = None,
+    unit_system: str = "imperial",
 ) -> List[Dict[str, float]]:
     """Generate a safe long-run progression (spine) for marathon training.
 
@@ -413,16 +432,16 @@ def generate_long_run_spine(
     peak = float(max(0.0, peak_long_run_target))
     current_longest = float(max(0.0, starting_long_run_miles))
     if round_to_half:
-        current_longest = round_half(current_longest)
+        current_longest = round_to_half_mile(current_longest)
 
     # Preserve the caller's selected start exactly (no hidden minimum here).
-    start_floor = round_half(max(0.0, current_longest - non_regressive_slack))
+    start_floor = round_to_half_mile(max(0.0, current_longest - non_regressive_slack))
     # Start from user's actual longest recent (no backward step beyond slack)
     start_lr = max(start_floor, current_longest)
 
     # Start exactly at user's recent ability (within non-regression floor)
     if round_to_half:
-        start_lr = round_half(start_lr)
+        start_lr = round_to_half_mile(start_lr)
 
     weeks: List[Dict[str, float]] = []
     lr = start_lr
@@ -438,8 +457,15 @@ def generate_long_run_spine(
 
         # Append starting week
         if round_to_half:
-            lr = round_half(lr)
-        weeks.append({"week_number": week_num, "long_run_miles": lr, "phase": "Base", "is_cutback": False})
+            lr = round_to_half_mile(lr)
+        weeks.append(
+            {
+                "week_number": week_num,
+                "long_run_miles": lr,
+                "phase": "Base",
+                "is_cutback": False,
+            }
+        )
         if lr >= peak - 1e-6:
             peaked = True
         week_num += 1
@@ -462,6 +488,7 @@ def generate_long_run_spine(
                     inc_miles=inc_miles,
                     base_resume_inc=inc_miles,  # Use inc_miles as base for dynamic mode
                     config=config,
+                    unit_system=unit_system,
                 )
                 lr = min(peak, dynamic_resume)
 
@@ -483,7 +510,9 @@ def generate_long_run_spine(
                     and not last_was_cutback
                 ):
                     pre_cutback_lr = lr
-                    new_lr = round_half(max(min_lr_dynamic, lr * cutback_factor))
+                    new_lr = round_to_half_mile(
+                        max(min_lr_dynamic, lr * cutback_factor)
+                    )
 
                     # GUARDRAIL: Ensure cutback actually reduces long run
                     if new_lr >= lr:
@@ -491,7 +520,7 @@ def generate_long_run_spine(
                             f"Week {week_num}: Cutback calculation error (dynamic) - new_lr {new_lr:.1f} >= lr {lr:.1f}, "
                             f"forcing reduction to {lr * 0.7:.1f}"
                         )
-                        new_lr = round_half(
+                        new_lr = round_to_half_mile(
                             max(min_lr_dynamic, lr * 0.7)
                         )  # Force 30% reduction as fallback
 
@@ -511,9 +540,14 @@ def generate_long_run_spine(
             # Track if this was a cutback week
             week_is_cutback = last_was_cutback  # Set before we clear the flag
             if round_to_half:
-                lr = round_half(lr)
+                lr = round_to_half_mile(lr)
             weeks.append(
-                {"week_number": week_num, "long_run_miles": lr, "phase": "Build", "is_cutback": week_is_cutback}
+                {
+                    "week_number": week_num,
+                    "long_run_miles": lr,
+                    "phase": "Build",
+                    "is_cutback": week_is_cutback,
+                }
             )
             if not peaked and lr >= peak - 1e-6:
                 peaked = True
@@ -526,9 +560,14 @@ def generate_long_run_spine(
         # Post-peak: final pre-taper (peak-1), then taper (non-increasing)
         # Skip recovery week to ensure non-increasing post-peak sequence
         min_lr = config.min_long_run_miles if config else 5.0
-        final_pre = round_half(max(min_lr, peak - 1.0))
+        final_pre = round_to_half_mile(max(min_lr, peak - 1.0))
         weeks.append(
-            {"week_number": week_num, "long_run_miles": final_pre, "phase": "Peak", "is_cutback": False}
+            {
+                "week_number": week_num,
+                "long_run_miles": final_pre,
+                "phase": "Peak",
+                "is_cutback": False,
+            }
         )
         week_num += 1
 
@@ -547,9 +586,14 @@ def generate_long_run_spine(
             else:
                 ratios = [taper_factor, 0.40]
         for r in ratios:
-            t = round_half(max(min_lr, peak * r))
+            t = round_to_half_mile(max(min_lr, peak * r))
             weeks.append(
-                {"week_number": week_num, "long_run_miles": t, "phase": "Taper", "is_cutback": False}
+                {
+                    "week_number": week_num,
+                    "long_run_miles": t,
+                    "phase": "Taper",
+                    "is_cutback": False,
+                }
             )
             week_num += 1
 
@@ -597,8 +641,10 @@ def generate_long_run_spine(
 
     # Append the starting week as-is (Week 1)
     if round_to_half:
-        lr = round_half(lr)
-    weeks.append({"week_number": 1, "long_run_miles": lr, "phase": "", "is_cutback": False})
+        lr = round_to_half_mile(lr)
+    weeks.append(
+        {"week_number": 1, "long_run_miles": lr, "phase": "", "is_cutback": False}
+    )
     if lr >= peak - 1e-6:
         peaked = True
 
@@ -638,6 +684,7 @@ def generate_long_run_spine(
                 inc_miles=inc_miles,
                 base_resume_inc=resume_inc,
                 config=config,
+                unit_system=unit_system,
             )
 
             # GUARDRAIL: Resume must ALWAYS increase from cutback value
@@ -666,7 +713,7 @@ def generate_long_run_spine(
             # Increment build counter first, then check for cutback
             # This ensures first cutback happens at Week 4 (after 3 build weeks: Week 2, 3, 4)
             build_counter += 1
-            
+
             # Check if cutback time: every cutback_every build weeks (not absolute week numbers)
             # First cutback at build week 3 (absolute Week 4), then every 4th build week after that
             # Logic: First cutback when build_counter == 3 (after 3 build weeks)
@@ -674,17 +721,21 @@ def generate_long_run_spine(
             #        But we need to account for the offset: after first cutback, counter resets to 0
             #        So next cutback should be when counter reaches 4 again (which is 4 build weeks after reset)
             # ADDITIONAL SAFETY: Never allow cutback if we just had a cutback (defensive check)
-            is_first_cutback = (build_counter == cutback_every - 1)  # Week 4: build_counter = 3
+            is_first_cutback = (
+                build_counter == cutback_every - 1
+            )  # Week 4: build_counter = 3
             # For subsequent cutbacks: after reset, we need 4 more build weeks (counter = 4, 8, 12...)
-            is_subsequent_cutback = (build_counter >= cutback_every and (build_counter % cutback_every) == 0)
-            
+            is_subsequent_cutback = (
+                build_counter >= cutback_every and (build_counter % cutback_every) == 0
+            )
+
             if (
                 (is_first_cutback or is_subsequent_cutback)
                 and lr < peak
                 and not last_was_cutback
             ):
                 pre_cutback_lr = lr
-                new_lr = round_half(max(min_lr, lr * cutback_factor))
+                new_lr = round_to_half_mile(max(min_lr, lr * cutback_factor))
 
                 # GUARDRAIL: Ensure cutback actually reduces long run
                 if new_lr >= lr:
@@ -692,7 +743,7 @@ def generate_long_run_spine(
                         f"Week {i}: Cutback calculation error - new_lr {new_lr:.1f} >= lr {lr:.1f}, "
                         f"forcing reduction to {lr * 0.7:.1f}"
                     )
-                    new_lr = round_half(
+                    new_lr = round_to_half_mile(
                         max(min_lr, lr * 0.7)
                     )  # Force 30% reduction as fallback
 
@@ -722,8 +773,15 @@ def generate_long_run_spine(
                 current_is_cutback = False
 
         if round_to_half:
-            lr = round_half(lr)
-        weeks.append({"week_number": i, "long_run_miles": lr, "phase": "", "is_cutback": current_is_cutback})
+            lr = round_to_half_mile(lr)
+        weeks.append(
+            {
+                "week_number": i,
+                "long_run_miles": lr,
+                "phase": "",
+                "is_cutback": current_is_cutback,
+            }
+        )
         if not peaked and lr >= peak - 1e-6:
             peaked = True
 
@@ -735,7 +793,7 @@ def generate_long_run_spine(
         weeks.append(
             {
                 "week_number": peak_week_num,
-                "long_run_miles": round_half(peak),
+                "long_run_miles": round_to_half_mile(peak),
                 "phase": "",
                 "is_cutback": False,
             }
@@ -744,15 +802,21 @@ def generate_long_run_spine(
 
     # Update total_weeks_in_plan to reflect actual plan length
     actual_weeks_so_far = len(weeks)
-    # FIXED: Respect maximum constraint - don't extend beyond requested weeks
-    # Use minimum of requested weeks and what we actually built (to respect race date constraint)
-    actual_total_weeks = min(
-        total_weeks_in_plan,  # MAXIMUM constraint - don't exceed this
-        max(
-            actual_weeks_so_far + taper_weeks,  # At least what we built + taper
-            total_weeks_in_plan,  # But respect the constraint
-        ),
+    # CRITICAL: Ensure we have enough weeks for exactly taper_weeks taper weeks
+    # If time-constrained, we may need to extend slightly to accommodate required taper
+    # Priority: Ensure taper_weeks are created (safety-critical for race preparation)
+    min_required_weeks = actual_weeks_so_far + taper_weeks
+    actual_total_weeks = max(
+        min_required_weeks,  # At minimum: what we built + required taper weeks
+        total_weeks_in_plan,  # But respect the constraint if it's larger
     )
+    # If constraint is too tight, log a warning but still ensure taper weeks
+    if total_weeks_in_plan > 0 and min_required_weeks > total_weeks_in_plan:
+        logger.warning(
+            f"Time-constrained plan: Need {min_required_weeks} weeks for proper taper "
+            f"but only {total_weeks_in_plan} available. Extending to {min_required_weeks} weeks "
+            f"to ensure {taper_weeks} taper weeks are created."
+        )
 
     # Pre-taper fill (maintenance) + Taper weeks
     # Use actual_total_weeks (may be extended for safety) instead of requested total_weeks_in_plan
@@ -765,25 +829,42 @@ def generate_long_run_spine(
         recovery_ratio = config.post_peak_recovery_ratio if config else 0.75
 
         # Use a safer maintenance target (peak - maintenance_reduction) to avoid sustained 19/20 blocks
-        maintenance_target = round_half(max(0.0, peak - maintenance_reduction))
+        maintenance_target = round_to_half_mile(max(0.0, peak - maintenance_reduction))
 
         # 1) Immediate recovery week after peak (using config ratio)
         if rem > 0 and (actual_total_weeks - len(weeks)) > taper_slots:
-            recovery = round_half(max(min_lr, peak * recovery_ratio))
-            weeks.append({"week_number": wk, "long_run_miles": recovery, "phase": "", "is_cutback": False})
+            recovery = round_to_half_mile(max(min_lr, peak * recovery_ratio))
+            weeks.append(
+                {
+                    "week_number": wk,
+                    "long_run_miles": recovery,
+                    "phase": "",
+                    "is_cutback": False,
+                }
+            )
             wk += 1
 
         # 2) One sub-peak cap week (peak - maintenance_reduction) if time remains before taper
         if (actual_total_weeks - len(weeks)) > taper_slots:
             weeks.append(
-                {"week_number": wk, "long_run_miles": maintenance_target, "phase": "", "is_cutback": False}
+                {
+                    "week_number": wk,
+                    "long_run_miles": maintenance_target,
+                    "phase": "",
+                    "is_cutback": False,
+                }
             )
             wk += 1
 
         # 3) Fill any remaining pre-taper weeks with maintenance_target
         while (actual_total_weeks - len(weeks)) > taper_slots:
             weeks.append(
-                {"week_number": wk, "long_run_miles": maintenance_target, "phase": "", "is_cutback": False}
+                {
+                    "week_number": wk,
+                    "long_run_miles": maintenance_target,
+                    "phase": "",
+                    "is_cutback": False,
+                }
             )
             wk += 1
 
@@ -831,21 +912,43 @@ def generate_long_run_spine(
                 and not is_peak_week
                 and weeks[i]["long_run_miles"] > cap_miles
             ):
-                weeks[i]["long_run_miles"] = round_half(cap_miles)
+                weeks[i]["long_run_miles"] = round_to_half_mile(cap_miles)
 
-        if rem_after_fill > 0:
+        # CRITICAL FIX: Ensure exactly taper_weeks are created, not just rem_after_fill
+        # If rem_after_fill < taper_weeks, we need to extend the plan or reduce pre-taper weeks
+        # Priority: Always create exactly taper_weeks for proper race preparation
+        taper_weeks_to_create = min(rem_after_fill, taper_weeks)
+
+        # If we don't have enough weeks for full taper, extend the plan
+        if rem_after_fill < taper_weeks:
+            logger.warning(
+                f"Time constraint: Only {rem_after_fill} weeks available for taper, "
+                f"but {taper_weeks} required. Extending plan to accommodate full taper."
+            )
+            # Extend actual_total_weeks to ensure we can create all taper weeks
+            actual_total_weeks = len(weeks) + taper_weeks
+            taper_weeks_to_create = taper_weeks
+
+        if taper_weeks_to_create > 0:
             # Use config taper ratios if available
-            if config and len(config.taper_ratios) >= rem_after_fill:
-                ratios = config.taper_ratios[:rem_after_fill]
+            if config and len(config.taper_ratios) >= taper_weeks_to_create:
+                ratios = config.taper_ratios[:taper_weeks_to_create]
             else:
                 # Fallback to hardcoded values for backwards compatibility
                 if taper_weeks == 3:
-                    ratios = [0.70, 0.50, 0.25][:rem_after_fill]
+                    ratios = [0.70, 0.50, 0.25][:taper_weeks_to_create]
                 else:
-                    ratios = [taper_factor, 0.40][:rem_after_fill]
+                    ratios = [taper_factor, 0.40][:taper_weeks_to_create]
             for r in ratios:
-                t = round_half(max(min_lr, peak * r))
-                weeks.append({"week_number": wk, "long_run_miles": t, "phase": "", "is_cutback": False})
+                t = round_to_half_mile(max(min_lr, peak * r))
+                weeks.append(
+                    {
+                        "week_number": wk,
+                        "long_run_miles": t,
+                        "phase": "",
+                        "is_cutback": False,
+                    }
+                )
                 wk += 1
 
     # Label phases using data-driven approach: find actual peak, then label accordingly
@@ -871,14 +974,14 @@ def generate_long_run_spine(
 
         if i < peak_week_num:
             # Before peak: Base or Build
-            if i <= max(1, actual_total_weeks // 4):
+            if i <= max(1, len(weeks) // 4):
                 w["phase"] = "Base"
             else:
                 w["phase"] = "Build"
         elif i == peak_week_num:
             # Peak week itself
             w["phase"] = "Peak"
-        elif i <= actual_total_weeks - taper_weeks:
+        elif i <= len(weeks) - taper_weeks:
             # After peak, before taper: Peak (maintenance)
             w["phase"] = "Peak"
         else:

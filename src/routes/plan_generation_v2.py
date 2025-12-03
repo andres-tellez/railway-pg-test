@@ -16,6 +16,7 @@ from src.services.training_plan.v2.plan_generation_orchestrator_v2 import (
     PlanGenerationOrchestratorV2,
 )
 from src.utils.date_helpers import DEFAULT_TRAINING_DAYS
+from src.db.dao.user_profile_dao import get_user_profile
 
 
 def run_v2_plan_generation(
@@ -45,12 +46,20 @@ def run_v2_plan_generation(
         config=config,
         race_type=race_type,  # Pass race_type so Step 6 uses correct templates
     )
+
+    # Fetch user profile to get unit_system preference
+    user_profile = get_user_profile(session, str(user_id))
+    unit_system = (
+        (user_profile.get("unit_system") or "imperial") if user_profile else "imperial"
+    )
+
     runner_ctx = {
         "session": session,
         "user_id": str(user_id),
         "plan_request": plan_request,
         "training_days": training_days,
         "activity_weeks": activity_weeks,
+        "unit_system": unit_system,  # Pass unit system for unit-aware rounding
     }
     return orchestrator.generate_longrun_first(runner_ctx, mode=mode)
 

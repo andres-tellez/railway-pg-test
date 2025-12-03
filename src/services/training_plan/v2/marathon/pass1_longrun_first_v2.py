@@ -15,8 +15,8 @@ from src.services.training_plan.v2.shared_v2.long_run_signals import (
     calculate_recovery_week_long_run,
     detect_consecutive_long_runs_from_materialized_view,
     recent_longest_3w_from_materialized_view,
-    round_to_half,
 )
+from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
 from sqlalchemy.orm import Session
 
 
@@ -50,6 +50,7 @@ def build_spine(
     cfg: LRConfig,
     race_date: Any,
     config: Optional[Any] = None,  # RaceDistanceConfig
+    unit_system: str = "imperial",
 ) -> List[Dict[str, Any]]:
     return generate_long_run_spine(
         starting_long_run_miles=start,
@@ -63,6 +64,7 @@ def build_spine(
         cutback_factor=cfg["cutFactor"],
         peak_offset_before_taper=4 if (total_weeks or 0) >= 15 else 1,
         config=config,  # Pass config to spine generator
+        unit_system=unit_system,
     )
 
 
@@ -98,10 +100,10 @@ def validate_spine(
                 last_was_cutback = True
             else:
                 if last_was_cutback:
-                    expected = round_to_half(min(cap, lr_two_back + cfg["inc"]))
+                    expected = round_to_half_mile(min(cap, lr_two_back + cfg["inc"]))
                     last_was_cutback = False
                 else:
-                    expected = round_to_half(min(cap, lr_prev + cfg["inc"]))
+                    expected = round_to_half_mile(min(cap, lr_prev + cfg["inc"]))
                 if abs(lr - expected) > 1e-6:
                     raise ValueError(
                         f"Week {i+1} invalid: got {lr:.1f}, expected {expected:.1f} (prev {lr_prev:.1f}, two_back {lr_two_back:.1f}, cap {cap:.1f})"
@@ -144,6 +146,7 @@ class Pass1LongRunFirstV2:
         longest_run: float,
         plan_request: Dict[str, Any],
         recommended_weeks: Optional[int] = None,
+        unit_system: str = "imperial",
     ) -> Dict[str, Any]:
         """Compute long-run progression and recommended duration.
 
@@ -216,7 +219,9 @@ class Pass1LongRunFirstV2:
                 # User has consecutive runs but no recent reduction - schedule recovery week
                 # This is a build pattern (increasing) or flat at peak - recovery needed
                 recovery_lr = calculate_recovery_week_long_run(
-                    consecutive_analysis["longest_recent"], config=self.config
+                    consecutive_analysis["longest_recent"],
+                    config=self.config,
+                    unit_system=unit_system,
                 )
                 trusted_start = recovery_lr
                 start_rule = "recovery_week_after_consecutive_runs"
@@ -252,7 +257,7 @@ class Pass1LongRunFirstV2:
                 self.config.min_long_run_miles,  # Never below absolute minimum
             )
             original_start = trusted_start
-            trusted_start = round_to_half(capped_start)
+            trusted_start = round_to_half_mile(capped_start)
             start_rule = f"{start_rule} (capped from {original_start:.1f} to {trusted_start:.1f} for race peak {target_peak_miles:.1f}mi)"
             logger.info(
                 f"🔄 Capping starting long run: User's fitness ({original_start:.1f}mi) exceeds "
@@ -279,6 +284,7 @@ class Pass1LongRunFirstV2:
                 cfg=cfg,
                 race_date=plan_request.get("race_date"),
                 config=self.config,  # Pass config for removing hardcoded values
+                unit_system=unit_system,
             )
         else:
             logger.info(
@@ -294,6 +300,7 @@ class Pass1LongRunFirstV2:
                 cfg=cfg,
                 race_date=plan_request.get("race_date"),
                 config=self.config,  # Pass config for removing hardcoded values
+                unit_system=unit_system,
             )
         desired_total_weeks = len(weeks)
 
@@ -302,7 +309,7 @@ class Pass1LongRunFirstV2:
         try:
             validate_spine(
                 weeks,
-                expected_start=round_to_half(trusted_start),
+                expected_start=round_to_half_mile(trusted_start),
                 peak=target_peak_miles,
                 cfg=cfg,
             )
@@ -397,11 +404,11 @@ class Pass1LongRunFirstV2:
                 else:
                     if last_was_cutback:
                         # Resume: pre-cutback + 1.0
-                        expected = round_to_half(min(cap, lr_two_back + 1.0))
+                        expected = round_to_half_mile(min(cap, lr_two_back + 1.0))
                         last_was_cutback = False
                     else:
                         # Normal build: prior week + 1.0
-                        expected = round_to_half(min(cap, lr_prev + 1.0))
+                        expected = round_to_half_mile(min(cap, lr_prev + 1.0))
                     if abs(lr - expected) > 1e-6:
                         raise ValueError(
                             f"Week {i+1} invalid: got {lr:.1f}, expected {expected:.1f} (prev {lr_prev:.1f}, two_back {lr_two_back:.1f}, cap {cap:.1f})"

@@ -118,6 +118,10 @@ def submit_user_profile():
             user_dict["height_feet"] = feet
             user_dict["height_inches"] = inches
 
+        # Map unitSystem to unit_system (camelCase -> snake_case)
+        if "unitSystem" in user_dict:
+            user_dict["unit_system"] = user_dict.pop("unitSystem")
+
         # Enum -> primitive
         for k, v in list(user_dict.items()):
             if isinstance(v, Enum):
