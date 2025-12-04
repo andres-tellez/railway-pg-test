@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { AuthGuard } from "@/components/AuthGuard";
 import { useApiClient } from "@/utils/apiClient";
 import { useAuthSetup } from "@/hooks/useAuthSetup";
+import { useUnitSystem } from "@/context/UnitSystemContext";
+import { formatDistanceNumber, toDisplayDistance } from "@/utils/unitFormatters";
 
 type PlanResponse = {
   plan_id: string;
@@ -36,6 +38,7 @@ export default function PlanOverviewTable() {
   const { isReady, userId } = useAuthSetup();
   const api = useApiClient();
   const navigate = useNavigate();
+  const { unitSystem } = useUnitSystem();
   const [plan, setPlan] = useState<PlanResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -205,6 +208,7 @@ export default function PlanOverviewTable() {
   };
 
   // Helper to get race distance in miles from race_distance string
+  // Returns miles (for internal calculation), then convert for display
   const getRaceDistanceMiles = (raceDistance?: string): number => {
     if (!raceDistance) return 26.2; // Default to marathon
 
@@ -217,7 +221,6 @@ export default function PlanOverviewTable() {
     // Default to marathon if unknown
     return 26.2;
   };
-
 
   if (loading) {
     return (
@@ -301,7 +304,9 @@ export default function PlanOverviewTable() {
                       {['M','T','W','T','F','S','S'].map((d, i) => (
                         <th key={i} className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center font-medium border border-slate-700">{d}</th>
                       ))}
-                      <th className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center font-medium border border-slate-700">Total</th>
+                      <th className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center font-medium border border-slate-700">
+                        Total
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -352,7 +357,8 @@ export default function PlanOverviewTable() {
                       const raceDistanceMiles = getRaceDistanceMiles(plan.race_distance);
                       let displayTotal = week.total;
                       if (isRaceWeek && raceDayName) {
-                        displayTotal = week.total + raceDistanceMiles;
+                        // Subtract the original workout for race day, then add race distance
+                        displayTotal = week.total - (week.workouts[raceDayName] || 0) + raceDistanceMiles;
                       }
 
                       return (
@@ -383,9 +389,13 @@ export default function PlanOverviewTable() {
                                 {shouldHide ? (
                                   <span className="text-slate-300">—</span>
                                 ) : isRaceDay ? (
-                                  <span className="text-slate-800 font-bold">{raceDistanceMiles}</span>
+                                  <span className="text-slate-800 font-bold">
+                                    {formatDistanceNumber(raceDistanceMiles, unitSystem)}
+                                  </span>
                                 ) : hasWorkout ? (
-                                  <span className="text-slate-800">{week.workouts[day]}</span>
+                                  <span className="text-slate-800">
+                                    {formatDistanceNumber(week.workouts[day], unitSystem)}
+                                  </span>
                                 ) : (
                                   <span className="text-slate-300">—</span>
                                 )}
@@ -394,7 +404,7 @@ export default function PlanOverviewTable() {
                           })}
                           <td className="py-1.5 px-2 sm:py-2 sm:px-3 md:py-1 md:px-1.5 text-center border border-slate-200 tabular-nums font-semibold text-slate-800">
                             {displayTotal > 0 ? (
-                              Math.round(displayTotal)
+                              Math.round(toDisplayDistance(displayTotal, unitSystem))
                             ) : (
                               <span className="text-slate-300">—</span>
                             )}

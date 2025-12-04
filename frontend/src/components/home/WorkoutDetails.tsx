@@ -2,11 +2,13 @@
  * WorkoutDetails Component
  * Shows workout details for selected day
  */
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { WEEK_TIMELINE_STYLES } from '../../utils/weekTimelineStyles';
 import { normalizeWorkoutTypeDisplay } from '../../utils/workoutTypeUtils';
+import { useUnitSystem } from '../../context/UnitSystemContext';
+import { formatDistanceNumber, formatDistance, formatPace, formatPaceRange, parseAndConvertPaceString } from '../../utils/unitFormatters';
 
 interface Workout {
   date: string;
@@ -53,8 +55,11 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
   planStartDate,
   nextWorkoutDay,
 }) => {
+  const { unitSystem } = useUnitSystem();
+
   // Check if this date is before the plan starts
   const isBeforePlanStart = planStartDate && dateStr < planStartDate;
+
   // Helper to extract just the HR zone (Z1, Z2, etc.) from target_hr
   // Note: target_zone contains pace, not HR zone
   const extractHRZone = (target_hr?: string): string => {
@@ -72,17 +77,34 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
 
     return "";
   };
+
+  // Memoized formatted values - only recalculate when inputs change
+  const activityDistance = useMemo(() => {
+    if (!activity?.distance_miles) return null;
+    return formatDistance(activity.distance_miles, unitSystem, 1);
+  }, [activity?.distance_miles, unitSystem]);
+
+  const workoutDistance = useMemo(() => {
+    if (!workout?.miles) return null;
+    const formatted = formatDistanceNumber(workout.miles, unitSystem);
+    return `${formatted} ${unitSystem === 'metric' ? 'km' : 'mi'}`;
+  }, [workout?.miles, unitSystem]);
+
+  const activityPace = useMemo(() => {
+    if (!activity?.moving_time || !activity?.distance_miles || activity.distance_miles <= 0) {
+      return null;
+    }
+    // Calculate seconds per mile from activity data
+    const secondsPerMile = activity.moving_time / activity.distance_miles;
+    return formatPace(secondsPerMile, unitSystem);
+  }, [activity?.moving_time, activity?.distance_miles, unitSystem]);
+
+  const convertedTargetZone = useMemo(() => {
+    if (!workout?.target_zone) return null;
+    return parseAndConvertPaceString(workout.target_zone, unitSystem);
+  }, [workout?.target_zone, unitSystem]);
   // If date is before plan starts, show simple activity card without comparison grid
   if (isBeforePlanStart && activity && activity.distance_miles > 0) {
-    const paceDisplay = activity.moving_time && activity.distance_miles > 0
-      ? (() => {
-          const secondsPerMile = activity.moving_time / activity.distance_miles;
-          const minutes = Math.floor(secondsPerMile / 60);
-          const seconds = Math.floor(secondsPerMile % 60);
-          return `${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
-        })()
-      : null;
-
     return (
       <div>
         <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
@@ -94,11 +116,11 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
             {activity.name || 'Run'}
           </div>
           <div className="text-2xl font-bold text-gray-900 mb-1">
-            {activity.distance_miles.toFixed(1)} miles
+            {activityDistance}
           </div>
-          {paceDisplay && (
+          {activityPace && (
             <div className="text-sm text-gray-600">
-              Pace: {paceDisplay}
+              Pace: {activityPace}
             </div>
           )}
         </div>
@@ -153,18 +175,13 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
             <div className={WEEK_TIMELINE_STYLES.comparisonColumn}>
               <div className={WEEK_TIMELINE_STYLES.comparisonHeader}>Actual</div>
               <div className={WEEK_TIMELINE_STYLES.comparisonValue}>
-                {activity.distance_miles.toFixed(1)} miles
+                {activityDistance}
               </div>
-              <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
-                {activity.moving_time && activity.distance_miles > 0
-                  ? (() => {
-                      const secondsPerMile = activity.moving_time / activity.distance_miles;
-                      const minutes = Math.floor(secondsPerMile / 60);
-                      const seconds = Math.floor(secondsPerMile % 60);
-                      return `Actual Pace: ${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
-                    })()
-                  : 'Actual Pace: N/A'}
-              </div>
+              {activityPace && (
+                <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
+                  Actual Pace: {activityPace}
+                </div>
+              )}
             </div>
           </div>
 
@@ -195,7 +212,7 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
           <div className={WEEK_TIMELINE_STYLES.detailsDivider}>
             <p className="text-sm text-gray-600 mb-1">Next workout:</p>
             <p className="text-sm font-medium text-gray-900">
-              {format(nextWorkoutDay.date, 'EEEE')} - {nextWorkoutDay.workout.workout_type} • {nextWorkoutDay.workout.miles} miles
+              {format(nextWorkoutDay.date, 'EEEE')} - {nextWorkoutDay.workout.workout_type} • {formatDistanceNumber(nextWorkoutDay.workout.miles, unitSystem)} {unitSystem === 'metric' ? 'km' : 'mi'}
             </p>
           </div>
         )}
@@ -206,15 +223,6 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
   if (!workout) {
     // If there's an activity but no workout, show the activity details
     if (activity && activity.distance_miles > 0) {
-      const paceDisplay = activity.moving_time && activity.distance_miles > 0
-        ? (() => {
-            const secondsPerMile = activity.moving_time / activity.distance_miles;
-            const minutes = Math.floor(secondsPerMile / 60);
-            const seconds = Math.floor(secondsPerMile % 60);
-            return `${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
-          })()
-        : null;
-
       // Different layout and messaging for no-plan vs plan-without-workout
       if (!hasPlan) {
         // No plan scenario - simple, clean activity display
@@ -229,11 +237,11 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
                 {activity.name || 'Run'}
               </div>
               <div className="text-2xl font-bold text-gray-900 mb-1">
-                {activity.distance_miles.toFixed(1)} miles
+                {activityDistance}
               </div>
-              {paceDisplay && (
+              {activityPace && (
                 <div className="text-sm text-gray-600">
-                  Pace: {paceDisplay}
+                  Pace: {activityPace}
                 </div>
               )}
             </div>
@@ -265,10 +273,10 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
               <div className={WEEK_TIMELINE_STYLES.comparisonColumn}>
                 <div className={WEEK_TIMELINE_STYLES.comparisonHeader}>Activity</div>
                 <div className={WEEK_TIMELINE_STYLES.comparisonValue}>
-                  {activity.distance_miles.toFixed(1)} miles
+                  {activityDistance}
                 </div>
                 <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
-                  {paceDisplay ? `Pace: ${paceDisplay}` : 'Pace: N/A'}
+                  {activityPace ? `Pace: ${activityPace}` : 'Pace: N/A'}
                 </div>
                 {activity.name && (
                   <div className="text-sm text-gray-600 mt-2">
@@ -330,30 +338,24 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
           <div className={WEEK_TIMELINE_STYLES.comparisonColumn}>
             <div className={WEEK_TIMELINE_STYLES.comparisonHeader}>Planned</div>
             <div className={WEEK_TIMELINE_STYLES.comparisonValue}>
-              {workout.miles} miles
+              {workoutDistance}
             </div>
-            {workout.target_zone && (
+            {convertedTargetZone && (
               <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
-                Target Pace: {workout.target_zone}
+                Target Pace: {convertedTargetZone}
               </div>
             )}
           </div>
           <div className={WEEK_TIMELINE_STYLES.comparisonColumn}>
             <div className={WEEK_TIMELINE_STYLES.comparisonHeader}>Actual</div>
             <div className={WEEK_TIMELINE_STYLES.comparisonValue}>
-              {activity.distance_miles.toFixed(1)} miles
+              {activityDistance}
             </div>
-            <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
-              {activity.moving_time && activity.distance_miles > 0
-                ? (() => {
-                    // Calculate pace: seconds per mile
-                    const secondsPerMile = activity.moving_time / activity.distance_miles;
-                    const minutes = Math.floor(secondsPerMile / 60);
-                    const seconds = Math.floor(secondsPerMile % 60);
-                    return `Actual Pace: ${minutes}:${seconds.toString().padStart(2, '0')}/mi`;
-                  })()
-                : 'Actual Pace: N/A'}
-            </div>
+            {activityPace && (
+              <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
+                Actual Pace: {activityPace}
+              </div>
+            )}
           </div>
         </div>
 
@@ -405,11 +407,11 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
       </h3>
       <div className={WEEK_TIMELINE_STYLES.detailsSection}>
         <div className="text-lg font-medium text-gray-900">
-          {workout.miles} miles
+          {workoutDistance}
         </div>
-        {workout.target_zone && (
+        {convertedTargetZone && (
           <div className="text-sm text-gray-600 mt-1">
-            Target Pace: {workout.target_zone}
+            Target Pace: {convertedTargetZone}
           </div>
         )}
         {!hrZone && workout.target_hr && (
@@ -424,22 +426,23 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
           <div className={WEEK_TIMELINE_STYLES.workoutStructureCards}>
             {workout.segments.steps.map((step: any, idx: number) => {
               // Format target from spec-compliant format {low: sec, high: sec}
+              // These are already in seconds per mile from backend
               let targetStr = '';
               if (step.target) {
-                const formatPace = (sec: number) => {
-                  const min = Math.floor(sec / 60);
-                  const secRemainder = Math.round(sec % 60);
-                  return `${min}:${secRemainder.toString().padStart(2, '0')}`;
-                };
                 if (step.target.low && step.target.high) {
-                  targetStr = `${formatPace(step.target.low)}–${formatPace(step.target.high)}/mi`;
+                  targetStr = formatPaceRange(step.target.low, step.target.high, unitSystem);
                 } else if (step.target.low) {
-                  targetStr = `${formatPace(step.target.low)}/mi`;
+                  targetStr = formatPace(step.target.low, unitSystem);
                 }
               }
 
+              // Convert segment distance
               const distanceValue = step.value;
-              const distanceUnit = step.durationType === 'DISTANCE' ? (distanceValue === 1 ? 'mile' : 'miles') : (distanceValue === 1 ? 'minute' : 'minutes');
+              const isDistance = step.durationType === 'DISTANCE';
+              const formattedDistance = isDistance
+                ? `${formatDistanceNumber(distanceValue, unitSystem)} ${unitSystem === 'metric' ? 'km' : 'mi'}`
+                : `${distanceValue} ${distanceValue === 1 ? 'minute' : 'minutes'}`;
+
               const intensity = step.intensity || '';
 
               return (
@@ -449,7 +452,7 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
                   </div>
                   <div className={WEEK_TIMELINE_STYLES.workoutStructureCardDetails}>
                     <span className={WEEK_TIMELINE_STYLES.workoutStructureCardDetailItem}>
-                      {distanceValue} {distanceUnit}
+                      {formattedDistance}
                     </span>
                     {intensity && (
                       <>

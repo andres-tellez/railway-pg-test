@@ -43,7 +43,7 @@ import AskGptMvpUI from "./pages/AskGptMvpUI";
 import AuthTestPage from "./pages/AuthTestPage";
 import WelcomePage from "./pages/WelcomePage";
 import SimpleMetrics from "./pages/SimpleMetrics";
-import GYRMetricsDemo from "./pages/GYRMetricsDemo";
+// import GYRMetricsDemo from "./pages/GYRMetricsDemo"; // GYR Scores page hidden
 import Metrics from "./pages/Metrics";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
@@ -57,6 +57,7 @@ import HeartRateZones from "./pages/HeartRateZones";
 import Layout from "./components/Layout";
 import PlanLayout from "./components/layout/PlanLayout";
 import SmartRouter from "./components/SmartRouter";
+import { UnitSystemProvider } from "./context/UnitSystemContext";
 
 // ---------------------------
 // LoginPage
@@ -121,9 +122,10 @@ export default function App() {
   console.log("Auth0 Status →", { isLoading, isAuthenticated });
 
   return (
-    <Routes>
-      {/* Public Routes */}
-      <Route path="/welcome" element={<WelcomePage />} />
+    <UnitSystemProvider>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/welcome" element={<WelcomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
       <Route path="/terms-of-service" element={<TermsOfService />} />
@@ -265,6 +267,8 @@ export default function App() {
           </Layout>
         }
       />
+      {/* GYR Scores demo route - hidden */}
+      {/*
       <Route
         path="/gyr-demo"
         element={
@@ -273,6 +277,7 @@ export default function App() {
           </Layout>
         }
       />
+      */}
 
       {/* Legacy Routes */}
       <Route
@@ -317,6 +322,7 @@ export default function App() {
 
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </UnitSystemProvider>
   );
 }

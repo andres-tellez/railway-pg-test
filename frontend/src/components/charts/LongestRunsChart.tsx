@@ -4,6 +4,8 @@ import { getBarShadow, formatChartNumber, calculateChartContainerHeight, calcula
 import { CHART_LAYOUT, CHART_BASE_CLASSES } from '../../utils/chartUtils';
 import { useScrollHideTooltip } from '../../hooks/useScrollHideTooltip';
 import ChartTooltip from './ChartTooltip';
+import { useUnitSystem } from '../../context/UnitSystemContext';
+import { formatDistance, getUnitLabels } from '../../utils/unitFormatters';
 
 interface LongestRunData {
   week_start: string;
@@ -32,6 +34,8 @@ interface LongestRunsChartProps {
 
 export default function LongestRunsChart({ data, title = "Weekly Longest Runs", showHeader = true, longRunGoals = [] }: LongestRunsChartProps) {
   const [hoveredRun, setHoveredRun] = useState<{ index: number; x: number; y: number } | null>(null);
+  const { unitSystem } = useUnitSystem();
+  const unitLabels = getUnitLabels(unitSystem);
 
   // Centralized tooltip behavior - hide on scroll
   useScrollHideTooltip(hoveredRun !== null, () => setHoveredRun(null));
@@ -121,15 +125,19 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
     return getBarShadow(barColor, index);
   };
 
+  // Dynamic title based on unit system
+  const displayTitle = title.startsWith("Weekly Longest Runs")
+    ? title.replace("Weekly Longest Runs", `Weekly Longest ${unitLabels.distance}`)
+    : title;
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
       {showHeader && (
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+          <h3 className="text-xl font-bold text-gray-900">{displayTitle}</h3>
           <div className="text-right">
             <div className="text-lg text-gray-700">
-              Units: mi
+              Units: {unitLabels.distanceAbbrev}
             </div>
           </div>
         </div>
@@ -183,7 +191,7 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
                   >
                     {/* Label inside actual bar */}
                     <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-semibold text-white drop-shadow" aria-hidden="true">
-                      {formatChartNumber(run.distance, 'distance')}
+                      {formatDistance(run.distance, unitSystem, 1).split(' ')[0]}
                     </div>
                   </div>
 
@@ -197,11 +205,11 @@ export default function LongestRunsChart({ data, title = "Weekly Longest Runs", 
                         width: '48%',
                         height: `${barData[index].plannedHeightPixels}px`
                       }}
-                      aria-label={`Planned ${barData[index].planned?.toFixed(1)} miles`}
+                      aria-label={`Planned ${formatDistance(barData[index].planned || 0, unitSystem, 1)}`}
                       role="img"
                     >
                       <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[10px] sm:text-xs font-semibold text-gray-900" aria-hidden="true">
-                        {barData[index].planned?.toFixed(1)}
+                        {formatDistance(barData[index].planned || 0, unitSystem, 1).split(' ')[0]}
                       </div>
                     </div>
                   )}

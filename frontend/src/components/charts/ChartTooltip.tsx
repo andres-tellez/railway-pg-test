@@ -1,5 +1,7 @@
 import React from 'react';
 import { formatWeekString, formatChangePercentage, getTrendIcon } from '../../utils/chartHelpers';
+import { useUnitSystem } from '../../context/UnitSystemContext';
+import { formatDistance, formatPace } from '../../utils/unitFormatters';
 
 // Helper function to format heart rate zones
 const formatHeartRateZones = (zones: any) => {
@@ -73,6 +75,8 @@ interface ChartTooltipProps {
 }
 
 export default function ChartTooltip({ isVisible, position, data }: ChartTooltipProps) {
+  const { unitSystem } = useUnitSystem();
+
   if (!isVisible) return null;
 
   // Determine if this is individual run data or weekly aggregated data
@@ -108,7 +112,7 @@ export default function ChartTooltip({ isVisible, position, data }: ChartTooltip
                 {/* Distance */}
                 <div className="flex items-center justify-between">
                   <span className="text-gray-300">Distance:</span>
-                  <span className="text-white font-semibold">{data.runDistance?.toFixed(1)} mi</span>
+                  <span className="text-white font-semibold">{data.runDistance ? formatDistance(data.runDistance, unitSystem, 1) : 'N/A'}</span>
                 </div>
 
                 {/* Duration */}
@@ -142,7 +146,7 @@ export default function ChartTooltip({ isVisible, position, data }: ChartTooltip
                         'text-white'
                     }`}>
                       {data.runDistance && data.prevWeekDistance ?
-                        `${data.runDistance >= data.prevWeekDistance ? '+' : ''}${(data.runDistance - data.prevWeekDistance).toFixed(1)} mi` :
+                        `${data.runDistance >= data.prevWeekDistance ? '+' : ''}${formatDistance(Math.abs(data.runDistance - data.prevWeekDistance), unitSystem, 1)}` :
                         'N/A'
                       }
                     </span>
@@ -172,8 +176,12 @@ export default function ChartTooltip({ isVisible, position, data }: ChartTooltip
               <div className="flex items-center justify-between">
                 <span className="text-gray-300 font-medium">Value:</span>
                 <span className="text-white font-semibold">
-                  {data.unit === 'min/mi' ?
-                    `${Math.floor(data.value)}:${Math.round((data.value - Math.floor(data.value)) * 60).toString().padStart(2, '0')} min/mi` :
+                  {data.unit === 'min/mi' || data.unit === 'min/km' ?
+                    (() => {
+                      // Convert minutes per mile to seconds per mile, then format
+                      const secondsPerMile = data.value * 60;
+                      return formatPace(secondsPerMile, unitSystem);
+                    })() :
                     `${data.value} ${data.unit}`
                   }
                 </span>

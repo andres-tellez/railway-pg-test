@@ -122,14 +122,18 @@ def create_recovery_week(previous_week: Dict[str, Any]) -> Dict[str, Any]:
 
     recovery = deepcopy(previous_week)
 
+    from src.services.training_plan.v2.shared_v2.rounding_utils import (
+        round_to_half_mile,
+    )
+
     # Reduce total mileage by 15%
     original_total = float(recovery.get("weekly_mileage", 0) or 0)
-    new_total = round(original_total * 0.85 * 2) / 2.0  # Round to 0.5
+    new_total = round_to_half_mile(original_total * 0.85)
 
     # Reduce long run by ~3 miles (or 20%, whichever is less)
     original_lr = float(recovery.get("long_run_miles", 0) or 0)
     lr_reduction = min(3.0, original_lr * 0.20)  # Max 3 miles or 20%, whichever is less
-    new_lr = round((original_lr - lr_reduction) * 2) / 2.0  # Round to 0.5
+    new_lr = round_to_half_mile(original_lr - lr_reduction)
 
     # Ensure minimums
     new_lr = max(3.0, new_lr)  # At least 3 miles

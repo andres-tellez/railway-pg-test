@@ -34,6 +34,9 @@ from src.services.training_plan.v2.race_configs.base_config import RaceDistanceC
 from src.services.training_plan.workout_utils import (
     calculate_weekly_mileage_from_workouts,
 )
+from src.services.training_plan.v2.shared_v2.rounding_utils import (
+    round_workout_distance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +53,6 @@ class Pass3WorkoutDistribution:
         config: RaceDistanceConfig,
         race_type: str = "marathon",
         scenario: str = None,
-        use_new_engine: bool = True,  # Kept for compatibility, always True now
     ):
         """Initialize Pass 3 workout distribution calculator.
 
@@ -58,7 +60,6 @@ class Pass3WorkoutDistribution:
             config: Race distance configuration
             race_type: Race type for template lookup ("marathon", "half", etc.)
             scenario: Optional scenario for template/rule overrides
-            use_new_engine: Deprecated - always uses new engine
         """
         self.config = config
         self.race_type = race_type
@@ -80,6 +81,7 @@ class Pass3WorkoutDistribution:
         training_days: List[str],
         total_weeks: int = None,
         long_run_day: str = None,
+        unit_system: str = "imperial",
     ) -> Dict[str, Any]:
         """Distribute workouts across training days for each week.
 
@@ -88,6 +90,7 @@ class Pass3WorkoutDistribution:
             training_days: List of training days (e.g., ["Mon", "Wed", "Thu", "Sat"])
             total_weeks: Total weeks in plan (for calculating weeks_until_race)
             long_run_day: Preferred day for long runs (if None, auto-selects)
+            unit_system: Deprecated - kept for backward compatibility. All rounding is now in miles.
 
         Returns:
             Dict with "weeks" list containing workout distributions
@@ -150,10 +153,26 @@ class Pass3WorkoutDistribution:
             )
 
             # Convert to list format for backward compatibility
+            # Round individual workout distances to practical increments based on unit system
             workouts = []
             for day in training_days:
                 if day in schedule:
                     workout_data = schedule[day].copy()
+                    # Round distance_miles to practical increments (0.5 miles)
+                    # Frontend will convert to km for display using toDisplayDistance()
+                    if "distance_miles" in workout_data:
+                        original_distance = workout_data.get("distance_miles", 0)
+                        if original_distance > 0:
+                            workout_data["distance_miles"] = round_workout_distance(
+                                original_distance
+                            )
+                    # Also handle "miles" field if present
+                    if "miles" in workout_data:
+                        original_distance = workout_data.get("miles", 0)
+                        if original_distance > 0:
+                            workout_data["miles"] = round_workout_distance(
+                                original_distance
+                            )
                     workouts.append(workout_data)
 
             logger.debug(
