@@ -3,6 +3,7 @@ import { useApiClient } from "../utils/apiClient";
 import { useAuthSetup } from "../hooks/useAuthSetup";
 import { AuthGuard } from "../components/AuthGuard";
 import RichMessage from "../components/RichMessage";
+import axios from "axios";
 
 interface Message {
   id: string;
@@ -19,6 +20,13 @@ interface Conversation {
   message_count: number;
 }
 
+interface RateLimitStatus {
+  remaining: number;
+  limit: number;
+  used: number;
+  retryAfter?: number; // seconds until retry is allowed
+}
+
 export default function AskGptMvpUI() {
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -26,7 +34,10 @@ export default function AskGptMvpUI() {
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showConversations, setShowConversations] = useState(false);
+  const [rateLimit, setRateLimit] = useState<RateLimitStatus | null>(null);
+  const [rateLimitError, setRateLimitError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const rateLimitTimerRef = useRef<NodeJS.Timeout | null>(null);
   const api = useApiClient();
   const { isReady, userId, error: authError } = useAuthSetup();
 
@@ -65,6 +76,42 @@ export default function AskGptMvpUI() {
       scrollToBottom();
     }
   }, [loading]);
+
+  // Rate limit countdown timer
+  useEffect(() => {
+    if (rateLimit?.retryAfter && rateLimit.retryAfter > 0) {
+      // Clear any existing timer
+      if (rateLimitTimerRef.current) {
+        clearInterval(rateLimitTimerRef.current);
+      }
+
+      // Set up countdown
+      rateLimitTimerRef.current = setInterval(() => {
+        setRateLimit((prev) => {
+          if (!prev || !prev.retryAfter) return prev;
+          const newRetryAfter = prev.retryAfter - 1;
+          if (newRetryAfter <= 0) {
+            // Timer expired, clear the error
+            if (rateLimitTimerRef.current) {
+              clearInterval(rateLimitTimerRef.current);
+              rateLimitTimerRef.current = null;
+            }
+            setRateLimitError(null);
+            // Reset to allow new requests (remaining will be updated on next successful request)
+            return { ...prev, retryAfter: 0, remaining: prev.limit };
+          }
+          return { ...prev, retryAfter: newRetryAfter };
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (rateLimitTimerRef.current) {
+        clearInterval(rateLimitTimerRef.current);
+        rateLimitTimerRef.current = null;
+      }
+    };
+  }, [rateLimit?.retryAfter]);
 
   const createNewConversation = async () => {
     try {
@@ -106,6 +153,7 @@ export default function AskGptMvpUI() {
 
   const handleSendMessage = async () => {
     if (!message.trim()) return;
+    if (rateLimit?.retryAfter && rateLimit.retryAfter > 0) return; // Rate limited
 
     // Create new conversation if none exists
     if (!currentConversationId) {
@@ -114,12 +162,13 @@ export default function AskGptMvpUI() {
     }
 
     setLoading(true);
+    setRateLimitError(null);
     const userMessage = message.trim();
-    setMessage("");
+    const tempUserMessageId = Date.now().toString();
 
     // Add user message to UI immediately
     const tempUserMessage: Message = {
-      id: Date.now().toString(),
+      id: tempUserMessageId,
       role: 'user',
       content: userMessage,
       created_at: new Date().toISOString()
@@ -133,6 +182,19 @@ export default function AskGptMvpUI() {
 
       const data = response.data;
 
+      // Update rate limit status from response
+      if (data.rate_limit) {
+        setRateLimit({
+          remaining: data.rate_limit.remaining,
+          limit: data.rate_limit.limit,
+          used: data.rate_limit.used,
+          retryAfter: 0,
+        });
+      }
+
+      // Clear input on success
+      setMessage("");
+
       // Add assistant response to UI
       const assistantMessage: Message = {
         id: data.message_id,
@@ -143,11 +205,32 @@ export default function AskGptMvpUI() {
 
       setMessages(prev => [...prev, assistantMessage]);
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error sending message:", error);
-      // Remove the temporary user message on error
-      setMessages(prev => prev.filter(msg => msg.id !== tempUserMessage.id));
-      alert("❌ Error sending message. Please try again.");
+
+      // Check if it's a rate limit error
+      if (axios.isAxiosError(error) && error.response?.status === 429) {
+        const errorData = error.response.data as any;
+        if (errorData?.error_code === "OPENAI_RATE_LIMIT_EXCEEDED") {
+          const retryAfter = errorData.details?.retry_after_seconds || 60;
+          setRateLimit({
+            remaining: 0,
+            limit: errorData.details?.limit ? parseInt(errorData.details.limit.match(/\d+/)?.[0] || "10") : 10,
+            used: errorData.details?.limit ? parseInt(errorData.details.limit.match(/\d+/)?.[0] || "10") : 10,
+            retryAfter: retryAfter,
+          });
+          setRateLimitError(null); // Clear any previous errors, timer will show message
+          // Remove user message from UI (it was added optimistically)
+          setMessages(prev => prev.filter(msg => msg.id !== tempUserMessageId));
+          // Keep the message in the input field so they can retry after timer expires
+          setMessage(userMessage);
+          return;
+        }
+      }
+
+      // For other errors, remove the temporary user message
+      setMessages(prev => prev.filter(msg => msg.id !== tempUserMessageId));
+      setRateLimitError("❌ Error sending message. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -208,6 +291,40 @@ export default function AskGptMvpUI() {
 
       {/* Input Area */}
       <div className="border-t p-4 bg-white">
+        {/* Rate Limit Status */}
+        {rateLimit && (
+          <div className="mb-2">
+            {rateLimit.retryAfter && rateLimit.retryAfter > 0 ? (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-red-800 font-medium">
+                    ⏱️ Rate limit exceeded. Retry in {rateLimit.retryAfter}s
+                  </span>
+                </div>
+              </div>
+            ) : rateLimit.remaining <= 2 && rateLimit.remaining > 0 ? (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-yellow-800">
+                    ⚠️ {rateLimit.remaining} of {rateLimit.limit} requests remaining this minute
+                  </span>
+                </div>
+              </div>
+            ) : rateLimit.remaining > 0 ? (
+              <div className="text-xs text-gray-500 flex items-center justify-end">
+                {rateLimit.remaining} of {rateLimit.limit} requests remaining
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        {/* Error Message */}
+        {rateLimitError && !rateLimit?.retryAfter && (
+          <div className="mb-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-800">
+            {rateLimitError}
+          </div>
+        )}
+
         <div className="flex gap-2">
           <input
             type="text"
@@ -215,15 +332,21 @@ export default function AskGptMvpUI() {
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Type your message..."
-            className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={loading}
+            className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading || (rateLimit?.retryAfter ? rateLimit.retryAfter > 0 : false)}
           />
           <button
             onClick={handleSendMessage}
-            disabled={loading || !message.trim()}
-            className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:opacity-50"
+            disabled={
+              loading ||
+              !message.trim() ||
+              (rateLimit?.retryAfter ? rateLimit.retryAfter > 0 : false)
+            }
+            className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            Send
+            {rateLimit?.retryAfter && rateLimit.retryAfter > 0
+              ? `Wait ${rateLimit.retryAfter}s`
+              : "Send"}
           </button>
         </div>
       </div>

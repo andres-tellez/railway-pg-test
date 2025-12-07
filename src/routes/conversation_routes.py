@@ -45,6 +45,11 @@ from src.db.db_session import get_session
 from src.db.models.conversations import Conversation, ConversationMessage
 from src.utils.gpt_ops import get_conversation_response
 from src.utils.auth_helpers import get_user_id_from_request
+from src.services.security.external_apis.openai_rate_limiter import (
+    can_make_request,
+    record_request,
+)
+from src.utils.response_utils import error_response
 
 logger = logging.getLogger(__name__)
 
@@ -296,10 +301,37 @@ def send_message(conversation_id):
             context, conversation.messages, message.strip()
         )
 
+        # Check OpenAI rate limit before making API call
+        allowed, retry_after = can_make_request(str(user_id))
+        if not allowed:
+            logger.warning(
+                f"OpenAI rate limit exceeded for user {user_id}. "
+                f"Retry after {retry_after:.1f} seconds"
+            )
+            return error_response(
+                message=f"Rate limit exceeded. Please try again in {int(retry_after)} seconds.",
+                status_code=429,
+                error_code="OPENAI_RATE_LIMIT_EXCEEDED",
+                details={
+                    "retry_after_seconds": int(retry_after),
+                    "limit": "10 requests per minute",
+                },
+            )
+
         # Get GPT response
         gpt_response = get_conversation_response(
             gpt_messages, require_json=False, question=message.strip()
         )
+
+        # Record successful OpenAI API request
+        record_request(str(user_id))
+
+        # Get rate limit status for response
+        from src.services.security.external_apis.openai_rate_limiter import (
+            get_user_stats,
+        )
+
+        rate_limit_stats = get_user_stats(str(user_id))
 
         # Add transparency if enabled
         if False:  # Disabled transparency for simple system
@@ -336,6 +368,11 @@ def send_message(conversation_id):
                     "context_used": {
                         "context_loaded": bool(context),
                         "context_length": len(context) if context else 0,
+                    },
+                    "rate_limit": {
+                        "remaining": rate_limit_stats["remaining"],
+                        "limit": rate_limit_stats["limit"],
+                        "used": rate_limit_stats["request_count"],
                     },
                 }
             ),
