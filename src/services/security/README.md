@@ -21,9 +21,18 @@ This package provides a centralized location for all security-related services. 
   - Integrated into conversation endpoint
   - Sliding window tracking
   - Standardized error responses
+- **OpenAI Cost Tracker** (`external_apis/openai_cost_tracker.py`)
+  - Per-user daily cost limit: $2.00
+  - Global daily hard limit: $100.00 (alert at $50.00)
+  - Integrated into conversation endpoint
+- **Unified OpenAI Service** (`external_apis/openai_service.py`)
+  - Centralized OpenAI API integration
+  - Automatic rate limiting and cost tracking
+  - Standardized return types (`OpenAIResponse`)
+  - Single source of truth for pricing
+  - Architecture guardrails enforced
 
 ### ⏳ In Progress
-- Cost tracking service (Step 2)
 - Service migration planning
 
 ### 📋 Planned

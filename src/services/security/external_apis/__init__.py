@@ -33,9 +33,44 @@ from src.services.security.external_apis.openai_rate_limiter import (
     reset_rate_limits,
 )
 
+# Export OpenAI cost tracker functions
+from src.services.security.external_apis.openai_cost_tracker import (
+    check_cost_limits,
+    record_request_cost,
+    get_user_cost_stats,
+    get_global_cost_stats,
+    reset_cost_tracking,
+    MODEL_PRICING,  # Export pricing for use in other modules
+    _calculate_cost,  # Export for smart_model_selector
+)
+
+# Export unified OpenAI service
+from src.services.security.external_apis.openai_service import (
+    OpenAIService,
+    OpenAIResponse,
+    RateLimitExceededError,
+    CostLimitExceededError,
+    get_openai_service,
+)
+
 __all__ = [
+    # Rate limiter
     "can_make_request",
     "record_request",
     "get_user_stats",
     "reset_rate_limits",
+    # Cost tracker
+    "check_cost_limits",
+    "record_request_cost",
+    "get_user_cost_stats",
+    "get_global_cost_stats",
+    "reset_cost_tracking",
+    "MODEL_PRICING",
+    "_calculate_cost",
+    # Unified service
+    "OpenAIService",
+    "OpenAIResponse",
+    "RateLimitExceededError",
+    "CostLimitExceededError",
+    "get_openai_service",
 ]

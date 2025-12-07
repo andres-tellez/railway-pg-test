@@ -187,19 +187,23 @@ def test_openai_api() -> Tuple[bool, str]:
         return False, "OPENAI_API_KEY not set"
 
     try:
-        from openai import OpenAI
+        # Use unified OpenAIService for consistency with application code
+        from src.services.security.external_apis.openai_service import (
+            get_openai_service,
+        )
 
-        client = OpenAI(api_key=api_key)
+        service = get_openai_service()
 
         # Make a minimal test call (just to validate API key)
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+        response = service.chat_completion(
             messages=[{"role": "user", "content": "Say 'test'"}],
+            user_id="validation-script",  # Fixed ID for validation script
+            model="gpt-3.5-turbo",
             max_tokens=5,
             timeout=10,
         )
 
-        if response.choices and response.choices[0].message.content:
+        if response.content:
             return True, "OpenAI API accessible and responding"
         else:
             return False, "OpenAI API returned empty response"

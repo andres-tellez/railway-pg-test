@@ -5,30 +5,30 @@
 # @integration-points: training_plan_service.py, conversation_routes.py
 # @usage: Used to generate plans or answer user questions
 # @prerequisites: OPENAI_API_KEY set in .env.local
+#
+# NOTE: This module is being migrated to use OpenAIService from
+# src/services/security/external_apis/openai_service.py for centralized
+# security controls (rate limiting, cost tracking, etc.)
 
 import os
 import re
 import json
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
-# Handle both old and new OpenAI API versions
-try:
-    from openai import OpenAI
-
-    client = OpenAI()  # Uses OPENAI_API_KEY from env
-except ImportError:
-    # Fallback for older openai versions
-    import openai
-
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-    client = None
+# Import unified OpenAI service
+from src.services.security.external_apis.openai_service import (
+    OpenAIService,
+    RateLimitExceededError,
+    CostLimitExceededError,
+    get_openai_service,
+)
 
 # Model configuration with cost-friendly defaults
-# Using gpt-4o for training plans, gpt-3.5-turbo for conversations
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+# Using gpt-4o for training plans and conversations
+DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 TRAINING_PLAN_MODEL = os.getenv("OPENAI_TRAINING_PLAN_MODEL", "gpt-4o")
-CONVERSATION_MODEL = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-3.5-turbo")
+CONVERSATION_MODEL = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
 print(
     f"[INFO] OpenAI models => DEFAULT_MODEL={DEFAULT_MODEL}, TRAINING_PLAN_MODEL={TRAINING_PLAN_MODEL}, CONVERSATION_MODEL={CONVERSATION_MODEL}"
 )
@@ -55,213 +55,146 @@ def parse_date_safe(date_str: str) -> datetime:
 
 
 def get_conversation_response(
-    messages: List[Dict], require_json: bool = False, question: str = None
-) -> str:
+    messages: List[Dict],
+    user_id: str,
+    require_json: bool = False,
+    question: str = None,
+) -> Tuple[str, Dict]:
     """
     Calls GPT with conversation history for chat-like interactions.
-    Uses our new strategic conversation service approach.
+
+    Uses unified OpenAIService with automatic rate limiting and cost tracking.
 
     Args:
         messages: List of message dictionaries with 'role' and 'content'
+        user_id: User identifier (REQUIRED for security tracking)
         require_json: If True, enforces JSON response format
-        question: The user's question (unused in new system)
+        question: The user's question (unused, kept for backward compatibility)
+
+    Returns:
+        Tuple of (content: str, usage_info: Dict)
+
+    Raises:
+        RateLimitExceededError: If rate limit exceeded
+        CostLimitExceededError: If cost limit exceeded
+        ValueError: If request is invalid
+        Exception: For OpenAI API errors
     """
     try:
-        # Use our new system - always use GPT-3.5-turbo for conversations
-        selected_model = CONVERSATION_MODEL
+        # Use unified OpenAI service (automatic rate limiting + cost tracking)
+        service = get_openai_service()
 
-        if client is not None:
-            # New OpenAI API with optimized parameters
-            call_params = {
-                "model": selected_model,
-                "temperature": 0.7,  # Slightly higher for more natural conversation
-                "timeout": 30.0,  # Reduced timeout for faster response
-                "messages": messages,
-                "max_tokens": 800,  # Increased for more comprehensive responses
-            }
-            # Only add response_format if JSON is required
-            if require_json:
-                call_params["response_format"] = {"type": "json_object"}
+        response = service.chat_completion(
+            messages=messages,
+            user_id=user_id,
+            model=CONVERSATION_MODEL,
+            temperature=0.7,
+            max_tokens=800,
+            timeout=30.0,
+            require_json=require_json,
+        )
 
-            response = client.chat.completions.create(**call_params)
-            # Token usage logging
-            try:
-                usage = getattr(response, "usage", None)
-                if usage:
-                    print(
-                        f"[DEBUG] Token usage (conversation): prompt={usage.prompt_tokens} completion={usage.completion_tokens} total={usage.total_tokens}"
-                    )
-            except Exception:
-                pass
+        # Convert to expected format (backward compatibility)
+        usage_info = {
+            **response.usage,
+            "model": response.model,
+            "cost": response.cost,  # Include cost from service response
+        }
 
-            # Check if response is valid
-            if not response or not response.choices:
-                raise ValueError("Empty response from GPT API")
+        return response.content, usage_info
 
-            content = response.choices[0].message.content
-            if content is None:
-                raise ValueError("GPT returned None content - possibly hit token limit")
-
-            return content.strip()
-        else:
-            # Old OpenAI API
-            response = openai.ChatCompletion.create(
-                model=CONVERSATION_MODEL,
-                temperature=0.7,
-                messages=messages,
-                max_tokens=800,  # Increased for more comprehensive responses
-            )
-            # Token usage logging (legacy)
-            try:
-                usage = (
-                    response.get("usage")
-                    if isinstance(response, dict)
-                    else getattr(response, "usage", None)
-                )
-                if usage:
-                    print(
-                        f"[DEBUG] Token usage (conversation): prompt={usage.get('prompt_tokens')} completion={usage.get('completion_tokens')} total={usage.get('total_tokens')}"
-                    )
-            except Exception:
-                pass
-
-            # Check if response is valid
-            if not response or not response.get("choices"):
-                raise ValueError("Empty response from GPT API")
-
-            content = response["choices"][0]["message"]["content"]
-            if content is None:
-                raise ValueError("GPT returned None content - possibly hit token limit")
-
-            return content.strip()
+    except RateLimitExceededError as e:
+        # Re-raise with original error (caller should handle)
+        raise
+    except CostLimitExceededError as e:
+        # Re-raise with original error (caller should handle)
+        raise
     except Exception as e:
-        print("GPT conversation API call failed:", e)
-        return f"[ERROR] GPT error: {e}"
+        print(f"GPT conversation API call failed: {e}")
+        # Return error in same format as before for backward compatibility
+        return f"[ERROR] GPT error: {e}", {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "model": CONVERSATION_MODEL,
+            "cost": 0.0,  # Include cost for consistency
+        }
 
 
 async def get_conversation_response_async(
-    messages: List[Dict], require_json: bool = False
-) -> str:
+    messages: List[Dict],
+    user_id: str,
+    require_json: bool = False,
+) -> Tuple[str, Dict]:
     """
-    Async version of GPT conversation response for faster performance.
+    Async version of GPT conversation response.
+
+    NOTE: Currently uses synchronous service (OpenAIService is sync).
+    For true async support, OpenAIService would need async implementation.
+    This maintains backward compatibility but delegates to sync service.
+
+    TODO: Implement async version of OpenAIService if needed for performance.
+
+    Args:
+        messages: List of message dictionaries with 'role' and 'content'
+        user_id: User identifier (REQUIRED for security tracking)
+        require_json: If True, enforces JSON response format
+
+    Returns:
+        Tuple of (content: str, usage_info: Dict) - matches sync version for consistency
     """
-    import httpx
-
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": CONVERSATION_MODEL,
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "max_tokens": 500,
-                    "response_format": (
-                        {"type": "json_object"} if require_json else None
-                    ),
-                },
-            )
-
-            response.raise_for_status()
-            data = response.json()
-
-            if not data.get("choices"):
-                raise ValueError("Empty response from GPT API")
-
-            content = data["choices"][0]["message"]["content"]
-            if content is None:
-                raise ValueError("GPT returned None content")
-
-            return content.strip()
-
-    except Exception as e:
-        print("Async GPT conversation API call failed:", e)
-        return f"[ERROR] GPT error: {e}"
+    # For now, delegate to sync version (maintains consistency)
+    # In the future, if async performance is critical, implement async OpenAIService
+    return get_conversation_response(
+        messages=messages,
+        user_id=user_id,
+        require_json=require_json,
+    )
 
 
-def get_gpt_response(prompt: str, require_json: bool = True) -> str:
+def get_gpt_response(prompt: str, user_id: str, require_json: bool = True) -> str:
     """
     Calls GPT with a generic coaching prompt. Returns plain text.
 
+    Uses unified OpenAIService with automatic rate limiting and cost tracking.
+
     Args:
         prompt: The user prompt to send to GPT
+        user_id: User identifier (REQUIRED for security tracking)
         require_json: If True, enforces JSON response format (default). Set to False for plain text responses.
+
+    Returns:
+        Response content as string
+
+    Raises:
+        RateLimitExceededError: If rate limit exceeded
+        CostLimitExceededError: If cost limit exceeded
+        ValueError: If request is invalid
+        Exception: For OpenAI API errors
     """
     try:
-        if client is not None:
-            # New OpenAI API
-            call_params = {
-                "model": DEFAULT_MODEL,
-                "temperature": 0.25,
-                "timeout": 60.0,  # 60 second timeout
-                "messages": [
-                    {"role": "system", "content": JACK_DANIELS_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-            }
-            # Only add response_format if JSON is required
-            if require_json:
-                call_params["response_format"] = {"type": "json_object"}
+        # Use unified OpenAI service (automatic rate limiting + cost tracking)
+        service = get_openai_service()
 
-            response = client.chat.completions.create(**call_params)
-            # Token usage logging (new OpenAI client)
-            try:
-                usage = getattr(response, "usage", None)
-                if usage:
-                    print(
-                        f"[DEBUG] Token usage (get_gpt_response): prompt={usage.prompt_tokens} completion={usage.completion_tokens} total={usage.total_tokens}"
-                    )
-            except Exception:
-                pass
+        response = service.chat_completion(
+            messages=[
+                {"role": "system", "content": JACK_DANIELS_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            user_id=user_id,
+            model=DEFAULT_MODEL,
+            temperature=0.25,
+            timeout=60.0,
+            require_json=require_json,
+        )
 
-            # Check if response is valid
-            if not response or not response.choices:
-                raise ValueError("Empty response from GPT API")
+        return response.content
 
-            content = response.choices[0].message.content
-            if content is None:
-                raise ValueError("GPT returned None content - possibly hit token limit")
-
-            return content.strip()
-        else:
-            # Old OpenAI API
-            response = openai.ChatCompletion.create(
-                model=DEFAULT_MODEL,
-                temperature=0.25,
-                messages=[
-                    {"role": "system", "content": JACK_DANIELS_SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-            )
-            # Token usage logging (legacy OpenAI client)
-            try:
-                usage = (
-                    response.get("usage")
-                    if isinstance(response, dict)
-                    else getattr(response, "usage", None)
-                )
-                if usage:
-                    print(
-                        f"[DEBUG] Token usage (get_gpt_response): prompt={usage.get('prompt_tokens')} completion={usage.get('completion_tokens')} total={usage.get('total_tokens')}"
-                    )
-            except Exception:
-                pass
-
-            # Check if response is valid
-            if not response or not response.get("choices"):
-                raise ValueError("Empty response from GPT API")
-
-            content = response["choices"][0]["message"]["content"]
-            if content is None:
-                raise ValueError("GPT returned None content - possibly hit token limit")
-
-            return content.strip()
+    except (RateLimitExceededError, CostLimitExceededError):
+        # Re-raise security errors (caller should handle)
+        raise
     except Exception as e:
-        print("GPT API call failed:", e)
+        print(f"GPT API call failed: {e}")
         return f"[ERROR] GPT error: {e}"
 
 
