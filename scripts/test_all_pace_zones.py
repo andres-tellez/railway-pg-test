@@ -27,7 +27,7 @@ def test_all_pace_zones(user_id: str):
     print("=" * 60)
     print(f"User ID: {user_id}")
     print()
-    
+
     session = get_session()
     try:
         seed = get_initial_pace_seed(
@@ -36,7 +36,7 @@ def test_all_pace_zones(user_id: str):
             week1_long=8.0,
             lookback_weeks=6,
         )
-        
+
         print("✅ SUCCESS! All pace zones calculated:")
         print("-" * 60)
         print(f"Easy:      {format_pace(seed.E_min)} - {format_pace(seed.E_max)}")
@@ -53,25 +53,35 @@ def test_all_pace_zones(user_id: str):
         print()
         print(f"Week 1 Long Cap: {seed.week1_long_cap:.1f} miles")
         print()
-        
+
         # Verify ordering
         print("Verification:")
         print("-" * 60)
-        print(f"Threshold max ({seed.T_max:.1f}) < Marathon ({seed.M:.1f}): {seed.T_max < seed.M}")
-        print(f"Marathon ({seed.M:.1f}) < Steady min ({seed.S_min:.1f}): {seed.M < seed.S_min}")
-        print(f"Steady within Easy range: {seed.E_min <= seed.S_min <= seed.S_max <= seed.E_max}")
+        print(
+            f"Threshold max ({seed.T_max:.1f}) < Marathon ({seed.M:.1f}): {seed.T_max < seed.M}"
+        )
+        print(
+            f"Marathon ({seed.M:.1f}) < Steady min ({seed.S_min:.1f}): {seed.M < seed.S_min}"
+        )
+        print(
+            f"Steady within Easy range: {seed.E_min <= seed.S_min <= seed.S_max <= seed.E_max}"
+        )
         print()
-        
+
         # Correct ordering: Threshold < Marathon < Steady < Easy
         # Note: Steady overlaps with Easy (Steady is subset of Easy), which is correct
-        if seed.T_max < seed.M < seed.S_min and seed.E_min <= seed.S_min <= seed.S_max <= seed.E_max:
+        if (
+            seed.T_max < seed.M < seed.S_min
+            and seed.E_min <= seed.S_min <= seed.S_max <= seed.E_max
+        ):
             print("✅ All paces are correctly ordered!")
         else:
             print("❌ WARNING: Pace ordering issue detected!")
-            
+
     except Exception as e:
         print(f"❌ ERROR: {e}")
         import traceback
+
         traceback.print_exc()
     finally:
         session.close()
@@ -82,9 +92,10 @@ if __name__ == "__main__":
         print("Usage: python scripts/test_all_pace_zones.py <user_id>")
         print()
         print("Example:")
-        print('  python scripts/test_all_pace_zones.py "2e1c2581-619c-4a2a-a8b4-4dfc265e7789"')
+        print(
+            '  python scripts/test_all_pace_zones.py "2e1c2581-619c-4a2a-a8b4-4dfc265e7789"'
+        )
         sys.exit(1)
-    
+
     user_id = sys.argv[1]
     test_all_pace_zones(user_id)
-

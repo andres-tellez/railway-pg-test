@@ -404,13 +404,19 @@ class WeeklyRebuildService:
                 logger.error(
                     f"[Rebuild] CRITICAL: skip_adaptive_adjustments=True but initial_seed is None!"
                 )
-                raise ValueError("Cannot skip adaptive adjustments without initial_seed")
+                raise ValueError(
+                    "Cannot skip adaptive adjustments without initial_seed"
+                )
             logger.info(
                 f"[Rebuild] Using explicitly provided pace seed (skipping adaptive adjustments per request): "
                 f"E={current_seed.E_min}-{current_seed.E_max}s/mi, M={current_seed.M}s/mi"
             )
-        
-        if previous_week_logs and previous_week_workouts and not skip_adaptive_adjustments:
+
+        if (
+            previous_week_logs
+            and previous_week_workouts
+            and not skip_adaptive_adjustments
+        ):
             try:
                 logger.info(
                     f"[Adaptive Pipeline] Stage 2: Analyzing week {previous_week_num} performance"
@@ -645,27 +651,41 @@ class WeeklyRebuildService:
                         "M": [float(current_seed.M), float(current_seed.M)],
                         "T": [float(current_seed.T_min), float(current_seed.T_max)],
                     }
-                    
+
                     # ALWAYS set target_zone from current_seed to keep in sync with pace_ranges
                     # This ensures frontend sees updated pace even if extract_pace_zone_from_workout fails
-                    from .workout_utils import get_workout_pace_label_key, pace_range_to_str
+                    from .workout_utils import (
+                        get_workout_pace_label_key,
+                        pace_range_to_str,
+                    )
+
                     pace_key = get_workout_pace_label_key(db_workout.workout_type or "")
-                    
+
                     if pace_key == "E":
-                        target_zone_str = pace_range_to_str(current_seed.E_min, current_seed.E_max)
+                        target_zone_str = pace_range_to_str(
+                            current_seed.E_min, current_seed.E_max
+                        )
                     elif pace_key == "S":
-                        target_zone_str = pace_range_to_str(current_seed.S_min, current_seed.S_max)
+                        target_zone_str = pace_range_to_str(
+                            current_seed.S_min, current_seed.S_max
+                        )
                     elif pace_key == "M":
-                        target_zone_str = pace_range_to_str(current_seed.M, current_seed.M)
+                        target_zone_str = pace_range_to_str(
+                            current_seed.M, current_seed.M
+                        )
                     elif pace_key == "T":
-                        target_zone_str = pace_range_to_str(current_seed.T_min, current_seed.T_max)
+                        target_zone_str = pace_range_to_str(
+                            current_seed.T_min, current_seed.T_max
+                        )
                     else:
                         # Default to Easy
-                        target_zone_str = pace_range_to_str(current_seed.E_min, current_seed.E_max)
-                    
+                        target_zone_str = pace_range_to_str(
+                            current_seed.E_min, current_seed.E_max
+                        )
+
                     # Override target_zone with value from seed (single source of truth)
                     update_data["target_zone"] = target_zone_str
-                    
+
                     logger.info(
                         f"[Rebuild] Set pace_ranges and target_zone for workout {db_workout.id} ({db_workout.date}): "
                         f"E={current_seed.E_min:.1f}-{current_seed.E_max:.1f}s/mi, "
@@ -676,7 +696,7 @@ class WeeklyRebuildService:
                     logger.error(
                         f"[Rebuild] Failed to set pace_ranges/target_zone for workout {db_workout.id} "
                         f"({db_workout.date}, {db_workout.workout_type}): {e}",
-                        exc_info=True
+                        exc_info=True,
                     )
                     # Log and continue - don't break the whole rebuild if pace_ranges fails
                     # This way we can see what's failing without stopping all updates
@@ -734,7 +754,7 @@ class WeeklyRebuildService:
                 logger.warning(
                     f"[Rebuild] WARNING: pace_ranges NOT in update_data for workout {db_workout.id} ({db_workout.date})"
                 )
-            
+
             update_workout(session, db_workout.id, update_data)
             updated_count += 1
 
@@ -752,10 +772,9 @@ class WeeklyRebuildService:
             .all()
         )
         pace_ranges_count = sum(
-            1 for w in refreshed_workouts 
-            if w.pace_ranges is not None
+            1 for w in refreshed_workouts if w.pace_ranges is not None
         )
-        
+
         logger.info(
             f"Updated {updated_count} workouts for week {week_num} "
             f"(phase={phase}, quality={allow_quality}, pace_ranges set on {pace_ranges_count}/{updated_count})"

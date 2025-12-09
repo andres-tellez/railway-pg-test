@@ -20,7 +20,8 @@ cutoff = datetime.now() - timedelta(weeks=6)
 session = get_session()
 try:
     # Get all paces
-    query = text("""
+    query = text(
+        """
         SELECT moving_time::float / conv_distance AS pace_sec_per_mile
         FROM activities
         WHERE user_id = :user_id
@@ -32,16 +33,18 @@ try:
           AND conv_distance > 0
           AND (moving_time::float / conv_distance) BETWEEN 360 AND 1200
         ORDER BY pace_sec_per_mile
-    """)
-    
+    """
+    )
+
     results = session.execute(query, {"user_id": user_id, "cutoff": cutoff}).fetchall()
     paces = [float(r.pace_sec_per_mile) for r in results]
-    
+
     # Python median
     python_median = statistics.median(paces)
-    
+
     # SQL median
-    sql_query = text("""
+    sql_query = text(
+        """
         WITH valid_runs AS (
             SELECT moving_time::float / conv_distance AS pace_sec_per_mile
             FROM activities
@@ -56,10 +59,13 @@ try:
         )
         SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pace_sec_per_mile) AS median_pace
         FROM valid_runs
-    """)
-    
-    sql_median = session.execute(sql_query, {"user_id": user_id, "cutoff": cutoff}).scalar()
-    
+    """
+    )
+
+    sql_median = session.execute(
+        sql_query, {"user_id": user_id, "cutoff": cutoff}
+    ).scalar()
+
     print("=" * 60)
     print("VERIFICATION: SQL vs Python Median")
     print("=" * 60)
@@ -69,12 +75,11 @@ try:
     print(f"Difference:    {abs(python_median - float(sql_median)):.3f} sec/mi")
     print(f"Match:         {abs(python_median - float(sql_median)) < 0.1}")
     print("=" * 60)
-    
+
     if abs(python_median - float(sql_median)) < 0.1:
         print("✅ SUCCESS: SQL and Python medians match!")
     else:
         print("❌ WARNING: Medians don't match!")
-        
+
 finally:
     session.close()
-

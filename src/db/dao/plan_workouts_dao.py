@@ -39,19 +39,20 @@ def update_workout(
 ) -> PlanWorkout | None:
     """Update a single workout by ID."""
     import logging
+
     logger = logging.getLogger(__name__)
-    
+
     workout = session.query(PlanWorkout).filter_by(id=workout_id).first()
     if not workout:
         logger.warning(f"[DAO] update_workout: Workout {workout_id} not found")
         return None
-    
+
     # Log what we're updating (especially pace_ranges)
     if "pace_ranges" in updates:
         logger.info(
             f"[DAO] update_workout: Setting pace_ranges for workout {workout_id}: {updates['pace_ranges']}"
         )
-    
+
     for key, value in updates.items():
         if hasattr(workout, key):
             old_value = getattr(workout, key, None)
@@ -65,16 +66,16 @@ def update_workout(
             logger.warning(
                 f"[DAO] update_workout: Workout {workout_id} does not have attribute '{key}'"
             )
-    
+
     session.flush()
-    
+
     # Verify the value was set after flush
     if "pace_ranges" in updates:
         actual_value = getattr(workout, "pace_ranges", None)
         logger.info(
             f"[DAO] update_workout: Verified pace_ranges on workout {workout_id} after flush: {actual_value}"
         )
-    
+
     return workout
 
 

@@ -4,6 +4,7 @@ Performance-Based Pace Calculator
 Calculate all pace zones from recent run performance using SQL.
 Simple, clean, reliable approach.
 """
+
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -20,26 +21,27 @@ def calculate_paces_from_performance(
 ) -> Optional[PaceSeed]:
     """
     Calculate all pace zones from recent run performance.
-    
+
     Strategy:
     1. Calculate median easy pace from recent runs (2+ miles, last 6 weeks)
     2. Build all pace zones around that median
-    
+
     Formula (from TARGET_PACE_EXPLAINER.md):
     - Easy: Median - 15 to + 45 seconds
     - Steady: Median - 15 to + 15 seconds
     - Marathon: Median - 60 seconds
     - Threshold: Marathon - 20 to 30 seconds
-    
+
     Returns:
         PaceSeed with all pace zones, or None if insufficient data (< 6 runs)
     """
     cutoff = datetime.now() - timedelta(weeks=lookback_weeks)
-    
+
     # SQL query to calculate median easy pace
-    query = text("""
+    query = text(
+        """
         WITH valid_runs AS (
-            SELECT 
+            SELECT
                 moving_time::float / conv_distance AS pace_sec_per_mile
             FROM activities
             WHERE user_id = :user_id
@@ -51,29 +53,30 @@ def calculate_paces_from_performance(
               AND conv_distance > 0
               AND (moving_time::float / conv_distance) BETWEEN 360 AND 1200
         )
-        SELECT 
+        SELECT
             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pace_sec_per_mile) AS median_pace,
             COUNT(*) AS run_count
         FROM valid_runs
-    """)
-    
+    """
+    )
+
     result = session.execute(
         query,
         {
             "user_id": user_id,
             "cutoff": cutoff,
             "min_distance": min_distance_miles,
-        }
+        },
     ).first()
-    
+
     if not result or result.run_count < 6:
         return None  # Insufficient data
-    
+
     median_easy_pace = float(result.median_pace)
-    
+
     # Calculate week1_long_cap from longest recent run
     week1_long_cap = _calculate_week1_long_cap(session, user_id, cutoff)
-    
+
     # Build all pace zones from median easy pace
     return _build_pace_zones_from_median(median_easy_pace, week1_long_cap)
 
@@ -84,7 +87,7 @@ def _build_pace_zones_from_median(
 ) -> PaceSeed:
     """
     Build all pace zones from median easy pace.
-    
+
     Formula (from TARGET_PACE_EXPLAINER.md):
     - Easy: Median - 15 to + 45 seconds (conversational pace)
     - Steady: Median - 15 to + 15 seconds (slightly faster)
@@ -109,7 +112,8 @@ def _calculate_week1_long_cap(
     cutoff: datetime,
 ) -> float:
     """Calculate max long run for week 1 from recent longest run."""
-    query = text("""
+    query = text(
+        """
         SELECT conv_distance
         FROM activities
         WHERE user_id = :user_id
@@ -118,14 +122,11 @@ def _calculate_week1_long_cap(
           AND conv_distance >= 10.0
         ORDER BY conv_distance DESC
         LIMIT 1
-    """)
-    
-    result = session.execute(
-        query,
-        {"user_id": user_id, "cutoff": cutoff}
-    ).scalar()
-    
+    """
+    )
+
+    result = session.execute(query, {"user_id": user_id, "cutoff": cutoff}).scalar()
+
     if result:
         return max(8.0, float(result) + 2.0)
     return 8.0
-
