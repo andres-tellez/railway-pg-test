@@ -60,7 +60,7 @@ The Training Plan Generation System is a sophisticated multi-pass architecture t
 - ✅ **`src/services/training_plan/weekly_metrics_service.py`** - Weekly metrics calculation
 
 #### **Utility Services**
-- ✅ **`src/services/training_plan/pace_seed_service.py`** - Pace zone calculation
+- ✅ **`src/services/training_plan/pace/`** - Pace zone calculation (performance-based)
 - ✅ **`src/services/training_plan/v2/marathon/weekly_total_calculator_v2.py`** - Weekly total calculations
 - ✅ **`src/services/training_plan/workout_utils.py`** - Workout utilities
 - ✅ **`src/services/training_plan/workout_comparison_service.py`** - Workout comparison

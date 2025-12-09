@@ -112,7 +112,7 @@ def generate_longrun_first(self, runner_ctx: Dict[str, Any], ...):
    - Batch inserts for workouts (`insert_batch`)
 
 2. **Data Reuse**
-   - `v2/plan_generation_orchestrator_v2.py` reuses `strava_activities` for pace seeding (avoids duplicate queries)
+   - `v2/plan_generation_orchestrator_v2.py` uses performance-based pace calculation from database (avoids duplicate queries)
    - Raw data collected once and passed through pipeline
 
 3. **Lazy Loading**

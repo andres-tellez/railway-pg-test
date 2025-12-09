@@ -644,7 +644,7 @@ CREATE TABLE weekly_decision_log (
 - `src/services/training_plan/week_log_service.py` - Week log creation
 - `src/services/training_plan/weekly_adjuster.py` - Pace adjustment logic
 - `src/services/training_plan/weekly_rebuild_service.py` - Main rebuild service
-- `src/services/training_plan/pace_seed_service.py` - Pace zone definitions
+- `src/services/training_plan/pace/` - Pace zone definitions (performance-based)
 
 ### Data Available
 

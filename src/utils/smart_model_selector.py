@@ -154,21 +154,18 @@ class SmartModelSelector:
     def get_cost_estimate(
         self, model: str, input_tokens: int, output_tokens: int = 200
     ) -> float:
-        """Get cost estimate for the selected model"""
+        """
+        Get cost estimate for the selected model.
 
-        # Pricing as of 2024 (per 1K tokens)
-        pricing = {
-            "gpt-4o": {"input": 0.03, "output": 0.06},
-            "gpt-3.5-turbo": {"input": 0.001, "output": 0.002},
-        }
+        Uses centralized pricing from cost_tracker to ensure consistency.
+        """
+        # Import from centralized cost tracker (single source of truth)
+        from src.services.security.external_apis.openai_cost_tracker import (
+            _calculate_cost,
+        )
 
-        if model not in pricing:
-            return 0.0
-
-        input_cost = (input_tokens / 1000) * pricing[model]["input"]
-        output_cost = (output_tokens / 1000) * pricing[model]["output"]
-
-        return input_cost + output_cost
+        # Use centralized cost calculation
+        return _calculate_cost(model, input_tokens, output_tokens)
 
     def get_savings_estimate(self, question: str, context_tokens: int) -> Dict:
         """Estimate potential savings with smart model selection"""

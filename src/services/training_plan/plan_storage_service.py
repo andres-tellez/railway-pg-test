@@ -39,7 +39,7 @@ from src.services.training_plan.workout_detail_rules import (
     SEGMENT_SUM_TOLERANCE,
     QUALITY_ENABLED_PHASES,
 )
-from src.services.training_plan.pace_seed_service import PaceSeed
+from src.services.training_plan.pace import PaceSeed
 from src.services.training_plan.workout_types import TYPE_DISPLAY
 from src.services.training_plan.workout_utils import pace_range_to_str
 

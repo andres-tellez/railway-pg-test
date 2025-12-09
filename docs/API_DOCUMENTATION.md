@@ -353,6 +353,69 @@ The JWT token is obtained from Auth0 after user login and is passed in the `Auth
 
 ---
 
+## Conversation Endpoints
+
+### POST /api/conversations/<conversation_id>/messages
+
+**Description:** Send a message in a conversation and get AI coach response.
+
+**Authentication:** Required (Bearer token)
+
+**Rate Limit:** 10 requests per minute per user (OpenAI API rate limiting)
+
+**Request:**
+```json
+{
+  "message": "How should I adjust my training this week?"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Message sent successfully",
+  "response": "Based on your training data...",
+  "message_id": "uuid-123",
+  "response_time": 2.5,
+  "context_used": {
+    "context_loaded": true,
+    "context_length": 1500
+  },
+  "rate_limit": {
+    "remaining": 7,
+    "limit": 10,
+    "used": 3
+  }
+}
+```
+
+**Response Fields:**
+- `rate_limit.remaining`: Number of requests remaining in the current 1-minute window
+- `rate_limit.limit`: Total requests allowed per minute (10)
+- `rate_limit.used`: Number of requests used in the current window
+
+**Error Response:**
+- **400**: Missing or invalid message
+- **401**: Unauthorized
+- **404**: Conversation not found
+- **429**: OpenAI rate limit exceeded (`OPENAI_RATE_LIMIT_EXCEEDED`)
+- **500**: Internal server error
+
+**Rate Limit Error Response:**
+```json
+{
+  "error": "Rate limit exceeded. Please try again in 45 seconds.",
+  "error_code": "OPENAI_RATE_LIMIT_EXCEEDED",
+  "status": 429,
+  "details": {
+    "retry_after_seconds": 45,
+    "limit": "10 requests per minute"
+  }
+}
+```
+
+---
+
 ## Strava Connection Management
 
 ### DELETE /api/strava/disconnect
@@ -415,7 +478,8 @@ All error responses follow this standard format:
 - `UNAUTHORIZED` (401): Authentication required or failed
 - `NOT_FOUND` (404): Resource not found
 - `ALREADY_LINKED` (409): User or athlete already linked
-- `RATE_LIMIT_EXCEEDED` (429): Too many requests
+- `RATE_LIMIT_EXCEEDED` (429): Too many requests (general rate limit)
+- `OPENAI_RATE_LIMIT_EXCEEDED` (429): Too many OpenAI API requests
 - `INTERNAL_ERROR` (500): Server error
 
 ### Rate Limit Error Response
@@ -432,6 +496,22 @@ When rate limit is exceeded:
 }
 ```
 
+### OpenAI Rate Limit Error Response
+
+When OpenAI API rate limit is exceeded:
+
+```json
+{
+  "error": "Rate limit exceeded. Please try again in 45 seconds.",
+  "error_code": "OPENAI_RATE_LIMIT_EXCEEDED",
+  "status": 429,
+  "details": {
+    "retry_after_seconds": 45,
+    "limit": "10 requests per minute"
+  }
+}
+```
+
 ---
 
 ## Rate Limits
@@ -441,6 +521,13 @@ When rate limit is exceeded:
 - **Login/OAuth callbacks**: 10 requests per 5 minutes per IP
 - **Token refresh**: 30 requests per 15 minutes per IP
 - **General auth endpoints**: 20 requests per 5 minutes per IP
+
+### OpenAI API Endpoints
+
+- **Conversation messages** (`POST /api/conversations/<conversation_id>/messages`): 10 requests per minute per user
+  - Rate limiting is applied to prevent abuse and manage OpenAI API costs
+  - Per-user tracking (not per-IP)
+  - Returns `OPENAI_RATE_LIMIT_EXCEEDED` error code when limit exceeded
 
 ### Rate Limit Headers
 

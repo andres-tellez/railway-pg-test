@@ -6,28 +6,28 @@ This document describes the architecture for adding detailed workout segments, p
 
 ## Architecture Components
 
-### 1. Pace Seed Service (`pace_seed_service.py`)
+### 1. Pace Calculation Module (`pace/`)
 
-**Purpose:** Generate initial pace zones (E, S, M, T) from Strava data or calibration.
+**Purpose:** Generate initial pace zones (E, S, M, T) from recent run performance or calibration.
 
 **Two-Path Logic:**
 
-1. **Strava Data Path** (preferred):
+1. **Performance-Based Path** (preferred):
 
-   - Fetches last 6 weeks of Strava activities
-   - Calculates median easy pace from runs ≥2 miles
+   - Uses SQL query to calculate median easy pace from last 6 weeks of runs (≥2 miles)
+   - Efficient single-query approach using PostgreSQL `PERCENTILE_CONT`
    - Derives pace zones: E = median ±15-45s, S = E ±15s, M = E -60s, T = M -20-30s
    - Caps Week 1 long run based on recent longest run
 
 2. **Calibration Path** (fallback):
    - Uses conservative default (10:00/mi for "Just Finish" runners)
    - Derives zones from marathon pace using standard relationships
-   - Safe defaults when no Strava data available
+   - Safe defaults when insufficient data available (< 6 runs)
 
 **Integration:**
 
-- Uses `DataCollectionService.fetch_strava_activities()` for Strava data
-- Called by Pass 4 to initialize pace zones
+- Uses direct SQL queries to `activities` table (fast, efficient)
+- Called by Pass 4 and weekly rebuild service to initialize pace zones
 
 **Output:** `PaceSeed` dataclass with all pace zones in seconds per mile.
 
@@ -199,7 +199,7 @@ week2_with_details = pass4.add_details_to_week(
 
 See:
 
-- `tests/services/training_plan/test_pace_seed_service.py`
+- `tests/services/training_plan/test_pace_calculator.py` (if tests exist)
 - `tests/services/training_plan/test_weekly_adjuster.py`
 - `tests/services/training_plan/test_v2/v2/pass4_workout_details_v2_v2.py`
 
