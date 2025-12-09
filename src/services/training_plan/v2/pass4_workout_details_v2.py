@@ -7,7 +7,7 @@ Purpose:
 
 Integration:
     Called after Pass 3 (workout distribution) to add detailed segments.
-    Uses PaceSeed from pace_seed_service.py to determine pace zones.
+    Uses PaceSeed from pace module to determine pace zones.
 
 Unit Invariant:
     All pace targets are in seconds per mile (sec/mi) as integers.
@@ -1156,8 +1156,7 @@ class Pass4WorkoutDetails:
 
 if __name__ == "__main__":
     # Quick test
-    from .pace_seed_service import get_initial_pace_seed
-    from src.db.db_session import get_session
+    from src.services.training_plan.pace import PaceSeed
 
     # Create test seed
     seed = PaceSeed(

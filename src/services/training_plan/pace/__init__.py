@@ -1,7 +1,8 @@
 """
 Pace Zone Calculation Module
 
-Clean, organized pace zone calculation using HR zones.
+Performance-based pace zone calculation from recent run data.
+Uses SQL-based median easy pace calculation for efficiency and reliability.
 """
 
 from .models import PaceSeed

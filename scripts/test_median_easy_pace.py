@@ -23,7 +23,7 @@ sys.path.insert(0, str(project_root))
 
 from src.db.db_session import get_session
 from src.services.training_plan.pace.performance_calculator import (
-    calculate_median_easy_pace,
+    calculate_paces_from_performance,
 )
 from sqlalchemy import text
 from datetime import datetime, timedelta
@@ -114,9 +114,16 @@ def test_median_easy_pace(user_id: str):
 
         # Calculate median using our function
         print("🔍 Calculating median easy pace...")
-        median_pace = calculate_median_easy_pace(session, user_id)
+        pace_seed = calculate_paces_from_performance(
+            session=session,
+            user_id=user_id,
+            lookback_weeks=6,
+        )
 
-        if median_pace:
+        if pace_seed:
+            # Extract median easy pace from the calculated seed
+            # Easy pace range is median - 15 to + 45, so median is E_min + 15
+            median_pace = pace_seed.E_min + 15
             print()
             print("✅ SUCCESS!")
             print("-" * 60)

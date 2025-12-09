@@ -1,7 +1,7 @@
 """
 Calibration Pace Zones
 
-Conservative defaults for users without HR zone data.
+Conservative defaults for users without sufficient run data.
 """
 
 from .models import PaceSeed

@@ -671,7 +671,7 @@ Dependencies:
     - WeekAnalysisResult (from Stage 2)
     - TrendAnalysisResult (from Stage 3)
     - AdaptiveConfig (for phase rules and constraints)
-    - PaceSeedService (for pace adjustments)
+    - Pace module (for pace adjustments)
 
 Author: SmartCoach Development Team
 Last Updated: January 2026
@@ -684,7 +684,7 @@ import logging
 
 from .week_analysis_service import WeekAnalysisResult
 from .trend_analysis_service import TrendAnalysisResult
-from .pace_seed_service import PaceSeed
+from .pace import PaceSeed
 from src.utils.adaptive_constants import AdaptiveConfig
 
 logger = logging.getLogger(__name__)
@@ -1268,7 +1268,7 @@ from .adaptive_adjustment_service import AdaptiveAdjustmentService
 from .weekly_metrics_service import WeeklyMetricsService
 
 # Existing services
-from .pace_seed_service import PaceSeed, get_initial_pace_seed
+from .pace import PaceSeed, get_initial_pace_seed
 from .v2/pass4_workout_details_v2 import Pass4WorkoutDetails
 from .workout_comparison_service import WorkoutComparisonService
 

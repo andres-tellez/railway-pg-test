@@ -715,12 +715,12 @@ def test_pace_calculation():
     """
     Test pace zone calculation for a user.
 
-    Tests the new HR zone-based pace calculation.
+    Tests the performance-based pace calculation from recent run data.
 
     Request body (JSON):
         - user_id (str, optional): User UUID to test. If not provided, uses authenticated user.
         - week1_long (float, optional): Planned long run distance (default: 8.0)
-        - lookback_days (int, optional): Days of history to analyze (default: 90)
+        - lookback_weeks (int, optional): Weeks of history to analyze (default: 6)
 
     Returns:
         JSON response with calculated pace zones and calculation method used.

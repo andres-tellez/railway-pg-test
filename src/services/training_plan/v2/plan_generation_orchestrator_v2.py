@@ -406,7 +406,7 @@ class PlanGenerationOrchestratorV2:
         # Post-race cleanse: Remove any workout scheduled for the day after race
         weeks_out = self._remove_post_race_workouts(weeks_out, race_date)
 
-        # Pace seed (use real Strava activities for accurate pacing)
+        # Pace seed (performance-based calculation from recent run data)
         pace_seed = self._derive_pace_seed(
             lr_output, plan_request, weeks_out, user_id=str(user_id), session=session
         )
@@ -675,7 +675,7 @@ class PlanGenerationOrchestratorV2:
         user_id: str,
         session: Session,
     ) -> PaceSeed:
-        """Create an initial pace seed using real Strava activity data."""
+        """Create an initial pace seed using performance-based calculation from recent run data."""
         week1 = weeks_out[0] if weeks_out else {}
         week1_total = float(week1.get("weekly_mileage", 0) or 0)
         week1_long = float(week1.get("long_run_miles", 0) or 0)

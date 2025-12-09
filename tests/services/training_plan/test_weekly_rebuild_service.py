@@ -16,7 +16,7 @@ from src.services.training_plan.weekly_rebuild_service import (
     _determine_phase,
 )
 from src.services.training_plan.weekly_adjuster import WeekLogRun
-from src.services.training_plan.pace_seed_service import PaceSeed
+from src.services.training_plan.pace import PaceSeed
 
 
 class TestWeeklyRebuildService:

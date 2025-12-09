@@ -17,7 +17,7 @@ Dependencies:
     - WeekAnalysisResult (from Stage 2)
     - TrendAnalysisResult (from Stage 3)
     - AdaptiveConfig (for phase rules and constraints)
-    - PaceSeedService (for pace adjustments)
+    - Pace module (for pace adjustments)
 
 Author: SmartCoach Development Team
 Last Updated: January 2026
