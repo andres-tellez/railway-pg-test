@@ -34,17 +34,30 @@ export function useApiClient() {
         }
         return config;
       } catch (err: any) {
-        const msg = String(err?.error || err?.message || "");
+        const msg = String(err?.error || err?.message || "").toLowerCase();
         const needsConsent =
           msg.includes("missing_refresh_token") ||
           msg.includes("consent_required") ||
-          msg.includes("login_required");
+          msg.includes("login_required") ||
+          msg.includes("invalid refresh token") ||
+          msg.includes("invalid_refresh_token") ||
+          msg.includes("unknown or invalid refresh token");
 
         if (needsConsent) {
+          // Clear invalid tokens from localStorage before redirecting
+          console.warn("⚠️ Invalid refresh token detected. Clearing auth cache and redirecting to login.");
+          // Clear Auth0 cache keys from localStorage
+          Object.keys(localStorage).forEach((key) => {
+            if (key.startsWith("@@auth0spa@@")) {
+              localStorage.removeItem(key);
+            }
+          });
+
           await loginWithRedirect({
-            authorizationParams: { prompt: "consent" },
+            authorizationParams: { prompt: "login" },
             appState: { returnTo: window.location.pathname || "/dashboard" },
           });
+          return config; // Prevent the request from continuing
         }
         throw err;
       }
