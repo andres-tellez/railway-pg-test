@@ -17,7 +17,8 @@ Author: SmartCoach Development Team
 Last Updated: January 2026
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+from datetime import date, datetime
 import logging
 
 from src.services.training_plan.v2.workout_taxonomy.workout_definitions import (
@@ -996,13 +997,17 @@ class Pass4WorkoutDetails:
         Add detailed segments to all workouts in a plan.
 
         Args:
-            plan: Plan dict with 'weeks' array (from Pass 3)
+            plan: Plan dict with 'weeks' array (from Pass 3) and 'race_date'
             seed: Initial PaceSeed (adjusted per week in rolling mode)
-            mode: "prefill" (all weeks) or "rolling" (week 1 only)
+            mode: "prefill" (all weeks) or "rolling" (current week only)
             week_logs: Optional dict mapping week_num -> List[WeekLogRun] for adjustments
 
         Returns:
             Plan dict with detailed segments added to each workout
+
+        Note:
+            In "rolling" mode, only the week containing today's date is detailed.
+            This is calculated based on race_date and today's date, not plan week_number 1.
         """
         if week_logs is None:
             week_logs = {}
@@ -1012,6 +1017,53 @@ class Pass4WorkoutDetails:
             self.logger.warning("Plan has no weeks - no details to add")
             return plan
 
+        # In rolling mode, calculate which week number contains today
+        current_week_num: Optional[int] = None
+        if mode == "rolling":
+            race_date = plan.get("race_date")
+            if race_date:
+                # Convert race_date to date object if it's a string
+                if isinstance(race_date, str):
+                    race_date = datetime.fromisoformat(race_date.split("T")[0]).date()
+                elif isinstance(race_date, datetime):
+                    race_date = race_date.date()
+
+                # Calculate current week number (week containing today)
+                today = date.today()
+                from src.utils.date_helpers import get_week_start_for_date
+
+                # Get Monday of current week (not next Monday)
+                current_week_monday = get_week_start_for_date(today)
+
+                # Calculate weeks until race from current week's Monday
+                days_until_race = (race_date - current_week_monday).days
+
+                # Calculate week number (weeks before race week)
+                weeks_until_race = None
+                if days_until_race >= 7:
+                    weeks_until_race = days_until_race // 7
+                    current_week_num = (
+                        weeks_until_race if weeks_until_race > 0 else None
+                    )
+
+                # Convert to plan week_number (plan weeks are numbered 1-N, where N is furthest from race)
+                # Plan week_number = max_week_num - weeks_before_race
+                if current_week_num is not None:
+                    max_week_num = max(w.get("week_number", 0) for w in weeks)
+                    plan_week_num = max_week_num - current_week_num
+                    current_week_num = plan_week_num if plan_week_num > 0 else None
+
+                if current_week_num and weeks_until_race is not None:
+                    self.logger.info(
+                        f"Rolling mode: Current week is plan week_number={current_week_num} "
+                        f"(week containing today, {weeks_until_race} weeks before race)"
+                    )
+                else:
+                    self.logger.warning(
+                        "Rolling mode: Could not determine current week number, "
+                        "will detail all weeks (fallback to prefill behavior)"
+                    )
+
         current_seed = seed
         adjusted_seed = False
 
@@ -1020,10 +1072,17 @@ class Pass4WorkoutDetails:
             phase = week.get("phase", PHASE["BASE"])
             workouts = week.get("workouts", [])
 
-            # In rolling mode, only detail week 1
-            if mode == "rolling" and week_num > 1:
-                self.logger.debug(f"Rolling mode: skipping details for week {week_num}")
-                break
+            # In rolling mode, only detail the current week (week containing today)
+            if mode == "rolling":
+                if current_week_num is None:
+                    # Fallback: if we couldn't determine current week, detail all weeks
+                    pass
+                elif week_num != current_week_num:
+                    self.logger.debug(
+                        f"Rolling mode: skipping details for week {week_num} "
+                        f"(current week is {current_week_num})"
+                    )
+                    continue
 
             # Adjust seed based on previous week logs (rolling mode)
             if week_num > 1 and week_logs.get(week_num - 1):
