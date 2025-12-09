@@ -30,6 +30,11 @@ const Admin: React.FC = () => {
   const [migrating, setMigrating] = useState(false);
   const [migrationResult, setMigrationResult] = useState<any>(null);
   const [fullMigration, setFullMigration] = useState(false);
+  const [testingPace, setTestingPace] = useState(false);
+  const [paceResult, setPaceResult] = useState<any>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [updatingPace, setUpdatingPace] = useState(false);
+  const [updatePaceResult, setUpdatePaceResult] = useState<any>(null);
 
   // Set default date range (last 7 days)
   useEffect(() => {
@@ -47,7 +52,12 @@ const Admin: React.FC = () => {
     const loadAthletes = async () => {
       try {
         const response = await apiClient.get('/admin/athletes');
-        setAthletes(response.data.athletes || []);
+        const athletesList = response.data.athletes || [];
+        setAthletes(athletesList);
+        // Set default selected user_id if available
+        if (athletesList.length > 0 && !selectedUserId) {
+          setSelectedUserId(athletesList[0].user_id);
+        }
       } catch (error) {
         console.error('Failed to load athletes:', error);
         setResult({
@@ -130,6 +140,67 @@ const Admin: React.FC = () => {
       });
     } finally {
       setMigrating(false);
+    }
+  };
+
+  const handleTestPaceCalculation = async () => {
+    if (!selectedUserId) {
+      setPaceResult({
+        status: 'error',
+        message: 'Please select a user'
+      });
+      return;
+    }
+
+    setTestingPace(true);
+    setPaceResult(null);
+
+    try {
+      const response = await apiClient.post('/admin/test-pace-calculation', {
+        user_id: selectedUserId,
+        lookback_weeks: 6,
+        week1_long: 8.0
+      });
+      setPaceResult(response.data);
+    } catch (error: any) {
+      console.error('Pace calculation test failed:', error);
+      setPaceResult({
+        status: 'error',
+        message: error.response?.data?.message || 'Pace calculation test failed',
+        error: error.response?.data
+      });
+    } finally {
+      setTestingPace(false);
+    }
+  };
+
+  const handleUpdateCurrentWeekPace = async () => {
+    if (!selectedUserId) {
+      setUpdatePaceResult({
+        status: 'error',
+        message: 'Please select a user'
+      });
+      return;
+    }
+
+    setUpdatingPace(true);
+    setUpdatePaceResult(null);
+
+    try {
+      const response = await apiClient.post('/admin/update-current-week-pace', {
+        user_id: selectedUserId,
+        lookback_weeks: 6
+      });
+      setUpdatePaceResult(response.data);
+    } catch (error: any) {
+      console.error('Update current week pace failed:', error);
+      setUpdatePaceResult({
+        status: 'error',
+        message: error.response?.data?.message || 'Update current week pace failed',
+        error: error.response?.data
+      });
+    } finally {
+      setUpdatingPace(false);
     }
   };
 
@@ -218,6 +289,202 @@ const Admin: React.FC = () => {
               </div>
             )}
           </div>
+
+          {/* Test Pace Calculation Section */}
+          <div className="mb-8 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Test Pace Calculation</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              Test the new performance-based pace calculation. Select a user to calculate their training pace zones.
+            </p>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select User
+              </label>
+              <select
+                value={selectedUserId}
+                onChange={(e) => setSelectedUserId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">Choose a user...</option>
+                {athletes.map((athlete) => (
+                  <option key={athlete.user_id} value={athlete.user_id}>
+                    {athlete.display_name} (User: {athlete.user_id.substring(0, 8)}...)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleTestPaceCalculation}
+                disabled={testingPace || !selectedUserId}
+                className="bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {testingPace ? 'Calculating...' : '🧪 Test Pace Calculation'}
+              </button>
+              <button
+                onClick={handleUpdateCurrentWeekPace}
+                disabled={updatingPace || !selectedUserId}
+                className="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {updatingPace ? 'Updating...' : '🔄 Update Current Week Pace'}
+              </button>
+            </div>
+
+            {paceResult && (
+              <div className={`mt-4 p-4 rounded-md ${
+                paceResult.status === 'success'
+                  ? 'bg-green-50 border border-green-200'
+                  : 'bg-red-50 border border-red-200'
+              }`}>
+                <h3 className={`font-medium text-sm mb-2 ${
+                  paceResult.status === 'success' ? 'text-green-800' : 'text-red-800'
+                }`}>
+                  {paceResult.status === 'success' ? '✅ Calculation Successful' : '❌ Calculation Failed'}
+                </h3>
+                {paceResult.status === 'success' && (
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="font-semibold text-gray-700">Method: </span>
+                      <span className={`px-2 py-1 rounded text-xs ${
+                        paceResult.calculation_method === 'Performance-Based'
+                          ? 'bg-green-100 text-green-800'
+                          : paceResult.calculation_method === 'Performance'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {paceResult.calculation_method}
+                      </span>
+                    </div>
+                    {paceResult.lookback_weeks !== undefined && (
+                      <div>
+                        <span className="font-semibold text-gray-700">Lookback Weeks: </span>
+                        <span className="text-gray-600">{paceResult.lookback_weeks}</span>
+                      </div>
+                    )}
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <h4 className="font-semibold text-gray-700 mb-2">Pace Zones:</h4>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="font-medium">Easy:</span>{' '}
+                          {paceResult.pace_zones?.Easy?.min} - {paceResult.pace_zones?.Easy?.max}
+                        </div>
+                        <div>
+                          <span className="font-medium">Steady:</span>{' '}
+                          {paceResult.pace_zones?.Steady?.min} - {paceResult.pace_zones?.Steady?.max}
+                        </div>
+                        <div>
+                          <span className="font-medium">Marathon:</span>{' '}
+                          {paceResult.pace_zones?.Marathon?.pace}
+                        </div>
+                        <div>
+                          <span className="font-medium">Threshold:</span>{' '}
+                          {paceResult.pace_zones?.Threshold?.min} - {paceResult.pace_zones?.Threshold?.max}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-2">
+                      <span className="font-semibold text-gray-700">Week 1 Long Cap: </span>
+                      <span className="text-gray-600">{paceResult.week1_long_cap} miles</span>
+                    </div>
+                  </div>
+                )}
+                {paceResult.status === 'error' && (
+                  <p className="text-sm text-red-700">{paceResult.message}</p>
+                )}
+                <details className="mt-2">
+                  <summary className="text-xs text-gray-600 cursor-pointer">Show raw data</summary>
+                  <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-64">
+                    {JSON.stringify(paceResult, null, 2)}
+                  </pre>
+                </details>
+              </div>
+            )}
+          </div>
+
+          {/* Update Current Week Pace Result */}
+          {updatePaceResult && (
+            <div className={`mb-8 p-4 rounded-lg border ${
+              updatePaceResult?.status === 'success'
+                ? 'bg-green-50 border-green-200'
+                : 'bg-red-50 border-red-200'
+            }`}>
+              <h3 className={`font-medium text-lg mb-2 ${
+                updatePaceResult?.status === 'success' ? 'text-green-800' : 'text-red-800'
+              }`}>
+                {updatePaceResult?.status === 'success' ? '✅ Week Updated Successfully' : '❌ Update Failed'}
+              </h3>
+              {updatePaceResult?.status === 'success' && (
+                <div className="space-y-2 text-sm">
+                  {updatePaceResult.plan_id !== undefined && (
+                    <div>
+                      <span className="font-semibold text-gray-700">Plan ID: </span>
+                      <span className="text-gray-600">{updatePaceResult.plan_id}</span>
+                    </div>
+                  )}
+                  {updatePaceResult.week_num !== undefined && (
+                    <div>
+                      <span className="font-semibold text-gray-700">Week Number: </span>
+                      <span className="text-gray-600">{updatePaceResult.week_num}</span>
+                    </div>
+                  )}
+                  {updatePaceResult.lookback_weeks !== undefined && (
+                    <div>
+                      <span className="font-semibold text-gray-700">Lookback Weeks: </span>
+                      <span className="text-gray-600">{updatePaceResult.lookback_weeks}</span>
+                    </div>
+                  )}
+                  {updatePaceResult.pace_zones && (
+                    <div className="mt-3 pt-3 border-t border-gray-200">
+                      <h4 className="font-semibold text-gray-700 mb-2">New Pace Zones:</h4>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        {updatePaceResult.pace_zones.Easy && (
+                          <div>
+                            <span className="font-medium">Easy:</span>{' '}
+                            {updatePaceResult.pace_zones.Easy.min || 'N/A'} - {updatePaceResult.pace_zones.Easy.max || 'N/A'}
+                          </div>
+                        )}
+                        {updatePaceResult.pace_zones.Steady && (
+                          <div>
+                            <span className="font-medium">Steady:</span>{' '}
+                            {updatePaceResult.pace_zones.Steady.min || 'N/A'} - {updatePaceResult.pace_zones.Steady.max || 'N/A'}
+                          </div>
+                        )}
+                        {updatePaceResult.pace_zones.Marathon && (
+                          <div>
+                            <span className="font-medium">Marathon:</span>{' '}
+                            {updatePaceResult.pace_zones.Marathon.pace || 'N/A'}
+                          </div>
+                        )}
+                        {updatePaceResult.pace_zones.Threshold && (
+                          <div>
+                            <span className="font-medium">Threshold:</span>{' '}
+                            {updatePaceResult.pace_zones.Threshold.min || 'N/A'} - {updatePaceResult.pace_zones.Threshold.max || 'N/A'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {updatePaceResult.rebuild_result && (
+                    <div className="mt-2">
+                      <span className="font-semibold text-gray-700">Workouts Updated: </span>
+                      <span className="text-gray-600">
+                        {updatePaceResult.rebuild_result.updated_workouts ?? 0}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {updatePaceResult?.status === 'error' && (
+                <p className="text-sm text-red-700">{updatePaceResult?.message || 'An error occurred'}</p>
+              )}
+              <details className="mt-2">
+                <summary className="text-xs text-gray-600 cursor-pointer">Show raw data</summary>
+                <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-64">
+                  {JSON.stringify(updatePaceResult, null, 2)}
+                </pre>
+              </details>
+            </div>
+          )}
 
           {/* Refresh Metrics Section */}
           <div className="mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">

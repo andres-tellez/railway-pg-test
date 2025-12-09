@@ -47,18 +47,17 @@ This document outlines how the training plan services leverage existing database
   - Queries `activities` table directly using `user_id` (no `athlete_id` lookup needed)
   - Filters by date range, activity type ("Run")
   - Returns list of activity dictionaries with converted metrics
-- **Usage**: Used by `pace_seed_service.py` and `week_log_service.py`
+- **Usage**: Used by `week_log_service.py` and other services
 
-### 2. `pace_seed_service.py`
+### 2. Pace Calculation Module (`pace/`)
 
-- **Purpose**: Generate initial pace zones (E, S, M, T) for workout details
+- **Purpose**: Generate initial pace zones (E, S, M, T) for workout details using performance-based calculation
 - **Database Access**:
-  - Uses `DataCollectionService.fetch_strava_activities()` to query `activities` table
-  - Queries by `user_id` directly (leverages existing infrastructure)
-  - Extracts `distance` (miles) and `moving_time` (seconds) for pace calculations
-- **Not Using**:
-  - `ActivityStatsDAO` (uses `athlete_id`; we use `user_id` via DataCollectionService)
-  - `splits` table (not needed for aggregated pace calculations)
+  - Uses direct SQL queries with `PERCENTILE_CONT` to calculate median easy pace from `activities` table
+  - Queries by `user_id` directly (efficient, single-query approach)
+  - Falls back to calibration if insufficient data (< 6 runs in last 6 weeks)
+  - Extracts `conv_distance` (miles) and `moving_time` (seconds) for pace calculations
+  - Uses efficient SQL aggregation instead of fetching all activities
 
 ### 3. `week_log_service.py`
 

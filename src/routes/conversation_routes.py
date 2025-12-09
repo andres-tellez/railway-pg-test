@@ -45,6 +45,15 @@ from src.db.db_session import get_session
 from src.db.models.conversations import Conversation, ConversationMessage
 from src.utils.gpt_ops import get_conversation_response
 from src.utils.auth_helpers import get_user_id_from_request
+from src.services.security.external_apis.openai_rate_limiter import get_user_stats
+from src.services.security.external_apis.openai_cost_tracker import (
+    get_user_cost_stats,
+)
+from src.services.security.external_apis.openai_service import (
+    RateLimitExceededError,
+    CostLimitExceededError,
+)
+from src.utils.response_utils import error_response
 
 logger = logging.getLogger(__name__)
 
@@ -296,10 +305,49 @@ def send_message(conversation_id):
             context, conversation.messages, message.strip()
         )
 
-        # Get GPT response
-        gpt_response = get_conversation_response(
-            gpt_messages, require_json=False, question=message.strip()
-        )
+        # Get GPT response (automatic rate limiting + cost tracking via OpenAIService)
+        try:
+            gpt_response, usage_info = get_conversation_response(
+                gpt_messages,
+                user_id=str(user_id),  # Required for security tracking
+                require_json=False,
+                question=message.strip(),
+            )
+        except RateLimitExceededError as e:
+            logger.warning(
+                f"OpenAI rate limit exceeded for user {user_id}. "
+                f"Retry after {e.retry_after:.1f} seconds"
+            )
+            return error_response(
+                message=f"Rate limit exceeded. Please try again in {int(e.retry_after)} seconds.",
+                status_code=429,
+                error_code="OPENAI_RATE_LIMIT_EXCEEDED",
+                details={
+                    "retry_after_seconds": int(e.retry_after),
+                    "limit": "10 requests per minute",
+                },
+            )
+        except CostLimitExceededError as e:
+            logger.warning(
+                f"OpenAI cost limit exceeded for user {user_id}. " f"Error: {e.message}"
+            )
+            return error_response(
+                message=e.message or "Daily cost limit exceeded.",
+                status_code=429,
+                error_code="OPENAI_COST_LIMIT_EXCEEDED",
+                details={
+                    "limit_type": "daily_cost",
+                    "exceeded_by": round(e.exceeded_by, 4) if e.exceeded_by else None,
+                },
+            )
+
+        # Cost is already calculated and tracked by OpenAIService
+        # Extract from usage_info (no duplicate calculation needed)
+        request_cost = usage_info.get("cost", 0.0)
+
+        # Get rate limit and cost status for response
+        rate_limit_stats = get_user_stats(str(user_id))
+        cost_stats = get_user_cost_stats(str(user_id))
 
         # Add transparency if enabled
         if False:  # Disabled transparency for simple system
@@ -336,6 +384,24 @@ def send_message(conversation_id):
                     "context_used": {
                         "context_loaded": bool(context),
                         "context_length": len(context) if context else 0,
+                    },
+                    "rate_limit": {
+                        "remaining": rate_limit_stats["remaining"],
+                        "limit": rate_limit_stats["limit"],
+                        "used": rate_limit_stats["request_count"],
+                    },
+                    "cost": {
+                        "request_cost": round(request_cost, 6),
+                        "today_cost": cost_stats["today_cost"],
+                        "limit": cost_stats["limit"],
+                        "remaining": cost_stats["remaining"],
+                        "percent_used": cost_stats["percent_used"],
+                    },
+                    "token_usage": {
+                        "prompt_tokens": usage_info.get("prompt_tokens", 0),
+                        "completion_tokens": usage_info.get("completion_tokens", 0),
+                        "total_tokens": usage_info.get("total_tokens", 0),
+                        "model": usage_info.get("model", "gpt-4o"),
                     },
                 }
             ),
