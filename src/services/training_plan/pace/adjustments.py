@@ -4,10 +4,14 @@ Pace Adjustments
 Adjust pace zones based on weekly feedback (RPE, completion).
 """
 
+import logging
 from dataclasses import dataclass
 from typing import List
 
 from .models import PaceSeed
+from .validation import validate_pace_seed
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -28,27 +32,75 @@ def adjust_pace_seed(
     """
     Adjust pace seed based on week completion logs.
 
+    Args:
+        seed: Current PaceSeed to adjust
+        week_log: List of WeekLogRun entries from the week
+
     Returns:
         (adjusted_seed, disable_quality_workouts)
+        - adjusted_seed: New PaceSeed with adjusted paces
+        - disable_quality_workouts: True if quality workouts should be disabled
+
+    Raises:
+        ValueError: If seed is invalid
+        RuntimeError: If adjusted seed fails validation
     """
+    # Validate input seed
+    is_valid, error_msg = validate_pace_seed(seed)
+    if not is_valid:
+        logger.error(f"Invalid input seed for adjustment: {error_msg}")
+        raise ValueError(f"Invalid input seed: {error_msg}")
+
     if not week_log:
+        logger.debug("No week log provided, returning seed unchanged")
         return (seed, False)
+
+    logger.info(f"Adjusting pace seed based on {len(week_log)} week log entries")
 
     # Calculate metrics
     completion_rate = _calculate_completion_rate(week_log)
     avg_rpe = _calculate_avg_rpe(week_log)
 
+    logger.debug(
+        f"Week metrics: completion_rate={completion_rate:.2%}, avg_rpe={avg_rpe:.1f}"
+    )
+
     # Adjustment rules
+    adjusted_seed = None
+    disable_quality = False
+
     if completion_rate < 0.6:
-        return (_adjust_all_paces(seed, +15), True)
+        adjusted_seed = _adjust_all_paces(seed, +15)
+        disable_quality = True
+        logger.info(
+            f"Low completion ({completion_rate:.1%}): "
+            f"slowing all paces by 15s/mi, disabling quality workouts"
+        )
+    elif avg_rpe <= 2.0 and completion_rate >= 0.8:
+        adjusted_seed = _adjust_all_paces(seed, -5)
+        disable_quality = False
+        logger.info(
+            f"Excellent recovery (RPE={avg_rpe:.1f}, completion={completion_rate:.1%}): "
+            f"speeding all paces by 5s/mi"
+        )
+    elif avg_rpe >= 5.0:
+        adjusted_seed = _adjust_all_paces(seed, +10)
+        disable_quality = True
+        logger.info(
+            f"High RPE ({avg_rpe:.1f}): "
+            f"slowing all paces by 10s/mi, disabling quality workouts"
+        )
+    else:
+        logger.debug("No adjustment needed (normal week)")
+        return (seed, False)
 
-    if avg_rpe <= 2.0 and completion_rate >= 0.8:
-        return (_adjust_all_paces(seed, -5), False)
+    # Validate adjusted seed
+    is_valid, error_msg = validate_pace_seed(adjusted_seed)
+    if not is_valid:
+        logger.error(f"Adjusted seed failed validation: {error_msg}")
+        raise RuntimeError(f"Adjusted seed failed validation: {error_msg}")
 
-    if avg_rpe >= 5.0:
-        return (_adjust_all_paces(seed, +10), True)
-
-    return (seed, False)
+    return (adjusted_seed, disable_quality)
 
 
 def _calculate_completion_rate(week_log: List[WeekLogRun]) -> float:
