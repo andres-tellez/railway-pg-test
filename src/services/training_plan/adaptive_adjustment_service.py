@@ -30,7 +30,7 @@ import logging
 
 from .week_analysis_service import WeekAnalysisResult
 from .trend_analysis_service import TrendAnalysisResult
-from .pace_seed_service import PaceSeed
+from src.services.training_plan.pace import PaceSeed
 from src.utils.adaptive_constants import (
     AdaptiveConfig,
     PhaseRules,

@@ -43,7 +43,7 @@ from src.services.training_plan.v2.plan_validation_service_v2 import (
 )
 
 # Recovery week insertion removed - spine generator now handles all progression naturally
-from src.services.training_plan.v2.shared_v2.pace_seed_service import (
+from src.services.training_plan.pace import (
     get_initial_pace_seed,
     PaceSeed,
 )
@@ -680,22 +680,12 @@ class PlanGenerationOrchestratorV2:
         week1_total = float(week1.get("weekly_mileage", 0) or 0)
         week1_long = float(week1.get("long_run_miles", 0) or 0)
 
-        # Fetch real Strava activities for accurate pace seeding
-        from src.services.training_plan.data_collection_service import (
-            DataCollectionService,
-        )
-
-        strava_activities = (
-            DataCollectionService.fetch_strava_activities(session, user_id) or []
-        )
-
-        logger.info(f"Pace seed using {len(strava_activities)} Strava activities")
-
+        # Calculate pace seed using performance-based calculation or calibration
         seed = get_initial_pace_seed(
-            strava_activities=strava_activities,
-            plan_week1_total=week1_total,
-            plan_week1_long=week1_long,
-            goal_mp_sec_per_mi=None,
+            session=session,
+            user_id=user_id,
+            week1_long=week1_long,
+            lookback_weeks=6,
         )
         return seed
 

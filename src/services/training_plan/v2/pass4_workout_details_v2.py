@@ -53,7 +53,7 @@ TYPE_DISPLAY = {
     ENDURANCE: "Endurance (Medium-Long)",  # Keep legacy display name
     LONG: WORKOUT_DEFINITIONS["long_run"]["description"],
 }
-from src.services.training_plan.v2.shared_v2.pace_seed_service import PaceSeed
+from src.services.training_plan.pace import PaceSeed
 from src.services.training_plan.v2.shared_v2.workout_detail_rules import (
     PHASE,
     WU_CD_MI,

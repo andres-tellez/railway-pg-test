@@ -30,7 +30,7 @@ from .adaptive_adjustment_service import AdaptiveAdjustmentService
 from .weekly_metrics_service import WeeklyMetricsService
 
 # Existing services
-from .pace_seed_service import PaceSeed, get_initial_pace_seed, _time_add
+from src.services.training_plan.pace import PaceSeed, get_initial_pace_seed
 
 # Use the refactored v2 workout detail service for rebuilds
 from src.services.training_plan.v2.pass4_workout_details_v2 import (
@@ -59,6 +59,7 @@ class WeeklyRebuildService:
         week_num: int,
         previous_week_logs: Optional[List] = None,
         initial_seed: Optional[PaceSeed] = None,
+        skip_adaptive_adjustments: bool = False,
     ) -> Dict[str, Any]:
         """
         Rebuild workout details for a specific week.
@@ -69,6 +70,8 @@ class WeeklyRebuildService:
             week_num: Week number (1-based)
             previous_week_logs: Optional logs from previous week for adjustments
             initial_seed: Optional initial pace seed (if not provided, regenerates)
+            skip_adaptive_adjustments: If True, use initial_seed directly without adaptive adjustments
+                                      (useful for admin tools to force new paces)
 
         Returns:
             Dict with updated week details and adjustment info
@@ -157,10 +160,10 @@ class WeeklyRebuildService:
                     f"[Rebuild] Generating initial pace seed from historical data..."
                 )
                 initial_seed = get_initial_pace_seed(
-                    strava_activities=strava_activities,
-                    plan_week1_total=week1_total,
-                    plan_week1_long=week1_long,
-                    goal_mp_sec_per_mi=None,
+                    session=session,
+                    user_id=str(plan.user_id),
+                    week1_long=week1_long,
+                    lookback_weeks=6,
                 )
                 logger.info(f"[Rebuild] Initial pace seed generated")
             else:
@@ -218,10 +221,10 @@ class WeeklyRebuildService:
                         )
 
                         initial_seed = get_initial_pace_seed(
-                            strava_activities=strava_activities,
-                            plan_week1_total=week1_total,
-                            plan_week1_long=week1_long,
-                            goal_mp_sec_per_mi=None,
+                            session=session,
+                            user_id=str(plan.user_id),
+                            week1_long=week1_long,
+                            lookback_days=90,
                         )
                         logger.info(
                             f"[Rebuild] Pace seed generated from fallback (12 weeks) in {strava_elapsed:.1f} seconds"
@@ -261,10 +264,10 @@ class WeeklyRebuildService:
                     )
 
                     initial_seed = get_initial_pace_seed(
-                        strava_activities=strava_activities,
-                        plan_week1_total=week1_total,
-                        plan_week1_long=week1_long,
-                        goal_mp_sec_per_mi=None,
+                        session=session,
+                        user_id=str(plan.user_id),
+                        week1_long=week1_long,
+                        lookback_days=90,
                     )
                     logger.info(
                         f"[Rebuild] Pace seed generated from fallback in {strava_elapsed:.1f} seconds"
@@ -371,13 +374,13 @@ class WeeklyRebuildService:
                             f"delta={delta:.1f}s"
                         )
                         current_seed = PaceSeed(
-                            E_min=_time_add(current_seed.E_min, delta),
-                            E_max=_time_add(current_seed.E_max, delta),
-                            S_min=_time_add(current_seed.S_min, delta),
-                            S_max=_time_add(current_seed.S_max, delta),
-                            M=_time_add(current_seed.M, delta),
-                            T_min=_time_add(current_seed.T_min, delta),
-                            T_max=_time_add(current_seed.T_max, delta),
+                            E_min=current_seed.E_min + delta,
+                            E_max=current_seed.E_max + delta,
+                            S_min=current_seed.S_min + delta,
+                            S_max=current_seed.S_max + delta,
+                            M=current_seed.M + delta,
+                            T_min=current_seed.T_min + delta,
+                            T_max=current_seed.T_max + delta,
                             week1_long_cap=current_seed.week1_long_cap,
                         )
                         # Update initial_seed so downstream stages use the nudged seed
@@ -394,7 +397,20 @@ class WeeklyRebuildService:
         current_seed = initial_seed
         disable_quality = False
 
-        if previous_week_logs and previous_week_workouts:
+        # If skip_adaptive_adjustments is True, use the provided seed directly without adjustments
+        # This allows admin tools to force new paces regardless of previous week performance
+        if skip_adaptive_adjustments:
+            if current_seed is None:
+                logger.error(
+                    f"[Rebuild] CRITICAL: skip_adaptive_adjustments=True but initial_seed is None!"
+                )
+                raise ValueError("Cannot skip adaptive adjustments without initial_seed")
+            logger.info(
+                f"[Rebuild] Using explicitly provided pace seed (skipping adaptive adjustments per request): "
+                f"E={current_seed.E_min}-{current_seed.E_max}s/mi, M={current_seed.M}s/mi"
+            )
+        
+        if previous_week_logs and previous_week_workouts and not skip_adaptive_adjustments:
             try:
                 logger.info(
                     f"[Adaptive Pipeline] Stage 2: Analyzing week {previous_week_num} performance"
@@ -616,16 +632,54 @@ class WeeklyRebuildService:
             }
 
             # Keep pace_ranges in sync with the active seed so table and UI match
-            try:
-                update_data["pace_ranges"] = {
-                    "E": [float(current_seed.E_min), float(current_seed.E_max)],
-                    "S": [float(current_seed.S_min), float(current_seed.S_max)],
-                    "M": [float(current_seed.M), float(current_seed.M)],
-                    "T": [float(current_seed.T_min), float(current_seed.T_max)],
-                }
-            except Exception:
-                # If seed not available for any reason, skip syncing pace_ranges
-                pass
+            if current_seed is None:
+                logger.warning(
+                    f"[Rebuild] Cannot set pace_ranges: current_seed is None for workout {db_workout.id} "
+                    f"({db_workout.date}, {db_workout.workout_type})"
+                )
+            else:
+                try:
+                    update_data["pace_ranges"] = {
+                        "E": [float(current_seed.E_min), float(current_seed.E_max)],
+                        "S": [float(current_seed.S_min), float(current_seed.S_max)],
+                        "M": [float(current_seed.M), float(current_seed.M)],
+                        "T": [float(current_seed.T_min), float(current_seed.T_max)],
+                    }
+                    
+                    # ALWAYS set target_zone from current_seed to keep in sync with pace_ranges
+                    # This ensures frontend sees updated pace even if extract_pace_zone_from_workout fails
+                    from .workout_utils import get_workout_pace_label_key, pace_range_to_str
+                    pace_key = get_workout_pace_label_key(db_workout.workout_type or "")
+                    
+                    if pace_key == "E":
+                        target_zone_str = pace_range_to_str(current_seed.E_min, current_seed.E_max)
+                    elif pace_key == "S":
+                        target_zone_str = pace_range_to_str(current_seed.S_min, current_seed.S_max)
+                    elif pace_key == "M":
+                        target_zone_str = pace_range_to_str(current_seed.M, current_seed.M)
+                    elif pace_key == "T":
+                        target_zone_str = pace_range_to_str(current_seed.T_min, current_seed.T_max)
+                    else:
+                        # Default to Easy
+                        target_zone_str = pace_range_to_str(current_seed.E_min, current_seed.E_max)
+                    
+                    # Override target_zone with value from seed (single source of truth)
+                    update_data["target_zone"] = target_zone_str
+                    
+                    logger.info(
+                        f"[Rebuild] Set pace_ranges and target_zone for workout {db_workout.id} ({db_workout.date}): "
+                        f"E={current_seed.E_min:.1f}-{current_seed.E_max:.1f}s/mi, "
+                        f"target_zone={target_zone_str} (from {pace_key} zone)"
+                    )
+                except Exception as e:
+                    # Log the actual error instead of silently failing
+                    logger.error(
+                        f"[Rebuild] Failed to set pace_ranges/target_zone for workout {db_workout.id} "
+                        f"({db_workout.date}, {db_workout.workout_type}): {e}",
+                        exc_info=True
+                    )
+                    # Log and continue - don't break the whole rebuild if pace_ranges fails
+                    # This way we can see what's failing without stopping all updates
 
             # ALWAYS save segments if they exist (critical for Garmin automation)
             # Segments should be a dict with "steps" array from pass4_workout_details
@@ -670,6 +724,17 @@ class WeeklyRebuildService:
                     )
                     segments_missing_count += 1
 
+            # Log what we're updating (especially pace_ranges)
+            if "pace_ranges" in update_data:
+                logger.info(
+                    f"[Rebuild] Updating workout {db_workout.id} ({db_workout.date}): "
+                    f"pace_ranges={update_data['pace_ranges']}"
+                )
+            else:
+                logger.warning(
+                    f"[Rebuild] WARNING: pace_ranges NOT in update_data for workout {db_workout.id} ({db_workout.date})"
+                )
+            
             update_workout(session, db_workout.id, update_data)
             updated_count += 1
 
@@ -679,9 +744,21 @@ class WeeklyRebuildService:
             f"({segments_missing_count} missing for workouts with distance > 0)"
         )
 
+        # Count how many workouts got pace_ranges updated (refresh from DB to get latest values)
+        session.flush()  # Ensure all updates are flushed
+        refreshed_workouts = (
+            session.query(PlanWorkout)
+            .filter(PlanWorkout.id.in_([w.id for w in week_workouts]))
+            .all()
+        )
+        pace_ranges_count = sum(
+            1 for w in refreshed_workouts 
+            if w.pace_ranges is not None
+        )
+        
         logger.info(
             f"Updated {updated_count} workouts for week {week_num} "
-            f"(phase={phase}, quality={allow_quality})"
+            f"(phase={phase}, quality={allow_quality}, pace_ranges set on {pace_ranges_count}/{updated_count})"
         )
 
         # Extract pace_labels from first workout (all workouts have same labels)
@@ -784,13 +861,13 @@ def _apply_decision_to_seed(
 
     # Apply pace adjustment to all zones
     return PaceSeed(
-        E_min=_time_add(seed.E_min, decision.pace_adjustment_sec),
-        E_max=_time_add(seed.E_max, decision.pace_adjustment_sec),
-        S_min=_time_add(seed.S_min, decision.pace_adjustment_sec),
-        S_max=_time_add(seed.S_max, decision.pace_adjustment_sec),
-        M=_time_add(seed.M, decision.pace_adjustment_sec),
-        T_min=_time_add(seed.T_min, decision.pace_adjustment_sec),
-        T_max=_time_add(seed.T_max, decision.pace_adjustment_sec),
+        E_min=seed.E_min + decision.pace_adjustment_sec,
+        E_max=seed.E_max + decision.pace_adjustment_sec,
+        S_min=seed.S_min + decision.pace_adjustment_sec,
+        S_max=seed.S_max + decision.pace_adjustment_sec,
+        M=seed.M + decision.pace_adjustment_sec,
+        T_min=seed.T_min + decision.pace_adjustment_sec,
+        T_max=seed.T_max + decision.pace_adjustment_sec,
         week1_long_cap=seed.week1_long_cap,
     )
 
