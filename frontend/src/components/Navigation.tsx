@@ -90,8 +90,7 @@ const Navigation: React.FC = () => {
       navItems.push(
         { label: 'Training Plan', path: '/plan/overview', icon: '📊' },
         { label: 'Metrics', path: '/metrics', icon: '📊' },
-        { label: 'Ask Coach', path: '/ask', icon: '💬' },
-        { label: 'Settings', path: '/settings', icon: '⚙️' }
+        { label: 'Ask Coach', path: '/ask', icon: '💬' }
       );
     } else if (userState.hasStrava && !isOnSetupOrOnboarding) {
       // Has Strava but not onboarded - only show "Complete Profile" if not already on setup/profile pages

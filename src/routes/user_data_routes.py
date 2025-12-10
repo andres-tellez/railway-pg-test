@@ -181,7 +181,7 @@ def delete_user_account():
         deletions["plans"] = plans_result
         print(f"  ✓ Deleted {plans_result} training plans", flush=True)
 
-        # 3. Delete athlete links and associated tokens
+        # 3. Delete athlete links and associated tokens (cover both link + token cleanup)
         athlete_links = (
             session.query(UserAthleteLink).filter_by(user_id=internal_user_id).all()
         )
@@ -191,6 +191,12 @@ def delete_user_account():
                 session.query(Token).filter_by(athlete_id=link.athlete_id).delete()
             )
             deletions["tokens"] += tokens_result
+
+        # Also delete any tokens directly tied to this user (safety net)
+        user_token_result = (
+            session.query(Token).filter_by(user_id=internal_user_id).delete()
+        )
+        deletions["tokens"] += user_token_result
 
         athlete_links_result = (
             session.query(UserAthleteLink).filter_by(user_id=internal_user_id).delete()
@@ -228,6 +234,9 @@ def delete_user_account():
                     "message": "All your data has been permanently deleted",
                     "deleted": deletions,
                     "timestamp": datetime.utcnow().isoformat(),
+                    # Hint for clients to clear local auth/session state
+                    "logoutRecommended": True,
+                    "next": "/login",
                 }
             ),
             200,
