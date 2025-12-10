@@ -78,18 +78,16 @@ def validate_pace_seed(seed: PaceSeed) -> tuple[bool, Optional[str]]:
             f"Invalid ordering: Marathon ({seed.M:.1f}) >= Steady min ({seed.S_min:.1f})",
         )
 
-    # Steady should overlap with Easy range (Steady can extend slightly faster)
-    # But Steady max should be <= Easy max, and there should be overlap
-    if seed.S_max > seed.E_max:
+    # Steady should be between Marathon and Easy (faster than Easy, slower than Marathon)
+    if seed.S_max >= seed.E_min:
         return (
             False,
-            f"Invalid ordering: Steady max ({seed.S_max:.1f}) > Easy max ({seed.E_max:.1f})",
+            f"Invalid ordering: Steady max ({seed.S_max:.1f}) >= Easy min ({seed.E_min:.1f})",
         )
-    if seed.S_min >= seed.E_max:
+    if seed.S_min <= seed.M:
         return (
             False,
-            f"Invalid ordering: Steady ({seed.S_min:.1f}-{seed.S_max:.1f}) "
-            f"does not overlap with Easy range ({seed.E_min:.1f}-{seed.E_max:.1f})",
+            f"Invalid ordering: Steady min ({seed.S_min:.1f}) <= Marathon ({seed.M:.1f})",
         )
 
     # Check reasonable bounds (4:00/mile to 20:00/mile)
