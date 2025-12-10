@@ -108,9 +108,12 @@ const Navigation: React.FC = () => {
   return (
     <nav className="bg-white shadow-sm border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          {/* Logo and App Name */}
-          <div className="flex items-center">
+        <div className="flex items-center h-16">
+          {/* Left spacer (optional menu placeholder on mobile) */}
+          <div className="w-10 flex items-center justify-start md:hidden" />
+
+          {/* Center: Brand (centered on mobile, left on desktop) */}
+          <div className="flex-1 flex items-center justify-center md:justify-start">
             <Link
               to={userState?.hasOnboarded ? '/home' : '/'}
               className="flex items-center space-x-2"
@@ -118,7 +121,7 @@ const Navigation: React.FC = () => {
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">SC</span>
               </div>
-              <span className="text-xl font-semibold text-gray-900">
+              <span className="text-lg md:text-xl font-semibold text-gray-900">
                 SmartCoach
               </span>
             </Link>
@@ -142,8 +145,8 @@ const Navigation: React.FC = () => {
             ))}
           </div>
 
-          {/* User Profile Dropdown */}
-          <div className="relative" ref={profileDropdownRef}>
+          {/* Right: Profile/avatar */}
+          <div className="w-10 flex items-center justify-end relative" ref={profileDropdownRef}>
             <button
               onClick={() => setShowProfileDropdown(!showProfileDropdown)}
               className="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-50 transition-colors"
@@ -161,11 +164,12 @@ const Navigation: React.FC = () => {
                   </span>
                 </div>
               )}
-              <span className="hidden md:block text-sm font-medium text-gray-700">
-                {user?.name || 'User'}
+              {/* Hide email/name on mobile for cleanliness */}
+              <span className="hidden md:block text-sm font-medium text-gray-700 truncate max-w-[140px]">
+                {user?.email || user?.name || 'User'}
               </span>
               <svg
-                className="w-4 h-4 text-gray-400"
+                className="w-4 h-4 text-gray-400 hidden md:block"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -210,50 +214,38 @@ const Navigation: React.FC = () => {
               </div>
             )}
           </div>
+        </div>
+      </div>
 
-          {/* Mobile Menu Button */}
-          <div className="md:hidden">
+      {/* Mobile Navigation Menu */}
+      {showMobileMenu && (
+        <div className="md:hidden border-t border-gray-200 py-4">
+          <div className="space-y-2">
+            {navItems.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setShowMobileMenu(false)}
+                className={`flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                  isActive(item.path)
+                    ? 'text-blue-600 bg-blue-50'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
+              </Link>
+            ))}
             <button
-              onClick={() => setShowMobileMenu(!showMobileMenu)}
-              className="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+              onClick={handleLogout}
+              className="flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 w-full text-left"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
+              <span>🚪</span>
+              <span>Sign out</span>
             </button>
           </div>
         </div>
-
-        {/* Mobile Navigation Menu */}
-        {showMobileMenu && (
-          <div className="md:hidden border-t border-gray-200 py-4">
-            <div className="space-y-2">
-              {navItems.map((item) => (
-                <Link
-                  key={item.path}
-                  to={item.path}
-                  onClick={() => setShowMobileMenu(false)}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                    isActive(item.path)
-                      ? 'text-blue-600 bg-blue-50'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                  }`}
-                >
-                  <span>{item.icon}</span>
-                  <span>{item.label}</span>
-                </Link>
-              ))}
-              <button
-                onClick={handleLogout}
-                className="flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 w-full text-left"
-              >
-                <span>🚪</span>
-                <span>Sign out</span>
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      )}
     </nav>
   );
 };
