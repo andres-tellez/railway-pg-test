@@ -1067,7 +1067,6 @@ def update_current_week_pace():
             WeeklyRebuildService,
         )
         from src.services.training_plan.week_log_service import fetch_week_logs
-        from src.scripts.metrics_scheduler import calculate_upcoming_week_num
         from datetime import date
 
         data = request.get_json() or {}
