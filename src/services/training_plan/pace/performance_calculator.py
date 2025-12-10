@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from .models import PaceSeed
 from .config import PaceConfig, DEFAULT_CONFIG
@@ -72,7 +72,8 @@ def calculate_paces_from_performance(
     )
 
     try:
-        cutoff = datetime.now() - timedelta(weeks=lookback_weeks)
+        # Use UTC explicitly to ensure consistent cutoff across all environments
+        cutoff = datetime.now(timezone.utc) - timedelta(weeks=lookback_weeks)
 
         # SQL query to calculate median easy pace
         query = text(

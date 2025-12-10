@@ -26,7 +26,7 @@ from src.services.training_plan.pace.performance_calculator import (
     calculate_paces_from_performance,
 )
 from sqlalchemy import text
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 def format_pace(sec):
@@ -47,7 +47,8 @@ def test_median_easy_pace(user_id: str):
     session = get_session()
     try:
         # First, check how many runs we have
-        cutoff = datetime.now() - timedelta(weeks=6)
+        # Use UTC to match the fixed performance_calculator.py
+        cutoff = datetime.now(timezone.utc) - timedelta(weeks=6)
         count_query = text(
             """
             SELECT COUNT(*) as run_count
