@@ -72,10 +72,8 @@ def calculate_paces_from_performance(
     )
 
     try:
-        # Use UTC explicitly to ensure consistent cutoff across all environments
-        cutoff = datetime.now(timezone.utc) - timedelta(weeks=lookback_weeks)
-
-        # SQL query to calculate median easy pace
+        # Calculate cutoff directly in PostgreSQL to ensure consistency across all environments
+        # This avoids timezone conversion issues when passing Python datetime to PostgreSQL
         query = text(
             """
             WITH valid_runs AS (
@@ -84,7 +82,7 @@ def calculate_paces_from_performance(
                 FROM activities
                 WHERE user_id = :user_id
                   AND type = 'Run'
-                  AND start_date >= :cutoff
+                  AND start_date >= (NOW() AT TIME ZONE 'UTC' - make_interval(weeks => :lookback_weeks))
                   AND conv_distance >= :min_distance
                   AND moving_time IS NOT NULL
                   AND moving_time > 0
@@ -102,7 +100,7 @@ def calculate_paces_from_performance(
             query,
             {
                 "user_id": user_id,
-                "cutoff": cutoff,
+                "lookback_weeks": lookback_weeks,
                 "min_distance": min_distance_miles,
                 "min_pace": config.MIN_PACE_SEC_PER_MILE,
                 "max_pace": config.MAX_PACE_SEC_PER_MILE,
@@ -130,7 +128,7 @@ def calculate_paces_from_performance(
         )
 
         # Calculate week1_long_cap from longest recent run
-        week1_long_cap = _calculate_week1_long_cap(session, user_id, cutoff)
+        week1_long_cap = _calculate_week1_long_cap(session, user_id, lookback_weeks)
 
         # Build all pace zones from median easy pace
         seed = _build_pace_zones_from_median(median_easy_pace, week1_long_cap)
@@ -197,7 +195,7 @@ def _build_pace_zones_from_median(
 def _calculate_week1_long_cap(
     session: Session,
     user_id: str,
-    cutoff: datetime,
+    lookback_weeks: int,
 ) -> float:
     """
     Calculate max long run for week 1 from recent longest run.
@@ -205,7 +203,7 @@ def _calculate_week1_long_cap(
     Args:
         session: Database session
         user_id: User UUID string
-        cutoff: Date cutoff for looking back
+        lookback_weeks: Number of weeks to look back
 
     Returns:
         Maximum long run distance for week 1 (miles)
@@ -213,13 +211,14 @@ def _calculate_week1_long_cap(
     config = DEFAULT_CONFIG
 
     try:
+        # Calculate cutoff directly in PostgreSQL to ensure consistency
         query = text(
             """
             SELECT conv_distance
             FROM activities
             WHERE user_id = :user_id
               AND type = 'Run'
-              AND start_date >= :cutoff
+              AND start_date >= (NOW() AT TIME ZONE 'UTC' - make_interval(weeks => :lookback_weeks))
               AND conv_distance >= :min_distance
             ORDER BY conv_distance DESC
             LIMIT 1
@@ -230,7 +229,7 @@ def _calculate_week1_long_cap(
             query,
             {
                 "user_id": user_id,
-                "cutoff": cutoff,
+                "lookback_weeks": lookback_weeks,
                 "min_distance": config.MIN_RUN_FOR_LONG_CAP,
             },
         ).scalar()
