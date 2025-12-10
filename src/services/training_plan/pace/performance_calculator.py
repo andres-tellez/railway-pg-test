@@ -90,17 +90,41 @@ def calculate_paces_from_performance(
     )
 
     try:
+        # First, get the actual cutoff date that PostgreSQL will use
+        # Use DATE() to ensure cutoff is always at midnight UTC, making it consistent
+        # regardless of when the query runs (avoids time-of-day differences)
+        cutoff_query = text(
+            """
+            SELECT
+                DATE(NOW() AT TIME ZONE 'UTC') AS current_date_utc,
+                (DATE(NOW() AT TIME ZONE 'UTC') - make_interval(weeks => :lookback_weeks)) AS cutoff_date_utc
+            """
+        )
+        cutoff_result = session.execute(
+            cutoff_query, {"lookback_weeks": lookback_weeks}
+        ).first()
+
+        if cutoff_result:
+            current_date_utc = cutoff_result.current_date_utc
+            cutoff_date_utc = cutoff_result.cutoff_date_utc
+            logger.info(
+                f"[Pace Calculation Debug] PostgreSQL current date UTC: {current_date_utc}, "
+                f"Cutoff date (current date - {lookback_weeks} weeks): {cutoff_date_utc}"
+            )
+
         # Calculate cutoff directly in PostgreSQL to ensure consistency across all environments
-        # This avoids timezone conversion issues when passing Python datetime to PostgreSQL
+        # Use DATE() to ensure cutoff is always at midnight UTC, making it consistent
+        # regardless of when the query runs (avoids time-of-day differences between local/prod)
         query = text(
             """
             WITH valid_runs AS (
                 SELECT
-                    moving_time::float / conv_distance AS pace_sec_per_mile
+                    moving_time::float / conv_distance AS pace_sec_per_mile,
+                    start_date
                 FROM activities
                 WHERE user_id = :user_id
                   AND type = 'Run'
-                  AND start_date >= (NOW() AT TIME ZONE 'UTC' - make_interval(weeks => :lookback_weeks))
+                  AND start_date >= (DATE(NOW() AT TIME ZONE 'UTC') - make_interval(weeks => :lookback_weeks))
                   AND conv_distance >= :min_distance
                   AND moving_time IS NOT NULL
                   AND moving_time > 0
@@ -109,7 +133,9 @@ def calculate_paces_from_performance(
             )
             SELECT
                 PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pace_sec_per_mile) AS median_pace,
-                COUNT(*) AS run_count
+                COUNT(*) AS run_count,
+                MIN(start_date) AS earliest_run,
+                MAX(start_date) AS latest_run
             FROM valid_runs
         """
         )
@@ -230,13 +256,15 @@ def _calculate_week1_long_cap(
 
     try:
         # Calculate cutoff directly in PostgreSQL to ensure consistency
+        # Use DATE() to ensure cutoff is always at midnight UTC, making it consistent
+        # regardless of when the query runs (avoids time-of-day differences between local/prod)
         query = text(
             """
             SELECT conv_distance
             FROM activities
             WHERE user_id = :user_id
               AND type = 'Run'
-              AND start_date >= (NOW() AT TIME ZONE 'UTC' - make_interval(weeks => :lookback_weeks))
+              AND start_date >= (DATE(NOW() AT TIME ZONE 'UTC') - make_interval(weeks => :lookback_weeks))
               AND conv_distance >= :min_distance
             ORDER BY conv_distance DESC
             LIMIT 1
