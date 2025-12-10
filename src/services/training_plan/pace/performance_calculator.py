@@ -16,6 +16,19 @@ from .config import PaceConfig, DEFAULT_CONFIG
 from .validation import validate_input_parameters, validate_pace_seed
 
 logger = logging.getLogger(__name__)
+# Ensure logger is configured to show INFO level logs
+if not logger.handlers:
+    import sys
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+logger.propagate = True
 
 
 def calculate_paces_from_performance(
@@ -65,6 +78,11 @@ def calculate_paces_from_performance(
     if not is_valid:
         logger.error(f"Invalid input parameters: {error_msg}")
         raise ValueError(f"Invalid input parameters: {error_msg}")
+
+    # Debug: Print to verify function is called
+    print(
+        f"[DEBUG] calculate_paces_from_performance called: user_id={user_id}, lookback_weeks={lookback_weeks}"
+    )
 
     logger.info(
         f"Calculating paces from performance: user_id={user_id}, "
