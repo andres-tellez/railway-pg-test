@@ -198,20 +198,6 @@ const HomeScreen: React.FC = () => {
     return isSundayEvening();
   }, [isViewingNextWeek]);
 
-  // Format week display (e.g., "Nov 10 - Nov 16")
-  const weekDisplayText = useMemo(() => {
-    const { weekStart, weekEnd } = weekRange;
-    const startDate = dateStringToDate(weekStart);
-    const endDate = dateStringToDate(weekEnd);
-
-    const thisWeekRange = getThisWeekRange();
-    if (weekStart === thisWeekRange.weekStart) {
-      return 'THIS WEEK';
-    }
-
-    return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`;
-  }, [weekRange]);
-
   // Memoized computed values
   const selectedDay = useMemo(
     () => weekDays.find((d) => d.dateStr === selectedDate),
@@ -261,7 +247,8 @@ const HomeScreen: React.FC = () => {
                 ← Previous
               </button>
 
-              <h2 className={WEEK_TIMELINE_STYLES.title}>{weekDisplayText}</h2>
+              {/* Spacer: no week label */}
+              <div className="flex-1" />
 
               <button
                 onClick={handleNextWeek}
