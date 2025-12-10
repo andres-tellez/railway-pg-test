@@ -9,13 +9,26 @@ import logging
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from .models import PaceSeed
 from .config import PaceConfig, DEFAULT_CONFIG
 from .validation import validate_input_parameters, validate_pace_seed
 
 logger = logging.getLogger(__name__)
+# Ensure logger is configured to show INFO level logs
+if not logger.handlers:
+    import sys
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+logger.propagate = True
 
 
 def calculate_paces_from_performance(
@@ -34,7 +47,7 @@ def calculate_paces_from_performance(
 
     Formula (from TARGET_PACE_EXPLAINER.md):
     - Easy: Median - 15 to + 45 seconds
-    - Steady: Median - 15 to + 15 seconds
+    - Steady: Median - 30 to - 10 seconds (between Easy and Marathon)
     - Marathon: Median - 60 seconds
     - Threshold: Marathon - 20 to 30 seconds
 
@@ -66,24 +79,52 @@ def calculate_paces_from_performance(
         logger.error(f"Invalid input parameters: {error_msg}")
         raise ValueError(f"Invalid input parameters: {error_msg}")
 
+    # Debug: Print to verify function is called
+    print(
+        f"[DEBUG] calculate_paces_from_performance called: user_id={user_id}, lookback_weeks={lookback_weeks}"
+    )
+
     logger.info(
         f"Calculating paces from performance: user_id={user_id}, "
         f"lookback_weeks={lookback_weeks}, min_distance={min_distance_miles}"
     )
 
     try:
-        cutoff = datetime.now() - timedelta(weeks=lookback_weeks)
+        # First, get the actual cutoff date that PostgreSQL will use
+        # Use DATE() to ensure cutoff is always at midnight UTC, making it consistent
+        # regardless of when the query runs (avoids time-of-day differences)
+        cutoff_query = text(
+            """
+            SELECT
+                DATE(NOW() AT TIME ZONE 'UTC') AS current_date_utc,
+                (DATE(NOW() AT TIME ZONE 'UTC') - make_interval(weeks => :lookback_weeks)) AS cutoff_date_utc
+            """
+        )
+        cutoff_result = session.execute(
+            cutoff_query, {"lookback_weeks": lookback_weeks}
+        ).first()
 
-        # SQL query to calculate median easy pace
+        if cutoff_result:
+            current_date_utc = cutoff_result.current_date_utc
+            cutoff_date_utc = cutoff_result.cutoff_date_utc
+            logger.info(
+                f"[Pace Calculation Debug] PostgreSQL current date UTC: {current_date_utc}, "
+                f"Cutoff date (current date - {lookback_weeks} weeks): {cutoff_date_utc}"
+            )
+
+        # Calculate cutoff directly in PostgreSQL to ensure consistency across all environments
+        # Use DATE() to ensure cutoff is always at midnight UTC, making it consistent
+        # regardless of when the query runs (avoids time-of-day differences between local/prod)
         query = text(
             """
             WITH valid_runs AS (
                 SELECT
-                    moving_time::float / conv_distance AS pace_sec_per_mile
+                    moving_time::float / conv_distance AS pace_sec_per_mile,
+                    start_date
                 FROM activities
                 WHERE user_id = :user_id
                   AND type = 'Run'
-                  AND start_date >= :cutoff
+                  AND DATE(start_date AT TIME ZONE 'UTC') >= (DATE(NOW() AT TIME ZONE 'UTC') - make_interval(weeks => :lookback_weeks))
                   AND conv_distance >= :min_distance
                   AND moving_time IS NOT NULL
                   AND moving_time > 0
@@ -92,7 +133,9 @@ def calculate_paces_from_performance(
             )
             SELECT
                 PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pace_sec_per_mile) AS median_pace,
-                COUNT(*) AS run_count
+                COUNT(*) AS run_count,
+                MIN(start_date) AS earliest_run,
+                MAX(start_date) AS latest_run
             FROM valid_runs
         """
         )
@@ -101,7 +144,7 @@ def calculate_paces_from_performance(
             query,
             {
                 "user_id": user_id,
-                "cutoff": cutoff,
+                "lookback_weeks": lookback_weeks,
                 "min_distance": min_distance_miles,
                 "min_pace": config.MIN_PACE_SEC_PER_MILE,
                 "max_pace": config.MAX_PACE_SEC_PER_MILE,
@@ -129,7 +172,7 @@ def calculate_paces_from_performance(
         )
 
         # Calculate week1_long_cap from longest recent run
-        week1_long_cap = _calculate_week1_long_cap(session, user_id, cutoff)
+        week1_long_cap = _calculate_week1_long_cap(session, user_id, lookback_weeks)
 
         # Build all pace zones from median easy pace
         seed = _build_pace_zones_from_median(median_easy_pace, week1_long_cap)
@@ -166,7 +209,7 @@ def _build_pace_zones_from_median(
 
     Formula (from TARGET_PACE_EXPLAINER.md):
     - Easy: Median - 15 to + 45 seconds (conversational pace)
-    - Steady: Median - 15 to + 15 seconds (slightly faster)
+    - Steady: Median - 30 to - 10 seconds (moderate effort, between Easy and Marathon)
     - Marathon: Median - 60 seconds (race goal)
     - Threshold: Marathon - 20 to 30 seconds (hard efforts)
 
@@ -196,7 +239,7 @@ def _build_pace_zones_from_median(
 def _calculate_week1_long_cap(
     session: Session,
     user_id: str,
-    cutoff: datetime,
+    lookback_weeks: int,
 ) -> float:
     """
     Calculate max long run for week 1 from recent longest run.
@@ -204,7 +247,7 @@ def _calculate_week1_long_cap(
     Args:
         session: Database session
         user_id: User UUID string
-        cutoff: Date cutoff for looking back
+        lookback_weeks: Number of weeks to look back
 
     Returns:
         Maximum long run distance for week 1 (miles)
@@ -212,13 +255,16 @@ def _calculate_week1_long_cap(
     config = DEFAULT_CONFIG
 
     try:
+        # Calculate cutoff directly in PostgreSQL to ensure consistency
+        # Use DATE() to ensure cutoff is always at midnight UTC, making it consistent
+        # regardless of when the query runs (avoids time-of-day differences between local/prod)
         query = text(
             """
             SELECT conv_distance
             FROM activities
             WHERE user_id = :user_id
               AND type = 'Run'
-              AND start_date >= :cutoff
+              AND DATE(start_date AT TIME ZONE 'UTC') >= (DATE(NOW() AT TIME ZONE 'UTC') - make_interval(weeks => :lookback_weeks))
               AND conv_distance >= :min_distance
             ORDER BY conv_distance DESC
             LIMIT 1
@@ -229,7 +275,7 @@ def _calculate_week1_long_cap(
             query,
             {
                 "user_id": user_id,
-                "cutoff": cutoff,
+                "lookback_weeks": lookback_weeks,
                 "min_distance": config.MIN_RUN_FOR_LONG_CAP,
             },
         ).scalar()
