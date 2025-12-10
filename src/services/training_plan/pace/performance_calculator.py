@@ -47,7 +47,7 @@ def calculate_paces_from_performance(
 
     Formula (from TARGET_PACE_EXPLAINER.md):
     - Easy: Median - 15 to + 45 seconds
-    - Steady: Median - 15 to + 15 seconds
+    - Steady: Median - 30 to - 10 seconds (between Easy and Marathon)
     - Marathon: Median - 60 seconds
     - Threshold: Marathon - 20 to 30 seconds
 
@@ -224,7 +224,7 @@ def _build_pace_zones_from_median(
 
     Formula (from TARGET_PACE_EXPLAINER.md):
     - Easy: Median - 15 to + 45 seconds (conversational pace)
-    - Steady: Median - 15 to + 15 seconds (slightly faster)
+    - Steady: Median - 30 to - 10 seconds (moderate effort, between Easy and Marathon)
     - Marathon: Median - 60 seconds (race goal)
     - Threshold: Marathon - 20 to 30 seconds (hard efforts)
 
