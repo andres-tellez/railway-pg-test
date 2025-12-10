@@ -175,19 +175,19 @@ const Navigation: React.FC = () => {
               onClick={() => setShowProfileDropdown(!showProfileDropdown)}
               className="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-50 transition-colors min-w-0"
             >
-              {user?.picture ? (
-                <img
-                  src={user.picture}
-                  alt={user.name || 'User'}
-                  className="w-8 h-8 aspect-square rounded-full border border-gray-300 object-cover overflow-hidden block shrink-0"
-                />
-              ) : (
-                <div className="w-8 h-8 aspect-square rounded-full bg-gray-300 flex items-center justify-center overflow-hidden shrink-0">
+              <div className="w-8 h-8 shrink-0 inline-flex items-center justify-center rounded-full overflow-hidden border border-gray-300 bg-gray-300">
+                {user?.picture ? (
+                  <img
+                    src={user.picture}
+                    alt={user.name || 'User'}
+                    className="w-full h-full object-cover block"
+                  />
+                ) : (
                   <span className="text-gray-600 text-sm font-medium">
                     {user?.name?.charAt(0) || 'U'}
                   </span>
-                </div>
-              )}
+                )}
+              </div>
               {/* Hide text on mobile; show display name on desktop with truncation */}
               <span
                 className="hidden md:block text-sm font-medium text-gray-700 truncate max-w-[160px]"

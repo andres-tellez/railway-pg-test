@@ -241,10 +241,10 @@ const HomeScreen: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <button
                 onClick={handlePreviousWeek}
-                className="px-3 py-1 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                className="px-3 py-1 text-lg font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
                 aria-label="Previous week"
               >
-                ← Previous
+                ←
               </button>
 
               {/* Spacer: no week label */}
@@ -252,10 +252,10 @@ const HomeScreen: React.FC = () => {
 
               <button
                 onClick={handleNextWeek}
-                className="px-3 py-1 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
+                className="px-3 py-1 text-lg font-semibold text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
                 aria-label="Next week"
               >
-                Next →
+                →
               </button>
             </div>
 
