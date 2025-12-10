@@ -237,7 +237,7 @@ const UserProfile: React.FC = () => {
               isRequired={!profile.max_hr}
             />
             <div className="mb-4 pb-4 border-b last:border-b-0">
-              <div className="mt-2">
+              <div className="mt-2 space-y-2">
                 <Link
                   to="/heart-rate-zones"
                   className="text-sm text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
@@ -246,6 +246,15 @@ const UserProfile: React.FC = () => {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   What are HR zones?
+                </Link>
+                <Link
+                  to="/pace-zones"
+                  className="text-sm text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  What are pace zones?
                 </Link>
               </div>
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2 mt-4">

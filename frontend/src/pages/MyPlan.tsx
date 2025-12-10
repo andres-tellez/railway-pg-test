@@ -123,8 +123,17 @@ const WorkoutDetails: React.FC<{ workout: Workout }> = ({ workout }) => {
 
       {/* Target Zone */}
       {workout.target_zone && (
-        <div className="text-sm text-blue-700 font-medium">
+        <div className="text-sm text-blue-700 font-medium flex items-center gap-2">
           <span className="font-semibold">Target Pace:</span> {parseAndConvertPaceString(workout.target_zone, unitSystem)}
+          <Link
+            to="/pace-zones"
+            className="text-blue-600 hover:text-blue-800"
+            title="Learn about pace zones"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </Link>
         </div>
       )}
       {workout.target_hr && workout.target_zone && (
