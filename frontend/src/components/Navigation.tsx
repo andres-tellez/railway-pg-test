@@ -179,10 +179,10 @@ const Navigation: React.FC = () => {
                 <img
                   src={user.picture}
                   alt={user.name || 'User'}
-                  className="w-8 h-8 rounded-full border border-gray-300"
+                  className="w-8 h-8 aspect-square rounded-full border border-gray-300 object-cover"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                <div className="w-8 h-8 aspect-square rounded-full bg-gray-300 flex items-center justify-center">
                   <span className="text-gray-600 text-sm font-medium">
                     {user?.name?.charAt(0) || 'U'}
                   </span>
