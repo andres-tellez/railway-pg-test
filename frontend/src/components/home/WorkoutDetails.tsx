@@ -341,8 +341,17 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
               {workoutDistance}
             </div>
             {convertedTargetZone && (
-              <div className={WEEK_TIMELINE_STYLES.comparisonSubValue}>
+              <div className={`${WEEK_TIMELINE_STYLES.comparisonSubValue} flex items-center gap-1`}>
                 Target Pace: {convertedTargetZone}
+                <Link
+                  to="/pace-zones"
+                  className="text-blue-600 hover:text-blue-800"
+                  title="Learn about pace zones"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </Link>
               </div>
             )}
           </div>
@@ -410,8 +419,17 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
           {workoutDistance}
         </div>
         {convertedTargetZone && (
-          <div className="text-sm text-gray-600 mt-1">
+          <div className="text-sm text-gray-600 mt-1 flex items-center gap-1">
             Target Pace: {convertedTargetZone}
+            <Link
+              to="/pace-zones"
+              className="text-blue-600 hover:text-blue-800"
+              title="Learn about pace zones"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </Link>
           </div>
         )}
         {!hrZone && workout.target_hr && (
