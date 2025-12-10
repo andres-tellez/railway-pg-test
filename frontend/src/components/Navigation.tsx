@@ -112,8 +112,8 @@ const Navigation: React.FC = () => {
           {/* Left spacer (optional menu placeholder on mobile) */}
           <div className="w-10 flex items-center justify-start md:hidden" />
 
-          {/* Center: Brand (centered on mobile, left on desktop) */}
-          <div className="flex-1 flex items-center justify-center md:justify-start">
+          {/* Brand + Desktop Nav (centered on mobile, left-aligned on desktop) */}
+          <div className="flex-1 flex items-center justify-center md:justify-start md:space-x-8">
             <Link
               to={userState?.hasOnboarded ? '/home' : '/'}
               className="flex items-center space-x-2"
@@ -125,24 +125,24 @@ const Navigation: React.FC = () => {
                 SmartCoach
               </span>
             </Link>
-          </div>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-8">
-            {navItems.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                  isActive(item.path)
-                    ? 'text-blue-600 bg-blue-50'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
-              </Link>
-            ))}
+            {/* Desktop Navigation */}
+            <div className="hidden md:flex items-center space-x-8">
+              {navItems.map((item) => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  className={`flex items-center space-x-1 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    isActive(item.path)
+                      ? 'text-blue-600 bg-blue-50'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </div>
           </div>
 
           {/* Right: Profile/avatar */}
@@ -164,9 +164,9 @@ const Navigation: React.FC = () => {
                   </span>
                 </div>
               )}
-              {/* Hide email/name on mobile for cleanliness */}
+              {/* Hide text on mobile; show display name on desktop */}
               <span className="hidden md:block text-sm font-medium text-gray-700 truncate max-w-[140px]">
-                {user?.email || user?.name || 'User'}
+                {user?.name || user?.email || 'User'}
               </span>
               <svg
                 className="w-4 h-4 text-gray-400 hidden md:block"
