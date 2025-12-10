@@ -53,6 +53,7 @@ import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 import DateTestPage from "./pages/DateTestPage";
 import HeartRateZones from "./pages/HeartRateZones";
+import PaceZones from "./pages/PaceZones";
 
 import Layout from "./components/Layout";
 import PlanLayout from "./components/layout/PlanLayout";
@@ -169,6 +170,14 @@ export default function App() {
         element={
           <Layout>
             <HeartRateZones />
+          </Layout>
+        }
+      />
+      <Route
+        path="/pace-zones"
+        element={
+          <Layout>
+            <PaceZones />
           </Layout>
         }
       />
