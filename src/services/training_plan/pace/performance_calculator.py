@@ -124,7 +124,7 @@ def calculate_paces_from_performance(
                 FROM activities
                 WHERE user_id = :user_id
                   AND type = 'Run'
-                  AND start_date >= (DATE(NOW() AT TIME ZONE 'UTC') - make_interval(weeks => :lookback_weeks))
+                  AND DATE(start_date AT TIME ZONE 'UTC') >= (DATE(NOW() AT TIME ZONE 'UTC') - make_interval(weeks => :lookback_weeks))
                   AND conv_distance >= :min_distance
                   AND moving_time IS NOT NULL
                   AND moving_time > 0
@@ -279,7 +279,7 @@ def _calculate_week1_long_cap(
             FROM activities
             WHERE user_id = :user_id
               AND type = 'Run'
-              AND start_date >= (DATE(NOW() AT TIME ZONE 'UTC') - make_interval(weeks => :lookback_weeks))
+              AND DATE(start_date AT TIME ZONE 'UTC') >= (DATE(NOW() AT TIME ZONE 'UTC') - make_interval(weeks => :lookback_weeks))
               AND conv_distance >= :min_distance
             ORDER BY conv_distance DESC
             LIMIT 1
