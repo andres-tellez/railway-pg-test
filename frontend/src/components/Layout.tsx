@@ -48,24 +48,14 @@ const Layout: React.FC<LayoutProps> = ({
       <footer className="bg-white border-t border-gray-200 py-4">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex flex-col md:flex-row justify-between items-center gap-3">
-            {/* Legal Links */}
-            <div className="flex gap-4 text-xs text-gray-600">
+            {/* Legal Links (minimal set) */}
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 text-xs text-gray-600 text-center sm:text-left">
               <a href="/privacy-policy" className="hover:text-gray-900 hover:underline">
                 Privacy Policy
               </a>
-              <span className="text-gray-300">|</span>
               <a href="/terms-of-service" className="hover:text-gray-900 hover:underline">
                 Terms of Service
               </a>
-              <span className="text-gray-300">|</span>
-              <a href="/data-deletion" className="hover:text-gray-900 hover:underline">
-                Delete My Data
-              </a>
-              <span className="text-gray-300">|</span>
-              <a href="/data-usage" className="hover:text-gray-900 hover:underline">
-                Data Usage
-              </a>
-              <span className="text-gray-300">|</span>
               <a href="mailto:support@smartcoach.app" className="hover:text-gray-900 hover:underline">
                 Contact Support
               </a>

@@ -11,10 +11,16 @@
  * - Active page highlighting
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useApiClient } from '../utils/apiClient';
+
+const DEFAULT_NAV_ITEMS = [
+  { label: 'Training Plan', path: '/plan/overview', icon: '📊' },
+  { label: 'Metrics', path: '/metrics', icon: '📊' },
+  { label: 'Ask Coach', path: '/ask', icon: '💬' },
+];
 
 const Navigation: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuth0();
@@ -66,6 +72,18 @@ const Navigation: React.FC = () => {
     };
   }, [showProfileDropdown]);
 
+  // Close menus on Escape
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowMobileMenu(false);
+        setShowProfileDropdown(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleLogout = () => {
     logout({
       logoutParams: {
@@ -78,29 +96,24 @@ const Navigation: React.FC = () => {
     return location.pathname === path || location.pathname.startsWith(path);
   };
 
-  const navItems = [];
-
   // Add navigation items based on user state
-  // Don't show "Complete Profile" on setup or onboarding pages - they handle profile completion themselves
   const isOnSetupOrOnboarding = location.pathname === '/setup' || location.pathname === '/profile';
 
-  if (userState) {
-    if (userState.hasOnboarded) {
-      // Complete user - show full navigation
-      navItems.push(
-        { label: 'Training Plan', path: '/plan/overview', icon: '📊' },
-        { label: 'Metrics', path: '/metrics', icon: '📊' },
-        { label: 'Ask Coach', path: '/ask', icon: '💬' },
-        { label: 'Settings', path: '/settings', icon: '⚙️' }
-      );
-    } else if (userState.hasStrava && !isOnSetupOrOnboarding) {
-      // Has Strava but not onboarded - only show "Complete Profile" if not already on setup/profile pages
-      navItems.push(
-        { label: 'Complete Profile', path: '/profile', icon: '⚙️' }
-      );
+  const navItems = useMemo(() => {
+    if (!userState) {
+      return DEFAULT_NAV_ITEMS;
     }
-    // New users without Strava - no navigation items (they're on setup page)
-  }
+
+    if (userState.hasOnboarded) {
+      return DEFAULT_NAV_ITEMS;
+    }
+
+    if (userState.hasStrava && !isOnSetupOrOnboarding) {
+      return [{ label: 'Complete Profile', path: '/profile', icon: '⚙️' }];
+    }
+
+    return DEFAULT_NAV_ITEMS;
+  }, [userState, isOnSetupOrOnboarding]);
 
   if (!isAuthenticated) {
     return null; // Don't show navigation if not authenticated
@@ -109,9 +122,22 @@ const Navigation: React.FC = () => {
   return (
     <nav className="bg-white shadow-sm border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          {/* Logo and App Name */}
-          <div className="flex items-center">
+        <div className="flex items-center h-16">
+          {/* Mobile hamburger (hidden on desktop) */}
+          <div className="w-10 flex items-center justify-start">
+            <button
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              aria-label="Toggle navigation"
+              className="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50 md:hidden"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Brand (centered on mobile, left on desktop) */}
+          <div className="flex-1 flex items-center justify-center md:flex-none md:justify-start">
             <Link
               to={userState?.hasOnboarded ? '/home' : '/'}
               className="flex items-center space-x-2"
@@ -119,14 +145,14 @@ const Navigation: React.FC = () => {
               <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-sm">SC</span>
               </div>
-              <span className="text-xl font-semibold text-gray-900">
+              <span className="text-lg md:text-xl font-semibold text-gray-900">
                 SmartCoach
               </span>
             </Link>
           </div>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-8">
+          {/* Desktop Navigation - centered in remaining space */}
+          <div className="hidden md:flex flex-1 items-center justify-center space-x-8">
             {navItems.map((item) => (
               <Link
                 key={item.path}
@@ -143,11 +169,11 @@ const Navigation: React.FC = () => {
             ))}
           </div>
 
-          {/* User Profile Dropdown */}
-          <div className="relative" ref={profileDropdownRef}>
+          {/* Right: Profile/avatar */}
+          <div className="w-10 md:w-auto flex items-center justify-end relative" ref={profileDropdownRef}>
             <button
               onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-              className="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-50 transition-colors"
+              className="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-50 transition-colors min-w-0"
             >
               {user?.picture ? (
                 <img
@@ -162,11 +188,15 @@ const Navigation: React.FC = () => {
                   </span>
                 </div>
               )}
-              <span className="hidden md:block text-sm font-medium text-gray-700">
-                {user?.name || 'User'}
+              {/* Hide text on mobile; show display name on desktop with truncation */}
+              <span
+                className="hidden md:block text-sm font-medium text-gray-700 truncate max-w-[160px]"
+                title={user?.name || user?.email || 'User'}
+              >
+                {user?.name || user?.email || 'User'}
               </span>
               <svg
-                className="w-4 h-4 text-gray-400"
+                className="w-4 h-4 text-gray-400 hidden md:block"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -211,33 +241,27 @@ const Navigation: React.FC = () => {
               </div>
             )}
           </div>
-
-          {/* Mobile Menu Button */}
-          <div className="md:hidden">
-            <button
-              onClick={() => setShowMobileMenu(!showMobileMenu)}
-              className="p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-          </div>
         </div>
+      </div>
 
-        {/* Mobile Navigation Menu */}
-        {showMobileMenu && (
-          <div className="md:hidden border-t border-gray-200 py-4">
-            <div className="space-y-2">
+      {/* Mobile Navigation Menu (mobile only) */}
+      {showMobileMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/20 md:hidden"
+            onClick={() => setShowMobileMenu(false)}
+          />
+          <div className="fixed z-50 top-16 left-4 right-4 md:hidden bg-white border border-gray-200 rounded-lg shadow-lg">
+            <div className="py-2">
               {navItems.map((item) => (
                 <Link
                   key={item.path}
                   to={item.path}
                   onClick={() => setShowMobileMenu(false)}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium transition-colors ${
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     isActive(item.path)
                       ? 'text-blue-600 bg-blue-50'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
                   }`}
                 >
                   <span>{item.icon}</span>
@@ -246,15 +270,15 @@ const Navigation: React.FC = () => {
               ))}
               <button
                 onClick={handleLogout}
-                className="flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 w-full text-left"
+                className="w-full text-left flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50"
               >
                 <span>🚪</span>
                 <span>Sign out</span>
               </button>
             </div>
           </div>
-        )}
-      </div>
+        </>
+      )}
     </nav>
   );
 };
