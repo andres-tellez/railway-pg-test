@@ -382,12 +382,14 @@ def calculate_hr_zones_from_streams(
     """
     Calculate HR zone percentages from heartrate stream data.
 
-    Uses Strava-compatible HR zone thresholds:
+    Uses Strava-compatible HR zone thresholds from centralized constants:
     - Zone 1: 50-60% of max HR (Recovery)
     - Zone 2: 60-75% of max HR (Easy/Aerobic)
     - Zone 3: 75-85% of max HR (Threshold)
     - Zone 4: 85-95% of max HR (VO2 Max)
     - Zone 5: 95-100% of max HR (Neuromuscular)
+
+    Imported from src.utils.hr_zone_constants
 
     Args:
         heartrate_stream: List of heartrate values from stream
@@ -440,6 +442,9 @@ def calculate_hr_zones_from_streams(
 
     # Calculate time in each zone using Strava-compatible thresholds
     # HR values below 50% are excluded (not counted in any zone)
+    # Import HR zone thresholds from centralized constants
+    from src.utils.hr_zone_constants import HR_ZONE_THRESHOLDS
+
     zone_times = [0.0] * 5
     excluded_time = 0.0
     excluded_count = 0
@@ -466,17 +471,17 @@ def calculate_hr_zones_from_streams(
             hr_pct = hr / max_heartrate
 
             # Exclude HR below 50% (warmup/cooldown or invalid readings)
-            if hr_pct < 0.5:
+            if hr_pct < HR_ZONE_THRESHOLDS["Z1_MIN"]:
                 excluded_time += time_interval
                 excluded_count += 1
                 continue
-            elif hr_pct < 0.6:
+            elif hr_pct < HR_ZONE_THRESHOLDS["Z1_MAX"]:
                 zone_times[0] += time_interval  # Zone 1: 50-60%
-            elif hr_pct < 0.75:
+            elif hr_pct < HR_ZONE_THRESHOLDS["Z2_MAX"]:
                 zone_times[1] += time_interval  # Zone 2: 60-75%
-            elif hr_pct < 0.85:
+            elif hr_pct < HR_ZONE_THRESHOLDS["Z3_MAX"]:
                 zone_times[2] += time_interval  # Zone 3: 75-85%
-            elif hr_pct < 0.95:
+            elif hr_pct < HR_ZONE_THRESHOLDS["Z4_MAX"]:
                 zone_times[3] += time_interval  # Zone 4: 85-95%
             else:
                 zone_times[4] += time_interval  # Zone 5: 95-100%
@@ -486,16 +491,16 @@ def calculate_hr_zones_from_streams(
             hr_pct = hr / max_heartrate
 
             # Exclude HR below 50% (warmup/cooldown or invalid readings)
-            if hr_pct < 0.5:
+            if hr_pct < HR_ZONE_THRESHOLDS["Z1_MIN"]:
                 excluded_count += 1
                 continue
-            elif hr_pct < 0.6:
+            elif hr_pct < HR_ZONE_THRESHOLDS["Z1_MAX"]:
                 zone_times[0] += 1  # Zone 1: 50-60%
-            elif hr_pct < 0.75:
+            elif hr_pct < HR_ZONE_THRESHOLDS["Z2_MAX"]:
                 zone_times[1] += 1  # Zone 2: 60-75%
-            elif hr_pct < 0.85:
+            elif hr_pct < HR_ZONE_THRESHOLDS["Z3_MAX"]:
                 zone_times[2] += 1  # Zone 3: 75-85%
-            elif hr_pct < 0.95:
+            elif hr_pct < HR_ZONE_THRESHOLDS["Z4_MAX"]:
                 zone_times[3] += 1  # Zone 4: 85-95%
             else:
                 zone_times[4] += 1  # Zone 5: 95-100%

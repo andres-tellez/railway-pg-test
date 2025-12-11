@@ -14,7 +14,7 @@ import WelcomeModal from '../components/WelcomeModal';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import WeekDayButton from '../components/home/WeekDayButton';
 import ProgressBar from '../components/home/ProgressBar';
-import WorkoutDetails2 from '../components/home/WorkoutDetails2';
+import WorkoutDetails from '../components/home/WorkoutDetails';
 import {
   getThisWeekRange,
   processWeekData,
@@ -156,7 +156,7 @@ const HomeScreen2: React.FC = () => {
         localStorage.setItem('smartcoach_welcome_shown', 'true');
       }
       if (fromOnboarding) {
-        navigate('/home2', { replace: true });
+        navigate('/home', { replace: true });
       }
     }
   }, [searchParams, navigate]);
@@ -312,7 +312,7 @@ const HomeScreen2: React.FC = () => {
           {/* Details Panel - Show for both plan and no-plan scenarios */}
           {selectedDay && (
             <div className={WEEK_TIMELINE_STYLES.detailsPanel}>
-              <WorkoutDetails2
+              <WorkoutDetails
                 date={selectedDay.date}
                 dateStr={selectedDay.dateStr}
                 workout={selectedDay.workout}

@@ -101,14 +101,10 @@ def map_pace_zones(
     print(f"  • Max HR: {max_hr} bpm")
     print(f"  • Age: {age}")
 
-    # Standard Strava HR zones
-    hr_zones = {
-        "Z1": (0.50, 0.60),  # Recovery
-        "Z2": (0.60, 0.75),  # Easy/Aerobic
-        "Z3": (0.75, 0.85),  # Threshold
-        "Z4": (0.85, 0.95),  # VO2 Max
-        "Z5": (0.95, 1.00),  # Neuromuscular
-    }
+    # Import centralized HR zone definitions
+    from src.utils.hr_zone_constants import STRAVA_HR_ZONES
+
+    hr_zones = STRAVA_HR_ZONES
 
     # Get pace ranges for user's VDOT
     pace_dict = VDOT_TO_PACE.get(vdot, VDOT_TO_PACE[45])
@@ -143,11 +139,11 @@ def map_pace_zones(
                 continue
 
             # Map workout type to pace and HR zones
-            if workout_type in ["Threshold", "Tempo"]:
+            if workout_type in ["Steady", "Threshold", "Tempo"]:
                 pace_lo, pace_hi = pace_dict["Threshold"]
                 hr_lo, hr_hi = hr_zones["Z3"]
                 zone_desc = "Z3"
-                description = "Threshold/tempo pace - comfortably hard effort"
+                description = "Steady-state/threshold pace - comfortably hard effort"
 
             elif workout_type == "Marathon":
                 pace_lo, pace_hi = pace_dict["Marathon"]
@@ -171,8 +167,10 @@ def map_pace_zones(
 
             elif workout_type == "Race":
                 pace_lo, pace_hi = pace_dict["Marathon"]
-                hr_lo, hr_hi = hr_zones["Z4"]
-                zone_desc = "Race"
+                hr_lo, hr_hi = hr_zones[
+                    "Z3"
+                ]  # Changed from Z4 to Z3 for marathon training context
+                zone_desc = "Z3"
                 description = "Race day - trust your training and pacing"
 
             else:  # Easy, Recovery

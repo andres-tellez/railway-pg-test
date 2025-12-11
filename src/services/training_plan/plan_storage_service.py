@@ -38,6 +38,7 @@ from src.services.training_plan.workout_detail_rules import (
     FOCUS_TAGS,
     SEGMENT_SUM_TOLERANCE,
     QUALITY_ENABLED_PHASES,
+    PHASE,
 )
 from src.services.training_plan.pace import PaceSeed
 from src.services.training_plan.workout_types import TYPE_DISPLAY
@@ -345,14 +346,10 @@ class PlanStorageService:
         Returns:
             HR zone string like "Z2 (120-150 bpm)" or empty string if can't calculate
         """
-        # Standard Strava HR zones (as percentages)
-        hr_zones = {
-            "Z1": (0.50, 0.60),  # Recovery
-            "Z2": (0.60, 0.75),  # Easy/Aerobic
-            "Z3": (0.75, 0.85),  # Threshold
-            "Z4": (0.85, 0.95),  # VO2 Max
-            "Z5": (0.95, 1.00),  # Neuromuscular
-        }
+        # Import centralized HR zone definitions
+        from src.utils.hr_zone_constants import STRAVA_HR_ZONES
+
+        hr_zones = STRAVA_HR_ZONES
 
         # Map workout type to HR zone based on training philosophy
         # Reference: workout_types.py - INTENSITY_ZONE definitions
@@ -368,7 +365,9 @@ class PlanStorageService:
         elif run_type_lower in ["vo2", "intervals", "repetitions", "race"]:
             zone_key = "Z4"  # VO2 max intervals (85-95% max HR)
         elif run_type_lower in ["steady"]:
-            zone_key = "Z2"  # Aerobic steady (60-75% max HR) - controlled, not hard
+            zone_key = (
+                "Z3"  # Steady-state/threshold (75-85% max HR) - comfortably hard effort
+            )
         elif run_type_lower in ["long", "endurance"]:
             zone_key = "Z2"  # Easy/steady aerobic (60-75% max HR)
         else:  # easy, recovery, or default
@@ -428,8 +427,21 @@ class PlanStorageService:
 
         # Determine intensity from config
         intensity = INTENSITY_MAP.get(run_type_key, "E")
-        if run_type_key == "long" and PlanStorageService._has_marathon_finish(segments):
-            intensity = "M"  # Long run with M finish
+
+        # Phase-aware Long run intensity:
+        # - Base: Easy pace (E)
+        # - Build: Steady pace (S) - slightly faster than Easy
+        # - Peak: Easy pace (E) + optional M-finish segments (M)
+        # - Taper: Easy pace (E)
+        if run_type_key == "long":
+            if PlanStorageService._has_marathon_finish(segments):
+                intensity = "M"  # Long run with M finish (Peak phase) - overrides Build
+            elif phase == PHASE["BUILD"]:
+                intensity = "S"  # Long runs use Steady pace in Build phase
+            else:
+                intensity = (
+                    "E"  # Base, Peak (without M-finish), and Taper use Easy pace
+                )
 
         # Build pace_ranges from seed (integer seconds)
         pace_ranges = {
