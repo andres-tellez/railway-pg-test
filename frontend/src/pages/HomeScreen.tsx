@@ -49,8 +49,12 @@ const HomeScreen: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasPlan, setHasPlan] = useState<boolean>(true);
-  const [allActivities, setAllActivities] = useState<Activity[]>([]);
   const [planStartDate, setPlanStartDate] = useState<string | null>(null);
+
+  // Cached data - fetched once, filtered client-side
+  const [allWorkouts, setAllWorkouts] = useState<Workout[]>([]);
+  const [allActivities, setAllActivities] = useState<Activity[]>([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   // Track the current week being viewed (starts with this week)
   const [currentWeekStart, setCurrentWeekStart] = useState<string>(() => {
@@ -60,33 +64,28 @@ const HomeScreen: React.FC = () => {
   // Memoize week range calculation based on current week
   const weekRange = useMemo(() => getWeekRange(currentWeekStart), [currentWeekStart]);
 
-  // Fetch week data
+  // DATA LAYER: Fetch plan and activities once on mount
   useEffect(() => {
-    if (!isReady || !userId) return;
+    if (!isReady || !userId || dataLoaded) return;
 
-    const fetchWeekData = async () => {
+    const fetchInitialData = async () => {
       try {
         setLoading(true);
-        const { weekStart, weekEnd } = weekRange;
 
         // Fetch current plan and activities in parallel
-        let workouts: Workout[] = [];
+        let fetchedWorkouts: Workout[] = [];
         let planExists = false;
 
         try {
           const planRes = await api.get('/api/plan/current');
-          const allWorkouts = planRes.data.workouts || [];
+          fetchedWorkouts = planRes.data.workouts || [];
           // Store plan start date
           if (planRes.data.start_date) {
             setPlanStartDate(planRes.data.start_date);
           }
-          // Filter workouts for the current week being viewed
-          workouts = allWorkouts.filter((w: Workout) => {
-            const workoutDate = toDateString(w.date);
-            return workoutDate >= weekStart && workoutDate <= weekEnd;
-          });
           planExists = true;
           setHasPlan(true);
+          setAllWorkouts(fetchedWorkouts);
 
         } catch (planError: any) {
           // Check if it's a 404 (no plan) vs other error
@@ -94,13 +93,13 @@ const HomeScreen: React.FC = () => {
             planExists = false;
             setHasPlan(false);
             setPlanStartDate(null);
-            workouts = [];
+            setAllWorkouts([]);
           } else {
             // Other error - log it but continue
             console.error('Error fetching plan:', planError);
             setHasPlan(false);
             setPlanStartDate(null);
-            workouts = [];
+            setAllWorkouts([]);
           }
         }
 
@@ -109,41 +108,81 @@ const HomeScreen: React.FC = () => {
         const fetchedActivities: Activity[] = activitiesRes.data?.activities || [];
         setAllActivities(fetchedActivities);
 
-        // Filter activities for this week - SIMPLE string comparison
-        const weekActivities = fetchedActivities.filter((act: Activity) => {
-          const actDate = toDateString(act.date);
-          return actDate >= weekStart && actDate <= weekEnd;
-        });
-
-        // Process week data
-        const processedDays = processWeekData(workouts, weekActivities, weekStart, weekEnd);
-        setWeekDays(processedDays);
-
-        // Calculate progress
-        const progress = calculateWeeklyProgress(processedDays);
-
-        // Set selected date: prefer today if in this week, otherwise first day with workout, otherwise first day
-        const todayDay = processedDays.find((d) => d.isToday);
-        if (todayDay) {
-          setSelectedDate(todayDay.dateStr);
-        } else {
-          const firstWorkoutDay = processedDays.find((d) => d.workout);
-          if (firstWorkoutDay) {
-            setSelectedDate(firstWorkoutDay.dateStr);
-          } else if (processedDays.length > 0) {
-            // If no workouts, select first day of the week
-            setSelectedDate(processedDays[0].dateStr);
-          }
-        }
+        setDataLoaded(true);
       } catch (error) {
-        console.error('Failed to fetch week data:', error);
+        console.error('Failed to fetch initial data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchWeekData();
-  }, [isReady, userId, api, weekRange, currentWeekStart]);
+    fetchInitialData();
+  }, [isReady, userId, api, dataLoaded]);
+
+  // VIEW LAYER: Filter cached data by week (no API calls)
+  useEffect(() => {
+    if (!dataLoaded) return;
+
+    const { weekStart, weekEnd } = weekRange;
+
+    // Filter workouts for the current week being viewed
+    const weekWorkouts = allWorkouts.filter((w: Workout) => {
+      const workoutDate = toDateString(w.date);
+      return workoutDate >= weekStart && workoutDate <= weekEnd;
+    });
+
+    // Filter activities for this week - SIMPLE string comparison
+    const weekActivities = allActivities.filter((act: Activity) => {
+      const actDate = toDateString(act.date);
+      return actDate >= weekStart && actDate <= weekEnd;
+    });
+
+    // Process week data
+    const processedDays = processWeekData(weekWorkouts, weekActivities, weekStart, weekEnd);
+    setWeekDays(processedDays);
+
+    // Set selected date: prefer today if in this week, otherwise first day with workout, otherwise first day
+    const todayDay = processedDays.find((d) => d.isToday);
+    if (todayDay) {
+      setSelectedDate(todayDay.dateStr);
+    } else {
+      const firstWorkoutDay = processedDays.find((d) => d.workout);
+      if (firstWorkoutDay) {
+        setSelectedDate(firstWorkoutDay.dateStr);
+      } else if (processedDays.length > 0) {
+        // If no workouts, select first day of the week
+        setSelectedDate(processedDays[0].dateStr);
+      }
+    }
+  }, [dataLoaded, weekRange, allWorkouts, allActivities]);
+
+  // Refresh data when activities might have changed (e.g., after sync)
+  const refreshData = useCallback(async () => {
+    if (!isReady || !userId) return;
+
+    try {
+      // Refresh activities (plan rarely changes)
+      const activitiesRes = await api.get('/api/activities/');
+      const fetchedActivities: Activity[] = activitiesRes.data?.activities || [];
+      setAllActivities(fetchedActivities);
+    } catch (error) {
+      console.error('Failed to refresh activities:', error);
+    }
+  }, [isReady, userId, api]);
+
+  // Refresh activities when page becomes visible (user might have synced in another tab)
+  useEffect(() => {
+    if (!dataLoaded) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [dataLoaded, refreshData]);
 
   // Welcome modal logic
   useEffect(() => {
