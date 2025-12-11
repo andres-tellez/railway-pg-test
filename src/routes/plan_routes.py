@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, g, request
 from sqlalchemy.orm import joinedload
 import uuid
 import logging
+import re
 
 from src.db.db_session import get_session
 from src.db.models.plans import Plan
@@ -182,12 +183,9 @@ def get_current_plan():
         workouts_data = []
         for w in workouts:
             target_hr = w.target_hr
-            # Calculate HR zone if missing
-            if not target_hr and w.run_type_key:
-                target_hr = PlanStorageService._calculate_hr_zone(
-                    w.run_type_key, user_profile
-                )
-            elif not target_hr:
+            # Determine run_type_key for validation/recalculation
+            run_type_key = w.run_type_key
+            if not run_type_key:
                 # Try to infer from workout_type
                 workout_type_lower = (w.workout_type or "").lower()
                 if "threshold" in workout_type_lower or "tempo" in workout_type_lower:
@@ -200,9 +198,34 @@ def get_current_plan():
                     run_type_key = "easy"
                 else:
                     run_type_key = "easy"  # default
-                target_hr = PlanStorageService._calculate_hr_zone(
+
+            # Calculate HR zone if missing OR if existing zone doesn't match workout type
+            if not target_hr:
+                if run_type_key:
+                    target_hr = PlanStorageService._calculate_hr_zone(
+                        run_type_key, user_profile
+                    )
+            elif run_type_key:
+                # Validate existing target_hr matches expected zone for workout type
+                # Recalculate if zone is incorrect (e.g., Steady showing Z2 instead of Z3)
+                expected_hr = PlanStorageService._calculate_hr_zone(
                     run_type_key, user_profile
                 )
+                # Extract zone from stored and expected (e.g., "Z2" vs "Z3")
+                stored_zone_match = (
+                    re.search(r"Z[1-5]", target_hr) if target_hr else None
+                )
+                expected_zone_match = (
+                    re.search(r"Z[1-5]", expected_hr) if expected_hr else None
+                )
+                stored_zone = stored_zone_match.group(0) if stored_zone_match else None
+                expected_zone = (
+                    expected_zone_match.group(0) if expected_zone_match else None
+                )
+
+                # If zones don't match, use the correct one
+                if stored_zone != expected_zone:
+                    target_hr = expected_hr
 
             workouts_data.append(
                 {

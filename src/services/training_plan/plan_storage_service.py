@@ -345,14 +345,10 @@ class PlanStorageService:
         Returns:
             HR zone string like "Z2 (120-150 bpm)" or empty string if can't calculate
         """
-        # Standard Strava HR zones (as percentages)
-        hr_zones = {
-            "Z1": (0.50, 0.60),  # Recovery
-            "Z2": (0.60, 0.75),  # Easy/Aerobic
-            "Z3": (0.75, 0.85),  # Threshold
-            "Z4": (0.85, 0.95),  # VO2 Max
-            "Z5": (0.95, 1.00),  # Neuromuscular
-        }
+        # Import centralized HR zone definitions
+        from src.utils.hr_zone_constants import STRAVA_HR_ZONES
+
+        hr_zones = STRAVA_HR_ZONES
 
         # Map workout type to HR zone based on training philosophy
         # Reference: workout_types.py - INTENSITY_ZONE definitions
@@ -368,7 +364,9 @@ class PlanStorageService:
         elif run_type_lower in ["vo2", "intervals", "repetitions", "race"]:
             zone_key = "Z4"  # VO2 max intervals (85-95% max HR)
         elif run_type_lower in ["steady"]:
-            zone_key = "Z2"  # Aerobic steady (60-75% max HR) - controlled, not hard
+            zone_key = (
+                "Z3"  # Steady-state/threshold (75-85% max HR) - comfortably hard effort
+            )
         elif run_type_lower in ["long", "endurance"]:
             zone_key = "Z2"  # Easy/steady aerobic (60-75% max HR)
         else:  # easy, recovery, or default

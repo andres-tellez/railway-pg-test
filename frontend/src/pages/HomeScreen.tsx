@@ -1,7 +1,7 @@
 // @file HomeScreen.tsx
 // @component HomeScreen
-// @description: Week timeline view showing this week's workouts with details panel
-// @features: Interactive week timeline, workout details, completion status
+// @description: Week timeline view with improved workout details (WorkoutDetails)
+// @features: Interactive week timeline, improved workout details with visual range bars, completion status
 // @architecture: Optimized with useMemo, useCallback, and extracted components
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
