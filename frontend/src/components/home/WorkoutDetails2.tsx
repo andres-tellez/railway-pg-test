@@ -260,13 +260,12 @@ const WorkoutDetails2: React.FC<WorkoutDetailsProps> = memo(({
   // Memoized formatted values
   const activityDistance = useMemo(() => {
     if (!activity?.distance_miles) return null;
-    return formatDistance(activity.distance_miles, unitSystem, 1);
+    return formatDistanceNumber(activity.distance_miles, unitSystem);
   }, [activity?.distance_miles, unitSystem]);
 
   const workoutDistance = useMemo(() => {
     if (!workout?.miles) return null;
-    const formatted = formatDistanceNumber(workout.miles, unitSystem);
-    return `${formatted} ${unitSystem === 'metric' ? 'km' : 'mi'}`;
+    return formatDistanceNumber(workout.miles, unitSystem);
   }, [workout?.miles, unitSystem]);
 
   const activityPace = useMemo(() => {
@@ -469,11 +468,28 @@ const WorkoutDetails2: React.FC<WorkoutDetailsProps> = memo(({
           {displayWorkoutType}{hrZone && ` (Zone ${hrZone.replace(/Z/g, '')})`}
         </h3>
 
+        {/* Distance Card */}
+        <div className={WEEK_TIMELINE_STYLES.metricCard}>
+          <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3"}>
+            Distance ({unitSystem === 'metric' ? 'km' : 'mi'})
+          </div>
+          <div className={WEEK_TIMELINE_STYLES.actualValue + " text-gray-900"}>
+            {activityDistance}
+            {workout?.miles && (
+              <span className="text-sm text-gray-500 font-normal ml-1">
+                (planned: {formatDistanceNumber(workout.miles, unitSystem)})
+              </span>
+            )}
+          </div>
+        </div>
+
         {/* Pace Card */}
         {activityPace && paceRange && paceStatus && (
           <div className={WEEK_TIMELINE_STYLES.metricCard}>
             <div className="flex items-center justify-between mb-3">
-              <div className={WEEK_TIMELINE_STYLES.cardHeader}>Pace</div>
+              <div className={WEEK_TIMELINE_STYLES.cardHeader}>
+                Pace ({unitSystem === 'metric' ? 'min/km' : 'min/mi'})
+              </div>
               <div className={`flex items-center gap-2 ${paceStatus.status === 'perfect' ? 'text-green-600' : paceStatus.status === 'close' ? 'text-yellow-600' : 'text-red-600'}`}>
                 <span className={WEEK_TIMELINE_STYLES.statusIcon}>{paceStatus.icon}</span>
                 <span className={WEEK_TIMELINE_STYLES.statusLabel}>{paceStatus.label}</span>
@@ -495,7 +511,7 @@ const WorkoutDetails2: React.FC<WorkoutDetailsProps> = memo(({
         {hrRange && (
           <div className={WEEK_TIMELINE_STYLES.metricCard}>
             <div className="flex items-center justify-between mb-3">
-              <div className={WEEK_TIMELINE_STYLES.cardHeader}>Heart Rate</div>
+              <div className={WEEK_TIMELINE_STYLES.cardHeader}>Heart Rate (bpm)</div>
               {activity.average_heartrate && hrStatus ? (
                 <div className={`flex items-center gap-2 ${hrStatus.status === 'perfect' ? 'text-green-600' : hrStatus.status === 'close' ? 'text-yellow-600' : 'text-red-600'}`}>
                   <span className={WEEK_TIMELINE_STYLES.statusIcon}>{hrStatus.icon}</span>
@@ -547,13 +563,13 @@ const WorkoutDetails2: React.FC<WorkoutDetailsProps> = memo(({
                         className={`absolute ${WEEK_TIMELINE_STYLES.rangeLabel} transform -translate-x-1/2`}
                         style={{ left: `${barStart}%` }}
                       >
-                        {Math.round(hrRange.min)} bpm
+                        {Math.round(hrRange.min)}
                       </div>
                       <div
                         className={`absolute ${WEEK_TIMELINE_STYLES.rangeLabel} transform -translate-x-1/2`}
                         style={{ left: `${barStart + barWidth}%` }}
                       >
-                        {Math.round(hrRange.max)} bpm
+                        {Math.round(hrRange.max)}
                       </div>
                     </div>
                   </div>
@@ -562,14 +578,6 @@ const WorkoutDetails2: React.FC<WorkoutDetailsProps> = memo(({
             )}
           </div>
         )}
-
-        {/* Distance */}
-        <div className="mb-4">
-          <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-1"}>Distance</div>
-          <div className={WEEK_TIMELINE_STYLES.distanceValue}>
-            {activityDistance}
-          </div>
-        </div>
 
         {/* Strava link */}
         <a
@@ -584,34 +592,133 @@ const WorkoutDetails2: React.FC<WorkoutDetailsProps> = memo(({
     );
   }
 
-  // Upcoming workout
+  // Upcoming workout - use same card-based design as completed workouts
   const normalizedWorkoutType = normalizeWorkoutTypeDisplay(workout.workout_type || "") || workout.workout_type;
   const hrZone = extractHRZone(workout.target_hr);
+  // Display workout type clearly (e.g., "Easy Run" not just "EASY")
+  const displayWorkoutType = normalizedWorkoutType ? `${normalizedWorkoutType} Run` : 'Run';
 
   return (
     <div>
-      <h3 className={WEEK_TIMELINE_STYLES.detailsTitle}>
-        {normalizedWorkoutType}{hrZone && ` (${hrZone})`}
+      <h3 className={WEEK_TIMELINE_STYLES.workoutTypeTitle}>
+        {displayWorkoutType}{hrZone && ` (Zone ${hrZone.replace(/Z/g, '')})`}
       </h3>
-      <div className={WEEK_TIMELINE_STYLES.detailsSection}>
-        <div className="text-lg font-medium text-gray-900">
+
+      {/* Distance Card */}
+      <div className={WEEK_TIMELINE_STYLES.metricCard}>
+        <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3"}>
+          Distance ({unitSystem === 'metric' ? 'km' : 'mi'})
+        </div>
+        <div className={WEEK_TIMELINE_STYLES.actualValue + " text-gray-900"}>
           {workoutDistance}
         </div>
-        {convertedTargetZone && (
-          <div className="text-sm text-gray-600 mt-1 flex items-center gap-1">
-            Target Pace: {convertedTargetZone}
-            <Link
-              to="/pace-zones"
-              className="text-blue-600 hover:text-blue-800"
-              title="Learn about pace zones"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </Link>
-          </div>
-        )}
       </div>
+
+      {/* Pace Card */}
+      {paceRange && (
+        <div className={WEEK_TIMELINE_STYLES.metricCard}>
+          <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3"}>
+            Pace ({unitSystem === 'metric' ? 'min/km' : 'min/mi'})
+          </div>
+
+          {/* Show target range bar without marker */}
+          {(() => {
+            const range = paceRange.max - paceRange.min;
+            const extendedMin = paceRange.min - (range * 0.2);
+            const extendedMax = paceRange.max + (range * 0.2);
+            const extendedRange = extendedMax - extendedMin;
+            const barStart = ((paceRange.min - extendedMin) / extendedRange) * 100;
+            const barWidth = (range / extendedRange) * 100;
+
+            return (
+              <div className="mt-3">
+                <div className="relative h-10 mb-1">
+                  {/* Background line */}
+                  <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-gray-300 transform -translate-y-1/2"></div>
+
+                  {/* Target range bar */}
+                  <div
+                    className="absolute top-1/2 h-2 bg-blue-200 transform -translate-y-1/2 rounded"
+                    style={{
+                      left: `${barStart}%`,
+                      width: `${barWidth}%`,
+                    }}
+                  ></div>
+                </div>
+
+                {/* Target range labels at bar ends */}
+                <div className="relative h-4">
+                  <div
+                    className={`absolute ${WEEK_TIMELINE_STYLES.rangeLabel} transform -translate-x-1/2`}
+                    style={{ left: `${barStart}%` }}
+                  >
+                    {formatPaceWithoutUnits(paceRange.min, unitSystem)}
+                  </div>
+                  <div
+                    className={`absolute ${WEEK_TIMELINE_STYLES.rangeLabel} transform -translate-x-1/2`}
+                    style={{ left: `${barStart + barWidth}%` }}
+                  >
+                    {formatPaceWithoutUnits(paceRange.max, unitSystem)}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Heart Rate Card */}
+      {hrRange && (
+        <div className={WEEK_TIMELINE_STYLES.metricCard}>
+          <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3"}>Heart Rate (bpm)</div>
+
+          {/* Show target range bar without marker */}
+          {(() => {
+            const range = hrRange.max - hrRange.min;
+            const extendedMin = hrRange.min - (range * 0.2);
+            const extendedMax = hrRange.max + (range * 0.2);
+            const extendedRange = extendedMax - extendedMin;
+            const barStart = ((hrRange.min - extendedMin) / extendedRange) * 100;
+            const barWidth = (range / extendedRange) * 100;
+
+            return (
+              <div className="mt-3">
+                <div className="relative h-10 mb-1">
+                  {/* Background line */}
+                  <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-gray-300 transform -translate-y-1/2"></div>
+
+                  {/* Target range bar */}
+                  <div
+                    className="absolute top-1/2 h-2 bg-blue-200 transform -translate-y-1/2 rounded"
+                    style={{
+                      left: `${barStart}%`,
+                      width: `${barWidth}%`,
+                    }}
+                  ></div>
+                </div>
+
+                {/* Target range labels at bar ends */}
+                <div className="relative h-4">
+                  <div
+                    className={`absolute ${WEEK_TIMELINE_STYLES.rangeLabel} transform -translate-x-1/2`}
+                    style={{ left: `${barStart}%` }}
+                  >
+                    {Math.round(hrRange.min)}
+                  </div>
+                  <div
+                    className={`absolute ${WEEK_TIMELINE_STYLES.rangeLabel} transform -translate-x-1/2`}
+                    style={{ left: `${barStart + barWidth}%` }}
+                  >
+                    {Math.round(hrRange.max)}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Workout Structure - keep if exists */}
       {workout.segments?.steps && Array.isArray(workout.segments.steps) && (
         <div className={WEEK_TIMELINE_STYLES.detailsDivider}>
           <p className={WEEK_TIMELINE_STYLES.workoutStructureHeader}>Workout Structure:</p>
