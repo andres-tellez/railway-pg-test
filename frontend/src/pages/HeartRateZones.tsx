@@ -7,6 +7,87 @@ import { parseAndConvertPaceString } from '@/utils/unitFormatters';
 const HeartRateZones: React.FC = () => {
   const { unitSystem } = useUnitSystem();
 
+  const zones = [
+    {
+      icon: '🩵',
+      name: 'Z1 – Recovery',
+      mhr: '50–60%',
+      effort: 'Very Easy',
+      feel: 'Gentle pace • you can talk easily',
+      rowClass: 'hover:bg-blue-50',
+    },
+    {
+      icon: '💚',
+      name: 'Z2 – Endurance',
+      mhr: '60–70%',
+      effort: 'Easy',
+      feel: 'Steady pace • light breathing',
+      rowClass: 'hover:bg-green-50',
+    },
+    {
+      icon: '💛',
+      name: 'Z3 – Tempo',
+      mhr: '70–80%',
+      effort: 'Moderate',
+      feel: 'Breathing deeper • short phrases',
+      rowClass: 'hover:bg-yellow-50',
+    },
+    {
+      icon: '🧡',
+      name: 'Z4 – Threshold',
+      mhr: '80–90%',
+      effort: 'Hard',
+      feel: 'Sustained push • few words only',
+      rowClass: 'hover:bg-orange-50',
+    },
+    {
+      icon: '❤️',
+      name: 'Z5 – Max Effort',
+      mhr: '90–100%',
+      effort: 'Very Hard',
+      feel: "All-out • can't talk",
+      rowClass: 'hover:bg-red-50',
+    },
+  ];
+
+  const paceZones = [
+    {
+      icon: '🩵',
+      hr: 'Z1',
+      pace: parseAndConvertPaceString('10:30–12:00/mi', unitSystem),
+      type: 'Recovery runs, warm-ups',
+      rowClass: 'hover:bg-blue-50',
+    },
+    {
+      icon: '💚',
+      hr: 'Z2',
+      pace: parseAndConvertPaceString('9:10–10:30/mi', unitSystem),
+      type: 'Long runs, easy aerobic training',
+      rowClass: 'hover:bg-green-50',
+    },
+    {
+      icon: '💛',
+      hr: 'Z3',
+      pace: parseAndConvertPaceString('8:00–9:10/mi', unitSystem),
+      type: 'Tempo runs, steady efforts',
+      rowClass: 'hover:bg-yellow-50',
+    },
+    {
+      icon: '🧡',
+      hr: 'Z4',
+      pace: parseAndConvertPaceString('7:35–8:00/mi', unitSystem),
+      type: 'Intervals, hill repeats',
+      rowClass: 'hover:bg-orange-50',
+    },
+    {
+      icon: '❤️',
+      hr: 'Z5',
+      pace: `<${parseAndConvertPaceString('7:35/mi', unitSystem)}`,
+      type: 'Sprints, all-out efforts',
+      rowClass: 'hover:bg-red-50',
+    },
+  ];
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gray-50 py-8">
@@ -58,7 +139,8 @@ const HeartRateZones: React.FC = () => {
               Each zone represents a different intensity level. As your fitness improves, you'll be able to run faster while staying in the same zone.
             </p>
 
-            <div className="overflow-x-auto">
+            {/* Desktop table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-gray-50 border-b-2 border-gray-300">
@@ -69,53 +151,34 @@ const HeartRateZones: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="border-b border-gray-200 hover:bg-blue-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <span className="text-2xl">🩵</span>
-                      <span className="ml-2 font-semibold text-gray-900">Z1 – Recovery</span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">50–60%</td>
-                    <td className="py-4 px-4 text-gray-700">Very Easy</td>
-                    <td className="py-4 px-4 text-gray-600">Gentle pace • you can talk easily</td>
-                  </tr>
-                  <tr className="border-b border-gray-200 hover:bg-green-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <span className="text-2xl">💚</span>
-                      <span className="ml-2 font-semibold text-gray-900">Z2 – Endurance</span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">60–70%</td>
-                    <td className="py-4 px-4 text-gray-700">Easy</td>
-                    <td className="py-4 px-4 text-gray-600">Steady pace • light breathing</td>
-                  </tr>
-                  <tr className="border-b border-gray-200 hover:bg-yellow-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <span className="text-2xl">💛</span>
-                      <span className="ml-2 font-semibold text-gray-900">Z3 – Tempo</span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">70–80%</td>
-                    <td className="py-4 px-4 text-gray-700">Moderate</td>
-                    <td className="py-4 px-4 text-gray-600">Breathing deeper • short phrases</td>
-                  </tr>
-                  <tr className="border-b border-gray-200 hover:bg-orange-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <span className="text-2xl">🧡</span>
-                      <span className="ml-2 font-semibold text-gray-900">Z4 – Threshold</span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">80–90%</td>
-                    <td className="py-4 px-4 text-gray-700">Hard</td>
-                    <td className="py-4 px-4 text-gray-600">Sustained push • few words only</td>
-                  </tr>
-                  <tr className="border-b border-gray-200 hover:bg-red-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <span className="text-2xl">❤️</span>
-                      <span className="ml-2 font-semibold text-gray-900">Z5 – Max Effort</span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">90–100%</td>
-                    <td className="py-4 px-4 text-gray-700">Very Hard</td>
-                    <td className="py-4 px-4 text-gray-600">All-out • can't talk</td>
-                  </tr>
+                  {zones.map((z) => (
+                    <tr key={z.name} className={`border-b border-gray-200 transition-colors ${z.rowClass}`}>
+                      <td className="py-4 px-4">
+                        <span className="text-2xl">{z.icon}</span>
+                        <span className="ml-2 font-semibold text-gray-900">{z.name}</span>
+                      </td>
+                      <td className="py-4 px-4 text-gray-700 font-medium">{z.mhr}</td>
+                      <td className="py-4 px-4 text-gray-700">{z.effort}</td>
+                      <td className="py-4 px-4 text-gray-600">{z.feel}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="md:hidden space-y-4">
+              {zones.map((z) => (
+                <div key={z.name} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-2xl">{z.icon}</span>
+                    <div className="font-semibold text-gray-900">{z.name}</div>
+                  </div>
+                  <div className="text-sm text-gray-700 mb-1">% of MHR: {z.mhr}</div>
+                  <div className="text-sm text-gray-700 mb-1">Effort: {z.effort}</div>
+                  <div className="text-sm text-gray-600">How it feels: {z.feel}</div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -128,7 +191,8 @@ const HeartRateZones: React.FC = () => {
               Your pace and HR work together. HR shows effort, pace shows results. Over time, Strava learns how your body responds to different levels of effort. As your fitness improves, your HR stays lower at faster paces.
             </p>
 
-            <div className="overflow-x-auto">
+            {/* Desktop table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-gray-50 border-b-2 border-gray-300">
@@ -138,58 +202,34 @@ const HeartRateZones: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr className="border-b border-gray-200 hover:bg-blue-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <span className="text-2xl">🩵</span>
-                      <span className="ml-2 font-semibold text-gray-900">Z1</span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">
-                      {parseAndConvertPaceString('10:30–12:00/mi', unitSystem)}
-                    </td>
-                    <td className="py-4 px-4 text-gray-600">Recovery runs, warm-ups</td>
-                  </tr>
-                  <tr className="border-b border-gray-200 hover:bg-green-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <span className="text-2xl">💚</span>
-                      <span className="ml-2 font-semibold text-gray-900">Z2</span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">
-                      {parseAndConvertPaceString('9:10–10:30/mi', unitSystem)}
-                    </td>
-                    <td className="py-4 px-4 text-gray-600">Long runs, easy aerobic training</td>
-                  </tr>
-                  <tr className="border-b border-gray-200 hover:bg-yellow-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <span className="text-2xl">💛</span>
-                      <span className="ml-2 font-semibold text-gray-900">Z3</span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">
-                      {parseAndConvertPaceString('8:00–9:10/mi', unitSystem)}
-                    </td>
-                    <td className="py-4 px-4 text-gray-600">Tempo runs, steady efforts</td>
-                  </tr>
-                  <tr className="border-b border-gray-200 hover:bg-orange-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <span className="text-2xl">🧡</span>
-                      <span className="ml-2 font-semibold text-gray-900">Z4</span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">
-                      {parseAndConvertPaceString('7:35–8:00/mi', unitSystem)}
-                    </td>
-                    <td className="py-4 px-4 text-gray-600">Intervals, hill repeats</td>
-                  </tr>
-                  <tr className="border-b border-gray-200 hover:bg-red-50 transition-colors">
-                    <td className="py-4 px-4">
-                      <span className="text-2xl">❤️</span>
-                      <span className="ml-2 font-semibold text-gray-900">Z5</span>
-                    </td>
-                    <td className="py-4 px-4 text-gray-700 font-medium">
-                      &lt;{parseAndConvertPaceString('7:35/mi', unitSystem)}
-                    </td>
-                    <td className="py-4 px-4 text-gray-600">Sprints, all-out efforts</td>
-                  </tr>
+                  {paceZones.map((z) => (
+                    <tr key={z.hr} className={`border-b border-gray-200 transition-colors ${z.rowClass}`}>
+                      <td className="py-4 px-4">
+                        <span className="text-2xl">{z.icon}</span>
+                        <span className="ml-2 font-semibold text-gray-900">{z.hr}</span>
+                      </td>
+                      <td className="py-4 px-4 text-gray-700 font-medium">
+                        {z.pace}
+                      </td>
+                      <td className="py-4 px-4 text-gray-600">{z.type}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile cards */}
+            <div className="md:hidden space-y-4">
+              {paceZones.map((z) => (
+                <div key={z.hr} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-2xl">{z.icon}</span>
+                    <div className="font-semibold text-gray-900">{z.hr}</div>
+                  </div>
+                  <div className="text-sm text-gray-700 mb-1">Typical pace: {z.pace}</div>
+                  <div className="text-sm text-gray-600">Training type: {z.type}</div>
+                </div>
+              ))}
             </div>
           </div>
 
