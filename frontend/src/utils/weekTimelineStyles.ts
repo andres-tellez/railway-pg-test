@@ -19,14 +19,16 @@ export const WEEK_TIMELINE_STYLES = {
 
   // Day button states
   dayButtonDefault: "border-blue-300 hover:border-blue-400 bg-blue-50",
-  dayButtonSelected: "border-blue-600 bg-blue-100 shadow-md",
+  dayButtonSelected: "border-blue-600 bg-blue-600",
   dayButtonCompleted: "border-blue-300 bg-blue-50",
   dayButtonRest: "bg-gray-200 border-gray-300",
 
   // Day content
   dayName: "text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1 leading-tight",
+  dayNameSelected: "text-xs sm:text-sm font-medium text-white mb-0.5 sm:mb-1 leading-tight",
   dayNameRest: "text-xs sm:text-sm font-medium text-gray-500 mb-0.5 sm:mb-1 leading-tight",
   dayNumber: "text-sm sm:text-base md:text-lg font-semibold mb-0.5 sm:mb-1 leading-tight",
+  dayNumberSelected: "text-sm sm:text-base md:text-lg font-semibold text-white mb-0.5 sm:mb-1 leading-tight",
   dayNumberCompleted: "text-gray-900",
   dayNumberRest: "text-gray-500",
   dayNumberDefault: "text-gray-900",
@@ -40,16 +42,16 @@ export const WEEK_TIMELINE_STYLES = {
   workoutInfoRest: "text-xs text-gray-400 mt-1",
 
   // Progress section
-  progressSection: "border-t border-gray-200 pt-4 mt-4",
+  progressSection: "border-b border-gray-200 pb-4 mb-4",
   progressHeader: "flex justify-between items-center mb-2",
   progressLabel: "text-sm text-gray-600",
   progressValue: "text-sm font-semibold text-gray-900",
   progressBarContainer: "w-full bg-gray-200 rounded-full h-2 mb-2",
-  progressBarFill: "bg-blue-600 h-2 rounded-full transition-all duration-300",
+  progressBarFill: "bg-green-600 h-2 rounded-full transition-all duration-300",
   progressMiles: "text-sm text-gray-600",
 
   // Details panel
-  detailsPanel: "bg-white rounded-lg shadow-sm p-3 sm:p-4 md:p-6",
+  detailsPanel: "bg-white border-l-2 border-blue-600 rounded-lg shadow-sm p-3 sm:p-4 md:p-6",
   detailsTitle: "text-2xl font-semibold text-gray-900 mb-4",
   detailsSubtitle: "text-lg font-medium text-gray-900",
   detailsText: "text-base text-gray-600",
@@ -168,10 +170,14 @@ export function getDayButtonClasses(
  */
 export function getDayNumberClasses(
   isCompleted: boolean,
-  isRestDay: boolean
+  isRestDay: boolean,
+  isSelected?: boolean
 ): string {
   const base = WEEK_TIMELINE_STYLES.dayNumber;
 
+  if (isSelected) {
+    return WEEK_TIMELINE_STYLES.dayNumberSelected;
+  }
   if (isCompleted && !isRestDay) {
     return `${base} ${WEEK_TIMELINE_STYLES.dayNumberCompleted}`;
   }
@@ -184,7 +190,10 @@ export function getDayNumberClasses(
 /**
  * Get day name classes based on state
  */
-export function getDayNameClasses(isRestDay: boolean): string {
+export function getDayNameClasses(isRestDay: boolean, isSelected?: boolean): string {
+  if (isSelected) {
+    return WEEK_TIMELINE_STYLES.dayNameSelected;
+  }
   if (isRestDay) {
     return WEEK_TIMELINE_STYLES.dayNameRest;
   }
