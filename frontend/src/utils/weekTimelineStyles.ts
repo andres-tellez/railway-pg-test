@@ -15,7 +15,7 @@ export const WEEK_TIMELINE_STYLES = {
   dayGrid: "grid grid-cols-7 gap-1 sm:gap-2 md:gap-3 mb-4",
 
   // Day button base
-  dayButtonBase: "p-1.5 sm:p-2 md:p-3 rounded-lg border-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 sm:focus:ring-offset-2 min-w-0 flex flex-col items-center justify-center relative",
+  dayButtonBase: "p-1.5 sm:p-2 md:p-3 rounded-lg border-2 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 sm:focus:ring-offset-2 min-w-0 flex flex-col items-center justify-center relative min-h-[44px] min-w-[44px] sm:min-h-[48px] sm:min-w-[48px]",
 
   // Day button states
   dayButtonDefault: "border-blue-300 hover:border-blue-400 bg-blue-50",
@@ -107,6 +107,33 @@ export const WEEK_TIMELINE_STYLES = {
   recentActivityItem: "bg-gray-50 rounded-lg p-3 mb-2",
   recentActivityName: "text-sm font-medium text-gray-900 mb-1",
   recentActivityDetails: "text-xs text-gray-600",
+
+  // ============================================================================
+  // STANDARDIZED TYPOGRAPHY FOR HOME PAGE
+  // ============================================================================
+
+  // Workout Type Title
+  workoutTypeTitle: "text-2xl font-bold text-gray-900 mb-1",
+  workoutTypeSubtitle: "text-sm font-normal text-gray-600 mb-4",
+
+  // Card Headers (Pace, Heart Rate, Distance)
+  cardHeader: "text-base font-semibold text-gray-700",
+
+  // Status Labels (Perfect, Close, Off Target)
+  statusLabel: "text-sm font-semibold",
+  statusIcon: "text-lg font-bold",
+
+  // Actual Values (above range bar)
+  actualValue: "text-base font-bold",
+
+  // Range Labels (below bar ends)
+  rangeLabel: "text-xs font-normal text-gray-600",
+
+  // Distance Value
+  distanceValue: "text-lg font-medium text-gray-900",
+
+  // Card Container
+  metricCard: "border border-gray-200 rounded-lg p-4 mb-4 bg-white",
 } as const;
 
 /**
@@ -115,7 +142,8 @@ export const WEEK_TIMELINE_STYLES = {
 export function getDayButtonClasses(
   isSelected: boolean,
   isCompleted: boolean,
-  isRestDay: boolean
+  isRestDay: boolean,
+  isToday?: boolean
 ): string {
   const base = WEEK_TIMELINE_STYLES.dayButtonBase;
 
@@ -127,6 +155,10 @@ export function getDayButtonClasses(
   }
   if (isRestDay) {
     return `${base} ${WEEK_TIMELINE_STYLES.dayButtonRest}`;
+  }
+  // Add subtle highlight for today if not selected
+  if (isToday && !isSelected) {
+    return `${base} ${WEEK_TIMELINE_STYLES.dayButtonDefault} ring-2 ring-blue-400 ring-offset-1`;
   }
   return `${base} ${WEEK_TIMELINE_STYLES.dayButtonDefault}`;
 }

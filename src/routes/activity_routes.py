@@ -102,7 +102,8 @@ def get_activities():
                 distance,
                 moving_time,
                 name,
-                type
+                type,
+                average_heartrate
             FROM public.activities
             WHERE athlete_id = :aid
             AND start_date >= NOW() - INTERVAL '30 days'
@@ -126,6 +127,7 @@ def get_activities():
                 "moving_time": row[3],
                 "name": row[4],
                 "type": row[5],
+                "average_heartrate": float(row[6]) if row[6] is not None else None,
             }
             for row in activities_result
         ]
