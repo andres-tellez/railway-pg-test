@@ -1,7 +1,7 @@
-// @file HomeScreen.tsx
-// @component HomeScreen
-// @description: Week timeline view showing this week's workouts with details panel
-// @features: Interactive week timeline, workout details, completion status
+// @file HomeScreen2.tsx
+// @component HomeScreen2
+// @description: Week timeline view with improved workout details (WorkoutDetails2)
+// @features: Interactive week timeline, improved workout details with visual range bars, completion status
 // @architecture: Optimized with useMemo, useCallback, and extracted components
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -14,7 +14,7 @@ import WelcomeModal from '../components/WelcomeModal';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import WeekDayButton from '../components/home/WeekDayButton';
 import ProgressBar from '../components/home/ProgressBar';
-import WorkoutDetails from '../components/home/WorkoutDetails';
+import WorkoutDetails2 from '../components/home/WorkoutDetails2';
 import {
   getThisWeekRange,
   processWeekData,
@@ -38,7 +38,7 @@ import { WEEK_TIMELINE_STYLES } from '../utils/weekTimelineStyles';
 import '../utils/dateTestUtils';
 import MaxHrBanner from '../components/MaxHrBanner';
 
-const HomeScreen: React.FC = () => {
+const HomeScreen2: React.FC = () => {
   const { isReady, userId } = useAuthSetup();
   const api = useApiClient();
   const navigate = useNavigate();
@@ -156,7 +156,7 @@ const HomeScreen: React.FC = () => {
         localStorage.setItem('smartcoach_welcome_shown', 'true');
       }
       if (fromOnboarding) {
-        navigate('/home', { replace: true });
+        navigate('/home2', { replace: true });
       }
     }
   }, [searchParams, navigate]);
@@ -312,7 +312,7 @@ const HomeScreen: React.FC = () => {
           {/* Details Panel - Show for both plan and no-plan scenarios */}
           {selectedDay && (
             <div className={WEEK_TIMELINE_STYLES.detailsPanel}>
-              <WorkoutDetails
+              <WorkoutDetails2
                 date={selectedDay.date}
                 dateStr={selectedDay.dateStr}
                 workout={selectedDay.workout}
@@ -336,4 +336,4 @@ const HomeScreen: React.FC = () => {
   );
 };
 
-export default HomeScreen;
+export default HomeScreen2;

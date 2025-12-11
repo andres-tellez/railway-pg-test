@@ -12,6 +12,7 @@ interface WeekDayButtonProps {
   isSelected: boolean;
   isCompleted: boolean;
   isRestDay: boolean;
+  isToday?: boolean;
   workout?: {
     miles: number;
     workout_type: string;
@@ -25,6 +26,7 @@ const WeekDayButton: React.FC<WeekDayButtonProps> = memo(({
   isSelected,
   isCompleted,
   isRestDay,
+  isToday,
   workout,
   onClick,
 }) => {
@@ -40,8 +42,8 @@ const WeekDayButton: React.FC<WeekDayButtonProps> = memo(({
   return (
     <button
       onClick={handleClick}
-      className={getDayButtonClasses(isSelected, isCompleted, isRestDay)}
-      aria-label={`${dayNameFull} ${dayNum}${workout ? ` - ${workout.workout_type}` : ''}`}
+      className={getDayButtonClasses(isSelected, isCompleted, isRestDay, isToday)}
+      aria-label={`${dayNameFull} ${dayNum}${workout ? ` - ${workout.workout_type}` : ''}${isToday ? ' - Today' : ''}`}
       aria-pressed={isSelected}
     >
       <div className={getDayNameClasses(isRestDay)}>
