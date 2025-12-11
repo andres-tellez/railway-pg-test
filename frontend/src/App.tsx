@@ -39,6 +39,7 @@ import PlanOverviewTable from "./pages/PlanOverviewTable";
 import SetupPage from "./pages/LandingPage";
 import PostOAuth from "./pages/PostOAuth";
 import HomeScreen from "./pages/HomeScreen";
+import HomeScreen2 from "./pages/HomeScreen2";
 import AskGptMvpUI from "./pages/AskGptMvpUI";
 import AuthTestPage from "./pages/AuthTestPage";
 import WelcomePage from "./pages/WelcomePage";
@@ -186,6 +187,14 @@ export default function App() {
         element={
           <Layout>
             <HomeScreen />
+          </Layout>
+        }
+      />
+      <Route
+        path="/home2"
+        element={
+          <Layout>
+            <HomeScreen2 />
           </Layout>
         }
       />

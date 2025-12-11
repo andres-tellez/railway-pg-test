@@ -359,20 +359,6 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
           </div>
         </div>
 
-        {/* Coach's Note */}
-        <div className={WEEK_TIMELINE_STYLES.coachNoteSection}>
-          <div className={WEEK_TIMELINE_STYLES.coachNoteHeader}>
-            <span className={WEEK_TIMELINE_STYLES.coachNoteIcon}>💬</span>
-            <h4 className={WEEK_TIMELINE_STYLES.coachNoteTitle}>Coach's Note</h4>
-          </div>
-          <p className={WEEK_TIMELINE_STYLES.coachNoteText}>
-            Analysis coming soon! We'll provide personalized feedback on your workout performance.
-          </p>
-          <Link to="/ask" className={WEEK_TIMELINE_STYLES.coachNoteLink}>
-            Ask the coach about this workout →
-          </Link>
-        </div>
-
         {/* Strava link */}
         <a
           href={`https://www.strava.com/activities/${activity.activity_id}`}
