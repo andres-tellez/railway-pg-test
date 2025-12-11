@@ -470,8 +470,9 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
 
         {/* Distance Card */}
         <div className={WEEK_TIMELINE_STYLES.metricCard}>
-          <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3"}>
-            Distance ({unitSystem === 'metric' ? 'km' : 'mi'})
+          <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3 flex items-center gap-2"}>
+            <span aria-hidden="true">📏</span>
+            <span>Distance ({unitSystem === 'metric' ? 'km' : 'mi'})</span>
           </div>
           <div className={WEEK_TIMELINE_STYLES.actualValue + " text-gray-900"}>
             {activityDistance}
@@ -486,15 +487,18 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
         {/* Pace Card */}
         {activityPace && paceRange && paceStatus && (
           <div className={WEEK_TIMELINE_STYLES.metricCard}>
-            <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <span aria-hidden="true">⏱️</span>
               <div className={WEEK_TIMELINE_STYLES.cardHeader}>
                 Pace ({unitSystem === 'metric' ? 'min/km' : 'min/mi'})
               </div>
-              <div className={`flex items-center gap-2 ${paceStatus.status === 'perfect' ? 'text-green-600' : paceStatus.status === 'close' ? 'text-yellow-600' : 'text-red-600'}`}>
-                <span className={WEEK_TIMELINE_STYLES.statusIcon}>{paceStatus.icon}</span>
-                <span className={WEEK_TIMELINE_STYLES.statusLabel}>{paceStatus.label}</span>
-              </div>
             </div>
+            <div className={`flex items-center gap-2 ${paceStatus.status === 'perfect' ? 'text-green-600' : paceStatus.status === 'close' ? 'text-yellow-600' : 'text-red-600'}`}>
+              <span className={WEEK_TIMELINE_STYLES.statusIcon}>{paceStatus.icon}</span>
+              <span className={WEEK_TIMELINE_STYLES.statusLabel}>{paceStatus.label}</span>
+            </div>
+          </div>
 
             <RangeBar
               min={paceRange.min}
@@ -510,16 +514,24 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
         {/* Heart Rate Card */}
         {hrRange && (
           <div className={WEEK_TIMELINE_STYLES.metricCard}>
-            <div className="flex items-center justify-between mb-3">
-              <div className={WEEK_TIMELINE_STYLES.cardHeader}>Heart Rate (bpm)</div>
-              {activity.average_heartrate && hrStatus ? (
-                <div className={`flex items-center gap-2 ${hrStatus.status === 'perfect' ? 'text-green-600' : hrStatus.status === 'close' ? 'text-yellow-600' : 'text-red-600'}`}>
-                  <span className={WEEK_TIMELINE_STYLES.statusIcon}>{hrStatus.icon}</span>
-                  <span className={WEEK_TIMELINE_STYLES.statusLabel}>{hrStatus.label}</span>
-                </div>
-              ) : (
-                <div className={`${WEEK_TIMELINE_STYLES.statusLabel} text-gray-500`}>No data</div>
-              )}
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <span aria-hidden="true">💓</span>
+                <div className={WEEK_TIMELINE_STYLES.cardHeader}>Heart Rate (bpm)</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Link to="/heart-rate-zones" className="text-sm text-blue-600 hover:underline whitespace-nowrap">
+                  HR zones →
+                </Link>
+                {activity.average_heartrate && hrStatus ? (
+                  <div className={`flex items-center gap-2 ${hrStatus.status === 'perfect' ? 'text-green-600' : hrStatus.status === 'close' ? 'text-yellow-600' : 'text-red-600'}`}>
+                    <span className={WEEK_TIMELINE_STYLES.statusIcon}>{hrStatus.icon}</span>
+                    <span className={WEEK_TIMELINE_STYLES.statusLabel}>{hrStatus.label}</span>
+                  </div>
+                ) : (
+                  <div className={`${WEEK_TIMELINE_STYLES.statusLabel} text-gray-500`}>No data</div>
+                )}
+              </div>
             </div>
 
             {activity.average_heartrate ? (
@@ -606,8 +618,9 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
 
       {/* Distance Card */}
       <div className={WEEK_TIMELINE_STYLES.metricCard}>
-        <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3"}>
-          Distance ({unitSystem === 'metric' ? 'km' : 'mi'})
+        <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3 flex items-center gap-2"}>
+          <span aria-hidden="true">📏</span>
+          <span>Distance ({unitSystem === 'metric' ? 'km' : 'mi'})</span>
         </div>
         <div className={WEEK_TIMELINE_STYLES.actualValue + " text-gray-900"}>
           {workoutDistance}
@@ -616,10 +629,13 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
 
       {/* Pace Card */}
       {paceRange && (
-        <div className={WEEK_TIMELINE_STYLES.metricCard}>
-          <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3"}>
-            Pace ({unitSystem === 'metric' ? 'min/km' : 'min/mi'})
-          </div>
+          <div className={WEEK_TIMELINE_STYLES.metricCard}>
+            <div className="flex items-center gap-2 mb-3">
+              <span aria-hidden="true">⏱️</span>
+              <div className={WEEK_TIMELINE_STYLES.cardHeader}>
+                Pace ({unitSystem === 'metric' ? 'min/km' : 'min/mi'})
+              </div>
+            </div>
 
           {/* Show target range bar without marker */}
           {(() => {
@@ -670,7 +686,15 @@ const WorkoutDetails: React.FC<WorkoutDetailsProps> = memo(({
       {/* Heart Rate Card */}
       {hrRange && (
         <div className={WEEK_TIMELINE_STYLES.metricCard}>
-          <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3"}>Heart Rate (bpm)</div>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <span aria-hidden="true">💓</span>
+              <div className={WEEK_TIMELINE_STYLES.cardHeader}>Heart Rate (bpm)</div>
+            </div>
+            <Link to="/heart-rate-zones" className="text-sm text-blue-600 hover:underline whitespace-nowrap">
+              HR zones →
+            </Link>
+          </div>
 
           {/* Show target range bar without marker */}
           {(() => {
