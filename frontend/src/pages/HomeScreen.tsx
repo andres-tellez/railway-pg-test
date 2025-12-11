@@ -237,6 +237,16 @@ const HomeScreen: React.FC = () => {
           <MaxHrBanner />
           {/* Week Timeline */}
           <div className={`${WEEK_TIMELINE_STYLES.container} ${WEEK_TIMELINE_STYLES.containerPadding} mb-6`}>
+            {/* Progress Summary - Only show if plan exists - Moved to top */}
+            {hasPlan && (
+              <ProgressBar
+                completed={weeklyProgress.completed}
+                total={weeklyProgress.total}
+                milesCompleted={weeklyProgress.milesCompleted}
+                milesTotal={weeklyProgress.milesTotal}
+              />
+            )}
+
             {/* Week Navigation Header */}
             <div className="flex items-center justify-between mb-4">
               <button
@@ -296,16 +306,6 @@ const HomeScreen: React.FC = () => {
                 />
               ))}
             </div>
-
-            {/* Progress Summary - Only show if plan exists */}
-            {hasPlan && (
-              <ProgressBar
-                completed={weeklyProgress.completed}
-                total={weeklyProgress.total}
-                milesCompleted={weeklyProgress.milesCompleted}
-                milesTotal={weeklyProgress.milesTotal}
-              />
-            )}
           </div>
 
 

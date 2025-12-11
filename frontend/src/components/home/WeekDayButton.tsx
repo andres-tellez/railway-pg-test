@@ -46,11 +46,11 @@ const WeekDayButton: React.FC<WeekDayButtonProps> = memo(({
       aria-label={`${dayNameFull} ${dayNum}${workout ? ` - ${workout.workout_type}` : ''}${isToday ? ' - Today' : ''}`}
       aria-pressed={isSelected}
     >
-      <div className={getDayNameClasses(isRestDay)}>
+      <div className={getDayNameClasses(isRestDay, isSelected)}>
         <span className="hidden sm:inline">{dayNameFull}</span>
         <span className="sm:hidden">{dayNameShort}</span>
       </div>
-      <div className={getDayNumberClasses(isCompleted, isRestDay)}>
+      <div className={getDayNumberClasses(isCompleted, isRestDay, isSelected)}>
         {dayNum}
       </div>
 
