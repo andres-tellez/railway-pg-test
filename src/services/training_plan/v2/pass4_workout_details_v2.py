@@ -901,6 +901,17 @@ def _detail_run(
             and distance_mi >= MARATHON_FINISH["min_lr_mi"]
         )
 
+        # Phase-aware Long run pace:
+        # - Base: Easy pace (E)
+        # - Build: Steady pace (S) - slightly faster than Easy
+        # - Peak: Easy pace (E) + optional M-finish segments
+        # - Taper: Easy pace (E)
+        use_steady_pace = phase == PHASE["BUILD"] and not m_finish_enabled
+        long_pace_min = seed.S_min if use_steady_pace else seed.E_min
+        long_pace_max = seed.S_max if use_steady_pace else seed.E_max
+        long_intensity = "STEADY" if use_steady_pace else "EASY"
+        long_name = "Long Steady" if use_steady_pace else "Long Easy"
+
         if m_finish_enabled:
             # Fix rounding to avoid drift
             finish_raw = distance_mi * MARATHON_FINISH["finish_fraction"]
@@ -931,17 +942,23 @@ def _detail_run(
         else:
             steps = [
                 {
-                    "name": "Long Easy",
+                    "name": long_name,
                     "durationType": "DISTANCE",
                     "value": distance_mi,
-                    "target": _fmt_range_dict(seed.E_min, seed.E_max),
-                    "intensity": "EASY",
+                    "target": _fmt_range_dict(long_pace_min, long_pace_max),
+                    "intensity": long_intensity,
                 }
             ]
-            cues.append(
-                "Keep it easy; practice fueling every 30–40 min. "
-                "Conversational effort throughout."
-            )
+            if use_steady_pace:
+                cues.append(
+                    "Steady long run at moderate effort; practice fueling every 30–40 min. "
+                    "Slightly faster than easy pace but still comfortable."
+                )
+            else:
+                cues.append(
+                    "Keep it easy; practice fueling every 30–40 min. "
+                    "Conversational effort throughout."
+                )
     else:
         # Fallback for unknown types
         steps = [

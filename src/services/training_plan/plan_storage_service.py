@@ -38,6 +38,7 @@ from src.services.training_plan.workout_detail_rules import (
     FOCUS_TAGS,
     SEGMENT_SUM_TOLERANCE,
     QUALITY_ENABLED_PHASES,
+    PHASE,
 )
 from src.services.training_plan.pace import PaceSeed
 from src.services.training_plan.workout_types import TYPE_DISPLAY
@@ -426,8 +427,21 @@ class PlanStorageService:
 
         # Determine intensity from config
         intensity = INTENSITY_MAP.get(run_type_key, "E")
-        if run_type_key == "long" and PlanStorageService._has_marathon_finish(segments):
-            intensity = "M"  # Long run with M finish
+
+        # Phase-aware Long run intensity:
+        # - Base: Easy pace (E)
+        # - Build: Steady pace (S) - slightly faster than Easy
+        # - Peak: Easy pace (E) + optional M-finish segments (M)
+        # - Taper: Easy pace (E)
+        if run_type_key == "long":
+            if PlanStorageService._has_marathon_finish(segments):
+                intensity = "M"  # Long run with M finish (Peak phase) - overrides Build
+            elif phase == PHASE["BUILD"]:
+                intensity = "S"  # Long runs use Steady pace in Build phase
+            else:
+                intensity = (
+                    "E"  # Base, Peak (without M-finish), and Taper use Easy pace
+                )
 
         # Build pace_ranges from seed (integer seconds)
         pace_ranges = {
