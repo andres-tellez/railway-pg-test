@@ -563,11 +563,16 @@ const WorkoutDetails2: React.FC<WorkoutDetailsProps> = memo(({
           </div>
         )}
 
-        {/* Distance */}
-        <div className="mb-4">
-          <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-1"}>Distance</div>
-          <div className={WEEK_TIMELINE_STYLES.distanceValue}>
+        {/* Distance Card */}
+        <div className={WEEK_TIMELINE_STYLES.metricCard}>
+          <div className={WEEK_TIMELINE_STYLES.cardHeader + " mb-3"}>Distance</div>
+          <div className={WEEK_TIMELINE_STYLES.actualValue + " text-gray-900"}>
             {activityDistance}
+            {workout?.miles && (
+              <span className="text-sm text-gray-500 font-normal ml-1">
+                (planned: {workout.miles.toFixed(1)} mi)
+              </span>
+            )}
           </div>
         </div>
 
