@@ -93,11 +93,13 @@ class HalfMarathonConfig(RaceDistanceConfig):
         - 3 days: 35-45% (target 40%)
         - 4 days: 30-40% (target 35%)
         - 5 days: 25-35% (target 30%)
+        - 6 days: 20-25% (target 23%)
         """
         return {
             3: (0.35, 0.45),
             4: (0.30, 0.40),
             5: (0.25, 0.35),
+            6: (0.20, 0.25),
         }
 
     @property
@@ -109,11 +111,13 @@ class HalfMarathonConfig(RaceDistanceConfig):
         - 3 days: 32 mi peak
         - 4 days: 38 mi peak
         - 5 days: 42 mi peak
+        - 6 days: 48 mi peak
         """
         return {
             3: 32,
             4: 38,
             5: 42,
+            6: 48,
         }
 
     @property
@@ -156,11 +160,13 @@ class HalfMarathonConfig(RaceDistanceConfig):
         - 3 days: [0.55, 0.45] (ENDURANCE, EASY)
         - 4 days: [0.40, 0.30, 0.30] (ENDURANCE, STEADY, EASY)
         - 5 days: [0.32, 0.25, 0.23, 0.20] (ENDURANCE, STEADY, STEADY, EASY)
+        - 6 days: [0.28, 0.22, 0.18, 0.16, 0.16] (ENDURANCE, STEADY, STEADY, EASY, EASY)
         """
         return {
             3: [0.55, 0.45],
             4: [0.40, 0.30, 0.30],
             5: [0.32, 0.25, 0.23, 0.20],
+            6: [0.28, 0.22, 0.18, 0.16, 0.16],
         }
 
     @property

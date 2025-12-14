@@ -236,7 +236,8 @@ const NewPlanFormV2: React.FC = () => {
   const selectedGoal = methods.watch("primary_goal");
   const selectedDays = methods.watch("training_days") || [];
   const daysCount = selectedDays.length;
-  const isDaysValid = daysCount >= 3 && daysCount <= 5;
+  const isDaysValid = daysCount >= 3 && daysCount <= 6;
+  const isSixDayPlan = daysCount === 6;
 
   return (
     <AuthGuard>
@@ -499,7 +500,7 @@ const NewPlanFormV2: React.FC = () => {
                 </h2>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Training Days * <span className="text-gray-400">(select 3, 4, or 5 days)</span>
+                    Training Days * <span className="text-gray-400">(select 3, 4, 5, or 6 days)</span>
                   </label>
                   {/* Days counter badge */}
                   <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium mb-3 ${
@@ -516,9 +517,27 @@ const NewPlanFormV2: React.FC = () => {
                       </svg>
                     )}
                     {!isDaysValid && daysCount > 0 && (
-                      <span className="ml-1">({daysCount < 3 ? `need ${3 - daysCount} more` : `remove ${daysCount - 5}`})</span>
+                      <span className="ml-1">({daysCount < 3 ? `need ${3 - daysCount} more` : `remove ${daysCount - 6}`})</span>
                     )}
                   </div>
+                  {/* Warning banner for 6-day plan */}
+                  {isSixDayPlan && (
+                    <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                      <div className="flex items-start">
+                        <svg className="w-5 h-5 text-amber-600 mt-0.5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <div className="flex-1">
+                          <h3 className="text-sm font-semibold text-amber-900 mb-1">Advanced Schedule</h3>
+                          <p className="text-sm text-amber-800 leading-relaxed">
+                            For experienced runners only. Recommended: 35+ mpw, 5+ days/week currently, 2+ years experience.
+                            <br />
+                            <span className="font-medium">Always include 1 rest day. Keep most runs easy (1-2 hard sessions max). Monitor for overtraining.</span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {trainingDaysOptions.map((option) => (
                       <label
