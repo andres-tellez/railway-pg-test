@@ -24,6 +24,18 @@ def save_user_profile(session: Session, profile_data: dict):
         existing_profile.height_inches = profile_data.get("height_inches")
         existing_profile.weight = profile_data.get("weight")
         existing_profile.max_hr = profile_data.get("max_hr")
+        existing_profile.max_hr_source = profile_data.get("max_hr_source")
+        existing_profile.resting_hr = profile_data.get("resting_hr")
+        existing_profile.resting_hr_source = profile_data.get("resting_hr_source")
+        existing_profile.resting_hr_updated_at = profile_data.get(
+            "resting_hr_updated_at"
+        )
+        existing_profile.hrmax_calculated_at = profile_data.get("hrmax_calculated_at")
+        existing_profile.hrmax_confidence = profile_data.get("hrmax_confidence")
+        existing_profile.hrmax_activity_count = profile_data.get("hrmax_activity_count")
+        existing_profile.last_hrmax_activity_id = profile_data.get(
+            "last_hrmax_activity_id"
+        )
         existing_profile.unit_system = profile_data.get("unit_system")
 
         session.commit()
@@ -33,8 +45,18 @@ def save_user_profile(session: Session, profile_data: dict):
         session.execute(
             text(
                 """
-            INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, max_hr, unit_system)
-            VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr, :unit_system)
+            INSERT INTO user_profile (
+                user_id, age_group, height_feet, height_inches, weight, max_hr,
+                max_hr_source, resting_hr, resting_hr_source, resting_hr_updated_at,
+                hrmax_calculated_at, hrmax_confidence,
+                hrmax_activity_count, last_hrmax_activity_id, unit_system
+            )
+            VALUES (
+                :user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr,
+                :max_hr_source, :resting_hr, :resting_hr_source, :resting_hr_updated_at,
+                :hrmax_calculated_at, :hrmax_confidence,
+                :hrmax_activity_count, :last_hrmax_activity_id, :unit_system
+            )
             """
             ),
             {
@@ -44,6 +66,14 @@ def save_user_profile(session: Session, profile_data: dict):
                 "height_inches": profile_data.get("height_inches"),
                 "weight": profile_data.get("weight"),
                 "max_hr": profile_data.get("max_hr"),
+                "max_hr_source": profile_data.get("max_hr_source"),
+                "resting_hr": profile_data.get("resting_hr"),
+                "resting_hr_source": profile_data.get("resting_hr_source"),
+                "resting_hr_updated_at": profile_data.get("resting_hr_updated_at"),
+                "hrmax_calculated_at": profile_data.get("hrmax_calculated_at"),
+                "hrmax_confidence": profile_data.get("hrmax_confidence"),
+                "hrmax_activity_count": profile_data.get("hrmax_activity_count"),
+                "last_hrmax_activity_id": profile_data.get("last_hrmax_activity_id"),
                 "unit_system": profile_data.get("unit_system", "imperial"),
             },
         )
@@ -70,10 +100,23 @@ def get_user_profile(session: Session, user_id: str) -> dict:
         "height_inches",
         "weight",
         "max_hr",
+        "max_hr_source",
+        "resting_hr",
+        "resting_hr_source",
+        "resting_hr_updated_at",
+        "hrmax_calculated_at",
+        "hrmax_confidence",
+        "hrmax_activity_count",
+        "last_hrmax_activity_id",
         "unit_system",
     ]:
+        # Backward compatibility: Use hasattr to safely access columns
+        # Returns None if column doesn't exist yet (during migration)
         if hasattr(profile, key):
             profile_dict[key] = getattr(profile, key)
+        else:
+            # Safe default for new fields during migration
+            profile_dict[key] = None
 
     # Normalize any enum/array values
     profile_dict = normalize_postgres_row(profile_dict)

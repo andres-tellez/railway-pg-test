@@ -1,5 +1,6 @@
 # src/db/dao/user_athletes_dao.py
 from typing import List, Optional
+from datetime import datetime
 from sqlalchemy import select, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -20,7 +21,11 @@ def _validate_user_exists(session: Session, user_id: str) -> None:
 
 
 def create_link(
-    user_id: str, athlete_id: int, session: Optional[Session] = None
+    user_id: str,
+    athlete_id: int,
+    session: Optional[Session] = None,
+    has_strava_premium: Optional[bool] = None,
+    strava_premium_checked_at: Optional[datetime] = None,
 ) -> UserAthleteLink:
     """
     Create/link user -> athlete. 'user_id' is the internal UUID.
@@ -29,6 +34,8 @@ def create_link(
         user_id: Internal UUID user ID
         athlete_id: Strava athlete ID
         session: Optional session to use. If None, creates a new session.
+        has_strava_premium: Optional Strava premium/Summit subscription status
+        strava_premium_checked_at: Optional timestamp when premium status was checked
 
     Returns:
         UserAthleteLink instance
@@ -40,7 +47,12 @@ def create_link(
 
     try:
         _validate_user_exists(session, user_id)
-        row = UserAthleteLink(user_id=user_id, athlete_id=athlete_id)
+        row = UserAthleteLink(
+            user_id=user_id,
+            athlete_id=athlete_id,
+            has_strava_premium=has_strava_premium,
+            strava_premium_checked_at=strava_premium_checked_at,
+        )
         session.add(row)
         try:
             if should_close:
