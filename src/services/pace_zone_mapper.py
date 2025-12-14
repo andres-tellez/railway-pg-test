@@ -94,7 +94,9 @@ def map_pace_zones(
 
     # Use calculated max HR if not available
     if not max_hr or max_hr == 0:
-        max_hr = 220 - age  # rough estimate
+        from src.utils.hr_zone_constants import HRMAX_ESTIMATION
+
+        max_hr = HRMAX_ESTIMATION["AGE_FORMULA_BASE"] - age  # rough estimate
 
     print(f"\nUser Fitness Profile:")
     print(f"  • VDOT: {vdot}")
@@ -180,8 +182,11 @@ def map_pace_zones(
                 description = "Easy aerobic run - comfortable conversational pace"
 
             # Calculate HR ranges
-            hr_min = int(hr_lo * max_hr)
-            hr_max = int(hr_hi * max_hr)
+            from src.services.heart_rate.estimation_helpers import (
+                zone_percentage_to_bpm,
+            )
+
+            hr_min, hr_max = zone_percentage_to_bpm(hr_lo, hr_hi, max_hr)
 
             # Format pace as MM:SS
             pace_min_lo = int(pace_lo)

@@ -121,3 +121,24 @@ def estimate_resting_hr_from_age_group(age_group: Optional[str]) -> Optional[int
     if age is None:
         return None
     return estimate_resting_hr_from_age(age)
+
+
+def zone_percentage_to_bpm(
+    zone_percentage_low: float, zone_percentage_high: float, max_hr: int
+) -> tuple[int, int]:
+    """
+    Convert HR zone percentages to actual bpm values.
+
+    Args:
+        zone_percentage_low: Lower bound percentage (e.g., 0.60 for 60%)
+        zone_percentage_high: Upper bound percentage (e.g., 0.75 for 75%)
+        max_hr: Maximum heart rate in bpm
+
+    Returns:
+        Tuple of (hr_min, hr_max) as integers in bpm
+
+    Example:
+        >>> zone_percentage_to_bpm(0.60, 0.75, 180)
+        (108, 135)
+    """
+    return (int(zone_percentage_low * max_hr), int(zone_percentage_high * max_hr))

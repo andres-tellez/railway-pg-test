@@ -60,6 +60,8 @@ HRMAX_ESTIMATION = {
     "MIN_HRR": 30,  # Minimum Heart Rate Reserve
     "RECALC_DAYS_THRESHOLD": 30,  # Days before auto-recalc
     "HRMAX_PEAK_THRESHOLD": 2,  # bpm increase to trigger recalculation
+    "AGE_FORMULA_BASE": 220,  # Standard "220 - age" formula for rough estimation
+    "DEFAULT_FALLBACK_MAX_HR": 190,  # Conservative default when can't estimate from age or activities
 }
 
 # Karvonen Zone Percentages (HRR-based)
