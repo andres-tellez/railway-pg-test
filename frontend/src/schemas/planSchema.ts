@@ -27,10 +27,10 @@ export const planSchema = z.object({
   }),
   target_time: z.string().optional(),
 
-  // Training schedule (required) - must be 3, 4, or 5 days
+  // Training schedule (required) - must be 3, 4, 5, or 6 days
   training_days: z.array(z.string())
     .min(3, "Please select at least 3 training days")
-    .max(5, "Please select no more than 5 training days"),
+    .max(6, "Please select no more than 6 training days"),
 
   // Long run day (optional) - must be one of the selected training days
   long_run_day: z.string().optional(),

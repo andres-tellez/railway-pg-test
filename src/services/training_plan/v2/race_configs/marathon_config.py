@@ -90,11 +90,13 @@ class MarathonConfig(RaceDistanceConfig):
         - 3 days: 40-50% (target 45%)
         - 4 days: 35-45% (target 40%)
         - 5 days: 30-40% (target 33%)
+        - 6 days: 25-30% (target 28%)
         """
         return {
             3: (0.40, 0.50),
             4: (0.35, 0.45),
             5: (0.30, 0.40),
+            6: (0.25, 0.30),
         }
 
     @property
@@ -106,11 +108,13 @@ class MarathonConfig(RaceDistanceConfig):
         - 3 days: 42 mi peak
         - 4 days: 46 mi peak
         - 5 days: 50 mi peak
+        - 6 days: 55 mi peak
         """
         return {
             3: 42,
             4: 46,
             5: 50,
+            6: 55,
         }
 
     @property
@@ -153,11 +157,13 @@ class MarathonConfig(RaceDistanceConfig):
         - 3 days: [0.55, 0.45] (ENDURANCE, EASY)
         - 4 days: [0.40, 0.30, 0.30] (ENDURANCE, STEADY, EASY)
         - 5 days: [0.32, 0.25, 0.23, 0.20] (ENDURANCE, STEADY, STEADY, EASY)
+        - 6 days: [0.28, 0.22, 0.18, 0.16, 0.16] (ENDURANCE, STEADY, STEADY, EASY, EASY)
         """
         return {
             3: [0.55, 0.45],
             4: [0.40, 0.30, 0.30],
             5: [0.32, 0.25, 0.23, 0.20],
+            6: [0.28, 0.22, 0.18, 0.16, 0.16],
         }
 
     @property
