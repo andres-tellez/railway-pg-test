@@ -339,8 +339,8 @@ class PlanStorageService:
         """
         Calculate HR zone string (e.g., "Z2 (120-150 bpm)") from workout type.
 
-        Uses Karvonen zones if available (when resting_hr is present),
-        otherwise falls back to standard % max HR zones.
+        Delegates to HeartRateZoneOrchestrationService.get_hr_zone_string() to avoid
+        code duplication. This ensures consistent zone calculation logic across the app.
 
         Args:
             run_type_key: Workout type key (easy, steady, long, etc.)
@@ -349,90 +349,19 @@ class PlanStorageService:
         Returns:
             HR zone string like "Z2 (120-150 bpm)" or empty string if can't calculate
         """
-        # Map workout type to HR zone based on training philosophy
-        # Reference: workout_types.py - INTENSITY_ZONE definitions
-        # EASY: "E" -> Z1-Z2 (recovery/easy aerobic)
-        # STEADY: "E/steady" -> Z2 (aerobic steady, not hard)
-        # ENDURANCE: "E→steady" -> Z2 (easy transitioning to steady)
-        # LONG: "E" -> Z2 (easy aerobic)
-        # THRESHOLD/TEMPO: -> Z3 (threshold pace)
-        # VO2/INTERVALS: -> Z4 (hard intervals)
-        run_type_lower = run_type_key.lower()
-        if run_type_lower in ["threshold", "tempo"]:
-            zone_key = "Z3"  # Threshold pace
-        elif run_type_lower in ["vo2", "intervals", "repetitions", "race"]:
-            zone_key = "Z4"  # VO2 max intervals
-        elif run_type_lower in ["steady"]:
-            zone_key = "Z3"  # Steady-state/threshold - comfortably hard effort
-        elif run_type_lower in ["long", "endurance"]:
-            zone_key = "Z2"  # Easy/steady aerobic
-        else:  # easy, recovery, or default
-            zone_key = "Z2"  # Easy aerobic
+        from src.services.heart_rate import HeartRateZoneOrchestrationService
 
+        # If no profile, create minimal profile dict for fallback calculation
         if not user_profile:
-            # Fallback to default
-            max_hr = 190
-            from src.utils.hr_zone_constants import STRAVA_HR_ZONES
+            user_profile = {}
 
-            hr_zones = STRAVA_HR_ZONES
-            hr_lo, hr_hi = hr_zones[zone_key]
-            hr_min = int(hr_lo * max_hr)
-            hr_max = int(hr_hi * max_hr)
-            return f"{zone_key} ({hr_min}–{hr_max} bpm)"
-
-        # Try Karvonen zones first if available
-        resting_hr = user_profile.get("resting_hr")
-        max_hr = None
-
-        # Get effective max HR using resolution service
-        from src.services.heart_rate import HRMaxResolutionService
-
-        effective_max_hr = HRMaxResolutionService.get_effective_max_hr(user_profile)
-
-        # If no effective max HR, try to estimate from age or use default
-        if effective_max_hr is None:
-            # Try to estimate from age_group
-            age_group = user_profile.get("age_group", "")
-            if age_group:
-                try:
-                    if "-" in str(age_group):
-                        age_range = str(age_group).split("-")
-                        age = (int(age_range[0]) + int(age_range[1])) // 2
-                    else:
-                        age = int(str(age_group).replace("+", "").split("-")[0])
-                    max_hr = 220 - age
-                except (ValueError, IndexError):
-                    pass
-
-        if not effective_max_hr and not max_hr:
-            max_hr = 190  # Conservative default
-        elif effective_max_hr:
-            max_hr = effective_max_hr
-
-        # Use Karvonen zones if resting_hr is available
-        if resting_hr and max_hr:
-            try:
-                from src.services.heart_rate import KarvonenZoneService
-
-                zones_result = KarvonenZoneService.calculate_zones(max_hr, resting_hr)
-                if zones_result.success and zones_result.zones:
-                    hr_min, hr_max = zones_result.zones[zone_key]
-                    return f"{zone_key} ({int(hr_min)}–{int(hr_max)} bpm)"
-            except Exception as e:
-                # Fallback to standard zones if Karvonen calculation fails
-                logger.debug(
-                    f"Karvonen zone calculation failed, using standard zones: {e}"
-                )
-
-        # Fallback to standard % max HR zones
-        from src.utils.hr_zone_constants import STRAVA_HR_ZONES
-
-        hr_zones = STRAVA_HR_ZONES
-        hr_lo, hr_hi = hr_zones[zone_key]
-        hr_min = int(hr_lo * max_hr)
-        hr_max = int(hr_hi * max_hr)
-
-        return f"{zone_key} ({hr_min}–{hr_max} bpm)"
+        # Delegate to orchestration service (lightweight, no DB writes)
+        return HeartRateZoneOrchestrationService.get_hr_zone_string(
+            workout_type=run_type_key,
+            user_profile=user_profile,
+            session=None,  # No DB access needed - uses existing profile data
+            user_id=None,
+        )
 
     @staticmethod
     def _workout_to_row(

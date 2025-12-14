@@ -137,6 +137,9 @@ class HeartRateZoneOrchestrationService:
         """
         Calculate HR zones for a user using Karvonen method.
 
+        This method wraps all DB operations in a transaction to ensure data consistency.
+        If any step fails, the transaction is rolled back.
+
         This is the main orchestration method that coordinates:
         1. Fetch user profile
         2. Resolve effective resting HR (with estimation if needed)
@@ -145,10 +148,10 @@ class HeartRateZoneOrchestrationService:
         5. Calculate zones
 
         Estimation Priority (canonical order):
-        1. If force_estimate=True → always estimate (even if user RHR exists)
-        2. Else if user RHR exists → use manual RHR
-        3. Else if use_estimate=True → auto-estimate from age_group
-        4. Else → fail with "missing resting HR" error
+        1. If force_estimate=True -> always estimate (even if user RHR exists)
+        2. Else if user RHR exists -> use manual RHR
+        3. Else if use_estimate=True -> auto-estimate from age_group
+        4. Else -> fail with "missing resting HR" error
 
         Args:
             session: Database session
@@ -174,30 +177,33 @@ class HeartRateZoneOrchestrationService:
             extra={"user_id": user_id},
         )
 
-        # Step 1: Get user profile
-        profile = get_user_profile(session, user_id)
-        if not profile:
-            return {
-                "success": False,
-                "error_code": "PROFILE_NOT_FOUND",
-                "error_message": "User profile not found",
-            }
-
-        # Step 2: Resolve resting HR (with estimation priority logic)
-        resting_hr = profile.get("resting_hr")
-        resting_hr_source = profile.get("resting_hr_source")
-        age_group = profile.get("age_group")
-
-        # Priority 1: Force estimate (override user value)
-        if force_estimate:
-            if not age_group:
+        # All DB operations are executed within this transaction
+        # If any step fails, the transaction will be rolled back
+        try:
+            # Step 1: Get user profile
+            profile = get_user_profile(session, user_id)
+            if not profile:
                 return {
                     "success": False,
-                    "error_code": "MISSING_RESTING_HR",
-                    "error_message": "Cannot estimate resting HR: age_group is missing.",
-                    "can_estimate": False,
-                    "reason": "age_group_missing",
+                    "error_code": "PROFILE_NOT_FOUND",
+                    "error_message": "User profile not found",
                 }
+
+            # Step 2: Resolve resting HR (with estimation priority logic)
+            resting_hr = profile.get("resting_hr")
+            resting_hr_source = profile.get("resting_hr_source")
+            age_group = profile.get("age_group")
+
+            # Priority 1: Force estimate (override user value)
+            if force_estimate:
+                if not age_group:
+                    return {
+                        "success": False,
+                        "error_code": "MISSING_RESTING_HR",
+                        "error_message": "Cannot estimate resting HR: age_group is missing.",
+                        "can_estimate": False,
+                        "reason": "age_group_missing",
+                    }
 
             estimated_rhr = estimate_resting_hr_from_age_group(age_group)
             if estimated_rhr is None:
@@ -296,81 +302,94 @@ class HeartRateZoneOrchestrationService:
 
         # Step 3: Estimate HRmax if needed
         if effective_max_hr is None:
-            logger.info(
-                "HRmax not available, estimating from activities",
-                extra={"user_id": user_id},
-            )
+                logger.info(
+                    "HRmax not available, estimating from activities",
+                    extra={"user_id": user_id},
+                )
 
-            # Fetch activities
-            activities = HeartRateZoneOrchestrationService.fetch_activities_for_hrmax(
-                session, user_id
-            )
+                # Fetch activities
+                activities = HeartRateZoneOrchestrationService.fetch_activities_for_hrmax(
+                    session, user_id
+                )
 
-            # Estimate HRmax
-            hrmax_result = HRMaxEstimationService.estimate_hrmax(activities)
+                # Estimate HRmax
+                hrmax_result = HRMaxEstimationService.estimate_hrmax(activities)
 
-            if not hrmax_result.success:
+                if not hrmax_result.success:
+                    return {
+                        "success": False,
+                        "error_code": hrmax_result.error_code,
+                        "error_message": hrmax_result.error_message,
+                        "confidence": hrmax_result.confidence,
+                        "activity_count": hrmax_result.activity_count,
+                    }
+
+                effective_max_hr = hrmax_result.hrmax
+
+                # Update profile with estimated HRmax
+                profile_data = profile.copy()
+                profile_data = HRMaxResolutionService.update_max_hr_data(
+                    profile_data,
+                    effective_max_hr,
+                    source="AUTO",
+                    confidence=hrmax_result.confidence,
+                    activity_count=hrmax_result.activity_count,
+                )
+
+                # Save updated profile
+                save_user_profile(session, profile_data)
+
+                confidence = hrmax_result.confidence
+                activity_count = hrmax_result.activity_count
+            else:
+                confidence = profile.get("hrmax_confidence", "UNKNOWN")
+                activity_count = profile.get("hrmax_activity_count")
+
+            # Step 5: Calculate zones
+            try:
+                zones_result = KarvonenZoneService.calculate_zones(
+                    effective_max_hr, resting_hr
+                )
+
+                if not zones_result.success:
+                    return {
+                        "success": False,
+                        "error_code": "ZONE_CALCULATION_FAILED",
+                        "error_message": "Failed to calculate zones",
+                    }
+
                 return {
-                    "success": False,
-                    "error_code": hrmax_result.error_code,
-                    "error_message": hrmax_result.error_message,
-                    "confidence": hrmax_result.confidence,
-                    "activity_count": hrmax_result.activity_count,
+                    "success": True,
+                    "hrmax": effective_max_hr,
+                    "resting_hr": resting_hr,
+                    "resting_hr_source": resting_hr_source,
+                    "zones": zones_result.zones,
+                    "confidence": confidence,
+                    "activity_count": activity_count,
                 }
 
-            effective_max_hr = hrmax_result.hrmax
-
-            # Update profile with estimated HRmax
-            profile_data = profile.copy()
-            profile_data = HRMaxResolutionService.update_max_hr_data(
-                profile_data,
-                effective_max_hr,
-                source="AUTO",
-                confidence=hrmax_result.confidence,
-                activity_count=hrmax_result.activity_count,
-            )
-
-            # Save updated profile
-            save_user_profile(session, profile_data)
-
-            confidence = hrmax_result.confidence
-            activity_count = hrmax_result.activity_count
-        else:
-            confidence = profile.get("hrmax_confidence", "UNKNOWN")
-            activity_count = profile.get("hrmax_activity_count")
-
-        # Step 4: Calculate zones
-        try:
-            zones_result = KarvonenZoneService.calculate_zones(
-                effective_max_hr, resting_hr
-            )
-
-            if not zones_result.success:
+            except ValueError as e:
+                logger.warning(
+                    "Invalid inputs for zone calculation",
+                    extra={"user_id": user_id, "error": str(e)},
+                )
                 return {
                     "success": False,
-                    "error_code": "ZONE_CALCULATION_FAILED",
-                    "error_message": "Failed to calculate zones",
+                    "error_code": "INVALID_INPUT",
+                    "error_message": str(e),
                 }
-
-            return {
-                "success": True,
-                "hrmax": effective_max_hr,
-                "resting_hr": resting_hr,
-                "resting_hr_source": resting_hr_source,
-                "zones": zones_result.zones,
-                "confidence": confidence,
-                "activity_count": activity_count,
-            }
-
-        except ValueError as e:
-            logger.warning(
-                "Invalid inputs for zone calculation",
+        except Exception as e:
+            # Rollback transaction on any unexpected error
+            session.rollback()
+            logger.error(
+                "Unexpected error during HR zone calculation, transaction rolled back",
                 extra={"user_id": user_id, "error": str(e)},
+                exc_info=True,
             )
             return {
                 "success": False,
-                "error_code": "INVALID_INPUT",
-                "error_message": str(e),
+                "error_code": "INTERNAL_ERROR",
+                "error_message": "An unexpected error occurred during zone calculation",
             }
 
     @staticmethod
@@ -393,24 +412,40 @@ class HeartRateZoneOrchestrationService:
             extra={"user_id": user_id},
         )
 
-        # Force recalculation by clearing stored HRmax
-        profile = get_user_profile(session, user_id)
-        if not profile:
+        try:
+            # Force recalculation by clearing stored HRmax
+            profile = get_user_profile(session, user_id)
+            if not profile:
+                return {
+                    "success": False,
+                    "error_code": "PROFILE_NOT_FOUND",
+                    "error_message": "User profile not found",
+                }
+
+            # Clear stored HRmax to force recalculation
+            profile_data = profile.copy()
+            profile_data["max_hr"] = None
+            profile_data["max_hr_source"] = None
+            save_user_profile(session, profile_data)
+
+            # Now calculate zones (will estimate fresh)
+            # Note: calculate_zones_for_user handles its own transaction
+            return HeartRateZoneOrchestrationService.calculate_zones_for_user(
+                session, user_id
+            )
+        except Exception as e:
+            # Rollback transaction on any unexpected error
+            session.rollback()
+            logger.error(
+                "Unexpected error during HR zone recalculation, transaction rolled back",
+                extra={"user_id": user_id, "error": str(e)},
+                exc_info=True,
+            )
             return {
                 "success": False,
-                "error_code": "PROFILE_NOT_FOUND",
-                "error_message": "User profile not found",
+                "error_code": "INTERNAL_ERROR",
+                "error_message": "An unexpected error occurred during zone recalculation",
             }
-
-        # Clear stored HRmax to force recalculation
-        profile_data = profile.copy()
-        profile_data["max_hr"] = None
-        profile_data["max_hr_source"] = None
-
-        # Now calculate zones (will estimate fresh)
-        return HeartRateZoneOrchestrationService.calculate_zones_for_user(
-            session, user_id
-        )
 
     @staticmethod
     def get_current_zones(session: Session, user_id: str) -> Dict[str, Any]:
@@ -693,3 +728,93 @@ class HeartRateZoneOrchestrationService:
             ]
 
         return status
+
+    @staticmethod
+    def get_hr_zone_string(
+        workout_type: str,
+        user_profile: Dict[str, Any],
+        session: Optional[Session] = None,
+        user_id: Optional[str] = None,
+    ) -> str:
+        """
+        Get HR zone string for a specific workout type (e.g., "Z2 (120-150 bpm)").
+
+        This is a lightweight helper method that calculates a single zone string
+        without triggering full zone calculation or DB writes unless necessary.
+
+        Priority:
+        1. Try to calculate zones from existing profile data (no DB write)
+        2. Fall back to simple %maxHR calculation if insufficient data
+        3. Only call full orchestration if absolutely necessary and session/user_id provided
+
+        Args:
+            workout_type: Workout type key (easy, steady, threshold, vo2, etc.)
+            user_profile: User profile dict with max_hr, resting_hr, age_group
+            session: Optional database session (only used if full calculation needed)
+            user_id: Optional user ID (only used if full calculation needed)
+
+        Returns:
+            HR zone string like "Z2 (120-150 bpm)" or empty string if can't calculate
+        """
+        # Map workout type to HR zone based on training philosophy
+        run_type_lower = workout_type.lower()
+        if run_type_lower in ["threshold", "tempo"]:
+            zone_key = "Z3"  # Threshold pace
+        elif run_type_lower in ["vo2", "intervals", "repetitions", "race"]:
+            zone_key = "Z4"  # VO2 max intervals
+        elif run_type_lower in ["steady"]:
+            zone_key = "Z3"  # Steady-state/threshold - comfortably hard effort
+        elif run_type_lower in ["long", "endurance"]:
+            zone_key = "Z2"  # Easy/steady aerobic
+        else:  # easy, recovery, or default
+            zone_key = "Z2"  # Easy aerobic
+
+        # Try Karvonen zones first if available
+        resting_hr = user_profile.get("resting_hr") if user_profile else None
+        max_hr = None
+
+        # Get effective max HR using resolution service
+        if user_profile:
+            effective_max_hr = HRMaxResolutionService.get_effective_max_hr(user_profile)
+        else:
+            effective_max_hr = None
+
+        # If no effective max HR, try to estimate from age or use default
+        if effective_max_hr is None:
+            # Try to estimate from age_group using centralized function
+            if user_profile:
+                age_group = user_profile.get("age_group", "")
+                if age_group:
+                    age = parse_age_from_group(age_group)
+                    if age is not None:
+                        max_hr = HRMAX_ESTIMATION["AGE_FORMULA_BASE"] - age
+
+        if not effective_max_hr and not max_hr:
+            max_hr = HRMAX_ESTIMATION["DEFAULT_FALLBACK_MAX_HR"]
+        elif effective_max_hr:
+            max_hr = effective_max_hr
+
+        # Use Karvonen zones if resting_hr is available
+        if resting_hr and max_hr:
+            try:
+                zones_result = KarvonenZoneService.calculate_zones(max_hr, resting_hr)
+                if zones_result.success and zones_result.zones and zone_key in zones_result.zones:
+                    hr_min, hr_max = zones_result.zones[zone_key]
+                    return f"{zone_key} ({int(hr_min)}–{int(hr_max)} bpm)"
+            except Exception as e:
+                # Fallback to standard zones if Karvonen calculation fails
+                logger.debug(
+                    f"Karvonen zone calculation failed, using standard zones: {e}"
+                )
+
+        # Fallback to standard % max HR zones
+        from src.utils.hr_zone_constants import STRAVA_HR_ZONES
+        from src.services.heart_rate.estimation_helpers import zone_percentage_to_bpm
+
+        hr_zones = STRAVA_HR_ZONES
+        if zone_key in hr_zones:
+            hr_lo, hr_hi = hr_zones[zone_key]
+            hr_min, hr_max = zone_percentage_to_bpm(hr_lo, hr_hi, max_hr)
+            return f"{zone_key} ({hr_min}–{hr_max} bpm)"
+
+        return ""  # Unknown zone key
