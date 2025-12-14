@@ -294,99 +294,86 @@ class HeartRateZoneOrchestrationService:
                 "reason": "resting_hr_missing",
             }
 
-        # Step 2: Resolve effective HRmax
+        # Step 3: Resolve effective HRmax
         effective_max_hr = HRMaxResolutionService.get_effective_max_hr(profile)
 
-        # Step 3: Estimate HRmax if needed
+        # Step 4: Estimate HRmax if needed
         if effective_max_hr is None:
-                logger.info(
-                    "HRmax not available, estimating from activities",
-                    extra={"user_id": user_id},
-                )
+            logger.info(
+                "HRmax not available, estimating from activities",
+                extra={"user_id": user_id},
+            )
 
-                # Fetch activities
-                activities = HeartRateZoneOrchestrationService.fetch_activities_for_hrmax(
-                    session, user_id
-                )
+            # Fetch activities
+            activities = HeartRateZoneOrchestrationService.fetch_activities_for_hrmax(
+                session, user_id
+            )
 
-                # Estimate HRmax
-                hrmax_result = HRMaxEstimationService.estimate_hrmax(activities)
+            # Estimate HRmax
+            hrmax_result = HRMaxEstimationService.estimate_hrmax(activities)
 
-                if not hrmax_result.success:
-                    return {
-                        "success": False,
-                        "error_code": hrmax_result.error_code,
-                        "error_message": hrmax_result.error_message,
-                        "confidence": hrmax_result.confidence,
-                        "activity_count": hrmax_result.activity_count,
-                    }
-
-                effective_max_hr = hrmax_result.hrmax
-
-                # Update profile with estimated HRmax
-                profile_data = profile.copy()
-                profile_data = HRMaxResolutionService.update_max_hr_data(
-                    profile_data,
-                    effective_max_hr,
-                    source="AUTO",
-                    confidence=hrmax_result.confidence,
-                    activity_count=hrmax_result.activity_count,
-                )
-
-                # Save updated profile
-                save_user_profile(session, profile_data)
-
-                confidence = hrmax_result.confidence
-                activity_count = hrmax_result.activity_count
-            else:
-                confidence = profile.get("hrmax_confidence", "UNKNOWN")
-                activity_count = profile.get("hrmax_activity_count")
-
-            # Step 5: Calculate zones
-            try:
-                zones_result = KarvonenZoneService.calculate_zones(
-                    effective_max_hr, resting_hr
-                )
-
-                if not zones_result.success:
-                    return {
-                        "success": False,
-                        "error_code": "ZONE_CALCULATION_FAILED",
-                        "error_message": "Failed to calculate zones",
-                    }
-
-                return {
-                    "success": True,
-                    "hrmax": effective_max_hr,
-                    "resting_hr": resting_hr,
-                    "resting_hr_source": resting_hr_source,
-                    "zones": zones_result.zones,
-                    "confidence": confidence,
-                    "activity_count": activity_count,
-                }
-
-            except ValueError as e:
-                logger.warning(
-                    "Invalid inputs for zone calculation",
-                    extra={"user_id": user_id, "error": str(e)},
-                )
+            if not hrmax_result.success:
                 return {
                     "success": False,
-                    "error_code": "INVALID_INPUT",
-                    "error_message": str(e),
+                    "error_code": hrmax_result.error_code,
+                    "error_message": hrmax_result.error_message,
+                    "confidence": hrmax_result.confidence,
+                    "activity_count": hrmax_result.activity_count,
                 }
-        except Exception as e:
-            # Rollback transaction on any unexpected error
-            session.rollback()
-            logger.error(
-                "Unexpected error during HR zone calculation, transaction rolled back",
+
+            effective_max_hr = hrmax_result.hrmax
+
+            # Update profile with estimated HRmax
+            profile_data = profile.copy()
+            profile_data = HRMaxResolutionService.update_max_hr_data(
+                profile_data,
+                effective_max_hr,
+                source="AUTO",
+                confidence=hrmax_result.confidence,
+                activity_count=hrmax_result.activity_count,
+            )
+
+            # Save updated profile
+            save_user_profile(session, profile_data)
+
+            confidence = hrmax_result.confidence
+            activity_count = hrmax_result.activity_count
+        else:
+            confidence = profile.get("hrmax_confidence", "UNKNOWN")
+            activity_count = profile.get("hrmax_activity_count")
+
+        # Step 5: Calculate zones
+        try:
+            zones_result = KarvonenZoneService.calculate_zones(
+                effective_max_hr, resting_hr
+            )
+
+            if not zones_result.success:
+                return {
+                    "success": False,
+                    "error_code": "ZONE_CALCULATION_FAILED",
+                    "error_message": "Failed to calculate zones",
+                }
+
+            return {
+                "success": True,
+                "hrmax": effective_max_hr,
+                "resting_hr": resting_hr,
+                "resting_hr_source": resting_hr_source,
+                "zones": zones_result.zones,
+                "confidence": confidence,
+                "activity_count": activity_count,
+            }
+
+        except ValueError as e:
+            logger.warning(
+                "Invalid inputs for zone calculation",
                 extra={"user_id": user_id, "error": str(e)},
-                exc_info=True,
             )
             return {
                 "success": False,
-                "error_code": "INTERNAL_ERROR",
-                "error_message": "An unexpected error occurred during zone calculation",
+                "error_code": "INVALID_INPUT",
+                "error_message": str(e),
             }
 
     @staticmethod
