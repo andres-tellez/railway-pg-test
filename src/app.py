@@ -76,6 +76,7 @@ from src.routes.gyr_metrics_routes import gyr_metrics_bp
 from src.routes.plan_routes import plan_bp
 from src.routes.conversation_routes import conversation_bp
 from src.routes.pace_zones_routes import pace_zones_bp
+from src.routes.heart_rate_routes import heart_rate_bp
 
 
 def create_app(test_config=None):
@@ -155,6 +156,7 @@ def create_app(test_config=None):
     app.register_blueprint(webhook_bp)
     app.register_blueprint(conversation_bp)
     app.register_blueprint(pace_zones_bp)
+    app.register_blueprint(heart_rate_bp)
 
     # Log all registered routes for debugging
     print("[BLUEPRINT_REGISTRATION] All blueprints registered", flush=True)

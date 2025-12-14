@@ -122,6 +122,10 @@ def submit_user_profile():
         if "unitSystem" in user_dict:
             user_dict["unit_system"] = user_dict.pop("unitSystem")
 
+        # Map restingHr to resting_hr (camelCase -> snake_case)
+        if "restingHr" in user_dict:
+            user_dict["resting_hr"] = user_dict.pop("restingHr")
+
         # Enum -> primitive
         for k, v in list(user_dict.items()):
             if isinstance(v, Enum):
@@ -136,15 +140,34 @@ def submit_user_profile():
 
         session = get_session()
         try:
-            # Check if max_hr is being updated (for HR zone recalculation)
+            # Check if max_hr or resting_hr is being updated (for HR zone recalculation)
             old_profile = get_user_profile(session, str(internal_user_id))
             old_max_hr = old_profile.get("max_hr") if old_profile else None
+            old_resting_hr = old_profile.get("resting_hr") if old_profile else None
+            old_resting_hr_source = (
+                old_profile.get("resting_hr_source") if old_profile else None
+            )
+
             new_max_hr = user_dict.get("max_hr")
+            new_resting_hr = user_dict.get("resting_hr")
+
+            # If user is setting resting_hr manually, clear estimated values
+            if new_resting_hr is not None and new_resting_hr != old_resting_hr:
+                from datetime import datetime
+
+                user_dict["resting_hr_source"] = "USER"
+                user_dict["resting_hr_updated_at"] = datetime.now()
 
             save_user_profile(session, user_dict)
 
-            # If max_hr was updated, recalculate HR zones for active plans
+            # If max_hr or resting_hr was updated, recalculate HR zones for active plans
+            should_recalc = False
             if new_max_hr and new_max_hr != old_max_hr:
+                should_recalc = True
+            if new_resting_hr and new_resting_hr != old_resting_hr:
+                should_recalc = True
+
+            if should_recalc:
                 try:
                     from src.services.training_plan.recalculate_hr_zones_service import (
                         recalculate_hr_zones_for_user,
@@ -154,12 +177,12 @@ def submit_user_profile():
                         session, str(internal_user_id)
                     )
                     current_app.logger.info(
-                        f"Recalculated HR zones after max_hr update: {len(recalc_results)} plans updated"
+                        f"Recalculated HR zones after HR data update: {len(recalc_results)} plans updated"
                     )
                 except Exception as e:
                     # Log but don't fail the save if recalculation fails
                     current_app.logger.warning(
-                        f"Could not recalculate HR zones after max_hr update: {e}"
+                        f"Could not recalculate HR zones after HR data update: {e}"
                     )
         finally:
             session.close()

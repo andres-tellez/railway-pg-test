@@ -339,69 +339,29 @@ class PlanStorageService:
         """
         Calculate HR zone string (e.g., "Z2 (120-150 bpm)") from workout type.
 
+        Delegates to HeartRateZoneOrchestrationService.get_hr_zone_string() to avoid
+        code duplication. This ensures consistent zone calculation logic across the app.
+
         Args:
             run_type_key: Workout type key (easy, steady, long, etc.)
-            user_profile: User profile dict with max_hr or age_group
+            user_profile: User profile dict with max_hr, resting_hr, or age_group
 
         Returns:
             HR zone string like "Z2 (120-150 bpm)" or empty string if can't calculate
         """
-        # Import centralized HR zone definitions
-        from src.utils.hr_zone_constants import STRAVA_HR_ZONES
+        from src.services.heart_rate import HeartRateZoneOrchestrationService
 
-        hr_zones = STRAVA_HR_ZONES
+        # If no profile, create minimal profile dict for fallback calculation
+        if not user_profile:
+            user_profile = {}
 
-        # Map workout type to HR zone based on training philosophy
-        # Reference: workout_types.py - INTENSITY_ZONE definitions
-        # EASY: "E" -> Z1-Z2 (recovery/easy aerobic)
-        # STEADY: "E/steady" -> Z2 (aerobic steady, not hard)
-        # ENDURANCE: "E→steady" -> Z2 (easy transitioning to steady)
-        # LONG: "E" -> Z2 (easy aerobic)
-        # THRESHOLD/TEMPO: -> Z3 (threshold pace)
-        # VO2/INTERVALS: -> Z4 (hard intervals)
-        run_type_lower = run_type_key.lower()
-        if run_type_lower in ["threshold", "tempo"]:
-            zone_key = "Z3"  # Threshold pace (75-85% max HR)
-        elif run_type_lower in ["vo2", "intervals", "repetitions", "race"]:
-            zone_key = "Z4"  # VO2 max intervals (85-95% max HR)
-        elif run_type_lower in ["steady"]:
-            zone_key = (
-                "Z3"  # Steady-state/threshold (75-85% max HR) - comfortably hard effort
-            )
-        elif run_type_lower in ["long", "endurance"]:
-            zone_key = "Z2"  # Easy/steady aerobic (60-75% max HR)
-        else:  # easy, recovery, or default
-            zone_key = "Z2"  # Easy aerobic (60-75% max HR)
-
-        # Get max HR from user profile or estimate
-        max_hr = None
-        if user_profile:
-            max_hr = user_profile.get("max_hr")
-            if not max_hr or max_hr == 0:
-                # Try to estimate from age_group
-                age_group = user_profile.get("age_group", "")
-                if age_group:
-                    # Extract age from age_group (e.g., "30-39" -> 35)
-                    try:
-                        if "-" in str(age_group):
-                            age_range = str(age_group).split("-")
-                            age = (int(age_range[0]) + int(age_range[1])) // 2
-                        else:
-                            age = int(str(age_group).replace("+", "").split("-")[0])
-                        max_hr = 220 - age
-                    except (ValueError, IndexError):
-                        pass
-
-        # Default max HR if still not available
-        if not max_hr or max_hr == 0:
-            max_hr = 190  # Conservative default
-
-        # Calculate HR range
-        hr_lo, hr_hi = hr_zones[zone_key]
-        hr_min = int(hr_lo * max_hr)
-        hr_max = int(hr_hi * max_hr)
-
-        return f"{zone_key} ({hr_min}–{hr_max} bpm)"
+        # Delegate to orchestration service (lightweight, no DB writes)
+        return HeartRateZoneOrchestrationService.get_hr_zone_string(
+            workout_type=run_type_key,
+            user_profile=user_profile,
+            session=None,  # No DB access needed - uses existing profile data
+            user_id=None,
+        )
 
     @staticmethod
     def _workout_to_row(

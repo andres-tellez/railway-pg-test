@@ -413,6 +413,11 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
         )
 
     strava_athlete_id = athlete["id"]
+    # Extract premium status from OAuth response (same pattern as athlete_id)
+    has_premium = athlete.get(
+        "summit", False
+    )  # Summit is boolean indicating paid subscription
+    premium_checked_at = datetime.utcnow()
 
     # ✅ 1. Ensure athlete exists in user_athletes BEFORE inserting token
     if user_id:
@@ -420,12 +425,29 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
             user_athletes_dao.create_link(
                 user_id=user_id,
                 athlete_id=strava_athlete_id,
+                has_strava_premium=has_premium,
+                strava_premium_checked_at=premium_checked_at,
                 session=session,  # Use the same session for transaction consistency
             )
-            logger.info(f"Linked user {user_id} → athlete {strava_athlete_id}")
+            logger.info(
+                f"Linked user {user_id} → athlete {strava_athlete_id} (premium: {has_premium})"
+            )
         except IntegrityError:
             session.rollback()  # clear failed transaction
             logger.debug(f"Link already exists for user {user_id}")
+            # Update existing link with premium status (same pattern as token update)
+            from src.db.models.user_athletes import UserAthleteLink
+
+            existing_link = (
+                session.query(UserAthleteLink).filter_by(user_id=user_id).first()
+            )
+            if existing_link:
+                existing_link.has_strava_premium = has_premium
+                existing_link.strava_premium_checked_at = premium_checked_at
+                session.commit()
+                logger.info(
+                    f"Updated existing link for user {user_id} with premium status: {has_premium}"
+                )
 
     # ✅ 2. Insert or update tokens
     # Extract token data from response
