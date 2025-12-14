@@ -17,6 +17,9 @@ class UserProfileSchema(BaseModel):
     height: Optional[Height] = None
     weight: Optional[int] = None
     max_hr: Optional[int] = Field(None, ge=120, le=220)  # Max heart rate in bpm
+    restingHr: Optional[int] = Field(
+        None, ge=35, le=110, description="Resting heart rate in bpm"
+    )  # Resting heart rate in bpm
 
     # Display Preferences
     unitSystem: Optional[Literal["imperial", "metric"]] = Field(

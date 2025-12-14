@@ -205,6 +205,12 @@ def get_user_info():
         f"📤 GET /api/user response: hasOnboarded={status.get('hasOnboarded')}, hasStrava={status.get('hasStrava')}"
     )
 
+    # Get Strava premium status if user has Strava connected
+    athlete_link = get_by_user_id(user_id)
+    has_strava_premium = None
+    if athlete_link and hasattr(athlete_link, "has_strava_premium"):
+        has_strava_premium = athlete_link.has_strava_premium
+
     payload = {
         "name": identity.name or "",
         "email": identity.email or "",
@@ -212,6 +218,7 @@ def get_user_info():
         "hasOnboarded": bool(status.get("hasOnboarded")),
         "hasStrava": bool(status.get("hasStrava")),
         "hasActivities": bool(status.get("hasActivities")),
+        "hasStravaPremium": has_strava_premium,
     }
     return success_response(payload)
 

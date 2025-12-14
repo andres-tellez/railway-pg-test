@@ -634,6 +634,17 @@ def get_strava_status():
                 ),
                 "activity_count": activity_count,
                 "sync_status": sync_payload,
+                "has_strava_premium": (
+                    athlete_link.has_strava_premium
+                    if hasattr(athlete_link, "has_strava_premium")
+                    else None
+                ),
+                "strava_premium_checked_at": (
+                    athlete_link.strava_premium_checked_at.isoformat()
+                    if hasattr(athlete_link, "strava_premium_checked_at")
+                    and athlete_link.strava_premium_checked_at
+                    else None
+                ),
             },
             message=f"Connected to Strava. {activity_count} activities synced.",
         )

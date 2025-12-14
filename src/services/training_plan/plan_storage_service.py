@@ -339,18 +339,16 @@ class PlanStorageService:
         """
         Calculate HR zone string (e.g., "Z2 (120-150 bpm)") from workout type.
 
+        Uses Karvonen zones if available (when resting_hr is present),
+        otherwise falls back to standard % max HR zones.
+
         Args:
             run_type_key: Workout type key (easy, steady, long, etc.)
-            user_profile: User profile dict with max_hr or age_group
+            user_profile: User profile dict with max_hr, resting_hr, or age_group
 
         Returns:
             HR zone string like "Z2 (120-150 bpm)" or empty string if can't calculate
         """
-        # Import centralized HR zone definitions
-        from src.utils.hr_zone_constants import STRAVA_HR_ZONES
-
-        hr_zones = STRAVA_HR_ZONES
-
         # Map workout type to HR zone based on training philosophy
         # Reference: workout_types.py - INTENSITY_ZONE definitions
         # EASY: "E" -> Z1-Z2 (recovery/easy aerobic)
@@ -361,42 +359,75 @@ class PlanStorageService:
         # VO2/INTERVALS: -> Z4 (hard intervals)
         run_type_lower = run_type_key.lower()
         if run_type_lower in ["threshold", "tempo"]:
-            zone_key = "Z3"  # Threshold pace (75-85% max HR)
+            zone_key = "Z3"  # Threshold pace
         elif run_type_lower in ["vo2", "intervals", "repetitions", "race"]:
-            zone_key = "Z4"  # VO2 max intervals (85-95% max HR)
+            zone_key = "Z4"  # VO2 max intervals
         elif run_type_lower in ["steady"]:
-            zone_key = (
-                "Z3"  # Steady-state/threshold (75-85% max HR) - comfortably hard effort
-            )
+            zone_key = "Z3"  # Steady-state/threshold - comfortably hard effort
         elif run_type_lower in ["long", "endurance"]:
-            zone_key = "Z2"  # Easy/steady aerobic (60-75% max HR)
+            zone_key = "Z2"  # Easy/steady aerobic
         else:  # easy, recovery, or default
-            zone_key = "Z2"  # Easy aerobic (60-75% max HR)
+            zone_key = "Z2"  # Easy aerobic
 
-        # Get max HR from user profile or estimate
+        if not user_profile:
+            # Fallback to default
+            max_hr = 190
+            from src.utils.hr_zone_constants import STRAVA_HR_ZONES
+
+            hr_zones = STRAVA_HR_ZONES
+            hr_lo, hr_hi = hr_zones[zone_key]
+            hr_min = int(hr_lo * max_hr)
+            hr_max = int(hr_hi * max_hr)
+            return f"{zone_key} ({hr_min}–{hr_max} bpm)"
+
+        # Try Karvonen zones first if available
+        resting_hr = user_profile.get("resting_hr")
         max_hr = None
-        if user_profile:
-            max_hr = user_profile.get("max_hr")
-            if not max_hr or max_hr == 0:
-                # Try to estimate from age_group
-                age_group = user_profile.get("age_group", "")
-                if age_group:
-                    # Extract age from age_group (e.g., "30-39" -> 35)
-                    try:
-                        if "-" in str(age_group):
-                            age_range = str(age_group).split("-")
-                            age = (int(age_range[0]) + int(age_range[1])) // 2
-                        else:
-                            age = int(str(age_group).replace("+", "").split("-")[0])
-                        max_hr = 220 - age
-                    except (ValueError, IndexError):
-                        pass
 
-        # Default max HR if still not available
-        if not max_hr or max_hr == 0:
+        # Get effective max HR using resolution service
+        from src.services.heart_rate import HRMaxResolutionService
+
+        effective_max_hr = HRMaxResolutionService.get_effective_max_hr(user_profile)
+
+        # If no effective max HR, try to estimate from age or use default
+        if effective_max_hr is None:
+            # Try to estimate from age_group
+            age_group = user_profile.get("age_group", "")
+            if age_group:
+                try:
+                    if "-" in str(age_group):
+                        age_range = str(age_group).split("-")
+                        age = (int(age_range[0]) + int(age_range[1])) // 2
+                    else:
+                        age = int(str(age_group).replace("+", "").split("-")[0])
+                    max_hr = 220 - age
+                except (ValueError, IndexError):
+                    pass
+
+        if not effective_max_hr and not max_hr:
             max_hr = 190  # Conservative default
+        elif effective_max_hr:
+            max_hr = effective_max_hr
 
-        # Calculate HR range
+        # Use Karvonen zones if resting_hr is available
+        if resting_hr and max_hr:
+            try:
+                from src.services.heart_rate import KarvonenZoneService
+
+                zones_result = KarvonenZoneService.calculate_zones(max_hr, resting_hr)
+                if zones_result.success and zones_result.zones:
+                    hr_min, hr_max = zones_result.zones[zone_key]
+                    return f"{zone_key} ({int(hr_min)}–{int(hr_max)} bpm)"
+            except Exception as e:
+                # Fallback to standard zones if Karvonen calculation fails
+                logger.debug(
+                    f"Karvonen zone calculation failed, using standard zones: {e}"
+                )
+
+        # Fallback to standard % max HR zones
+        from src.utils.hr_zone_constants import STRAVA_HR_ZONES
+
+        hr_zones = STRAVA_HR_ZONES
         hr_lo, hr_hi = hr_zones[zone_key]
         hr_min = int(hr_lo * max_hr)
         hr_max = int(hr_hi * max_hr)

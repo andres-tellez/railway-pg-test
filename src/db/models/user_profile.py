@@ -7,6 +7,8 @@ from sqlalchemy import (
     Enum,
     Float,
     Text,
+    DateTime,
+    BigInteger,
 )
 from sqlalchemy.dialects.postgresql import ENUM as PGEnum, ARRAY as PGArray
 from sqlalchemy.types import TypeDecorator
@@ -141,6 +143,26 @@ class UserProfile(Base):
     max_hr = Column(
         Integer, nullable=True
     )  # Max heart rate (from Strava or user input)
+    max_hr_source = Column(
+        String, nullable=True
+    )  # Source of max_hr: "USER"|"AUTO"|"STRAVA"
+    resting_hr = Column(Integer, nullable=True)  # Resting heart rate
+    resting_hr_source = Column(
+        String, nullable=True
+    )  # Source of resting_hr: "USER"|"ESTIMATED"
+    resting_hr_updated_at = Column(
+        DateTime, nullable=True
+    )  # When resting_hr was last updated
+    hrmax_calculated_at = Column(DateTime, nullable=True)  # When HRmax was calculated
+    hrmax_confidence = Column(
+        String, nullable=True
+    )  # Confidence level: "LOW"|"MEDIUM"|"HIGH"
+    hrmax_activity_count = Column(
+        Integer, nullable=True
+    )  # Number of activities used for estimation
+    last_hrmax_activity_id = Column(
+        BigInteger, nullable=True
+    )  # Last activity ID processed for HRmax calculation
 
     # Display Preferences
     unit_system = Column(
