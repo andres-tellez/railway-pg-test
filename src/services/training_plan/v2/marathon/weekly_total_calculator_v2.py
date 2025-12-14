@@ -3,7 +3,7 @@ Marathon Finisher Weekly Mileage Calculator V2
 
 Given:
   - long_run (miles) for the week
-  - runs_per_week (3, 4, or 5)
+  - runs_per_week (3, 4, 5, or 6)
   - prev_week_total (optional, for safe ramping)
   - config: RaceDistanceConfig (provides race-distance-specific values)
 
@@ -42,7 +42,7 @@ def recommend_weekly_total(
 
     Args:
         long_run: Long run distance in miles
-        runs_per_week: Number of runs per week (3, 4, or 5)
+        runs_per_week: Number of runs per week (3, 4, 5, or 6)
         config: RaceDistanceConfig providing race-distance-specific values
         prev_week_total: Previous week's total (for safe ramping)
         prev_prev_week_total: Week before previous (for post-cutback rebuild)
@@ -56,8 +56,8 @@ def recommend_weekly_total(
     Returns:
         Safe weekly total in whole miles (always rounded to whole miles, regardless of unit_system)
     """
-    if runs_per_week not in (3, 4, 5):
-        raise ValueError("runs_per_week must be 3, 4, or 5")
+    if runs_per_week not in (3, 4, 5, 6):
+        raise ValueError("runs_per_week must be 3, 4, 5, or 6")
 
     # Get values from config
     lo_pct, hi_pct = config.long_run_percentage_ranges[runs_per_week]
@@ -145,7 +145,7 @@ def calculate_weekly_totals_from_long_runs(
 
     Args:
         weeks: List of week dicts with 'week_number' and 'long_run_miles'
-        runs_per_week: Number of runs per week (3, 4, or 5)
+        runs_per_week: Number of runs per week (3, 4, 5, or 6)
         config: RaceDistanceConfig providing race-distance-specific values
         peak_caps: Custom peak caps (optional, defaults to config.peak_caps)
         scenario_adjustments: Optional scenario-specific adjustments dict

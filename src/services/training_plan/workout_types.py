@@ -66,6 +66,7 @@ NON_LONG_SHARES = {
     3: [0.55, 0.45],  # [ENDURANCE, EASY]
     4: [0.40, 0.30, 0.30],  # [ENDURANCE, STEADY, EASY]
     5: [0.32, 0.25, 0.23, 0.20],  # [ENDURANCE, STEADY, STEADY, EASY]
+    6: [0.28, 0.22, 0.18, 0.16, 0.16],  # [ENDURANCE, STEADY, STEADY, EASY, EASY]
 }
 
 # ============================================================================
@@ -77,6 +78,7 @@ SLOT_COUNTS = {
     3: {ENDURANCE: 1, STEADY: 0, EASY: 1},  # Total: 2 non-long slots
     4: {ENDURANCE: 1, STEADY: 1, EASY: 1},  # Total: 3 non-long slots
     5: {ENDURANCE: 1, STEADY: 2, EASY: 1},  # Total: 4 non-long slots
+    6: {ENDURANCE: 1, STEADY: 2, EASY: 2},  # Total: 5 non-long slots
 }
 
 # ============================================================================
@@ -92,6 +94,7 @@ LONG_RUN_SHARE_RANGES = {
     3: (0.40, 0.50),  # 40-50% for 3-day plans
     4: (0.35, 0.45),  # 35-45% for 4-day plans
     5: (0.30, 0.40),  # 30-40% for 5-day plans
+    6: (0.25, 0.30),  # 25-30% for 6-day plans
 }
 
 # ============================================================================
@@ -159,9 +162,9 @@ def _validate_config() -> None:
     )
 
     # Validate long-run share ranges are defined for all frequencies
-    assert set(LONG_RUN_SHARE_RANGES.keys()) == {3, 4, 5}, (
+    assert set(LONG_RUN_SHARE_RANGES.keys()) == {3, 4, 5, 6}, (
         f"LONG_RUN_SHARE_RANGES missing keys: "
-        f"{set({3, 4, 5}) - set(LONG_RUN_SHARE_RANGES.keys())}"
+        f"{set({3, 4, 5, 6}) - set(LONG_RUN_SHARE_RANGES.keys())}"
     )
 
 
