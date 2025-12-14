@@ -177,33 +177,30 @@ class HeartRateZoneOrchestrationService:
             extra={"user_id": user_id},
         )
 
-        # All DB operations are executed within this transaction
-        # If any step fails, the transaction will be rolled back
-        try:
-            # Step 1: Get user profile
-            profile = get_user_profile(session, user_id)
-            if not profile:
+        # Step 1: Get user profile
+        profile = get_user_profile(session, user_id)
+        if not profile:
+            return {
+                "success": False,
+                "error_code": "PROFILE_NOT_FOUND",
+                "error_message": "User profile not found",
+            }
+
+        # Step 2: Resolve resting HR (with estimation priority logic)
+        resting_hr = profile.get("resting_hr")
+        resting_hr_source = profile.get("resting_hr_source")
+        age_group = profile.get("age_group")
+
+        # Priority 1: Force estimate (override user value)
+        if force_estimate:
+            if not age_group:
                 return {
                     "success": False,
-                    "error_code": "PROFILE_NOT_FOUND",
-                    "error_message": "User profile not found",
+                    "error_code": "MISSING_RESTING_HR",
+                    "error_message": "Cannot estimate resting HR: age_group is missing.",
+                    "can_estimate": False,
+                    "reason": "age_group_missing",
                 }
-
-            # Step 2: Resolve resting HR (with estimation priority logic)
-            resting_hr = profile.get("resting_hr")
-            resting_hr_source = profile.get("resting_hr_source")
-            age_group = profile.get("age_group")
-
-            # Priority 1: Force estimate (override user value)
-            if force_estimate:
-                if not age_group:
-                    return {
-                        "success": False,
-                        "error_code": "MISSING_RESTING_HR",
-                        "error_message": "Cannot estimate resting HR: age_group is missing.",
-                        "can_estimate": False,
-                        "reason": "age_group_missing",
-                    }
 
             estimated_rhr = estimate_resting_hr_from_age_group(age_group)
             if estimated_rhr is None:
