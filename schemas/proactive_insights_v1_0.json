@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProactiveInsights",
+  "description": "Proactive coaching insights detected from runner state",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["version", "proactive_insights"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "example": "1.0.0"
+    },
+    "proactive_insights": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "severity"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "fatigue_detected",
+              "long_runs_too_fast",
+              "on_track_for_goal",
+              "volume_too_high",
+              "volume_too_low",
+              "recovery_needed"
+            ],
+            "description": "Type of insight"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "moderate", "high"],
+            "description": "Severity of the insight"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message describing the insight",
+            "example": "HR drift detected, recommend recovery week"
+          },
+          "data": {
+            "type": "object",
+            "description": "Additional data supporting the insight",
+            "properties": {
+              "hr_drift_bpm": {"type": "number"},
+              "long_runs_count": {"type": "integer"},
+              "load_change_pct": {"type": "number"}
+            }
+          }
+        }
+      }
+    }
+  }
+}
