@@ -282,64 +282,107 @@ def send_message(conversation_id):
                 "..." if len(message) > 50 else ""
             )
 
-        # Get smart context based on question analysis
-        try:
-            from src.services.smart_data_service import SmartDataService
+        # Check if new Coach system is enabled
+        from coach.utils.config import Config
 
-            data_service = SmartDataService(str(user_id))
-            context = data_service.get_context_for_question(message.strip())
-            data_service.close()
-        except Exception as e:
-            logger.error(f"Smart context creation failed: {str(e)}")
-            # Fallback to simple context
-            context = {
-                "current_date": time.strftime("%Y-%m-%d"),
-                "user_id": str(user_id),
-                "question": message.strip(),
-                "data_sources": [],
-                "error": str(e),
-            }
+        use_new_coach = Config.COACH_V2_ENABLED
+        context = None  # Initialize for later use
 
-        # Build GPT messages
-        gpt_messages = build_gpt_messages(
-            context, conversation.messages, message.strip()
-        )
+        if use_new_coach:
+            # Use new Coach system
+            try:
+                from coach.orchestrator import CoachOrchestrator
 
-        # Get GPT response (automatic rate limiting + cost tracking via OpenAIService)
-        try:
-            gpt_response, usage_info = get_conversation_response(
-                gpt_messages,
-                user_id=str(user_id),  # Required for security tracking
-                require_json=False,
-                question=message.strip(),
+                # Convert conversation history to format expected by orchestrator
+                conversation_history = [
+                    {"role": msg.role, "content": msg.content}
+                    for msg in conversation.messages
+                ]
+
+                orchestrator = CoachOrchestrator(session, str(user_id))
+                coach_result = orchestrator.process_question(
+                    question=message.strip(),
+                    conversation_history=conversation_history,
+                )
+
+                gpt_response = coach_result["response"]
+                usage_info = coach_result["usage"]
+
+                # Log metadata for debugging
+                logger.info(
+                    f"Coach metadata: intent={coach_result['metadata'].get('intent')}, "
+                    f"confidence={coach_result['metadata'].get('intent_confidence')}, "
+                    f"safety_flags={len(coach_result['metadata'].get('safety_flags', []))}"
+                )
+
+            except Exception as e:
+                logger.error(f"New Coach system failed: {str(e)}", exc_info=True)
+                # Fall back to old system
+                use_new_coach = False
+
+        if not use_new_coach:
+            # Use old system (legacy)
+            # Get smart context based on question analysis
+            try:
+                from src.services.smart_data_service import SmartDataService
+
+                data_service = SmartDataService(str(user_id))
+                context = data_service.get_context_for_question(message.strip())
+                data_service.close()
+            except Exception as e:
+                logger.error(f"Smart context creation failed: {str(e)}")
+                # Fallback to simple context
+                context = {
+                    "current_date": time.strftime("%Y-%m-%d"),
+                    "user_id": str(user_id),
+                    "question": message.strip(),
+                    "data_sources": [],
+                    "error": str(e),
+                }
+
+            # Build GPT messages
+            gpt_messages = build_gpt_messages(
+                context, conversation.messages, message.strip()
             )
-        except RateLimitExceededError as e:
-            logger.warning(
-                f"OpenAI rate limit exceeded for user {user_id}. "
-                f"Retry after {e.retry_after:.1f} seconds"
-            )
-            return error_response(
-                message=f"Rate limit exceeded. Please try again in {int(e.retry_after)} seconds.",
-                status_code=429,
-                error_code="OPENAI_RATE_LIMIT_EXCEEDED",
-                details={
-                    "retry_after_seconds": int(e.retry_after),
-                    "limit": "10 requests per minute",
-                },
-            )
-        except CostLimitExceededError as e:
-            logger.warning(
-                f"OpenAI cost limit exceeded for user {user_id}. " f"Error: {e.message}"
-            )
-            return error_response(
-                message=e.message or "Daily cost limit exceeded.",
-                status_code=429,
-                error_code="OPENAI_COST_LIMIT_EXCEEDED",
-                details={
-                    "limit_type": "daily_cost",
-                    "exceeded_by": round(e.exceeded_by, 4) if e.exceeded_by else None,
-                },
-            )
+
+            # Get GPT response (automatic rate limiting + cost tracking via OpenAIService)
+            try:
+                gpt_response, usage_info = get_conversation_response(
+                    gpt_messages,
+                    user_id=str(user_id),  # Required for security tracking
+                    require_json=False,
+                    question=message.strip(),
+                )
+            except RateLimitExceededError as e:
+                logger.warning(
+                    f"OpenAI rate limit exceeded for user {user_id}. "
+                    f"Retry after {e.retry_after:.1f} seconds"
+                )
+                return error_response(
+                    message=f"Rate limit exceeded. Please try again in {int(e.retry_after)} seconds.",
+                    status_code=429,
+                    error_code="OPENAI_RATE_LIMIT_EXCEEDED",
+                    details={
+                        "retry_after_seconds": int(e.retry_after),
+                        "limit": "10 requests per minute",
+                    },
+                )
+            except CostLimitExceededError as e:
+                logger.warning(
+                    f"OpenAI cost limit exceeded for user {user_id}. "
+                    f"Error: {e.message}"
+                )
+                return error_response(
+                    message=e.message or "Daily cost limit exceeded.",
+                    status_code=429,
+                    error_code="OPENAI_COST_LIMIT_EXCEEDED",
+                    details={
+                        "limit_type": "daily_cost",
+                        "exceeded_by": (
+                            round(e.exceeded_by, 4) if e.exceeded_by else None
+                        ),
+                    },
+                )
 
         # Cost is already calculated and tracked by OpenAIService
         # Extract from usage_info (no duplicate calculation needed)
@@ -349,10 +392,12 @@ def send_message(conversation_id):
         rate_limit_stats = get_user_stats(str(user_id))
         cost_stats = get_user_cost_stats(str(user_id))
 
-        # Add transparency if enabled
-        if False:  # Disabled transparency for simple system
+        # Add transparency if enabled (only for old system)
+        if False and not use_new_coach:  # Disabled transparency for simple system
+            from src.compliance.ai_transparency import AITransparency
+
             gpt_response = AITransparency.add_transparency_to_response(
-                gpt_response, context
+                gpt_response, context if not use_new_coach else {}
             )
 
         # Add assistant message
@@ -382,8 +427,10 @@ def send_message(conversation_id):
                     "message_id": str(user_msg.id),
                     "response_time": response_time,
                     "context_used": {
-                        "context_loaded": bool(context),
-                        "context_length": len(context) if context else 0,
+                        "context_loaded": bool(context) if not use_new_coach else True,
+                        "context_length": (
+                            len(context) if context and not use_new_coach else 0
+                        ),
                     },
                     "rate_limit": {
                         "remaining": rate_limit_stats["remaining"],

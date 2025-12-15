@@ -1,0 +1,199 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RunnerState",
+  "description": "Canonical runner state object representing training state",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["version", "runner_state"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Schema version (semantic versioning)",
+      "example": "1.0.0"
+    },
+    "runner_state": {
+      "type": "object",
+      "required": ["phase", "week_of_block", "race", "zones", "safety"],
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": ["Base", "Build", "Peak", "Taper"],
+          "description": "Current training phase"
+        },
+        "week_of_block": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Current week number in training block"
+        },
+        "plan_type": {
+          "type": "string",
+          "description": "Training plan type",
+          "example": "Marathon_4hr"
+        },
+        "race": {
+          "type": "object",
+          "required": ["date", "distance"],
+          "properties": {
+            "date": {
+              "type": "string",
+              "format": "date",
+              "description": "Race date (YYYY-MM-DD)"
+            },
+            "distance": {
+              "type": "string",
+              "description": "Race distance",
+              "example": "Marathon"
+            },
+            "target_time": {
+              "type": "string",
+              "description": "Target race time (HH:MM:SS)",
+              "example": "4:00:00"
+            },
+            "goal_type": {
+              "type": "string",
+              "enum": ["Just Finish", "Target Time"],
+              "description": "Race goal type"
+            }
+          }
+        },
+        "zones": {
+          "type": "object",
+          "properties": {
+            "pace": {
+              "type": "object",
+              "properties": {
+                "easy": {
+                  "type": "string",
+                  "description": "Easy pace range (min/mile)",
+                  "example": "9:45-10:15/mile"
+                },
+                "marathon": {
+                  "type": "string",
+                  "description": "Marathon pace range (min/mile)",
+                  "example": "9:05-9:15/mile"
+                },
+                "threshold": {
+                  "type": "string",
+                  "description": "Threshold pace range (min/mile)",
+                  "example": "8:25-8:40/mile"
+                }
+              }
+            },
+            "hr": {
+              "type": "object",
+              "properties": {
+                "z1": {
+                  "type": "string",
+                  "description": "HR Zone 1 range",
+                  "example": "105-120 bpm"
+                },
+                "z2": {
+                  "type": "string",
+                  "description": "HR Zone 2 range",
+                  "example": "121-138 bpm"
+                },
+                "z3": {
+                  "type": "string",
+                  "description": "HR Zone 3 range",
+                  "example": "139-152 bpm"
+                },
+                "z4": {
+                  "type": "string",
+                  "description": "HR Zone 4 range"
+                },
+                "z5": {
+                  "type": "string",
+                  "description": "HR Zone 5 range"
+                }
+              }
+            }
+          }
+        },
+        "weekly_metrics": {
+          "type": "object",
+          "properties": {
+            "week_start": {
+              "type": "string",
+              "format": "date",
+              "description": "Week start date (YYYY-MM-DD)"
+            },
+            "mileage": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Weekly mileage in miles"
+            },
+            "volume_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Volume adherence score (0-100)"
+            },
+            "intensity_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Intensity adherence score (0-100)"
+            },
+            "consistency_score": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Consistency score (0-100)"
+            },
+            "load_change_pct": {
+              "type": "number",
+              "description": "Week-over-week load change percentage"
+            },
+            "fatigue_flags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of fatigue indicators",
+              "example": ["mild_hr_drift", "pace_slowdown"]
+            }
+          }
+        },
+        "patterns": {
+          "type": "object",
+          "properties": {
+            "long_runs_too_fast_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of recent long runs that were too fast"
+            },
+            "missed_key_workouts_last_4_weeks": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of missed key workouts in last 4 weeks"
+            },
+            "trend": {
+              "type": "string",
+              "enum": ["improving", "stable", "declining"],
+              "description": "Overall training trend"
+            }
+          }
+        },
+        "safety": {
+          "type": "object",
+          "required": ["hr_data_reliable", "pace_data_reliable"],
+          "properties": {
+            "hr_data_reliable": {
+              "type": "boolean",
+              "description": "Whether HR data is reliable (>80% of runs have HR)"
+            },
+            "pace_data_reliable": {
+              "type": "boolean",
+              "description": "Whether pace data is reliable"
+            },
+            "reported_injury": {
+              "type": "boolean",
+              "description": "Whether user has reported an injury"
+            }
+          }
+        }
+      }
+    }
+  }
+}

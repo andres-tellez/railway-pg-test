@@ -1,0 +1,78 @@
+name: Coach Architecture Tests
+
+on:
+  push:
+    paths:
+      - 'coach/**'
+      - 'tests/coach/**'
+      - 'schemas/**'
+  pull_request:
+    paths:
+      - 'coach/**'
+      - 'tests/coach/**'
+      - 'schemas/**'
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-test.txt
+          pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: |
+          pytest tests/coach/unit/ -m unit -v --cov=coach --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage.xml
+
+  contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-test.txt
+
+      - name: Run contract tests
+        run: |
+          pytest tests/coach/contract/ -m contract -v
+
+  schema-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Validate JSON schemas
+        run: |
+          python -c "import json, jsonschema; [jsonschema.Draft7Validator.check_schema(json.load(open(f))) for f in schemas/*.json]"
+
+  check-no-direct-llm-calls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check for direct LLM calls
+        run: |
+          if grep -r "openai.ChatCompletion\|openai.chat.completions.create" coach/ --exclude-dir=__pycache__; then
+            echo "❌ Direct LLM calls found! Use LLMClient instead."
+            exit 1
+          fi
+          echo "✅ No direct LLM calls found"

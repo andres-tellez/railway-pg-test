@@ -1,0 +1,23 @@
+# Training thresholds and constants for Coach system
+
+# HR drift thresholds
+hr_drift_bpm: 8  # Average HR +8 bpm at same pace = fatigue
+
+# Volume thresholds
+volume_spike_pct: 15  # Week-over-week >15% increase = risk
+
+# Long run violations
+long_run_zone_violations_count: 3  # 3 long runs above Zone 2 = pattern
+
+# Pace slowdown
+pace_slowdown_pct: 10  # Pace +10% slower at same effort
+
+# Consecutive missed days
+consecutive_missed_days_threshold: 3  # 3 consecutive missed days = concern
+
+# Fatigue indicators
+fatigue_pace_threshold_pct: 5  # 5% pace slowdown = fatigue
+fatigue_hr_threshold_pct: 8  # 8% HR increase = fatigue
+
+# Activity summarization thresholds
+long_run_distance_threshold: 8.0  # Distance in miles for long run classification (>8 miles or explicitly marked)
