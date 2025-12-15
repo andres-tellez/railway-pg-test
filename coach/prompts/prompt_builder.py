@@ -144,6 +144,8 @@ class CoachPromptBuilder:
             prompt += "\n\nFocus on providing specific, actionable feedback about the workout. Compare performance to plan targets if available."
         elif intent == Intent.THIS_WEEK_PLAN.value:
             prompt += "\n\nFor 'this week' questions, prioritize the planned workouts provided in the context. Be specific about what to do each day."
+        elif intent == Intent.PROGRESS_REVIEW_LAST_WEEK.value:
+            prompt += "\n\nFor 'last week' questions, provide a detailed review of the week's training. Include: (1) Quick takeaway summarizing the week, (2) Weekly overview with mileage, completion rate, and run details, (3) Analysis of what the data shows (pace, HR, consistency), (4) What it means for their training progression, (5) Action steps for improvement, and (6) Encouragement. Be specific and reference actual data from their runs."
 
         return prompt
 
@@ -336,6 +338,44 @@ class CoachPromptBuilder:
                     lines.append(
                         f"    Average HR: {summary['average_heartrate']:.0f} bpm"
                     )
+
+        elif "progress_review_last_week" in question_context:
+            weekly = question_context["progress_review_last_week"]
+            lines.append("\nLast Week's Training:")
+            lines.append(
+                f"  Week: {weekly.get('week', {}).get('start', 'Unknown')} to {weekly.get('week', {}).get('end', 'Unknown')}"
+            )
+            lines.append(f"  Planned Miles: {weekly.get('plan_miles', 0):.1f}")
+            lines.append(f"  Completed Miles: {weekly.get('actual_miles', 0):.1f}")
+            lines.append(f"  Completion Rate: {weekly.get('completion_rate', 0):.1%}")
+            lines.append(f"  Runs Completed: {weekly.get('run_count', 0)}")
+
+            if weekly.get("runs"):
+                lines.append("  Runs:")
+                for run in weekly["runs"]:
+                    run_line = f"    {run.get('day', 'Unknown')} ({run.get('date', 'Unknown')}): {run.get('distance', 0):.1f} miles"
+                    if run.get("pace"):
+                        run_line += f" @ {run.get('pace')}"
+                    if run.get("hr"):
+                        run_line += f", HR: {run.get('hr')} bpm"
+                    if run.get("evaluation"):
+                        run_line += f" [{run.get('evaluation')}]"
+                    lines.append(run_line)
+
+            if weekly.get("long_run"):
+                lr = weekly["long_run"]
+                lines.append("  Long Run:")
+                lines.append(f"    Distance: {lr.get('distance', 0):.1f} miles")
+                if lr.get("pace"):
+                    lines.append(f"    Pace: {lr.get('pace')}")
+                if lr.get("target_pace"):
+                    lines.append(f"    Target Pace: {lr.get('target_pace')}")
+                lines.append(f"    Evaluation: {lr.get('evaluation', 'Unknown')}")
+
+            if weekly.get("key_insights"):
+                lines.append("  Key Insights:")
+                for insight in weekly["key_insights"]:
+                    lines.append(f"    - {insight}")
 
         elif "injury_or_symptom" in question_context:
             injury_ctx = question_context["injury_or_symptom"]

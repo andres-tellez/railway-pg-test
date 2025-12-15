@@ -40,6 +40,7 @@ class Intent(Enum):
     THIS_WEEK_PLAN = "this_week_plan"
     PLAN_ADJUSTMENT_REQUEST = "plan_adjustment_request"
     PROGRESS_CHECK = "progress_check"
+    PROGRESS_REVIEW_LAST_WEEK = "progress_review_last_week"
     INJURY_OR_SYMPTOM = "injury_or_symptom"
     GENERAL_EDUCATION = "general_education"
     MOTIVATION_SUPPORT = "motivation_support"
@@ -95,6 +96,16 @@ class IntentClassifier:
             r"\b(how).*?(is|'s).*?(my|the).*?(training|progress).*?(going)\b",
             r"\b(how'?s).*?(my|the).*?(progress)\b",
             # Don't match "tell me about" or "tell me about my run" - too specific
+        ]
+
+        # Progress review last week patterns
+        self.progress_review_last_week_patterns = [
+            r"\b(last week|previous week)\b",
+            r"\b(how).*?(was|did).*?(my|my training|I train).*?(last week|last week's)\b",
+            r"\b(how).*?(was|did).*?(last week|last week's).*?(training|go)\b",
+            r"\b(review|summarize|what did I do).*?(last week|last week's)\b",
+            r"\b(how).*?(did I do|was my training).*?(last week)\b",
+            r"\b(last week'?s).*?(training|summary|review)\b",
         ]
 
         # Injury/symptom patterns
@@ -205,12 +216,23 @@ class IntentClassifier:
         if score > 0:
             intent_scores.append((Intent.PLAN_ADJUSTMENT_REQUEST.value, score))
 
+        # Progress review last week (check before general progress_check)
+        score = self._score_patterns(
+            message_lower, self.progress_review_last_week_patterns
+        )
+        if score > 0:
+            intent_scores.append((Intent.PROGRESS_REVIEW_LAST_WEEK.value, score))
+
         # Progress check (only if workout_review didn't match)
         # Check if workout review already matched - if so, skip progress check to avoid conflicts
         workout_review_matched = any(
             intent == Intent.WORKOUT_REVIEW.value for intent, _ in intent_scores
         )
-        if not workout_review_matched:
+        progress_review_matched = any(
+            intent == Intent.PROGRESS_REVIEW_LAST_WEEK.value
+            for intent, _ in intent_scores
+        )
+        if not workout_review_matched and not progress_review_matched:
             score = self._score_patterns(message_lower, self.progress_check_patterns)
             if score > 0:
                 intent_scores.append((Intent.PROGRESS_CHECK.value, score))
