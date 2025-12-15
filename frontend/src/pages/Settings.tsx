@@ -1,5 +1,6 @@
 import React from 'react';
 import { AuthGuard } from '@/components/AuthGuard';
+import ActivityExport from '@/components/ActivityExport';
 
 const Settings: React.FC = () => {
   return (
@@ -7,6 +8,11 @@ const Settings: React.FC = () => {
       <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl font-bold text-gray-900 mb-8">Settings</h1>
+
+          {/* Activity Export */}
+          <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <ActivityExport />
+          </div>
 
           {/* Account & Data Management */}
           <div className="bg-white rounded-lg shadow-md p-6">
