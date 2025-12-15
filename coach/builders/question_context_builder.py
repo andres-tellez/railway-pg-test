@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from coach.utils.intent_classifier import IntentClassifier, IntentClassificationResult
 from coach.builders.runner_state_builder import RunnerStateBuilder
 from coach.builders.activity_summarizer import ActivitySummarizer
+from coach.builders.progress_review_context_builder import ProgressReviewContextBuilder
 from coach.safety.safety_scanner import SafetyScanner
 from coach.utils.schema_validator import SchemaValidator
 from coach.utils.error_handler import CoachErrorHandler, ErrorSeverity
@@ -86,6 +87,23 @@ class QuestionContextBuilder:
                 )
             elif intent == "progress_check":
                 base_context["progress_check"] = self._build_progress_check_context()
+            elif intent == "progress_review_last_week":
+                # Get zones from RunnerState for weekly review
+                runner_state_builder = RunnerStateBuilder(self.session, self.user_id)
+                runner_state = runner_state_builder.build()
+                zones = runner_state.get("runner_state", {}).get("zones", {})
+                pace_zones = zones.get("pace", {})
+                hr_zones = zones.get("hr", {})
+
+                # Build weekly review context
+                progress_builder = ProgressReviewContextBuilder(
+                    self.session, self.user_id
+                )
+                weekly_context = progress_builder.build(
+                    pace_zones=pace_zones,
+                    hr_zones=hr_zones,
+                )
+                base_context["progress_review_last_week"] = weekly_context
             elif intent == "injury_or_symptom":
                 base_context["injury_or_symptom"] = {
                     "safety_flags": safety_flags.get("safety_flags", {}).get(
@@ -141,8 +159,10 @@ class QuestionContextBuilder:
         """
         try:
             # Get recent activities
-            data_service = SmartDataService(self.session, self.user_id)
-            activities = data_service._get_recent_activities(weeks=2)
+            # NOTE: SmartDataService._get_recent_activities() doesn't accept weeks parameter
+            # This is a temporary workaround until we fully migrate to ActivityFetcher
+            data_service = SmartDataService(self.user_id)
+            activities = data_service._get_recent_activities()
 
             if not activities:
                 return {}
@@ -288,8 +308,10 @@ class QuestionContextBuilder:
         """Build context for progress_check intent."""
         # Use ActivitySummarizer for recent performance summary
         try:
-            data_service = SmartDataService(self.session, self.user_id)
-            activities = data_service._get_recent_activities(weeks=8)
+            # NOTE: SmartDataService._get_recent_activities() doesn't accept weeks parameter
+            # This is a temporary workaround until we fully migrate to ActivityFetcher
+            data_service = SmartDataService(self.user_id)
+            activities = data_service._get_recent_activities()
 
             summary = self.activity_summarizer.summarize(activities)
 
@@ -315,8 +337,10 @@ class QuestionContextBuilder:
         """Build context for motivation_support intent."""
         # Use recent performance data for motivation
         try:
-            data_service = SmartDataService(self.session, self.user_id)
-            activities = data_service._get_recent_activities(weeks=4)
+            # NOTE: SmartDataService._get_recent_activities() doesn't accept weeks parameter
+            # This is a temporary workaround until we fully migrate to ActivityFetcher
+            data_service = SmartDataService(self.user_id)
+            activities = data_service._get_recent_activities()
 
             if activities:
                 total_miles = sum(a.get("distance_miles", 0) for a in activities)
