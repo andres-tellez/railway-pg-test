@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QuestionContext",
+  "description": "Intent-specific context for coaching questions",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["version", "question_context"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Schema version (semantic versioning)",
+      "example": "1.0.0"
+    },
+    "question_context": {
+      "type": "object",
+      "required": ["intent"],
+      "properties": {
+        "intent": {
+          "type": "string",
+          "enum": [
+            "workout_review",
+            "this_week_plan",
+            "plan_adjustment_request",
+            "progress_check",
+            "injury_or_symptom",
+            "general_education",
+            "motivation_support"
+          ],
+          "description": "Classified intent of the user's question"
+        },
+        "workout_review": {
+          "type": "object",
+          "description": "Context for workout_review intent",
+          "properties": {
+            "workout_type": {
+              "type": "string",
+              "description": "Type of workout being reviewed",
+              "example": "long_run"
+            },
+            "activity": {
+              "type": "object",
+              "properties": {
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "distance_miles": {
+                  "type": "number"
+                },
+                "avg_pace": {
+                  "type": "string",
+                  "example": "8:36/mile"
+                },
+                "avg_hr": {
+                  "type": "integer"
+                },
+                "zone_distribution": {
+                  "type": "object",
+                  "properties": {
+                    "z1": {"type": "string", "example": "5%"},
+                    "z2": {"type": "string", "example": "53%"},
+                    "z3": {"type": "string", "example": "42%"}
+                  }
+                },
+                "plan_target": {
+                  "type": "object",
+                  "properties": {
+                    "distance_miles": {"type": "number"},
+                    "pace_range": {"type": "string"},
+                    "hr_zone": {"type": "string"}
+                  }
+                },
+                "deviation": {
+                  "type": "object",
+                  "properties": {
+                    "pace_faster_pct": {"type": "number"},
+                    "hr_above_zone": {"type": "boolean"}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "this_week_plan": {
+          "type": "object",
+          "description": "Context for this_week_plan intent",
+          "properties": {
+            "current_week": {
+              "type": "object",
+              "properties": {
+                "week_number": {"type": "integer"},
+                "workouts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "day": {"type": "string"},
+                      "type": {"type": "string"},
+                      "miles": {"type": "number"},
+                      "pace": {"type": "string"},
+                      "details": {"type": "string"}
+                    }
+                  }
+                },
+                "weekly_focus": {"type": "string"}
+              }
+            }
+          }
+        },
+        "plan_adjustment_request": {
+          "type": "object",
+          "description": "Context for plan_adjustment_request intent"
+        },
+        "progress_check": {
+          "type": "object",
+          "description": "Context for progress_check intent"
+        },
+        "injury_or_symptom": {
+          "type": "object",
+          "description": "Context for injury_or_symptom intent",
+          "properties": {
+            "safety_flags": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        },
+        "general_education": {
+          "type": "object",
+          "description": "Context for general_education intent"
+        },
+        "motivation_support": {
+          "type": "object",
+          "description": "Context for motivation_support intent"
+        }
+      }
+    }
+  }
+}

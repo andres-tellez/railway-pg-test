@@ -1,0 +1,67 @@
+# Safety Flags Configuration
+# Medical and safety red flags for SafetyScanner
+# Update this file to modify flag detection without code changes
+
+# Critical flags: Immediate medical attention required
+# Zero false negatives on these - safety first
+critical_flags:
+  - "chest pain"
+  - "chest tightness"
+  - "chest discomfort"
+  - "chest pressure"
+  - "heart attack"
+  - "cardiac arrest"
+  - "can't breathe"
+  - "cannot breathe"
+  - "difficulty breathing"
+  - "shortness of breath"
+  - "trouble breathing"
+  - "dizziness"
+  - "dizzy"  # Also match standalone "dizzy"
+  - "lightheaded"
+  - "fainted"
+  - "blacked out"
+  - "passed out"
+  - "lost consciousness"
+  - "numbness"
+  - "tingling"
+  - "sharp pain"
+  - "stabbing pain"
+  - "severe pain"
+  - "excruciating pain"
+  - "joint swelling"
+  - "can't bear weight"
+  - "can't walk"
+  - "heart racing"
+  - "heart palpitations"
+  - "irregular heartbeat"
+
+# Moderate flags: Medical consultation recommended
+moderate_flags:
+  - "persistent pain"
+  - "persistent"  # Match "persistent" in context of pain
+  - "pain that won't go away"
+  - "chronic pain"
+  - "chronic"  # Match "chronic" in context of pain
+  - "nagging pain"
+  - "discomfort"
+  - "soreness that lasts"
+  - "injury"
+  - "hurt"
+  - "strained"
+  - "pulled muscle"
+  - "tendon pain"
+
+# Pattern-based flags: Require regex matching
+# Format: [pattern_regex, description]
+pattern_flags:
+  - pattern: "heart\\s+rate.*(?:200|over\\s+200|exceeded\\s+200|hit\\s+200|went\\s+over\\s+200|:\\s*200\\+)"
+    description: "heart rate > 200"
+  - pattern: "hr.*(?:200|over\\s+200|exceeded\\s+200|hit\\s+200|went\\s+over\\s+200|:\\s*200\\+)"
+    description: "heart rate > 200"
+  - pattern: "(?:chest|heart).*(?:pain|tight|uncomfortable|pressure|discomfort)"
+    description: "chest/heart symptoms"
+  - pattern: "(?:can'?t|cannot).*(?:breathe|breath)"
+    description: "breathing difficulty"
+  - pattern: "(?:fainted|blacked\\s+out|passed\\s+out|lost\\s+consciousness)"
+    description: "loss of consciousness"

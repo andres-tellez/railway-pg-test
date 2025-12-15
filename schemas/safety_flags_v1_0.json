@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SafetyFlags",
+  "description": "Safety flags detected from user message",
+  "version": "1.0.0",
+  "type": "object",
+  "required": ["version", "safety_flags"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "example": "1.0.0"
+    },
+    "safety_flags": {
+      "type": "object",
+      "required": ["has_medical_red_flag"],
+      "properties": {
+        "has_medical_red_flag": {
+          "type": "boolean",
+          "description": "Whether medical red flags were detected"
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of detected flag types",
+          "example": ["chest pain", "dizziness"]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "moderate", "low"],
+          "description": "Severity of detected flags"
+        }
+      }
+    }
+  }
+}

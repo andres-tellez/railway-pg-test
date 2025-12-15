@@ -1,0 +1,3 @@
+"""
+Coach architecture test suite.
+"""
