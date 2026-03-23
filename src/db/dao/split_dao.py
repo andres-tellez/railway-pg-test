@@ -1,4 +1,9 @@
+from typing import List
+
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
+
 from src.db.models.splits import Split
 from src.utils.conversions import convert_metrics
 
@@ -76,3 +81,13 @@ def upsert_splits(session, splits: list) -> int:
     result = session.execute(stmt)
     session.commit()
     return result.rowcount
+
+
+def get_splits_by_activity_id(session: Session, activity_id: int) -> List[Split]:
+    """Return split rows for an activity, ordered by lap_index (ascending)."""
+    stmt = (
+        select(Split)
+        .where(Split.activity_id == activity_id)
+        .order_by(Split.lap_index.asc())
+    )
+    return list(session.scalars(stmt).all())

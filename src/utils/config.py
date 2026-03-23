@@ -49,6 +49,12 @@ class Config:
         os.getenv("DEFAULT_PER_PAGE", 50)
     )  # Default activities per page
 
+    # ===== SmartCoach MVP (HTTP proxy; no duplicated coach logic) =====
+    SMARTCOACH_BASE_URL = (os.getenv("SMARTCOACH_BASE_URL") or "").strip() or None
+    SMARTCOACH_TIMEOUT_SECONDS = float(os.getenv("SMARTCOACH_TIMEOUT_SECONDS", "60"))
+    # Optional cap when resolving a run by local calendar date (0 = unlimited)
+    SMARTCOACH_DATE_LOOKBACK_DAYS = int(os.getenv("SMARTCOACH_DATE_LOOKBACK_DAYS", "0"))
+
 
 # Export single instance for import convenience
 config = Config()

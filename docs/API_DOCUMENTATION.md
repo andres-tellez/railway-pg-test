@@ -1,6 +1,6 @@
 # API Documentation
 
-**Date:** November 2025
+**Date:** March 2026 (activity / SmartCoach analyze-run section added)
 **Status:** In Progress
 **Base URL:** `https://api.smartcoach.dev` (production) / `https://localhost:5000` (local)
 
@@ -350,6 +350,97 @@ The JWT token is obtained from Auth0 after user login and is passed in the `Auth
 - **400**: Missing sub claim in token
 - **404**: User-athlete link not found
 - **401**: Unauthorized
+
+---
+
+## Activity Endpoints
+
+### GET /api/activities/
+
+**Description:** Returns the authenticated user’s recent Run activities (last 30 days) for plan and UI context. Uses the same JWT as other `/api/...` routes.
+
+**Authentication:** Required (`Authorization: Bearer <access_token>`)
+
+**Response:** `200` with `{ "activities": [ ... ] }` (each item includes `activity_id`, local `date`, distances, etc.).
+
+---
+
+### POST /api/activities/smartcoach/analyze-run
+
+**Description:** Builds a `run` payload from the database (activity + **split** rows), then proxies to the SmartCoach HTTP service `POST {SMARTCOACH_BASE_URL}/analyze-run`. The main API does not duplicate SmartCoach logic; it only reads the DB and forwards the response.
+
+**Authentication:** Required — same as `GET /api/activities/` (`@requires_auth`, Auth0 access token, internal `g.user_id` resolution).
+
+**Headers:**
+
+- `Authorization: Bearer <access_token>`
+- `Content-Type: application/json`
+- `Accept: application/json` (optional)
+
+**Request body (JSON) — provide exactly one of:**
+
+```json
+{ "activity_id": 1234567890 }
+```
+
+```json
+{ "date": "2025-03-23" }
+```
+
+- **`activity_id`:** Strava activity id as stored and returned in activity lists. Must belong to the caller (`activities.user_id` must match the JWT user). If missing, wrong user, or not found → **404** with `{ "error": "Activity not found" }` (or equivalent) without leaking other users’ data.
+- **`date`:** Local calendar date for the linked athlete, using the same timezone rules as `GET /api/activities/`. **404** if no run that day; **409** if multiple runs that day — client must send `activity_id` instead.
+
+**Activity type:** Only `Run` is supported; otherwise **400**.
+
+**Data dependency — splits required:** Split rows must exist for the activity (typically after enrichment). They are loaded ordered by `lap_index`. If none:
+
+- **422** with JSON such as:
+  ```json
+  {
+    "error": "Cannot build run for SmartCoach",
+    "detail": "No split rows for this activity; enrich the activity to load splits first."
+  }
+  ```
+
+**Downstream (server configuration):**
+
+- Set **`SMARTCOACH_BASE_URL`** on the API service (Railway/env) to the SmartCoach service **origin only** (no `/analyze-run` suffix). Example: `https://smartcoach-internal.example.com` or `http://127.0.0.1:8000`.
+- Optional: **`SMARTCOACH_TIMEOUT_SECONDS`** (default `60`), **`SMARTCOACH_DATE_LOOKBACK_DAYS`** (default `0` = unlimited history when resolving by `date`).
+- The API must be able to reach that host (network / private URL / firewall).
+
+**Downstream request shape (internal):**
+
+```json
+{
+  "run": { "duration_seconds": 3600, "samples": [ ... ] },
+  "runner_id": "<internal user UUID string>"
+}
+```
+
+**Success — 200:** Response body is SmartCoach’s JSON **as-is** (no wrapper), e.g. string fields such as `summary`, `explanation`, `evidence`, `recommendation` per your SmartCoach contract.
+
+**Error responses (summary):**
+
+| Status | When | Body (typical) |
+|--------|------|----------------|
+| **400** | Invalid JSON, both `activity_id` and `date`, neither, invalid `date` format, non-Run activity | `{ "error": "<message>" }` |
+| **401** | Missing or invalid JWT | `{ "error": "unauthorized", ... }` |
+| **404** | Activity not found / not owned; no linked athlete (`date` path); no run on date | `{ "error": "<message>" }` |
+| **409** | Multiple runs on the same `date` | `{ "error": "...", "detail": "Pass activity_id to choose one run." }` |
+| **422** | No splits or other mapper validation failure; or SmartCoach returned validation error | `{ "error", "detail" }` or forwarded `{ "detail": ... }` (FastAPI style) |
+| **503** | `SMARTCOACH_BASE_URL` not set | `{ "detail": "SmartCoach is not configured (SMARTCOACH_BASE_URL)." }` |
+| **500** | SmartCoach unreachable, transport error, or non-422 upstream failure | `{ "error": "Analysis service unavailable" }` (details only in server logs) |
+
+**Post-deploy verification (production `https://api.smartcoach.dev`):**
+
+| Check | Expected |
+|-------|----------|
+| `POST …/api/activities/smartcoach/analyze-run` **without** `Authorization` | **401** — proves the route is registered (not Werkzeug **404** “URL was not found”). |
+| Same with valid JWT, valid owned `activity_id`, splits present | **200** + coaching JSON |
+| Valid JWT, owned activity, **no** splits | **422** + enrich / splits message |
+| Valid JWT, another user’s `activity_id` | **404** + `{ "error": "..." }` |
+
+If unauthenticated `POST` returns Werkzeug **404**, the deployed build does not include this route yet.
 
 ---
 
