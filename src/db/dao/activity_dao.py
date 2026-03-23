@@ -6,14 +6,18 @@
 # @usage: Used in ingestion orchestration and enrichment
 # @prerequisites: Activity table must exist with correct schema
 
-from typing import List, Dict, Optional
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
-from uuid import UUID
+from typing import Any, List, Dict, Optional
+from datetime import date
 import uuid
 import logging
 
+from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
+from uuid import UUID
+
 from src.db.models.activities import Activity
+from src.utils.activity_local_date_sql import ACTIVITY_LOCAL_DATE_SQL_FRAGMENT
 from src.utils.logger import get_logger
 from src.utils.conversions import convert_metrics  # assumed to exist
 
@@ -182,6 +186,42 @@ class ActivityDAO:
             .order_by(Activity.start_date.desc())
             .all()
         )
+
+    @staticmethod
+    def find_run_activity_ids_on_local_date(
+        session: Session,
+        athlete_id: int,
+        local_date: date,
+        max_lookback_days: Optional[int] = None,
+    ) -> List[int]:
+        """
+        Return activity_ids for Run activities on the athlete's local calendar date.
+
+        Uses the same local-date expression as GET /api/activities/. Optional
+        max_lookback_days filters by start_date (omit or 0 for full history).
+        """
+        params: Dict[str, Any] = {"aid": athlete_id, "d": local_date}
+        lookback_clause = ""
+        if max_lookback_days is not None and max_lookback_days > 0:
+            lookback_clause = (
+                "AND start_date >= (NOW() AT TIME ZONE 'UTC') "
+                "- (:lookback_days * INTERVAL '1 day')"
+            )
+            params["lookback_days"] = max_lookback_days
+
+        q = text(
+            f"""
+            SELECT activity_id
+            FROM public.activities
+            WHERE athlete_id = :aid
+            AND type = 'Run'
+            AND ({ACTIVITY_LOCAL_DATE_SQL_FRAGMENT}) = :d
+            {lookback_clause}
+            ORDER BY start_date DESC
+            """
+        )
+        rows = session.execute(q, params).fetchall()
+        return [int(r[0]) for r in rows]
 
 
 def has_existing_activities(session: Session, athlete_id: int) -> bool:
