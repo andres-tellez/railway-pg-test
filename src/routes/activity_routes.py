@@ -102,10 +102,19 @@ def get_activities():
         internal_user_id = getattr(g, "user_id", None)
 
         if not internal_user_id:
+            logger.warning(
+                "get_activities: user_id=None athlete_id=None activities_sql_rows=None "
+                "(g.user_id missing after requires_auth — unexpected)"
+            )
             return jsonify({"activities": []}), 200
 
         athlete_id = _get_primary_athlete_id(session, internal_user_id)
         if not athlete_id:
+            logger.info(
+                "get_activities: user_id=%s athlete_id=None activities_sql_rows=None "
+                "(no user_athletes row for this user)",
+                internal_user_id,
+            )
             return jsonify({"activities": []}), 200
 
         # Fetch activities from the last 30 days (4 weeks)
@@ -133,6 +142,15 @@ def get_activities():
         activities_result = session.execute(
             activities_stmt, {"aid": athlete_id}
         ).fetchall()
+        sql_row_count = len(activities_result)
+
+        # One line per request — compare to manual SQL: same athlete_id + 30-day filter
+        logger.info(
+            "get_activities: user_id=%s athlete_id=%s activities_sql_rows=%s",
+            internal_user_id,
+            athlete_id,
+            sql_row_count,
+        )
 
         activities = [
             {
@@ -156,8 +174,12 @@ def get_activities():
         return jsonify({"activities": activities}), 200
 
     except Exception as e:
-        print(f"❌ Error fetching activities: {e}")
-        traceback.print_exc()
+        internal_user_id = getattr(g, "user_id", None)
+        logger.exception(
+            "get_activities: exception → empty response; user_id=%s error=%s",
+            internal_user_id,
+            e,
+        )
         return jsonify({"activities": []}), 200
     finally:
         session.close()
