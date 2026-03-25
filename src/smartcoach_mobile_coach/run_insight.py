@@ -1,0 +1,226 @@
+"""
+Build get_run_insight tool payload: facts + comparison (Topic 4 use case).
+"""
+
+from __future__ import annotations
+
+import statistics
+from typing import Any, Dict, List, Optional, Tuple
+
+from sqlalchemy import bindparam, text
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import Session
+
+from src.db.dao.activity_dao import ActivityDAO
+from src.db.models.activities import Activity
+from src.smartcoach_mobile_coach.display_format import (
+    format_distance_mi,
+    format_duration_seconds,
+    format_hr_bpm,
+    format_pace_sec_per_mi,
+    format_time_utc,
+)
+from src.utils.activity_local_date_sql import ACTIVITY_LOCAL_DATE_SQL_FRAGMENT
+
+
+def _distance_miles_from_meters(meters: Optional[float]) -> float:
+    if meters is None:
+        return 0.0
+    return float(meters) * 0.000621371
+
+
+def _pace_sec_per_mi(
+    moving_time: Optional[int], distance_miles: float
+) -> Optional[float]:
+    if not moving_time or moving_time <= 0 or distance_miles <= 0:
+        return None
+    return float(moving_time) / distance_miles
+
+
+def _median(vals: List[float]) -> Optional[float]:
+    clean = [v for v in vals if v is not None and v > 0]
+    if not clean:
+        return None
+    return float(statistics.median(clean))
+
+
+def _delta_pace_display(this_sec: float, med_sec: float) -> str:
+    d = this_sec - med_sec
+    sec_i = int(round(abs(d)))
+    m, s = divmod(sec_i, 60)
+    bit = f"{m}:{s:02d}/mi"
+    if d < 0:
+        return f"{bit} faster than recent median"
+    if d > 0:
+        return f"{bit} slower than recent median"
+    return "same as recent median"
+
+
+def _delta_hr_display(this_hr: float, med_hr: float) -> str:
+    d = int(round(this_hr - med_hr))
+    if d == 0:
+        return "same as recent median"
+    sign = "+" if d > 0 else ""
+    return f"{sign}{d} bpm vs recent median"
+
+
+def _delta_distance_display(this_mi: float, med_mi: float) -> str:
+    d = this_mi - med_mi
+    if abs(d) < 0.05:
+        return "same as recent median"
+    sign = "+" if d > 0 else ""
+    return f"{sign}{d:.2f} mi vs recent median"
+
+
+def _fetch_activity_context(
+    session: Session, internal_user_id: str, activity_id: int
+) -> Optional[Tuple[Any, ...]]:
+    q = text(
+        f"""
+        SELECT
+            activity_id,
+            ({ACTIVITY_LOCAL_DATE_SQL_FRAGMENT}) AS local_date,
+            start_date,
+            name,
+            distance,
+            moving_time,
+            average_heartrate,
+            type
+        FROM public.activities
+        WHERE activity_id = :aid AND user_id = :uid
+        """
+    ).bindparams(bindparam("uid", type_=PGUUID))
+    row = session.execute(q, {"aid": activity_id, "uid": internal_user_id}).fetchone()
+    return row
+
+
+def _peer_activities_before(
+    session: Session, athlete_id: int, before_start, exclude_id: int, limit: int = 10
+) -> List[Activity]:
+    return (
+        session.query(Activity)
+        .filter(
+            Activity.athlete_id == athlete_id,
+            Activity.type == "Run",
+            Activity.activity_id != exclude_id,
+            Activity.start_date < before_start,
+        )
+        .order_by(Activity.start_date.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def build_get_run_insight_payload(
+    session: Session,
+    internal_user_id: str,
+    activity_id: int,
+    schema_version: str,
+) -> Dict[str, Any]:
+    row = _fetch_activity_context(session, internal_user_id, activity_id)
+    if not row:
+        return {"error": "not_found", "message": "Activity not found for this user."}
+
+    _aid, local_date, start_date, name, distance_m, moving_time, avg_hr, act_type = row
+    if (act_type or "") != "Run":
+        return {"error": "unsupported", "message": "Only Run activities are supported."}
+
+    distance_mi = _distance_miles_from_meters(distance_m)
+    pace_sec = _pace_sec_per_mi(moving_time, distance_mi)
+    act = ActivityDAO.get_by_id(session, activity_id)
+    if not act or str(act.user_id) != str(internal_user_id):
+        return {"error": "not_found", "message": "Activity not found for this user."}
+
+    peers = _peer_activities_before(
+        session, act.athlete_id, act.start_date, activity_id, limit=10
+    )[:5]
+
+    peer_rows: List[Dict[str, Any]] = []
+    peer_paces: List[float] = []
+    peer_hrs: List[float] = []
+    peer_dists: List[float] = []
+
+    for p in peers:
+        p_mi = _distance_miles_from_meters(p.distance)
+        p_pace = _pace_sec_per_mi(p.moving_time, p_mi)
+        p_hr = float(p.average_heartrate) if p.average_heartrate is not None else None
+        if p_pace:
+            peer_paces.append(p_pace)
+        if p_hr:
+            peer_hrs.append(p_hr)
+        if p_mi > 0:
+            peer_dists.append(p_mi)
+        ld = None
+        try:
+            pr = _fetch_activity_context(session, internal_user_id, int(p.activity_id))
+            if pr and pr[1]:
+                ld = pr[1].isoformat() if hasattr(pr[1], "isoformat") else str(pr[1])
+        except Exception:
+            ld = None
+        label = ld or f"Activity {p.activity_id}"
+        peer_rows.append(
+            {
+                "label": label,
+                "activity_id": int(p.activity_id),
+                "distance_display": format_distance_mi(p_mi),
+                "avg_pace_display": format_pace_sec_per_mi(p_pace) if p_pace else "—",
+                "avg_heart_rate_display": format_hr_bpm(p.average_heartrate) or "—",
+            }
+        )
+
+    med_pace = _median(peer_paces)
+    med_hr = _median(peer_hrs)
+    med_dist = _median(peer_dists)
+
+    delta_block = None
+    if peer_rows and pace_sec and med_pace:
+        delta_block = {
+            "avg_pace": _delta_pace_display(pace_sec, med_pace),
+            "avg_heart_rate": (
+                _delta_hr_display(float(avg_hr), med_hr)
+                if avg_hr is not None and med_hr
+                else None
+            ),
+            "distance": (
+                _delta_distance_display(distance_mi, med_dist) if med_dist else None
+            ),
+        }
+
+    local_date_str = (
+        local_date.isoformat()
+        if local_date and hasattr(local_date, "isoformat")
+        else str(local_date or "")
+    )
+
+    payload: Dict[str, Any] = {
+        "schema_version": schema_version,
+        "activity_id": activity_id,
+        "facts": {
+            "title": (name or "Run")[:200],
+            "local_date": local_date_str,
+            "start_local_time_display": format_time_utc(start_date),
+            "distance_display": format_distance_mi(distance_mi),
+            "moving_time_display": format_duration_seconds(int(moving_time or 0)),
+            "avg_pace_display": format_pace_sec_per_mi(pace_sec) if pace_sec else "—",
+            "avg_heart_rate_display": format_hr_bpm(avg_hr) or "—",
+            "sport_type": "run",
+        },
+        "comparison": {
+            "peer_criteria_summary": "Up to 5 prior runs for this athlete before this activity",
+            "peers_count": len(peer_rows),
+            "this_run": {
+                "label": (
+                    f"This run ({local_date_str})" if local_date_str else "This run"
+                ),
+                "activity_id": activity_id,
+                "distance_display": format_distance_mi(distance_mi),
+                "avg_pace_display": (
+                    format_pace_sec_per_mi(pace_sec) if pace_sec else "—"
+                ),
+                "avg_heart_rate_display": format_hr_bpm(avg_hr) or "—",
+            },
+            "peer_runs": peer_rows,
+            "delta_vs_peer_median_display": delta_block,
+        },
+    }
+    return payload

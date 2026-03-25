@@ -65,6 +65,18 @@ class OpenAIResponse:
     request_id: Optional[str] = None
 
 
+@dataclass
+class OpenAIToolCompletionResult:
+    """Chat completion that may include tool_calls (content optional)."""
+
+    content: Optional[str]
+    tool_calls: Optional[List[Dict[str, Any]]]
+    usage: Dict[str, int]
+    cost: float
+    model: str
+    request_id: Optional[str] = None
+
+
 class RateLimitExceededError(Exception):
     """Raised when rate limit is exceeded."""
 
@@ -246,6 +258,132 @@ class OpenAIService:
                 f"OpenAI API call failed: user={user_id}, model={model}, error={e}"
             )
             # Don't record failed requests for rate limiting or cost tracking
+            raise
+
+    def chat_completion_with_tools(
+        self,
+        messages: List[Dict[str, Any]],
+        user_id: str,
+        tools: List[Dict[str, Any]],
+        model: str = "gpt-4o",
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        timeout: float = 30.0,
+        tool_choice: Optional[str] = None,
+        **kwargs: Any,
+    ) -> OpenAIToolCompletionResult:
+        """
+        Chat completion with function/tool calling. Applies same rate and cost guards
+        as chat_completion. Returns text and/or tool_calls from the assistant message.
+        """
+        if not user_id:
+            raise ValueError(
+                "user_id is required for OpenAI API calls (for security tracking)"
+            )
+
+        allowed, retry_after = can_make_request(user_id)
+        if not allowed:
+            logger.warning(
+                f"OpenAI rate limit exceeded for user {user_id}. "
+                f"Retry after {retry_after:.1f} seconds"
+            )
+            raise RateLimitExceededError(retry_after)
+
+        cost_allowed, cost_error, cost_exceeded_by = check_cost_limits(user_id)
+        if not cost_allowed:
+            logger.warning(
+                f"OpenAI cost limit exceeded for user {user_id}. "
+                f"Error: {cost_error}"
+            )
+            raise CostLimitExceededError(
+                cost_error or "Daily cost limit exceeded.", cost_exceeded_by
+            )
+
+        call_params: Dict[str, Any] = {
+            "model": model,
+            "temperature": temperature,
+            "messages": messages,
+            "tools": tools,
+            "timeout": timeout,
+            **kwargs,
+        }
+        if tool_choice is not None:
+            call_params["tool_choice"] = tool_choice
+        if max_tokens is not None:
+            call_params["max_tokens"] = max_tokens
+
+        try:
+            response = self._client.chat.completions.create(**call_params)
+            if not response or not response.choices:
+                raise ValueError("Empty response from OpenAI API")
+
+            choice = response.choices[0].message
+            raw_content = choice.content
+            content = (raw_content or "").strip() if raw_content else None
+            if content == "":
+                content = None
+
+            tool_calls_out: Optional[List[Dict[str, Any]]] = None
+            raw_tc = getattr(choice, "tool_calls", None)
+            if raw_tc:
+                tool_calls_out = []
+                for tc in raw_tc:
+                    fn = getattr(tc, "function", None)
+                    if fn is None:
+                        continue
+                    tool_calls_out.append(
+                        {
+                            "id": tc.id,
+                            "type": getattr(tc, "type", None) or "function",
+                            "function": {
+                                "name": fn.name,
+                                "arguments": fn.arguments or "{}",
+                            },
+                        }
+                    )
+
+            if content is None and not tool_calls_out:
+                raise ValueError(
+                    "OpenAI returned no content and no tool_calls — unexpected"
+                )
+
+            usage_dict = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            }
+            try:
+                usage = getattr(response, "usage", None)
+                if usage:
+                    usage_dict = {
+                        "prompt_tokens": usage.prompt_tokens,
+                        "completion_tokens": usage.completion_tokens,
+                        "total_tokens": usage.total_tokens,
+                    }
+            except Exception:
+                pass
+
+            cost = record_request_cost(
+                user_id=user_id,
+                model=model,
+                prompt_tokens=usage_dict["prompt_tokens"],
+                completion_tokens=usage_dict["completion_tokens"],
+            )
+            record_request(user_id)
+            request_id = getattr(response, "id", None)
+
+            return OpenAIToolCompletionResult(
+                content=content,
+                tool_calls=tool_calls_out,
+                usage=usage_dict,
+                cost=cost,
+                model=model,
+                request_id=request_id,
+            )
+        except Exception as e:
+            logger.error(
+                f"OpenAI tool completion failed: user={user_id}, model={model}, error={e}"
+            )
             raise
 
 
