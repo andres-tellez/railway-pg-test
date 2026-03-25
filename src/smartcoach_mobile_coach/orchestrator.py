@@ -23,9 +23,10 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
             "name": "list_runs_for_local_date",
             "description": (
                 "Find the user's run activities on a local calendar date (YYYY-MM-DD). "
-                "Use when they ask about 'today', 'this morning', or a specific date. "
+                "When they ask about 'my run', 'how was my run', 'this run', 'today', or omit a date, "
+                "use the device anchor date from the system prompt as local_date unless they clearly name another day. "
                 "If multiple runs are returned, ask which one using the candidate list. "
-                "If one activity_id is returned, you may call get_run_insight with it."
+                "If one activity_id is returned, call get_run_insight with it."
             ),
             "parameters": {
                 "type": "object",
@@ -62,16 +63,32 @@ OPENAI_TOOLS: List[Dict[str, Any]] = [
     },
 ]
 
-SYSTEM_PROMPT = """You are SmartCoach, an expert running coach speaking to a user in the mobile app.
+SYSTEM_PROMPT_BASE = """You are SmartCoach, an expert running coach speaking to a user in the mobile app.
 
 Rules:
 - Use tools to load real run data; never invent distances, paces, heart rates, or dates.
+- The system message includes the user's real local calendar "today" from their phone — use it for vague run questions; do not ask them to pick a date when they say today / my run / how was my run.
 - If list_runs_for_local_date returns disambiguation_needed with multiple candidates, ask the user which run they mean (use titles, distance, and time from the list).
-- If there are no runs on that date, say so clearly.
+- If there are no runs on that date, say so clearly (e.g. you did not log a run that day).
+- When you have get_run_insight results for today's default lookup, you may open naturally (e.g. "Today's run was …") when it fits the tool results.
 - When you have get_run_insight results, answer in this order: (1) key facts in plain language, (2) a small markdown table comparing this run to peer_runs if present, (3) a short coaching blurb grounded only in that data.
 - If a metric is missing (e.g. no HR), do not guess.
 - Stay supportive and concise. Do not give medical diagnoses; suggest professionals for pain or health concerns.
 """
+
+
+def _device_anchor_system_section(
+    anchor_local_date: str, client_timezone: str | None
+) -> str:
+    tz_display = (client_timezone or "").strip() or "unknown"
+    return (
+        f'## Device context (authoritative calendar "today")\n'
+        f"- The user's local calendar date on their phone right now is **{anchor_local_date}** (IANA timezone: {tz_display}).\n"
+        f'- For "how was my run?", "my run", "this run", "today", or whenever they do not name a specific day, '
+        f"call `list_runs_for_local_date` with `local_date` exactly **{anchor_local_date}**.\n"
+        f"- Only use a different `local_date` when the user clearly refers to another day.\n"
+        f"- Never ask the user to specify the date for those vague questions; use **{anchor_local_date}**."
+    )
 
 
 def run_mobile_agent_turn(
@@ -79,9 +96,14 @@ def run_mobile_agent_turn(
     internal_user_id: str,
     conversation_history: List[Dict[str, str]],
     user_message: str,
+    *,
+    anchor_local_date: str,
+    client_timezone: str | None = None,
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Returns (assistant_text, metadata with usage, cost, loops).
+
+    anchor_local_date: YYYY-MM-DD from the mobile device (or server fallback); grounds "today".
     """
     service = get_openai_service()
     # Match coach.utils.config defaults without importing `coach` (avoids heavy import chain).
@@ -90,7 +112,12 @@ def run_mobile_agent_turn(
     max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
     timeout = float(os.getenv("OPENAI_TIMEOUT", "30.0"))
 
-    messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    system_content = (
+        SYSTEM_PROMPT_BASE
+        + "\n\n"
+        + _device_anchor_system_section(anchor_local_date, client_timezone)
+    )
+    messages: List[Dict[str, Any]] = [{"role": "system", "content": system_content}]
     for m in conversation_history[-12:]:
         if m.get("role") in ("user", "assistant") and m.get("content"):
             messages.append({"role": m["role"], "content": m["content"]})
@@ -165,7 +192,7 @@ def run_mobile_agent_turn(
 
     fallback = (
         "I couldn't complete that within the allowed steps. Try asking about one run at a time, "
-        "or pick a specific date (YYYY-MM-DD)."
+        "or try again in a moment."
     )
     return fallback, {
         "usage": total_usage,

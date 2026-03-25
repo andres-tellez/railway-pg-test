@@ -5,7 +5,10 @@
 ## Entry point
 
 - **`POST /api/conversations/{conversation_id}/agent-messages`**
-- Body: `{ "message": string }`
+- Body: `{ "message": string, "client_local_date": "YYYY-MM-DD", "client_timezone"?: string }`
+  - **`client_local_date`** (required for correct “today”): the user’s **device** local calendar date. Mobile sends this every turn.
+  - **`client_timezone`**: optional IANA name (e.g. `America/Chicago`) for the system prompt; does not change SQL (activities still use per-activity timezone).
+  - If `client_local_date` is missing or invalid, the server falls back to **UTC** calendar date (logged) — prefer always sending it from the app.
 - Success: `{ "response": string, … }` (same shape as plain `…/messages` for assistant text).
 
 ## Code layout

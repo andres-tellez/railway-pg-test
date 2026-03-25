@@ -9,7 +9,8 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Optional, Tuple
 
 from flask import Blueprint, jsonify, request
 
@@ -29,6 +30,43 @@ from src.smartcoach_mobile_coach.orchestrator import run_mobile_agent_turn
 from src.utils.response_utils import error_response
 
 logger = logging.getLogger("smartcoach_mobile_coach")
+
+
+def _resolve_anchor_local_date(payload: dict) -> Tuple[str, Optional[str]]:
+    """
+    Prefer client_local_date / clientLocalDate (YYYY-MM-DD) from the mobile app.
+    Fall back to UTC calendar date if missing or invalid (logged).
+    Returns (anchor_date_str, timezone_str_or_none).
+    """
+    raw = payload.get("client_local_date")
+    if raw is None:
+        raw = payload.get("clientLocalDate")
+    tz_raw = payload.get("client_timezone")
+    if tz_raw is None:
+        tz_raw = payload.get("clientTimezone")
+
+    tz = None
+    if isinstance(tz_raw, str) and tz_raw.strip():
+        tz = tz_raw.strip()[:120]
+
+    if isinstance(raw, str) and raw.strip():
+        candidate = raw.strip()
+        try:
+            datetime.strptime(candidate, "%Y-%m-%d")
+            return candidate, tz
+        except ValueError:
+            logger.warning(
+                "[smartcoach_mobile_coach] invalid client_local_date=%r; using UTC fallback",
+                candidate[:48],
+            )
+
+    anchor = datetime.now(timezone.utc).date().isoformat()
+    logger.info(
+        "[smartcoach_mobile_coach] missing client_local_date; using UTC date fallback %s",
+        anchor,
+    )
+    return anchor, tz
+
 
 smartcoach_mobile_coach_bp = Blueprint(
     "smartcoach_mobile_coach",
@@ -106,6 +144,7 @@ def agent_messages(conversation_id):
             .all()
         )
         history = [{"role": m.role, "content": m.content} for m in prior]
+        anchor_date, client_tz = _resolve_anchor_local_date(data)
 
         user_msg = ConversationMessage(
             conversation_id=conversation_id,
@@ -125,6 +164,8 @@ def agent_messages(conversation_id):
                 uid_str,
                 history,
                 message.strip(),
+                anchor_local_date=anchor_date,
+                client_timezone=client_tz,
             )
         except RateLimitExceededError as e:
             session.rollback()
