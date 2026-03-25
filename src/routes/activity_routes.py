@@ -9,6 +9,9 @@ Endpoints:
 GET  /api/activities/
     Get user's activities (last 30 days) for plan generation context
 
+POST /api/activities/smartcoach/analyze-run
+    Proxy: build run from DB splits and call SmartCoach POST /analyze-run
+
 GET  /api/activities/enrich/status
     Check enrichment service status
 
@@ -32,20 +35,59 @@ Data Source:
 
 from __future__ import annotations
 
+import logging
 import traceback
-from typing import Optional
 from datetime import datetime
 from io import BytesIO
+from typing import Any, Optional
 
 from flask import Blueprint, jsonify, request, g, send_file
 from sqlalchemy import text, bindparam
 from sqlalchemy.dialects.postgresql import UUID
 
+from src.db.dao.activity_dao import ActivityDAO
+from src.db.dao.split_dao import get_splits_by_activity_id
 from src.db.db_session import get_session
 from src.services.activity_service import ActivityIngestionService, run_enrichment_batch
+from src.services.smartcoach_client import SmartCoachUpstreamError, post_analyze_run
+from src.services.smartcoach_run_mapper import build_smartcoach_run
+from src.utils.activity_local_date_sql import ACTIVITY_LOCAL_DATE_SQL_FRAGMENT
 from src.utils.auth0_jwt import requires_auth
+from src.utils.config import config
+
+logger = logging.getLogger(__name__)
 
 activity_bp = Blueprint("activity", __name__, url_prefix="/api/activities")
+
+
+def _get_primary_athlete_id(session, internal_user_id: str) -> Optional[int]:
+    stmt = text(
+        """
+        SELECT athlete_id
+        FROM public.user_athletes
+        WHERE user_id = :uid
+        LIMIT 1
+        """
+    ).bindparams(bindparam("uid", type_=UUID))
+    row = session.execute(stmt, {"uid": internal_user_id}).fetchone()
+    if not row:
+        return None
+    return int(row[0])
+
+
+def _coerce_activity_id(raw: Any) -> Optional[int]:
+    """Parse JSON activity_id as int (reject bool; allow numeric string)."""
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, float) and raw.is_integer():
+        return int(raw)
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip())
+    return None
 
 
 @activity_bp.get("/")
@@ -60,52 +102,36 @@ def get_activities():
         internal_user_id = getattr(g, "user_id", None)
 
         if not internal_user_id:
+            logger.warning(
+                "get_activities: user_id=None athlete_id=None activities_sql_rows=None "
+                "(g.user_id missing after requires_auth — unexpected)"
+            )
             return jsonify({"activities": []}), 200
 
-        # Get athlete_id for this user
-        stmt = text(
-            """
-            SELECT athlete_id
-            FROM public.user_athletes
-            WHERE user_id = :uid
-            LIMIT 1
-            """
-        ).bindparams(bindparam("uid", type_=UUID))
-        athlete_row = session.execute(stmt, {"uid": internal_user_id}).fetchone()
-
-        if not athlete_row:
+        athlete_id = _get_primary_athlete_id(session, internal_user_id)
+        if not athlete_id:
+            logger.info(
+                "get_activities: user_id=%s athlete_id=None activities_sql_rows=None "
+                "(no user_athletes row for this user)",
+                internal_user_id,
+            )
             return jsonify({"activities": []}), 200
-
-        athlete_id = athlete_row.athlete_id
 
         # Fetch activities from the last 30 days (4 weeks)
         # Use PostgreSQL to convert UTC datetime to activity's local timezone and extract date
         # Timezone format: "(GMT-06:00) America/Chicago" -> extract "America/Chicago"
         activities_stmt = text(
-            """
+            f"""
             SELECT
                 activity_id,
-                CASE
-                    WHEN timezone IS NOT NULL AND timezone LIKE '%America/%' THEN
-                        -- Extract timezone name after ") " (e.g., "America/Chicago")
-                        DATE((start_date AT TIME ZONE 'UTC') AT TIME ZONE
-                            SUBSTRING(timezone FROM POSITION(') ' IN timezone) + 2))
-                    WHEN timezone IS NOT NULL THEN
-                        -- Try to extract timezone name, fallback to UTC conversion
-                        DATE((start_date AT TIME ZONE 'UTC') AT TIME ZONE
-                            COALESCE(
-                                NULLIF(SUBSTRING(timezone FROM POSITION(') ' IN timezone) + 2), ''),
-                                'UTC'
-                            ))
-                    ELSE
-                        -- No timezone: assume start_date is already in local time, extract date directly
-                        DATE(start_date)
-                END as local_date,
+                {ACTIVITY_LOCAL_DATE_SQL_FRAGMENT} as local_date,
                 distance,
                 moving_time,
                 name,
                 type,
-                average_heartrate
+                average_heartrate,
+                average_cadence,
+                max_cadence
             FROM public.activities
             WHERE athlete_id = :aid
             AND start_date >= NOW() - INTERVAL '30 days'
@@ -116,6 +142,15 @@ def get_activities():
         activities_result = session.execute(
             activities_stmt, {"aid": athlete_id}
         ).fetchall()
+        sql_row_count = len(activities_result)
+
+        # One line per request — compare to manual SQL: same athlete_id + 30-day filter
+        logger.info(
+            "get_activities: user_id=%s athlete_id=%s activities_sql_rows=%s",
+            internal_user_id,
+            athlete_id,
+            sql_row_count,
+        )
 
         activities = [
             {
@@ -130,6 +165,8 @@ def get_activities():
                 "name": row[4],
                 "type": row[5],
                 "average_heartrate": float(row[6]) if row[6] is not None else None,
+                "average_cadence": float(row[7]) if row[7] is not None else None,
+                "max_cadence": float(row[8]) if row[8] is not None else None,
             }
             for row in activities_result
         ]
@@ -137,9 +174,120 @@ def get_activities():
         return jsonify({"activities": activities}), 200
 
     except Exception as e:
-        print(f"❌ Error fetching activities: {e}")
-        traceback.print_exc()
+        internal_user_id = getattr(g, "user_id", None)
+        logger.exception(
+            "get_activities: exception → empty response; user_id=%s error=%s",
+            internal_user_id,
+            e,
+        )
         return jsonify({"activities": []}), 200
+    finally:
+        session.close()
+
+
+@activity_bp.post("/smartcoach/analyze-run")
+@requires_auth
+def smartcoach_analyze_run():
+    """
+    Proxy to SmartCoach POST /analyze-run.
+
+    JSON body: exactly one of:
+      { "activity_id": <int> }
+      { "date": "YYYY-MM-DD" }  — local calendar date (same rules as GET /api/activities/)
+
+    Returns SmartCoach JSON: summary, explanation, evidence, recommendation.
+    """
+    if not request.is_json:
+        return jsonify({"error": "Expected application/json"}), 400
+
+    body = request.get_json(silent=True) or {}
+    raw_aid = body.get("activity_id")
+    date_str = body.get("date")
+    has_id = raw_aid is not None
+    has_date = date_str is not None and str(date_str).strip() != ""
+
+    if has_id and has_date:
+        return jsonify({"error": "Provide only one of activity_id or date"}), 400
+    if not has_id and not has_date:
+        return jsonify({"error": "Provide activity_id or date (YYYY-MM-DD)"}), 400
+
+    internal_user_id = getattr(g, "user_id", None)
+    if not internal_user_id:
+        return jsonify({"error": "unauthorized"}), 401
+
+    session = get_session()
+    try:
+        act = None
+
+        if has_id:
+            activity_id = _coerce_activity_id(raw_aid)
+            if activity_id is None or activity_id <= 0:
+                return jsonify({"error": "activity_id must be a positive integer"}), 400
+            act = ActivityDAO.get_by_id(session, activity_id)
+            if not act:
+                return jsonify({"error": "Activity not found"}), 404
+            if str(act.user_id) != str(internal_user_id):
+                return jsonify({"error": "Activity not found"}), 404
+            if (act.type or "") != "Run":
+                return jsonify({"error": "Only Run activities are supported"}), 400
+        else:
+            try:
+                local_d = datetime.strptime(str(date_str).strip(), "%Y-%m-%d").date()
+            except ValueError:
+                return jsonify({"error": "Invalid date; use YYYY-MM-DD"}), 400
+
+            aid = _get_primary_athlete_id(session, internal_user_id)
+            if aid is None:
+                return jsonify({"error": "No linked athlete"}), 404
+
+            lookback = config.SMARTCOACH_DATE_LOOKBACK_DAYS
+            lb = lookback if lookback and lookback > 0 else None
+            ids = ActivityDAO.find_run_activity_ids_on_local_date(
+                session, aid, local_d, max_lookback_days=lb
+            )
+            if len(ids) == 0:
+                return jsonify({"error": "No run on that date"}), 404
+            if len(ids) > 1:
+                return (
+                    jsonify(
+                        {
+                            "error": "Multiple runs on that date",
+                            "detail": "Pass activity_id to choose one run.",
+                        }
+                    ),
+                    409,
+                )
+            act = ActivityDAO.get_by_id(session, ids[0])
+            if not act or str(act.user_id) != str(internal_user_id):
+                return jsonify({"error": "Activity not found"}), 404
+            if (act.type or "") != "Run":
+                return jsonify({"error": "Only Run activities are supported"}), 400
+
+        splits = get_splits_by_activity_id(session, act.activity_id)
+        try:
+            run = build_smartcoach_run(act, splits)
+        except ValueError as ve:
+            return (
+                jsonify(
+                    {"error": "Cannot build run for SmartCoach", "detail": str(ve)}
+                ),
+                422,
+            )
+
+        try:
+            payload, _ = post_analyze_run(run, str(internal_user_id))
+        except SmartCoachUpstreamError as up:
+            if up.status_code == 422 and up.payload is not None:
+                return jsonify(up.payload), 422
+            if up.status_code == 503:
+                return jsonify(up.payload or {"error": "Service unavailable"}), 503
+            logger.exception(
+                "SmartCoach analyze-run failed: %s",
+                up.log_message or up.status_code,
+            )
+            return jsonify({"error": "Analysis service unavailable"}), 500
+
+        return jsonify(payload), 200
     finally:
         session.close()
 

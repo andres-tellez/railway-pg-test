@@ -140,6 +140,12 @@ def calculate_paces_from_performance(
         """
         )
 
+        logger.info(
+            f"[Pace Calculation Debug] Query parameters: user_id={user_id}, "
+            f"lookback_weeks={lookback_weeks}, min_distance={min_distance_miles}, "
+            f"min_pace={config.MIN_PACE_SEC_PER_MILE}, max_pace={config.MAX_PACE_SEC_PER_MILE}"
+        )
+
         result = session.execute(
             query,
             {
@@ -167,6 +173,15 @@ def calculate_paces_from_performance(
             return None
 
         median_easy_pace = float(result.median_pace)
+        earliest_run = result.earliest_run if hasattr(result, "earliest_run") else None
+        latest_run = result.latest_run if hasattr(result, "latest_run") else None
+
+        logger.info(
+            f"[Pace Calculation Debug] Query results: "
+            f"run_count={run_count}, median_pace={median_easy_pace:.2f}s/mi ({median_easy_pace/60:.2f} min/mi), "
+            f"earliest_run={earliest_run}, latest_run={latest_run}"
+        )
+
         logger.debug(
             f"Found {run_count} valid runs, median easy pace: {median_easy_pace:.1f}s/mi"
         )
