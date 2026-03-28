@@ -1,6 +1,9 @@
 """Human-readable display strings for runner-facing tool payloads (Topic 4)."""
 
-from typing import Optional
+from datetime import date, datetime
+from typing import Optional, Union
+
+_DateLike = Union[date, datetime, str, None]
 
 
 def format_duration_seconds(sec: int) -> str:
@@ -46,3 +49,40 @@ def format_time_utc(dt) -> str:
         return dt.strftime("%I:%M %p").lstrip("0") + " UTC"
     except Exception:
         return "—"
+
+
+def _coerce_to_date(value: _DateLike) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and len(value) >= 10:
+        try:
+            return datetime.strptime(value.strip()[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+def format_month_day(local_d: _DateLike) -> str:
+    """Table-friendly month-day, e.g. 03-24 (no year)."""
+    d = _coerce_to_date(local_d)
+    if d is None:
+        return "—"
+    return f"{d.month:02d}-{d.day:02d}"
+
+
+def table_row_date_label(local_d: _DateLike, anchor_yyyy_mm_dd: Optional[str]) -> str:
+    """
+    Label for comparison tables: 'Today' if local calendar day matches anchor (YYYY-MM-DD),
+    else MM-DD. Central place for coach table date copy.
+    """
+    d = _coerce_to_date(local_d)
+    if d is None:
+        return "—"
+    a = (anchor_yyyy_mm_dd or "").strip()[:10]
+    if len(a) == 10 and d.isoformat() == a:
+        return "Today"
+    return format_month_day(d)

@@ -4,6 +4,7 @@ Build get_run_insight tool payload: facts + comparison (Topic 4 use case).
 
 from __future__ import annotations
 
+import copy
 import statistics
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -19,6 +20,7 @@ from src.smartcoach_mobile_coach.display_format import (
     format_hr_bpm,
     format_pace_sec_per_mi,
     format_time_utc,
+    table_row_date_label,
 )
 from src.utils.activity_local_date_sql import ACTIVITY_LOCAL_DATE_SQL_FRAGMENT
 
@@ -150,17 +152,21 @@ def build_get_run_insight_payload(
             peer_hrs.append(p_hr)
         if p_mi > 0:
             peer_dists.append(p_mi)
-        ld = None
+        ld_iso: Optional[str] = None
         try:
             pr = _fetch_activity_context(session, internal_user_id, int(p.activity_id))
             if pr and pr[1]:
-                ld = pr[1].isoformat() if hasattr(pr[1], "isoformat") else str(pr[1])
+                raw_ld = pr[1]
+                if hasattr(raw_ld, "isoformat"):
+                    ld_iso = raw_ld.isoformat()
+                else:
+                    s = str(raw_ld)
+                    ld_iso = s[:10] if len(s) >= 10 else None
         except Exception:
-            ld = None
-        label = ld or f"Activity {p.activity_id}"
+            pass
         peer_rows.append(
             {
-                "label": label,
+                "local_date_iso": ld_iso,
                 "activity_id": int(p.activity_id),
                 "distance_display": format_distance_mi(p_mi),
                 "avg_pace_display": format_pace_sec_per_mi(p_pace) if p_pace else "—",
@@ -209,9 +215,7 @@ def build_get_run_insight_payload(
             "peer_criteria_summary": "Up to 5 prior runs for this athlete before this activity",
             "peers_count": len(peer_rows),
             "this_run": {
-                "label": (
-                    f"This run ({local_date_str})" if local_date_str else "This run"
-                ),
+                "local_date_iso": local_date_str or None,
                 "activity_id": activity_id,
                 "distance_display": format_distance_mi(distance_mi),
                 "avg_pace_display": (
@@ -224,3 +228,36 @@ def build_get_run_insight_payload(
         },
     }
     return payload
+
+
+def apply_insight_table_labels(
+    payload: Dict[str, Any], anchor_yyyy_mm_dd: Optional[str]
+) -> Dict[str, Any]:
+    """
+    Add row `label` for comparison tables (Today vs MM-DD) using device anchor date.
+    Cached payloads are canonical; this runs on every tool response.
+    """
+    if not payload or payload.get("error"):
+        return payload
+    out = copy.deepcopy(payload)
+    anchor = (anchor_yyyy_mm_dd or "").strip()[:10]
+    if len(anchor) < 10:
+        anchor = None
+
+    comp = out.get("comparison") or {}
+    this_run = dict(comp.get("this_run") or {})
+    iso = this_run.get("local_date_iso")
+    if not iso:
+        facts = out.get("facts") or {}
+        iso = facts.get("local_date")
+    this_run["label"] = table_row_date_label(iso, anchor)
+    comp["this_run"] = this_run
+
+    peers = []
+    for row in comp.get("peer_runs") or []:
+        r = dict(row)
+        r["label"] = table_row_date_label(r.get("local_date_iso"), anchor)
+        peers.append(r)
+    comp["peer_runs"] = peers
+    out["comparison"] = comp
+    return out
