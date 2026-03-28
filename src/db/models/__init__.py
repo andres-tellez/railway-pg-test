@@ -11,5 +11,6 @@ from src.db.models.strava_sync_status import StravaSyncStatus
 from src.db.models.user_hr_zones import UserHrZones
 from src.db.models.coach_tools import CoachTool
 from src.db.models.user_coach_preferences import UserCoachPreferences
+from src.db.models.weekly_training_insights import WeeklyTrainingInsight
 
 # Add other models in the proper order if needed (e.g. tokens, activities)

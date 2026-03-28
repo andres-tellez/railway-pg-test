@@ -143,6 +143,35 @@ VERBOSITY_RULES = {
 # Allowed values for preference_scope (future-proof for training summaries, alerts, etc.)
 PREFERENCE_SCOPES = ["run_summary", "training_summary", "global"]
 
+# ---------------------------------------------------------------------------
+# Weekly Insights — KPI Bands (R/O/Y/G)
+# ---------------------------------------------------------------------------
+
+# HR Drift: absolute thresholds (well-established in coaching science).
+# Lower drift = more aerobic stability. These apply to ALL users.
+HR_DRIFT_BANDS = {
+    "green_max": 2.5,
+    "yellow_max": 5.0,
+    "orange_max": 7.5,
+}
+
+# Z2 Pace and Efficiency use trend-based bands because absolute values
+# are user-specific. The delta (%) vs the prior-week value determines
+# the band. "worse_pct" thresholds represent how much WORSE the current
+# value is compared to the prior week (positive = decline).
+TREND_BAND_THRESHOLDS = {
+    "green_max_worse_pct": 0.0,
+    "yellow_max_worse_pct": 3.0,
+    "orange_max_worse_pct": 8.0,
+}
+
+# Overall score: "worst-of-three" with a 2-week persistence rule.
+# A single bad week caps at yellow; same KPI red for 2+ consecutive
+# weeks promotes overall to red.
+OVERALL_SCORE_RULES = {
+    "consecutive_red_weeks_for_overall_red": 2,
+}
+
 # HR Zone Issues Enum (used in status endpoint)
 # These are the canonical issue codes that can block zone calculation
 HR_ZONE_ISSUES = [
