@@ -82,6 +82,96 @@ EASY_RUN_THRESHOLDS = {
     "MIN_EASY_PCT": 0.70,  # 70% of splits must be at or below Z2 ceiling
 }
 
+# ---------------------------------------------------------------------------
+# Coaching Preferences
+# ---------------------------------------------------------------------------
+
+# Controlled vocabulary for metrics the user can request or the level defaults to.
+# Used for validation in save_coach_preference and prompt injection.
+ALLOWED_METRICS = [
+    "summary",
+    "easy_pct",
+    "hr_drift",
+    "z2_adherence",
+    "z2_pace",
+    "efficiency",
+    "pace_spread",
+]
+
+COACHING_LEVEL_DEFAULTS = {
+    "beginner": {
+        "metrics": ["summary", "easy_pct"],
+        "tone": (
+            "Encouraging and simple. Do NOT use terms like 'HR drift', "
+            "'Z2 adherence', or 'efficiency'. Translate all metrics into "
+            "plain language the user can feel (e.g. 'your effort stayed "
+            "steady', 'you stayed in your easy zone')."
+        ),
+    },
+    "intermediate": {
+        "metrics": ["summary", "easy_pct", "hr_drift", "z2_pace"],
+        "tone": (
+            "Supportive with light education. Introduce metric concepts "
+            "in plain English with a brief explanation on first mention "
+            "(e.g. 'your heart rate stayed steady — only 3% drift, which "
+            "means your body handled the effort well')."
+        ),
+    },
+    "advanced": {
+        "metrics": [
+            "summary",
+            "easy_pct",
+            "hr_drift",
+            "z2_adherence",
+            "efficiency",
+            "pace_spread",
+        ],
+        "tone": (
+            "Direct and data-rich. Use metric names, values, and band "
+            "colors directly (e.g. 'HR drift: 3.1% (green). Z2 adherence: "
+            "92%.'). Keep it concise."
+        ),
+    },
+}
+
+VERBOSITY_RULES = {
+    "minimal": "1-2 sentences maximum. Only the priority metrics.",
+    "normal": "Short paragraph. Default metrics for the level plus brief coaching insight.",
+    "detailed": "Full explanation with all available metrics, comparisons, and coaching context.",
+}
+
+# Allowed values for preference_scope (future-proof for training summaries, alerts, etc.)
+PREFERENCE_SCOPES = ["run_summary", "training_summary", "global"]
+
+# ---------------------------------------------------------------------------
+# Weekly Insights — KPI Bands (R/O/Y/G)
+# ---------------------------------------------------------------------------
+
+# HR Drift: absolute thresholds (well-established in coaching science).
+# Lower drift = more aerobic stability. These apply to ALL users.
+HR_DRIFT_BANDS = {
+    "green_max": 2.5,
+    "yellow_max": 5.0,
+    "orange_max": 7.5,
+}
+
+# Z2 Pace and Efficiency use trend-based bands because absolute values
+# are user-specific. The delta (%) vs the prior-week value determines
+# the band. "worse_pct" thresholds represent how much WORSE the current
+# value is compared to the prior week (positive = decline).
+TREND_BAND_THRESHOLDS = {
+    "green_max_worse_pct": 0.0,
+    "yellow_max_worse_pct": 3.0,
+    "orange_max_worse_pct": 8.0,
+}
+
+# Overall score: "worst-of-three" with a 2-week persistence rule.
+# A single bad week caps at yellow; same KPI red for 2+ consecutive
+# weeks promotes overall to red.
+OVERALL_SCORE_RULES = {
+    "consecutive_red_weeks_for_overall_red": 2,
+}
+
 # HR Zone Issues Enum (used in status endpoint)
 # These are the canonical issue codes that can block zone calculation
 HR_ZONE_ISSUES = [

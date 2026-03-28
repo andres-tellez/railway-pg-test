@@ -79,6 +79,7 @@ from src.smartcoach_mobile_coach.routes import smartcoach_mobile_coach_bp
 from src.routes.coach_routes import coach_bp
 from src.routes.pace_zones_routes import pace_zones_bp
 from src.routes.heart_rate_routes import heart_rate_bp
+from src.routes.training_insights_routes import training_insights_bp
 
 
 def create_app(test_config=None):
@@ -167,6 +168,7 @@ def create_app(test_config=None):
     app.register_blueprint(coach_bp)
     app.register_blueprint(pace_zones_bp)
     app.register_blueprint(heart_rate_bp)
+    app.register_blueprint(training_insights_bp)
 
     # Log all registered routes for debugging
     print("[BLUEPRINT_REGISTRATION] All blueprints registered", flush=True)
