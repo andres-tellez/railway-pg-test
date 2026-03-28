@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -26,6 +27,7 @@ from src.smartcoach_mobile_coach.training_kpi_service import (
     get_training_progress,
 )
 from src.utils.config import config
+from src.utils.hr_zone_constants import ALLOWED_METRICS, COACHING_LEVEL_DEFAULTS
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
@@ -178,6 +180,93 @@ def tool_get_training_kpis(
 
 
 # ---------------------------------------------------------------------------
+# Tool: save_coach_preference
+# ---------------------------------------------------------------------------
+
+_VALID_LEVELS = set(COACHING_LEVEL_DEFAULTS.keys())
+_VALID_VERBOSITY = {"minimal", "normal", "detailed"}
+
+
+def _validate_metric_list(raw: Any) -> Optional[List[str]]:
+    """Return a cleaned list of allowed metrics, or None if input is invalid."""
+    if raw is None:
+        return None
+    if not isinstance(raw, list):
+        return None
+    return [m for m in raw if isinstance(m, str) and m in ALLOWED_METRICS] or None
+
+
+def tool_save_coach_preference(
+    session: Session, internal_user_id: str, args: Dict[str, Any]
+) -> Dict[str, Any]:
+    level = args.get("coaching_level")
+    run_priority = args.get("run_summary_priority")
+    training_priority = args.get("training_summary_priority")
+    verbosity = args.get("verbosity")
+
+    if level and level not in _VALID_LEVELS:
+        return {
+            "error": "invalid_level",
+            "message": f"coaching_level must be one of {sorted(_VALID_LEVELS)}",
+        }
+    if verbosity and verbosity not in _VALID_VERBOSITY:
+        return {
+            "error": "invalid_verbosity",
+            "message": f"verbosity must be one of {sorted(_VALID_VERBOSITY)}",
+        }
+
+    run_priority = _validate_metric_list(run_priority)
+    training_priority = _validate_metric_list(training_priority)
+
+    set_clauses = ["updated_at = now()"]
+    params: Dict[str, Any] = {"uid": internal_user_id}
+
+    if level:
+        set_clauses.append("coaching_level = :level")
+        params["level"] = level
+    if run_priority is not None:
+        set_clauses.append("run_summary_priority = :rsp")
+        params["rsp"] = json.dumps(run_priority)
+    if training_priority is not None:
+        set_clauses.append("training_summary_priority = :tsp")
+        params["tsp"] = json.dumps(training_priority)
+    if verbosity:
+        set_clauses.append("verbosity = :verbosity")
+        params["verbosity"] = verbosity
+
+    session.execute(
+        text(
+            f"INSERT INTO user_coach_preferences (user_id) "
+            f"VALUES (CAST(:uid AS uuid)) "
+            f"ON CONFLICT (user_id) DO UPDATE SET {', '.join(set_clauses)}"
+        ),
+        params,
+    )
+    session.commit()
+
+    row = session.execute(
+        text(
+            "SELECT coaching_level, run_summary_priority, training_summary_priority, verbosity "
+            "FROM user_coach_preferences WHERE user_id = CAST(:uid AS uuid)"
+        ),
+        {"uid": internal_user_id},
+    ).fetchone()
+
+    current = {
+        "coaching_level": row.coaching_level if row else "beginner",
+        "run_summary_priority": row.run_summary_priority if row else None,
+        "training_summary_priority": row.training_summary_priority if row else None,
+        "verbosity": row.verbosity if row else "normal",
+    }
+
+    return {
+        "saved": True,
+        "preferences": current,
+        "message": "Preferences saved. I'll use these going forward.",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -185,6 +274,7 @@ _TOOL_HANDLERS = {
     "find_runs_by_date": "find_runs_by_date",
     "get_run_summary": "get_run_summary",
     "get_training_kpis": "get_training_kpis",
+    "save_coach_preference": "save_coach_preference",
     # Legacy names → map to current handlers
     "list_runs_for_local_date": "find_runs_by_date",
     "get_run_insight": "get_run_summary",
@@ -199,8 +289,6 @@ def execute_tool(
     *,
     anchor_local_date: Optional[str] = None,
 ) -> Dict[str, Any]:
-    import json
-
     try:
         args = json.loads(arguments_json or "{}")
     except json.JSONDecodeError:
@@ -242,5 +330,8 @@ def execute_tool(
         except (TypeError, ValueError):
             weeks = _DEFAULT_KPI_WEEKS
         return tool_get_training_kpis(session, internal_user_id, weeks)
+
+    if handler_key == "save_coach_preference":
+        return tool_save_coach_preference(session, internal_user_id, args)
 
     return {"error": "unknown_tool", "message": f"Unknown tool: {name}"}
