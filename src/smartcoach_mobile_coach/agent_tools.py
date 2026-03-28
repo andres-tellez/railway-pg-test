@@ -26,6 +26,9 @@ from src.smartcoach_mobile_coach.training_kpi_service import (
     get_run_kpi_detail,
     get_training_progress,
 )
+from src.smartcoach_mobile_coach.weekly_insights_service import (
+    get_latest_weekly_insight,
+)
 from src.utils.config import config
 from src.utils.hr_zone_constants import ALLOWED_METRICS, COACHING_LEVEL_DEFAULTS
 
@@ -180,6 +183,17 @@ def tool_get_training_kpis(
 
 
 # ---------------------------------------------------------------------------
+# Tool: get_weekly_training_insight
+# ---------------------------------------------------------------------------
+
+
+def tool_get_weekly_training_insight(
+    session: Session, internal_user_id: str
+) -> Dict[str, Any]:
+    return get_latest_weekly_insight(session, internal_user_id)
+
+
+# ---------------------------------------------------------------------------
 # Tool: save_coach_preference
 # ---------------------------------------------------------------------------
 
@@ -274,6 +288,7 @@ _TOOL_HANDLERS = {
     "find_runs_by_date": "find_runs_by_date",
     "get_run_summary": "get_run_summary",
     "get_training_kpis": "get_training_kpis",
+    "get_weekly_training_insight": "get_weekly_training_insight",
     "save_coach_preference": "save_coach_preference",
     # Legacy names → map to current handlers
     "list_runs_for_local_date": "find_runs_by_date",
@@ -330,6 +345,9 @@ def execute_tool(
         except (TypeError, ValueError):
             weeks = _DEFAULT_KPI_WEEKS
         return tool_get_training_kpis(session, internal_user_id, weeks)
+
+    if handler_key == "get_weekly_training_insight":
+        return tool_get_weekly_training_insight(session, internal_user_id)
 
     if handler_key == "save_coach_preference":
         return tool_save_coach_preference(session, internal_user_id, args)

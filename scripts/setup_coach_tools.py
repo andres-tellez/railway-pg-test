@@ -111,6 +111,31 @@ SEED_TOOLS = [
         "sort_order": 20,
     },
     {
+        "name": "get_weekly_training_insight",
+        "display_name": "Get Weekly Training Insight",
+        "category": "training_progress",
+        "description": (
+            "Get the user's latest precomputed weekly training scoreboard: overall band, "
+            "HR drift/Z2 pace/efficiency bands, deltas, and coaching summary/action text. "
+            "Use this first for weekly progress/status questions."
+        ),
+        "when_to_call": (
+            "User asks weekly progress questions like 'am I on track', 'how am I doing this week', "
+            "'weekly status', or wants a concise progress scoreboard."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {},
+        },
+        "returns_description": (
+            "If available: has_insight=true with week range, overall band, KPI cards, "
+            "summary_text, action_text. If not available: has_insight=false with message."
+        ),
+        "data_source": "weekly_training_insights",
+        "is_enabled": True,
+        "sort_order": 35,
+    },
+    {
         "name": "get_training_kpis",
         "display_name": "Get Training KPIs",
         "category": "training_progress",

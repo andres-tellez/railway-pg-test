@@ -9,6 +9,7 @@ Usage:
 import os
 import sys
 from pathlib import Path
+import json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dotenv import load_dotenv
@@ -56,6 +57,32 @@ CREATE INDEX IF NOT EXISTS idx_weekly_insights_user_week
 ON weekly_training_insights (user_id, week_start DESC)
 """
 
+WEEKLY_INSIGHT_TOOL = {
+    "name": "get_weekly_training_insight",
+    "display_name": "Get Weekly Training Insight",
+    "category": "training_progress",
+    "description": (
+        "Get the user's latest precomputed weekly training scoreboard: overall band, "
+        "HR drift/Z2 pace/efficiency bands, deltas, and coaching summary/action text. "
+        "Use this first for weekly progress/status questions."
+    ),
+    "when_to_call": (
+        "User asks weekly progress questions like 'am I on track', 'how am I doing this week', "
+        "'weekly status', or wants a concise progress scoreboard."
+    ),
+    "parameters_schema": {
+        "type": "object",
+        "properties": {},
+    },
+    "returns_description": (
+        "If available: has_insight=true with week range, overall band, KPI cards, "
+        "summary_text, action_text. If not available: has_insight=false with message."
+    ),
+    "data_source": "weekly_training_insights",
+    "is_enabled": True,
+    "sort_order": 35,
+}
+
 
 def setup_db(db_url: str, label: str):
     engine = create_engine(db_url)
@@ -66,6 +93,36 @@ def setup_db(db_url: str, label: str):
     print("  Creating weekly_training_insights table...")
     s.execute(text(_CREATE_TABLE))
     s.execute(text(_CREATE_INDEX))
+    s.execute(
+        text(
+            """
+            INSERT INTO coach_tools (
+                name, display_name, category, description,
+                when_to_call, parameters_schema, returns_description,
+                data_source, is_enabled, sort_order
+            ) VALUES (
+                :name, :display_name, :category, :description,
+                :when_to_call, :parameters_schema, :returns_description,
+                :data_source, :is_enabled, :sort_order
+            )
+            ON CONFLICT (name) DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                category = EXCLUDED.category,
+                description = EXCLUDED.description,
+                when_to_call = EXCLUDED.when_to_call,
+                parameters_schema = EXCLUDED.parameters_schema,
+                returns_description = EXCLUDED.returns_description,
+                data_source = EXCLUDED.data_source,
+                is_enabled = EXCLUDED.is_enabled,
+                sort_order = EXCLUDED.sort_order,
+                updated_at = now()
+            """
+        ),
+        {
+            **WEEKLY_INSIGHT_TOOL,
+            "parameters_schema": json.dumps(WEEKLY_INSIGHT_TOOL["parameters_schema"]),
+        },
+    )
     s.commit()
     print("  Done.")
 
