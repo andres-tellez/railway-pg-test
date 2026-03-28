@@ -62,7 +62,7 @@ def main():
         week_start, week_end = _last_completed_week()
 
     label = "PROD" if args.prod else "DEV"
-    print(f"\n[{label}] Generating insights for week {week_start} → {week_end}")
+    print(f"\n[{label}] Generating insights for week {week_start} to {week_end}")
 
     engine = create_engine(db_url)
     Session = sessionmaker(bind=engine)
