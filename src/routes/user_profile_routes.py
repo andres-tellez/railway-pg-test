@@ -180,9 +180,19 @@ def submit_user_profile():
                         f"Recalculated HR zones after HR data update: {len(recalc_results)} plans updated"
                     )
                 except Exception as e:
-                    # Log but don't fail the save if recalculation fails
                     current_app.logger.warning(
                         f"Could not recalculate HR zones after HR data update: {e}"
+                    )
+
+                try:
+                    from src.services.heart_rate.zone_population_service import (
+                        refresh_user_zones,
+                    )
+
+                    refresh_user_zones(session, str(internal_user_id))
+                except Exception as e:
+                    current_app.logger.warning(
+                        f"Could not refresh user_hr_zones after HR data update: {e}"
                     )
         finally:
             session.close()

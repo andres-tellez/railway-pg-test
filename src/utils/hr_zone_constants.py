@@ -68,10 +68,18 @@ HRMAX_ESTIMATION = {
 # These are percentages of Heart Rate Reserve (HRR), not max HR
 KARVONEN_ZONE_PERCENTAGES = {
     "Z1": (0.50, 0.60),
-    "Z2": (0.60, 0.70),
-    "Z3": (0.70, 0.80),
-    "Z4": (0.80, 0.90),
-    "Z5": (0.90, 1.00),
+    "Z2": (0.60, 0.75),
+    "Z3": (0.75, 0.85),
+    "Z4": (0.85, 0.95),
+    "Z5": (0.95, 1.00),
+}
+
+# Easy Run Classification Thresholds
+# These are used in v_easy_runs SQL view and application-layer classifiers.
+# When changing these values, also update the v_easy_runs view SQL.
+EASY_RUN_THRESHOLDS = {
+    "MIN_DURATION_SECONDS": 1800,  # 30 minutes — runs shorter than this are excluded
+    "MIN_EASY_PCT": 0.70,  # 70% of splits must be at or below Z2 ceiling
 }
 
 # HR Zone Issues Enum (used in status endpoint)

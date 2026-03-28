@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from src.db.dao.activity_dao import ActivityDAO
 from src.smartcoach_mobile_coach.config import INSIGHT_SCHEMA_VERSION
@@ -15,8 +17,20 @@ from src.smartcoach_mobile_coach.display_format import (
     format_time_utc,
 )
 from src.smartcoach_mobile_coach.insight_cache import cache_key, get_cached, set_cached
-from src.smartcoach_mobile_coach.run_insight import build_get_run_insight_payload
+from src.smartcoach_mobile_coach.run_insight import (
+    apply_insight_table_labels,
+    build_get_run_insight_payload,
+)
+from src.smartcoach_mobile_coach.training_kpi_service import (
+    get_run_kpi_detail,
+    get_training_progress,
+)
 from src.utils.config import config
+
+logger = logging.getLogger("smartcoach_mobile_coach")
+
+_DEFAULT_KPI_WEEKS = 4
+_MAX_KPI_WEEKS = 52
 
 
 def _distance_miles_from_meters(meters) -> float:
@@ -25,7 +39,37 @@ def _distance_miles_from_meters(meters) -> float:
     return float(meters) * 0.000621371
 
 
-def tool_list_runs_for_local_date(
+def _increment_tool_call_count(session: Session, tool_name: str) -> None:
+    """Best-effort counter bump; never blocks the tool response."""
+    try:
+        session.execute(
+            text(
+                "UPDATE coach_tools "
+                "SET call_count = call_count + 1, last_called_at = now() "
+                "WHERE name = :name"
+            ),
+            {"name": tool_name},
+        )
+        session.commit()
+    except Exception:
+        logger.debug("Could not increment call_count for %s", tool_name, exc_info=True)
+
+
+def _parse_activity_id(args: Dict[str, Any]) -> Optional[int]:
+    raw = args.get("activity_id")
+    try:
+        aid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return aid if aid > 0 else None
+
+
+# ---------------------------------------------------------------------------
+# Tool: find_runs_by_date
+# ---------------------------------------------------------------------------
+
+
+def tool_find_runs_by_date(
     session: Session, internal_user_id: str, local_date: str
 ) -> Dict[str, Any]:
     try:
@@ -86,20 +130,65 @@ def tool_list_runs_for_local_date(
     }
 
 
-def tool_get_run_insight(
-    session: Session, internal_user_id: str, activity_id: int
+# ---------------------------------------------------------------------------
+# Tool: get_run_summary
+# ---------------------------------------------------------------------------
+
+
+def tool_get_run_summary(
+    session: Session,
+    internal_user_id: str,
+    activity_id: int,
+    anchor_local_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     ck = cache_key(internal_user_id, activity_id, INSIGHT_SCHEMA_VERSION)
     hit = get_cached(ck)
     if hit is not None:
-        return hit
+        payload = apply_insight_table_labels(hit, anchor_local_date)
+    else:
+        payload = build_get_run_insight_payload(
+            session, internal_user_id, activity_id, INSIGHT_SCHEMA_VERSION
+        )
+        if "error" not in payload:
+            set_cached(ck, payload)
+        payload = apply_insight_table_labels(payload, anchor_local_date)
 
-    payload = build_get_run_insight_payload(
-        session, internal_user_id, activity_id, INSIGHT_SCHEMA_VERSION
-    )
-    if "error" not in payload:
-        set_cached(ck, payload)
+    if payload.get("error"):
+        return payload
+
+    kpi_data = get_run_kpi_detail(session, internal_user_id, activity_id)
+    if not kpi_data.get("error"):
+        payload["training_kpis"] = kpi_data.get("kpis")
+        payload["zone_bounds"] = kpi_data.get("zone_bounds")
+        payload["is_easy_run"] = kpi_data.get("is_easy_run")
+
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Tool: get_training_kpis
+# ---------------------------------------------------------------------------
+
+
+def tool_get_training_kpis(
+    session: Session, internal_user_id: str, weeks: int = _DEFAULT_KPI_WEEKS
+) -> Dict[str, Any]:
+    weeks = max(1, min(weeks, _MAX_KPI_WEEKS))
+    return get_training_progress(session, internal_user_id, weeks)
+
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+
+_TOOL_HANDLERS = {
+    "find_runs_by_date": "find_runs_by_date",
+    "get_run_summary": "get_run_summary",
+    "get_training_kpis": "get_training_kpis",
+    # Legacy names → map to current handlers
+    "list_runs_for_local_date": "find_runs_by_date",
+    "get_run_insight": "get_run_summary",
+}
 
 
 def execute_tool(
@@ -107,6 +196,8 @@ def execute_tool(
     internal_user_id: str,
     name: str,
     arguments_json: str,
+    *,
+    anchor_local_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     import json
 
@@ -118,29 +209,38 @@ def execute_tool(
             "message": "Tool arguments were not valid JSON.",
         }
 
-    if name == "list_runs_for_local_date":
+    handler_key = _TOOL_HANDLERS.get(name)
+    if not handler_key:
+        return {"error": "unknown_tool", "message": f"Unknown tool: {name}"}
+
+    _increment_tool_call_count(session, name)
+
+    if handler_key == "find_runs_by_date":
         ld = args.get("local_date")
         if not ld or not isinstance(ld, str):
             return {
                 "error": "missing_local_date",
                 "message": "Parameter local_date (YYYY-MM-DD) is required.",
             }
-        return tool_list_runs_for_local_date(session, internal_user_id, ld.strip())
+        return tool_find_runs_by_date(session, internal_user_id, ld.strip())
 
-    if name == "get_run_insight":
-        raw = args.get("activity_id")
-        try:
-            aid = int(raw)
-        except (TypeError, ValueError):
+    if handler_key == "get_run_summary":
+        aid = _parse_activity_id(args)
+        if aid is None:
             return {
                 "error": "missing_activity_id",
-                "message": "activity_id must be an integer.",
+                "message": "activity_id must be a positive integer.",
             }
-        if aid <= 0:
-            return {
-                "error": "invalid_activity_id",
-                "message": "activity_id must be positive.",
-            }
-        return tool_get_run_insight(session, internal_user_id, aid)
+        return tool_get_run_summary(
+            session, internal_user_id, aid, anchor_local_date=anchor_local_date
+        )
+
+    if handler_key == "get_training_kpis":
+        weeks = args.get("weeks", _DEFAULT_KPI_WEEKS)
+        try:
+            weeks = int(weeks)
+        except (TypeError, ValueError):
+            weeks = _DEFAULT_KPI_WEEKS
+        return tool_get_training_kpis(session, internal_user_id, weeks)
 
     return {"error": "unknown_tool", "message": f"Unknown tool: {name}"}
