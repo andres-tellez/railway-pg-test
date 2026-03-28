@@ -16,6 +16,11 @@ from sqlalchemy import text
 
 from src.services.security.external_apis.openai_service import get_openai_service
 from src.smartcoach_mobile_coach.agent_tools import execute_tool
+from src.utils.hr_zone_constants import (
+    ALLOWED_METRICS,
+    COACHING_LEVEL_DEFAULTS,
+    VERBOSITY_RULES,
+)
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
@@ -72,6 +77,69 @@ Rules:
 """
 
 
+_DEFAULT_PREFS = {
+    "coaching_level": "beginner",
+    "run_summary_priority": None,
+    "training_summary_priority": None,
+    "verbosity": "normal",
+}
+
+
+def _load_coaching_preferences(session: Session, user_id: str) -> Dict[str, Any]:
+    """Fetch the user's coaching preferences, returning sensible defaults."""
+    try:
+        row = session.execute(
+            text(
+                "SELECT coaching_level, run_summary_priority, "
+                "training_summary_priority, verbosity "
+                "FROM user_coach_preferences "
+                "WHERE user_id = CAST(:uid AS uuid)"
+            ),
+            {"uid": user_id},
+        ).fetchone()
+    except Exception:
+        logger.debug(
+            "user_coach_preferences query failed; using defaults", exc_info=True
+        )
+        return dict(_DEFAULT_PREFS)
+
+    if row:
+        return {
+            "coaching_level": row.coaching_level or "beginner",
+            "run_summary_priority": row.run_summary_priority,
+            "training_summary_priority": row.training_summary_priority,
+            "verbosity": row.verbosity or "normal",
+        }
+
+    return dict(_DEFAULT_PREFS)
+
+
+def _coaching_preferences_section(prefs: Dict[str, Any]) -> str:
+    """Build a system prompt section from the user's coaching preferences."""
+    level = prefs["coaching_level"]
+    verbosity = prefs["verbosity"]
+    level_cfg = COACHING_LEVEL_DEFAULTS.get(level, COACHING_LEVEL_DEFAULTS["beginner"])
+
+    run_priority = prefs.get("run_summary_priority") or level_cfg["metrics"]
+    training_priority = prefs.get("training_summary_priority") or level_cfg["metrics"]
+
+    lines = [
+        "## Coaching preferences (personalisation)",
+        f"- **Level:** {level}",
+        f"- **Tone:** {level_cfg['tone']}",
+        f"- **Verbosity:** {verbosity} — {VERBOSITY_RULES.get(verbosity, VERBOSITY_RULES['normal'])}",
+        f"- **Run summary priority metrics:** {', '.join(run_priority)}",
+        f"- **Training summary priority metrics:** {', '.join(training_priority)}",
+        "",
+        "### Presentation rules",
+        "- Prioritise the metrics listed above. Include others only when clearly valuable.",
+        "- Tools always return the full data payload. Shape your **presentation** based on the preferences above — never omit calling a tool.",
+        f"- Allowed metric names: {', '.join(ALLOWED_METRICS)}.",
+        "- If the user asks to change preferences, call `save_coach_preference`.",
+    ]
+    return "\n".join(lines)
+
+
 def _device_anchor_system_section(
     anchor_local_date: str, client_timezone: Optional[str]
 ) -> str:
@@ -110,8 +178,12 @@ def run_mobile_agent_turn(
     if not openai_tools:
         logger.warning("No enabled tools in coach_tools table; agent has no tools")
 
+    prefs = _load_coaching_preferences(session, internal_user_id)
+
     system_content = (
         SYSTEM_PROMPT_BASE
+        + "\n\n"
+        + _coaching_preferences_section(prefs)
         + "\n\n"
         + _device_anchor_system_section(anchor_local_date, client_timezone)
     )
