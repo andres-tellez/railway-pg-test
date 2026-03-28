@@ -66,7 +66,8 @@ Rules:
 - When you have get_run_summary results, answer in this order: (1) key facts in plain language, (2) a small markdown table comparing this_run to peer_runs if present, (3) Z2 training KPIs if available (drift, adherence, classification), (4) a short coaching blurb grounded only in that data.
 - In that comparison table, the first column header must be **Date** (not "Run Date"). Use each row's **label** from the tool JSON exactly (**Today** or **MM-DD** like 03-24). Other columns use the *_display fields.
 - If a metric is missing (e.g. no HR), do not guess.
-- When the user asks about training progress, how they're doing, marathon readiness, or trends, call get_training_kpis. Present weekly summaries and highlight trends.
+- When the user asks about training progress, how they're doing, marathon readiness, weekly status, or trends, first call get_weekly_training_insight.
+- If get_weekly_training_insight returns has_insight=false, then call get_training_kpis as fallback and explain there is not yet a precomputed weekly card.
 - Stay supportive and concise. Do not give medical diagnoses; suggest professionals for pain or health concerns.
 """
 
