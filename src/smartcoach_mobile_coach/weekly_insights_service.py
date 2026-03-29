@@ -842,12 +842,45 @@ def get_weekly_insight_history(
         {"color": "red", "min": o_max, "max": round(o_max + 2.5, 1)},
     ]
 
+    # THRESHOLD: same v_easy_runs classification + KPI SQL as weekly compute; trend bands
+    # use recent calendar weeks (Monday-Sunday) rather than easy-insight snapshot weeks.
+    cal_week_start, _ = _week_bounds(date.today())
+    week_windows = [
+        (
+            cal_week_start - timedelta(weeks=offset),
+            cal_week_start - timedelta(weeks=offset) + timedelta(days=6),
+        )
+        for offset in reversed(range(weeks))
+    ]
+    prev_threshold_stability: Optional[float] = None
+    threshold_points: List[Dict[str, Any]] = []
+    for ws, we in week_windows:
+        wk = _fetch_week_kpis(session, user_id, ws, we)
+        stab: Optional[float] = None
+        if int(wk.get("threshold_run_count") or 0) > 0:
+            raw = wk.get("effort_stability_min_per_mi")
+            if raw is not None:
+                stab = float(raw)
+        if stab is not None:
+            th_band = _trend_band(stab, prev_threshold_stability, lower_is_better=True)
+            threshold_points.append(
+                {
+                    "label": f"{ws.month}/{ws.day}",
+                    "value": stab,
+                    "band": th_band,
+                    "z2_pace_min_per_mi": None,
+                    "z2_pace_band": None,
+                }
+            )
+        prev_threshold_stability = stab
+
     return {
         "has_history": True,
         "weekly_data": data_points,
         "zones": zones,
         "systems": {
-            TrainingSystem.EASY.value: {"weekly_data": data_points, "zones": zones}
+            TrainingSystem.EASY.value: {"weekly_data": data_points, "zones": zones},
+            TrainingSystem.THRESHOLD.value: {"weekly_data": threshold_points},
         },
     }
 
