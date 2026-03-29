@@ -593,7 +593,10 @@ def get_weekly_insight_history(
         }
 
     data_points = [
-        {"label": r.week_start.strftime("W%V"), "value": float(r.hr_drift_pct)}
+        {
+            "label": f"{r.week_start.month}/{r.week_start.day}",
+            "value": float(r.hr_drift_pct),
+        }
         for r in reversed(rows)
     ]
 
