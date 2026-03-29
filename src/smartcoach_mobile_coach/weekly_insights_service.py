@@ -43,6 +43,14 @@ WITH classified_runs AS (
         *,
         CASE
             WHEN is_easy_run THEN 'easy'
+            WHEN (
+                moving_time_seconds >= 1800
+                AND z2_high IS NOT NULL
+                AND easy_pct IS NOT NULL
+                AND easy_pct < 0.70
+                AND avg_hr IS NOT NULL
+                AND avg_hr > z2_high
+            ) THEN 'threshold'
             ELSE NULL
         END AS training_system
     FROM v_easy_runs
@@ -54,11 +62,23 @@ WITH classified_runs AS (
 SELECT
     COUNT(*) AS total_runs,
     COUNT(*) FILTER (WHERE training_system = 'easy')                   AS easy_runs,
+    COUNT(*) FILTER (WHERE training_system = 'threshold')              AS threshold_runs,
     ROUND(AVG(hr_drift_pct) FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_drift,
     ROUND(AVG(avg_pace)     FILTER (WHERE training_system = 'easy')::numeric, 4)  AS avg_pace,
     ROUND(AVG(avg_hr)       FILTER (WHERE training_system = 'easy')::numeric, 1)  AS avg_hr,
     ROUND(AVG(easy_pct)     FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_easy_pct,
-    ROUND(AVG(z2_band_pct)  FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_z2_adherence
+    ROUND(AVG(z2_band_pct)  FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_z2_adherence,
+    ROUND(
+        (
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY (late_hr - early_hr))
+            FILTER (
+                WHERE training_system = 'threshold'
+                  AND early_hr IS NOT NULL
+                  AND late_hr IS NOT NULL
+            )
+        )::numeric,
+        2
+    ) AS avg_threshold_effort_stability
 FROM classified_runs
 """
 
@@ -200,22 +220,31 @@ def _fetch_week_kpis(
         stmt, {"uid": user_id, "ws": str(week_start), "we": str(week_end)}
     ).fetchone()
 
-    if not row or (row.easy_runs or 0) == 0:
+    if not row:
         return {
             "easy_run_count": 0,
-            "total_run_count": int(row.total_runs) if row else 0,
+            "threshold_run_count": 0,
+            "total_run_count": 0,
+            "effort_stability_min_per_mi": None,
         }
 
     avg_pace = float(row.avg_pace) if row.avg_pace is not None else None
     avg_hr = float(row.avg_hr) if row.avg_hr is not None else None
+    threshold_effort_stability = (
+        float(row.avg_threshold_effort_stability)
+        if row.avg_threshold_effort_stability is not None
+        else None
+    )
 
     return {
-        "easy_run_count": int(row.easy_runs),
+        "easy_run_count": int(row.easy_runs or 0),
+        "threshold_run_count": int(row.threshold_runs or 0),
         "total_run_count": int(row.total_runs),
         "hr_drift_pct": float(row.avg_drift) if row.avg_drift is not None else None,
         "z2_pace_min_per_mi": avg_pace,
         "avg_hr": avg_hr,
         "efficiency": _compute_efficiency(avg_pace, avg_hr),
+        "effort_stability_min_per_mi": threshold_effort_stability,
         "avg_easy_pct": (
             float(row.avg_easy_pct) if row.avg_easy_pct is not None else None
         ),
@@ -228,9 +257,24 @@ def _fetch_week_kpis(
 def _fetch_week_kpis_by_system(
     session: Session, user_id: str, week_start: date, week_end: date
 ) -> Dict[TrainingSystem, Dict[str, Any]]:
-    """Fetch weekly KPI inputs for all systems. EASY is implemented for now."""
+    """Fetch weekly KPI inputs for all systems. EASY + THRESHOLD are implemented."""
+    weekly = _fetch_week_kpis(session, user_id, week_start, week_end)
     return {
-        TrainingSystem.EASY: _fetch_week_kpis(session, user_id, week_start, week_end),
+        TrainingSystem.EASY: {
+            "easy_run_count": weekly.get("easy_run_count", 0),
+            "total_run_count": weekly.get("total_run_count", 0),
+            "hr_drift_pct": weekly.get("hr_drift_pct"),
+            "z2_pace_min_per_mi": weekly.get("z2_pace_min_per_mi"),
+            "avg_hr": weekly.get("avg_hr"),
+            "efficiency": weekly.get("efficiency"),
+            "avg_easy_pct": weekly.get("avg_easy_pct"),
+            "avg_z2_adherence": weekly.get("avg_z2_adherence"),
+        },
+        TrainingSystem.THRESHOLD: {
+            "threshold_run_count": weekly.get("threshold_run_count", 0),
+            "total_run_count": weekly.get("total_run_count", 0),
+            "effort_stability_min_per_mi": weekly.get("effort_stability_min_per_mi"),
+        },
     }
 
 
@@ -240,7 +284,8 @@ def _fetch_prior_insight(
     row = session.execute(
         text(
             "SELECT hr_drift_pct, z2_pace_min_per_mi, efficiency, "
-            "hr_drift_band, z2_pace_band, efficiency_band, overall_band "
+            "hr_drift_band, z2_pace_band, efficiency_band, overall_band, "
+            "kpi_snapshot "
             "FROM weekly_training_insights "
             "WHERE user_id = CAST(:uid AS uuid) AND week_start < :ws "
             "ORDER BY week_start DESC LIMIT 1"
@@ -249,6 +294,17 @@ def _fetch_prior_insight(
     ).fetchone()
     if not row:
         return None
+    snapshot = row.kpi_snapshot if isinstance(row.kpi_snapshot, dict) else None
+    threshold_prior = None
+    threshold_prior_band = None
+    if snapshot:
+        systems = snapshot.get("systems", {})
+        th = systems.get(TrainingSystem.THRESHOLD.value, {})
+        th_kpis = th.get("kpis", {})
+        th_bands = th.get("bands", {})
+        threshold_prior = th_kpis.get("effort_stability_min_per_mi")
+        threshold_prior_band = th_bands.get("effort_stability")
+
     return {
         "hr_drift_pct": row.hr_drift_pct,
         "z2_pace_min_per_mi": row.z2_pace_min_per_mi,
@@ -257,6 +313,8 @@ def _fetch_prior_insight(
         "z2_pace_band": row.z2_pace_band,
         "efficiency_band": row.efficiency_band,
         "overall_band": row.overall_band,
+        "threshold_effort_stability": threshold_prior,
+        "threshold_effort_stability_band": threshold_prior_band,
     }
 
 
@@ -305,6 +363,24 @@ def _compute_easy_system_pipeline(
     }
 
 
+def _compute_threshold_system_pipeline(
+    kpis: Dict[str, Any], prior: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    prior_stability = prior.get("threshold_effort_stability") if prior else None
+    effort_stability = kpis.get("effort_stability_min_per_mi")
+    effort_band = _trend_band(effort_stability, prior_stability, lower_is_better=True)
+    effort_delta = _compute_delta(effort_stability, prior_stability)
+
+    return {
+        "system": TrainingSystem.THRESHOLD.value,
+        "status": "ready",
+        "kpis": kpis,
+        "bands": {"effort_stability": effort_band},
+        "deltas": {"effort_stability_delta": effort_delta},
+        "overall_band": effort_band,
+    }
+
+
 def _compute_system_pipeline(
     kpis_by_system: Dict[TrainingSystem, Dict[str, Any]],
     prior: Optional[Dict[str, Any]],
@@ -335,6 +411,22 @@ def _compute_system_pipeline(
                 "z2_pace_delta": None,
                 "efficiency_delta": None,
             },
+            "overall_band": None,
+        }
+
+    threshold_kpis = kpis_by_system[TrainingSystem.THRESHOLD]
+    if threshold_kpis.get("threshold_run_count", 0) > 0:
+        systems[TrainingSystem.THRESHOLD.value] = _compute_threshold_system_pipeline(
+            threshold_kpis, prior
+        )
+    else:
+        systems[TrainingSystem.THRESHOLD.value] = {
+            "system": TrainingSystem.THRESHOLD.value,
+            "status": "insufficient_data",
+            "reason": "no_threshold_runs",
+            "kpis": threshold_kpis,
+            "bands": {"effort_stability": None},
+            "deltas": {"effort_stability_delta": None},
             "overall_band": None,
         }
     return {"systems": systems}
@@ -470,7 +562,12 @@ def generate_weekly_insight(
                     "system": TrainingSystem.EASY.value,
                     "status": "insufficient_data",
                     "reason": "no_easy_runs",
-                }
+                },
+                TrainingSystem.THRESHOLD.value: {
+                    "system": TrainingSystem.THRESHOLD.value,
+                    "status": "insufficient_data",
+                    "reason": "no_threshold_runs",
+                },
             },
         }
 
@@ -660,6 +757,25 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
         },
     ]
 
+    systems_payload: Dict[str, Dict[str, Any]] = {
+        TrainingSystem.EASY.value: {
+            "system": TrainingSystem.EASY.value,
+            "status": "ready",
+            "overall_band": row.overall_band,
+            "kpis": kpis_payload,
+            "easy_run_count": row.easy_run_count,
+            "total_run_count": row.total_run_count,
+            "summary_text": row.summary_text,
+            "action_text": row.action_text,
+            "generated_at": row.generated_at.isoformat() if row.generated_at else None,
+        }
+    }
+    if isinstance(row.kpi_snapshot, dict):
+        prior_systems = row.kpi_snapshot.get("systems", {})
+        threshold_system = prior_systems.get(TrainingSystem.THRESHOLD.value)
+        if isinstance(threshold_system, dict):
+            systems_payload[TrainingSystem.THRESHOLD.value] = threshold_system
+
     return {
         "has_insight": True,
         "week_start": str(row.week_start),
@@ -671,21 +787,7 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
         "summary_text": row.summary_text,
         "action_text": row.action_text,
         "generated_at": row.generated_at.isoformat() if row.generated_at else None,
-        "systems": {
-            TrainingSystem.EASY.value: {
-                "system": TrainingSystem.EASY.value,
-                "status": "ready",
-                "overall_band": row.overall_band,
-                "kpis": kpis_payload,
-                "easy_run_count": row.easy_run_count,
-                "total_run_count": row.total_run_count,
-                "summary_text": row.summary_text,
-                "action_text": row.action_text,
-                "generated_at": (
-                    row.generated_at.isoformat() if row.generated_at else None
-                ),
-            }
-        },
+        "systems": systems_payload,
     }
 
 
