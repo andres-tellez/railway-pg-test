@@ -14,6 +14,7 @@ import json
 import logging
 import os
 from datetime import date, timedelta
+from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import bindparam, text
@@ -37,28 +38,54 @@ logger = logging.getLogger("smartcoach_mobile_coach")
 # ---------------------------------------------------------------------------
 
 _WEEK_KPIS_SQL = """
+WITH classified_runs AS (
+    SELECT
+        *,
+        CASE
+            WHEN is_easy_run THEN 'easy'
+            ELSE NULL
+        END AS training_system
+    FROM v_easy_runs
+    WHERE user_id = :uid
+      AND activity_date >= :ws
+      AND activity_date <= :we
+      AND activity_type = 'Run'
+)
 SELECT
-    COUNT(*) FILTER (WHERE activity_type = 'Run')         AS total_runs,
-    COUNT(*) FILTER (WHERE is_easy_run)                   AS easy_runs,
-    ROUND(AVG(hr_drift_pct) FILTER (WHERE is_easy_run)::numeric, 2)  AS avg_drift,
-    ROUND(AVG(avg_pace)     FILTER (WHERE is_easy_run)::numeric, 4)  AS avg_pace,
-    ROUND(AVG(avg_hr)       FILTER (WHERE is_easy_run)::numeric, 1)  AS avg_hr,
-    ROUND(AVG(easy_pct)     FILTER (WHERE is_easy_run)::numeric, 2)  AS avg_easy_pct,
-    ROUND(AVG(z2_band_pct)  FILTER (WHERE is_easy_run)::numeric, 2)  AS avg_z2_adherence
-FROM v_easy_runs
-WHERE user_id = :uid
-  AND activity_date >= :ws
-  AND activity_date <= :we
-  AND activity_type = 'Run'
+    COUNT(*) AS total_runs,
+    COUNT(*) FILTER (WHERE training_system = 'easy')                   AS easy_runs,
+    ROUND(AVG(hr_drift_pct) FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_drift,
+    ROUND(AVG(avg_pace)     FILTER (WHERE training_system = 'easy')::numeric, 4)  AS avg_pace,
+    ROUND(AVG(avg_hr)       FILTER (WHERE training_system = 'easy')::numeric, 1)  AS avg_hr,
+    ROUND(AVG(easy_pct)     FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_easy_pct,
+    ROUND(AVG(z2_band_pct)  FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_z2_adherence
+FROM classified_runs
 """
 
 _USERS_WITH_EASY_RUNS_SQL = """
+WITH classified_runs AS (
+    SELECT
+        user_id,
+        activity_date,
+        CASE
+            WHEN is_easy_run THEN 'easy'
+            ELSE NULL
+        END AS training_system
+    FROM v_easy_runs
+)
 SELECT DISTINCT user_id
-FROM v_easy_runs
-WHERE is_easy_run = TRUE
+FROM classified_runs
+WHERE training_system = 'easy'
   AND activity_date >= :ws
   AND activity_date <= :we
 """
+
+
+class TrainingSystem(str, Enum):
+    EASY = "easy"
+    THRESHOLD = "threshold"
+    SPEED = "speed"
+
 
 # ---------------------------------------------------------------------------
 # Band computations (deterministic — no LLM involvement)
@@ -198,6 +225,15 @@ def _fetch_week_kpis(
     }
 
 
+def _fetch_week_kpis_by_system(
+    session: Session, user_id: str, week_start: date, week_end: date
+) -> Dict[TrainingSystem, Dict[str, Any]]:
+    """Fetch weekly KPI inputs for all systems. EASY is implemented for now."""
+    return {
+        TrainingSystem.EASY: _fetch_week_kpis(session, user_id, week_start, week_end),
+    }
+
+
 def _fetch_prior_insight(
     session: Session, user_id: str, week_start: date
 ) -> Optional[Dict[str, Any]]:
@@ -222,6 +258,86 @@ def _fetch_prior_insight(
         "efficiency_band": row.efficiency_band,
         "overall_band": row.overall_band,
     }
+
+
+def _compute_easy_system_pipeline(
+    kpis: Dict[str, Any], prior: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    prior_drift = prior["hr_drift_pct"] if prior else None
+    prior_pace = prior["z2_pace_min_per_mi"] if prior else None
+    prior_eff = prior["efficiency"] if prior else None
+
+    drift_band = _hr_drift_band(kpis.get("hr_drift_pct"))
+    pace_band = _trend_band(
+        kpis.get("z2_pace_min_per_mi"), prior_pace, lower_is_better=True
+    )
+    eff_band = _trend_band(kpis.get("efficiency"), prior_eff, lower_is_better=False)
+
+    prior_bands = None
+    if prior:
+        prior_bands = {
+            "hr_drift": prior.get("hr_drift_band"),
+            "z2_pace": prior.get("z2_pace_band"),
+            "efficiency": prior.get("efficiency_band"),
+        }
+
+    overall = _compute_overall_band(
+        [drift_band, pace_band, eff_band],
+        prior_bands,
+        prior.get("overall_band") if prior else None,
+    )
+
+    deltas = {
+        "hr_drift_delta": _compute_delta(kpis.get("hr_drift_pct"), prior_drift),
+        "z2_pace_delta": _compute_delta(kpis.get("z2_pace_min_per_mi"), prior_pace),
+        "efficiency_delta": _compute_delta(kpis.get("efficiency"), prior_eff),
+    }
+
+    bands = {"hr_drift": drift_band, "z2_pace": pace_band, "efficiency": eff_band}
+
+    return {
+        "system": TrainingSystem.EASY.value,
+        "status": "ready",
+        "kpis": kpis,
+        "bands": bands,
+        "deltas": deltas,
+        "overall_band": overall,
+    }
+
+
+def _compute_system_pipeline(
+    kpis_by_system: Dict[TrainingSystem, Dict[str, Any]],
+    prior: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Central signal computation pipeline keyed by training system.
+    Only EASY is implemented for now; structure is future-proof for THRESHOLD/SPEED.
+    """
+    systems: Dict[str, Dict[str, Any]] = {}
+    easy_kpis = kpis_by_system[TrainingSystem.EASY]
+    if easy_kpis.get("easy_run_count", 0) > 0:
+        systems[TrainingSystem.EASY.value] = _compute_easy_system_pipeline(
+            easy_kpis, prior
+        )
+    else:
+        systems[TrainingSystem.EASY.value] = {
+            "system": TrainingSystem.EASY.value,
+            "status": "insufficient_data",
+            "reason": "no_easy_runs",
+            "kpis": easy_kpis,
+            "bands": {
+                "hr_drift": None,
+                "z2_pace": None,
+                "efficiency": None,
+            },
+            "deltas": {
+                "hr_drift_delta": None,
+                "z2_pace_delta": None,
+                "efficiency_delta": None,
+            },
+            "overall_band": None,
+        }
+    return {"systems": systems}
 
 
 # ---------------------------------------------------------------------------
@@ -339,48 +455,35 @@ def generate_weekly_insight(
         ref_date = date.today()
 
     week_start, week_end = _week_bounds(ref_date)
-    kpis = _fetch_week_kpis(session, user_id, week_start, week_end)
+    kpis_by_system = _fetch_week_kpis_by_system(session, user_id, week_start, week_end)
+    easy_kpis = kpis_by_system[TrainingSystem.EASY]
 
-    if kpis["easy_run_count"] == 0:
+    if easy_kpis["easy_run_count"] == 0:
         return {
             "user_id": user_id,
             "week_start": str(week_start),
             "week_end": str(week_end),
             "skipped": True,
             "reason": "no_easy_runs",
+            "systems": {
+                TrainingSystem.EASY.value: {
+                    "system": TrainingSystem.EASY.value,
+                    "status": "insufficient_data",
+                    "reason": "no_easy_runs",
+                }
+            },
         }
 
     prior = _fetch_prior_insight(session, user_id, week_start)
-
-    prior_drift = prior["hr_drift_pct"] if prior else None
-    prior_pace = prior["z2_pace_min_per_mi"] if prior else None
-    prior_eff = prior["efficiency"] if prior else None
-
-    drift_band = _hr_drift_band(kpis.get("hr_drift_pct"))
-    pace_band = _trend_band(
-        kpis.get("z2_pace_min_per_mi"), prior_pace, lower_is_better=True
-    )
-    eff_band = _trend_band(kpis.get("efficiency"), prior_eff, lower_is_better=False)
-
-    prior_bands = None
-    if prior:
-        prior_bands = {
-            "hr_drift": prior.get("hr_drift_band"),
-            "z2_pace": prior.get("z2_pace_band"),
-            "efficiency": prior.get("efficiency_band"),
-        }
-
-    overall = _compute_overall_band(
-        [drift_band, pace_band, eff_band],
-        prior_bands,
-        prior.get("overall_band") if prior else None,
-    )
-
-    deltas = {
-        "hr_drift_delta": _compute_delta(kpis.get("hr_drift_pct"), prior_drift),
-        "z2_pace_delta": _compute_delta(kpis.get("z2_pace_min_per_mi"), prior_pace),
-        "efficiency_delta": _compute_delta(kpis.get("efficiency"), prior_eff),
-    }
+    pipeline = _compute_system_pipeline(kpis_by_system, prior)
+    easy_system = pipeline["systems"][TrainingSystem.EASY.value]
+    kpis = easy_system["kpis"]
+    bands = easy_system["bands"]
+    deltas = easy_system["deltas"]
+    overall = easy_system["overall_band"]
+    drift_band = bands["hr_drift"]
+    pace_band = bands["z2_pace"]
+    eff_band = bands["efficiency"]
 
     coaching_level = "beginner"
     try:
@@ -402,8 +505,6 @@ def generate_weekly_insight(
         "week_end": str(week_end),
     }
 
-    bands = {"hr_drift": drift_band, "z2_pace": pace_band, "efficiency": eff_band}
-
     summary_text, action_text = _generate_llm_summary(
         kpi_payload, bands, deltas, overall, user_id, coaching_level
     )
@@ -413,6 +514,8 @@ def generate_weekly_insight(
         "bands": bands,
         "deltas": deltas,
         "overall_band": overall,
+        "training_system": TrainingSystem.EASY.value,
+        "systems": pipeline["systems"],
         "coaching_level": coaching_level,
     }
 
@@ -486,6 +589,7 @@ def generate_weekly_insight(
         "overall_band": overall,
         "easy_run_count": kpis["easy_run_count"],
         "generated": True,
+        "systems": pipeline["systems"],
     }
 
 
@@ -504,6 +608,7 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
         return {
             "has_insight": False,
             "message": "No weekly insights yet. We'll generate your first summary after a week of easy runs.",
+            "systems": {},
         }
 
     pace_display = "—"
@@ -526,46 +631,61 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
         sign = "+" if row.efficiency_delta > 0 else ""
         eff_delta_display = f"{sign}{row.efficiency_delta}"
 
+    kpis_payload = [
+        {
+            "name": "hr_drift",
+            "label": "HR Drift",
+            "value": row.hr_drift_pct,
+            "value_display": (
+                f"{row.hr_drift_pct}%" if row.hr_drift_pct is not None else "—"
+            ),
+            "band": row.hr_drift_band,
+            "delta_display": drift_delta_display,
+        },
+        {
+            "name": "z2_pace",
+            "label": "Z2 Pace",
+            "value": row.z2_pace_min_per_mi,
+            "value_display": pace_display,
+            "band": row.z2_pace_band,
+            "delta_display": pace_delta_display,
+        },
+        {
+            "name": "efficiency",
+            "label": "Efficiency",
+            "value": row.efficiency,
+            "value_display": str(row.efficiency) if row.efficiency is not None else "—",
+            "band": row.efficiency_band,
+            "delta_display": eff_delta_display,
+        },
+    ]
+
     return {
         "has_insight": True,
         "week_start": str(row.week_start),
         "week_end": str(row.week_end),
         "overall_band": row.overall_band,
-        "kpis": [
-            {
-                "name": "hr_drift",
-                "label": "HR Drift",
-                "value": row.hr_drift_pct,
-                "value_display": (
-                    f"{row.hr_drift_pct}%" if row.hr_drift_pct is not None else "—"
-                ),
-                "band": row.hr_drift_band,
-                "delta_display": drift_delta_display,
-            },
-            {
-                "name": "z2_pace",
-                "label": "Z2 Pace",
-                "value": row.z2_pace_min_per_mi,
-                "value_display": pace_display,
-                "band": row.z2_pace_band,
-                "delta_display": pace_delta_display,
-            },
-            {
-                "name": "efficiency",
-                "label": "Efficiency",
-                "value": row.efficiency,
-                "value_display": (
-                    str(row.efficiency) if row.efficiency is not None else "—"
-                ),
-                "band": row.efficiency_band,
-                "delta_display": eff_delta_display,
-            },
-        ],
+        "kpis": kpis_payload,
         "easy_run_count": row.easy_run_count,
         "total_run_count": row.total_run_count,
         "summary_text": row.summary_text,
         "action_text": row.action_text,
         "generated_at": row.generated_at.isoformat() if row.generated_at else None,
+        "systems": {
+            TrainingSystem.EASY.value: {
+                "system": TrainingSystem.EASY.value,
+                "status": "ready",
+                "overall_band": row.overall_band,
+                "kpis": kpis_payload,
+                "easy_run_count": row.easy_run_count,
+                "total_run_count": row.total_run_count,
+                "summary_text": row.summary_text,
+                "action_text": row.action_text,
+                "generated_at": (
+                    row.generated_at.isoformat() if row.generated_at else None
+                ),
+            }
+        },
     }
 
 
@@ -591,6 +711,7 @@ def get_weekly_insight_history(
         return {
             "has_history": False,
             "message": "Not enough data for a trend chart yet.",
+            "systems": {},
         }
 
     data_points = []
@@ -619,7 +740,14 @@ def get_weekly_insight_history(
         {"color": "red", "min": o_max, "max": round(o_max + 2.5, 1)},
     ]
 
-    return {"has_history": True, "weekly_data": data_points, "zones": zones}
+    return {
+        "has_history": True,
+        "weekly_data": data_points,
+        "zones": zones,
+        "systems": {
+            TrainingSystem.EASY.value: {"weekly_data": data_points, "zones": zones}
+        },
+    }
 
 
 def get_users_with_easy_runs(
