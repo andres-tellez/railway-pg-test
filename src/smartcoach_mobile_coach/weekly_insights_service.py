@@ -576,7 +576,8 @@ def get_weekly_insight_history(
     weeks = max(1, min(weeks, 12))
     rows = session.execute(
         text(
-            "SELECT week_start, hr_drift_pct, hr_drift_band "
+            "SELECT week_start, hr_drift_pct, hr_drift_band, "
+            "z2_pace_min_per_mi, z2_pace_band "
             "FROM weekly_training_insights "
             "WHERE user_id = CAST(:uid AS uuid) "
             "  AND hr_drift_pct IS NOT NULL "
@@ -592,13 +593,20 @@ def get_weekly_insight_history(
             "message": "Not enough data for a trend chart yet.",
         }
 
-    data_points = [
-        {
-            "label": f"{r.week_start.month}/{r.week_start.day}",
-            "value": float(r.hr_drift_pct),
-        }
-        for r in reversed(rows)
-    ]
+    data_points = []
+    for r in reversed(rows):
+        val = float(r.hr_drift_pct)
+        band = r.hr_drift_band or _hr_drift_band(val)
+        pace = r.z2_pace_min_per_mi
+        data_points.append(
+            {
+                "label": f"{r.week_start.month}/{r.week_start.day}",
+                "value": val,
+                "band": band,
+                "z2_pace_min_per_mi": float(pace) if pace is not None else None,
+                "z2_pace_band": r.z2_pace_band,
+            }
+        )
 
     g_max = HR_DRIFT_BANDS["green_max"]
     y_max = HR_DRIFT_BANDS["yellow_max"]
