@@ -569,6 +569,48 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
     }
 
 
+def get_weekly_insight_history(
+    session: Session, user_id: str, weeks: int = 6
+) -> Dict[str, Any]:
+    """Return the last *weeks* weekly insights plus HR drift zone definitions."""
+    weeks = max(1, min(weeks, 12))
+    rows = session.execute(
+        text(
+            "SELECT week_start, hr_drift_pct, hr_drift_band "
+            "FROM weekly_training_insights "
+            "WHERE user_id = CAST(:uid AS uuid) "
+            "  AND hr_drift_pct IS NOT NULL "
+            "ORDER BY week_start DESC "
+            "LIMIT :n"
+        ),
+        {"uid": user_id, "n": weeks},
+    ).fetchall()
+
+    if not rows:
+        return {
+            "has_history": False,
+            "message": "Not enough data for a trend chart yet.",
+        }
+
+    data_points = [
+        {"label": r.week_start.strftime("W%V"), "value": float(r.hr_drift_pct)}
+        for r in reversed(rows)
+    ]
+
+    g_max = HR_DRIFT_BANDS["green_max"]
+    y_max = HR_DRIFT_BANDS["yellow_max"]
+    o_max = HR_DRIFT_BANDS["orange_max"]
+
+    zones = [
+        {"color": "green", "min": 0, "max": g_max},
+        {"color": "yellow", "min": g_max, "max": y_max},
+        {"color": "orange", "min": y_max, "max": o_max},
+        {"color": "red", "min": o_max, "max": round(o_max + 2.5, 1)},
+    ]
+
+    return {"has_history": True, "weekly_data": data_points, "zones": zones}
+
+
 def get_users_with_easy_runs(
     session: Session, week_start: date, week_end: date
 ) -> List[str]:
