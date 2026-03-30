@@ -2,7 +2,8 @@
 """
 Generate weekly training insights for all qualifying users.
 
-Intended to run as a Monday morning cron job on Railway.
+Intended to run as a Sunday evening cron (e.g. 5 PM CT) so the Mon–Sun week
+ending that day is complete; Monday–Saturday runs use the prior completed week.
 Idempotent: safe to re-run for the same week.
 
 Usage:
@@ -32,13 +33,23 @@ from src.smartcoach_mobile_coach.weekly_insights_service import (
 
 
 def _last_completed_week() -> tuple[date, date]:
-    """Monday–Sunday of the most recently completed week."""
+    """
+    Monday–Sunday of the week to report.
+
+    On Sunday, that is the Mon–Sun window ending today (for a same-day cron).
+    On Monday–Saturday, it is the most recently finished Mon–Sun week (ended
+    last Sunday).
+    """
     today = date.today()
     dow = today.weekday()
+    if dow == 6:  # Sunday — week closes today
+        week_end = today
+        week_start = today - timedelta(days=6)
+        return week_start, week_end
     this_monday = today - timedelta(days=dow)
-    last_monday = this_monday - timedelta(weeks=1)
-    last_sunday = last_monday + timedelta(days=6)
-    return last_monday, last_sunday
+    week_end = this_monday - timedelta(days=1)
+    week_start = week_end - timedelta(days=6)
+    return week_start, week_end
 
 
 def main():
