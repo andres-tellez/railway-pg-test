@@ -348,6 +348,7 @@ def execute_tool(
 
     if handler_key == "get_weekly_training_insight":
         return tool_get_weekly_training_insight(session, internal_user_id)
+
     if handler_key == "save_coach_preference":
         return tool_save_coach_preference(session, internal_user_id, args)
 
