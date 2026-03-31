@@ -17,6 +17,7 @@ from .estimation_helpers import (
     estimate_resting_hr_from_age_group,
     zone_percentage_to_bpm,
 )
+from .zone_population_service import refresh_user_zones
 
 __all__ = [
     "HeartRateZoneOrchestrationService",
@@ -29,4 +30,5 @@ __all__ = [
     "estimate_resting_hr_from_age",
     "estimate_resting_hr_from_age_group",
     "zone_percentage_to_bpm",
+    "refresh_user_zones",
 ]

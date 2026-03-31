@@ -102,6 +102,7 @@ We’ve added a skeleton workflow in `.github/workflows/cron-sync.yml` that:
 
 ### Other Documentation
 See [`docs/`](docs/) directory for architecture guides, API docs, and setup instructions.
+- Prod release runbook: [`docs/prod-release-workflow.md`](docs/prod-release-workflow.md)
 
 ---
 
