@@ -332,7 +332,7 @@ def tool_save_coach_preference(
     return {
         "saved": True,
         "preferences": current,
-        "message": "Preferences saved. I'll use these going forward.",
+        "message": "Preferences saved for your account only. I'll use these going forward.",
     }
 
 

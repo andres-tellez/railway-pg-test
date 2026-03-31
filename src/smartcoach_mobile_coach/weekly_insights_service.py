@@ -29,6 +29,7 @@ from src.utils.hr_zone_constants import (
     OVERALL_SCORE_RULES,
     TREND_BAND_THRESHOLDS,
     VERBOSITY_RULES,
+    hr_drift_band_from_pct,
 )
 
 logger = logging.getLogger("smartcoach_mobile_coach")
@@ -113,15 +114,7 @@ class TrainingSystem(str, Enum):
 
 
 def _hr_drift_band(value: Optional[float]) -> Optional[str]:
-    if value is None:
-        return None
-    if value < HR_DRIFT_BANDS["green_max"]:
-        return "green"
-    if value < HR_DRIFT_BANDS["yellow_max"]:
-        return "yellow"
-    if value < HR_DRIFT_BANDS["orange_max"]:
-        return "orange"
-    return "red"
+    return hr_drift_band_from_pct(value)
 
 
 def _trend_band(
