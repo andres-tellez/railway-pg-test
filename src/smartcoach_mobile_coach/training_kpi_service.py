@@ -234,7 +234,9 @@ def get_run_kpi_detail(
         float(row.hr_drift_pct) if row.hr_drift_pct is not None else None
     )
     drift_summary = (
-        f"{drift_pct}% ({drift_band})" if drift_pct is not None and drift_band else None
+        f"![HR drift: {drift_pct}%](kpi-band://{drift_band})"
+        if drift_pct is not None and drift_band
+        else None
     )
 
     return {

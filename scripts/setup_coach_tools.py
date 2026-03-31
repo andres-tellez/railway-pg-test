@@ -86,7 +86,7 @@ SEED_TOOLS = [
             "**Optional sections** (each defaults to true if omitted; set false to reduce payload): "
             "`include_peer_comparison` → `comparison` (this run vs up to 5 prior runs, deltas); "
             "`include_execution_kpis` → `training_kpis`, `zone_bounds`, `is_easy_run` from v_easy_runs "
-            "(kpis: `hr_drift_pct`, `hr_drift_band`, `hr_drift_summary_display` for Insights-style drift + R/O/Y/G; "
+            "(kpis: `hr_drift_pct`, `hr_drift_band`, `hr_drift_summary_display` as `![HR drift: X%](kpi-band://band)` for chat dot + label; "
             "`easy_pct_display`, `z2_band_pct_display`); "
             "`include_hr_profile` → `user_hr_profile` (Z1–Z5 bpm, hrmax_used_bpm, resting_hr_used_bpm, method). "
             "Only call after activity_id is known (find_runs_by_date or user-provided)."
