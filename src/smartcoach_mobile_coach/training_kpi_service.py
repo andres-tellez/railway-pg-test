@@ -107,15 +107,19 @@ def _trend_direction(values: List[Optional[float]], lower_is_better: bool) -> st
 
 def _format_weekly_row(row) -> Dict[str, Any]:
     avg_pace_raw = float(row.avg_z2_pace) if row.avg_z2_pace is not None else None
+    total_miles_val = float(row.total_miles) if row.total_miles else 0.0
+    longest_run_miles_val = (
+        float(row.longest_run_miles) if row.longest_run_miles else 0.0
+    )
     return {
         "iso_week": row.iso_week,
         "week_start_date": row.week_start_date,
         "total_runs": row.total_runs,
         "easy_runs": row.easy_runs,
-        "total_miles": float(row.total_miles) if row.total_miles else 0,
-        "longest_run_miles": (
-            float(row.longest_run_miles) if row.longest_run_miles else 0
-        ),
+        "total_miles": total_miles_val,
+        "longest_run_miles": longest_run_miles_val,
+        "total_mi_display": format_distance_mi(total_miles_val),
+        "longest_mi_display": format_distance_mi(longest_run_miles_val),
         "avg_z2_pace_raw": avg_pace_raw,
         "avg_z2_pace_display": (
             format_pace_sec_per_mi(avg_pace_raw * 60) if avg_pace_raw else "—"
@@ -123,6 +127,11 @@ def _format_weekly_row(row) -> Dict[str, Any]:
         "avg_drift_pct": (float(row.avg_drift) if row.avg_drift is not None else None),
         "avg_z2_adherence": (
             float(row.avg_z2_adherence) if row.avg_z2_adherence is not None else None
+        ),
+        "avg_z2_adherence_display": (
+            f"{round(float(row.avg_z2_adherence))}% Z2"
+            if row.avg_z2_adherence is not None
+            else None
         ),
         "avg_pace_spread": (
             float(row.avg_pace_spread) if row.avg_pace_spread is not None else None
@@ -141,8 +150,8 @@ def get_training_progress(
     """
     Weekly KPI summaries + trend analysis for the coach tool.
 
-    Returns structured data the LLM interprets — no display formatting decisions
-    are made here beyond pace strings.
+    Returns structured data the LLM interprets, including `*_display` fields
+    for pace, weekly distance (mi), and Z2 adherence where available.
     """
     weeks = max(1, min(weeks, 52))
 
@@ -229,6 +238,11 @@ def get_run_kpi_detail(
             ),
             "z2_band_pct": (
                 round(float(row.z2_band_pct), 2)
+                if row.z2_band_pct is not None
+                else None
+            ),
+            "z2_band_pct_display": (
+                f"{round(float(row.z2_band_pct))}% Z2"
                 if row.z2_band_pct is not None
                 else None
             ),
