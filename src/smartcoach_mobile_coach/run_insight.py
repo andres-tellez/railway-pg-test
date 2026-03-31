@@ -52,26 +52,26 @@ def _delta_pace_display(this_sec: float, med_sec: float) -> str:
     m, s = divmod(sec_i, 60)
     bit = f"{m}:{s:02d}/mi"
     if d < 0:
-        return f"{bit} faster than recent median"
+        return f"Avg. pace {bit} faster vs recent median"
     if d > 0:
-        return f"{bit} slower than recent median"
-    return "same as recent median"
+        return f"Avg. pace {bit} slower vs recent median"
+    return "Avg. pace same vs recent median"
 
 
 def _delta_hr_display(this_hr: float, med_hr: float) -> str:
     d = int(round(this_hr - med_hr))
     if d == 0:
-        return "same as recent median"
+        return "Avg. HR same vs recent median"
     sign = "+" if d > 0 else ""
-    return f"{sign}{d} bpm vs recent median"
+    return f"Avg. HR {sign}{d} bpm vs recent median"
 
 
 def _delta_distance_display(this_mi: float, med_mi: float) -> str:
     d = this_mi - med_mi
     if abs(d) < 0.05:
-        return "same as recent median"
+        return "Distance same vs recent median"
     sign = "+" if d > 0 else ""
-    return f"{sign}{d:.2f} mi vs recent median"
+    return f"Distance {sign}{d:.2f} mi vs recent median"
 
 
 def _fetch_activity_context(
