@@ -21,6 +21,7 @@ from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_pace_sec_per_mi,
 )
+from src.utils.hr_zone_constants import hr_drift_band_from_pct
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
@@ -216,7 +217,8 @@ def get_run_kpi_detail(
 ) -> Dict[str, Any]:
     """
     Z2 KPI detail for a single run. Complements run_insight facts
-    with training-specific metrics.
+    with training-specific metrics. Includes HR drift %, band (green/yellow/orange/red),
+    and hr_drift_summary_display aligned with Weekly Insights thresholds.
     """
     stmt = text(_RUN_KPI_SQL).bindparams(bindparam("uid", type_=PGUUID))
     row = session.execute(stmt, {"uid": user_id, "aid": activity_id}).fetchone()
@@ -225,6 +227,15 @@ def get_run_kpi_detail(
         return {"error": "not_found", "message": "Run not found in KPI view."}
 
     avg_pace_raw = float(row.avg_pace) if row.avg_pace is not None else None
+    drift_pct = (
+        round(float(row.hr_drift_pct), 2) if row.hr_drift_pct is not None else None
+    )
+    drift_band = hr_drift_band_from_pct(
+        float(row.hr_drift_pct) if row.hr_drift_pct is not None else None
+    )
+    drift_summary = (
+        f"{drift_pct}% ({drift_band})" if drift_pct is not None and drift_band else None
+    )
 
     return {
         "activity_id": int(row.activity_id),
@@ -257,11 +268,9 @@ def get_run_kpi_detail(
             "z2_band_pct_display": _pct_fraction_to_display(
                 float(row.z2_band_pct) if row.z2_band_pct is not None else None
             ),
-            "hr_drift_pct": (
-                round(float(row.hr_drift_pct), 2)
-                if row.hr_drift_pct is not None
-                else None
-            ),
+            "hr_drift_pct": drift_pct,
+            "hr_drift_band": drift_band,
+            "hr_drift_summary_display": drift_summary,
             "early_hr": (
                 round(float(row.early_hr), 1) if row.early_hr is not None else None
             ),

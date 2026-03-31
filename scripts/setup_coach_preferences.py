@@ -37,16 +37,19 @@ SAVE_TOOL = {
     "display_name": "Save Coach Preference",
     "category": "preferences",
     "description": (
-        "Save or update the user's coaching preferences. Call when the user says "
-        "'remember this', 'only show me X', 'I want more detail', 'keep it simple', "
-        "'change my level', or expresses any preference about how run summaries or "
-        "training updates should be presented. "
-        "Validate fields against allowed metrics before saving."
+        "Save or update **this user's** coaching preferences only (per account — "
+        "does not affect other users). Call when the user says 'remember this', "
+        "'only show me X', 'from now on include HR drift and the KPI color', "
+        "'I want more detail', 'keep it simple', 'change my level', or any lasting "
+        "preference for run or training summaries. For run recap add-ons, set "
+        "`run_summary_priority` to include the matching ALLOWED_METRICS key (e.g. "
+        "`hr_drift` for drift % and Insights band color). Merge with existing "
+        "priorities when appropriate. Validate fields against allowed metrics."
     ),
     "when_to_call": (
-        "User expresses a preference about response format, verbosity, detail level, "
-        "or which metrics to prioritize. Also when user says 'I want advanced mode' "
-        "or 'keep it beginner friendly'."
+        "User expresses a lasting preference about format, verbosity, metrics to "
+        "prioritize in run/training summaries, or 'from now on always show …'. "
+        "Also when they want advanced/beginner style changes."
     ),
     "parameters_schema": {
         "type": "object",
@@ -60,8 +63,9 @@ SAVE_TOOL = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Ordered list of metrics to prioritize in run summaries. "
-                    "Allowed: summary, easy_pct, hr_drift, z2_adherence, z2_pace, "
+                    "Ordered list of metrics to prioritize in run summaries (this user only). "
+                    "Allowed: summary, easy_pct, hr_drift (includes % + green/yellow/orange/red "
+                    "band from training_kpis when present), z2_adherence, z2_pace, "
                     "efficiency, pace_spread."
                 ),
             },

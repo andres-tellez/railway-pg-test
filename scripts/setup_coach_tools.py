@@ -86,7 +86,8 @@ SEED_TOOLS = [
             "**Optional sections** (each defaults to true if omitted; set false to reduce payload): "
             "`include_peer_comparison` → `comparison` (this run vs up to 5 prior runs, deltas); "
             "`include_execution_kpis` → `training_kpis`, `zone_bounds`, `is_easy_run` from v_easy_runs "
-            "(kpis include `easy_pct_display` and `z2_band_pct_display` for easy vs narrow Z2 band); "
+            "(kpis: `hr_drift_pct`, `hr_drift_band`, `hr_drift_summary_display` for Insights-style drift + R/O/Y/G; "
+            "`easy_pct_display`, `z2_band_pct_display`); "
             "`include_hr_profile` → `user_hr_profile` (Z1–Z5 bpm, hrmax_used_bpm, resting_hr_used_bpm, method). "
             "Only call after activity_id is known (find_runs_by_date or user-provided)."
         ),
@@ -129,7 +130,7 @@ SEED_TOOLS = [
             "Always: schema_version, activity_id, facts. "
             "If include_peer_comparison: comparison (this_run, peer_runs, deltas). "
             "If include_execution_kpis and KPI row exists: training_kpis.kpis "
-            "(includes easy_pct_display vs z2_band_pct_display — easy = ≤Z2 top, Z2 band = between Z2 bounds), "
+            "(hr_drift_summary_display, easy_pct_display, z2_band_pct_display, etc.), "
             "zone_bounds, is_easy_run. "
             "If include_hr_profile and zones configured: user_hr_profile."
         ),
