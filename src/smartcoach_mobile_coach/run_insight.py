@@ -118,6 +118,8 @@ def build_get_run_insight_payload(
     internal_user_id: str,
     activity_id: int,
     schema_version: str,
+    *,
+    include_peer_comparison: bool = True,
 ) -> Dict[str, Any]:
     row = _fetch_activity_context(session, internal_user_id, activity_id)
     if not row:
@@ -132,6 +134,31 @@ def build_get_run_insight_payload(
     act = ActivityDAO.get_by_id(session, activity_id)
     if not act or str(act.user_id) != str(internal_user_id):
         return {"error": "not_found", "message": "Activity not found for this user."}
+
+    local_date_str = (
+        local_date.isoformat()
+        if local_date and hasattr(local_date, "isoformat")
+        else str(local_date or "")
+    )
+
+    facts: Dict[str, Any] = {
+        "title": (name or "Run")[:200],
+        "local_date": local_date_str,
+        "start_local_time_display": format_time_utc(start_date),
+        "distance_display": format_distance_mi(distance_mi),
+        "moving_time_display": format_duration_seconds(int(moving_time or 0)),
+        "avg_pace_display": format_pace_sec_per_mi(pace_sec) if pace_sec else "—",
+        "avg_heart_rate_display": format_hr_bpm(avg_hr) or "—",
+        "max_heart_rate_display": format_hr_bpm(act.max_heartrate) or "—",
+        "sport_type": "run",
+    }
+
+    if not include_peer_comparison:
+        return {
+            "schema_version": schema_version,
+            "activity_id": activity_id,
+            "facts": facts,
+        }
 
     peers = _peer_activities_before(
         session, act.athlete_id, act.start_date, activity_id, limit=10
@@ -209,6 +236,7 @@ def build_get_run_insight_payload(
             "moving_time_display": format_duration_seconds(int(moving_time or 0)),
             "avg_pace_display": format_pace_sec_per_mi(pace_sec) if pace_sec else "—",
             "avg_heart_rate_display": format_hr_bpm(avg_hr) or "—",
+            "max_heart_rate_display": format_hr_bpm(act.max_heartrate) or "—",
             "sport_type": "run",
         },
         "comparison": {
@@ -222,6 +250,7 @@ def build_get_run_insight_payload(
                     format_pace_sec_per_mi(pace_sec) if pace_sec else "—"
                 ),
                 "avg_heart_rate_display": format_hr_bpm(avg_hr) or "—",
+                "max_heart_rate_display": format_hr_bpm(act.max_heartrate) or "—",
             },
             "peer_runs": peer_rows,
             "delta_vs_peer_median_display": delta_block,
@@ -244,7 +273,11 @@ def apply_insight_table_labels(
     if len(anchor) < 10:
         anchor = None
 
-    comp = out.get("comparison") or {}
+    comp = out.get("comparison")
+    if not comp:
+        return out
+
+    comp = dict(comp)
     this_run = dict(comp.get("this_run") or {})
     iso = this_run.get("local_date_iso")
     if not iso:
