@@ -82,7 +82,7 @@ SEED_TOOLS = [
         "category": "run_analysis",
         "description": (
             "Load run analysis for one activity_id. **Core (always returned):** `facts` — "
-            "distance, time, pace, avg/max HR, title, local date/time (display-ready). "
+            "distance (mi), time, Avg. pace, Avg./max HR (bpm), title, local date/time (display-ready). "
             "**Optional sections** (each defaults to true if omitted; set false to reduce payload): "
             "`include_peer_comparison` → `comparison` (this run vs up to 5 prior runs, deltas); "
             "`include_execution_kpis` → `training_kpis`, `zone_bounds`, `is_easy_run` from v_easy_runs; "
@@ -140,7 +140,7 @@ SEED_TOOLS = [
         "category": "training_progress",
         "description": (
             "Get the user's latest precomputed weekly training scoreboard: overall band, "
-            "HR drift/Z2 pace/efficiency bands, deltas, and coaching summary/action text. "
+            "HR drift / Avg. Z2 pace / efficiency bands, deltas, and coaching summary/action text. "
             "Use this first for weekly progress/status questions."
         ),
         "when_to_call": (
@@ -164,8 +164,8 @@ SEED_TOOLS = [
         "display_name": "Get Training KPIs",
         "category": "training_progress",
         "description": (
-            "Get the user's training KPI trends over recent weeks: Z2 pace, HR drift, "
-            "Z2 adherence, weekly mileage, and long run readiness. "
+            "Get the user's training KPI trends over recent weeks: Avg. Z2 pace, HR drift, "
+            "Z2 adherence (use *_display fields when present), weekly totals in mi, and long-run readiness. "
             "Call when the user asks about training progress, marathon readiness, "
             "'how am I doing', 'am I on track', or 'am I improving'. "
             "Never calculate KPIs yourself — always use this tool's data."

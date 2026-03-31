@@ -463,8 +463,8 @@ def _build_summary_prompt(
     data_block = (
         f"Week: {kpis.get('week_start')} to {kpis.get('week_end')}\n"
         f"Easy runs: {kpis.get('easy_run_count', 0)}\n"
-        f"HR Drift: {kpis.get('hr_drift_pct', '—')}% ({bands.get('hr_drift', 'no data')})\n"
-        f"Z2 Pace: {pace_display} ({bands.get('z2_pace', 'no data')})\n"
+        f"HR drift: {kpis.get('hr_drift_pct', '—')}% ({bands.get('hr_drift', 'no data')})\n"
+        f"Avg. Z2 pace: {pace_display} ({bands.get('z2_pace', 'no data')})\n"
         f"Efficiency: {kpis.get('efficiency', '—')} ({bands.get('efficiency', 'no data')})\n"
         f"Overall: {overall}\n"
     )
@@ -472,10 +472,12 @@ def _build_summary_prompt(
     delta_block = ""
     if deltas.get("hr_drift_delta") is not None:
         sign = "+" if deltas["hr_drift_delta"] > 0 else ""
-        delta_block += f"HR Drift vs last week: {sign}{deltas['hr_drift_delta']}%\n"
+        delta_block += f"HR drift vs last week: {sign}{deltas['hr_drift_delta']}%\n"
     if deltas.get("z2_pace_delta") is not None:
         sign = "+" if deltas["z2_pace_delta"] > 0 else ""
-        delta_block += f"Z2 Pace vs last week: {sign}{deltas['z2_pace_delta']} min/mi\n"
+        delta_block += (
+            f"Avg. Z2 pace vs last week: {sign}{deltas['z2_pace_delta']} min/mi\n"
+        )
     if deltas.get("efficiency_delta") is not None:
         sign = "+" if deltas["efficiency_delta"] > 0 else ""
         delta_block += f"Efficiency vs last week: {sign}{deltas['efficiency_delta']}\n"
@@ -731,7 +733,7 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
     kpis_payload = [
         {
             "name": "hr_drift",
-            "label": "HR Drift",
+            "label": "HR drift",
             "value": row.hr_drift_pct,
             "value_display": (
                 f"{row.hr_drift_pct}%" if row.hr_drift_pct is not None else "—"
@@ -741,7 +743,7 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
         },
         {
             "name": "z2_pace",
-            "label": "Z2 Pace",
+            "label": "Avg. Z2 pace",
             "value": row.z2_pace_min_per_mi,
             "value_display": pace_display,
             "band": row.z2_pace_band,
