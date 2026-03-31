@@ -19,6 +19,8 @@ This file is the SINGLE SOURCE OF TRUTH for all HR zone constants.
 No magic numbers should appear in service files - all constants must be here.
 """
 
+from __future__ import annotations
+
 # Legacy: Strava-style zones (max HR percentage-based)
 # Keep for backward compatibility
 STRAVA_HR_ZONES = {
@@ -154,6 +156,27 @@ HR_DRIFT_BANDS = {
     "yellow_max": 5.0,
     "orange_max": 7.5,
 }
+
+
+def hr_drift_band_from_pct(value: float | None) -> str | None:
+    """
+    Map per-run or weekly HR drift % to the same R/O/Y/G band as Insights.
+    Thresholds: HR_DRIFT_BANDS (green < 2.5%, yellow < 5%, orange < 7.5%, else red).
+    """
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v < HR_DRIFT_BANDS["green_max"]:
+        return "green"
+    if v < HR_DRIFT_BANDS["yellow_max"]:
+        return "yellow"
+    if v < HR_DRIFT_BANDS["orange_max"]:
+        return "orange"
+    return "red"
+
 
 # Z2 Pace and Efficiency use trend-based bands because absolute values
 # are user-specific. The delta (%) vs the prior-week value determines
