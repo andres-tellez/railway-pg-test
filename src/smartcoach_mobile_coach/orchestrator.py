@@ -184,7 +184,10 @@ STYLE
 - **Duration / time:** bold **Time**, value from `moving_time_display`.
 - **Pace:** bold **Avg. pace**, value from `avg_pace_display`.
 - **Heart rate:** bold **Avg. HR** and **Max HR** (not “Average Heart Rate” / “Heart Rate” spelled out). Pair with the tool values (they already include **bpm**).
-- **Zone adherence:** when `get_run_summary` includes `training_kpis.kpis`, prefer **`z2_band_pct_display`** for that bullet if present (bold **Z2**). Do **not** use the phrase **“Easy Zone”** in stat bullets. You may still discuss an easy aerobic run in prose using normal words.
+- **Easy vs Z2 band (when `training_kpis.kpis` has display fields):** use **up to two** bullets so the numbers match runner intuition:
+  - **`Easy (≤ Z2 top):`** + `easy_pct_display` — % of splits with HR **at or below** the top of Z2 (Z1 + Z2 + anything easier); **usually high** on a controlled easy day.
+  - **`HR in Z2 band:`** + `z2_band_pct_display` — % of splits with HR **between** Z2 low and Z2 high **only**; **often lower** if HR sat mostly in Z1. Do **not** treat a low Z2-band % as “bad easy” by itself.
+  Include `easy_pct_display` **before** `z2_band_pct_display` when both exist. If only one display field exists, use that one. Do **not** use **“Easy Zone”** in stat bullets.
 - **Peer medians:** `comparison.delta_vs_peer_median_display` strings already use **Avg. pace**, **Avg. HR**, **Distance**, and **mi** — quote them verbatim when you summarize vs recent runs.
 
 - Be supportive, but not overly motivational or emotional.

@@ -24,6 +24,18 @@ from src.smartcoach_mobile_coach.display_format import (
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
+
+def _pct_fraction_to_display(frac: Optional[float]) -> Optional[str]:
+    """Format v_easy_runs fraction columns (0..1) as a whole-percent string."""
+    if frac is None:
+        return None
+    try:
+        v = float(frac)
+    except (TypeError, ValueError):
+        return None
+    return f"{int(round(v * 100.0))}%"
+
+
 _WEEKLY_SUMMARY_SQL = """
 WITH user_easy AS (
     SELECT *
@@ -128,10 +140,8 @@ def _format_weekly_row(row) -> Dict[str, Any]:
         "avg_z2_adherence": (
             float(row.avg_z2_adherence) if row.avg_z2_adherence is not None else None
         ),
-        "avg_z2_adherence_display": (
-            f"{round(float(row.avg_z2_adherence))}% Z2"
-            if row.avg_z2_adherence is not None
-            else None
+        "avg_z2_adherence_display": _pct_fraction_to_display(
+            float(row.avg_z2_adherence) if row.avg_z2_adherence is not None else None
         ),
         "avg_pace_spread": (
             float(row.avg_pace_spread) if row.avg_pace_spread is not None else None
@@ -241,10 +251,11 @@ def get_run_kpi_detail(
                 if row.z2_band_pct is not None
                 else None
             ),
-            "z2_band_pct_display": (
-                f"{round(float(row.z2_band_pct))}% Z2"
-                if row.z2_band_pct is not None
-                else None
+            "easy_pct_display": _pct_fraction_to_display(
+                float(row.easy_pct) if row.easy_pct is not None else None
+            ),
+            "z2_band_pct_display": _pct_fraction_to_display(
+                float(row.z2_band_pct) if row.z2_band_pct is not None else None
             ),
             "hr_drift_pct": (
                 round(float(row.hr_drift_pct), 2)
