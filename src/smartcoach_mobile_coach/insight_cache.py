@@ -1,4 +1,4 @@
-"""Per-user TTL cache for get_run_insight JSON (Topic 5)."""
+"""Per-user TTL cache for get_run_summary / run insight JSON (Topic 5)."""
 
 from __future__ import annotations
 
@@ -12,8 +12,16 @@ _lock = threading.Lock()
 _store: Dict[str, tuple[float, Dict[str, Any]]] = {}
 
 
-def cache_key(user_id: str, activity_id: int, schema_version: str) -> str:
-    return f"{user_id}:{activity_id}:insight:{schema_version}"
+def cache_key(
+    user_id: str,
+    activity_id: int,
+    schema_version: str,
+    *,
+    include_peer_comparison: bool = True,
+) -> str:
+    """Peer-specific payloads differ; key must distinguish p0 (facts-only) vs p1 (with peers)."""
+    peer = "p1" if include_peer_comparison else "p0"
+    return f"{user_id}:{activity_id}:insight:{schema_version}:{peer}"
 
 
 def get_cached(key: str) -> Optional[Dict[str, Any]]:
@@ -40,6 +48,16 @@ def set_cached(
 def invalidate_user_activity(
     user_id: str, activity_id: int, schema_version: str
 ) -> None:
-    k = cache_key(user_id, activity_id, schema_version)
     with _lock:
-        _store.pop(k, None)
+        _store.pop(
+            cache_key(
+                user_id, activity_id, schema_version, include_peer_comparison=True
+            ),
+            None,
+        )
+        _store.pop(
+            cache_key(
+                user_id, activity_id, schema_version, include_peer_comparison=False
+            ),
+            None,
+        )

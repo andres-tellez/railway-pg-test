@@ -12,7 +12,10 @@ from sqlalchemy import text
 
 from src.db.dao.activity_dao import ActivityDAO
 from src.smartcoach_mobile_coach.config import INSIGHT_SCHEMA_VERSION
-from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
+from src.smartcoach_mobile_coach.db_helpers import (
+    fetch_user_hr_profile_for_coach,
+    get_primary_athlete_id,
+)
 from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_time_utc,
@@ -67,6 +70,40 @@ def _parse_activity_id(args: Dict[str, Any]) -> Optional[int]:
     except (TypeError, ValueError):
         return None
     return aid if aid > 0 else None
+
+
+def _coerce_tool_bool(value: Any, default: bool) -> bool:
+    """Parse optional boolean tool args from JSON (bool, string, or int)."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in ("true", "1", "yes"):
+            return True
+        if s in ("false", "0", "no"):
+            return False
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    return default
+
+
+def _parse_get_run_summary_include_flags(
+    args: Dict[str, Any],
+) -> tuple[bool, bool, bool]:
+    """
+    Optional sections for get_run_summary (defaults all True = backward compatible).
+
+    - include_peer_comparison: peer table + deltas vs recent runs
+    - include_execution_kpis: v_easy_runs KPIs + zone_bounds + is_easy_run
+    - include_hr_profile: user_hr_zones profile (Z1–Z5, max/resting used)
+    """
+    return (
+        _coerce_tool_bool(args.get("include_peer_comparison"), True),
+        _coerce_tool_bool(args.get("include_execution_kpis"), True),
+        _coerce_tool_bool(args.get("include_hr_profile"), True),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -145,14 +182,27 @@ def tool_get_run_summary(
     internal_user_id: str,
     activity_id: int,
     anchor_local_date: Optional[str] = None,
+    *,
+    include_peer_comparison: bool = True,
+    include_execution_kpis: bool = True,
+    include_hr_profile: bool = True,
 ) -> Dict[str, Any]:
-    ck = cache_key(internal_user_id, activity_id, INSIGHT_SCHEMA_VERSION)
+    ck = cache_key(
+        internal_user_id,
+        activity_id,
+        INSIGHT_SCHEMA_VERSION,
+        include_peer_comparison=include_peer_comparison,
+    )
     hit = get_cached(ck)
     if hit is not None:
         payload = apply_insight_table_labels(hit, anchor_local_date)
     else:
         payload = build_get_run_insight_payload(
-            session, internal_user_id, activity_id, INSIGHT_SCHEMA_VERSION
+            session,
+            internal_user_id,
+            activity_id,
+            INSIGHT_SCHEMA_VERSION,
+            include_peer_comparison=include_peer_comparison,
         )
         if "error" not in payload:
             set_cached(ck, payload)
@@ -161,11 +211,17 @@ def tool_get_run_summary(
     if payload.get("error"):
         return payload
 
-    kpi_data = get_run_kpi_detail(session, internal_user_id, activity_id)
-    if not kpi_data.get("error"):
-        payload["training_kpis"] = kpi_data.get("kpis")
-        payload["zone_bounds"] = kpi_data.get("zone_bounds")
-        payload["is_easy_run"] = kpi_data.get("is_easy_run")
+    if include_execution_kpis:
+        kpi_data = get_run_kpi_detail(session, internal_user_id, activity_id)
+        if not kpi_data.get("error"):
+            payload["training_kpis"] = kpi_data.get("kpis")
+            payload["zone_bounds"] = kpi_data.get("zone_bounds")
+            payload["is_easy_run"] = kpi_data.get("is_easy_run")
+
+    if include_hr_profile:
+        profile = fetch_user_hr_profile_for_coach(session, internal_user_id)
+        if profile is not None:
+            payload["user_hr_profile"] = profile
 
     return payload
 
@@ -334,8 +390,15 @@ def execute_tool(
                 "error": "missing_activity_id",
                 "message": "activity_id must be a positive integer.",
             }
+        inc_peers, inc_kpis, inc_hr = _parse_get_run_summary_include_flags(args)
         return tool_get_run_summary(
-            session, internal_user_id, aid, anchor_local_date=anchor_local_date
+            session,
+            internal_user_id,
+            aid,
+            anchor_local_date=anchor_local_date,
+            include_peer_comparison=inc_peers,
+            include_execution_kpis=inc_kpis,
+            include_hr_profile=inc_hr,
         )
 
     if handler_key == "get_training_kpis":

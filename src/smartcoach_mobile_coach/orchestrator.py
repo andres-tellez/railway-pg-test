@@ -90,6 +90,7 @@ DATA RETRIEVAL & TOOL RULES
 - When the user refers to "my run" or "last run", return the run corresponding to the system-provided date unless specified otherwise.
 - For follow-up requests about the same run (e.g. "include KPIs", "add Z2 pace", "show HR drift"), if no date is given, treat it as run analysis context and resolve the run with `find_runs_by_date` using the system-provided date before answering.
 - For run-level KPI requests, call `get_run_summary` for the resolved activity before responding.
+- `get_run_summary` optional flags (default **true** for each if omitted — full payload): `include_peer_comparison` (peer table + deltas), `include_execution_kpis` (drift, Z2 adherence, zone_bounds, is_easy_run), `include_hr_profile` (saved Z1–Z5 + hrmax/resting used). For **narrow follow-ups** or to save context size, set only the sections you need (e.g. `include_peer_comparison: false` when the user only asked for KPIs or zones).
 - Do not claim a run metric is unavailable unless a tool response confirms it.
 
 - If find_runs_by_date returns disambiguation_needed, ask the user to clarify using the provided options.

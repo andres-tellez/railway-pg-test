@@ -81,15 +81,17 @@ SEED_TOOLS = [
         "display_name": "Get Run Summary",
         "category": "run_analysis",
         "description": (
-            "Load complete analysis for one run: facts (distance, time, pace, HR), "
-            "comparison vs recent similar runs, and Z2 training KPIs (HR drift, Z2 adherence, "
-            "pace consistency). Only call after you know the activity_id from find_runs_by_date "
-            "or the user provides one directly. "
-            "Pace and times in tool output are display-ready; quote them accurately."
+            "Load run analysis for one activity_id. **Core (always returned):** `facts` — "
+            "distance, time, pace, avg/max HR, title, local date/time (display-ready). "
+            "**Optional sections** (each defaults to true if omitted; set false to reduce payload): "
+            "`include_peer_comparison` → `comparison` (this run vs up to 5 prior runs, deltas); "
+            "`include_execution_kpis` → `training_kpis`, `zone_bounds`, `is_easy_run` from v_easy_runs; "
+            "`include_hr_profile` → `user_hr_profile` (Z1–Z5 bpm, hrmax_used_bpm, resting_hr_used_bpm, method). "
+            "Only call after activity_id is known (find_runs_by_date or user-provided)."
         ),
         "when_to_call": (
-            "After identifying a specific activity_id (via find_runs_by_date or user-provided). "
-            "Provides everything needed to discuss a single run."
+            "After identifying activity_id. Use defaults (all sections) for first 'how was my run' style "
+            "questions; turn off sections you do not need on follow-ups to save tokens."
         ),
         "parameters_schema": {
             "type": "object",
@@ -97,14 +99,36 @@ SEED_TOOLS = [
                 "activity_id": {
                     "type": "integer",
                     "description": "Strava activity id for this user's run.",
-                }
+                },
+                "include_peer_comparison": {
+                    "type": "boolean",
+                    "description": (
+                        "If true (default), include comparison vs recent peer runs and deltas. "
+                        "If false, omit `comparison` (facts only besides other flags)."
+                    ),
+                },
+                "include_execution_kpis": {
+                    "type": "boolean",
+                    "description": (
+                        "If true (default), include training_kpis, zone_bounds, is_easy_run when "
+                        "the run exists in v_easy_runs. If false, skip KPI query."
+                    ),
+                },
+                "include_hr_profile": {
+                    "type": "boolean",
+                    "description": (
+                        "If true (default), attach user_hr_profile from user_hr_zones when configured. "
+                        "If false, omit (e.g. user only asked about pace, not zones)."
+                    ),
+                },
             },
             "required": ["activity_id"],
         },
         "returns_description": (
-            "Run facts (distance, pace, HR, time), peer comparison table, "
-            "Z2 KPIs (hr_drift_pct, z2_band_pct, easy_pct, pace_spread), "
-            "is_easy_run classification, zone bounds used."
+            "Always: schema_version, activity_id, facts. "
+            "If include_peer_comparison: comparison (this_run, peer_runs, deltas). "
+            "If include_execution_kpis and KPI row exists: training_kpis, zone_bounds, is_easy_run. "
+            "If include_hr_profile and zones configured: user_hr_profile."
         ),
         "data_source": "run_insight + v_easy_runs",
         "is_enabled": True,
