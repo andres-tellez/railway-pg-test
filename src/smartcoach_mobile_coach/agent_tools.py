@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -93,6 +93,26 @@ def _coerce_tool_bool(value: Any, default: bool) -> bool:
     return default
 
 
+def _parse_optional_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_optional_date(value: Any) -> Optional[date]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.strptime(value.strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
 def _parse_get_run_summary_include_flags(
     args: Dict[str, Any],
 ) -> tuple[bool, bool, bool]:
@@ -173,6 +193,73 @@ def tool_find_runs_by_date(
         "local_date": local_date,
         "candidates": candidates,
         "message": "Ask the user which run they mean.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tool: search_runs
+# ---------------------------------------------------------------------------
+
+
+def tool_search_runs(
+    session: Session,
+    internal_user_id: str,
+    *,
+    min_distance_m: Optional[float] = None,
+    max_distance_m: Optional[float] = None,
+    name_query: Optional[str] = None,
+    start_date_from: Optional[date] = None,
+    start_date_to: Optional[date] = None,
+    limit: int = 5,
+) -> Dict[str, Any]:
+    athlete_id = get_primary_athlete_id(session, internal_user_id)
+    if not athlete_id:
+        return {"error": "no_athlete", "message": "No linked athlete for this account."}
+
+    rows = ActivityDAO.search_runs(
+        session,
+        athlete_id,
+        min_distance_m=min_distance_m,
+        max_distance_m=max_distance_m,
+        name_query=name_query,
+        start_date_from=start_date_from,
+        start_date_to=start_date_to,
+        limit=limit,
+    )
+
+    matches = [
+        {
+            "activity_id": r["activity_id"],
+            "title": (r.get("name") or "Run")[:120],
+            "distance_display": format_distance_mi(
+                _distance_miles_from_meters(r.get("distance"))
+            ),
+            "start_local_time_display": format_time_utc(r.get("start_date")),
+            "start_local_date": (
+                r.get("start_date").date().isoformat()
+                if getattr(r.get("start_date"), "date", None)
+                else None
+            ),
+        }
+        for r in rows
+    ]
+
+    return {
+        "matches": matches,
+        "count": len(matches),
+        "filters": {
+            "min_distance_m": min_distance_m,
+            "max_distance_m": max_distance_m,
+            "name_query": name_query,
+            "start_date_from": start_date_from.isoformat() if start_date_from else None,
+            "start_date_to": start_date_to.isoformat() if start_date_to else None,
+            "limit": max(1, min(int(limit), 20)),
+        },
+        "message": (
+            "No matching runs found."
+            if len(matches) == 0
+            else "Use the first match as the most recent run that fits the filters."
+        ),
     }
 
 
@@ -348,6 +435,7 @@ def tool_save_coach_preference(
 
 _TOOL_HANDLERS = {
     "find_runs_by_date": "find_runs_by_date",
+    "search_runs": "search_runs",
     "get_run_summary": "get_run_summary",
     "get_training_kpis": "get_training_kpis",
     "get_weekly_training_insight": "get_weekly_training_insight",
@@ -388,6 +476,30 @@ def execute_tool(
                 "message": "Parameter local_date (YYYY-MM-DD) is required.",
             }
         return tool_find_runs_by_date(session, internal_user_id, ld.strip())
+
+    if handler_key == "search_runs":
+        min_distance_m = _parse_optional_float(args.get("min_distance_m"))
+        max_distance_m = _parse_optional_float(args.get("max_distance_m"))
+        name_query = args.get("name_query")
+        if name_query is not None and not isinstance(name_query, str):
+            name_query = None
+        start_date_from = _parse_optional_date(args.get("start_date_from"))
+        start_date_to = _parse_optional_date(args.get("start_date_to"))
+        limit_raw = args.get("limit", 5)
+        try:
+            limit = int(limit_raw)
+        except (TypeError, ValueError):
+            limit = 5
+        return tool_search_runs(
+            session,
+            internal_user_id,
+            min_distance_m=min_distance_m,
+            max_distance_m=max_distance_m,
+            name_query=(name_query or "").strip() or None,
+            start_date_from=start_date_from,
+            start_date_to=start_date_to,
+            limit=limit,
+        )
 
     if handler_key == "get_run_summary":
         aid = _parse_activity_id(args)
