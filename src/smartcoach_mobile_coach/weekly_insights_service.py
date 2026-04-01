@@ -25,6 +25,8 @@ from src.services.security.external_apis.openai_service import get_openai_servic
 from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
 from src.utils.hr_zone_constants import (
     COACHING_LEVEL_DEFAULTS,
+    aerobic_efficiency_band_from_value,
+    aerobic_efficiency_band_zones_chart,
     hr_drift_band_zones_chart,
     OVERALL_SCORE_RULES,
     TREND_BAND_THRESHOLDS,
@@ -322,7 +324,7 @@ def _compute_easy_system_pipeline(
     pace_band = _trend_band(
         kpis.get("z2_pace_min_per_mi"), prior_pace, lower_is_better=True
     )
-    eff_band = _trend_band(kpis.get("efficiency"), prior_eff, lower_is_better=False)
+    eff_band = aerobic_efficiency_band_from_value(kpis.get("efficiency"))
 
     prior_bands = None
     if prior:
@@ -702,6 +704,7 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
             "message": "No weekly insights yet. We'll generate your first summary after a week of easy runs.",
             "systems": {},
             "hr_drift_band_zones": hr_drift_band_zones_chart(),
+            "aerobic_efficiency_band_zones": aerobic_efficiency_band_zones_chart(),
         }
 
     pace_display = "—"
@@ -748,7 +751,9 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
             "label": "Efficiency",
             "value": row.efficiency,
             "value_display": str(row.efficiency) if row.efficiency is not None else "—",
-            "band": row.efficiency_band,
+            "band": aerobic_efficiency_band_from_value(
+                float(row.efficiency) if row.efficiency is not None else None
+            ),
             "delta_display": eff_delta_display,
         },
     ]
@@ -785,13 +790,14 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
         "generated_at": row.generated_at.isoformat() if row.generated_at else None,
         "systems": systems_payload,
         "hr_drift_band_zones": hr_drift_band_zones_chart(),
+        "aerobic_efficiency_band_zones": aerobic_efficiency_band_zones_chart(),
     }
 
 
 def get_weekly_insight_history(
     session: Session, user_id: str, weeks: int = 6
 ) -> Dict[str, Any]:
-    """Return the last *weeks* weekly insights plus HR drift zone definitions."""
+    """Return the last *weeks* weekly insights plus HR drift and efficiency zone definitions."""
     weeks = max(1, min(weeks, 12))
     rows = session.execute(
         text(
@@ -820,6 +826,12 @@ def get_weekly_insight_history(
         band = r.hr_drift_band or _hr_drift_band(val)
         pace = r.z2_pace_min_per_mi
         efficiency = r.efficiency
+        eff_float = float(efficiency) if efficiency is not None else None
+        eff_band = (
+            aerobic_efficiency_band_from_value(eff_float)
+            if eff_float is not None
+            else None
+        )
         data_points.append(
             {
                 "label": f"{r.week_start.month}/{r.week_start.day}",
@@ -827,12 +839,13 @@ def get_weekly_insight_history(
                 "band": band,
                 "z2_pace_min_per_mi": float(pace) if pace is not None else None,
                 "z2_pace_band": r.z2_pace_band,
-                "efficiency": float(efficiency) if efficiency is not None else None,
-                "efficiency_band": r.efficiency_band,
+                "efficiency": eff_float,
+                "efficiency_band": eff_band,
             }
         )
 
     zones = hr_drift_band_zones_chart()
+    eff_zones = aerobic_efficiency_band_zones_chart()
 
     # THRESHOLD: same v_easy_runs classification + KPI SQL as weekly compute; trend bands
     # use recent calendar weeks (Monday-Sunday) rather than easy-insight snapshot weeks.
@@ -872,8 +885,13 @@ def get_weekly_insight_history(
         "has_history": True,
         "weekly_data": data_points,
         "zones": zones,
+        "efficiency_zones": eff_zones,
         "systems": {
-            TrainingSystem.EASY.value: {"weekly_data": data_points, "zones": zones},
+            TrainingSystem.EASY.value: {
+                "weekly_data": data_points,
+                "zones": zones,
+                "efficiency_zones": eff_zones,
+            },
             TrainingSystem.THRESHOLD.value: {"weekly_data": threshold_points},
         },
     }
