@@ -97,6 +97,10 @@ DATA RETRIEVAL & TOOL RULES
 
 - If find_runs_by_date returns disambiguation_needed, ask the user to clarify using the provided options.
 
+- For historical discovery without a specific day (e.g. "when was my last marathon?", "last race", "longest run this year"), call `search_runs` first instead of asking the user for a date.
+- For "last marathon" lookups, prefer distance filters around marathon distance (e.g. `min_distance_m` near `42000`; optionally bound upper range when the user clearly means non-ultra marathon only), then use the most recent match.
+- After `search_runs` returns matches, answer directly from the top match (newest). If the user asks for deeper analysis of that run, call `get_run_summary` with that `activity_id`.
+
 - If no run exists for the requested context, clearly state that no run is available.
 - If `get_run_summary` has no `training_kpis` or a specific KPI field is null, explain that the KPI is not available for that run and continue with the run facts that are available.
 

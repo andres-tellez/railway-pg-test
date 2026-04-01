@@ -140,6 +140,58 @@ SEED_TOOLS = [
         "sort_order": 20,
     },
     {
+        "name": "search_runs",
+        "display_name": "Search Runs",
+        "category": "run_analysis",
+        "description": (
+            "Search the user's run history using optional filters (distance, name text, date range), "
+            "ordered newest-first. Use this for historical lookups when the user does NOT give a "
+            "specific day — e.g., 'when was my last marathon?', 'last race', 'longest run this year'. "
+            "For marathon lookup, use distance filters (typically around 42,195 meters)."
+        ),
+        "when_to_call": (
+            "Use for historical run discovery without a specific local_date. "
+            "If a single date is known, prefer find_runs_by_date. After selecting a match, "
+            "call get_run_summary with that activity_id for deeper analysis."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "min_distance_m": {
+                    "type": "number",
+                    "description": "Optional minimum distance in meters.",
+                },
+                "max_distance_m": {
+                    "type": "number",
+                    "description": "Optional maximum distance in meters.",
+                },
+                "name_query": {
+                    "type": "string",
+                    "description": "Optional case-insensitive text match on run title.",
+                },
+                "start_date_from": {
+                    "type": "string",
+                    "description": "Optional inclusive start date (YYYY-MM-DD).",
+                },
+                "start_date_to": {
+                    "type": "string",
+                    "description": "Optional inclusive end date (YYYY-MM-DD).",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max matches to return (default 5, max 20).",
+                },
+            },
+        },
+        "returns_description": (
+            "Matches ordered by most recent first with activity_id, title, distance_display, "
+            "and start_local_time_display. Includes count and filters applied."
+        ),
+        "data_source": "activities (filtered run history)",
+        "is_enabled": True,
+        "sort_order": 15,
+    },
+    {
         "name": "get_weekly_training_insight",
         "display_name": "Get Weekly Training Insight",
         "category": "training_progress",
