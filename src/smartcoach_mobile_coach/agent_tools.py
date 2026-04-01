@@ -468,69 +468,77 @@ def execute_tool(
 
     _increment_tool_call_count(session, name)
 
-    if handler_key == "find_runs_by_date":
-        ld = args.get("local_date")
-        if not ld or not isinstance(ld, str):
-            return {
-                "error": "missing_local_date",
-                "message": "Parameter local_date (YYYY-MM-DD) is required.",
-            }
-        return tool_find_runs_by_date(session, internal_user_id, ld.strip())
+    try:
+        if handler_key == "find_runs_by_date":
+            ld = args.get("local_date")
+            if not ld or not isinstance(ld, str):
+                return {
+                    "error": "missing_local_date",
+                    "message": "Parameter local_date (YYYY-MM-DD) is required.",
+                }
+            return tool_find_runs_by_date(session, internal_user_id, ld.strip())
 
-    if handler_key == "search_runs":
-        min_distance_m = _parse_optional_float(args.get("min_distance_m"))
-        max_distance_m = _parse_optional_float(args.get("max_distance_m"))
-        name_query = args.get("name_query")
-        if name_query is not None and not isinstance(name_query, str):
-            name_query = None
-        start_date_from = _parse_optional_date(args.get("start_date_from"))
-        start_date_to = _parse_optional_date(args.get("start_date_to"))
-        limit_raw = args.get("limit", 5)
-        try:
-            limit = int(limit_raw)
-        except (TypeError, ValueError):
-            limit = 5
-        return tool_search_runs(
-            session,
-            internal_user_id,
-            min_distance_m=min_distance_m,
-            max_distance_m=max_distance_m,
-            name_query=(name_query or "").strip() or None,
-            start_date_from=start_date_from,
-            start_date_to=start_date_to,
-            limit=limit,
-        )
+        if handler_key == "search_runs":
+            min_distance_m = _parse_optional_float(args.get("min_distance_m"))
+            max_distance_m = _parse_optional_float(args.get("max_distance_m"))
+            name_query = args.get("name_query")
+            if name_query is not None and not isinstance(name_query, str):
+                name_query = None
+            start_date_from = _parse_optional_date(args.get("start_date_from"))
+            start_date_to = _parse_optional_date(args.get("start_date_to"))
+            limit_raw = args.get("limit", 5)
+            try:
+                limit = int(limit_raw)
+            except (TypeError, ValueError):
+                limit = 5
+            return tool_search_runs(
+                session,
+                internal_user_id,
+                min_distance_m=min_distance_m,
+                max_distance_m=max_distance_m,
+                name_query=(name_query or "").strip() or None,
+                start_date_from=start_date_from,
+                start_date_to=start_date_to,
+                limit=limit,
+            )
 
-    if handler_key == "get_run_summary":
-        aid = _parse_activity_id(args)
-        if aid is None:
-            return {
-                "error": "missing_activity_id",
-                "message": "activity_id must be a positive integer.",
-            }
-        inc_peers, inc_kpis, inc_hr = _parse_get_run_summary_include_flags(args)
-        return tool_get_run_summary(
-            session,
-            internal_user_id,
-            aid,
-            anchor_local_date=anchor_local_date,
-            include_peer_comparison=inc_peers,
-            include_execution_kpis=inc_kpis,
-            include_hr_profile=inc_hr,
-        )
+        if handler_key == "get_run_summary":
+            aid = _parse_activity_id(args)
+            if aid is None:
+                return {
+                    "error": "missing_activity_id",
+                    "message": "activity_id must be a positive integer.",
+                }
+            inc_peers, inc_kpis, inc_hr = _parse_get_run_summary_include_flags(args)
+            return tool_get_run_summary(
+                session,
+                internal_user_id,
+                aid,
+                anchor_local_date=anchor_local_date,
+                include_peer_comparison=inc_peers,
+                include_execution_kpis=inc_kpis,
+                include_hr_profile=inc_hr,
+            )
 
-    if handler_key == "get_training_kpis":
-        weeks = args.get("weeks", _DEFAULT_KPI_WEEKS)
-        try:
-            weeks = int(weeks)
-        except (TypeError, ValueError):
-            weeks = _DEFAULT_KPI_WEEKS
-        return tool_get_training_kpis(session, internal_user_id, weeks)
+        if handler_key == "get_training_kpis":
+            weeks = args.get("weeks", _DEFAULT_KPI_WEEKS)
+            try:
+                weeks = int(weeks)
+            except (TypeError, ValueError):
+                weeks = _DEFAULT_KPI_WEEKS
+            return tool_get_training_kpis(session, internal_user_id, weeks)
 
-    if handler_key == "get_weekly_training_insight":
-        return tool_get_weekly_training_insight(session, internal_user_id)
+        if handler_key == "get_weekly_training_insight":
+            return tool_get_weekly_training_insight(session, internal_user_id)
 
-    if handler_key == "save_coach_preference":
-        return tool_save_coach_preference(session, internal_user_id, args)
+        if handler_key == "save_coach_preference":
+            return tool_save_coach_preference(session, internal_user_id, args)
 
-    return {"error": "unknown_tool", "message": f"Unknown tool: {name}"}
+        return {"error": "unknown_tool", "message": f"Unknown tool: {name}"}
+    except Exception as e:
+        logger.exception("Tool execution failed tool=%s", name)
+        return {
+            "error": "tool_execution_failed",
+            "message": str(e),
+            "tool": name,
+        }
