@@ -25,7 +25,7 @@ from src.services.security.external_apis.openai_service import get_openai_servic
 from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
 from src.utils.hr_zone_constants import (
     COACHING_LEVEL_DEFAULTS,
-    HR_DRIFT_BANDS,
+    hr_drift_band_zones_chart,
     OVERALL_SCORE_RULES,
     TREND_BAND_THRESHOLDS,
     VERBOSITY_RULES,
@@ -701,6 +701,7 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
             "has_insight": False,
             "message": "No weekly insights yet. We'll generate your first summary after a week of easy runs.",
             "systems": {},
+            "hr_drift_band_zones": hr_drift_band_zones_chart(),
         }
 
     pace_display = "—"
@@ -783,6 +784,7 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
         "action_text": row.action_text,
         "generated_at": row.generated_at.isoformat() if row.generated_at else None,
         "systems": systems_payload,
+        "hr_drift_band_zones": hr_drift_band_zones_chart(),
     }
 
 
@@ -826,16 +828,7 @@ def get_weekly_insight_history(
             }
         )
 
-    g_max = HR_DRIFT_BANDS["green_max"]
-    y_max = HR_DRIFT_BANDS["yellow_max"]
-    o_max = HR_DRIFT_BANDS["orange_max"]
-
-    zones = [
-        {"color": "green", "min": 0, "max": g_max},
-        {"color": "yellow", "min": g_max, "max": y_max},
-        {"color": "orange", "min": y_max, "max": o_max},
-        {"color": "red", "min": o_max, "max": round(o_max + 2.5, 1)},
-    ]
+    zones = hr_drift_band_zones_chart()
 
     # THRESHOLD: same v_easy_runs classification + KPI SQL as weekly compute; trend bands
     # use recent calendar weeks (Monday-Sunday) rather than easy-insight snapshot weeks.
