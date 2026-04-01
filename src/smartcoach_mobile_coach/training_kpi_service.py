@@ -21,7 +21,10 @@ from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_pace_sec_per_mi,
 )
-from src.utils.hr_zone_constants import hr_drift_band_from_pct
+from src.utils.hr_zone_constants import (
+    hr_drift_band_from_pct,
+    hr_drift_band_zones_chart,
+)
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
@@ -175,6 +178,7 @@ def get_training_progress(
             "weekly_summaries": [],
             "trends": {},
             "message": "No run data found for this period.",
+            "hr_drift_band_zones": hr_drift_band_zones_chart(),
         }
 
     summaries = [_format_weekly_row(r) for r in rows]
@@ -209,6 +213,7 @@ def get_training_progress(
         "total_easy_runs": total_easy,
         "weekly_summaries": summaries,
         "trends": trends,
+        "hr_drift_band_zones": hr_drift_band_zones_chart(),
     }
 
 
