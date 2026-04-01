@@ -197,9 +197,64 @@ def hr_drift_band_zones_chart() -> list[dict[str, float | str]]:
     ]
 
 
-# Z2 Pace and Efficiency use trend-based bands because absolute values
-# are user-specific. The delta (%) vs the prior-week value determines
-# the band. "worse_pct" thresholds represent how much WORSE the current
+# Aerobic efficiency (weekly easy runs): global coaching bands on
+# speed_mph/avg_hr*100 (mi/hr per 100 bpm). Higher = better.
+# Same thresholds for all users (v1); personalized cutoffs may replace later.
+# Boundaries: red < orange_min, orange < yellow_min, yellow < green_min, green >= green_min.
+AEROBIC_EFFICIENCY_BANDS = {
+    "orange_min": 3.9,
+    "yellow_min": 4.3,
+    "green_min": 4.7,
+}
+
+
+def aerobic_efficiency_band_from_value(value: float | None) -> str | None:
+    """
+    Map weekly aerobic efficiency scalar to R/O/Y/G (same semantics as Insights).
+
+    Green >= green_min, yellow >= yellow_min, orange >= orange_min, else red.
+    """
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    g = AEROBIC_EFFICIENCY_BANDS["green_min"]
+    y = AEROBIC_EFFICIENCY_BANDS["yellow_min"]
+    o = AEROBIC_EFFICIENCY_BANDS["orange_min"]
+    if v >= g:
+        return "green"
+    if v >= y:
+        return "yellow"
+    if v >= o:
+        return "orange"
+    return "red"
+
+
+def aerobic_efficiency_band_zones_chart() -> list[dict[str, float | str]]:
+    """
+    Y-axis bands for weekly aerobic efficiency charts and coach tools.
+
+    Semantics match ``aerobic_efficiency_band_from_value``. The green band's
+    ``max`` is only a chart axis cap; values above it are still green.
+    """
+    o_lo = AEROBIC_EFFICIENCY_BANDS["orange_min"]
+    y_lo = AEROBIC_EFFICIENCY_BANDS["yellow_min"]
+    g_lo = AEROBIC_EFFICIENCY_BANDS["green_min"]
+    g_cap = round(g_lo + 0.8, 1)
+    return [
+        {"color": "red", "min": 0.0, "max": o_lo},
+        {"color": "orange", "min": o_lo, "max": y_lo},
+        {"color": "yellow", "min": y_lo, "max": g_lo},
+        {"color": "green", "min": g_lo, "max": g_cap},
+    ]
+
+
+# Z2 pace uses trend-based bands because absolute pace is user-specific.
+# Efficiency uses global absolute bands (see AEROBIC_EFFICIENCY_BANDS above).
+# The delta (%) vs the prior-week value determines the Z2 band.
+# "worse_pct" thresholds represent how much WORSE the current
 # value is compared to the prior week (positive = decline).
 TREND_BAND_THRESHOLDS = {
     "green_max_worse_pct": 0.0,
