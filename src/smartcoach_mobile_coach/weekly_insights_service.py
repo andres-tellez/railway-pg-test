@@ -796,7 +796,8 @@ def get_weekly_insight_history(
     rows = session.execute(
         text(
             "SELECT week_start, hr_drift_pct, hr_drift_band, "
-            "z2_pace_min_per_mi, z2_pace_band "
+            "z2_pace_min_per_mi, z2_pace_band, "
+            "efficiency, efficiency_band "
             "FROM weekly_training_insights "
             "WHERE user_id = CAST(:uid AS uuid) "
             "  AND hr_drift_pct IS NOT NULL "
@@ -818,6 +819,7 @@ def get_weekly_insight_history(
         val = float(r.hr_drift_pct)
         band = r.hr_drift_band or _hr_drift_band(val)
         pace = r.z2_pace_min_per_mi
+        efficiency = r.efficiency
         data_points.append(
             {
                 "label": f"{r.week_start.month}/{r.week_start.day}",
@@ -825,6 +827,8 @@ def get_weekly_insight_history(
                 "band": band,
                 "z2_pace_min_per_mi": float(pace) if pace is not None else None,
                 "z2_pace_band": r.z2_pace_band,
+                "efficiency": float(efficiency) if efficiency is not None else None,
+                "efficiency_band": r.efficiency_band,
             }
         )
 
@@ -858,6 +862,8 @@ def get_weekly_insight_history(
                     "band": th_band,
                     "z2_pace_min_per_mi": None,
                     "z2_pace_band": None,
+                    "efficiency": None,
+                    "efficiency_band": None,
                 }
             )
         prev_threshold_stability = stab
