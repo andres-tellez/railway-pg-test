@@ -46,9 +46,10 @@ _SEARCH_RUNS_OPENAI_TOOL: Dict[str, Any] = {
         "name": "search_runs",
         "description": (
             "Search the user's run history using optional filters (distance, name text, date range), "
-            "ordered newest-first. Use for historical lookups when the user does NOT give a "
-            "specific day — e.g., 'when was my last marathon?', 'last race', 'longest run this year'. "
-            "For marathon lookup, use distance filters (typically min_distance_m around 42000)."
+            "ordered newest-first. Use when the user does NOT give a specific day — e.g. "
+            "'when was my last marathon?', 'last race'. For marathon distance use min_distance_m ~42000. "
+            "For race questions, after matches return, chain get_run_summary(top activity_id) in the same "
+            "turn so you can report time, pace, and comparison — search_runs alone has no finish time/pace."
         ),
         "parameters": {
             "type": "object",
@@ -179,8 +180,9 @@ DATA RETRIEVAL & TOOL RULES
 
 - For historical discovery without a specific day (e.g. "when was my last marathon?", "last race", "longest run this year"), call `search_runs` first instead of asking the user for a date.
 - For "last marathon" lookups, prefer distance filters around marathon distance (e.g. `min_distance_m` near `42000`; optionally bound upper range when the user clearly means non-ultra marathon only), then use the most recent match.
-- After `search_runs` returns matches, answer directly from the top match (newest). If the user asks for deeper analysis of that run **in the same turn**, call `get_run_summary` with that `activity_id`. If they ask in a **later** turn, you no longer have that id in context — **call `search_runs` or `find_runs_by_date` again** as above, then `get_run_summary`.
-- **"When was" / date-only questions:** If they only ask **when** something happened (e.g. last marathon **date**), answer from **`search_runs`** using **`start_local_date`** / **`start_local_time_display`** on the top match — **you may reply without `get_run_summary`**. If the **next** message asks how they did / recap / KPIs, use the **follow-up re-resolution** rules above and then **`get_run_summary`**.
+- **Race-forward lookups — chain in one turn:** When `search_runs` is for a **race-shaped** ask (marathon / half / ultra distance filters, race name query, or phrases like **last marathon**, **last race**, **when was** [event]), **always** call **`get_run_summary`** with the **top match’s `activity_id`** **in the same assistant turn** before answering. `search_runs` does **not** include finish time or avg pace — only `get_run_summary` → `facts` does. Keep **`include_peer_comparison` true** by default so **`comparison.delta_vs_peer_median_display`** can support a **grounded** extra sentence when useful.
+- For **pure listing** ("show my marathons this year") with **no** performance angle, you may summarize from `search_runs` only; if they want **how it went / stats**, chain **`get_run_summary`**.
+- If they ask in a **later** turn about that run, you have no `activity_id` in chat text — **re-run `search_runs` or `find_runs_by_date`** (thread rules above), then **`get_run_summary`**.
 
 - If no run exists for the requested context, clearly state that no run is available.
 - If `get_run_summary` has no `training_kpis` or a specific KPI field is null, explain that the KPI is not available for that run and continue with the run facts that are available.
@@ -275,6 +277,8 @@ STYLE
 - **HR drift (only when Run summary priority metrics includes `hr_drift` — user saved preference):** use **one list line** that is **`hr_drift_summary_display` exactly as returned** (e.g. `![HR drift: 2.1%](kpi-band://green)`); you may prefix `- ` for the bullet list. **Do not** append spelled-out band names or duplicate labels — the image `alt` is the readable text. Bands match **Weekly Insights** (same thresholds). If the field is missing, say HR drift is not available for that run. If you must compose drift manually, use the same `![…](kpi-band://{green|yellow|orange|red})` pattern with `hr_drift_pct` and `hr_drift_band` from tools.
 - **Zone / split % (easy_pct_display, z2_band_pct_display):** **omit** from the stats list on the **default** first recap — see OUTPUT STRUCTURE. If the user **asks** for zones, Z2, adherence, or a **breakdown**, you may add **1–2** bullets: use `easy_pct_display` first (HR at or below Z2 max), then `z2_band_pct_display` (HR between Z2 low and high only), with **short plain labels**; add **one sentence** in prose if needed so they aren’t misread. Never use **“Easy Zone”** in bullets.
 - **Peer medians:** `comparison.delta_vs_peer_median_display` strings already use **Avg. pace**, **Avg. HR**, **Distance**, and **mi** — quote them verbatim when you summarize vs recent runs.
+
+- **Race / milestone replies (after `get_run_summary` for a discovered race):** Lead with a **warm, compact** answer: **title + local date** from `facts`, then **Time** (`moving_time_display`) and **Avg. pace** (`avg_pace_display`), and **Distance** if it adds clarity. Optionally add **one short sentence** (plain language, not hype) of **grounded** color: e.g. paraphrase **`comparison.delta_vs_peer_median_display`** when `peers_count` ≥ 2 and the delta is clearly meaningful, or tie **Avg. HR** to **easy vs hard** effort using **only** tool values. **Do not** say **personal record** / **PR** unless a tool field explicitly indicates it. **Do not** invent **future goals**, **target race times**, or **sync/storage** excuses — stay on tool output.
 
 - Be supportive, but not overly motivational or emotional.
 - Follow user coaching preferences if provided (tone, detail level, etc.) — but **never** use verbosity as an excuse to repeat prior messages or to answer a question they did not ask.
