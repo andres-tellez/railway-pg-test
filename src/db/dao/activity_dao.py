@@ -223,6 +223,63 @@ class ActivityDAO:
         rows = session.execute(q, params).fetchall()
         return [int(r[0]) for r in rows]
 
+    @staticmethod
+    def search_runs(
+        session: Session,
+        athlete_id: int,
+        *,
+        min_distance_m: Optional[float] = None,
+        max_distance_m: Optional[float] = None,
+        name_query: Optional[str] = None,
+        start_date_from: Optional[date] = None,
+        start_date_to: Optional[date] = None,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """
+        Search Run activities for an athlete using optional filters.
+
+        Results are ordered newest-first and capped to a small limit for tool usage.
+        """
+        lim = max(1, min(int(limit), 20))
+        params: Dict[str, Any] = {"aid": athlete_id, "lim": lim}
+        where_parts = ["athlete_id = :aid", "type = 'Run'"]
+
+        if min_distance_m is not None:
+            where_parts.append("distance >= :min_distance_m")
+            params["min_distance_m"] = float(min_distance_m)
+        if max_distance_m is not None:
+            where_parts.append("distance <= :max_distance_m")
+            params["max_distance_m"] = float(max_distance_m)
+        if name_query:
+            where_parts.append("COALESCE(name, '') ILIKE :name_query")
+            params["name_query"] = f"%{name_query.strip()}%"
+        if start_date_from is not None:
+            where_parts.append("start_date::date >= :start_date_from")
+            params["start_date_from"] = start_date_from
+        if start_date_to is not None:
+            where_parts.append("start_date::date <= :start_date_to")
+            params["start_date_to"] = start_date_to
+
+        q = text(
+            f"""
+            SELECT activity_id, name, start_date, distance
+            FROM public.activities
+            WHERE {" AND ".join(where_parts)}
+            ORDER BY start_date DESC
+            LIMIT :lim
+            """
+        )
+        rows = session.execute(q, params).fetchall()
+        return [
+            {
+                "activity_id": int(r.activity_id),
+                "name": r.name,
+                "start_date": r.start_date,
+                "distance": float(r.distance) if r.distance is not None else None,
+            }
+            for r in rows
+        ]
+
 
 def has_existing_activities(session: Session, athlete_id: int) -> bool:
     count = session.query(Activity).filter(Activity.athlete_id == athlete_id).count()
