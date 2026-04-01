@@ -33,7 +33,11 @@ from src.smartcoach_mobile_coach.weekly_insights_service import (
     get_latest_weekly_insight,
 )
 from src.utils.config import config
-from src.utils.hr_zone_constants import ALLOWED_METRICS, COACHING_LEVEL_DEFAULTS
+from src.utils.hr_zone_constants import (
+    ALLOWED_METRICS,
+    COACHING_LEVEL_DEFAULTS,
+    hr_drift_band_zones_chart,
+)
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
@@ -222,6 +226,8 @@ def tool_get_run_summary(
         profile = fetch_user_hr_profile_for_coach(session, internal_user_id)
         if profile is not None:
             payload["user_hr_profile"] = profile
+
+    payload["hr_drift_band_zones"] = hr_drift_band_zones_chart()
 
     return payload
 

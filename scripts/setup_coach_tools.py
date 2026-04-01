@@ -88,6 +88,7 @@ SEED_TOOLS = [
             "`include_execution_kpis` → `training_kpis`, `zone_bounds`, `is_easy_run` from v_easy_runs "
             "(kpis: `hr_drift_pct`, `hr_drift_band`, `hr_drift_summary_display` as `![HR drift: X%](kpi-band://band)` for chat dot + label; "
             "`easy_pct_display`, `z2_band_pct_display`); "
+            "Always: `hr_drift_band_zones` — min/max % drift per color (app-wide, same as Weekly Insights; use when user asks band definitions). "
             "`include_hr_profile` → `user_hr_profile` (Z1–Z5 bpm, hrmax_used_bpm, resting_hr_used_bpm, method). "
             "Only call after activity_id is known (find_runs_by_date or user-provided)."
         ),
@@ -127,7 +128,7 @@ SEED_TOOLS = [
             "required": ["activity_id"],
         },
         "returns_description": (
-            "Always: schema_version, activity_id, facts. "
+            "Always: schema_version, activity_id, facts, hr_drift_band_zones (HR drift % bands for all users). "
             "If include_peer_comparison: comparison (this_run, peer_runs, deltas). "
             "If include_execution_kpis and KPI row exists: training_kpis.kpis "
             "(hr_drift_summary_display, easy_pct_display, z2_band_pct_display, etc.), "
@@ -156,6 +157,7 @@ SEED_TOOLS = [
             "properties": {},
         },
         "returns_description": (
+            "Always includes hr_drift_band_zones (HR drift % min/max per color, app-wide). "
             "If available: has_insight=true with week range, overall band, KPI cards, "
             "summary_text, action_text. If not available: has_insight=false with message."
         ),
@@ -191,7 +193,8 @@ SEED_TOOLS = [
         "returns_description": (
             "Weekly summaries with avg Z2 pace, avg HR drift, avg Z2 adherence, "
             "total miles, easy run count, longest run. Trend direction for each KPI "
-            "(improving/stable/declining). Long run drift assessment."
+            "(improving/stable/declining). Long run drift assessment. "
+            "Always: hr_drift_band_zones (HR drift % bands, app-wide)."
         ),
         "data_source": "v_easy_runs (aggregated by week)",
         "is_enabled": False,

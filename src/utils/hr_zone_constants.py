@@ -178,6 +178,25 @@ def hr_drift_band_from_pct(value: float | None) -> str | None:
     return "red"
 
 
+def hr_drift_band_zones_chart() -> list[dict[str, float | str]]:
+    """
+    HR drift % bands for Weekly Insights charts and coach tools.
+
+    Semantics match ``hr_drift_band_from_pct``: green if drift < green_max, yellow if
+    < yellow_max, orange if < orange_max, else red. The red band's ``max`` is only
+    an axis cap for charting; interpret red as drift >= orange_max.
+    """
+    g_max = HR_DRIFT_BANDS["green_max"]
+    y_max = HR_DRIFT_BANDS["yellow_max"]
+    o_max = HR_DRIFT_BANDS["orange_max"]
+    return [
+        {"color": "green", "min": 0.0, "max": g_max},
+        {"color": "yellow", "min": g_max, "max": y_max},
+        {"color": "orange", "min": y_max, "max": o_max},
+        {"color": "red", "min": o_max, "max": round(o_max + 2.5, 1)},
+    ]
+
+
 # Z2 Pace and Efficiency use trend-based bands because absolute values
 # are user-specific. The delta (%) vs the prior-week value determines
 # the band. "worse_pct" thresholds represent how much WORSE the current
