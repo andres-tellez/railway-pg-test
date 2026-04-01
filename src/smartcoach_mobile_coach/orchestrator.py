@@ -1,7 +1,8 @@
 """
-Mobile coach agent loop: OpenAI tools, max 3 iterations (Topic 3).
+Mobile coach agent loop: OpenAI tools with a bounded max iteration count.
 
 Tool definitions are loaded from the coach_tools database table.
+Max loops default 5; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–10).
 """
 
 from __future__ import annotations
@@ -24,7 +25,15 @@ from src.utils.hr_zone_constants import (
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
-_MAX_AGENT_LOOPS = 3
+
+def _max_agent_loops() -> int:
+    """Cap on model turns (tool rounds + final reply). Env: SMARTCOACH_AGENT_MAX_LOOPS, default 5."""
+    raw = os.getenv("SMARTCOACH_AGENT_MAX_LOOPS", "5").strip()
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 5
+    return max(2, min(n, 10))
 
 
 def _load_tools_from_db(session: Session) -> List[Dict[str, Any]]:
@@ -100,6 +109,7 @@ DATA RETRIEVAL & TOOL RULES
 - For historical discovery without a specific day (e.g. "when was my last marathon?", "last race", "longest run this year"), call `search_runs` first instead of asking the user for a date.
 - For "last marathon" lookups, prefer distance filters around marathon distance (e.g. `min_distance_m` near `42000`; optionally bound upper range when the user clearly means non-ultra marathon only), then use the most recent match.
 - After `search_runs` returns matches, answer directly from the top match (newest). If the user asks for deeper analysis of that run, call `get_run_summary` with that `activity_id`.
+- **"When was" / date-only questions:** If they only ask **when** something happened (e.g. last marathon **date**), answer from **`search_runs`** using **`start_local_date`** / **`start_local_time_display`** on the top match — **reply in the next turn without calling `get_run_summary`**. Reserve **`get_run_summary`** for "how was that run", recap, KPIs, or follow-ups that need full analysis.
 
 - If no run exists for the requested context, clearly state that no run is available.
 - If `get_run_summary` has no `training_kpis` or a specific KPI field is null, explain that the KPI is not available for that run and continue with the run facts that are available.
@@ -326,8 +336,9 @@ def run_mobile_agent_turn(
     total_cost = 0.0
     loops = 0
     tool_result_cache: Dict[tuple, Dict[str, Any]] = {}
+    max_loops = _max_agent_loops()
 
-    for _ in range(_MAX_AGENT_LOOPS):
+    for _ in range(max_loops):
         loops += 1
         result = service.chat_completion_with_tools(
             messages=messages,
@@ -392,6 +403,7 @@ def run_mobile_agent_turn(
                 "usage": total_usage,
                 "cost": total_cost,
                 "loops": loops,
+                "max_loops": max_loops,
                 "model": model,
             }
 
@@ -403,6 +415,7 @@ def run_mobile_agent_turn(
         "usage": total_usage,
         "cost": total_cost,
         "loops": loops,
+        "max_loops": max_loops,
         "truncated": True,
         "model": model,
     }
