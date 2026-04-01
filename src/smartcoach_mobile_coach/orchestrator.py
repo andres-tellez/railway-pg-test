@@ -166,9 +166,11 @@ DATA RETRIEVAL & TOOL RULES
 
 - Always use tools to retrieve run or training data before answering.
 
-- Use the system-provided "today" date for vague queries (e.g. "my run", "today").
-- When the user refers to "my run" or "last run", return the run corresponding to the system-provided date unless specified otherwise.
-- For follow-up requests about the same run (e.g. "include KPIs", "add Z2 pace", "show HR drift"), if no date is given, treat it as run analysis context and resolve the run with `find_runs_by_date` using the system-provided date before answering.
+- **Thread context — no `activity_id` in history:** The model only sees past **user and assistant plain text**, not prior tool JSON. If you answered with a **specific run** (race name, **date** like YYYY-MM-DD, or “last marathon” from `search_runs`), a follow-up such as **“how did I do?”**, **“how was that run?”**, **“what was my pace?”**, or **“tell me more”** refers to **that** run — **not** automatically “today.” You must obtain an **`activity_id`** again, then call **`get_run_summary`**.
+- **Re-resolving that run (pick one path):** (1) If the **prior assistant message** contains a calendar **date** (YYYY-MM-DD or a clear month/day/year), call **`find_runs_by_date`** with that **`local_date`** (disambiguate if multiple runs). (2) Else if the thread was about **last marathon / long race / similar**, call **`search_runs`** again with the **same style of filters** (e.g. `min_distance_m` ~42000) and use the **top match’s `activity_id`**. (3) Only if the user clearly means **today’s** run again, use the device anchor date below.
+- Use the system-provided "today" date for vague queries about **this calendar day** only (e.g. "my run", "today") when they are **not** clearly continuing a **different** run from the prior turn.
+- When the user refers to "my run" or "last run" **without** having just discussed another specific run, treat it as the run on the system-provided date unless they name another day.
+- For follow-up requests about **today’s** same run (e.g. "include KPIs", "add Z2 pace", "show HR drift") with no new date, resolve with `find_runs_by_date` using the **system-provided anchor date** before answering.
 - For run-level KPI requests, call `get_run_summary` for the resolved activity before responding.
 - `get_run_summary` optional flags (default **true** for each if omitted — full payload): `include_peer_comparison` (peer table + deltas), `include_execution_kpis` (drift, Z2 adherence, zone_bounds, is_easy_run), `include_hr_profile` (saved Z1–Z5 + hrmax/resting used). For **narrow follow-ups** or to save context size, set only the sections you need (e.g. `include_peer_comparison: false` when the user only asked for KPIs or zones).
 - Do not claim a run metric is unavailable unless a tool response confirms it.
@@ -177,8 +179,8 @@ DATA RETRIEVAL & TOOL RULES
 
 - For historical discovery without a specific day (e.g. "when was my last marathon?", "last race", "longest run this year"), call `search_runs` first instead of asking the user for a date.
 - For "last marathon" lookups, prefer distance filters around marathon distance (e.g. `min_distance_m` near `42000`; optionally bound upper range when the user clearly means non-ultra marathon only), then use the most recent match.
-- After `search_runs` returns matches, answer directly from the top match (newest). If the user asks for deeper analysis of that run, call `get_run_summary` with that `activity_id`.
-- **"When was" / date-only questions:** If they only ask **when** something happened (e.g. last marathon **date**), answer from **`search_runs`** using **`start_local_date`** / **`start_local_time_display`** on the top match — **reply in the next turn without calling `get_run_summary`**. Reserve **`get_run_summary`** for "how was that run", recap, KPIs, or follow-ups that need full analysis.
+- After `search_runs` returns matches, answer directly from the top match (newest). If the user asks for deeper analysis of that run **in the same turn**, call `get_run_summary` with that `activity_id`. If they ask in a **later** turn, you no longer have that id in context — **call `search_runs` or `find_runs_by_date` again** as above, then `get_run_summary`.
+- **"When was" / date-only questions:** If they only ask **when** something happened (e.g. last marathon **date**), answer from **`search_runs`** using **`start_local_date`** / **`start_local_time_display`** on the top match — **you may reply without `get_run_summary`**. If the **next** message asks how they did / recap / KPIs, use the **follow-up re-resolution** rules above and then **`get_run_summary`**.
 
 - If no run exists for the requested context, clearly state that no run is available.
 - If `get_run_summary` has no `training_kpis` or a specific KPI field is null, explain that the KPI is not available for that run and continue with the run facts that are available.
@@ -355,10 +357,11 @@ def _device_anchor_system_section(
     return (
         f'## Device context (authoritative calendar "today")\n'
         f"- The user's local calendar date on their phone right now is **{anchor_local_date}** (IANA timezone: {tz_display}).\n"
-        f'- For "how was my run?", "my run", "this run", "today", or whenever they do not name a specific day, '
+        f'- For "how was my run?", "my run", "this run", "today", or whenever they do not name a specific day **and** are **not** clearly continuing a **different** run you already named (e.g. a marathon date) in the **prior assistant** message, '
         f"call `find_runs_by_date` with `local_date` exactly **{anchor_local_date}**.\n"
-        f"- Only use a different `local_date` when the user clearly refers to another day.\n"
-        f"- Never ask the user to specify the date for those vague questions; use **{anchor_local_date}**."
+        f'- If they **just** asked about a **past** run you identified by **name/date** and now say **"how did I do?"** / **"how was it?"** / similar, **do not** default to **{anchor_local_date}** — resolve that run via **`find_runs_by_date`** on the **date from your prior reply** or **`search_runs`** again, then **`get_run_summary`**.\n'
+        f"- Only use a different `local_date` when the user clearly refers to another day (or use the rules above for thread continuation).\n"
+        f"- Never ask the user to specify the date for vague **today**-style questions; use **{anchor_local_date}** when that rule applies."
     )
 
 
