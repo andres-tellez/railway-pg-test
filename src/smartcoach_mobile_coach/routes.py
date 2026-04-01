@@ -198,11 +198,13 @@ def agent_messages(conversation_id):
         elapsed = time.time() - start
         logger.info(
             "[smartcoach_mobile_coach] ok correlation_id=%s user=%s conversation=%s "
-            "loops=%s cost=%.6f tokens=%s duration_ms=%d",
+            "loops=%s max_loops=%s truncated=%s cost=%.6f tokens=%s duration_ms=%d",
             correlation_id,
             uid_str,
             conversation_id,
             meta.get("loops"),
+            meta.get("max_loops"),
+            meta.get("truncated", False),
             meta.get("cost", 0),
             meta.get("usage", {}).get("total_tokens", 0),
             int(elapsed * 1000),

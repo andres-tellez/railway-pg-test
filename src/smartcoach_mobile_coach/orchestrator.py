@@ -2,7 +2,10 @@
 Mobile coach agent loop: OpenAI tools with a bounded max iteration count.
 
 Tool definitions are loaded from the coach_tools database table.
-Max loops default 5; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–10).
+If `search_runs` is missing from the DB, a built-in definition is injected so historical
+queries still work without re-seeding.
+
+Max loops default 8; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–15).
 """
 
 from __future__ import annotations
@@ -10,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -27,13 +30,79 @@ logger = logging.getLogger("smartcoach_mobile_coach")
 
 
 def _max_agent_loops() -> int:
-    """Cap on model turns (tool rounds + final reply). Env: SMARTCOACH_AGENT_MAX_LOOPS, default 5."""
-    raw = os.getenv("SMARTCOACH_AGENT_MAX_LOOPS", "5").strip()
+    """Cap on model turns (tool rounds + final reply). Env: SMARTCOACH_AGENT_MAX_LOOPS, default 8."""
+    raw = os.getenv("SMARTCOACH_AGENT_MAX_LOOPS", "8").strip()
     try:
         n = int(raw)
     except ValueError:
-        n = 5
-    return max(2, min(n, 10))
+        n = 8
+    return max(2, min(n, 15))
+
+
+# Kept in sync with scripts/setup_coach_tools.py `search_runs` (for DBs not yet re-seeded).
+_SEARCH_RUNS_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "search_runs",
+        "description": (
+            "Search the user's run history using optional filters (distance, name text, date range), "
+            "ordered newest-first. Use for historical lookups when the user does NOT give a "
+            "specific day — e.g., 'when was my last marathon?', 'last race', 'longest run this year'. "
+            "For marathon lookup, use distance filters (typically min_distance_m around 42000)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "min_distance_m": {
+                    "type": "number",
+                    "description": "Optional minimum distance in meters.",
+                },
+                "max_distance_m": {
+                    "type": "number",
+                    "description": "Optional maximum distance in meters.",
+                },
+                "name_query": {
+                    "type": "string",
+                    "description": "Optional case-insensitive text match on run title.",
+                },
+                "start_date_from": {
+                    "type": "string",
+                    "description": "Optional inclusive start date (YYYY-MM-DD).",
+                },
+                "start_date_to": {
+                    "type": "string",
+                    "description": "Optional inclusive end date (YYYY-MM-DD).",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max matches to return (default 5, max 20).",
+                },
+            },
+        },
+    },
+}
+
+
+def _openai_tool_names(tools: List[Dict[str, Any]]) -> Set[str]:
+    names = set()
+    for t in tools:
+        if t.get("type") != "function":
+            continue
+        fn = t.get("function") or {}
+        n = fn.get("name")
+        if n:
+            names.add(n)
+    return names
+
+
+def _ensure_search_runs_tool(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Inject search_runs if the DB seed was never run (execute_tool still implements it)."""
+    if "search_runs" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled search_runs; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_SEARCH_RUNS_OPENAI_TOOL]
 
 
 def _load_tools_from_db(session: Session) -> List[Dict[str, Any]]:
@@ -313,7 +382,7 @@ def run_mobile_agent_turn(
     max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
     timeout = float(os.getenv("OPENAI_TIMEOUT", "30.0"))
 
-    openai_tools = _load_tools_from_db(session)
+    openai_tools = _ensure_search_runs_tool(_load_tools_from_db(session))
     if not openai_tools:
         logger.warning("No enabled tools in coach_tools table; agent has no tools")
 
