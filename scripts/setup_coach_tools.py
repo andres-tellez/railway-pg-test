@@ -145,14 +145,17 @@ SEED_TOOLS = [
         "category": "run_analysis",
         "description": (
             "Search the user's run history using optional filters (distance, name text, date range), "
-            "ordered newest-first. Use this for historical lookups when the user does NOT give a "
-            "specific day — e.g., 'when was my last marathon?', 'last race', 'longest run this year'. "
-            "For marathon lookup, use distance filters (typically around 42,195 meters)."
+            "ordered newest-first. Use when the user does NOT give a specific day — e.g. "
+            "'when was my last marathon?', 'last race'. For marathon distance use min_distance_m ~42195. "
+            "For race questions, after matches return, chain get_run_summary(top activity_id) in the same "
+            "turn — search_runs alone has no finish time or avg pace."
         ),
         "when_to_call": (
-            "Use for historical run discovery without a specific local_date. "
-            "If a single date is known, prefer find_runs_by_date. After selecting a match, "
-            "call get_run_summary with that activity_id for deeper analysis."
+            "Historical run discovery without a specific local_date. If a single date is known, "
+            "prefer find_runs_by_date. For last marathon / last race / when was [event] / race-shaped "
+            "filters, always call get_run_summary on the top match's activity_id in the same assistant "
+            "turn (include_peer_comparison true by default). For pure multi-run listing with no stats "
+            "ask, search_runs alone is OK."
         ),
         "parameters_schema": {
             "type": "object",
