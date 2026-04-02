@@ -200,19 +200,19 @@ def plan_response(
         return ResponseDirective(
             turn_type=turn_type,
             target_length=(
-                "1-3 sentences max. Sentence 1: direct answer with a clear judgment or fact; "
-                "optional sentence 2 only: one short plain-language interpretation — no essay."
+                "1-3 short standalone sentences max (prefer 1-2). "
+                "No single long sentence packed with dependent clauses — split into punchy lines."
             ),
             tone_hint=(
-                "Human coach: short, direct statements; slightly opinionated when useful — "
-                "not formal analysis or textbook explanation."
+                "Confident, direct coach voice — speaking, not explaining. "
+                "Punchy standalone sentences; no explanatory chains."
             ),
             focus=(
-                "Lead with the conclusion (the why/how) immediately — no setup. "
-                "Prefer blunt coach lines over long explanation. "
-                "HARD BAN: the phrases “this indicates”, “this suggests”, “which indicates”, “which suggests” "
-                "(and close variants). Do not start any sentence with the word **This**. "
-                "No generic coaching filler unless one short clause is needed to answer the why."
+                "Answer the why/how immediately; no setup or transition phrases. "
+                "HARD BAN: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
+                "“indicating”, “which means”, and explanation-style bridges (e.g. “as a result”, “this means that”). "
+                "Do not start any sentence with the word **This**. "
+                "Avoid semicolon-heavy or em-dash ramble; prefer 1-2 crisp sentences over one clause-stuffed sentence."
             ),
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
@@ -222,17 +222,18 @@ def plan_response(
         return ResponseDirective(
             turn_type=turn_type,
             target_length=(
-                "1-2 sentences max. Sentence 1 = direct answer with value/judgment; "
-                "optional sentence 2 = one short plain interpretation only."
+                "1-2 short standalone sentences. Split ideas across sentences — "
+                "do not glue everything into one long explanatory sentence."
             ),
             tone_hint=(
-                "Coach texting back: punchy, conversational, a little opinionated — not an analyst or explainer."
+                "Coach texting: confident, direct, slightly opinionated — not lecturing or analyzing."
             ),
             focus=(
-                "Answer only what they just asked; open with the takeaway, not a wind-up. "
-                "Do not recap metrics already in the thread. "
-                "HARD BAN: “this indicates”, “this suggests”, “which indicates”, “which suggests” (and close variants). "
-                "Do not start any sentence with the word **This**. Prefer short, direct statements over explanation."
+                "Open with the takeaway. Do not recap metrics already in the thread. "
+                "HARD BAN: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
+                "“indicating”, “which means”, and other explanation-style transitions. "
+                "Do not start any sentence with the word **This**. "
+                "Prefer punchy statements over explanation; no chained “which/that” reasoning."
             ),
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
@@ -287,28 +288,33 @@ def response_directive_section(directive: ResponseDirective) -> str:
     if directive.turn_type == "follow_up":
         follow_hard = (
             "\n\n### Follow-up — HARD CONSTRAINTS (must obey)\n"
-            "- **Do not** use: “this indicates”, “this suggests”, “which indicates”, “which suggests” "
-            "(or close variants like “that suggests”).\n"
+            "- **Do not** use: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
+            "“indicating”, “which means”, or close variants.\n"
+            "- **No** explanation-style transitions or bridges — no “as a result”, “therefore”, "
+            "“this means that”, “in other words” unless you truly need one short clause (prefer zero).\n"
             "- **Do not** start any sentence with the word **This**.\n"
-            "- **Sentence 1:** direct answer with value/judgment — lead with the conclusion, no setup.\n"
-            "- **Sentence 2 (optional):** one brief plain-language interpretation only.\n"
-            "- Prefer short, direct statements over explanation; no analyst tone.\n"
+            "- Use **short standalone sentences**; prefer **1-2** punchy lines over one long sentence with stacked clauses.\n"
+            "- **Sentence 1:** direct answer with value/judgment — confident and immediate.\n"
+            "- **Sentence 2 (optional):** one extra punchy line only — not a paragraph.\n"
+            "- Sound like a coach speaking, not explaining.\n"
             "- Desired flavor (paraphrase; **do not** quote or enumerate these in the reply): "
-            "e.g. “Drift was moderate — you held steady but faded a bit late.”"
+            "e.g. “Drift was moderate. You stayed steady.”"
         )
         return base + follow_hard
 
     if directive.turn_type == "drill_down":
         drill_hard = (
             "\n\n### Drill-down — HARD CONSTRAINTS (must obey)\n"
-            "- **Do not** use: “this indicates”, “this suggests”, “which indicates”, “which suggests” "
-            "(or close variants).\n"
+            "- **Do not** use: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
+            "“indicating”, “which means”, or close variants.\n"
+            "- **No** explanation-style transitions — avoid analyst chains (“which implies…”, “suggesting that…”).\n"
             "- **Do not** start any sentence with the word **This**.\n"
-            "- **Sentence 1:** direct answer to the why/how with a clear judgment — no preamble.\n"
-            "- **Sentence 2 (optional):** one tight plain-language clause only; no textbook lecture.\n"
-            "- Prefer blunt coach phrasing over formal explanation; no generic filler.\n"
+            "- **1-3** max **short** standalone sentences (prefer **1-2**); split ideas across sentences — "
+            "no one winding sentence.\n"
+            "- **Sentence 1:** direct why/how with judgment; **sentence 2 (optional):** one tight coach line.\n"
+            "- Confident and direct; no textbook tone or generic filler.\n"
             "- Desired flavor (paraphrase; **do not** quote or enumerate these in the reply): "
-            "e.g. “That’s yellow because it’s in the moderate range. Nothing concerning, just room to tighten it up.”"
+            "e.g. “That’s yellow — moderate range. Nothing concerning.”"
         )
         return base + drill_hard
 
