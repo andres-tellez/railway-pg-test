@@ -199,9 +199,19 @@ def plan_response(
     if turn_type == "drill_down":
         return ResponseDirective(
             turn_type=turn_type,
-            target_length="2-4 sentences focused on requested detail",
-            tone_hint="specific and practical",
-            focus="go deeper on the exact follow-up point",
+            target_length=(
+                "1-3 sentences maximum. Put the core “why” in the first sentence when possible; "
+                "no preamble."
+            ),
+            tone_hint=(
+                "Sound like a human coach — short, punchy, slightly opinionated where it helps; "
+                "not a report, textbook, or generic explainer."
+            ),
+            focus=(
+                "Answer the specific why/how directly. No setup (“Great question”, “In short”). "
+                "Avoid formal bridges like “this indicates”, “suggesting that”, “it is important to note”. "
+                "Keep it tight and concrete; skip generic coaching filler unless it is essential to the answer."
+            ),
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
         )
@@ -209,9 +219,17 @@ def plan_response(
     if turn_type == "follow_up":
         return ResponseDirective(
             turn_type=turn_type,
-            target_length="1-3 sentences",
-            tone_hint="brief and direct",
-            focus="answer only the new ask from this turn",
+            target_length=(
+                "1-2 sentences maximum. First sentence must deliver the answer — no throat-clearing."
+            ),
+            tone_hint=(
+                "Coach texting back: plain, conversational, direct — not an analyst write-up."
+            ),
+            focus=(
+                "Answer only what they just asked. Lead with the answer. "
+                "Do not recap or restate metrics already shared in the thread. "
+                "Avoid stiff phrasing like “this indicates”, “suggesting that”, “this means that”."
+            ),
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
         )
