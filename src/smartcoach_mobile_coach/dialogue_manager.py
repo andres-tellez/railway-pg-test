@@ -200,17 +200,19 @@ def plan_response(
         return ResponseDirective(
             turn_type=turn_type,
             target_length=(
-                "1-3 sentences maximum. Put the core “why” in the first sentence when possible; "
-                "no preamble."
+                "1-3 sentences max. Sentence 1: direct answer with a clear judgment or fact; "
+                "optional sentence 2 only: one short plain-language interpretation — no essay."
             ),
             tone_hint=(
-                "Sound like a human coach — short, punchy, slightly opinionated where it helps; "
-                "not a report, textbook, or generic explainer."
+                "Human coach: short, direct statements; slightly opinionated when useful — "
+                "not formal analysis or textbook explanation."
             ),
             focus=(
-                "Answer the specific why/how directly. No setup (“Great question”, “In short”). "
-                "Avoid formal bridges like “this indicates”, “suggesting that”, “it is important to note”. "
-                "Keep it tight and concrete; skip generic coaching filler unless it is essential to the answer."
+                "Lead with the conclusion (the why/how) immediately — no setup. "
+                "Prefer blunt coach lines over long explanation. "
+                "HARD BAN: the phrases “this indicates”, “this suggests”, “which indicates”, “which suggests” "
+                "(and close variants). Do not start any sentence with the word **This**. "
+                "No generic coaching filler unless one short clause is needed to answer the why."
             ),
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
@@ -220,15 +222,17 @@ def plan_response(
         return ResponseDirective(
             turn_type=turn_type,
             target_length=(
-                "1-2 sentences maximum. First sentence must deliver the answer — no throat-clearing."
+                "1-2 sentences max. Sentence 1 = direct answer with value/judgment; "
+                "optional sentence 2 = one short plain interpretation only."
             ),
             tone_hint=(
-                "Coach texting back: plain, conversational, direct — not an analyst write-up."
+                "Coach texting back: punchy, conversational, a little opinionated — not an analyst or explainer."
             ),
             focus=(
-                "Answer only what they just asked. Lead with the answer. "
-                "Do not recap or restate metrics already shared in the thread. "
-                "Avoid stiff phrasing like “this indicates”, “suggesting that”, “this means that”."
+                "Answer only what they just asked; open with the takeaway, not a wind-up. "
+                "Do not recap metrics already in the thread. "
+                "HARD BAN: “this indicates”, “this suggests”, “which indicates”, “which suggests” (and close variants). "
+                "Do not start any sentence with the word **This**. Prefer short, direct statements over explanation."
             ),
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
@@ -267,20 +271,48 @@ def response_directive_section(directive: ResponseDirective) -> str:
         "- Prior assistant messages are shared context. Do not re-explain unchanged points."
     )
 
-    if directive.turn_type != "acknowledgment":
-        return base
+    if directive.turn_type == "acknowledgment":
+        ack_hard = (
+            "\n\n### Acknowledgment — HARD CONSTRAINTS (must obey; overrides softer wording elsewhere)\n"
+            "- Output **exactly one** short sentence. **No** second sentence.\n"
+            "- **No** filler or closings: e.g. “if you have more questions”, “feel free to ask”, "
+            "“let me know”, “keep up the great work”, “happy to help”.\n"
+            "- **No** coaching, analysis, guidance, metrics, or tools — the user did not ask a new question.\n"
+            "- Style: minimal and natural (e.g. “Got it.” “Nice.” “Sounds good.” “Perfect.”) — paraphrase; "
+            "do not list examples in the reply.\n"
+            "- This is a **hard** constraint, not a suggestion."
+        )
+        return base + ack_hard
 
-    ack_hard = (
-        "\n\n### Acknowledgment — HARD CONSTRAINTS (must obey; overrides softer wording elsewhere)\n"
-        "- Output **exactly one** short sentence. **No** second sentence.\n"
-        "- **No** filler or closings: e.g. “if you have more questions”, “feel free to ask”, "
-        "“let me know”, “keep up the great work”, “happy to help”.\n"
-        "- **No** coaching, analysis, guidance, metrics, or tools — the user did not ask a new question.\n"
-        "- Style: minimal and natural (e.g. “Got it.” “Nice.” “Sounds good.” “Perfect.”) — paraphrase; "
-        "do not list examples in the reply.\n"
-        "- This is a **hard** constraint, not a suggestion."
-    )
-    return base + ack_hard
+    if directive.turn_type == "follow_up":
+        follow_hard = (
+            "\n\n### Follow-up — HARD CONSTRAINTS (must obey)\n"
+            "- **Do not** use: “this indicates”, “this suggests”, “which indicates”, “which suggests” "
+            "(or close variants like “that suggests”).\n"
+            "- **Do not** start any sentence with the word **This**.\n"
+            "- **Sentence 1:** direct answer with value/judgment — lead with the conclusion, no setup.\n"
+            "- **Sentence 2 (optional):** one brief plain-language interpretation only.\n"
+            "- Prefer short, direct statements over explanation; no analyst tone.\n"
+            "- Desired flavor (paraphrase; **do not** quote or enumerate these in the reply): "
+            "e.g. “Drift was moderate — you held steady but faded a bit late.”"
+        )
+        return base + follow_hard
+
+    if directive.turn_type == "drill_down":
+        drill_hard = (
+            "\n\n### Drill-down — HARD CONSTRAINTS (must obey)\n"
+            "- **Do not** use: “this indicates”, “this suggests”, “which indicates”, “which suggests” "
+            "(or close variants).\n"
+            "- **Do not** start any sentence with the word **This**.\n"
+            "- **Sentence 1:** direct answer to the why/how with a clear judgment — no preamble.\n"
+            "- **Sentence 2 (optional):** one tight plain-language clause only; no textbook lecture.\n"
+            "- Prefer blunt coach phrasing over formal explanation; no generic filler.\n"
+            "- Desired flavor (paraphrase; **do not** quote or enumerate these in the reply): "
+            "e.g. “That’s yellow because it’s in the moderate range. Nothing concerning, just room to tighten it up.”"
+        )
+        return base + drill_hard
+
+    return base
 
 
 def _extract_metrics(text: str) -> Set[str]:
