@@ -20,6 +20,12 @@ from sqlalchemy import text
 
 from src.services.security.external_apis.openai_service import get_openai_service
 from src.smartcoach_mobile_coach.agent_tools import execute_tool
+from src.smartcoach_mobile_coach.dialogue_manager import (
+    classify_turn,
+    extract_conversation_state,
+    plan_response,
+    response_directive_section,
+)
 from src.utils.hr_zone_constants import (
     ALLOWED_METRICS,
     COACHING_LEVEL_DEFAULTS,
@@ -436,6 +442,21 @@ def run_mobile_agent_turn(
         logger.warning("No enabled tools in coach_tools table; agent has no tools")
 
     prefs = _load_coaching_preferences(session, internal_user_id)
+    turn_type = classify_turn(user_message, conversation_history)
+    conversation_state = extract_conversation_state(conversation_history)
+    response_directive = plan_response(
+        turn_type=turn_type,
+        state=conversation_state,
+        user_message=user_message,
+    )
+    logger.info(
+        "[dialogue] turn_type=%s turn_count=%s last_topic=%s avoid_repeat=%s target_length=%s",
+        response_directive.turn_type,
+        conversation_state.turn_count,
+        conversation_state.last_topic,
+        ",".join(response_directive.avoid_repeating_metrics) or "none",
+        response_directive.target_length,
+    )
 
     system_content = (
         SYSTEM_PROMPT_BASE
@@ -443,6 +464,8 @@ def run_mobile_agent_turn(
         + _coaching_preferences_section(prefs)
         + "\n\n"
         + _device_anchor_system_section(anchor_local_date, client_timezone)
+        + "\n\n"
+        + response_directive_section(response_directive)
     )
     messages: List[Dict[str, Any]] = [{"role": "system", "content": system_content}]
     for m in conversation_history[-12:]:
@@ -523,6 +546,14 @@ def run_mobile_agent_turn(
                 "loops": loops,
                 "max_loops": max_loops,
                 "model": model,
+                "dialogue": {
+                    "turn_type": response_directive.turn_type,
+                    "turn_count": conversation_state.turn_count,
+                    "last_topic": conversation_state.last_topic,
+                    "target_length": response_directive.target_length,
+                    "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                    "allow_full_recap": response_directive.allow_full_recap,
+                },
             }
 
     fallback = (
@@ -536,4 +567,12 @@ def run_mobile_agent_turn(
         "max_loops": max_loops,
         "truncated": True,
         "model": model,
+        "dialogue": {
+            "turn_type": response_directive.turn_type,
+            "turn_count": conversation_state.turn_count,
+            "last_topic": conversation_state.last_topic,
+            "target_length": response_directive.target_length,
+            "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+            "allow_full_recap": response_directive.allow_full_recap,
+        },
     }
