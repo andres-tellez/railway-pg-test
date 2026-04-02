@@ -14,8 +14,11 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 
+_ACK_TOKEN = (
+    r"(thanks|thank you|got it|ok|okay|cool|nice|perfect|makes sense|understood)"
+)
 _ACK_RE = re.compile(
-    r"^\s*(thanks|thank you|got it|ok|okay|cool|nice|perfect|makes sense|understood)\s*[!.]?\s*$",
+    rf"^\s*{_ACK_TOKEN}(?:\s*[,!.]*\s*{_ACK_TOKEN})*\s*[!.]?\s*$",
     re.IGNORECASE,
 )
 _CLARIFICATION_RE = re.compile(
@@ -166,8 +169,8 @@ def plan_response(
         return ResponseDirective(
             turn_type=turn_type,
             target_length="1 short sentence maximum",
-            tone_hint="warm and concise",
-            focus="acknowledge and keep moving without re-analysis",
+            tone_hint="warm, concise, no filler",
+            focus="acknowledge only; no guidance, no re-analysis, no extra coaching",
             avoid_repeating_metrics=list(state.metrics_already_shared),
             allow_full_recap=False,
         )
