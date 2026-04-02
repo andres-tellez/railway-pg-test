@@ -201,8 +201,9 @@ def plan_response(
             turn_type=turn_type,
             target_length=(
                 "HARD OUTPUT BOUNDARY: **at most 2 sentences** — these are strict limits, not guidelines. "
-                "**Sentence 1:** direct answer to the **why** only. "
-                "**Sentence 2 (optional):** one short interpretation only. "
+                "**Sentence 1:** direct answer to the **why** only — when a tool-backed number clarifies the answer, "
+                "weave **one** relevant value into this sentence in plain coach language (not a stat table). "
+                "**Sentence 2 (optional):** one short human interpretation only. "
                 "**STOP** generating immediately after the final allowed sentence — no sentence 3, no tail, no PS."
             ),
             tone_hint=(
@@ -214,6 +215,9 @@ def plan_response(
                 "or “one more thing”. "
                 "**One idea per sentence.** Keep each sentence short and standalone. "
                 "**No** long sentences with multiple clauses or comma chains. "
+                "**Single numeric anchor only** when it helps: pick the **one** most relevant value for the question "
+                "(e.g. drift %, pace, HR) — **do not** list multiple metrics or do a formal dump. "
+                "Values must be **tool-grounded** (never invented). "
                 "**No** generic coaching advice or encouragement unless the user explicitly asked for it. "
                 "HARD BAN: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
                 "“indicating”, “which means”, and explanation-style bridges. "
@@ -228,19 +232,21 @@ def plan_response(
             turn_type=turn_type,
             target_length=(
                 "HARD OUTPUT BOUNDARY: **at most 2 sentences** — strict limits, not guidelines. "
-                "**Sentence 1:** direct answer only — lead with value/judgment. "
-                "**Sentence 2 (optional):** one brief interpretation only. "
+                "**Sentence 1:** direct answer only — when the ask is metric-related, include **one** key "
+                "tool-backed number here in natural speech (e.g. “3.7% drift — moderate.” or “Drift was 3.7% — moderate.”). "
+                "**Sentence 2 (optional):** one brief human interpretation only. "
                 "**STOP** immediately after the final allowed sentence — never continue after sentence 2."
             ),
             tone_hint=(
-                "Coach texting: direct and confident — only address the question asked."
+                "Coach texting: direct and confident — conversational, but anchored by **one** concrete value when relevant."
             ),
             focus=(
                 "**No** content beyond those 1-2 sentences — no trailing wrap-up, no extra takeaway. "
                 "The response **must end** right after the final period of the last allowed sentence. "
                 "**One idea per sentence.** Short standalone lines — **no** comma chains or stacked clauses in one sentence. "
                 "**No** coaching advice, tips, or encouragement unless the user explicitly asked for that. "
-                "Do not recap metrics already in the thread. "
+                "**Do not** re-list or recap a block of metrics from earlier turns — only the **single** most relevant "
+                "value for **this** question, woven into sentence 1 when it matters. "
                 "HARD BAN: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
                 "“indicating”, “which means”, and other explanation-style transitions. "
                 "Do not start any sentence with the word **This**."
@@ -307,7 +313,13 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "- The reply **must end immediately** after the final period (or question mark) of the last allowed sentence.\n"
             "### Structure\n"
             "- **Maximum 2 sentences** total. **Sentence 1:** direct answer **only** — open with value/judgment. "
-            "**Sentence 2 (optional):** one brief interpretation only.\n"
+            "**Sentence 2 (optional):** one brief human interpretation only.\n"
+            "### Numeric anchor (when relevant)\n"
+            "- If the follow-up is about a metric (drift, pace, HR, etc.), **sentence 1** should include **exactly one** "
+            "key tool-backed value, woven in naturally — not a list or formal recap.\n"
+            "- Prefer compact coach lines like “3.7% drift — moderate.” or “Drift was 3.7% — moderate.” "
+            "(paraphrase formats; **do not** echo these examples verbatim unless the numbers match tools).\n"
+            "- **Only** the **most relevant** number for **this** question; **no** extra metrics in the same reply.\n"
             "- **No** further ideas beyond these two sentences.\n"
             "- **No third sentence.** **No** bullet lists or paragraphs.\n"
             "- **One idea per sentence.** Keep each sentence short and standalone.\n"
@@ -318,7 +330,7 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "- **No** explanation-style transitions (“as a result”, “therefore”, “this means that”, “in other words”) — prefer **none**.\n"
             "- **Do not** start any sentence with the word **This**.\n"
             "- Desired flavor (paraphrase; **do not** quote or enumerate these in the reply): "
-            "e.g. “Drift was moderate. You stayed steady.”"
+            "e.g. “3.7% drift — moderate.” then optional second sentence for plain interpretation."
         )
         return base + follow_hard
 
@@ -334,6 +346,12 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "### Structure\n"
             "- **Maximum 2 sentences** total — **no third sentence ever**. "
             "**Sentence 1:** direct answer to the **why** **only**. **Sentence 2 (optional):** one short interpretation only.\n"
+            "### Numeric anchor (when it helps)\n"
+            "- When a **single** tool-backed number makes the “why” clearer, integrate **that one value** into "
+            "**sentence 1** in natural coach language — **not** a metric dump or bullet list.\n"
+            "- Pick **only** the value that best answers the question (e.g. drift %, threshold edge, pace, HR). "
+            "**Do not** stack several numbers in one reply.\n"
+            "- Stay conversational — no statistical/report tone.\n"
             "- **No** additional ideas beyond these two sentences.\n"
             "- **One idea per sentence.** Short standalone lines only.\n"
             "- **No** long sentences with multiple clauses or comma chains.\n"
@@ -343,7 +361,7 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "- **No** explanation-style transitions — no analyst chains (“which implies…”, “suggesting that…”).\n"
             "- **Do not** start any sentence with the word **This**.\n"
             "- Desired flavor (paraphrase; **do not** quote or enumerate these in the reply): "
-            "e.g. “That’s yellow — moderate range. Nothing concerning.”"
+            "e.g. “That’s yellow — you’re in the moderate drift band (~3.7%).” plus optional second short line."
         )
         return base + drill_hard
 
