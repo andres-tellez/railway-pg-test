@@ -200,19 +200,19 @@ def plan_response(
         return ResponseDirective(
             turn_type=turn_type,
             target_length=(
-                "1-3 short standalone sentences max (prefer 1-2). "
-                "No single long sentence packed with dependent clauses — split into punchy lines."
+                "STRICT: **maximum 2 sentences** — no third sentence ever. "
+                "Sentence 1: direct answer to the why. Sentence 2 (optional): one short interpretation only."
             ),
             tone_hint=(
-                "Confident, direct coach voice — speaking, not explaining. "
-                "Punchy standalone sentences; no explanatory chains."
+                "Tight and focused — answer only what they asked. Confident coach voice, not a lecture."
             ),
             focus=(
-                "Answer the why/how immediately; no setup or transition phrases. "
+                "**One idea per sentence.** Keep each sentence short and standalone. "
+                "**No** long sentences with multiple clauses or comma chains. "
+                "**No** generic coaching advice or encouragement unless the user explicitly asked for it. "
                 "HARD BAN: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
-                "“indicating”, “which means”, and explanation-style bridges (e.g. “as a result”, “this means that”). "
-                "Do not start any sentence with the word **This**. "
-                "Avoid semicolon-heavy or em-dash ramble; prefer 1-2 crisp sentences over one clause-stuffed sentence."
+                "“indicating”, “which means”, and explanation-style bridges. "
+                "Do not start any sentence with the word **This**."
             ),
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
@@ -222,18 +222,20 @@ def plan_response(
         return ResponseDirective(
             turn_type=turn_type,
             target_length=(
-                "1-2 short standalone sentences. Split ideas across sentences — "
-                "do not glue everything into one long explanatory sentence."
+                "STRICT: **maximum 2 sentences**. "
+                "Sentence 1: direct answer — lead with value/judgment. "
+                "Sentence 2 (optional): one brief interpretation only."
             ),
             tone_hint=(
-                "Coach texting: confident, direct, slightly opinionated — not lecturing or analyzing."
+                "Coach texting: direct and confident — only address the question asked."
             ),
             focus=(
-                "Open with the takeaway. Do not recap metrics already in the thread. "
+                "**One idea per sentence.** Short standalone lines — **no** comma chains or stacked clauses in one sentence. "
+                "**No** coaching advice, tips, or encouragement unless the user explicitly asked for that. "
+                "Do not recap metrics already in the thread. "
                 "HARD BAN: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
                 "“indicating”, “which means”, and other explanation-style transitions. "
-                "Do not start any sentence with the word **This**. "
-                "Prefer punchy statements over explanation; no chained “which/that” reasoning."
+                "Do not start any sentence with the word **This**."
             ),
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
@@ -288,15 +290,16 @@ def response_directive_section(directive: ResponseDirective) -> str:
     if directive.turn_type == "follow_up":
         follow_hard = (
             "\n\n### Follow-up — HARD CONSTRAINTS (must obey)\n"
+            "- **Maximum 2 sentences** total. **Sentence 1:** direct answer — open with value/judgment. "
+            "**Sentence 2 (optional):** one brief interpretation only.\n"
+            "- **No third sentence.** **No** bullet lists or paragraphs.\n"
+            "- **One idea per sentence.** Keep each sentence short and standalone.\n"
+            "- **No** long sentences with multiple clauses or comma chains — split or shorten instead.\n"
+            "- **No** coaching advice, training tips, or generic encouragement unless the user **explicitly** asked for it.\n"
             "- **Do not** use: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
             "“indicating”, “which means”, or close variants.\n"
-            "- **No** explanation-style transitions or bridges — no “as a result”, “therefore”, "
-            "“this means that”, “in other words” unless you truly need one short clause (prefer zero).\n"
+            "- **No** explanation-style transitions (“as a result”, “therefore”, “this means that”, “in other words”) — prefer **none**.\n"
             "- **Do not** start any sentence with the word **This**.\n"
-            "- Use **short standalone sentences**; prefer **1-2** punchy lines over one long sentence with stacked clauses.\n"
-            "- **Sentence 1:** direct answer with value/judgment — confident and immediate.\n"
-            "- **Sentence 2 (optional):** one extra punchy line only — not a paragraph.\n"
-            "- Sound like a coach speaking, not explaining.\n"
             "- Desired flavor (paraphrase; **do not** quote or enumerate these in the reply): "
             "e.g. “Drift was moderate. You stayed steady.”"
         )
@@ -305,14 +308,15 @@ def response_directive_section(directive: ResponseDirective) -> str:
     if directive.turn_type == "drill_down":
         drill_hard = (
             "\n\n### Drill-down — HARD CONSTRAINTS (must obey)\n"
+            "- **Maximum 2 sentences** total — **no third sentence ever**. "
+            "**Sentence 1:** direct answer to the **why**. **Sentence 2 (optional):** one short interpretation only.\n"
+            "- **One idea per sentence.** Short standalone lines only.\n"
+            "- **No** long sentences with multiple clauses or comma chains.\n"
+            "- **No** generic coaching advice or encouragement unless the user **explicitly** asked for it.\n"
             "- **Do not** use: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
             "“indicating”, “which means”, or close variants.\n"
-            "- **No** explanation-style transitions — avoid analyst chains (“which implies…”, “suggesting that…”).\n"
+            "- **No** explanation-style transitions — no analyst chains (“which implies…”, “suggesting that…”).\n"
             "- **Do not** start any sentence with the word **This**.\n"
-            "- **1-3** max **short** standalone sentences (prefer **1-2**); split ideas across sentences — "
-            "no one winding sentence.\n"
-            "- **Sentence 1:** direct why/how with judgment; **sentence 2 (optional):** one tight coach line.\n"
-            "- Confident and direct; no textbook tone or generic filler.\n"
             "- Desired flavor (paraphrase; **do not** quote or enumerate these in the reply): "
             "e.g. “That’s yellow — moderate range. Nothing concerning.”"
         )
