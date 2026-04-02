@@ -200,13 +200,18 @@ def plan_response(
         return ResponseDirective(
             turn_type=turn_type,
             target_length=(
-                "STRICT: **maximum 2 sentences** — no third sentence ever. "
-                "Sentence 1: direct answer to the why. Sentence 2 (optional): one short interpretation only."
+                "HARD OUTPUT BOUNDARY: **at most 2 sentences** — these are strict limits, not guidelines. "
+                "**Sentence 1:** direct answer to the **why** only. "
+                "**Sentence 2 (optional):** one short interpretation only. "
+                "**STOP** generating immediately after the final allowed sentence — no sentence 3, no tail, no PS."
             ),
             tone_hint=(
                 "Tight and focused — answer only what they asked. Confident coach voice, not a lecture."
             ),
             focus=(
+                "**No** additional ideas beyond those 1-2 sentences. "
+                "After the last allowed sentence, **end the reply** — do not append explanation, summary, coaching, "
+                "or “one more thing”. "
                 "**One idea per sentence.** Keep each sentence short and standalone. "
                 "**No** long sentences with multiple clauses or comma chains. "
                 "**No** generic coaching advice or encouragement unless the user explicitly asked for it. "
@@ -222,14 +227,17 @@ def plan_response(
         return ResponseDirective(
             turn_type=turn_type,
             target_length=(
-                "STRICT: **maximum 2 sentences**. "
-                "Sentence 1: direct answer — lead with value/judgment. "
-                "Sentence 2 (optional): one brief interpretation only."
+                "HARD OUTPUT BOUNDARY: **at most 2 sentences** — strict limits, not guidelines. "
+                "**Sentence 1:** direct answer only — lead with value/judgment. "
+                "**Sentence 2 (optional):** one brief interpretation only. "
+                "**STOP** immediately after the final allowed sentence — never continue after sentence 2."
             ),
             tone_hint=(
                 "Coach texting: direct and confident — only address the question asked."
             ),
             focus=(
+                "**No** content beyond those 1-2 sentences — no trailing wrap-up, no extra takeaway. "
+                "The response **must end** right after the final period of the last allowed sentence. "
                 "**One idea per sentence.** Short standalone lines — **no** comma chains or stacked clauses in one sentence. "
                 "**No** coaching advice, tips, or encouragement unless the user explicitly asked for that. "
                 "Do not recap metrics already in the thread. "
@@ -290,8 +298,17 @@ def response_directive_section(directive: ResponseDirective) -> str:
     if directive.turn_type == "follow_up":
         follow_hard = (
             "\n\n### Follow-up — HARD CONSTRAINTS (must obey)\n"
-            "- **Maximum 2 sentences** total. **Sentence 1:** direct answer — open with value/judgment. "
+            "### Termination (hard STOP)\n"
+            "- Sentence limits are **strict output boundaries**, not soft targets.\n"
+            "- After you finish **sentence 1** (or **sentence 2** if you use it), **STOP** — end the assistant message there.\n"
+            "- **Do not** add anything after the final allowed sentence: no extra explanation, summary, caveat, "
+            "follow-up offer, encouragement, or coaching — **under any condition**.\n"
+            "- **Do not** write a sentence 3. **Do not** continue the response after sentence 2.\n"
+            "- The reply **must end immediately** after the final period (or question mark) of the last allowed sentence.\n"
+            "### Structure\n"
+            "- **Maximum 2 sentences** total. **Sentence 1:** direct answer **only** — open with value/judgment. "
             "**Sentence 2 (optional):** one brief interpretation only.\n"
+            "- **No** further ideas beyond these two sentences.\n"
             "- **No third sentence.** **No** bullet lists or paragraphs.\n"
             "- **One idea per sentence.** Keep each sentence short and standalone.\n"
             "- **No** long sentences with multiple clauses or comma chains — split or shorten instead.\n"
@@ -308,8 +325,16 @@ def response_directive_section(directive: ResponseDirective) -> str:
     if directive.turn_type == "drill_down":
         drill_hard = (
             "\n\n### Drill-down — HARD CONSTRAINTS (must obey)\n"
+            "### Termination (hard STOP)\n"
+            "- Sentence limits are **strict output boundaries**, not guidelines.\n"
+            "- After **sentence 1** (or **sentence 2** if you use it), **STOP** — produce **nothing** further in this reply.\n"
+            "- **Do not** continue after sentence 2 under **any** circumstance — no trailing explanation, recap, "
+            "hedge, or coaching.\n"
+            "- **No sentence 3.** The message **must terminate** right after the last allowed sentence ends.\n"
+            "### Structure\n"
             "- **Maximum 2 sentences** total — **no third sentence ever**. "
-            "**Sentence 1:** direct answer to the **why**. **Sentence 2 (optional):** one short interpretation only.\n"
+            "**Sentence 1:** direct answer to the **why** **only**. **Sentence 2 (optional):** one short interpretation only.\n"
+            "- **No** additional ideas beyond these two sentences.\n"
             "- **One idea per sentence.** Short standalone lines only.\n"
             "- **No** long sentences with multiple clauses or comma chains.\n"
             "- **No** generic coaching advice or encouragement unless the user **explicitly** asked for it.\n"
