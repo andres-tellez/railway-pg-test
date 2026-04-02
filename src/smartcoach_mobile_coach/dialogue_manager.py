@@ -119,7 +119,7 @@ def classify_turn(user_message: str, conversation_history: List[Dict[str, str]])
 
 
 def extract_conversation_state(
-    conversation_history: List[Dict[str, str]]
+    conversation_history: List[Dict[str, str]],
 ) -> ConversationState:
     """Build minimal conversation state from text-only history."""
     user_turns = sum(1 for m in conversation_history if m.get("role") == "user")
@@ -168,9 +168,20 @@ def plan_response(
     if turn_type == "acknowledgment":
         return ResponseDirective(
             turn_type=turn_type,
-            target_length="1 short sentence maximum",
-            tone_hint="warm, concise, no filler",
-            focus="acknowledge only; no guidance, no re-analysis, no extra coaching",
+            target_length=(
+                "MANDATORY: exactly one short sentence (one period or question mark max). "
+                "No second sentence. No paragraph."
+            ),
+            tone_hint=(
+                "Minimal acknowledgment only — natural, human; not customer-support or chatbot closing."
+            ),
+            focus=(
+                "MUST: brief acknowledgment only. MUST NOT: coaching, analysis, guidance, metrics, "
+                "follow-up questions, or tool calls. MUST NOT use filler such as “if you have more questions”, "
+                "“feel free to ask”, “let me know”, “keep up the great work”. "
+                "Acceptable flavor (paraphrase; do not echo this list in the reply): "
+                "“Got it.” “Nice.” “Sounds good.” “Perfect.”"
+            ),
             avoid_repeating_metrics=list(state.metrics_already_shared),
             allow_full_recap=False,
         )
@@ -227,7 +238,7 @@ def response_directive_section(directive: ResponseDirective) -> str:
         avoid_line = "none"
     recap_line = "yes" if directive.allow_full_recap else "no"
 
-    return (
+    base = (
         "## Response directive (current turn)\n"
         f"- Turn type: **{directive.turn_type}**\n"
         f"- Target length: {directive.target_length}\n"
@@ -237,6 +248,21 @@ def response_directive_section(directive: ResponseDirective) -> str:
         f"- Full recap requested by user: {recap_line}\n"
         "- Prior assistant messages are shared context. Do not re-explain unchanged points."
     )
+
+    if directive.turn_type != "acknowledgment":
+        return base
+
+    ack_hard = (
+        "\n\n### Acknowledgment — HARD CONSTRAINTS (must obey; overrides softer wording elsewhere)\n"
+        "- Output **exactly one** short sentence. **No** second sentence.\n"
+        "- **No** filler or closings: e.g. “if you have more questions”, “feel free to ask”, "
+        "“let me know”, “keep up the great work”, “happy to help”.\n"
+        "- **No** coaching, analysis, guidance, metrics, or tools — the user did not ask a new question.\n"
+        "- Style: minimal and natural (e.g. “Got it.” “Nice.” “Sounds good.” “Perfect.”) — paraphrase; "
+        "do not list examples in the reply.\n"
+        "- This is a **hard** constraint, not a suggestion."
+    )
+    return base + ack_hard
 
 
 def _extract_metrics(text: str) -> Set[str]:
