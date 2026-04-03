@@ -299,17 +299,30 @@ def tool_aggregate_runs_in_range(
         "max_distance_m": max_distance_m,
         "name_query": name_query,
     }
-    return {
+    out = {
         "run_count": int(agg["run_count"]),
         "total_distance_meters": total_m,
         "total_distance_miles": round(miles, 4),
         "total_mi_display": format_distance_mi(miles),
         "filters": filters,
-        "scope": "All Strava runs in range (type Run; same filters as search_runs, no row cap).",
+        "scope": (
+            "All Strava runs in range (type Run). Dates are each activity's local calendar day "
+            "(same rule as find_runs_by_date / activities API), not raw UTC date. "
+            "Same optional filters as search_runs; no row cap."
+        ),
         "message": (
-            "Use run_count and total_mi_display for the user's totals; do not infer totals from search_runs."
+            "Report totals using **exactly** run_count and total_mi_display from this payload — "
+            "do not round differently or estimate. Do not infer totals from search_runs."
         ),
     }
+    logger.info(
+        "aggregate_runs_in_range from=%s to=%s run_count=%s total_mi_display=%s",
+        start_date_from.isoformat(),
+        start_date_to.isoformat(),
+        out["run_count"],
+        out["total_mi_display"],
+    )
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -82,10 +82,13 @@ SEED_TOOLS = [
         "category": "run_analysis",
         "description": (
             "Return **full** run count and **total distance** for all Run activities in an inclusive "
-            "calendar date range (YYYY-MM-DD). Use for questions like **total miles in the last 30 days**, "
-            "**how many runs this month**, or **volume between two dates**. "
+            "date range (YYYY-MM-DD). Each row is included by its **activity local calendar day** "
+            "(Strava timezone — same as find_runs_by_date), not raw UTC date. "
+            "Use for **total miles in the last 30 days**, **how many runs this month**, "
+            "or **volume between two dates**. "
             "Optional filters match `search_runs` (distance bounds, name text). "
-            "**Do not** use `search_runs` for totals — it returns a capped sample, not complete aggregates."
+            "**Do not** use `search_runs` for totals — it returns a capped sample, not complete aggregates. "
+            "In answers, quote **run_count** and **total_mi_display** exactly from the tool result."
         ),
         "when_to_call": (
             "User asks for total runs, total miles/volume, or sum of distance over a calendar window "
@@ -96,11 +99,15 @@ SEED_TOOLS = [
             "properties": {
                 "start_date_from": {
                     "type": "string",
-                    "description": "Inclusive start date (YYYY-MM-DD).",
+                    "description": (
+                        "Inclusive start date (YYYY-MM-DD), activity-local calendar (not UTC-only)."
+                    ),
                 },
                 "start_date_to": {
                     "type": "string",
-                    "description": "Inclusive end date (YYYY-MM-DD).",
+                    "description": (
+                        "Inclusive end date (YYYY-MM-DD), activity-local calendar (not UTC-only)."
+                    ),
                 },
                 "min_distance_m": {
                     "type": "number",
@@ -225,11 +232,15 @@ SEED_TOOLS = [
                 },
                 "start_date_from": {
                     "type": "string",
-                    "description": "Optional inclusive start date (YYYY-MM-DD).",
+                    "description": (
+                        "Optional inclusive start (YYYY-MM-DD), activity-local calendar per run."
+                    ),
                 },
                 "start_date_to": {
                     "type": "string",
-                    "description": "Optional inclusive end date (YYYY-MM-DD).",
+                    "description": (
+                        "Optional inclusive end (YYYY-MM-DD), activity-local calendar per run."
+                    ),
                 },
                 "limit": {
                     "type": "integer",
@@ -252,11 +263,13 @@ SEED_TOOLS = [
         "description": (
             "Get the user's latest precomputed weekly training scoreboard: overall band, "
             "HR drift / Avg. Z2 pace / efficiency bands, deltas, and coaching summary/action text. "
-            "Use this first for weekly progress/status questions."
+            "Use this first for **this week's** holistic status. "
+            "**Not** for a table of weekly miles across many weeks — use **get_training_kpis** for that."
         ),
         "when_to_call": (
             "User asks weekly progress questions like 'am I on track', 'how am I doing this week', "
-            "'weekly status', or wants a concise progress scoreboard."
+            "'weekly status', or wants a concise scoreboard for the **current** insight week. "
+            "Do **not** use this alone when they want **per-week mileage** over roughly the last month."
         ),
         "parameters_schema": {
             "type": "object",
@@ -276,23 +289,26 @@ SEED_TOOLS = [
         "display_name": "Get Training KPIs",
         "category": "training_progress",
         "description": (
-            "Get the user's training KPI trends over recent weeks: Avg. Z2 pace, HR drift, "
-            "Z2 adherence (use *_display fields when present), weekly totals in mi, and long-run readiness. "
-            "Call when the user asks about training progress, marathon readiness, "
-            "'how am I doing', 'am I on track', or 'am I improving'. "
+            "Get training KPI trends over recent **ISO weeks** (Mon–Sun): Avg. Z2 pace, HR drift, "
+            "Z2 adherence (use *_display fields), **weekly_summaries** with miles per week, long-run readiness. "
+            "Scope is **v_easy_runs** (easy-classified runs only) — see **weekly_summaries_scope** in the payload. "
+            "Use for **weekly miles broken down by week** (e.g. 'last ~30 days', 'mileage each week lately'). "
+            "For **all Strava runs** in a calendar window, use **aggregate_runs_in_range** instead. "
             "Never calculate KPIs yourself — always use this tool's data."
         ),
         "when_to_call": (
-            "User asks about overall training progress, trends, weekly improvement, "
-            "marathon readiness, or any question about how their training is going "
-            "over time (not a single run)."
+            "User asks about training progress, trends, weekly improvement, marathon readiness, "
+            "or **miles per week** over multiple weeks / 'last 30 days' style weekly volume (not a single run). "
+            "Prefer **weeks** 5–6 when they mention the last month so ISO weeks cover ~30 days."
         ),
         "parameters_schema": {
             "type": "object",
             "properties": {
                 "weeks": {
                     "type": "integer",
-                    "description": "Number of weeks to look back. Default 4.",
+                    "description": (
+                        "Weeks to look back (rolling, ISO week buckets). Default 4; use 5–6 for ~30-day coverage."
+                    ),
                 }
             },
         },
@@ -303,7 +319,7 @@ SEED_TOOLS = [
             "Always: hr_drift_band_zones (HR drift % bands, app-wide)."
         ),
         "data_source": "v_easy_runs (aggregated by week)",
-        "is_enabled": False,
+        "is_enabled": True,
         "sort_order": 30,
     },
 ]
