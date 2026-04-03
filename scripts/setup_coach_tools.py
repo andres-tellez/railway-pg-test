@@ -293,13 +293,16 @@ SEED_TOOLS = [
             "Z2 adherence (use *_display fields), **weekly_summaries** with miles per week, long-run readiness. "
             "Scope is **v_easy_runs** (easy-classified runs only) — see **weekly_summaries_scope** in the payload. "
             "Use for **weekly miles broken down by week** (e.g. 'last ~30 days', 'mileage each week lately'). "
+            "For exact calendar windows, pass **start_date_from** and **start_date_to** so this tool and "
+            "**aggregate_runs_in_range** share the same date bounds. "
             "For **all Strava runs** in a calendar window, use **aggregate_runs_in_range** instead. "
             "Never calculate KPIs yourself — always use this tool's data."
         ),
         "when_to_call": (
             "User asks about training progress, trends, weekly improvement, marathon readiness, "
             "or **miles per week** over multiple weeks / 'last 30 days' style weekly volume (not a single run). "
-            "Prefer **weeks** 5–6 when they mention the last month so ISO weeks cover ~30 days."
+            "For 'last N days / this month / between dates', provide explicit start_date_from/start_date_to "
+            "so all tools use the same local-calendar window."
         ),
         "parameters_schema": {
             "type": "object",
@@ -307,15 +310,28 @@ SEED_TOOLS = [
                 "weeks": {
                     "type": "integer",
                     "description": (
-                        "Weeks to look back (rolling, ISO week buckets). Default 4; use 5–6 for ~30-day coverage."
+                        "Optional rolling lookback in weeks when no explicit date range is given."
                     ),
-                }
+                },
+                "start_date_from": {
+                    "type": "string",
+                    "description": (
+                        "Optional inclusive start date (YYYY-MM-DD), activity-local calendar."
+                    ),
+                },
+                "start_date_to": {
+                    "type": "string",
+                    "description": (
+                        "Optional inclusive end date (YYYY-MM-DD), activity-local calendar."
+                    ),
+                },
             },
         },
         "returns_description": (
             "Weekly summaries with avg Z2 pace, avg HR drift, avg Z2 adherence, "
             "total miles, easy run count, longest run. Trend direction for each KPI "
             "(improving/stable/declining). Long run drift assessment. "
+            "When explicit dates are provided, includes window and sum_weekly_total_mi_display. "
             "Always: hr_drift_band_zones (HR drift % bands, app-wide)."
         ),
         "data_source": "v_easy_runs (aggregated by week)",

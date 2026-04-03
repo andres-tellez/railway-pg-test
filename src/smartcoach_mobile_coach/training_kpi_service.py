@@ -14,7 +14,7 @@ import logging
 from datetime import date as date_cls, datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import bindparam, text
+from sqlalchemy import Date, bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Session
 
@@ -70,6 +70,41 @@ weekly AS (
         ) AS long_run_best_drift
     FROM user_easy
     GROUP BY to_char(start_date, 'IYYY-IW')
+    ORDER BY iso_week DESC
+)
+SELECT * FROM weekly
+"""
+
+_WEEKLY_SUMMARY_RANGE_SQL = """
+WITH user_easy AS (
+    SELECT *
+    FROM v_easy_runs
+    WHERE user_id = :uid
+      AND activity_type = 'Run'
+      AND activity_date::date >= :start_date_from
+      AND activity_date::date <= :start_date_to
+),
+weekly AS (
+    SELECT
+        to_char(activity_date::date, 'IYYY-IW') AS iso_week,
+        (date_trunc('week', MIN(activity_date::date)::timestamp))::date AS week_monday,
+        MIN(activity_date::date)              AS week_start_date,
+        COUNT(*)                        AS total_runs,
+        COUNT(*) FILTER (WHERE is_easy_run) AS easy_runs,
+        ROUND(SUM(distance_miles)::numeric, 1)              AS total_miles,
+        MAX(distance_miles)                                  AS longest_run_miles,
+        MAX(moving_time_seconds)                             AS longest_run_seconds,
+        ROUND(AVG(avg_pace) FILTER (WHERE is_easy_run)::numeric, 2) AS avg_z2_pace,
+        ROUND(AVG(hr_drift_pct) FILTER (WHERE is_easy_run)::numeric, 2) AS avg_drift,
+        ROUND(AVG(z2_band_pct) FILTER (WHERE is_easy_run)::numeric, 2)  AS avg_z2_adherence,
+        ROUND(AVG(pace_spread) FILTER (WHERE is_easy_run)::numeric, 2)  AS avg_pace_spread,
+        ROUND(
+            MIN(hr_drift_pct) FILTER (
+                WHERE is_easy_run AND moving_time_seconds >= 5400
+            )::numeric, 2
+        ) AS long_run_best_drift
+    FROM user_easy
+    GROUP BY to_char(activity_date::date, 'IYYY-IW')
     ORDER BY iso_week DESC
 )
 SELECT * FROM weekly
@@ -178,7 +213,12 @@ def _format_weekly_row(row) -> Dict[str, Any]:
 
 
 def get_training_progress(
-    session: Session, user_id: str, weeks: int = 4
+    session: Session,
+    user_id: str,
+    weeks: int = 4,
+    *,
+    start_date_from: Optional[date_cls] = None,
+    start_date_to: Optional[date_cls] = None,
 ) -> Dict[str, Any]:
     """
     Weekly KPI summaries + trend analysis for the coach tool.
@@ -187,18 +227,58 @@ def get_training_progress(
     for pace, weekly distance (mi), and Z2 adherence where available.
     """
     weeks = max(1, min(weeks, 52))
+    using_explicit_window = start_date_from is not None or start_date_to is not None
+    if using_explicit_window and (start_date_from is None or start_date_to is None):
+        return {
+            "error": "missing_dates",
+            "message": (
+                "start_date_from and start_date_to must both be provided as YYYY-MM-DD "
+                "when using an explicit calendar window."
+            ),
+        }
+    if (
+        start_date_from is not None
+        and start_date_to is not None
+        and start_date_from > start_date_to
+    ):
+        return {
+            "error": "invalid_date_range",
+            "message": "start_date_from must be on or before start_date_to.",
+        }
 
-    stmt = text(_WEEKLY_SUMMARY_SQL).bindparams(bindparam("uid", type_=PGUUID))
-    rows = session.execute(stmt, {"uid": user_id, "weeks": weeks}).fetchall()
+    if start_date_from is not None and start_date_to is not None:
+        stmt = text(_WEEKLY_SUMMARY_RANGE_SQL).bindparams(
+            bindparam("uid", type_=PGUUID),
+            bindparam("start_date_from", type_=Date()),
+            bindparam("start_date_to", type_=Date()),
+        )
+        rows = session.execute(
+            stmt,
+            {
+                "uid": user_id,
+                "start_date_from": start_date_from,
+                "start_date_to": start_date_to,
+            },
+        ).fetchall()
+    else:
+        stmt = text(_WEEKLY_SUMMARY_SQL).bindparams(bindparam("uid", type_=PGUUID))
+        rows = session.execute(stmt, {"uid": user_id, "weeks": weeks}).fetchall()
 
     if not rows:
-        return {
+        out = {
             "weeks_requested": weeks,
             "weekly_summaries": [],
             "trends": {},
             "message": "No run data found for this period.",
             "hr_drift_band_zones": hr_drift_band_zones_chart(),
         }
+        if start_date_from is not None and start_date_to is not None:
+            out["window"] = {
+                "start_date_inclusive": start_date_from.isoformat(),
+                "end_date_inclusive": start_date_to.isoformat(),
+                "basis": "activity_local_date",
+            }
+        return out
 
     summaries = [_format_weekly_row(r) for r in rows]
     summaries_chrono = list(reversed(summaries))
@@ -224,21 +304,33 @@ def get_training_progress(
 
     total_easy = sum(w["easy_runs"] for w in summaries)
     total_runs = sum(w["total_runs"] for w in summaries)
+    total_weekly_miles = round(sum(w["total_miles"] for w in summaries), 2)
 
-    return {
+    out = {
         "weeks_requested": weeks,
         "weeks_with_data": len(summaries),
         "total_runs": total_runs,
         "total_easy_runs": total_easy,
         "weekly_summaries": summaries,
+        "sum_weekly_total_miles": total_weekly_miles,
+        "sum_weekly_total_mi_display": format_distance_mi(total_weekly_miles),
         "weekly_summaries_scope": (
             "Each row is one ISO week (Monday–Sunday). Use **week_label** (Monday M/D) when listing a week. "
             "**iso_week** is the canonical id. **week_start_date** is the first run in that week, not the Monday. "
-            "Counts and miles are from **v_easy_runs** only (easy-classified runs), not every Strava activity."
+            "Counts and miles are from **v_easy_runs** only (easy-classified / KPI-eligible runs), "
+            "not every Strava activity. Compare against aggregate_runs_in_range only when the same "
+            "calendar window is provided."
         ),
         "trends": trends,
         "hr_drift_band_zones": hr_drift_band_zones_chart(),
     }
+    if start_date_from is not None and start_date_to is not None:
+        out["window"] = {
+            "start_date_inclusive": start_date_from.isoformat(),
+            "end_date_inclusive": start_date_to.isoformat(),
+            "basis": "activity_local_date",
+        }
+    return out
 
 
 def get_run_kpi_detail(
