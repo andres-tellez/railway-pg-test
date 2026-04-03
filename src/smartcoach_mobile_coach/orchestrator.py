@@ -2,8 +2,8 @@
 Mobile coach agent loop: OpenAI tools with a bounded max iteration count.
 
 Tool definitions are loaded from the coach_tools database table.
-If `search_runs` is missing from the DB, a built-in definition is injected so historical
-queries still work without re-seeding.
+If `search_runs` or `aggregate_runs_in_range` is missing from the DB, built-in definitions
+are injected so historical and aggregate queries still work without re-seeding.
 
 Max loops default 8; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–15).
 """
@@ -52,8 +52,10 @@ _SEARCH_RUNS_OPENAI_TOOL: Dict[str, Any] = {
         "name": "search_runs",
         "description": (
             "Search the user's run history using optional filters (distance, name text, date range), "
-            "ordered newest-first. Use when the user does NOT give a specific day — e.g. "
-            "'when was my last marathon?', 'last race'. For marathon distance use min_distance_m ~42000. "
+            "ordered newest-first, capped to a small limit (sample only). "
+            "Use for discovery — e.g. 'when was my last marathon?', 'last race'. "
+            "Never use this for total miles or total run count over a period; use aggregate_runs_in_range. "
+            "For marathon distance use min_distance_m ~42000. "
             "For race questions, after matches return, chain get_run_summary(top activity_id) in the same "
             "turn so you can report time, pace, and comparison — search_runs alone has no finish time/pace."
         ),
@@ -89,6 +91,46 @@ _SEARCH_RUNS_OPENAI_TOOL: Dict[str, Any] = {
     },
 }
 
+# Kept in sync with scripts/setup_coach_tools.py `aggregate_runs_in_range`.
+_AGGREGATE_RUNS_IN_RANGE_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "aggregate_runs_in_range",
+        "description": (
+            "Return full run count and total distance for all Run activities in an inclusive "
+            "calendar date range (YYYY-MM-DD). Use for total miles in the last N days, how many runs "
+            "this month, or volume between two dates. Optional filters match search_runs. "
+            "Do not use search_runs for totals — it returns a capped sample."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "start_date_from": {
+                    "type": "string",
+                    "description": "Inclusive start date (YYYY-MM-DD).",
+                },
+                "start_date_to": {
+                    "type": "string",
+                    "description": "Inclusive end date (YYYY-MM-DD).",
+                },
+                "min_distance_m": {
+                    "type": "number",
+                    "description": "Optional minimum distance in meters.",
+                },
+                "max_distance_m": {
+                    "type": "number",
+                    "description": "Optional maximum distance in meters.",
+                },
+                "name_query": {
+                    "type": "string",
+                    "description": "Optional case-insensitive substring match on run title.",
+                },
+            },
+            "required": ["start_date_from", "start_date_to"],
+        },
+    },
+}
+
 
 def _openai_tool_names(tools: List[Dict[str, Any]]) -> Set[str]:
     names = set()
@@ -110,6 +152,18 @@ def _ensure_search_runs_tool(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]
         "coach_tools has no enabled search_runs; injecting built-in OpenAI tool definition"
     )
     return list(tools) + [_SEARCH_RUNS_OPENAI_TOOL]
+
+
+def _ensure_aggregate_runs_in_range_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject aggregate_runs_in_range if the DB seed was never run (execute_tool implements it)."""
+    if "aggregate_runs_in_range" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled aggregate_runs_in_range; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_AGGREGATE_RUNS_IN_RANGE_OPENAI_TOOL]
 
 
 def _load_tools_from_db(session: Session) -> List[Dict[str, Any]]:
@@ -174,6 +228,8 @@ DATA RETRIEVAL & TOOL RULES
 -------------------------------------
 
 - Always use tools to retrieve run or training data before answering.
+
+- **Totals over a calendar range** (e.g. "total miles last 30 days", "how many runs this month", "volume since [date]"): call **`aggregate_runs_in_range`** with inclusive **`start_date_from`** / **`start_date_to`** (YYYY-MM-DD). Derive dates from the question or the device anchor date. **`search_runs`** returns only a **capped sample** — **never** use it to infer total run count or total miles. For **per-week** volume / easy-run KPI trends (rolling ISO weeks), use **`get_training_kpis`**, not calendar-day sums.
 
 - **Thread context — no `activity_id` in history:** The model only sees past **user and assistant plain text**, not prior tool JSON. If you answered with a **specific run** (race name, **date** like YYYY-MM-DD, or “last marathon” from `search_runs`), a follow-up such as **“how did I do?”**, **“how was that run?”**, **“what was my pace?”**, or **“tell me more”** refers to **that** run — **not** automatically “today.” You must obtain an **`activity_id`** again, then call **`get_run_summary`**.
 - **Re-resolving that run (pick one path):** (1) If the **prior assistant message** contains a calendar **date** (YYYY-MM-DD or a clear month/day/year), call **`find_runs_by_date`** with that **`local_date`** (disambiguate if multiple runs). (2) Else if the thread was about **last marathon / long race / similar**, call **`search_runs`** again with the **same style of filters** (e.g. `min_distance_m` ~42000) and use the **top match’s `activity_id`**. (3) Only if the user clearly means **today’s** run again, use the device anchor date below.
@@ -444,7 +500,9 @@ def run_mobile_agent_turn(
     max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
     timeout = float(os.getenv("OPENAI_TIMEOUT", "30.0"))
 
-    openai_tools = _ensure_search_runs_tool(_load_tools_from_db(session))
+    openai_tools = _ensure_aggregate_runs_in_range_tool(
+        _ensure_search_runs_tool(_load_tools_from_db(session))
+    )
     if not openai_tools:
         logger.warning("No enabled tools in coach_tools table; agent has no tools")
 

@@ -280,6 +280,81 @@ class ActivityDAO:
             for r in rows
         ]
 
+    @staticmethod
+    def aggregate_runs(
+        session: Session,
+        athlete_id: int,
+        *,
+        start_date_from: date,
+        start_date_to: date,
+        min_distance_m: Optional[float] = None,
+        max_distance_m: Optional[float] = None,
+        name_query: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Count runs and sum distance (meters) for Run activities in an inclusive
+        local-date window. Same filters as search_runs except no row limit.
+        """
+        if start_date_from > start_date_to:
+            return {
+                "run_count": 0,
+                "total_distance_m": 0.0,
+                "error": "invalid_range",
+                "message": "start_date_from must be on or before start_date_to.",
+            }
+        span_days = (start_date_to - start_date_from).days + 1
+        max_span = 366
+        if span_days > max_span:
+            return {
+                "run_count": 0,
+                "total_distance_m": 0.0,
+                "error": "range_too_large",
+                "message": f"Date range exceeds {max_span} days. Narrow the window.",
+            }
+
+        params: Dict[str, Any] = {
+            "aid": athlete_id,
+            "start_date_from": start_date_from,
+            "start_date_to": start_date_to,
+        }
+        where_parts = [
+            "athlete_id = :aid",
+            "type = 'Run'",
+            "start_date::date >= :start_date_from",
+            "start_date::date <= :start_date_to",
+        ]
+
+        if min_distance_m is not None:
+            where_parts.append("distance >= :min_distance_m")
+            params["min_distance_m"] = float(min_distance_m)
+        if max_distance_m is not None:
+            where_parts.append("distance <= :max_distance_m")
+            params["max_distance_m"] = float(max_distance_m)
+        if name_query:
+            where_parts.append("COALESCE(name, '') ILIKE :name_query")
+            params["name_query"] = f"%{name_query.strip()}%"
+
+        q = text(
+            f"""
+            SELECT
+                COUNT(*)::integer AS run_count,
+                COALESCE(SUM(distance), 0)::double precision AS total_distance_m
+            FROM public.activities
+            WHERE {" AND ".join(where_parts)}
+            """
+        )
+        row = session.execute(q, params).fetchone()
+        run_count = int(row.run_count) if row and row.run_count is not None else 0
+        total_m = (
+            float(row.total_distance_m)
+            if row and row.total_distance_m is not None
+            else 0.0
+        )
+        return {
+            "run_count": run_count,
+            "total_distance_m": total_m,
+        }
+
 
 def has_existing_activities(session: Session, athlete_id: int) -> bool:
     count = session.query(Activity).filter(Activity.athlete_id == athlete_id).count()
