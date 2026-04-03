@@ -292,6 +292,30 @@ def tool_aggregate_runs_in_range(
 
     total_m = float(agg["total_distance_m"])
     miles = _distance_miles_from_meters(total_m)
+    weekly_rows = agg.get("weekly_summaries") or []
+    weekly_summaries: List[Dict[str, Any]] = []
+    for row in weekly_rows:
+        week_monday_iso = row.get("week_monday")
+        week_label = None
+        if isinstance(week_monday_iso, str):
+            try:
+                d = datetime.strptime(week_monday_iso[:10], "%Y-%m-%d").date()
+                week_label = f"Week of {d.month}/{d.day}"
+            except ValueError:
+                week_label = None
+        w_total_m = float(row.get("total_distance_m") or 0.0)
+        w_miles = _distance_miles_from_meters(w_total_m)
+        weekly_summaries.append(
+            {
+                "iso_week": row.get("iso_week"),
+                "week_monday": week_monday_iso,
+                "week_label": week_label,
+                "run_count": int(row.get("run_count") or 0),
+                "total_distance_meters": w_total_m,
+                "total_distance_miles": round(w_miles, 4),
+                "total_mi_display": format_distance_mi(w_miles),
+            }
+        )
     filters = {
         "start_date_from": start_date_from.isoformat(),
         "start_date_to": start_date_to.isoformat(),
@@ -304,15 +328,21 @@ def tool_aggregate_runs_in_range(
         "total_distance_meters": total_m,
         "total_distance_miles": round(miles, 4),
         "total_mi_display": format_distance_mi(miles),
+        "weekly_summaries": weekly_summaries,
         "filters": filters,
         "scope": (
             "All Strava runs in range (type Run). Dates are each activity's local calendar day "
             "(same rule as find_runs_by_date / activities API), not raw UTC date. "
             "Same optional filters as search_runs; no row cap."
         ),
+        "weekly_summaries_scope": (
+            "Weekly rows are grouped by ISO week (Monday-Sunday) from the same filtered "
+            "activities set used for overall totals in this payload."
+        ),
         "message": (
             "Report totals using **exactly** run_count and total_mi_display from this payload — "
-            "do not round differently or estimate. Do not infer totals from search_runs."
+            "do not round differently or estimate. For weekly breakdowns, use weekly_summaries. "
+            "Do not infer totals from search_runs."
         ),
     }
     logger.info(
