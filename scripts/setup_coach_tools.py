@@ -77,6 +77,54 @@ SEED_TOOLS = [
         "sort_order": 10,
     },
     {
+        "name": "aggregate_runs_in_range",
+        "display_name": "Aggregate Runs in Date Range",
+        "category": "run_analysis",
+        "description": (
+            "Return **full** run count and **total distance** for all Run activities in an inclusive "
+            "calendar date range (YYYY-MM-DD). Use for questions like **total miles in the last 30 days**, "
+            "**how many runs this month**, or **volume between two dates**. "
+            "Optional filters match `search_runs` (distance bounds, name text). "
+            "**Do not** use `search_runs` for totals — it returns a capped sample, not complete aggregates."
+        ),
+        "when_to_call": (
+            "User asks for total runs, total miles/volume, or sum of distance over a calendar window "
+            "(e.g. last N days, this month, year to date). Compute dates from context or the device anchor date."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "start_date_from": {
+                    "type": "string",
+                    "description": "Inclusive start date (YYYY-MM-DD).",
+                },
+                "start_date_to": {
+                    "type": "string",
+                    "description": "Inclusive end date (YYYY-MM-DD).",
+                },
+                "min_distance_m": {
+                    "type": "number",
+                    "description": "Optional minimum distance in meters (same as search_runs).",
+                },
+                "max_distance_m": {
+                    "type": "number",
+                    "description": "Optional maximum distance in meters (same as search_runs).",
+                },
+                "name_query": {
+                    "type": "string",
+                    "description": "Optional case-insensitive substring match on run title.",
+                },
+            },
+            "required": ["start_date_from", "start_date_to"],
+        },
+        "returns_description": (
+            "run_count, total_distance_meters, total_mi_display, filters, scope (all Strava runs in range)."
+        ),
+        "data_source": "activities (aggregated)",
+        "is_enabled": True,
+        "sort_order": 12,
+    },
+    {
         "name": "get_run_summary",
         "display_name": "Get Run Summary",
         "category": "run_analysis",
@@ -145,8 +193,11 @@ SEED_TOOLS = [
         "category": "run_analysis",
         "description": (
             "Search the user's run history using optional filters (distance, name text, date range), "
-            "ordered newest-first. Use when the user does NOT give a specific day — e.g. "
-            "'when was my last marathon?', 'last race'. For marathon distance use min_distance_m ~42195. "
+            "ordered newest-first, **capped to a small limit** (sample only). "
+            "Use for discovery — e.g. 'when was my last marathon?', 'last race'. "
+            "**Never** use this tool for **total miles** or **total run count** over a period; "
+            "use **aggregate_runs_in_range** instead. "
+            "For marathon distance use min_distance_m ~42195. "
             "For race questions, after matches return, chain get_run_summary(top activity_id) in the same "
             "turn — search_runs alone has no finish time or avg pace."
         ),
