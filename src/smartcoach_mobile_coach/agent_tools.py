@@ -263,6 +263,55 @@ def tool_search_runs(
     }
 
 
+def tool_aggregate_runs_in_range(
+    session: Session,
+    internal_user_id: str,
+    *,
+    start_date_from: date,
+    start_date_to: date,
+    min_distance_m: Optional[float] = None,
+    max_distance_m: Optional[float] = None,
+    name_query: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Full count and total distance for Run activities in an inclusive date window."""
+    athlete_id = get_primary_athlete_id(session, internal_user_id)
+    if not athlete_id:
+        return {"error": "no_athlete", "message": "No linked athlete for this account."}
+
+    agg = ActivityDAO.aggregate_runs(
+        session,
+        athlete_id,
+        start_date_from=start_date_from,
+        start_date_to=start_date_to,
+        min_distance_m=min_distance_m,
+        max_distance_m=max_distance_m,
+        name_query=name_query,
+    )
+    if agg.get("error"):
+        return agg
+
+    total_m = float(agg["total_distance_m"])
+    miles = _distance_miles_from_meters(total_m)
+    filters = {
+        "start_date_from": start_date_from.isoformat(),
+        "start_date_to": start_date_to.isoformat(),
+        "min_distance_m": min_distance_m,
+        "max_distance_m": max_distance_m,
+        "name_query": name_query,
+    }
+    return {
+        "run_count": int(agg["run_count"]),
+        "total_distance_meters": total_m,
+        "total_distance_miles": round(miles, 4),
+        "total_mi_display": format_distance_mi(miles),
+        "filters": filters,
+        "scope": "All Strava runs in range (type Run; same filters as search_runs, no row cap).",
+        "message": (
+            "Use run_count and total_mi_display for the user's totals; do not infer totals from search_runs."
+        ),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Tool: get_run_summary
 # ---------------------------------------------------------------------------
@@ -436,6 +485,7 @@ def tool_save_coach_preference(
 _TOOL_HANDLERS = {
     "find_runs_by_date": "find_runs_by_date",
     "search_runs": "search_runs",
+    "aggregate_runs_in_range": "aggregate_runs_in_range",
     "get_run_summary": "get_run_summary",
     "get_training_kpis": "get_training_kpis",
     "get_weekly_training_insight": "get_weekly_training_insight",
@@ -500,6 +550,31 @@ def execute_tool(
                 start_date_from=start_date_from,
                 start_date_to=start_date_to,
                 limit=limit,
+            )
+
+        if handler_key == "aggregate_runs_in_range":
+            d_from = _parse_optional_date(args.get("start_date_from"))
+            d_to = _parse_optional_date(args.get("start_date_to"))
+            if d_from is None or d_to is None:
+                return {
+                    "error": "missing_dates",
+                    "message": (
+                        "start_date_from and start_date_to (YYYY-MM-DD, inclusive) are required."
+                    ),
+                }
+            min_distance_m = _parse_optional_float(args.get("min_distance_m"))
+            max_distance_m = _parse_optional_float(args.get("max_distance_m"))
+            nq = args.get("name_query")
+            if nq is not None and not isinstance(nq, str):
+                nq = None
+            return tool_aggregate_runs_in_range(
+                session,
+                internal_user_id,
+                start_date_from=d_from,
+                start_date_to=d_to,
+                min_distance_m=min_distance_m,
+                max_distance_m=max_distance_m,
+                name_query=(nq or "").strip() or None,
             )
 
         if handler_key == "get_run_summary":
