@@ -39,6 +39,8 @@ _RECAP_RE = re.compile(
     re.IGNORECASE,
 )
 _DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+# Avoid matching the substring "run" inside "runs", "running", etc.
+_RUN_WORD_RE = re.compile(r"\b(runs?|running)\b", re.IGNORECASE)
 
 
 @dataclass
@@ -401,14 +403,21 @@ def _extract_topics(texts: Iterable[str]) -> Set[str]:
 
 def _infer_topic(text: str) -> str:
     t = (text or "").lower()
-    if any(k in t for k in ("run", "pace", "hr", "drift", "activity", "splits")):
-        return "run_review"
     if any(k in t for k in ("week", "weekly", "trend", "progress", "readiness")):
         return "weekly_progress"
     if any(k in t for k in ("plan", "schedule", "workout this week", "adjust")):
         return "plan"
     if any(k in t for k in ("preference", "from now on", "verbosity", "tone")):
         return "preferences"
+    if (
+        _RUN_WORD_RE.search(t)
+        or "pace" in t
+        or "drift" in t
+        or re.search(r"\bhr\b", t)
+        or "activity" in t
+        or "splits" in t
+    ):
+        return "run_review"
     return "general"
 
 
