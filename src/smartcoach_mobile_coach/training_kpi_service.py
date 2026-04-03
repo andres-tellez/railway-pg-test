@@ -11,6 +11,7 @@ All numeric thresholds come from hr_zone_constants.py.
 from __future__ import annotations
 
 import logging
+from datetime import date as date_cls, datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import bindparam, text
@@ -51,6 +52,7 @@ WITH user_easy AS (
 weekly AS (
     SELECT
         to_char(start_date, 'IYYY-IW') AS iso_week,
+        (date_trunc('week', MIN(start_date::timestamp))::date) AS week_monday,
         MIN(activity_date)              AS week_start_date,
         COUNT(*)                        AS total_runs,
         COUNT(*) FILTER (WHERE is_easy_run) AS easy_runs,
@@ -127,8 +129,25 @@ def _format_weekly_row(row) -> Dict[str, Any]:
     longest_run_miles_val = (
         float(row.longest_run_miles) if row.longest_run_miles else 0.0
     )
+    week_monday = getattr(row, "week_monday", None)
+    week_label = None
+    week_monday_iso = None
+    if week_monday is not None:
+        try:
+            if isinstance(week_monday, date_cls):
+                d = week_monday
+            else:
+                d = datetime.strptime(str(week_monday)[:10], "%Y-%m-%d").date()
+            week_label = f"Wk {d.month}/{d.day}"
+            week_monday_iso = d.isoformat()
+        except (ValueError, TypeError):
+            week_label = None
+            week_monday_iso = None
+
     return {
         "iso_week": row.iso_week,
+        "week_monday": week_monday_iso,
+        "week_label": week_label,
         "week_start_date": row.week_start_date,
         "total_runs": row.total_runs,
         "easy_runs": row.easy_runs,
@@ -212,6 +231,11 @@ def get_training_progress(
         "total_runs": total_runs,
         "total_easy_runs": total_easy,
         "weekly_summaries": summaries,
+        "weekly_summaries_scope": (
+            "Each row is one ISO week (Monday–Sunday). Use **week_label** (Monday M/D) when listing a week. "
+            "**iso_week** is the canonical id. **week_start_date** is the first run in that week, not the Monday. "
+            "Counts and miles are from **v_easy_runs** only (easy-classified runs), not every Strava activity."
+        ),
         "trends": trends,
         "hr_drift_band_zones": hr_drift_band_zones_chart(),
     }
