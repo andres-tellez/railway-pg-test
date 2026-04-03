@@ -254,10 +254,14 @@ class ActivityDAO:
             where_parts.append("COALESCE(name, '') ILIKE :name_query")
             params["name_query"] = f"%{name_query.strip()}%"
         if start_date_from is not None:
-            where_parts.append("start_date::date >= :start_date_from")
+            where_parts.append(
+                f"({ACTIVITY_LOCAL_DATE_SQL_FRAGMENT}) >= :start_date_from"
+            )
             params["start_date_from"] = start_date_from
         if start_date_to is not None:
-            where_parts.append("start_date::date <= :start_date_to")
+            where_parts.append(
+                f"({ACTIVITY_LOCAL_DATE_SQL_FRAGMENT}) <= :start_date_to"
+            )
             params["start_date_to"] = start_date_to
 
         q = text(
@@ -320,8 +324,8 @@ class ActivityDAO:
         where_parts = [
             "athlete_id = :aid",
             "type = 'Run'",
-            "start_date::date >= :start_date_from",
-            "start_date::date <= :start_date_to",
+            f"({ACTIVITY_LOCAL_DATE_SQL_FRAGMENT}) >= :start_date_from",
+            f"({ACTIVITY_LOCAL_DATE_SQL_FRAGMENT}) <= :start_date_to",
         ]
 
         if min_distance_m is not None:

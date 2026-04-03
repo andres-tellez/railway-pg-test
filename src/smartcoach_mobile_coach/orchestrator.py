@@ -2,8 +2,8 @@
 Mobile coach agent loop: OpenAI tools with a bounded max iteration count.
 
 Tool definitions are loaded from the coach_tools database table.
-If `search_runs` or `aggregate_runs_in_range` is missing from the DB, built-in definitions
-are injected so historical and aggregate queries still work without re-seeding.
+If `search_runs`, `aggregate_runs_in_range`, or `get_training_kpis` is missing from the DB
+(enabled list), built-in definitions are injected so tools still work without re-seeding.
 
 Max loops default 8; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–15).
 """
@@ -76,11 +76,15 @@ _SEARCH_RUNS_OPENAI_TOOL: Dict[str, Any] = {
                 },
                 "start_date_from": {
                     "type": "string",
-                    "description": "Optional inclusive start date (YYYY-MM-DD).",
+                    "description": (
+                        "Optional inclusive start (YYYY-MM-DD), activity-local calendar per run."
+                    ),
                 },
                 "start_date_to": {
                     "type": "string",
-                    "description": "Optional inclusive end date (YYYY-MM-DD).",
+                    "description": (
+                        "Optional inclusive end (YYYY-MM-DD), activity-local calendar per run."
+                    ),
                 },
                 "limit": {
                     "type": "integer",
@@ -98,20 +102,22 @@ _AGGREGATE_RUNS_IN_RANGE_OPENAI_TOOL: Dict[str, Any] = {
         "name": "aggregate_runs_in_range",
         "description": (
             "Return full run count and total distance for all Run activities in an inclusive "
-            "calendar date range (YYYY-MM-DD). Use for total miles in the last N days, how many runs "
+            "date range (YYYY-MM-DD). Uses each activity's local calendar day (Strava timezone, "
+            "same as find_runs_by_date). Use for total miles in the last N days, how many runs "
             "this month, or volume between two dates. Optional filters match search_runs. "
-            "Do not use search_runs for totals — it returns a capped sample."
+            "Do not use search_runs for totals — it returns a capped sample. "
+            "Quote run_count and total_mi_display exactly from the tool result."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "start_date_from": {
                     "type": "string",
-                    "description": "Inclusive start date (YYYY-MM-DD).",
+                    "description": "Inclusive start (YYYY-MM-DD), activity-local calendar.",
                 },
                 "start_date_to": {
                     "type": "string",
-                    "description": "Inclusive end date (YYYY-MM-DD).",
+                    "description": "Inclusive end (YYYY-MM-DD), activity-local calendar.",
                 },
                 "min_distance_m": {
                     "type": "number",
@@ -127,6 +133,32 @@ _AGGREGATE_RUNS_IN_RANGE_OPENAI_TOOL: Dict[str, Any] = {
                 },
             },
             "required": ["start_date_from", "start_date_to"],
+        },
+    },
+}
+
+# Kept in sync with scripts/setup_coach_tools.py `get_training_kpis`.
+_GET_TRAINING_KPIS_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_training_kpis",
+        "description": (
+            "Training KPI trends over recent ISO weeks (Mon–Sun): weekly_summaries include miles per week; "
+            "scope is v_easy_runs (easy-classified runs) — read weekly_summaries_scope. "
+            "Use for weekly miles broken down by week (e.g. last ~30 days). "
+            "For all Strava runs in a calendar window, use aggregate_runs_in_range. "
+            "Prefer weeks 5–6 when the user mentions the last month."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "weeks": {
+                    "type": "integer",
+                    "description": (
+                        "Weeks to look back (rolling ISO buckets). Default 4; use 5–6 for ~30-day coverage."
+                    ),
+                }
+            },
         },
     },
 }
@@ -164,6 +196,16 @@ def _ensure_aggregate_runs_in_range_tool(
         "coach_tools has no enabled aggregate_runs_in_range; injecting built-in OpenAI tool definition"
     )
     return list(tools) + [_AGGREGATE_RUNS_IN_RANGE_OPENAI_TOOL]
+
+
+def _ensure_get_training_kpis_tool(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Inject get_training_kpis if missing from enabled coach_tools (execute_tool implements it)."""
+    if "get_training_kpis" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled get_training_kpis; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_GET_TRAINING_KPIS_OPENAI_TOOL]
 
 
 def _load_tools_from_db(session: Session) -> List[Dict[str, Any]]:
@@ -229,7 +271,9 @@ DATA RETRIEVAL & TOOL RULES
 
 - Always use tools to retrieve run or training data before answering.
 
-- **Totals over a calendar range** (e.g. "total miles last 30 days", "how many runs this month", "volume since [date]"): call **`aggregate_runs_in_range`** with inclusive **`start_date_from`** / **`start_date_to`** (YYYY-MM-DD). Derive dates from the question or the device anchor date. **`search_runs`** returns only a **capped sample** — **never** use it to infer total run count or total miles. For **per-week** volume / easy-run KPI trends (rolling ISO weeks), use **`get_training_kpis`**, not calendar-day sums.
+- **Totals over a calendar range** (e.g. "total miles last 30 days", "how many runs this month", "volume since [date]"): call **`aggregate_runs_in_range`** with inclusive **`start_date_from`** / **`start_date_to`** (YYYY-MM-DD). Bounds use each activity's **local calendar day** (same as **`find_runs_by_date`**). Derive dates from the question or the device anchor date. **`search_runs`** returns only a **capped sample** — **never** use it to infer total run count or total miles. After the tool returns, state totals using **exactly** **`run_count`** and **`total_mi_display`** — do not re-round, estimate, or recalculate from memory.
+
+- **Weekly miles across multiple weeks** (e.g. "mileage each week", "weekly miles in the last 30 days"): call **`get_training_kpis`** with **`weeks`** **5** or **6** (rolling ISO weeks). Answer from **`weekly_summaries`** (use **`week_label`**, respect **`weekly_summaries_scope`** — easy-run view). Do **not** answer this from **`get_weekly_training_insight`** alone (that is one precomputed week, not a per-week table). If they need **all Strava runs** by week in a fixed calendar window, say that **`aggregate_runs_in_range`** is totals-only unless they want easy-week KPIs from **`get_training_kpis`**.
 
 - **Thread context — no `activity_id` in history:** The model only sees past **user and assistant plain text**, not prior tool JSON. If you answered with a **specific run** (race name, **date** like YYYY-MM-DD, or “last marathon” from `search_runs`), a follow-up such as **“how did I do?”**, **“how was that run?”**, **“what was my pace?”**, or **“tell me more”** refers to **that** run — **not** automatically “today.” You must obtain an **`activity_id`** again, then call **`get_run_summary`**.
 - **Re-resolving that run (pick one path):** (1) If the **prior assistant message** contains a calendar **date** (YYYY-MM-DD or a clear month/day/year), call **`find_runs_by_date`** with that **`local_date`** (disambiguate if multiple runs). (2) Else if the thread was about **last marathon / long race / similar**, call **`search_runs`** again with the **same style of filters** (e.g. `min_distance_m` ~42000) and use the **top match’s `activity_id`**. (3) Only if the user clearly means **today’s** run again, use the device anchor date below.
@@ -253,9 +297,10 @@ DATA RETRIEVAL & TOOL RULES
 
 - **HR drift KPI ranges (definitions):** When the user asks what **HR drift** band **thresholds** or **% ranges** mean (green / yellow / orange / red), use **`hr_drift_band_zones`** from a tool you already called or call **`get_weekly_training_insight`** (or **`get_run_summary`** / **`get_training_kpis`**) so the payload includes it. Quote **min** and **max** (drift %) **exactly** from that array. These limits are **app-wide** (not personalized). The **red** row's **max** is only a chart axis cap; interpret **red** as drift **≥** the orange band's upper bound (7.5%). **Do not** say you could not retrieve the ranges when **`hr_drift_band_zones`** is in the tool result.
 
-- For questions about progress, trends, or readiness:
+- For questions about progress, trends, or readiness (holistic **this week** scoreboard):
   → First call get_weekly_training_insight
   → If has_insight=false, call get_training_kpis and explain fallback
+- If they want **per-week miles** over **several weeks** / ~last month, prioritize **get_training_kpis** (see rule above), not only get_weekly_training_insight.
 
 - **`get_training_kpis` → `weekly_summaries` (weekly miles / volume by week):**
   → Respect **`weekly_summaries_scope`** in the tool payload (easy-run view, ISO Mon–Sun weeks).
@@ -500,8 +545,10 @@ def run_mobile_agent_turn(
     max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
     timeout = float(os.getenv("OPENAI_TIMEOUT", "30.0"))
 
-    openai_tools = _ensure_aggregate_runs_in_range_tool(
-        _ensure_search_runs_tool(_load_tools_from_db(session))
+    openai_tools = _ensure_get_training_kpis_tool(
+        _ensure_aggregate_runs_in_range_tool(
+            _ensure_search_runs_tool(_load_tools_from_db(session))
+        )
     )
     if not openai_tools:
         logger.warning("No enabled tools in coach_tools table; agent has no tools")
