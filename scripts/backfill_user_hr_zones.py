@@ -45,6 +45,31 @@ CREATE TABLE IF NOT EXISTS user_hr_zones (
 )
 """
 
+_CREATE_ACTIVITY_LOCAL_DATE_FN = """
+CREATE OR REPLACE FUNCTION activity_local_date(
+    p_start_date TIMESTAMPTZ,
+    p_timezone TEXT
+) RETURNS DATE
+LANGUAGE SQL
+IMMUTABLE
+AS $$
+    SELECT
+    CASE
+        WHEN p_timezone IS NOT NULL AND p_timezone LIKE '%America/%' THEN
+            DATE((p_start_date AT TIME ZONE 'UTC') AT TIME ZONE
+                SUBSTRING(p_timezone FROM POSITION(') ' IN p_timezone) + 2))
+        WHEN p_timezone IS NOT NULL THEN
+            DATE((p_start_date AT TIME ZONE 'UTC') AT TIME ZONE
+                COALESCE(
+                    NULLIF(SUBSTRING(p_timezone FROM POSITION(') ' IN p_timezone) + 2), ''),
+                    'UTC'
+                ))
+        ELSE
+            DATE(p_start_date)
+    END
+$$
+"""
+
 _CREATE_V_RUN_METRICS = """
 CREATE OR REPLACE VIEW v_run_metrics AS
 WITH split_half AS (
@@ -64,14 +89,7 @@ SELECT
     a.type            AS activity_type,
     a.name            AS activity_name,
     a.start_date,
-    to_char(
-        (a.start_date AT TIME ZONE 'UTC')
-            AT TIME ZONE COALESCE(
-                split_part(a.timezone, ') ', 2),
-                'UTC'
-            ),
-        'YYYY-MM-DD'
-    ) AS activity_date,
+    to_char(activity_local_date(a.start_date, a.timezone), 'YYYY-MM-DD') AS activity_date,
     a.moving_time     AS moving_time_seconds,
     a.average_heartrate AS avg_hr,
     a.max_heartrate   AS max_hr,
@@ -157,6 +175,11 @@ def main():
         # --- Step 1: Create table + views ---
         print("Creating user_hr_zones table (if not exists)...")
         session.execute(text(_CREATE_TABLE))
+        session.commit()
+        print("  Done.")
+
+        print("Creating activity_local_date function...")
+        session.execute(text(_CREATE_ACTIVITY_LOCAL_DATE_FN))
         session.commit()
         print("  Done.")
 
