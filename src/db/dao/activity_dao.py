@@ -298,6 +298,9 @@ class ActivityDAO:
         """
         Count runs and sum distance (meters) for Run activities in an inclusive
         local-date window. Same filters as search_runs except no row limit.
+
+        Also returns weekly_summaries (ISO week buckets) from the same filtered
+        activities set so weekly totals and overall totals stay source-aligned.
         """
         if start_date_from > start_date_to:
             return {
@@ -354,9 +357,46 @@ class ActivityDAO:
             if row and row.total_distance_m is not None
             else 0.0
         )
+        weekly_q = text(
+            f"""
+            WITH filtered AS (
+                SELECT
+                    distance,
+                    ({ACTIVITY_LOCAL_DATE_SQL_FRAGMENT})::date AS activity_local_date
+                FROM public.activities
+                WHERE {" AND ".join(where_parts)}
+            )
+            SELECT
+                to_char(activity_local_date, 'IYYY-IW') AS iso_week,
+                date_trunc('week', activity_local_date::timestamp)::date AS week_monday,
+                COUNT(*)::integer AS run_count,
+                COALESCE(SUM(distance), 0)::double precision AS total_distance_m
+            FROM filtered
+            GROUP BY iso_week, week_monday
+            ORDER BY week_monday DESC
+            """
+        )
+        weekly_rows = session.execute(weekly_q, params).fetchall()
+        weekly_summaries: List[Dict[str, Any]] = []
+        for r in weekly_rows:
+            weekly_summaries.append(
+                {
+                    "iso_week": r.iso_week,
+                    "week_monday": (
+                        r.week_monday.isoformat() if r.week_monday is not None else None
+                    ),
+                    "run_count": int(r.run_count) if r.run_count is not None else 0,
+                    "total_distance_m": (
+                        float(r.total_distance_m)
+                        if r.total_distance_m is not None
+                        else 0.0
+                    ),
+                }
+            )
         return {
             "run_count": run_count,
             "total_distance_m": total_m,
+            "weekly_summaries": weekly_summaries,
         }
 
 
