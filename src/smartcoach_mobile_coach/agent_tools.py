@@ -387,10 +387,21 @@ def tool_get_run_summary(
 
 
 def tool_get_training_kpis(
-    session: Session, internal_user_id: str, weeks: int = _DEFAULT_KPI_WEEKS
+    session: Session,
+    internal_user_id: str,
+    weeks: int = _DEFAULT_KPI_WEEKS,
+    *,
+    start_date_from: Optional[date] = None,
+    start_date_to: Optional[date] = None,
 ) -> Dict[str, Any]:
     weeks = max(1, min(weeks, _MAX_KPI_WEEKS))
-    return get_training_progress(session, internal_user_id, weeks)
+    return get_training_progress(
+        session,
+        internal_user_id,
+        weeks,
+        start_date_from=start_date_from,
+        start_date_to=start_date_to,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -614,7 +625,23 @@ def execute_tool(
                 weeks = int(weeks)
             except (TypeError, ValueError):
                 weeks = _DEFAULT_KPI_WEEKS
-            return tool_get_training_kpis(session, internal_user_id, weeks)
+            d_from = _parse_optional_date(args.get("start_date_from"))
+            d_to = _parse_optional_date(args.get("start_date_to"))
+            if (d_from is None) ^ (d_to is None):
+                return {
+                    "error": "missing_dates",
+                    "message": (
+                        "Provide both start_date_from and start_date_to (YYYY-MM-DD), "
+                        "or omit both for rolling weeks mode."
+                    ),
+                }
+            return tool_get_training_kpis(
+                session,
+                internal_user_id,
+                weeks,
+                start_date_from=d_from,
+                start_date_to=d_to,
+            )
 
         if handler_key == "get_weekly_training_insight":
             return tool_get_weekly_training_insight(session, internal_user_id)
