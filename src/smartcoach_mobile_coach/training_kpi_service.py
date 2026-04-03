@@ -88,7 +88,7 @@ weekly AS (
     SELECT
         to_char(activity_date::date, 'IYYY-IW') AS iso_week,
         (date_trunc('week', MIN(activity_date::date)::timestamp))::date AS week_monday,
-        MIN(activity_date::date)              AS week_start_date,
+        MIN(activity_date)                    AS week_start_date,
         COUNT(*)                        AS total_runs,
         COUNT(*) FILTER (WHERE is_easy_run) AS easy_runs,
         ROUND(SUM(distance_miles)::numeric, 1)              AS total_miles,
