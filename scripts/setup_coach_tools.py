@@ -84,6 +84,8 @@ SEED_TOOLS = [
             "Return **full** run count and **total distance** for all Run activities in an inclusive "
             "date range (YYYY-MM-DD). Each row is included by its **activity local calendar day** "
             "(Strava timezone — same as find_runs_by_date), not raw UTC date. "
+            "Also returns **weekly_summaries** (ISO week buckets) from the same filtered activities set, "
+            "so weekly and overall totals stay aligned. "
             "Use for **total miles in the last 30 days**, **how many runs this month**, "
             "or **volume between two dates**. "
             "Optional filters match `search_runs` (distance bounds, name text). "
@@ -92,7 +94,8 @@ SEED_TOOLS = [
         ),
         "when_to_call": (
             "User asks for total runs, total miles/volume, or sum of distance over a calendar window "
-            "(e.g. last N days, this month, year to date). Compute dates from context or the device anchor date."
+            "(e.g. last N days, this month, year to date), OR asks for per-week mileage totals over a date range. "
+            "Compute dates from context or the device anchor date."
         ),
         "parameters_schema": {
             "type": "object",
@@ -125,7 +128,8 @@ SEED_TOOLS = [
             "required": ["start_date_from", "start_date_to"],
         },
         "returns_description": (
-            "run_count, total_distance_meters, total_mi_display, filters, scope (all Strava runs in range)."
+            "run_count, total_distance_meters, total_mi_display, weekly_summaries, filters, "
+            "scope (all Strava runs in range)."
         ),
         "data_source": "activities (aggregated)",
         "is_enabled": True,
@@ -264,7 +268,8 @@ SEED_TOOLS = [
             "Get the user's latest precomputed weekly training scoreboard: overall band, "
             "HR drift / Avg. Z2 pace / efficiency bands, deltas, and coaching summary/action text. "
             "Use this first for **this week's** holistic status. "
-            "**Not** for a table of weekly miles across many weeks — use **get_training_kpis** for that."
+            "**Not** for a table of weekly mileage totals across many weeks — use "
+            "**aggregate_runs_in_range** weekly_summaries for that."
         ),
         "when_to_call": (
             "User asks weekly progress questions like 'am I on track', 'how am I doing this week', "
@@ -292,17 +297,14 @@ SEED_TOOLS = [
             "Get training KPI trends over recent **ISO weeks** (Mon–Sun): Avg. Z2 pace, HR drift, "
             "Z2 adherence (use *_display fields), **weekly_summaries** with miles per week, long-run readiness. "
             "Scope is **v_easy_runs** (easy-classified runs only) — see **weekly_summaries_scope** in the payload. "
-            "Use for **weekly miles broken down by week** (e.g. 'last ~30 days', 'mileage each week lately'). "
-            "For exact calendar windows, pass **start_date_from** and **start_date_to** so this tool and "
-            "**aggregate_runs_in_range** share the same date bounds. "
-            "For **all Strava runs** in a calendar window, use **aggregate_runs_in_range** instead. "
+            "Use for KPI trend interpretation (HR drift/Z2 progress), not inclusive all-runs mileage totals. "
+            "For **all Strava runs** weekly mileage in a calendar window, use **aggregate_runs_in_range** instead. "
             "Never calculate KPIs yourself — always use this tool's data."
         ),
         "when_to_call": (
             "User asks about training progress, trends, weekly improvement, marathon readiness, "
-            "or **miles per week** over multiple weeks / 'last 30 days' style weekly volume (not a single run). "
-            "For 'last N days / this month / between dates', provide explicit start_date_from/start_date_to "
-            "so all tools use the same local-calendar window."
+            "or KPI quality trends over multiple weeks (not a single run). "
+            "For inclusive weekly mileage totals over a date range, use aggregate_runs_in_range instead."
         ),
         "parameters_schema": {
             "type": "object",

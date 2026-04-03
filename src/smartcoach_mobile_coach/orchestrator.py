@@ -104,7 +104,9 @@ _AGGREGATE_RUNS_IN_RANGE_OPENAI_TOOL: Dict[str, Any] = {
             "Return full run count and total distance for all Run activities in an inclusive "
             "date range (YYYY-MM-DD). Uses each activity's local calendar day (Strava timezone, "
             "same as find_runs_by_date). Use for total miles in the last N days, how many runs "
-            "this month, or volume between two dates. Optional filters match search_runs. "
+            "this month, or volume between two dates. Also returns weekly_summaries (ISO week "
+            "breakdown) from the same filtered activities set for all-runs weekly mileage. "
+            "Optional filters match search_runs. "
             "Do not use search_runs for totals — it returns a capped sample. "
             "Quote run_count and total_mi_display exactly from the tool result."
         ),
@@ -143,12 +145,10 @@ _GET_TRAINING_KPIS_OPENAI_TOOL: Dict[str, Any] = {
     "function": {
         "name": "get_training_kpis",
         "description": (
-            "Training KPI trends over recent ISO weeks (Mon–Sun): weekly_summaries include miles per week; "
-            "scope is v_easy_runs (easy-classified runs) — read weekly_summaries_scope. "
-            "Use for weekly miles broken down by week (e.g. last ~30 days). "
-            "For exact calendar windows, pass start_date_from/start_date_to so it aligns with aggregate_runs_in_range. "
-            "For all Strava runs in a calendar window, use aggregate_runs_in_range. "
-            "If date range params are omitted, weeks is rolling from now()."
+            "Training KPI trends over recent ISO weeks (Mon-Sun) from v_easy_runs (KPI/easy-run scope): "
+            "HR drift, Z2 pace/adherence, and long-run readiness context. "
+            "Not the source of truth for all-runs weekly mileage totals; use aggregate_runs_in_range "
+            "for inclusive weekly/all-runs volume. If date range params are omitted, weeks is rolling from now()."
         ),
         "parameters": {
             "type": "object",
@@ -282,7 +282,7 @@ DATA RETRIEVAL & TOOL RULES
 
 - **Totals over a calendar range** (e.g. "total miles last 30 days", "how many runs this month", "volume since [date]"): call **`aggregate_runs_in_range`** with inclusive **`start_date_from`** / **`start_date_to`** (YYYY-MM-DD). Bounds use each activity's **local calendar day** (same as **`find_runs_by_date`**). Derive dates from the question or the device anchor date. **`search_runs`** returns only a **capped sample** — **never** use it to infer total run count or total miles. After the tool returns, state totals using **exactly** **`run_count`** and **`total_mi_display`** — do not re-round, estimate, or recalculate from memory.
 
-- **Weekly miles across multiple weeks** (e.g. "mileage each week", "weekly miles in the last 30 days"): call **`get_training_kpis`** and answer from **`weekly_summaries`** (use **`week_label`**, respect **`weekly_summaries_scope`** — easy/KPI view). For **calendar-window asks** ("last 30 days", "this month", "between dates"), pass **the same** inclusive **`start_date_from`** / **`start_date_to`** you would use for **`aggregate_runs_in_range`** so both tools share one window definition. Do **not** answer this from **`get_weekly_training_insight`** alone (that is one precomputed week, not a per-week table). If they need **all Strava runs** by week in a fixed calendar window, explain that **`get_training_kpis`** is KPI/easy scope and **`aggregate_runs_in_range`** is all-runs totals only.
+- **Weekly miles across multiple weeks** (e.g. "mileage each week", "weekly miles in the last 30 days"): call **`aggregate_runs_in_range`** with inclusive **`start_date_from`** / **`start_date_to`** and answer from **`weekly_summaries`** in that payload (same all-runs source as totals). Use **`week_label`** when listing weeks and respect **`weekly_summaries_scope`**. Do **not** answer this from **`get_weekly_training_insight`** alone (that is one precomputed week, not a per-week table).
 
 - **Thread context — no `activity_id` in history:** The model only sees past **user and assistant plain text**, not prior tool JSON. If you answered with a **specific run** (race name, **date** like YYYY-MM-DD, or “last marathon” from `search_runs`), a follow-up such as **“how did I do?”**, **“how was that run?”**, **“what was my pace?”**, or **“tell me more”** refers to **that** run — **not** automatically “today.” You must obtain an **`activity_id`** again, then call **`get_run_summary`**.
 - **Re-resolving that run (pick one path):** (1) If the **prior assistant message** contains a calendar **date** (YYYY-MM-DD or a clear month/day/year), call **`find_runs_by_date`** with that **`local_date`** (disambiguate if multiple runs). (2) Else if the thread was about **last marathon / long race / similar**, call **`search_runs`** again with the **same style of filters** (e.g. `min_distance_m` ~42000) and use the **top match’s `activity_id`**. (3) Only if the user clearly means **today’s** run again, use the device anchor date below.
@@ -309,15 +309,17 @@ DATA RETRIEVAL & TOOL RULES
 - For questions about progress, trends, or readiness (holistic **this week** scoreboard):
   → First call get_weekly_training_insight
   → If has_insight=false, call get_training_kpis and explain fallback
-- If they want **per-week miles** over **several weeks** / ~last month, prioritize **get_training_kpis** (see rule above), not only get_weekly_training_insight.
+- If they want **per-week mileage totals** over several weeks / ~last month, prioritize **aggregate_runs_in_range** (with explicit calendar dates) rather than only get_weekly_training_insight.
 
-- **`get_training_kpis` → `weekly_summaries` (weekly miles / volume by week):**
-  → Respect **`weekly_summaries_scope`** in the tool payload (easy-run view, ISO Mon–Sun weeks).
+- **`aggregate_runs_in_range` → `weekly_summaries` (all-runs weekly mileage / volume by week):**
+  → This is the source of truth for inclusive weekly mileage totals across all runs.
+  → Respect **`weekly_summaries_scope`** in the tool payload (ISO Mon-Sun weeks from the same filtered range as totals).
   → When listing weeks, prefer each row’s **`week_label`** (e.g. `Wk 3/9` = Monday of that ISO week). Use **`iso_week`** as the stable week id.
   → **Never** use “Week 0”. If you number weeks, use **1-based** order **oldest → newest** only, or skip numbering and use **`week_label`** only.
-  → Do **not** invent calendar ranges; **`week_start_date`** is the **first run** in the bucket, not Monday — do not present it as the week start.
-  → For explicit calendar windows, use the tool's **`window`** field if present and do not describe it as rolling weeks.
-  → If only `weeks` is provided (no explicit dates), briefly note that it is a rolling-week approximation.
+  → Do **not** invent calendar ranges. For explicit calendar windows, rely on the same start/end dates passed to the tool.
+
+- **`get_training_kpis` (KPI/easy-run scope):**
+  → Use for HR drift / Z2 pace / Z2 adherence trends and coaching interpretation, not all-runs mileage totals.
 
 - If the user asks to change coaching preferences, call **`save_coach_preference`**. Preferences are **stored per user** (their account only — never affect other runners).
 - When they ask for a **lasting** run-summary change (e.g. “from now on, when I ask how my run was, include HR drift and the KPI color”), call **`save_coach_preference`** with **`run_summary_priority`** that **includes** **`hr_drift`** (and **merge** with their existing metric list — do not drop unrelated metrics unless they say to). For **explicit band colors** (`green` / `yellow` / `orange` / `red`) in text, **`coaching_level`: `advanced`** is appropriate; confirm or apply if they want that clarity.
