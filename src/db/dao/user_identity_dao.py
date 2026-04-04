@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import insert
 from src.db.db_session import get_session
 from src.db.models.user_identity import UserIdentity
 from src.db.models.user_auth_providers import UserAuthProvider
+from src.utils.email_verification import is_email_verified_claim
 
 
 # ----------------------
@@ -38,8 +39,9 @@ logger = logging.getLogger(__name__)
 def upsert_identity(payload: Mapping[str, Any]) -> uuid.UUID:
     """
     Insert or update a user_identity record.
-    - If email exists, reuse the DB's existing user_id.
-    - Prevents duplicate UUIDs when reusing an email.
+    - If email is set, conflict resolution is on **email** (user_id on that row is preserved).
+    - Callers should only pass **verified** emails when cross-provider merge is intended
+      (see resolve_user_id_from_auth_provider).
     - Returns the canonical user_id from DB.
     """
     db = get_session()
@@ -117,7 +119,8 @@ def resolve_user_id_from_auth_provider(
         provider_name, provider_user_id = "unknown", sub
     claims = normalize_claims(userinfo or {})
 
-    email = claims.get("email")
+    email_raw = claims.get("email")
+    email_norm = (email_raw or "").strip() or None
     name = claims.get("name")
     email_verified = claims.get("email_verified")
     picture = claims.get("picture")
@@ -150,20 +153,29 @@ def resolve_user_id_from_auth_provider(
         if not create_if_missing:
             return None
 
-        # 3) Decide user_id (reuse by email if present)
-        if email:
+        # 3) Decide user_id — merge by email only when email is verified (security)
+        linked_existing_via_verified_email = False
+        if email_norm and is_email_verified_claim(email_verified):
             reuse_user_id = db.execute(
-                select(UserIdentity.user_id).where(UserIdentity.email == email)
+                select(UserIdentity.user_id).where(UserIdentity.email == email_norm)
             ).scalar()
+            if reuse_user_id:
+                linked_existing_via_verified_email = True
             user_id = reuse_user_id if reuse_user_id else uuid.uuid4()
         else:
-            # Deterministic UUID fallback if no email
+            # Unverified or missing email: never merge by email; stable id per Auth0 sub
             user_id = uuid.uuid5(_UUID5_NAMESPACE, sub)
 
         # 4) Upsert identity (ensures canonical UUID is returned)
+        # Unverified email must not use the email conflict branch (would merge rows without proof).
+        email_for_upsert = (
+            email_norm
+            if email_norm and is_email_verified_claim(email_verified)
+            else None
+        )
         payload = {
             "user_id": user_id,
-            "email": email,
+            "email": email_for_upsert,
             "email_verified": email_verified,
             "name": name,
             "picture": picture,
@@ -183,6 +195,14 @@ def resolve_user_id_from_auth_provider(
             .on_conflict_do_nothing()
         )
         db.commit()
+        if linked_existing_via_verified_email:
+            logger.info(
+                "Linked new auth provider to existing user via verified email match "
+                "(provider=%s, user_id=%s, sub=%s)",
+                provider_name,
+                canonical_user_id,
+                sub,
+            )
     finally:
         db.close()
 
