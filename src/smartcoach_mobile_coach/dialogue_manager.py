@@ -387,12 +387,13 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
         "race_projection": {
             "narration_mode": "scenario_coach",
             "tool_strategy": (
-                "Prefer trend + historical race context tools before projecting. "
-                "If projection assumptions are needed, state them explicitly and label output as estimate."
+                "For marathon prediction asks, prioritize get_marathon_projection as the primary source. "
+                "Include only a brief trend context line unless the user explicitly asks for a deeper trend breakdown."
             ),
             "natural_style_notes": [
                 "Sound like a planning coach: confident but honest about uncertainty.",
                 "Use scenario framing when useful (today / conservative / on-track), with tool-grounded values only.",
+                "Keep trend context short so the projection remains the centerpiece of the response.",
                 "Close with one practical next-step sentence tied to the projection window.",
             ],
         },
