@@ -2,7 +2,8 @@
 Mobile coach agent loop: OpenAI tools with a bounded max iteration count.
 
 Tool definitions are loaded from the coach_tools database table.
-If `search_runs`, `aggregate_runs_in_range`, or `get_training_kpis` is missing from the DB
+If `search_runs`, `aggregate_runs_in_range`, `get_training_kpis`, or
+`get_marathon_projection` is missing from the DB
 (enabled list), built-in definitions are injected so tools still work without re-seeding.
 
 Max loops default 8; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–15).
@@ -172,6 +173,37 @@ _GET_TRAINING_KPIS_OPENAI_TOOL: Dict[str, Any] = {
     },
 }
 
+# Kept in sync with scripts/setup_coach_tools.py `get_marathon_projection`.
+_GET_MARATHON_PROJECTION_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_marathon_projection",
+        "description": (
+            "Deterministic marathon finish-time projection from recent run signals. "
+            "Returns scenario-based race pace and projected finish times (conservative/on_track/stretch), "
+            "with explicit assumptions and data quality details. Use this for 'predict my next marathon time' "
+            "or marathon projection asks. Do not invent projection numbers outside this tool."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target_race_date": {
+                    "type": "string",
+                    "description": "Optional race date (YYYY-MM-DD) to compute weeks until race.",
+                },
+                "goal_time_hhmmss": {
+                    "type": "string",
+                    "description": "Optional goal marathon time in HH:MM:SS for scenario comparison.",
+                },
+                "lookback_days": {
+                    "type": "integer",
+                    "description": "Optional projection lookback window in days (default 84).",
+                },
+            },
+        },
+    },
+}
+
 
 def _openai_tool_names(tools: List[Dict[str, Any]]) -> Set[str]:
     names = set()
@@ -215,6 +247,18 @@ def _ensure_get_training_kpis_tool(tools: List[Dict[str, Any]]) -> List[Dict[str
         "coach_tools has no enabled get_training_kpis; injecting built-in OpenAI tool definition"
     )
     return list(tools) + [_GET_TRAINING_KPIS_OPENAI_TOOL]
+
+
+def _ensure_get_marathon_projection_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject get_marathon_projection if missing from enabled coach_tools."""
+    if "get_marathon_projection" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled get_marathon_projection; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_GET_MARATHON_PROJECTION_OPENAI_TOOL]
 
 
 def _load_tools_from_db(session: Session) -> List[Dict[str, Any]]:
@@ -298,6 +342,7 @@ DATA RETRIEVAL & TOOL RULES
 - For historical discovery without a specific day (e.g. "when was my last marathon?", "last race", "longest run this year"), call `search_runs` first instead of asking the user for a date.
 - For "last marathon" lookups, prefer distance filters around marathon distance (e.g. `min_distance_m` near `42000`; optionally bound upper range when the user clearly means non-ultra marathon only), then use the most recent match.
 - **Race-forward lookups — chain in one turn:** When `search_runs` is for a **race-shaped** ask (marathon / half / ultra distance filters, race name query, or phrases like **last marathon**, **last race**, **when was** [event]), **always** call **`get_run_summary`** with the **top match’s `activity_id`** **in the same assistant turn** before answering. `search_runs` does **not** include finish time or avg pace — only `get_run_summary` → `facts` does. Keep **`include_peer_comparison` true** by default so **`comparison.delta_vs_peer_median_display`** can support a **grounded** extra sentence when useful.
+- **Marathon time prediction asks** (e.g. "predict my next marathon time", "marathon projection"): call **`get_marathon_projection`** first. Use scenario values (`race_pace_display`, `projected_finish_time_display`) exactly from the tool payload and clearly label them as estimates from assumptions.
 - For **pure listing** ("show my marathons this year") with **no** performance angle, you may summarize from `search_runs` only; if they want **how it went / stats**, chain **`get_run_summary`**.
 - If they ask in a **later** turn about that run, you have no `activity_id` in chat text — **re-run `search_runs` or `find_runs_by_date`** (thread rules above), then **`get_run_summary`**.
 
@@ -446,7 +491,7 @@ STYLE
 - **Zone / split % (easy_pct_display, z2_band_pct_display):** **omit** from the stats list on the **default** first recap — see OUTPUT STRUCTURE. If the user **asks** for zones, Z2, adherence, or a **breakdown**, you may add **1–2** bullets: use `easy_pct_display` first (HR at or below Z2 max), then `z2_band_pct_display` (HR between Z2 low and high only), with **short plain labels**; add **one sentence** in prose if needed so they aren’t misread. Never use **“Easy Zone”** in bullets.
 - **Peer medians:** `comparison.delta_vs_peer_median_display` strings already use **Avg. pace**, **Avg. HR**, **Distance**, and **mi** — quote them verbatim when you summarize vs recent runs.
 
-- **Race / milestone replies (after `get_run_summary` for a discovered race):** Lead with a **warm, compact** answer: **title + local date** from `facts`, then **Time** (`moving_time_display`) and **Avg. pace** (`avg_pace_display`), and **Distance** if it adds clarity. Optionally add **one short sentence** (plain language, not hype) of **grounded** color: e.g. paraphrase **`comparison.delta_vs_peer_median_display`** when `peers_count` ≥ 2 and the delta is clearly meaningful, or tie **Avg. HR** to **easy vs hard** effort using **only** tool values. **Do not** say **personal record** / **PR** unless a tool field explicitly indicates it. **Do not** invent **future goals**, **target race times**, or **sync/storage** excuses — stay on tool output.
+- **Race / milestone replies (after `get_run_summary` for a discovered race):** Lead with a **warm, compact** answer: **title + local date** from `facts`, then **Time** (`moving_time_display`) and **Avg. pace** (`avg_pace_display`), and **Distance** if it adds clarity. Optionally add **one short sentence** (plain language, not hype) of **grounded** color: e.g. paraphrase **`comparison.delta_vs_peer_median_display`** when `peers_count` ≥ 2 and the delta is clearly meaningful, or tie **Avg. HR** to **easy vs hard** effort using **only** tool values. **Do not** say **personal record** / **PR** unless a tool field explicitly indicates it. **Do not** invent **future goals** or **target race times** unless they come directly from **`get_marathon_projection`** output.
 
 - Be supportive, but not overly motivational or emotional.
 - Follow user coaching preferences if provided (tone, detail level, etc.) — but **never** use verbosity as an excuse to repeat prior messages or to answer a question they did not ask.
@@ -557,9 +602,11 @@ def run_mobile_agent_turn(
     max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
     timeout = float(os.getenv("OPENAI_TIMEOUT", "30.0"))
 
-    openai_tools = _ensure_get_training_kpis_tool(
-        _ensure_aggregate_runs_in_range_tool(
-            _ensure_search_runs_tool(_load_tools_from_db(session))
+    openai_tools = _ensure_get_marathon_projection_tool(
+        _ensure_get_training_kpis_tool(
+            _ensure_aggregate_runs_in_range_tool(
+                _ensure_search_runs_tool(_load_tools_from_db(session))
+            )
         )
     )
     if not openai_tools:
@@ -574,8 +621,9 @@ def run_mobile_agent_turn(
         user_message=user_message,
     )
     logger.info(
-        "[dialogue] turn_type=%s turn_count=%s last_topic=%s avoid_repeat=%s target_length=%s",
+        "[dialogue] turn_type=%s intent=%s turn_count=%s last_topic=%s avoid_repeat=%s target_length=%s",
         response_directive.turn_type,
+        response_directive.intent,
         conversation_state.turn_count,
         conversation_state.last_topic,
         ",".join(response_directive.avoid_repeating_metrics) or "none",
@@ -672,9 +720,12 @@ def run_mobile_agent_turn(
                 "model": model,
                 "dialogue": {
                     "turn_type": response_directive.turn_type,
+                    "intent": response_directive.intent,
                     "turn_count": conversation_state.turn_count,
                     "last_topic": conversation_state.last_topic,
                     "target_length": response_directive.target_length,
+                    "narration_mode": response_directive.narration_mode,
+                    "tool_strategy": response_directive.tool_strategy,
                     "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
                     "allow_full_recap": response_directive.allow_full_recap,
                 },
@@ -693,9 +744,12 @@ def run_mobile_agent_turn(
         "model": model,
         "dialogue": {
             "turn_type": response_directive.turn_type,
+            "intent": response_directive.intent,
             "turn_count": conversation_state.turn_count,
             "last_topic": conversation_state.last_topic,
             "target_length": response_directive.target_length,
+            "narration_mode": response_directive.narration_mode,
+            "tool_strategy": response_directive.tool_strategy,
             "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
             "allow_full_recap": response_directive.allow_full_recap,
         },

@@ -21,6 +21,9 @@ from src.smartcoach_mobile_coach.display_format import (
     format_time_utc,
 )
 from src.smartcoach_mobile_coach.insight_cache import cache_key, get_cached, set_cached
+from src.smartcoach_mobile_coach.marathon_projection_service import (
+    get_marathon_projection,
+)
 from src.smartcoach_mobile_coach.run_insight import (
     apply_insight_table_labels,
     build_get_run_insight_payload,
@@ -446,6 +449,28 @@ def tool_get_weekly_training_insight(
 
 
 # ---------------------------------------------------------------------------
+# Tool: get_marathon_projection
+# ---------------------------------------------------------------------------
+
+
+def tool_get_marathon_projection(
+    session: Session,
+    internal_user_id: str,
+    *,
+    target_race_date: Optional[date] = None,
+    goal_time_hhmmss: Optional[str] = None,
+    lookback_days: int = 84,
+) -> Dict[str, Any]:
+    return get_marathon_projection(
+        session,
+        internal_user_id,
+        target_race_date=target_race_date,
+        goal_time_hhmmss=goal_time_hhmmss,
+        lookback_days=lookback_days,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tool: save_coach_preference
 # ---------------------------------------------------------------------------
 
@@ -543,6 +568,7 @@ _TOOL_HANDLERS = {
     "get_run_summary": "get_run_summary",
     "get_training_kpis": "get_training_kpis",
     "get_weekly_training_insight": "get_weekly_training_insight",
+    "get_marathon_projection": "get_marathon_projection",
     "save_coach_preference": "save_coach_preference",
     # Legacy names → map to current handlers
     "list_runs_for_local_date": "find_runs_by_date",
@@ -675,6 +701,24 @@ def execute_tool(
 
         if handler_key == "get_weekly_training_insight":
             return tool_get_weekly_training_insight(session, internal_user_id)
+
+        if handler_key == "get_marathon_projection":
+            d_target = _parse_optional_date(args.get("target_race_date"))
+            goal = args.get("goal_time_hhmmss")
+            if goal is not None and not isinstance(goal, str):
+                goal = None
+            lookback_raw = args.get("lookback_days", 84)
+            try:
+                lookback_days = int(lookback_raw)
+            except (TypeError, ValueError):
+                lookback_days = 84
+            return tool_get_marathon_projection(
+                session,
+                internal_user_id,
+                target_race_date=d_target,
+                goal_time_hhmmss=(goal or "").strip() or None,
+                lookback_days=lookback_days,
+            )
 
         if handler_key == "save_coach_preference":
             return tool_save_coach_preference(session, internal_user_id, args)
