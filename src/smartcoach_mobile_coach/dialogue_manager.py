@@ -301,8 +301,8 @@ def response_directive_section(directive: ResponseDirective) -> str:
         )
         base += (
             "\n\n### Human coach style addon\n"
-            "- Keep the reply sounding like one coach talking to one athlete, not a report.\n"
-            "- Stay tool-grounded for numbers, but narrate naturally.\n"
+            "- Keep the reply sounding like one coach talking to one athlete, not a report or dashboard.\n"
+            "- Stay tool-grounded for numbers; default to woven prose (GLOBAL: OUTPUT STRUCTURE + STYLE in base prompt).\n"
             f"{natural_lines}"
         )
 
@@ -375,12 +375,13 @@ def infer_intent(user_message: str) -> str:
 def _intent_addon(intent: str) -> Dict[str, Any]:
     """Second-layer addon: intent-specific narration + retrieval strategy."""
     defaults: Dict[str, Any] = {
-        "narration_mode": "compact_coach",
+        "narration_mode": "woven_coach",
         "tool_strategy": "Use the minimum required tools, then answer directly from results.",
         "natural_style_notes": [
-            "Open with a direct answer, then one short interpretation.",
-            "Avoid robotic templates and avoid stat dumps unless user asks.",
-            "If confidence is limited by missing tool data, say so plainly in one line.",
+            "Default to continuous coach prose (short paragraphs); bold key numbers inline — not labeled report sections or stat-bullet dumps unless the user asks for a list or breakdown.",
+            "Lead with the takeaway, weave only tool-grounded facts that matter, then one clear interpretation.",
+            "Do not narrate your process (no 'let me pull' / 'now let me calculate').",
+            "If tool data is thin, say so in one honest line.",
         ],
     }
     profiles: Dict[str, Dict[str, Any]] = {
@@ -392,8 +393,8 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
             ),
             "natural_style_notes": [
                 "Sound like a planning coach: confident but honest about uncertainty.",
-                "Use scenario framing when useful (today / conservative / on-track), with tool-grounded values only.",
-                "Keep trend context short so the projection remains the centerpiece of the response.",
+                "Weave conservative / on-track / stretch scenarios into flowing prose or a very short list — tool numbers only.",
+                "Keep trend context short so the projection stays central.",
                 "Close with one practical next-step sentence tied to the projection window.",
             ],
         },
@@ -403,8 +404,8 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "Use aggregate_runs_in_range for totals and weekly_summaries; keep the window explicit and consistent."
             ),
             "natural_style_notes": [
-                "Lead with the exact number the user asked for, then a short plain-language context line.",
-                "If listing weekly rows, keep labels simple and scannable.",
+                "State the headline total in prose with the exact tool values bolded.",
+                "Prefer weaving a few weeks into a sentence; use a short bullet list only if many weeks or the user asked for a list.",
             ],
         },
         "training_trend": {
@@ -413,6 +414,7 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "Use weekly insight / training KPI tools first; summarize trend direction before giving advice."
             ),
             "natural_style_notes": [
+                "Tell one coherent story: what changed, what it implies — avoid sectioned KPI reports.",
                 "Highlight one main trend, not five competing themes.",
                 "Give one concrete coaching implication from the trend.",
             ],
@@ -423,7 +425,7 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "Resolve run identity first, then use run summary payload for facts and interpretation."
             ),
             "natural_style_notes": [
-                "Blend facts into natural language; avoid report-like headings unless clarity needs them.",
+                "Weave distance, time, pace, HR into sentences with bold values — not a labeled stat block by default.",
                 "Keep the recap personal and specific to this run.",
             ],
         },
