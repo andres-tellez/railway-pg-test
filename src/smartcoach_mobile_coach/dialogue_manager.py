@@ -59,11 +59,15 @@ class ConversationState:
 @dataclass
 class ResponseDirective:
     turn_type: str
+    intent: str
     target_length: str
     tone_hint: str
     focus: str
     avoid_repeating_metrics: List[str]
     allow_full_recap: bool
+    narration_mode: str
+    tool_strategy: str
+    natural_style_notes: List[str]
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -154,22 +158,29 @@ def plan_response(
     user_message: str,
 ) -> ResponseDirective:
     """Create a compact per-turn response directive."""
+    intent = infer_intent(user_message)
+    addon = _intent_addon(intent)
     asks_recap = bool(_RECAP_RE.search((user_message or "").lower()))
     avoid_metrics = [] if asks_recap else list(state.metrics_already_shared)
 
     if turn_type == "opening":
         return ResponseDirective(
             turn_type=turn_type,
+            intent=intent,
             target_length="short recap allowed; keep tight and scannable",
             tone_hint="coach-like, direct, grounded",
             focus="answer the initial ask with tool-grounded context",
             avoid_repeating_metrics=[],
             allow_full_recap=True,
+            narration_mode=addon["narration_mode"],
+            tool_strategy=addon["tool_strategy"],
+            natural_style_notes=addon["natural_style_notes"],
         )
 
     if turn_type == "acknowledgment":
         return ResponseDirective(
             turn_type=turn_type,
+            intent=intent,
             target_length=(
                 "MANDATORY: exactly one short sentence (one period or question mark max). "
                 "No second sentence. No paragraph."
@@ -186,85 +197,77 @@ def plan_response(
             ),
             avoid_repeating_metrics=list(state.metrics_already_shared),
             allow_full_recap=False,
+            narration_mode=addon["narration_mode"],
+            tool_strategy=addon["tool_strategy"],
+            natural_style_notes=addon["natural_style_notes"],
         )
 
     if turn_type == "clarification":
         return ResponseDirective(
             turn_type=turn_type,
+            intent=intent,
             target_length="2-3 sentences",
             tone_hint="clear and simple",
             focus="rephrase the last point plainly without full recap",
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
+            narration_mode=addon["narration_mode"],
+            tool_strategy=addon["tool_strategy"],
+            natural_style_notes=addon["natural_style_notes"],
         )
 
     if turn_type == "drill_down":
         return ResponseDirective(
             turn_type=turn_type,
+            intent=intent,
             target_length=(
-                "HARD OUTPUT BOUNDARY: **at most 2 sentences** — these are strict limits, not guidelines. "
-                "**Sentence 1:** direct answer to the **why** only — when a tool-backed number clarifies the answer, "
-                "weave **one** relevant value into this sentence in plain coach language (not a stat table). "
-                "**Sentence 2 (optional):** one short human interpretation only. "
-                "**STOP** generating immediately after the final allowed sentence — no sentence 3, no tail, no PS."
+                "2-4 sentences. Start with a direct answer, then one compact explanation with 1-2 tool-grounded "
+                "values only if they materially help. Keep language plain and human."
             ),
-            tone_hint=(
-                "Tight and focused — answer only what they asked. Confident coach voice, not a lecture."
-            ),
+            tone_hint="Tight and focused, but conversational and warm.",
             focus=(
-                "**No** additional ideas beyond those 1-2 sentences. "
-                "After the last allowed sentence, **end the reply** — do not append explanation, summary, coaching, "
-                "or “one more thing”. "
-                "**One idea per sentence.** Keep each sentence short and standalone. "
-                "**No** long sentences with multiple clauses or comma chains. "
-                "**Single numeric anchor only** when it helps: pick the **one** most relevant value for the question "
-                "(e.g. drift %, pace, HR) — **do not** list multiple metrics or do a formal dump. "
-                "Values must be **tool-grounded** (never invented). "
-                "**No** generic coaching advice or encouragement unless the user explicitly asked for it. "
-                "HARD BAN: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
-                "“indicating”, “which means”, and explanation-style bridges. "
-                "Do not start any sentence with the word **This**."
+                "Answer the why directly, avoid metric dumping, and use only tool-grounded numbers. "
+                "Include one practical coaching interpretation when useful."
             ),
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
+            narration_mode=addon["narration_mode"],
+            tool_strategy=addon["tool_strategy"],
+            natural_style_notes=addon["natural_style_notes"],
         )
 
     if turn_type == "follow_up":
         return ResponseDirective(
             turn_type=turn_type,
+            intent=intent,
             target_length=(
-                "HARD OUTPUT BOUNDARY: **at most 2 sentences** — strict limits, not guidelines. "
-                "**Sentence 1:** direct answer only — when the ask is metric-related, include **one** key "
-                "tool-backed number here in natural speech (e.g. “3.7% drift — moderate.” or “Drift was 3.7% — moderate.”). "
-                "**Sentence 2 (optional):** one brief human interpretation only. "
-                "**STOP** immediately after the final allowed sentence — never continue after sentence 2."
+                "2-4 sentences max. Lead with direct answer, then add one concise interpretation. "
+                "Use at most 1-2 key tool-backed values when relevant."
             ),
-            tone_hint=(
-                "Coach texting: direct and confident — conversational, but anchored by **one** concrete value when relevant."
-            ),
+            tone_hint="Coach texting: direct, natural, and grounded.",
             focus=(
-                "**No** content beyond those 1-2 sentences — no trailing wrap-up, no extra takeaway. "
-                "The response **must end** right after the final period of the last allowed sentence. "
-                "**One idea per sentence.** Short standalone lines — **no** comma chains or stacked clauses in one sentence. "
-                "**No** coaching advice, tips, or encouragement unless the user explicitly asked for that. "
-                "**Do not** re-list or recap a block of metrics from earlier turns — only the **single** most relevant "
-                "value for **this** question, woven into sentence 1 when it matters. "
-                "HARD BAN: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
-                "“indicating”, “which means”, and other explanation-style transitions. "
-                "Do not start any sentence with the word **This**."
+                "Answer the follow-up directly and avoid repeating prior full metric blocks. "
+                "Use the smallest set of numbers needed, grounded in tool outputs, then stop."
             ),
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
+            narration_mode=addon["narration_mode"],
+            tool_strategy=addon["tool_strategy"],
+            natural_style_notes=addon["natural_style_notes"],
         )
 
     # new_topic fallback
     return ResponseDirective(
         turn_type="new_topic",
+        intent=intent,
         target_length="2-4 sentences by default; expand only if asked",
         tone_hint="coach-like and conversational",
         focus="address the new topic directly",
         avoid_repeating_metrics=[] if asks_recap else avoid_metrics,
         allow_full_recap=asks_recap,
+        narration_mode=addon["narration_mode"],
+        tool_strategy=addon["tool_strategy"],
+        natural_style_notes=addon["natural_style_notes"],
     )
 
 
@@ -282,13 +285,26 @@ def response_directive_section(directive: ResponseDirective) -> str:
     base = (
         "## Response directive (current turn)\n"
         f"- Turn type: **{directive.turn_type}**\n"
+        f"- Intent: **{directive.intent}**\n"
         f"- Target length: {directive.target_length}\n"
         f"- Tone: {directive.tone_hint}\n"
         f"- Focus: {directive.focus}\n"
+        f"- Narration mode: {directive.narration_mode}\n"
+        f"- Tool strategy: {directive.tool_strategy}\n"
         f"- Avoid repeating metrics already shared unless asked: {avoid_line}\n"
         f"- Full recap requested by user: {recap_line}\n"
         "- Prior assistant messages are shared context. Do not re-explain unchanged points."
     )
+    if directive.natural_style_notes:
+        natural_lines = "\n".join(
+            [f"- {line}" for line in directive.natural_style_notes]
+        )
+        base += (
+            "\n\n### Human coach style addon\n"
+            "- Keep the reply sounding like one coach talking to one athlete, not a report.\n"
+            "- Stay tool-grounded for numbers, but narrate naturally.\n"
+            f"{natural_lines}"
+        )
 
     if directive.turn_type == "acknowledgment":
         ack_hard = (
@@ -303,71 +319,132 @@ def response_directive_section(directive: ResponseDirective) -> str:
         )
         return base + ack_hard
 
-    if directive.turn_type == "follow_up":
-        follow_hard = (
-            "\n\n### Follow-up — HARD CONSTRAINTS (must obey)\n"
-            "### Termination (hard STOP)\n"
-            "- Sentence limits are **strict output boundaries**, not soft targets.\n"
-            "- After you finish **sentence 1** (or **sentence 2** if you use it), **STOP** — end the assistant message there.\n"
-            "- **Do not** add anything after the final allowed sentence: no extra explanation, summary, caveat, "
-            "follow-up offer, encouragement, or coaching — **under any condition**.\n"
-            "- **Do not** write a sentence 3. **Do not** continue the response after sentence 2.\n"
-            "- The reply **must end immediately** after the final period (or question mark) of the last allowed sentence.\n"
-            "### Structure\n"
-            "- **Maximum 2 sentences** total. **Sentence 1:** direct answer **only** — open with value/judgment. "
-            "**Sentence 2 (optional):** one brief human interpretation only.\n"
-            "### Numeric anchor (when relevant)\n"
-            "- If the follow-up is about a metric (drift, pace, HR, etc.), **sentence 1** should include **exactly one** "
-            "key tool-backed value, woven in naturally — not a list or formal recap.\n"
-            "- Prefer compact coach lines like “3.7% drift — moderate.” or “Drift was 3.7% — moderate.” "
-            "(paraphrase formats; **do not** echo these examples verbatim unless the numbers match tools).\n"
-            "- **Only** the **most relevant** number for **this** question; **no** extra metrics in the same reply.\n"
-            "- **No** further ideas beyond these two sentences.\n"
-            "- **No third sentence.** **No** bullet lists or paragraphs.\n"
-            "- **One idea per sentence.** Keep each sentence short and standalone.\n"
-            "- **No** long sentences with multiple clauses or comma chains — split or shorten instead.\n"
-            "- **No** coaching advice, training tips, or generic encouragement unless the user **explicitly** asked for it.\n"
-            "- **Do not** use: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
-            "“indicating”, “which means”, or close variants.\n"
-            "- **No** explanation-style transitions (“as a result”, “therefore”, “this means that”, “in other words”) — prefer **none**.\n"
-            "- **Do not** start any sentence with the word **This**.\n"
-            "- Desired flavor (paraphrase; **do not** quote or enumerate these in the reply): "
-            "e.g. “3.7% drift — moderate.” then optional second sentence for plain interpretation."
-        )
-        return base + follow_hard
-
-    if directive.turn_type == "drill_down":
-        drill_hard = (
-            "\n\n### Drill-down — HARD CONSTRAINTS (must obey)\n"
-            "### Termination (hard STOP)\n"
-            "- Sentence limits are **strict output boundaries**, not guidelines.\n"
-            "- After **sentence 1** (or **sentence 2** if you use it), **STOP** — produce **nothing** further in this reply.\n"
-            "- **Do not** continue after sentence 2 under **any** circumstance — no trailing explanation, recap, "
-            "hedge, or coaching.\n"
-            "- **No sentence 3.** The message **must terminate** right after the last allowed sentence ends.\n"
-            "### Structure\n"
-            "- **Maximum 2 sentences** total — **no third sentence ever**. "
-            "**Sentence 1:** direct answer to the **why** **only**. **Sentence 2 (optional):** one short interpretation only.\n"
-            "### Numeric anchor (when it helps)\n"
-            "- When a **single** tool-backed number makes the “why” clearer, integrate **that one value** into "
-            "**sentence 1** in natural coach language — **not** a metric dump or bullet list.\n"
-            "- Pick **only** the value that best answers the question (e.g. drift %, threshold edge, pace, HR). "
-            "**Do not** stack several numbers in one reply.\n"
-            "- Stay conversational — no statistical/report tone.\n"
-            "- **No** additional ideas beyond these two sentences.\n"
-            "- **One idea per sentence.** Short standalone lines only.\n"
-            "- **No** long sentences with multiple clauses or comma chains.\n"
-            "- **No** generic coaching advice or encouragement unless the user **explicitly** asked for it.\n"
-            "- **Do not** use: “this indicates”, “this suggests”, “which indicates”, “which suggests”, "
-            "“indicating”, “which means”, or close variants.\n"
-            "- **No** explanation-style transitions — no analyst chains (“which implies…”, “suggesting that…”).\n"
-            "- **Do not** start any sentence with the word **This**.\n"
-            "- Desired flavor (paraphrase; **do not** quote or enumerate these in the reply): "
-            "e.g. “That’s yellow — you’re in the moderate drift band (~3.7%).” plus optional second short line."
-        )
-        return base + drill_hard
-
     return base
+
+
+def infer_intent(user_message: str) -> str:
+    """Infer lightweight intent for addon-style response shaping."""
+    t = (user_message or "").lower().strip()
+    if not t:
+        return "general_chat"
+
+    if any(
+        k in t
+        for k in (
+            "predict",
+            "projection",
+            "project",
+            "marathon time",
+            "finish time",
+            "goal time",
+        )
+    ):
+        return "race_projection"
+    if any(
+        k in t
+        for k in (
+            "last 30 days",
+            "this month",
+            "total miles",
+            "how many runs",
+            "mileage by week",
+            "weekly mileage",
+        )
+    ):
+        return "volume_query"
+    if any(k in t for k in ("trend", "progress", "readiness", "on track", "improving")):
+        return "training_trend"
+    if any(
+        k in t
+        for k in (
+            "how was my run",
+            "analyze my run",
+            "this run",
+            "that run",
+            "last run",
+        )
+    ):
+        return "run_analysis"
+    if any(k in t for k in ("hr drift", "z2", "zone", "pace", "heart rate")):
+        return "metric_explainer"
+    if any(k in t for k in ("preference", "from now on", "verbosity", "tone")):
+        return "preference_update"
+    return "general_chat"
+
+
+def _intent_addon(intent: str) -> Dict[str, Any]:
+    """Second-layer addon: intent-specific narration + retrieval strategy."""
+    defaults: Dict[str, Any] = {
+        "narration_mode": "compact_coach",
+        "tool_strategy": "Use the minimum required tools, then answer directly from results.",
+        "natural_style_notes": [
+            "Open with a direct answer, then one short interpretation.",
+            "Avoid robotic templates and avoid stat dumps unless user asks.",
+            "If confidence is limited by missing tool data, say so plainly in one line.",
+        ],
+    }
+    profiles: Dict[str, Dict[str, Any]] = {
+        "race_projection": {
+            "narration_mode": "scenario_coach",
+            "tool_strategy": (
+                "Prefer trend + historical race context tools before projecting. "
+                "If projection assumptions are needed, state them explicitly and label output as estimate."
+            ),
+            "natural_style_notes": [
+                "Sound like a planning coach: confident but honest about uncertainty.",
+                "Use scenario framing when useful (today / conservative / on-track), with tool-grounded values only.",
+                "Close with one practical next-step sentence tied to the projection window.",
+            ],
+        },
+        "volume_query": {
+            "narration_mode": "numbers_then_context",
+            "tool_strategy": (
+                "Use aggregate_runs_in_range for totals and weekly_summaries; keep the window explicit and consistent."
+            ),
+            "natural_style_notes": [
+                "Lead with the exact number the user asked for, then a short plain-language context line.",
+                "If listing weekly rows, keep labels simple and scannable.",
+            ],
+        },
+        "training_trend": {
+            "narration_mode": "coach_story",
+            "tool_strategy": (
+                "Use weekly insight / training KPI tools first; summarize trend direction before giving advice."
+            ),
+            "natural_style_notes": [
+                "Highlight one main trend, not five competing themes.",
+                "Give one concrete coaching implication from the trend.",
+            ],
+        },
+        "run_analysis": {
+            "narration_mode": "run_recap",
+            "tool_strategy": (
+                "Resolve run identity first, then use run summary payload for facts and interpretation."
+            ),
+            "natural_style_notes": [
+                "Blend facts into natural language; avoid report-like headings unless clarity needs them.",
+                "Keep the recap personal and specific to this run.",
+            ],
+        },
+        "metric_explainer": {
+            "narration_mode": "plain_explainer",
+            "tool_strategy": "Use the smallest tool payload that contains the requested metric definitions.",
+            "natural_style_notes": [
+                "Define the metric in plain words first, then provide value/range.",
+                "Skip unrelated stats; stay focused on the asked metric.",
+            ],
+        },
+        "preference_update": {
+            "narration_mode": "confirm_and_apply",
+            "tool_strategy": "Confirm intent briefly and apply preference tool update.",
+            "natural_style_notes": [
+                "One-line confirmation is enough unless user asked for details.",
+            ],
+        },
+    }
+    out = dict(defaults)
+    out.update(profiles.get(intent, {}))
+    return out
 
 
 def _extract_metrics(text: str) -> Set[str]:

@@ -340,6 +340,45 @@ SEED_TOOLS = [
         "is_enabled": True,
         "sort_order": 30,
     },
+    {
+        "name": "get_marathon_projection",
+        "display_name": "Get Marathon Projection",
+        "category": "training_progress",
+        "description": (
+            "Deterministic marathon finish-time projection from recent run signals. "
+            "Returns scenario-based race pace and finish-time estimates (conservative/on_track/stretch) "
+            "with explicit assumptions and data quality context. Use this for asks like "
+            "'predict my next marathon time' or 'marathon projection'."
+        ),
+        "when_to_call": (
+            "User asks to predict/project marathon finish time or marathon race pace. "
+            "Optionally include target_race_date and goal_time_hhmmss for timeline and goal comparison."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "target_race_date": {
+                    "type": "string",
+                    "description": "Optional race date (YYYY-MM-DD).",
+                },
+                "goal_time_hhmmss": {
+                    "type": "string",
+                    "description": "Optional goal marathon time in HH:MM:SS.",
+                },
+                "lookback_days": {
+                    "type": "integer",
+                    "description": "Optional lookback window in days (default 84).",
+                },
+            },
+        },
+        "returns_description": (
+            "Scenario list with race_pace_display and projected_finish_time_display, plus data_quality, "
+            "assumptions, optional race_target timing, and optional goal comparison."
+        ),
+        "data_source": "activities + v_easy_runs-derived anchor",
+        "is_enabled": True,
+        "sort_order": 32,
+    },
 ]
 
 
