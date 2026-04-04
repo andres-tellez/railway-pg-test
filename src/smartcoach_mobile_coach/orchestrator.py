@@ -582,6 +582,20 @@ def _device_anchor_system_section(
     )
 
 
+def _intent_priority_override_section(intent: str) -> str:
+    """Intent-aware hard overrides that can supersede base prompt defaults."""
+    if intent != "race_projection":
+        return ""
+    return (
+        "## Intent priority override: race_projection\n"
+        "- Primary objective: answer the marathon prediction request directly and keep projection as the centerpiece.\n"
+        "- Tool priority: call `get_marathon_projection` first for prediction asks.\n"
+        "- Do not call `get_weekly_training_insight` or long KPI trend tools unless the user explicitly asks for detailed trend analysis.\n"
+        "- If the user asks a compound question (prediction + trends), provide projection first and limit trend context to one short sentence.\n"
+        "- Avoid report-style sections like 'Running Trends' / 'Insight' for this intent unless explicitly requested.\n"
+    )
+
+
 def run_mobile_agent_turn(
     session: Session,
     internal_user_id: str,
@@ -638,6 +652,8 @@ def run_mobile_agent_turn(
         + _device_anchor_system_section(anchor_local_date, client_timezone)
         + "\n\n"
         + response_directive_section(response_directive)
+        + "\n\n"
+        + _intent_priority_override_section(response_directive.intent)
     )
     messages: List[Dict[str, Any]] = [{"role": "system", "content": system_content}]
     for m in conversation_history[-12:]:
