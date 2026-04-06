@@ -23,7 +23,7 @@ training_insights_bp = Blueprint(
 def weekly_insight():
     """
     Return the most recent weekly training insight for the authenticated user.
-    Precomputed by the Monday cron job — no heavy computation on request.
+    Precomputed by the Sunday metrics scheduler (weekly insights step) — no heavy computation on request.
     """
     session = get_session()
     try:

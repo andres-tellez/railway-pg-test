@@ -7,6 +7,7 @@ Tasks:
 1. Metrics refresh - refreshes materialized views and invalidates caches
 2. Weekly plan rebuild - rebuilds upcoming week's workouts for all active plans
 3. Email notifications - sends weekly update emails to users with changes
+4. Weekly training insights - precomputes Easy tab scoreboard rows (weekly_training_insights)
 
 Schedule is configured via SCHEDULE_* constants at the top of this file.
 """
@@ -500,8 +501,68 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
         return 1
 
 
+def run_weekly_training_insights() -> int:
+    """
+    Generate weekly_training_insights for the last completed Mon–Sun week (mobile Easy tab).
+    Same window as scripts/generate_weekly_insights.py when run without --week.
+    """
+    logger.info(
+        "🔄 Step 3/3: Starting weekly training insights (Easy tab precompute)..."
+    )
+
+    try:
+        from src.db.db_session import get_session
+        from src.smartcoach_mobile_coach.weekly_insights_service import (
+            generate_weekly_insight,
+            get_users_with_easy_runs,
+            last_completed_week_bounds,
+        )
+
+        session = get_session()
+        try:
+            week_start, week_end = last_completed_week_bounds()
+            logger.info(f"   Insights week (Mon–Sun): {week_start} → {week_end}")
+            users = get_users_with_easy_runs(session, week_start, week_end)
+            logger.info(f"   Users with easy runs in window: {len(users)}")
+
+            ref_date = week_start + timedelta(days=7)
+            generated = 0
+            skipped = 0
+            errors = 0
+
+            for uid in users:
+                try:
+                    result = generate_weekly_insight(session, uid, ref_date=ref_date)
+                    if result.get("generated"):
+                        generated += 1
+                    else:
+                        skipped += 1
+                        logger.debug(
+                            "Weekly insight skipped for user %s: %s",
+                            uid[:8],
+                            result.get("reason", "?"),
+                        )
+                except Exception as e:
+                    errors += 1
+                    logger.error(
+                        f"   ❌ Weekly insight failed for user {uid[:8]}…: {e}",
+                        exc_info=True,
+                    )
+
+            logger.info(
+                f"📊 Weekly insights done: {generated} generated, {skipped} skipped, {errors} error(s)"
+            )
+            return 0 if errors == 0 else 1
+        finally:
+            session.close()
+
+    except Exception as e:
+        logger.error(f"❌ Weekly training insights batch failed: {e}", exc_info=True)
+        return 1
+
+
 def run_all_scheduled_tasks():
-    """Run metrics refresh, weekly rebuild, and send email notifications."""
+    """Run metrics refresh, weekly rebuild, emails, and weekly training insights."""
     logger.info(f"🚀 Starting weekly scheduled tasks ({SCHEDULE_DISPLAY})...")
 
     # Step 1: Metrics refresh
@@ -510,14 +571,17 @@ def run_all_scheduled_tasks():
     # Step 2: Weekly rebuild (run even if metrics refresh had issues)
     rebuild_result = run_weekly_rebuild(metrics_success, metrics_message)
 
-    # Return success only if both completed successfully
-    if metrics_success and rebuild_result == 0:
+    # Step 3: Weekly training insights for mobile Easy tab (last completed Mon–Sun week)
+    insights_result = run_weekly_training_insights()
+
+    if metrics_success and rebuild_result == 0 and insights_result == 0:
         logger.info("✅ All weekly scheduled tasks completed successfully")
         return 0
     else:
         logger.warning(
             "⚠️  Weekly scheduled tasks completed with some errors "
-            f"(metrics: {'success' if metrics_success else 'failed'}, rebuild: {rebuild_result})"
+            f"(metrics: {'success' if metrics_success else 'failed'}, "
+            f"rebuild: {rebuild_result}, insights: {insights_result})"
         )
         return 1
 
@@ -574,7 +638,8 @@ def main():
     else:
         logger.info(f"📍 Current time (UTC): {utc_now.strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info(
-        "💡 Tasks include: (1) Metrics refresh, (2) Weekly plan rebuild, (3) Email notifications"
+        "💡 Tasks include: (1) Metrics refresh, (2) Weekly plan rebuild + emails, "
+        "(3) Weekly training insights (Easy tab)"
     )
 
     if not os.getenv("DATABASE_URL"):

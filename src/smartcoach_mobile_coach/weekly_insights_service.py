@@ -207,6 +207,26 @@ def _week_bounds(ref_date: date) -> Tuple[date, date]:
     return monday, sunday
 
 
+def last_completed_week_bounds(today: Optional[date] = None) -> Tuple[date, date]:
+    """
+    Monday–Sunday training week to report for Sunday-evening cron / batch jobs.
+
+    On Sunday, that is the Mon–Sun window ending today. On Monday–Saturday,
+    the most recently finished Mon–Sun week (ended last Sunday).
+    """
+    if today is None:
+        today = date.today()
+    dow = today.weekday()
+    if dow == 6:  # Sunday — week closes today
+        week_end = today
+        week_start = today - timedelta(days=6)
+        return week_start, week_end
+    this_monday = today - timedelta(days=dow)
+    week_end = this_monday - timedelta(days=1)
+    week_start = week_end - timedelta(days=6)
+    return week_start, week_end
+
+
 def _fetch_week_kpis(
     session: Session, user_id: str, week_start: date, week_end: date
 ) -> Dict[str, Any]:
