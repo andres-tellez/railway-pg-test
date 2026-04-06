@@ -29,27 +29,8 @@ from sqlalchemy.orm import sessionmaker
 from src.smartcoach_mobile_coach.weekly_insights_service import (
     generate_weekly_insight,
     get_users_with_easy_runs,
+    last_completed_week_bounds,
 )
-
-
-def _last_completed_week() -> tuple[date, date]:
-    """
-    Monday–Sunday of the week to report.
-
-    On Sunday, that is the Mon–Sun window ending today (for a same-day cron).
-    On Monday–Saturday, it is the most recently finished Mon–Sun week (ended
-    last Sunday).
-    """
-    today = date.today()
-    dow = today.weekday()
-    if dow == 6:  # Sunday — week closes today
-        week_end = today
-        week_start = today - timedelta(days=6)
-        return week_start, week_end
-    this_monday = today - timedelta(days=dow)
-    week_end = this_monday - timedelta(days=1)
-    week_start = week_end - timedelta(days=6)
-    return week_start, week_end
 
 
 def main():
@@ -70,7 +51,7 @@ def main():
         week_start = datetime.strptime(args.week, "%Y-%m-%d").date()
         week_end = week_start + timedelta(days=6)
     else:
-        week_start, week_end = _last_completed_week()
+        week_start, week_end = last_completed_week_bounds()
 
     label = "PROD" if args.prod else "DEV"
     print(f"\n[{label}] Generating insights for week {week_start} to {week_end}")
