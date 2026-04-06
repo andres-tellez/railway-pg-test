@@ -332,6 +332,11 @@ class HeartRateZoneOrchestrationService:
                 confidence=hrmax_result.confidence,
                 activity_count=hrmax_result.activity_count,
             )
+            if (
+                profile.get("max_hr_active") is None
+                and profile.get("max_hr_manual") is None
+            ):
+                profile_data["max_hr_active"] = "auto"
 
             # Save updated profile
             save_user_profile(session, profile_data)
@@ -406,10 +411,13 @@ class HeartRateZoneOrchestrationService:
                     "error_message": "User profile not found",
                 }
 
-            # Clear stored HRmax to force recalculation
+            # Clear activity-based estimate so the next run re-estimates max_hr_auto
             profile_data = profile.copy()
-            profile_data["max_hr"] = None
-            profile_data["max_hr_source"] = None
+            profile_data["max_hr_auto"] = None
+            profile_data["hrmax_calculated_at"] = None
+            profile_data["hrmax_confidence"] = None
+            profile_data["hrmax_activity_count"] = None
+            profile_data["last_hrmax_activity_id"] = None
             save_user_profile(session, profile_data)
 
             # Now calculate zones (will estimate fresh)
@@ -454,7 +462,7 @@ class HeartRateZoneOrchestrationService:
             }
 
         resting_hr = profile.get("resting_hr")
-        max_hr = profile.get("max_hr")
+        max_hr = HRMaxResolutionService.get_effective_max_hr(profile)
 
         if not resting_hr or not max_hr:
             # Need to calculate
@@ -504,7 +512,7 @@ class HeartRateZoneOrchestrationService:
         - next_action: Single action user should take next
         - issues: List of blockers
         - readiness: Detailed structural diagnostics
-        - hrmax_source: Source of HRmax (USER/AUTO/STRAVA)
+        - hrmax_source: Legacy-shaped hint (USER when active=manual, AUTO when active=auto)
         - resting_hr_source: Source of resting HR (USER/ESTIMATED)
         - activities_needed: Count of activities needed for estimation
 
@@ -600,11 +608,17 @@ class HeartRateZoneOrchestrationService:
 
         # Step 4: Check HRmax
         effective_max_hr = HRMaxResolutionService.get_effective_max_hr(profile)
-        max_hr_source = profile.get("max_hr_source")
+        active = profile.get("max_hr_active")
+        legacy_src = (
+            "USER" if active == "manual" else "AUTO" if active == "auto" else None
+        )
 
         if effective_max_hr:
             status["readiness"]["has_hrmax"] = True
-            status["hrmax_source"] = max_hr_source
+            status["hrmax_source"] = legacy_src
+            status["max_hr_active"] = active
+            status["max_hr_manual"] = profile.get("max_hr_manual")
+            status["max_hr_auto"] = profile.get("max_hr_auto")
         else:
             # Check if we can estimate HRmax
             activity_count_result = session.execute(
@@ -655,11 +669,26 @@ class HeartRateZoneOrchestrationService:
             status["method"] = "KARVONEN"
             status["next_action"] = "view_zones"
 
-            # Determine accuracy tier
-            hrmax_confidence = profile.get("hrmax_confidence", "UNKNOWN")
-            if resting_hr_source == "USER" and hrmax_confidence == "HIGH":
-                status["accuracy_tier"] = "HIGH"
-            elif resting_hr_source == "USER" or hrmax_confidence in ["MEDIUM", "HIGH"]:
+            auto_val = profile.get("max_hr_auto")
+            zones_use_auto = (
+                active == "auto"
+                and auto_val is not None
+                and effective_max_hr is not None
+                and int(auto_val) == int(effective_max_hr)
+            )
+
+            if zones_use_auto:
+                hrmax_confidence = profile.get("hrmax_confidence", "UNKNOWN")
+                if resting_hr_source == "USER" and hrmax_confidence == "HIGH":
+                    status["accuracy_tier"] = "HIGH"
+                elif resting_hr_source == "USER" or hrmax_confidence in [
+                    "MEDIUM",
+                    "HIGH",
+                ]:
+                    status["accuracy_tier"] = "MEDIUM"
+                else:
+                    status["accuracy_tier"] = "LOW"
+            elif resting_hr_source == "USER":
                 status["accuracy_tier"] = "MEDIUM"
             else:
                 status["accuracy_tier"] = "LOW"
@@ -782,7 +811,11 @@ class HeartRateZoneOrchestrationService:
         if resting_hr and max_hr:
             try:
                 zones_result = KarvonenZoneService.calculate_zones(max_hr, resting_hr)
-                if zones_result.success and zones_result.zones and zone_key in zones_result.zones:
+                if (
+                    zones_result.success
+                    and zones_result.zones
+                    and zone_key in zones_result.zones
+                ):
                     hr_min, hr_max = zones_result.zones[zone_key]
                     return f"{zone_key} ({int(hr_min)}–{int(hr_max)} bpm)"
             except Exception as e:

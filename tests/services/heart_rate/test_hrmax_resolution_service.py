@@ -10,147 +10,100 @@ from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionServ
 class TestHRMaxResolution:
     """Test HRmax resolution logic."""
 
-    def test_user_override_always_wins(self):
-        """Test that USER override always takes precedence."""
+    def test_active_manual_valid(self):
         profile = {
-            "max_hr": 185,
-            "max_hr_source": "USER",
+            "max_hr_manual": 185,
+            "max_hr_auto": 180,
+            "max_hr_active": "manual",
         }
+        assert HRMaxResolutionService.get_effective_max_hr(profile) == 185
 
-        effective = HRMaxResolutionService.get_effective_max_hr(profile)
-
-        assert effective == 185
-
-    def test_user_override_invalid_returns_none(self):
-        """Test that invalid user override returns None."""
+    def test_active_auto(self):
         profile = {
-            "max_hr": 250,  # Invalid
-            "max_hr_source": "USER",
+            "max_hr_manual": 185,
+            "max_hr_auto": 180,
+            "max_hr_active": "auto",
         }
+        assert HRMaxResolutionService.get_effective_max_hr(profile) == 180
 
-        effective = HRMaxResolutionService.get_effective_max_hr(profile)
-
-        assert effective is None
-
-    def test_auto_source_returns_max_hr(self):
-        """Test that AUTO source returns max_hr."""
+    def test_active_manual_invalid_falls_back_to_auto(self):
         profile = {
-            "max_hr": 180,
-            "max_hr_source": "AUTO",
+            "max_hr_manual": 250,
+            "max_hr_auto": 178,
+            "max_hr_active": "manual",
         }
+        assert HRMaxResolutionService.get_effective_max_hr(profile) == 178
 
-        effective = HRMaxResolutionService.get_effective_max_hr(profile)
+    def test_unset_active_prefers_manual_then_auto(self):
+        assert (
+            HRMaxResolutionService.get_effective_max_hr(
+                {"max_hr_manual": 182, "max_hr_auto": 175}
+            )
+            == 182
+        )
+        assert (
+            HRMaxResolutionService.get_effective_max_hr(
+                {"max_hr_manual": None, "max_hr_auto": 176}
+            )
+            == 176
+        )
 
-        assert effective == 180
+    def test_should_allow_auto_recalculation_always_true(self):
+        assert HRMaxResolutionService.should_allow_auto_recalculation({}) is True
+        assert (
+            HRMaxResolutionService.should_allow_auto_recalculation(
+                {"max_hr_manual": 180}
+            )
+            is True
+        )
 
-    def test_strava_source_returns_max_hr(self):
-        """Test that STRAVA source returns max_hr."""
-        profile = {
-            "max_hr": 175,
-            "max_hr_source": "STRAVA",
-        }
-
-        effective = HRMaxResolutionService.get_effective_max_hr(profile)
-
-        assert effective == 175
-
-    def test_no_source_returns_none(self):
-        """Test that no source returns None (must estimate)."""
-        profile = {
-            "max_hr": 180,
-            "max_hr_source": None,
-        }
-
-        effective = HRMaxResolutionService.get_effective_max_hr(profile)
-
-        assert effective is None
-
-    def test_should_allow_auto_recalculation_user_override(self):
-        """Test that USER override prevents auto-recalculation."""
-        profile = {
-            "max_hr_source": "USER",
-        }
-
-        should_recalc = HRMaxResolutionService.should_allow_auto_recalculation(profile)
-
-        assert should_recalc is False
-
-    def test_should_allow_auto_recalculation_auto_source(self):
-        """Test that AUTO source allows auto-recalculation."""
-        profile = {
-            "max_hr_source": "AUTO",
-        }
-
-        should_recalc = HRMaxResolutionService.should_allow_auto_recalculation(profile)
-
-        assert should_recalc is True
-
-    def test_should_recalculate_no_stored_hrmax(self):
-        """Test that missing HRmax triggers recalculation."""
-        profile = {
-            "max_hr": None,
-            "max_hr_source": "AUTO",
-        }
-
-        should_recalc = HRMaxResolutionService.should_recalculate_hrmax(profile)
-
-        assert should_recalc is True
+    def test_should_recalculate_no_stored_auto(self):
+        profile = {"max_hr_auto": None, "max_hr_manual": 180}
+        assert HRMaxResolutionService.should_recalculate_hrmax(profile) is True
 
     def test_should_recalculate_time_threshold(self):
-        """Test that >30 days since calculation triggers recalculation."""
         profile = {
-            "max_hr": 180,
-            "max_hr_source": "AUTO",
+            "max_hr_auto": 180,
             "hrmax_calculated_at": datetime.now() - timedelta(days=31),
         }
-
-        should_recalc = HRMaxResolutionService.should_recalculate_hrmax(profile)
-
-        assert should_recalc is True
+        assert HRMaxResolutionService.should_recalculate_hrmax(profile) is True
 
     def test_should_recalculate_new_peak(self):
-        """Test that new peak triggers recalculation."""
         profile = {
-            "max_hr": 180,
-            "max_hr_source": "AUTO",
+            "max_hr_auto": 180,
             "hrmax_calculated_at": datetime.now() - timedelta(days=1),
         }
-
-        should_recalc = HRMaxResolutionService.should_recalculate_hrmax(
-            profile, new_activity_max_hr=185  # +5 bpm > threshold of 2
+        assert (
+            HRMaxResolutionService.should_recalculate_hrmax(
+                profile, new_activity_max_hr=185
+            )
+            is True
         )
 
-        assert should_recalc is True
-
-    def test_should_not_recalculate_user_override(self):
-        """Test that USER override prevents recalculation."""
+    def test_should_not_recalculate_recent_auto_small_peak(self):
         profile = {
-            "max_hr": 180,
-            "max_hr_source": "USER",
+            "max_hr_auto": 180,
+            "max_hr_manual": 175,
+            "hrmax_calculated_at": datetime.now() - timedelta(days=1),
         }
-
-        should_recalc = HRMaxResolutionService.should_recalculate_hrmax(
-            profile, new_activity_max_hr=190
+        assert (
+            HRMaxResolutionService.should_recalculate_hrmax(
+                profile, new_activity_max_hr=181
+            )
+            is False
         )
-
-        assert should_recalc is False
 
     def test_update_max_hr_data_user_source(self):
-        """Test updating profile with USER source."""
         profile_data = {}
-
         updated = HRMaxResolutionService.update_max_hr_data(
             profile_data, new_max_hr=185, source="USER"
         )
-
-        assert updated["max_hr"] == 185
-        assert updated["max_hr_source"] == "USER"
+        assert updated["max_hr_manual"] == 185
         assert updated.get("hrmax_calculated_at") is None
+        assert updated.get("max_hr_auto") is None
 
     def test_update_max_hr_data_auto_source(self):
-        """Test updating profile with AUTO source."""
         profile_data = {}
-
         updated = HRMaxResolutionService.update_max_hr_data(
             profile_data,
             new_max_hr=180,
@@ -158,18 +111,14 @@ class TestHRMaxResolution:
             confidence="HIGH",
             activity_count=25,
         )
-
-        assert updated["max_hr"] == 180
-        assert updated["max_hr_source"] == "AUTO"
+        assert updated["max_hr_auto"] == 180
         assert updated["hrmax_confidence"] == "HIGH"
         assert updated["hrmax_activity_count"] == 25
         assert updated.get("hrmax_calculated_at") is not None
 
     def test_update_max_hr_data_invalid_user_override_raises(self):
-        """Test that invalid user override raises ValueError."""
         profile_data = {}
-
-        with pytest.raises(ValueError, match="Invalid user override"):
+        with pytest.raises(ValueError, match="Invalid manual HRmax"):
             HRMaxResolutionService.update_max_hr_data(
                 profile_data, new_max_hr=250, source="USER"
             )

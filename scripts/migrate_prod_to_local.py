@@ -255,15 +255,34 @@ class DataMigrator:
                 {"user_id": local_user_id},
             ).fetchone()
 
+            def _hr_migration_fields(row):
+                mm = getattr(row, "max_hr_manual", None)
+                ma = getattr(row, "max_hr_auto", None)
+                act = getattr(row, "max_hr_active", None)
+                if mm is not None or ma is not None:
+                    return mm, ma, act
+                legacy = getattr(row, "max_hr", None)
+                src = getattr(row, "max_hr_source", None)
+                if legacy is None:
+                    return None, None, None
+                if src == "AUTO":
+                    return None, legacy, act or "auto"
+                return legacy, None, act or "manual"
+
+            max_hr_manual, max_hr_auto, max_hr_active = _hr_migration_fields(
+                prod_profile
+            )
+
             if local_profile:
-                # Update existing (removed motivation and training_days columns, added max_hr)
                 self.local_session.execute(
                     text(
                         """
                         UPDATE user_profile
                         SET age_group = :age_group, height_feet = :height_feet,
                             height_inches = :height_inches, weight = :weight,
-                            max_hr = :max_hr
+                            max_hr_manual = :max_hr_manual,
+                            max_hr_auto = :max_hr_auto,
+                            max_hr_active = :max_hr_active
                         WHERE user_id = :user_id
                     """
                     ),
@@ -273,18 +292,23 @@ class DataMigrator:
                         "height_feet": prod_profile.height_feet,
                         "height_inches": prod_profile.height_inches,
                         "weight": prod_profile.weight,
-                        "max_hr": getattr(
-                            prod_profile, "max_hr", None
-                        ),  # Safely get max_hr if it exists
+                        "max_hr_manual": max_hr_manual,
+                        "max_hr_auto": max_hr_auto,
+                        "max_hr_active": max_hr_active,
                     },
                 )
             else:
-                # Insert new (removed motivation and training_days columns, added max_hr)
                 self.local_session.execute(
                     text(
                         """
-                        INSERT INTO user_profile (user_id, age_group, height_feet, height_inches, weight, max_hr)
-                        VALUES (:user_id, :age_group, :height_feet, :height_inches, :weight, :max_hr)
+                        INSERT INTO user_profile (
+                            user_id, age_group, height_feet, height_inches, weight,
+                            max_hr_manual, max_hr_auto, max_hr_active
+                        )
+                        VALUES (
+                            :user_id, :age_group, :height_feet, :height_inches, :weight,
+                            :max_hr_manual, :max_hr_auto, :max_hr_active
+                        )
                     """
                     ),
                     {
@@ -293,9 +317,9 @@ class DataMigrator:
                         "height_feet": prod_profile.height_feet,
                         "height_inches": prod_profile.height_inches,
                         "weight": prod_profile.weight,
-                        "max_hr": getattr(
-                            prod_profile, "max_hr", None
-                        ),  # Safely get max_hr if it exists
+                        "max_hr_manual": max_hr_manual,
+                        "max_hr_auto": max_hr_auto,
+                        "max_hr_active": max_hr_active,
                     },
                 )
 
@@ -1207,8 +1231,12 @@ class DataMigrator:
         if success_count == len(steps):
             print("\n📋 Refreshing materialized views...")
             try:
-                self.local_session.execute(text("REFRESH MATERIALIZED VIEW mv_athlete_metrics"))
-                self.local_session.execute(text("REFRESH MATERIALIZED VIEW mv_longest_runs"))
+                self.local_session.execute(
+                    text("REFRESH MATERIALIZED VIEW mv_athlete_metrics")
+                )
+                self.local_session.execute(
+                    text("REFRESH MATERIALIZED VIEW mv_longest_runs")
+                )
                 self.local_session.commit()
                 print("✅ Materialized views refreshed")
             except Exception as e:

@@ -40,8 +40,6 @@ def refresh_user_zones(session: Session, user_id: str) -> Optional[dict]:
 
     max_hr = HRMaxResolutionService.get_effective_max_hr(profile)
     if not max_hr:
-        max_hr = profile.get("max_hr")
-    if not max_hr:
         logger.info("No effective max_hr for user %s — skipping zone refresh", user_id)
         return None
 
