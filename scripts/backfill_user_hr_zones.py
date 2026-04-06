@@ -193,12 +193,17 @@ def main():
         session.commit()
         print("  Done.")
 
-        # --- Step 2: Backfill zones for all users with max_hr ---
+        # --- Step 2: Backfill zones for users with any stored max HR (manual or auto) ---
         rows = session.execute(
-            text("SELECT user_id FROM user_profile WHERE max_hr IS NOT NULL")
+            text(
+                """
+                SELECT user_id FROM user_profile
+                WHERE max_hr_manual IS NOT NULL OR max_hr_auto IS NOT NULL
+                """
+            )
         ).fetchall()
 
-        print(f"\nFound {len(rows)} user(s) with max_hr set")
+        print(f"\nFound {len(rows)} user(s) with max_hr_manual or max_hr_auto set")
 
         success = 0
         skipped = 0

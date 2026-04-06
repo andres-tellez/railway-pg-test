@@ -44,6 +44,7 @@ from src.db.dao.user_profile_dao import save_user_profile, get_user_profile
 from src.schemas.user_profile_schema import UserProfileSchema
 from src.utils.auth0_jwt import requires_auth
 from src.db.db_session import get_session
+from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
 
 # Note: sync_max_hr_from_strava removed - Strava API doesn't return max_heartrate
 from src.services.training_plan.recalculate_hr_zones_service import (
@@ -126,6 +127,11 @@ def submit_user_profile():
         if "restingHr" in user_dict:
             user_dict["resting_hr"] = user_dict.pop("restingHr")
 
+        if "maxHrActive" in user_dict:
+            user_dict["max_hr_active"] = user_dict.pop("maxHrActive")
+
+        user_dict.pop("max_hr", None)
+
         # Enum -> primitive
         for k, v in list(user_dict.items()):
             if isinstance(v, Enum):
@@ -140,31 +146,43 @@ def submit_user_profile():
 
         session = get_session()
         try:
-            # Check if max_hr or resting_hr is being updated (for HR zone recalculation)
-            old_profile = get_user_profile(session, str(internal_user_id))
-            old_max_hr = old_profile.get("max_hr") if old_profile else None
-            old_resting_hr = old_profile.get("resting_hr") if old_profile else None
-            old_resting_hr_source = (
-                old_profile.get("resting_hr_source") if old_profile else None
+            old_profile = get_user_profile(session, str(internal_user_id)) or {}
+            raw_body = request.get_json(silent=True) or {}
+            explicit_max_hr_active = any(
+                k in raw_body for k in ("max_hr_active", "maxHrActive")
             )
 
-            new_max_hr = user_dict.get("max_hr")
-            new_resting_hr = user_dict.get("resting_hr")
+            merged: Dict[str, Any] = {**old_profile, **user_dict}
+            merged["user_id"] = str(internal_user_id)
+
+            old_resting_hr = old_profile.get("resting_hr")
+            new_resting_hr = merged.get("resting_hr")
+
+            old_effective = HRMaxResolutionService.get_effective_max_hr(old_profile)
+
+            if (
+                merged.get("max_hr_manual") is not None
+                and merged.get("max_hr_manual") != old_profile.get("max_hr_manual")
+                and not explicit_max_hr_active
+            ):
+                merged["max_hr_active"] = "manual"
+
+            new_effective = HRMaxResolutionService.get_effective_max_hr(merged)
 
             # If user is setting resting_hr manually, clear estimated values
             if new_resting_hr is not None and new_resting_hr != old_resting_hr:
                 from datetime import datetime
 
-                user_dict["resting_hr_source"] = "USER"
-                user_dict["resting_hr_updated_at"] = datetime.now()
+                merged["resting_hr_source"] = "USER"
+                merged["resting_hr_updated_at"] = datetime.now()
 
-            save_user_profile(session, user_dict)
+            merged.pop("max_hr", None)
+            save_user_profile(session, merged)
 
-            # If max_hr or resting_hr was updated, recalculate HR zones for active plans
             should_recalc = False
-            if new_max_hr and new_max_hr != old_max_hr:
+            if new_resting_hr is not None and new_resting_hr != old_resting_hr:
                 should_recalc = True
-            if new_resting_hr and new_resting_hr != old_resting_hr:
+            if new_effective != old_effective:
                 should_recalc = True
 
             if should_recalc:
@@ -233,6 +251,10 @@ def get_user_profile_route():
                 jsonify({"status": "error", "message": "User profile not found"}),
                 404,
             )
+        profile_dict = dict(profile_dict)
+        profile_dict["max_hr"] = HRMaxResolutionService.get_effective_max_hr(
+            profile_dict
+        )
         return jsonify({"status": "success", "data": profile_dict}), 200
     except Exception:
         current_app.logger.exception(

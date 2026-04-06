@@ -88,8 +88,10 @@ def map_pace_zones(
     print("=" * 60)
 
     # Extract user fitness data
+    from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
+
     vdot = int(user_profile.get("vdot", 45))  # default mid-level
-    max_hr = user_profile.get("max_hr", 177)
+    max_hr = HRMaxResolutionService.get_effective_max_hr(user_profile)
     age = user_profile.get("age", 35)
 
     # Use calculated max HR if not available

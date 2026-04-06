@@ -73,24 +73,31 @@ const UserProfile: React.FC = () => {
     setEditingField(field);
   };
 
+  const buildProfilePayload = (overrides: Record<string, unknown> = {}) => {
+    const manual =
+      profile.max_hr_manual != null ? profile.max_hr_manual : profile.max_hr;
+    const base: Record<string, unknown> = {
+      ageGroup: profile.age_group,
+      trainingDays: profile.training_days,
+      weight: profile.weight,
+      max_hr_manual: manual,
+      max_hr: manual,
+      max_hr_active: profile.max_hr_active,
+      unitSystem: profile.unit_system || "imperial",
+      height: {
+        feet: profile.height_feet || 5,
+        inches: profile.height_inches || 0,
+      },
+      ...overrides,
+    };
+    return base;
+  };
+
   const handleSaveField = async (field: string, value: any) => {
     setError(null);
     try {
-      // Prepare the payload to send to backend - send full profile with updated field
-      const payload: any = {};
+      const payload: Record<string, unknown> = buildProfilePayload();
 
-      // Copy all existing profile fields with proper field name mapping
-      payload.ageGroup = profile.age_group;
-      payload.trainingDays = profile.training_days;
-      payload.weight = profile.weight;
-      payload.max_hr = profile.max_hr;
-      payload.unitSystem = profile.unit_system || 'imperial';
-      payload.height = {
-        feet: profile.height_feet || 5,
-        inches: profile.height_inches || 0,
-      };
-
-      // Update the specific field being changed
       if (field === "height") {
         payload.height = {
           feet: value.height_feet,
@@ -102,7 +109,8 @@ const UserProfile: React.FC = () => {
         payload.trainingDays = value;
       } else if (field === "weight") {
         payload.weight = value;
-      } else if (field === "max_hr") {
+      } else if (field === "max_hr_manual") {
+        payload.max_hr_manual = value;
         payload.max_hr = value;
       } else if (field === "unit_system") {
         payload.unitSystem = value;
@@ -136,9 +144,10 @@ const UserProfile: React.FC = () => {
       }
 
       setEditingField(null);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Error saving field:", e);
-      setError(e.response?.data?.message || e.message || "Failed to save changes");
+      const err = e as { response?: { data?: { message?: string } }; message?: string };
+      setError(err.response?.data?.message || err.message || "Failed to save changes");
       // Revert on error
       const response = await api.get("/api/onboarding");
       if (response.data?.data) {
@@ -151,6 +160,40 @@ const UserProfile: React.FC = () => {
     setEditingField(null);
   };
 
+  const saveMaxHrActive = async (next: "manual" | "auto") => {
+    if (next === "auto" && profile.max_hr_auto == null) return;
+    setError(null);
+    try {
+      const manual =
+        profile.max_hr_manual != null ? profile.max_hr_manual : profile.max_hr;
+      const payload = buildProfilePayload({
+        max_hr_active: next,
+        max_hr_manual: manual,
+        max_hr: manual,
+      });
+      await api.post("/api/onboarding", payload);
+      const response = await api.get("/api/onboarding");
+      if (response.data?.data) {
+        setProfile(response.data.data);
+      }
+    } catch (e: unknown) {
+      console.error("Error saving max HR source:", e);
+      const err = e as { response?: { data?: { message?: string } }; message?: string };
+      setError(err.response?.data?.message || err.message || "Failed to save");
+    }
+  };
+
+  const manualDisplay =
+    profile.max_hr_manual != null ? profile.max_hr_manual : profile.max_hr;
+
+  const manualZoneSourceChecked =
+    profile.max_hr_active === "manual" ||
+    (profile.max_hr_active == null && profile.max_hr_manual != null);
+  const autoZoneSourceChecked =
+    profile.max_hr_active === "auto" ||
+    (profile.max_hr_active == null &&
+      profile.max_hr_manual == null &&
+      profile.max_hr_auto != null);
 
   return (
     <AuthGuard>
@@ -223,12 +266,12 @@ const UserProfile: React.FC = () => {
             />
 
             <InlineEditableField
-              label="Max Heart Rate"
-              field="max_hr"
-              value={profile.max_hr}
-              editing={editingField === "max_hr"}
-              onEdit={() => handleEditField("max_hr")}
-              onSave={(value) => handleSaveField("max_hr", value)}
+              label="Max HR (manual)"
+              field="max_hr_manual"
+              value={manualDisplay}
+              editing={editingField === "max_hr_manual"}
+              onEdit={() => handleEditField("max_hr_manual")}
+              onSave={(value) => handleSaveField("max_hr_manual", value)}
               onCancel={handleCancelEdit}
               type="number"
               min={120}
@@ -236,6 +279,63 @@ const UserProfile: React.FC = () => {
               unit="bpm"
               isRequired={!profile.max_hr}
             />
+            <div className="mb-4 pb-4 border-b border-gray-100">
+              <div className="flex items-start gap-4">
+                <div className="font-medium text-gray-700 w-32 flex-shrink-0">
+                  Max HR (from activities):
+                </div>
+                <div className="flex-1 text-gray-900">
+                  {profile.max_hr_auto != null ? (
+                    <span>{profile.max_hr_auto} bpm</span>
+                  ) : (
+                    <span className="text-gray-400 italic">Not estimated yet</span>
+                  )}
+                  {profile.hrmax_confidence && profile.max_hr_auto != null && (
+                    <span className="text-xs text-gray-500 ml-2">
+                      ({profile.hrmax_confidence})
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="mb-4 pb-4 border-b border-gray-100">
+              <div className="flex items-start gap-4">
+                <div className="font-medium text-gray-700 w-32 flex-shrink-0">
+                  Use for zones:
+                </div>
+                <div className="flex-1 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="max_hr_active"
+                      checked={manualZoneSourceChecked}
+                      onChange={() => saveMaxHrActive("manual")}
+                      className="text-blue-600"
+                    />
+                    <span>Manual entry</span>
+                  </label>
+                  <label
+                    className={`flex items-center gap-2 ${profile.max_hr_auto == null ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                  >
+                    <input
+                      type="radio"
+                      name="max_hr_active"
+                      disabled={profile.max_hr_auto == null}
+                      checked={autoZoneSourceChecked}
+                      onChange={() => saveMaxHrActive("auto")}
+                      className="text-blue-600"
+                    />
+                    <span>Activity estimate</span>
+                  </label>
+                  {profile.max_hr != null && (
+                    <p className="text-xs text-gray-500">
+                      Effective max HR used for coaching:{" "}
+                      <strong>{profile.max_hr} bpm</strong>
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
             <div className="mb-4 pb-4 border-b last:border-b-0">
               <div className="mt-2 space-y-2">
                 <Link
@@ -272,9 +372,13 @@ const UserProfile: React.FC = () => {
               <p className="text-sm text-gray-600 mt-2">
                 <strong>Note:</strong> Strava API doesn't provide this value, so manual entry is required.
               </p>
-              {profile.max_hr && (
+              {profile.max_hr != null && (
                 <p className="text-xs text-gray-500 mt-2">
-                  ✓ HR zones in your plan will use this max HR value ({profile.max_hr} bpm).
+                  ✓ HR zones in your plan use max HR of {profile.max_hr} bpm (
+                  {profile.max_hr_active === "auto"
+                    ? "activity estimate"
+                    : "manual entry"}
+                  ).
                 </p>
               )}
             </div>

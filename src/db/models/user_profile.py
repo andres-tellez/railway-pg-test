@@ -140,12 +140,10 @@ class UserProfile(Base):
     height_feet = Column(Integer, nullable=False)
     height_inches = Column(Integer, nullable=False)
     weight = Column(Float)
-    max_hr = Column(
-        Integer, nullable=True
-    )  # Max heart rate (from Strava or user input)
-    max_hr_source = Column(
-        String, nullable=True
-    )  # Source of max_hr: "USER"|"AUTO"|"STRAVA"
+    # Max HR: user-entered vs activity-estimated; max_hr_active = which drives zones ('manual'|'auto')
+    max_hr_manual = Column(Integer, nullable=True)
+    max_hr_auto = Column(Integer, nullable=True)
+    max_hr_active = Column(String(16), nullable=True)
     resting_hr = Column(Integer, nullable=True)  # Resting heart rate
     resting_hr_source = Column(
         String, nullable=True
@@ -153,7 +151,9 @@ class UserProfile(Base):
     resting_hr_updated_at = Column(
         DateTime, nullable=True
     )  # When resting_hr was last updated
-    hrmax_calculated_at = Column(DateTime, nullable=True)  # When HRmax was calculated
+    hrmax_calculated_at = Column(
+        DateTime, nullable=True
+    )  # When max_hr_auto was last estimated from activities
     hrmax_confidence = Column(
         String, nullable=True
     )  # Confidence level: "LOW"|"MEDIUM"|"HIGH"
