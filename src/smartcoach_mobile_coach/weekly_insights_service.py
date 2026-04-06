@@ -939,7 +939,7 @@ def get_weekly_insight_history(
     zones = hr_drift_band_zones_chart()
     eff_zones = aerobic_efficiency_band_zones_chart()
 
-    # THRESHOLD: reuse the same calendar week_windows as EASY (above).
+    # THRESHOLD: same calendar week_windows as EASY — one point per week, gaps as nulls.
     prev_threshold_stability: Optional[float] = None
     prev_threshold_pace: Optional[float] = None
     threshold_points: List[Dict[str, Any]] = []
@@ -951,6 +951,17 @@ def get_weekly_insight_history(
             if raw_s is not None:
                 stab = float(raw_s)
         if stab is None:
+            threshold_points.append(
+                {
+                    "label": f"{ws.month}/{ws.day}",
+                    "value": None,
+                    "band": None,
+                    "z2_pace_min_per_mi": None,
+                    "z2_pace_band": None,
+                    "efficiency": None,
+                    "efficiency_band": None,
+                }
+            )
             continue
         pace: Optional[float] = None
         raw_p = wk.get("threshold_pace_min_per_mi")
