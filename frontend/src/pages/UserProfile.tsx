@@ -17,6 +17,7 @@ const UserProfile: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editingField, setEditingField] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [refreshingAutoHr, setRefreshingAutoHr] = useState(false);
 
   useEffect(() => {
     if (!isReady || !userId) return;
@@ -160,6 +161,27 @@ const UserProfile: React.FC = () => {
     setEditingField(null);
   };
 
+  const refreshAutoHrmax = async () => {
+    setError(null);
+    setRefreshingAutoHr(true);
+    try {
+      await api.post("/api/heart-rate/hrmax/refresh-auto?force=true");
+      const response = await api.get("/api/onboarding");
+      if (response.data?.data) {
+        setProfile(response.data.data);
+      }
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } }; message?: string };
+      setError(
+        err.response?.data?.error ||
+          err.message ||
+          "Could not refresh activity-based max HR"
+      );
+    } finally {
+      setRefreshingAutoHr(false);
+    }
+  };
+
   const saveMaxHrActive = async (next: "manual" | "auto") => {
     if (next === "auto" && profile.max_hr_auto == null) return;
     setError(null);
@@ -284,7 +306,7 @@ const UserProfile: React.FC = () => {
                 <div className="font-medium text-gray-700 w-32 flex-shrink-0">
                   Max HR (from activities):
                 </div>
-                <div className="flex-1 text-gray-900">
+                <div className="flex-1 text-gray-900 flex flex-wrap items-center gap-2">
                   {profile.max_hr_auto != null ? (
                     <span>{profile.max_hr_auto} bpm</span>
                   ) : (
@@ -295,6 +317,14 @@ const UserProfile: React.FC = () => {
                       ({profile.hrmax_confidence})
                     </span>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => refreshAutoHrmax()}
+                    disabled={refreshingAutoHr}
+                    className="text-sm text-blue-600 hover:text-blue-800 underline disabled:opacity-50"
+                  >
+                    {refreshingAutoHr ? "Refreshing…" : "Refresh from activities"}
+                  </button>
                 </div>
               </div>
             </div>
