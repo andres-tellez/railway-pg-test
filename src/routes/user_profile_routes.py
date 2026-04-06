@@ -254,6 +254,22 @@ def get_user_profile_route():
                 jsonify({"status": "error", "message": "User profile not found"}),
                 404,
             )
+        try:
+            if HeartRateZoneOrchestrationService.sanitize_unreliable_stored_max_hr_auto(
+                session, str(internal_user_id)
+            ):
+                profile_dict = get_user_profile(session, str(internal_user_id))
+                if not profile_dict:
+                    return (
+                        jsonify(
+                            {"status": "error", "message": "User profile not found"}
+                        ),
+                        404,
+                    )
+        except Exception as e:
+            current_app.logger.warning(
+                "sanitize_unreliable_stored_max_hr_auto on GET onboarding: %s", e
+            )
         profile_dict = dict(profile_dict)
         if profile_dict.get("max_hr_auto") is None:
             try:

@@ -125,6 +125,26 @@ class HeartRateZoneOrchestrationService:
             raise
 
     @staticmethod
+    def sanitize_unreliable_stored_max_hr_auto(session: Session, user_id: str) -> bool:
+        """
+        Clear max_hr_auto when stored value is LOW confidence or diverges from
+        a validated manual max. Returns True if the profile was updated.
+        """
+        profile = get_user_profile(session, user_id)
+        if not profile or not HRMaxResolutionService.stored_max_hr_auto_is_unreliable(
+            profile
+        ):
+            return False
+        profile_data = profile.copy()
+        HRMaxResolutionService.clear_auto_hrmax_fields(profile_data)
+        save_user_profile(session, profile_data)
+        logger.info(
+            "Cleared unreliable max_hr_auto",
+            extra={"user_id": user_id},
+        )
+        return True
+
+    @staticmethod
     def refresh_auto_hrmax_from_activities(
         session: Session,
         user_id: str,
@@ -140,6 +160,9 @@ class HeartRateZoneOrchestrationService:
         Respects should_recalculate_hrmax unless force=True (avoids constant
         rewrites when nothing changed).
 
+        Does not persist estimates that are LOW confidence or diverge strongly
+        from a validated manual max HR.
+
         Returns:
             Dict with success, updated (bool), optional hrmax, confidence,
             activity_count, error_code, error_message, reason (skip reason).
@@ -152,6 +175,18 @@ class HeartRateZoneOrchestrationService:
                 "error_code": "PROFILE_NOT_FOUND",
                 "error_message": "User profile not found",
             }
+
+        if HeartRateZoneOrchestrationService.sanitize_unreliable_stored_max_hr_auto(
+            session, user_id
+        ):
+            profile = get_user_profile(session, user_id)
+            if not profile:
+                return {
+                    "success": False,
+                    "updated": False,
+                    "error_code": "PROFILE_NOT_FOUND",
+                    "error_message": "User profile not found",
+                }
 
         activities = HeartRateZoneOrchestrationService.fetch_activities_for_hrmax(
             session, user_id
@@ -192,6 +227,22 @@ class HeartRateZoneOrchestrationService:
                 "updated": False,
                 "error_code": hrmax_result.error_code,
                 "error_message": hrmax_result.error_message or "Estimation failed",
+                "confidence": hrmax_result.confidence,
+                "activity_count": hrmax_result.activity_count,
+            }
+
+        trustworthy, reject_reason = (
+            HRMaxResolutionService.auto_hrmax_estimate_is_trustworthy(
+                profile,
+                hrmax_result.hrmax,
+                hrmax_result.confidence,
+            )
+        )
+        if not trustworthy:
+            return {
+                "success": True,
+                "updated": False,
+                "reason": reject_reason,
                 "confidence": hrmax_result.confidence,
                 "activity_count": hrmax_result.activity_count,
             }
@@ -403,6 +454,25 @@ class HeartRateZoneOrchestrationService:
                     "success": False,
                     "error_code": hrmax_result.error_code,
                     "error_message": hrmax_result.error_message,
+                    "confidence": hrmax_result.confidence,
+                    "activity_count": hrmax_result.activity_count,
+                }
+
+            trustworthy, _rej = (
+                HRMaxResolutionService.auto_hrmax_estimate_is_trustworthy(
+                    profile,
+                    hrmax_result.hrmax,
+                    hrmax_result.confidence,
+                )
+            )
+            if not trustworthy:
+                return {
+                    "success": False,
+                    "error_code": "HRMAX_AUTO_NOT_TRUSTED",
+                    "error_message": (
+                        "Activity-based max HR is not reliable enough to use yet. "
+                        "Set your max HR manually to match your watch or Strava."
+                    ),
                     "confidence": hrmax_result.confidence,
                     "activity_count": hrmax_result.activity_count,
                 }

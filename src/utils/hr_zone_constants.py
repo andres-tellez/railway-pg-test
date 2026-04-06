@@ -61,6 +61,10 @@ HRMAX_ESTIMATION = {
     "RESTING_HR_MAX": 110,
     "MIN_HRR": 30,  # Minimum Heart Rate Reserve
     "RECALC_DAYS_THRESHOLD": 30,  # Days before auto-recalc
+    # If stored manual max HR exists and agrees with this band, do not persist/show
+    # activity-based max_hr_auto when the estimate is farther away (avoids misleading
+    # 95th-percentile values vs watch/Strava max).
+    "HRMAX_AUTO_MAX_GAP_VS_MANUAL": 12,
     "HRMAX_PEAK_THRESHOLD": 2,  # bpm increase to trigger recalculation
     "AGE_FORMULA_BASE": 220,  # Standard "220 - age" formula for rough estimation
     "DEFAULT_FALLBACK_MAX_HR": 190,  # Conservative default when can't estimate from age or activities
