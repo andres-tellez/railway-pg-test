@@ -18,6 +18,7 @@ const UserProfile: React.FC = () => {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshingAutoHr, setRefreshingAutoHr] = useState(false);
+  const [autoHrRefreshInfo, setAutoHrRefreshInfo] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isReady || !userId) return;
@@ -163,9 +164,24 @@ const UserProfile: React.FC = () => {
 
   const refreshAutoHrmax = async () => {
     setError(null);
+    setAutoHrRefreshInfo(null);
     setRefreshingAutoHr(true);
     try {
-      await api.post("/api/heart-rate/hrmax/refresh-auto?force=true");
+      const postRes = await api.post("/api/heart-rate/hrmax/refresh-auto?force=true");
+      const d = postRes.data?.data as
+        | { updated?: boolean; reason?: string }
+        | undefined;
+      if (d?.updated) {
+        setAutoHrRefreshInfo(null);
+      } else if (d?.reason === "low_confidence") {
+        setAutoHrRefreshInfo(
+          "Not enough high-quality run data to estimate max HR from activities. Use your manual max HR from your watch or Strava."
+        );
+      } else if (d?.reason === "diverges_from_manual") {
+        setAutoHrRefreshInfo(
+          "The activity-based statistic doesn’t match your manual max HR, so it isn’t saved. Keep using manual for zones."
+        );
+      }
       const response = await api.get("/api/onboarding");
       if (response.data?.data) {
         setProfile(response.data.data);
@@ -239,6 +255,11 @@ const UserProfile: React.FC = () => {
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
             {error}
+          </div>
+        )}
+        {autoHrRefreshInfo && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 rounded text-sm">
+            {autoHrRefreshInfo}
           </div>
         )}
 
@@ -327,6 +348,11 @@ const UserProfile: React.FC = () => {
                   </button>
                 </div>
               </div>
+              <p className="text-xs text-gray-500 mt-2 ml-32 pl-0 max-w-md">
+                Activity max HR is only shown when we have medium- or high-confidence data
+                and it agrees with your manual max (within ~12 bpm). It is not the same
+                as your watch or Strava max unless those line up.
+              </p>
             </div>
             <div className="mb-4 pb-4 border-b border-gray-100">
               <div className="flex items-start gap-4">

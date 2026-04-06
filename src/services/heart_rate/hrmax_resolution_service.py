@@ -10,7 +10,7 @@ HRMax resolution: separate user-entered (manual) vs activity-estimated (auto) ma
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from src.utils.hr_zone_constants import HRMAX_ESTIMATION
 
@@ -57,6 +57,68 @@ class HRMaxResolutionService:
     @staticmethod
     def _validate_user_override(max_hr: int) -> bool:
         return HRMAX_ESTIMATION["HRMAX_MIN"] <= max_hr <= HRMAX_ESTIMATION["HRMAX_MAX"]
+
+    @staticmethod
+    def clear_auto_hrmax_fields(profile_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove activity-based max HR and its metadata (manual/active unchanged)."""
+        profile_data["max_hr_auto"] = None
+        profile_data["hrmax_calculated_at"] = None
+        profile_data["hrmax_confidence"] = None
+        profile_data["hrmax_activity_count"] = None
+        profile_data["last_hrmax_activity_id"] = None
+        return profile_data
+
+    @staticmethod
+    def auto_hrmax_estimate_is_trustworthy(
+        profile: Dict[str, Any],
+        estimate_bpm: int,
+        confidence: Optional[str],
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Whether to persist/show an activity-derived max HR.
+
+        Rejects LOW confidence (typical easy-run 95th percentile noise).
+        Rejects large divergence from a validated manual max (watch/Strava anchor).
+        """
+        if confidence == "LOW":
+            return False, "low_confidence"
+
+        manual = profile.get("max_hr_manual")
+        if manual is not None:
+            try:
+                m_int = int(manual)
+            except (TypeError, ValueError):
+                m_int = None
+            if m_int is not None and HRMaxResolutionService._validate_user_override(
+                m_int
+            ):
+                gap = HRMAX_ESTIMATION["HRMAX_AUTO_MAX_GAP_VS_MANUAL"]
+                if abs(int(estimate_bpm) - m_int) > gap:
+                    return False, "diverges_from_manual"
+
+        return True, None
+
+    @staticmethod
+    def stored_max_hr_auto_is_unreliable(profile: Dict[str, Any]) -> bool:
+        """True if saved max_hr_auto should be cleared (misleading vs manual or LOW)."""
+        auto = profile.get("max_hr_auto")
+        if auto is None:
+            return False
+
+        if profile.get("hrmax_confidence") == "LOW":
+            return True
+
+        manual = profile.get("max_hr_manual")
+        if manual is None:
+            return False
+        try:
+            m_int = int(manual)
+        except (TypeError, ValueError):
+            return False
+        if not HRMaxResolutionService._validate_user_override(m_int):
+            return False
+        gap = HRMAX_ESTIMATION["HRMAX_AUTO_MAX_GAP_VS_MANUAL"]
+        return abs(int(auto) - m_int) > gap
 
     @staticmethod
     def should_allow_auto_recalculation(profile: Dict[str, Any]) -> bool:
