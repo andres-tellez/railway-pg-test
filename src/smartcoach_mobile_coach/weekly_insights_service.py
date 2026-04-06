@@ -853,8 +853,23 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
 def get_weekly_insight_history(
     session: Session, user_id: str, weeks: int = 6
 ) -> Dict[str, Any]:
-    """Return the last *weeks* weekly insights plus HR drift and efficiency zone definitions."""
+    """Return the last *weeks* calendar weeks of easy-run KPIs plus zone definitions.
+
+    EASY: one point per calendar week (oldest → newest), aligned with the X axis even when
+    a week has no stored insight (null metrics for that week).
+    """
     weeks = max(1, min(weeks, 12))
+
+    cal_week_start, _ = _week_bounds(date.today())
+    week_windows = [
+        (
+            cal_week_start - timedelta(weeks=offset),
+            cal_week_start - timedelta(weeks=offset) + timedelta(days=6),
+        )
+        for offset in reversed(range(weeks))
+    ]
+    oldest_monday = cal_week_start - timedelta(weeks=weeks - 1)
+
     rows = session.execute(
         text(
             "SELECT week_start, hr_drift_pct, hr_drift_band, "
@@ -862,22 +877,36 @@ def get_weekly_insight_history(
             "efficiency, efficiency_band "
             "FROM weekly_training_insights "
             "WHERE user_id = CAST(:uid AS uuid) "
-            "  AND hr_drift_pct IS NOT NULL "
-            "ORDER BY week_start DESC "
-            "LIMIT :n"
+            "  AND week_start >= :ws_min "
+            "  AND week_start <= :ws_max "
         ),
-        {"uid": user_id, "n": weeks},
+        {
+            "uid": user_id,
+            "ws_min": str(oldest_monday),
+            "ws_max": str(cal_week_start),
+        },
     ).fetchall()
 
-    if not rows:
-        return {
-            "has_history": False,
-            "message": "Not enough data for a trend chart yet.",
-            "systems": {},
-        }
+    by_week_start: Dict[date, Any] = {}
+    for r in rows:
+        by_week_start[r.week_start] = r
 
-    data_points = []
-    for r in reversed(rows):
+    data_points: List[Dict[str, Any]] = []
+    for ws, _we in week_windows:
+        r = by_week_start.get(ws)
+        if r is None or r.hr_drift_pct is None:
+            data_points.append(
+                {
+                    "label": f"{ws.month}/{ws.day}",
+                    "value": None,
+                    "band": None,
+                    "z2_pace_min_per_mi": None,
+                    "z2_pace_band": None,
+                    "efficiency": None,
+                    "efficiency_band": None,
+                }
+            )
+            continue
         val = float(r.hr_drift_pct)
         band = r.hr_drift_band or _hr_drift_band(val)
         pace = r.z2_pace_min_per_mi
@@ -890,7 +919,7 @@ def get_weekly_insight_history(
         )
         data_points.append(
             {
-                "label": f"{r.week_start.month}/{r.week_start.day}",
+                "label": f"{ws.month}/{ws.day}",
                 "value": val,
                 "band": band,
                 "z2_pace_min_per_mi": float(pace) if pace is not None else None,
@@ -900,19 +929,17 @@ def get_weekly_insight_history(
             }
         )
 
+    if not any(p.get("value") is not None for p in data_points):
+        return {
+            "has_history": False,
+            "message": "Not enough data for a trend chart yet.",
+            "systems": {},
+        }
+
     zones = hr_drift_band_zones_chart()
     eff_zones = aerobic_efficiency_band_zones_chart()
 
-    # THRESHOLD: same v_easy_runs classification + KPI SQL as weekly compute; trend bands
-    # use recent calendar weeks (Monday-Sunday) rather than easy-insight snapshot weeks.
-    cal_week_start, _ = _week_bounds(date.today())
-    week_windows = [
-        (
-            cal_week_start - timedelta(weeks=offset),
-            cal_week_start - timedelta(weeks=offset) + timedelta(days=6),
-        )
-        for offset in reversed(range(weeks))
-    ]
+    # THRESHOLD: reuse the same calendar week_windows as EASY (above).
     prev_threshold_stability: Optional[float] = None
     prev_threshold_pace: Optional[float] = None
     threshold_points: List[Dict[str, Any]] = []
