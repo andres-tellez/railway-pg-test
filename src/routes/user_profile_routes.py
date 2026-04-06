@@ -45,6 +45,9 @@ from src.schemas.user_profile_schema import UserProfileSchema
 from src.utils.auth0_jwt import requires_auth
 from src.db.db_session import get_session
 from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
+from src.services.heart_rate.heart_rate_orchestration_service import (
+    HeartRateZoneOrchestrationService,
+)
 
 # Note: sync_max_hr_from_strava removed - Strava API doesn't return max_heartrate
 from src.services.training_plan.recalculate_hr_zones_service import (
@@ -252,6 +255,18 @@ def get_user_profile_route():
                 404,
             )
         profile_dict = dict(profile_dict)
+        if profile_dict.get("max_hr_auto") is None:
+            try:
+                HeartRateZoneOrchestrationService.refresh_auto_hrmax_from_activities(
+                    session, str(internal_user_id), force=False
+                )
+                fresh = get_user_profile(session, str(internal_user_id))
+                if fresh:
+                    profile_dict = dict(fresh)
+            except Exception as e:
+                current_app.logger.warning(
+                    "refresh_auto_hrmax on GET onboarding failed: %s", e
+                )
         profile_dict["max_hr"] = HRMaxResolutionService.get_effective_max_hr(
             profile_dict
         )

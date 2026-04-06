@@ -184,6 +184,75 @@ def recalculate_hr_zones():
         session.close()
 
 
+@heart_rate_bp.post("/hrmax/refresh-auto")
+@requires_auth
+def refresh_auto_hrmax():
+    """
+    Estimate max_hr_auto from stored runs even when manual max HR is set.
+
+    Query params:
+        force (bool): If true, skip should_recalculate_hrmax throttling.
+    """
+    from flask import request
+
+    user_id = g.user_id
+    session = get_session()
+    force = request.args.get("force", "false").lower() == "true"
+
+    try:
+        result = HeartRateZoneOrchestrationService.refresh_auto_hrmax_from_activities(
+            session, str(user_id), force=force
+        )
+
+        if (
+            not result.get("success")
+            and result.get("error_code") == "PROFILE_NOT_FOUND"
+        ):
+            return error_response(
+                result.get("error_message", "Profile not found"),
+                error_code="PROFILE_NOT_FOUND",
+                status_code=404,
+            )
+
+        if not result.get("success"):
+            return error_response(
+                result.get(
+                    "error_message", "Could not estimate max HR from activities"
+                ),
+                error_code=result.get("error_code", "HRMAX_AUTO_REFRESH_FAILED"),
+                status_code=400,
+                details={
+                    "confidence": result.get("confidence"),
+                    "activity_count": result.get("activity_count"),
+                },
+            )
+
+        return success_response(
+            {
+                "updated": result.get("updated"),
+                "hrmax_auto": result.get("hrmax"),
+                "confidence": result.get("confidence"),
+                "activity_count": result.get("activity_count"),
+                "reason": result.get("reason"),
+            },
+            message="Activity-based max HR refresh completed",
+        )
+
+    except Exception as e:
+        logger.error(
+            "Error refreshing auto HRmax",
+            extra={"user_id": user_id, "error": str(e)},
+            exc_info=True,
+        )
+        return error_response(
+            "Internal server error while refreshing activity max HR",
+            error_code="INTERNAL_ERROR",
+            status_code=500,
+        )
+    finally:
+        session.close()
+
+
 @heart_rate_bp.get("/zones/current")
 @requires_auth
 def get_current_hr_zones():

@@ -13,10 +13,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-from src.services.heart_rate.hrmax_estimation_service import (
-    HRMaxEstimationService,
-    HRMaxEstimationResult,
-)
+from src.services.heart_rate.hrmax_estimation_service import HRMaxEstimationService
 from src.services.heart_rate.karvonen_zone_service import (
     KarvonenZoneService,
     KarvonenZonesResult,
@@ -126,6 +123,95 @@ class HeartRateZoneOrchestrationService:
                 extra={"user_id": user_id, "error": str(e)},
             )
             raise
+
+    @staticmethod
+    def refresh_auto_hrmax_from_activities(
+        session: Session,
+        user_id: str,
+        *,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Estimate max HR from stored runs and persist max_hr_auto (+ metadata).
+
+        Runs even when the user already has a manual max HR, so activity-based
+        max_hr_auto stays available for comparison and for switching active source.
+
+        Respects should_recalculate_hrmax unless force=True (avoids constant
+        rewrites when nothing changed).
+
+        Returns:
+            Dict with success, updated (bool), optional hrmax, confidence,
+            activity_count, error_code, error_message, reason (skip reason).
+        """
+        profile = get_user_profile(session, user_id)
+        if not profile:
+            return {
+                "success": False,
+                "updated": False,
+                "error_code": "PROFILE_NOT_FOUND",
+                "error_message": "User profile not found",
+            }
+
+        activities = HeartRateZoneOrchestrationService.fetch_activities_for_hrmax(
+            session, user_id
+        )
+        if not activities:
+            return {
+                "success": True,
+                "updated": False,
+                "reason": "no_activities",
+            }
+
+        new_peak: Optional[int] = None
+        try:
+            peaks = [
+                int(a["max_heartrate"])
+                for a in activities
+                if a.get("max_heartrate") is not None
+            ]
+            if peaks:
+                new_peak = max(peaks)
+        except (TypeError, ValueError):
+            new_peak = None
+
+        if not force and not HRMaxResolutionService.should_recalculate_hrmax(
+            profile,
+            new_activity_max_hr=new_peak,
+        ):
+            return {
+                "success": True,
+                "updated": False,
+                "reason": "not_due",
+            }
+
+        hrmax_result = HRMaxEstimationService.estimate_hrmax(activities)
+        if not hrmax_result.success:
+            return {
+                "success": False,
+                "updated": False,
+                "error_code": hrmax_result.error_code,
+                "error_message": hrmax_result.error_message or "Estimation failed",
+                "confidence": hrmax_result.confidence,
+                "activity_count": hrmax_result.activity_count,
+            }
+
+        profile_data = profile.copy()
+        HRMaxResolutionService.update_auto_hrmax(
+            profile_data,
+            hrmax_result.hrmax,
+            confidence=hrmax_result.confidence,
+            activity_count=hrmax_result.activity_count,
+        )
+        save_user_profile(session, profile_data)
+
+        return {
+            "success": True,
+            "updated": True,
+            "hrmax": hrmax_result.hrmax,
+            "confidence": hrmax_result.confidence,
+            "activity_count": hrmax_result.activity_count,
+        }
 
     @staticmethod
     def calculate_zones_for_user(
@@ -359,6 +445,16 @@ class HeartRateZoneOrchestrationService:
                     "error_code": "ZONE_CALCULATION_FAILED",
                     "error_message": "Failed to calculate zones",
                 }
+
+            try:
+                HeartRateZoneOrchestrationService.refresh_auto_hrmax_from_activities(
+                    session, user_id, force=False
+                )
+            except Exception as refresh_err:
+                logger.warning(
+                    "refresh_auto_hrmax_from_activities failed (non-fatal)",
+                    extra={"user_id": user_id, "error": str(refresh_err)},
+                )
 
             return {
                 "success": True,
