@@ -68,6 +68,7 @@ SELECT
     COUNT(*) FILTER (WHERE training_system = 'threshold')              AS threshold_runs,
     ROUND(AVG(hr_drift_pct) FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_drift,
     ROUND(AVG(avg_pace)     FILTER (WHERE training_system = 'easy')::numeric, 4)  AS avg_pace,
+    ROUND(AVG(avg_pace)     FILTER (WHERE training_system = 'threshold')::numeric, 4) AS avg_threshold_pace,
     ROUND(AVG(avg_hr)       FILTER (WHERE training_system = 'easy')::numeric, 1)  AS avg_hr,
     ROUND(AVG(easy_pct)     FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_easy_pct,
     ROUND(AVG(z2_band_pct)  FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_z2_adherence,
@@ -241,6 +242,7 @@ def _fetch_week_kpis(
             "threshold_run_count": 0,
             "total_run_count": 0,
             "effort_stability_min_per_mi": None,
+            "threshold_pace_min_per_mi": None,
         }
 
     avg_pace = float(row.avg_pace) if row.avg_pace is not None else None
@@ -249,6 +251,9 @@ def _fetch_week_kpis(
         float(row.avg_threshold_effort_stability)
         if row.avg_threshold_effort_stability is not None
         else None
+    )
+    threshold_pace = (
+        float(row.avg_threshold_pace) if row.avg_threshold_pace is not None else None
     )
 
     return {
@@ -260,6 +265,7 @@ def _fetch_week_kpis(
         "avg_hr": avg_hr,
         "efficiency": _compute_efficiency(avg_pace, avg_hr),
         "effort_stability_min_per_mi": threshold_effort_stability,
+        "threshold_pace_min_per_mi": threshold_pace,
         "avg_easy_pct": (
             float(row.avg_easy_pct) if row.avg_easy_pct is not None else None
         ),
@@ -289,6 +295,7 @@ def _fetch_week_kpis_by_system(
             "threshold_run_count": weekly.get("threshold_run_count", 0),
             "total_run_count": weekly.get("total_run_count", 0),
             "effort_stability_min_per_mi": weekly.get("effort_stability_min_per_mi"),
+            "threshold_pace_min_per_mi": weekly.get("threshold_pace_min_per_mi"),
         },
     }
 
@@ -312,6 +319,9 @@ def _fetch_prior_insight(
     snapshot = row.kpi_snapshot if isinstance(row.kpi_snapshot, dict) else None
     threshold_prior = None
     threshold_prior_band = None
+    threshold_prior_pace = None
+    threshold_prior_pace_band = None
+    threshold_prior_overall = None
     if snapshot:
         systems = snapshot.get("systems", {})
         th = systems.get(TrainingSystem.THRESHOLD.value, {})
@@ -319,6 +329,9 @@ def _fetch_prior_insight(
         th_bands = th.get("bands", {})
         threshold_prior = th_kpis.get("effort_stability_min_per_mi")
         threshold_prior_band = th_bands.get("effort_stability")
+        threshold_prior_pace = th_kpis.get("threshold_pace_min_per_mi")
+        threshold_prior_pace_band = th_bands.get("threshold_pace")
+        threshold_prior_overall = th.get("overall_band")
 
     return {
         "hr_drift_pct": row.hr_drift_pct,
@@ -330,6 +343,9 @@ def _fetch_prior_insight(
         "overall_band": row.overall_band,
         "threshold_effort_stability": threshold_prior,
         "threshold_effort_stability_band": threshold_prior_band,
+        "threshold_prior_pace": threshold_prior_pace,
+        "threshold_prior_pace_band": threshold_prior_pace_band,
+        "threshold_prior_overall": threshold_prior_overall,
     }
 
 
@@ -382,17 +398,37 @@ def _compute_threshold_system_pipeline(
     kpis: Dict[str, Any], prior: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     prior_stability = prior.get("threshold_effort_stability") if prior else None
+    prior_pace = prior.get("threshold_prior_pace") if prior else None
     effort_stability = kpis.get("effort_stability_min_per_mi")
+    threshold_pace = kpis.get("threshold_pace_min_per_mi")
     effort_band = _trend_band(effort_stability, prior_stability, lower_is_better=True)
+    pace_band = _trend_band(threshold_pace, prior_pace, lower_is_better=True)
     effort_delta = _compute_delta(effort_stability, prior_stability)
+    pace_delta = _compute_delta(threshold_pace, prior_pace)
+
+    prior_bands_threshold = None
+    if prior:
+        prior_bands_threshold = {
+            "effort_stability": prior.get("threshold_effort_stability_band"),
+            "threshold_pace": prior.get("threshold_prior_pace_band"),
+        }
+
+    overall = _compute_overall_band(
+        [effort_band, pace_band],
+        prior_bands_threshold,
+        prior.get("threshold_prior_overall") if prior else None,
+    )
 
     return {
         "system": TrainingSystem.THRESHOLD.value,
         "status": "ready",
         "kpis": kpis,
-        "bands": {"effort_stability": effort_band},
-        "deltas": {"effort_stability_delta": effort_delta},
-        "overall_band": effort_band,
+        "bands": {"effort_stability": effort_band, "threshold_pace": pace_band},
+        "deltas": {
+            "effort_stability_delta": effort_delta,
+            "threshold_pace_delta": pace_delta,
+        },
+        "overall_band": overall,
     }
 
 
@@ -440,8 +476,8 @@ def _compute_system_pipeline(
             "status": "insufficient_data",
             "reason": "no_threshold_runs",
             "kpis": threshold_kpis,
-            "bands": {"effort_stability": None},
-            "deltas": {"effort_stability_delta": None},
+            "bands": {"effort_stability": None, "threshold_pace": None},
+            "deltas": {"effort_stability_delta": None, "threshold_pace_delta": None},
             "overall_band": None,
         }
     return {"systems": systems}
@@ -878,28 +914,41 @@ def get_weekly_insight_history(
         for offset in reversed(range(weeks))
     ]
     prev_threshold_stability: Optional[float] = None
+    prev_threshold_pace: Optional[float] = None
     threshold_points: List[Dict[str, Any]] = []
     for ws, we in week_windows:
         wk = _fetch_week_kpis(session, user_id, ws, we)
         stab: Optional[float] = None
         if int(wk.get("threshold_run_count") or 0) > 0:
-            raw = wk.get("effort_stability_min_per_mi")
-            if raw is not None:
-                stab = float(raw)
-        if stab is not None:
-            th_band = _trend_band(stab, prev_threshold_stability, lower_is_better=True)
-            threshold_points.append(
-                {
-                    "label": f"{ws.month}/{ws.day}",
-                    "value": stab,
-                    "band": th_band,
-                    "z2_pace_min_per_mi": None,
-                    "z2_pace_band": None,
-                    "efficiency": None,
-                    "efficiency_band": None,
-                }
-            )
+            raw_s = wk.get("effort_stability_min_per_mi")
+            if raw_s is not None:
+                stab = float(raw_s)
+        if stab is None:
+            continue
+        pace: Optional[float] = None
+        raw_p = wk.get("threshold_pace_min_per_mi")
+        if raw_p is not None:
+            pace = float(raw_p)
+        th_band = _trend_band(stab, prev_threshold_stability, lower_is_better=True)
+        pace_band = (
+            _trend_band(pace, prev_threshold_pace, lower_is_better=True)
+            if pace is not None
+            else None
+        )
+        threshold_points.append(
+            {
+                "label": f"{ws.month}/{ws.day}",
+                "value": stab,
+                "band": th_band,
+                "z2_pace_min_per_mi": pace,
+                "z2_pace_band": pace_band,
+                "efficiency": None,
+                "efficiency_band": None,
+            }
+        )
         prev_threshold_stability = stab
+        if pace is not None:
+            prev_threshold_pace = pace
 
     return {
         "has_history": True,
