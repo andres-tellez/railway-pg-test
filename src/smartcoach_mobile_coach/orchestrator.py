@@ -19,6 +19,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
+from src.db.dao.user_profile_dao import get_user_profile
+from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
 from src.services.security.external_apis.openai_service import get_openai_service
 from src.smartcoach_mobile_coach.agent_tools import execute_tool
 from src.smartcoach_mobile_coach.dialogue_manager import (
@@ -31,6 +33,7 @@ from src.utils.hr_zone_constants import (
     ALLOWED_METRICS,
     COACHING_LEVEL_DEFAULTS,
     VERBOSITY_RULES,
+    hr_calibration_reason_user_hint,
 )
 
 logger = logging.getLogger("smartcoach_mobile_coach")
@@ -581,6 +584,34 @@ def _device_anchor_system_section(
     )
 
 
+def _hr_calibration_system_section(session: Session, internal_user_id: str) -> str:
+    """Inject HR calibration status so coaching can guide data collection."""
+    profile = get_user_profile(session, internal_user_id) or {}
+    calibration = HRMaxResolutionService.get_hr_calibration_status(profile)
+    if calibration.get("status") != "uncalibrated":
+        return ""
+
+    reason_code = calibration.get("reason_code")
+    user_hint = calibration.get("user_hint") or hr_calibration_reason_user_hint(
+        reason_code if isinstance(reason_code, str) else None
+    )
+
+    return (
+        "## HR calibration status\n"
+        "- The user's HR profile is currently **uncalibrated** for effective max-HR-based zones.\n"
+        f"- Reason code: **{reason_code or 'UNKNOWN'}**.\n"
+        f"- Coaching hint (use or paraphrase; do not contradict): {user_hint}\n"
+        f"- Qualifying runs with HR so far: **{calibration.get('qualifying_activity_count', 0)}**.\n"
+        f"- Minimum required runs: **{calibration.get('min_activities_required', 5)}**.\n"
+        f"- Runs still needed: **{calibration.get('activities_needed', 0)}**.\n"
+        f"- Minimum run duration to qualify: **{calibration.get('min_activity_duration_minutes', 10)} minutes**.\n"
+        "- If HR zones/intensity guidance is discussed, explicitly explain calibration is still in progress.\n"
+        "- Recommend practical data-collection runs: include some sustained harder efforts "
+        "(tempo, threshold intervals, hills, or race effort), not only easy runs.\n"
+        "- Keep this supportive and actionable; avoid implying user failure."
+    )
+
+
 def _intent_priority_override_section(intent: str) -> str:
     """Intent-aware hard overrides that can supersede base prompt defaults."""
     if intent != "race_projection":
@@ -650,6 +681,8 @@ def run_mobile_agent_turn(
         + _coaching_preferences_section(prefs)
         + "\n\n"
         + _device_anchor_system_section(anchor_local_date, client_timezone)
+        + "\n\n"
+        + _hr_calibration_system_section(session, internal_user_id)
         + "\n\n"
         + response_directive_section(response_directive)
         + "\n\n"

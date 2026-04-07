@@ -19,10 +19,12 @@ from coach.utils.error_handler import CoachErrorHandler
 from coach.utils.config import Config
 
 from src.db.dao.plans_dao import get_active_plan
+from src.db.dao.user_profile_dao import get_user_profile
 from src.db.models.plan_workouts import PlanWorkout
 from src.services.heart_rate.heart_rate_orchestration_service import (
     HeartRateZoneOrchestrationService,
 )
+from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
 from src.services.training_plan.weekly_metrics_service import WeeklyMetricsService
 from src.services.training_plan.trend_analysis_service import TrendAnalysisService
 from src.services.training_plan.week_analysis_service import WeekAnalysisService
@@ -89,7 +91,7 @@ class RunnerStateBuilder:
             phase, week_of_block = self._calculate_phase_and_week(race_date, plan_id)
 
             # 3. HR Zones (USE EXISTING SERVICE)
-            hr_zones = self._build_hr_zones()
+            hr_zones, hr_calibration = self._build_hr_zones_and_calibration()
 
             # 4. Pace Zones (extract from plan workouts)
             pace_zones = self._build_pace_zones(plan_id)
@@ -111,6 +113,7 @@ class RunnerStateBuilder:
                 "race": race_info,
                 "zones": {
                     "hr": hr_zones,
+                    "hr_calibration": hr_calibration,
                     "pace": pace_zones,
                 },
                 "patterns": patterns,
@@ -211,12 +214,18 @@ class RunnerStateBuilder:
         else:
             return "Taper"
 
-    def _build_hr_zones(self) -> Dict[str, str]:
+    def _build_hr_zones_and_calibration(self) -> tuple[Dict[str, str], Dict[str, Any]]:
         """
-        Build HR zones using HeartRateZoneOrchestrationService.
+        Build HR zones and HR calibration status.
 
         Formats output as "105-120 bpm" strings per schema.
         """
+        try:
+            profile = get_user_profile(self.session, self.user_id) or {}
+        except Exception:
+            profile = {}
+        hr_calibration = HRMaxResolutionService.get_hr_calibration_status(profile)
+
         try:
             result = HeartRateZoneOrchestrationService.calculate_zones_for_user(
                 self.session, self.user_id, use_estimate=True
@@ -224,7 +233,7 @@ class RunnerStateBuilder:
 
             if not result.get("success") or "zones" not in result:
                 # Return empty zones if calculation failed
-                return {}
+                return {}, hr_calibration
 
             zones = result["zones"]
             formatted = {}
@@ -235,7 +244,8 @@ class RunnerStateBuilder:
                     zone_min, zone_max = zones[zone_key]
                     formatted[zone_key.lower()] = f"{int(zone_min)}-{int(zone_max)} bpm"
 
-            return formatted
+            hr_calibration["status"] = "calibrated"
+            return formatted, hr_calibration
 
         except Exception as e:
             from coach.utils.error_handler import ErrorSeverity
@@ -243,10 +253,10 @@ class RunnerStateBuilder:
             CoachErrorHandler.handle(
                 error=e,
                 severity=ErrorSeverity.MEDIUM,
-                component="RunnerStateBuilder._build_hr_zones",
+                component="RunnerStateBuilder._build_hr_zones_and_calibration",
                 user_id=self.user_id,
             )
-            return {}
+            return {}, hr_calibration
 
     def _build_pace_zones(self, plan_id: int) -> Dict[str, str]:
         """
@@ -611,13 +621,18 @@ class RunnerStateBuilder:
 
     def _build_minimal_state(self) -> Dict[str, Any]:
         """Build minimal state when required data is missing."""
+        try:
+            profile = get_user_profile(self.session, self.user_id) or {}
+        except Exception:
+            profile = {}
+        hr_calibration = HRMaxResolutionService.get_hr_calibration_status(profile)
         return {
             "version": "1.0.0",
             "runner_state": {
                 "phase": "Base",
                 "week_of_block": 1,
                 "race": None,
-                "zones": {"hr": {}, "pace": {}},
+                "zones": {"hr": {}, "hr_calibration": hr_calibration, "pace": {}},
                 "safety": {
                     "hr_data_reliable": False,
                     "pace_data_reliable": False,

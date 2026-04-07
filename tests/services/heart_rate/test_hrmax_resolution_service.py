@@ -5,6 +5,7 @@ Tests for HRMax Resolution Service
 import pytest
 from datetime import datetime, timedelta
 from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
+from src.utils.hr_zone_constants import hr_calibration_reason_user_hint
 
 
 class TestHRMaxResolution:
@@ -178,3 +179,72 @@ class TestHRMaxResolution:
             )
             is False
         )
+
+    def test_hr_calibration_status_calibrated(self):
+        status = HRMaxResolutionService.get_hr_calibration_status(
+            {
+                "max_hr_manual": 182,
+                "max_hr_active": "manual",
+                "hrmax_confidence": "HIGH",
+                "hrmax_activity_count": 12,
+            }
+        )
+        assert status["status"] == "calibrated"
+        assert status["effective_max_hr"] == 182
+        assert status["activities_needed"] == 0
+
+    def test_hr_calibration_status_insufficient_data(self):
+        status = HRMaxResolutionService.get_hr_calibration_status(
+            {
+                "max_hr_manual": None,
+                "max_hr_auto": None,
+                "hrmax_confidence": None,
+                "hrmax_activity_count": 2,
+            }
+        )
+        assert status["status"] == "uncalibrated"
+        assert status["reason_code"] == "INSUFFICIENT_DATA"
+        assert status["activities_needed"] == 3
+        assert "user_hint" in status
+        assert "ten minutes" in status["user_hint"].lower()
+
+    def test_hr_calibration_status_low_confidence(self):
+        status = HRMaxResolutionService.get_hr_calibration_status(
+            {
+                "max_hr_manual": None,
+                "max_hr_auto": None,
+                "hrmax_confidence": "LOW",
+                "hrmax_activity_count": 8,
+            }
+        )
+        assert status["status"] == "uncalibrated"
+        assert status["reason_code"] == "LOW_CONFIDENCE"
+
+    def test_hr_calibration_status_manual_out_of_range(self):
+        status = HRMaxResolutionService.get_hr_calibration_status(
+            {
+                "max_hr_manual": 250,
+                "max_hr_auto": None,
+                "hrmax_confidence": None,
+                "hrmax_activity_count": 0,
+            }
+        )
+        assert status["status"] == "uncalibrated"
+        assert status["reason_code"] == "MANUAL_OUT_OF_RANGE"
+        assert status["manual_is_valid"] is False
+
+    def test_hr_calibration_status_estimation_not_available(self):
+        status = HRMaxResolutionService.get_hr_calibration_status(
+            {
+                "max_hr_manual": None,
+                "max_hr_auto": None,
+                "hrmax_confidence": None,
+                "hrmax_activity_count": 6,
+            }
+        )
+        assert status["status"] == "uncalibrated"
+        assert status["reason_code"] == "ESTIMATION_NOT_AVAILABLE"
+
+    def test_hr_calibration_reason_user_hint_unknown_code(self):
+        text = hr_calibration_reason_user_hint("NOT_A_REAL_CODE")
+        assert "Max HR is not available" in text

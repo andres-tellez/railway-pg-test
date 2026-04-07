@@ -160,6 +160,47 @@ class TestCoachPromptBuilder:
         assert "45.5" in user_content  # Mileage
         assert "improving" in user_content.lower()
 
+    def test_runner_state_formatting_includes_hr_calibration(self):
+        """Test that HR calibration metadata is included when provided."""
+        builder = CoachPromptBuilder()
+
+        runner_state = {
+            "version": "1.0.0",
+            "runner_state": {
+                "phase": "Build",
+                "week_of_block": 8,
+                "race": {"date": "2025-07-20", "distance": "Marathon"},
+                "zones": {
+                    "hr": {},
+                    "hr_calibration": {
+                        "status": "uncalibrated",
+                        "reason_code": "INSUFFICIENT_DATA",
+                        "qualifying_activity_count": 2,
+                        "activities_needed": 3,
+                        "min_activity_duration_minutes": 10,
+                    },
+                    "pace": {},
+                },
+                "safety": {
+                    "hr_data_reliable": True,
+                    "pace_data_reliable": True,
+                    "reported_injury": False,
+                },
+            },
+        }
+        question_context = {
+            "version": "1.0.0",
+            "question_context": {"intent": "general_education"},
+        }
+
+        messages = builder.build(runner_state, question_context, "How am I doing?")
+        user_content = messages[1]["content"]
+
+        assert "HR Calibration" in user_content
+        assert "INSUFFICIENT_DATA" in user_content
+        assert "Coaching hint:" in user_content
+        assert "Runs Needed: 3" in user_content
+
     def test_question_context_formatting_workout_review(self):
         """Test that workout review context is formatted correctly."""
         builder = CoachPromptBuilder()
