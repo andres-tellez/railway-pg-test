@@ -33,6 +33,7 @@ class TestRunnerStateBuilder:
             assert result["runner_state"]["week_of_block"] == 1
             assert result["runner_state"]["race"] is None
             assert result["runner_state"]["zones"]["hr"] == {}
+            assert "hr_calibration" in result["runner_state"]["zones"]
             assert result["runner_state"]["zones"]["pace"] == {}
 
     def test_build_minimal_state_no_race_date(self):
@@ -184,6 +185,7 @@ class TestRunnerStateBuilder:
             assert "z1" in runner_state["zones"]["hr"]
             assert "bpm" in runner_state["zones"]["hr"]["z1"]
             assert runner_state["zones"]["hr"]["z1"] == "105-120 bpm"
+            assert runner_state["zones"]["hr_calibration"]["status"] == "calibrated"
 
             # Verify pace zones are formatted correctly
             assert "easy" in runner_state["zones"]["pace"]
@@ -260,6 +262,10 @@ class TestRunnerStateBuilder:
             assert result["version"] == "1.0.0"
             runner_state = result["runner_state"]
             assert runner_state["zones"]["hr"] == {}
+            assert runner_state["zones"]["hr_calibration"]["status"] in (
+                "calibrated",
+                "uncalibrated",
+            )
 
     def test_build_handles_weekly_metrics_service_failure(self):
         """Test that builder handles weekly metrics service failures gracefully."""

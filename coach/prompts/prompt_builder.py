@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional
 
 from coach.utils.error_handler import CoachErrorHandler, ErrorSeverity
 from coach.utils.intent_classifier import Intent
+from src.utils.hr_zone_constants import hr_calibration_reason_user_hint
 
 
 # Base system prompt for the Coach
@@ -41,6 +42,13 @@ CRITICAL SAFETY GUIDELINES:
 - Never provide medical advice - refer to healthcare professionals
 - If injury symptoms are present, prioritize rest and professional evaluation
 - Never encourage training through pain
+
+HR CALIBRATION GUIDELINES:
+- If HR calibration is not ready, explain this clearly and positively ("we're still calibrating your HR profile").
+- Use calibration fields when present: reason code, qualifying run count, runs still needed, and minimum duration.
+- Tell users what kind of runs help calibration: include some harder efforts (tempo, threshold intervals, hills, or race efforts), not only easy runs.
+- Mention run length guidance using the minimum duration field (10+ minutes qualifies; 20-40 minute sessions are typically most useful).
+- If manual max HR appears unusable, suggest verifying watch/Strava max HR and updating profile settings.
 """
 
 
@@ -233,6 +241,45 @@ class CoachPromptBuilder:
                 lines.append("  Pace Zones:")
                 for zone_key, zone_value in zones["pace"].items():
                     lines.append(f"    {zone_key.capitalize()}: {zone_value}")
+
+            hr_calibration = zones.get("hr_calibration")
+            if hr_calibration:
+                lines.append("  HR Calibration:")
+                status = hr_calibration.get("status", "unknown")
+                lines.append(f"    Status: {status}")
+                if status == "uncalibrated":
+                    reason_code = hr_calibration.get("reason_code")
+                    lines.append(f"    Reason: {reason_code or 'UNKNOWN'}")
+                    hint = hr_calibration.get(
+                        "user_hint"
+                    ) or hr_calibration_reason_user_hint(
+                        reason_code if isinstance(reason_code, str) else None
+                    )
+                    lines.append(f"    Coaching hint: {hint}")
+                    lines.append(
+                        "    Qualifying Runs: "
+                        f"{hr_calibration.get('qualifying_activity_count', 0)}"
+                    )
+                    lines.append(
+                        "    Runs Needed: "
+                        f"{hr_calibration.get('activities_needed', 'unknown')}"
+                    )
+                    lines.append(
+                        "    Minimum Duration: "
+                        f"{hr_calibration.get('min_activity_duration_minutes', 10)} minutes"
+                    )
+                else:
+                    lines.append(
+                        "    Effective Max HR: "
+                        f"{hr_calibration.get('effective_max_hr', 'unknown')}"
+                    )
+                    lines.append(
+                        f"    Source: {hr_calibration.get('source', 'unknown')}"
+                    )
+                    lines.append(
+                        "    Confidence: "
+                        f"{hr_calibration.get('confidence', 'unknown')}"
+                    )
 
         # Weekly metrics
         if runner_state.get("weekly_metrics"):

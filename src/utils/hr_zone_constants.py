@@ -21,6 +21,8 @@ No magic numbers should appear in service files - all constants must be here.
 
 from __future__ import annotations
 
+from typing import Optional
+
 # Legacy: Strava-style zones (max HR percentage-based)
 # Keep for backward compatibility
 STRAVA_HR_ZONES = {
@@ -69,6 +71,47 @@ HRMAX_ESTIMATION = {
     "AGE_FORMULA_BASE": 220,  # Standard "220 - age" formula for rough estimation
     "DEFAULT_FALLBACK_MAX_HR": 190,  # Conservative default when can't estimate from age or activities
 }
+
+# Short coach-facing copy keyed by get_hr_calibration_status() reason_code.
+HR_CALIBRATION_REASON_USER_HINTS: dict[str, str] = {
+    "INSUFFICIENT_DATA": (
+        "We need more runs with heart rate recorded—each at least about ten minutes moving "
+        "time—and a few sessions that include harder work (tempo, hills, intervals, or a race) "
+        "so we can see a realistic peak HR."
+    ),
+    "LOW_CONFIDENCE": (
+        "We have some HR data, but it is not stable enough to lock zones yet. Add a few runs "
+        "with clear harder efforts (not only easy mileage) so the estimate can firm up."
+    ),
+    "HRMAX_AUTO_NOT_TRUSTED": (
+        "An activity-based max HR was not reliable enough to use. Set max HR manually from "
+        "your watch or Strava, or keep logging varied runs with harder efforts and sync again."
+    ),
+    "ESTIMATION_NOT_AVAILABLE": (
+        "Enough qualifying runs were counted, but we could not derive a saved auto max HR yet. "
+        "Try syncing recent activities or add harder sessions; setting max HR manually is the "
+        "fastest fix."
+    ),
+    "MANUAL_OUT_OF_RANGE": (
+        "The max HR on file is outside the allowed range (120–220 bpm). Update it in your "
+        "profile to match your watch or Strava settings."
+    ),
+    "UNKNOWN_UNCALIBRATED": (
+        "Max HR is not available for personalized zones yet. Log more runs with HR—including "
+        "some harder efforts—or enter max HR manually in your profile."
+    ),
+}
+
+
+def hr_calibration_reason_user_hint(reason_code: Optional[str]) -> str:
+    """Return stable user-facing coaching copy for a calibration reason code."""
+    if not reason_code:
+        return HR_CALIBRATION_REASON_USER_HINTS["UNKNOWN_UNCALIBRATED"]
+    return HR_CALIBRATION_REASON_USER_HINTS.get(
+        reason_code,
+        HR_CALIBRATION_REASON_USER_HINTS["UNKNOWN_UNCALIBRATED"],
+    )
+
 
 # Karvonen Zone Percentages (HRR-based)
 # These are percentages of Heart Rate Reserve (HRR), not max HR

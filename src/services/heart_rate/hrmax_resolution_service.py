@@ -12,12 +12,98 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
-from src.utils.hr_zone_constants import HRMAX_ESTIMATION
+from src.utils.hr_zone_constants import (
+    HRMAX_ESTIMATION,
+    hr_calibration_reason_user_hint,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class HRMaxResolutionService:
+    @staticmethod
+    def get_hr_calibration_status(profile: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Return coach-facing HR calibration status from profile fields only.
+
+        This is read-only and intentionally lightweight so it can be reused
+        in prompt/context builders without additional database roundtrips.
+        """
+        effective_max_hr = HRMaxResolutionService.get_effective_max_hr(profile)
+        has_manual = profile.get("max_hr_manual") is not None
+        manual_is_valid = False
+        if has_manual:
+            try:
+                manual_is_valid = HRMaxResolutionService._validate_user_override(
+                    int(profile.get("max_hr_manual"))
+                )
+            except (TypeError, ValueError):
+                manual_is_valid = False
+        auto_value = profile.get("max_hr_auto")
+        confidence = profile.get("hrmax_confidence")
+        activity_count_raw = profile.get("hrmax_activity_count")
+        try:
+            qualifying_activity_count = int(activity_count_raw or 0)
+        except (TypeError, ValueError):
+            qualifying_activity_count = 0
+
+        min_activities_required = int(HRMAX_ESTIMATION["MIN_ACTIVITIES_REQUIRED"])
+        min_activity_duration_minutes = int(
+            HRMAX_ESTIMATION["MIN_DURATION_SECONDS"] // 60
+        )
+
+        if effective_max_hr is not None:
+            active = profile.get("max_hr_active")
+            if active in ("manual", "auto"):
+                source = active
+            else:
+                source = "manual" if has_manual else "auto"
+            return {
+                "status": "calibrated",
+                "effective_max_hr": int(effective_max_hr),
+                "source": source,
+                "confidence": confidence,
+                "qualifying_activity_count": qualifying_activity_count,
+                "min_activities_required": min_activities_required,
+                "min_activity_duration_minutes": min_activity_duration_minutes,
+                "activities_needed": 0,
+            }
+
+        # Distinguish likely reasons for no effective max HR.
+        if has_manual and not manual_is_valid and auto_value is None:
+            reason_code = "MANUAL_OUT_OF_RANGE"
+        elif confidence == "LOW":
+            reason_code = "LOW_CONFIDENCE"
+        elif auto_value is None and qualifying_activity_count < min_activities_required:
+            reason_code = "INSUFFICIENT_DATA"
+        elif (
+            auto_value is None
+            and qualifying_activity_count >= min_activities_required
+            and confidence in ("MEDIUM", "HIGH")
+        ):
+            reason_code = "HRMAX_AUTO_NOT_TRUSTED"
+        elif (
+            auto_value is None and qualifying_activity_count >= min_activities_required
+        ):
+            reason_code = "ESTIMATION_NOT_AVAILABLE"
+        else:
+            reason_code = "UNKNOWN_UNCALIBRATED"
+
+        return {
+            "status": "uncalibrated",
+            "reason_code": reason_code,
+            "user_hint": hr_calibration_reason_user_hint(reason_code),
+            "has_manual": has_manual,
+            "manual_is_valid": manual_is_valid,
+            "confidence": confidence,
+            "qualifying_activity_count": qualifying_activity_count,
+            "min_activities_required": min_activities_required,
+            "min_activity_duration_minutes": min_activity_duration_minutes,
+            "activities_needed": max(
+                0, min_activities_required - qualifying_activity_count
+            ),
+        }
+
     @staticmethod
     def get_effective_max_hr(profile: Dict[str, Any]) -> Optional[int]:
         """
