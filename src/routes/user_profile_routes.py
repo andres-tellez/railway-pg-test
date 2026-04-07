@@ -122,6 +122,10 @@ def submit_user_profile():
             user_dict["height_feet"] = feet
             user_dict["height_inches"] = inches
 
+        # Map ageGroup to age_group (camelCase -> snake_case; merge + DAO use age_group)
+        if "ageGroup" in user_dict:
+            user_dict["age_group"] = user_dict.pop("ageGroup")
+
         # Map unitSystem to unit_system (camelCase -> snake_case)
         if "unitSystem" in user_dict:
             user_dict["unit_system"] = user_dict.pop("unitSystem")
