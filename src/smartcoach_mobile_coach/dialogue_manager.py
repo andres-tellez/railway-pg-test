@@ -167,9 +167,9 @@ def plan_response(
         target_len = "short recap allowed; keep tight and scannable"
         if intent == "run_analysis":
             target_len = (
-                "Maximum **3 sentences** in insight text: **1** verdict + **1** explanation "
-                "(optional **one** verbatim anchor metric from tools) + **1** optional guidance. "
-                "Insight + Facts — card below shows metrics (see OUTPUT STRUCTURE)."
+                "**≤3 sentences** in `content` (**never** 4+): **1** verdict + **1** explanation sentence "
+                "(full *why* in that sentence only; **≤1** anchor, **prefer HR drift**) + **1** optional guidance. "
+                "Conversational, not report-like — see OUTPUT STRUCTURE — Insight + Facts."
             )
         return ResponseDirective(
             turn_type=turn_type,
@@ -224,18 +224,29 @@ def plan_response(
         )
 
     if turn_type == "drill_down":
+        target_len_dd = (
+            "2-4 sentences. Start with a direct answer, then one compact explanation with 1-2 tool-grounded "
+            "values only if they materially help. Keep language plain and human."
+        )
+        focus_dd = (
+            "Answer the why directly, avoid metric dumping, and use only tool-grounded numbers. "
+            "Include one practical coaching interpretation when useful."
+        )
+        if intent == "run_analysis":
+            target_len_dd = (
+                "If reply is **run_summary** with card: **≤3 sentences** in `content` only (Insight + Facts) — "
+                "never 4+. Else: 2-4 sentences, plain and human."
+            )
+            focus_dd = (
+                "For structured run recap: verdict + one explanation sentence + optional guidance; "
+                "≤1 anchor in explanation, prefer HR drift. Otherwise answer the drill-down directly."
+            )
         return ResponseDirective(
             turn_type=turn_type,
             intent=intent,
-            target_length=(
-                "2-4 sentences. Start with a direct answer, then one compact explanation with 1-2 tool-grounded "
-                "values only if they materially help. Keep language plain and human."
-            ),
+            target_length=target_len_dd,
             tone_hint="Tight and focused, but conversational and warm.",
-            focus=(
-                "Answer the why directly, avoid metric dumping, and use only tool-grounded numbers. "
-                "Include one practical coaching interpretation when useful."
-            ),
+            focus=focus_dd,
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
             narration_mode=addon["narration_mode"],
@@ -244,18 +255,29 @@ def plan_response(
         )
 
     if turn_type == "follow_up":
+        target_len_fu = (
+            "2-4 sentences max. Lead with direct answer, then add one concise interpretation. "
+            "Use at most 1-2 key tool-backed values when relevant."
+        )
+        focus_fu = (
+            "Answer the follow-up directly and avoid repeating prior full metric blocks. "
+            "Use the smallest set of numbers needed, grounded in tool outputs, then stop."
+        )
+        if intent == "run_analysis":
+            target_len_fu = (
+                "If **run_summary** with card: **≤3 sentences** in `content` (Insight + Facts) — **never** 4+. "
+                "Else: 2-4 sentences max."
+            )
+            focus_fu = (
+                "Structured run recap: same Insight + Facts as opening (one explanation sentence; ≤1 anchor, "
+                "prefer drift). Otherwise: smallest set of tool numbers, then stop."
+            )
         return ResponseDirective(
             turn_type=turn_type,
             intent=intent,
-            target_length=(
-                "2-4 sentences max. Lead with direct answer, then add one concise interpretation. "
-                "Use at most 1-2 key tool-backed values when relevant."
-            ),
+            target_length=target_len_fu,
             tone_hint="Coach texting: direct, natural, and grounded.",
-            focus=(
-                "Answer the follow-up directly and avoid repeating prior full metric blocks. "
-                "Use the smallest set of numbers needed, grounded in tool outputs, then stop."
-            ),
+            focus=focus_fu,
             avoid_repeating_metrics=avoid_metrics,
             allow_full_recap=asks_recap,
             narration_mode=addon["narration_mode"],
@@ -264,12 +286,20 @@ def plan_response(
         )
 
     # new_topic fallback
+    target_len_nt = "2-4 sentences by default; expand only if asked"
+    focus_nt = "address the new topic directly"
+    if intent == "run_analysis":
+        target_len_nt = (
+            "If **run_summary** with card: **≤3 sentences** in `content` (Insight + Facts). "
+            "Else: 2-4 sentences by default; expand only if asked."
+        )
+        focus_nt = "Run recap with card: verdict + one explanation sentence + optional guidance; else address the topic directly."
     return ResponseDirective(
         turn_type="new_topic",
         intent=intent,
-        target_length="2-4 sentences by default; expand only if asked",
+        target_length=target_len_nt,
         tone_hint="coach-like and conversational",
-        focus="address the new topic directly",
+        focus=focus_nt,
         avoid_repeating_metrics=[] if asks_recap else avoid_metrics,
         allow_full_recap=asks_recap,
         narration_mode=addon["narration_mode"],
@@ -310,7 +340,9 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "\n\n### Human coach style addon\n"
             "- Keep the reply sounding like one coach talking to one athlete, not a report or dashboard.\n"
             "- Stay tool-grounded for numbers; follow OUTPUT STRUCTURE + STYLE in the base prompt "
-            "(run-level with structured card: Insight + Facts — verdict + brief insight in content, at most one anchor metric in sentence 2; card carries metrics; other topics: woven prose where appropriate).\n"
+            "(run_summary + card: **≤3** sentences in content, **never** 4+; explanation = **one** sentence; "
+            "**≤1** anchor in sentence 2, **prefer HR drift**; conversational not report-like; card carries metrics; "
+            "other topics: woven prose where appropriate).\n"
             f"{natural_lines}"
         )
 
@@ -433,9 +465,9 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "Resolve run identity first, then use run summary payload for facts and interpretation."
             ),
             "natural_style_notes": [
-                "Insight + Facts: `content` is coaching insight only (max 3 sentences); the structured card shows all headline metrics below in the app.",
-                "Sentence 1 = verdict; sentence 2 = brief explanation with at most ONE optional anchor metric (verbatim from a single tool display field); sentence 3 = optional short guidance, qualitative only.",
-                "Do not repeat the full stat lineup in text or pack multiple numbers into one sentence; do not paste hr_drift_summary_display into content — the card shows HR drift.",
+                "Insight + Facts: `content` = coaching insight only — **≤3 sentences total, never 4+**; card below has metrics.",
+                "Structure: (1) verdict — short/direct, no filler (*today*, *you completed*, *this run was*). (2) **One** explanation sentence only (full *why* here; **≤1** anchor, **prefer HR drift**). (3) Optional guidance — qualitative, no numbers.",
+                "No report tone (short clauses, not *which indicates… for a controlled pace*). Do not split explanation across two sentences. Do not paste hr_drift_summary_display into content.",
             ],
         },
         "metric_explainer": {
