@@ -164,10 +164,17 @@ def plan_response(
     avoid_metrics = [] if asks_recap else list(state.metrics_already_shared)
 
     if turn_type == "opening":
+        target_len = "short recap allowed; keep tight and scannable"
+        if intent == "run_analysis":
+            target_len = (
+                "Maximum **3 sentences**: **1** verdict + **1–2** brief explanation. "
+                "Takeaway over detail; do not restate the full run stat lineup in prose when structured "
+                "run summary accompanies the reply (see OUTPUT STRUCTURE — run-level feedback)."
+            )
         return ResponseDirective(
             turn_type=turn_type,
             intent=intent,
-            target_length="short recap allowed; keep tight and scannable",
+            target_length=target_len,
             tone_hint="coach-like, direct, grounded",
             focus="answer the initial ask with tool-grounded context",
             avoid_repeating_metrics=[],
@@ -302,7 +309,8 @@ def response_directive_section(directive: ResponseDirective) -> str:
         base += (
             "\n\n### Human coach style addon\n"
             "- Keep the reply sounding like one coach talking to one athlete, not a report or dashboard.\n"
-            "- Stay tool-grounded for numbers; default to woven prose (GLOBAL: OUTPUT STRUCTURE + STYLE in base prompt).\n"
+            "- Stay tool-grounded for numbers; follow OUTPUT STRUCTURE + STYLE in the base prompt "
+            "(run-level: verdict + brief sentences; structured data carries detailed metrics; other topics: woven prose where appropriate).\n"
             f"{natural_lines}"
         )
 
@@ -378,8 +386,8 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
         "narration_mode": "woven_coach",
         "tool_strategy": "Use the minimum required tools, then answer directly from results.",
         "natural_style_notes": [
-            "Default to continuous coach prose (short paragraphs); bold key numbers inline — not labeled report sections or stat-bullet dumps unless the user asks for a list or breakdown.",
-            "Lead with the takeaway, weave only tool-grounded facts that matter, then one clear interpretation.",
+            "Default to short, scannable prose; lead with takeaway; bold key numbers when it helps — not labeled report sections or stat-bullet dumps unless the user asks for a list or breakdown.",
+            "For run-level recap: verdict first, brief explanation second; let structured run summary carry detailed metrics.",
             "Do not narrate your process (no 'let me pull' / 'now let me calculate').",
             "If tool data is thin, say so in one honest line.",
         ],
@@ -425,8 +433,9 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "Resolve run identity first, then use run summary payload for facts and interpretation."
             ),
             "natural_style_notes": [
-                "Weave distance, time, pace, HR into sentences with bold values — not a labeled stat block by default.",
-                "Keep the recap personal and specific to this run.",
+                "Lead with a one-sentence verdict, then 1–2 short sentences of explanation — not continuous paragraphs packed with every metric.",
+                "Do not restate the full run statistics in text; structured run summary presents detail.",
+                "Keep it personal and specific to this run; optional one bold number in the verdict if it sharpens the takeaway.",
             ],
         },
         "metric_explainer": {
