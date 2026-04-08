@@ -167,9 +167,9 @@ def plan_response(
         target_len = "short recap allowed; keep tight and scannable"
         if intent == "run_analysis":
             target_len = (
-                "Maximum **3 sentences**: **1** verdict + **1–2** brief explanation. "
-                "Takeaway over detail; do not restate the full run stat lineup in prose when structured "
-                "run summary accompanies the reply (see OUTPUT STRUCTURE — run-level feedback)."
+                "Maximum **3 sentences** in insight text: **1** verdict + **1** explanation "
+                "(optional **one** verbatim anchor metric from tools) + **1** optional guidance. "
+                "Insight + Facts — card below shows metrics (see OUTPUT STRUCTURE)."
             )
         return ResponseDirective(
             turn_type=turn_type,
@@ -310,7 +310,7 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "\n\n### Human coach style addon\n"
             "- Keep the reply sounding like one coach talking to one athlete, not a report or dashboard.\n"
             "- Stay tool-grounded for numbers; follow OUTPUT STRUCTURE + STYLE in the base prompt "
-            "(run-level: verdict + brief sentences; structured data carries detailed metrics; other topics: woven prose where appropriate).\n"
+            "(run-level with structured card: Insight + Facts — verdict + brief insight in content, at most one anchor metric in sentence 2; card carries metrics; other topics: woven prose where appropriate).\n"
             f"{natural_lines}"
         )
 
@@ -433,9 +433,9 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "Resolve run identity first, then use run summary payload for facts and interpretation."
             ),
             "natural_style_notes": [
-                "When structured run_summary is present: at most 3 short sentences total; sentence 1 must be a clear judgment (verdict), not 'Today's run was…' or 'You completed…'.",
-                "With structured data: no distance, duration, pace, or heart rate values in prose; no restating card metrics; no multiple numbers in sentences — only qualitative interpretation and optional light guidance.",
-                "Sound like fast coaching feedback, not an analytical report; avoid multi-clause sentences and over-explaining.",
+                "Insight + Facts: `content` is coaching insight only (max 3 sentences); the structured card shows all headline metrics below in the app.",
+                "Sentence 1 = verdict; sentence 2 = brief explanation with at most ONE optional anchor metric (verbatim from a single tool display field); sentence 3 = optional short guidance, qualitative only.",
+                "Do not repeat the full stat lineup in text or pack multiple numbers into one sentence; do not paste hr_drift_summary_display into content — the card shows HR drift.",
             ],
         },
         "metric_explainer": {
