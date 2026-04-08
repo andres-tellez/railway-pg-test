@@ -433,9 +433,9 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "Resolve run identity first, then use run summary payload for facts and interpretation."
             ),
             "natural_style_notes": [
-                "Lead with a one-sentence verdict, then 1–2 short sentences of explanation — not continuous paragraphs packed with every metric.",
-                "Do not restate the full run statistics in text; structured run summary presents detail.",
-                "Keep it personal and specific to this run; optional one bold number in the verdict if it sharpens the takeaway.",
+                "When structured run_summary is present: at most 3 short sentences total; sentence 1 must be a clear judgment (verdict), not 'Today's run was…' or 'You completed…'.",
+                "With structured data: no distance, duration, pace, or heart rate values in prose; no restating card metrics; no multiple numbers in sentences — only qualitative interpretation and optional light guidance.",
+                "Sound like fast coaching feedback, not an analytical report; avoid multi-clause sentences and over-explaining.",
             ],
         },
         "metric_explainer": {
