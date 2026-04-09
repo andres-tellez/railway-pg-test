@@ -6,11 +6,12 @@ POST /api/conversations/<conversation_id>/agent-messages
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from flask import Blueprint, jsonify, request
 
@@ -30,6 +31,26 @@ from src.smartcoach_mobile_coach.orchestrator import run_mobile_agent_turn
 from src.utils.response_utils import error_response
 
 logger = logging.getLogger("smartcoach_mobile_coach")
+
+
+def _llm_plain_text_from_stored_message(role: str, content: str) -> str:
+    """
+    Assistant rows may store JSON for structured mobile payloads; the agent only sees plain insight text.
+    """
+    if role != "assistant" or not content:
+        return content
+    stripped = content.strip()
+    if not stripped.startswith("{"):
+        return content
+    try:
+        obj: Any = json.loads(stripped)
+    except json.JSONDecodeError:
+        return content
+    if isinstance(obj, dict) and obj.get("type") == "run_summary":
+        inner = obj.get("content")
+        if isinstance(inner, str):
+            return inner
+    return content
 
 
 def _resolve_anchor_local_date(payload: dict) -> Tuple[str, Optional[str]]:
@@ -143,7 +164,13 @@ def agent_messages(conversation_id):
             .order_by(ConversationMessage.created_at.asc())
             .all()
         )
-        history = [{"role": m.role, "content": m.content} for m in prior]
+        history = [
+            {
+                "role": m.role,
+                "content": _llm_plain_text_from_stored_message(m.role, m.content),
+            }
+            for m in prior
+        ]
         anchor_date, client_tz = _resolve_anchor_local_date(data)
 
         user_msg = ConversationMessage(
@@ -186,19 +213,27 @@ def agent_messages(conversation_id):
                 details={"limit_type": "daily_cost"},
             )
 
+        assistant_content = (
+            json.dumps(gpt_response, separators=(",", ":"))
+            if isinstance(gpt_response, dict)
+            else gpt_response
+        )
         assistant_msg = ConversationMessage(
             conversation_id=conversation_id,
             role="assistant",
-            content=gpt_response,
+            content=assistant_content,
         )
         session.add(assistant_msg)
         conversation.updated_at = datetime.utcnow()
         session.commit()
 
         elapsed = time.time() - start
+        response_shape = (
+            gpt_response.get("type") if isinstance(gpt_response, dict) else "text"
+        )
         logger.info(
             "[smartcoach_mobile_coach] ok correlation_id=%s user=%s conversation=%s "
-            "loops=%s max_loops=%s truncated=%s cost=%.6f tokens=%s duration_ms=%d",
+            "loops=%s max_loops=%s truncated=%s cost=%.6f tokens=%s duration_ms=%d response_shape=%s",
             correlation_id,
             uid_str,
             conversation_id,
@@ -208,6 +243,7 @@ def agent_messages(conversation_id):
             meta.get("cost", 0),
             meta.get("usage", {}).get("total_tokens", 0),
             int(elapsed * 1000),
+            response_shape,
         )
 
         return (

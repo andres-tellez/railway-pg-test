@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -727,6 +727,16 @@ def _intent_priority_override_section(intent: str) -> str:
     )
 
 
+def _valid_run_summary_tool_payload(out: Any) -> Optional[Dict[str, Any]]:
+    """Success shape from get_run_summary — has facts for RunSummaryCard; exclude error stubs."""
+    if not isinstance(out, dict) or out.get("error"):
+        return None
+    facts = out.get("facts")
+    if not isinstance(facts, dict):
+        return None
+    return out
+
+
 def run_mobile_agent_turn(
     session: Session,
     internal_user_id: str,
@@ -735,9 +745,12 @@ def run_mobile_agent_turn(
     *,
     anchor_local_date: str,
     client_timezone: Optional[str] = None,
-) -> Tuple[str, Dict[str, Any]]:
+) -> Tuple[Union[str, Dict[str, Any]], Dict[str, Any]]:
     """
-    Returns (assistant_text, metadata with usage, cost, loops).
+    Returns (assistant_reply, metadata with usage, cost, loops).
+
+    `assistant_reply` is either a plain string or a structured dict:
+    ``{"type": "run_summary", "content": str, "data": {...}}`` when get_run_summary succeeded this turn.
 
     anchor_local_date: YYYY-MM-DD from the mobile device (or server fallback); grounds "today".
     """
@@ -799,6 +812,7 @@ def run_mobile_agent_turn(
     loops = 0
     tool_result_cache: Dict[tuple, Dict[str, Any]] = {}
     max_loops = _max_agent_loops()
+    latest_run_summary: Optional[Dict[str, Any]] = None
 
     for _ in range(max_loops):
         loops += 1
@@ -851,6 +865,10 @@ def run_mobile_agent_turn(
                         anchor_local_date=anchor_local_date,
                     )
                     tool_result_cache[sig] = out
+                if name in ("get_run_summary", "get_run_insight"):
+                    ok_payload = _valid_run_summary_tool_payload(out)
+                    if ok_payload is not None:
+                        latest_run_summary = ok_payload
                 messages.append(
                     {
                         "role": "tool",
@@ -860,8 +878,9 @@ def run_mobile_agent_turn(
                 )
             continue
 
-        if result.content:
-            return result.content, {
+        if result.content is not None:
+            text = (result.content or "").strip()
+            meta: Dict[str, Any] = {
                 "usage": total_usage,
                 "cost": total_cost,
                 "loops": loops,
@@ -879,6 +898,20 @@ def run_mobile_agent_turn(
                     "allow_full_recap": response_directive.allow_full_recap,
                 },
             }
+            if latest_run_summary is not None:
+                structured = {
+                    "type": "run_summary",
+                    "content": text,
+                    "data": latest_run_summary,
+                }
+                logger.info(
+                    "[smartcoach_mobile_coach] response_shape=run_summary loops=%s content_len=%s",
+                    loops,
+                    len(text),
+                )
+                return structured, meta
+            if text:
+                return text, meta
 
     fallback = (
         "I couldn't complete that within the allowed steps. Try asking about one run at a time, "
