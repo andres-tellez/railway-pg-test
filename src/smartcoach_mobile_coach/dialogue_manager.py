@@ -171,6 +171,11 @@ def plan_response(
                 "(full *why* in that sentence only; **≤1** anchor, **prefer HR drift**) + **1** optional guidance. "
                 "Conversational, not report-like — see OUTPUT STRUCTURE — Insight + Facts."
             )
+        elif intent == "training_trend":
+            target_len = (
+                "**≤3 sentences** for progress/readiness (**Progress check-in**): verdict → qualitative trend → "
+                "optional specific guidance. **≤1** optional number in the whole reply. See OUTPUT STRUCTURE."
+            )
         return ResponseDirective(
             turn_type=turn_type,
             intent=intent,
@@ -241,6 +246,12 @@ def plan_response(
                 "For structured run recap: verdict + one explanation sentence + optional guidance; "
                 "≤1 anchor in explanation, prefer HR drift. Otherwise answer the drill-down directly."
             )
+        elif intent == "training_trend":
+            target_len_dd = (
+                "Progress/readiness: **≤3 sentences** (Progress check-in), **≤1** optional number — never 4+. "
+                "Else if not a trend ask: 2-4 sentences."
+            )
+            focus_dd = "Qualitative trend + one specific guidance line tied to it; avoid metric stacks and analyst phrasing."
         return ResponseDirective(
             turn_type=turn_type,
             intent=intent,
@@ -272,6 +283,12 @@ def plan_response(
                 "Structured run recap: same Insight + Facts as opening (one explanation sentence; ≤1 anchor, "
                 "prefer drift). Otherwise: smallest set of tool numbers, then stop."
             )
+        elif intent == "training_trend":
+            target_len_fu = (
+                "Progress/readiness: **≤3 sentences** (Progress check-in), **≤1** optional number — **never** 4+. "
+                "Else: 2-4 sentences max."
+            )
+            focus_fu = "Quick check-in tone; one takeaway; guidance specific to the thread — not generic consistency filler."
         return ResponseDirective(
             turn_type=turn_type,
             intent=intent,
@@ -294,6 +311,12 @@ def plan_response(
             "Else: 2-4 sentences by default; expand only if asked."
         )
         focus_nt = "Run recap with card: verdict + one explanation sentence + optional guidance; else address the topic directly."
+    elif intent == "training_trend":
+        target_len_nt = (
+            "Progress/readiness: **≤3 sentences** (Progress check-in), **≤1** optional number. "
+            "Else: 2-4 sentences by default; expand only if asked."
+        )
+        focus_nt = "Verdict + qualitative trend + optional specific guidance; avoid verbosity and metric dumps."
     return ResponseDirective(
         turn_type="new_topic",
         intent=intent,
@@ -342,6 +365,7 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "- Stay tool-grounded for numbers; follow OUTPUT STRUCTURE + STYLE in the base prompt "
             "(run_summary + card: **≤3** sentences in content, **never** 4+; explanation = **one** sentence; "
             "**≤1** anchor in sentence 2, **prefer HR drift**; conversational not report-like; card carries metrics; "
+            "progress/readiness (training_trend): **≤3** sentences, **≤1** optional number, Progress check-in; "
             "other topics: woven prose where appropriate).\n"
             f"{natural_lines}"
         )
@@ -454,9 +478,9 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "Use weekly insight / training KPI tools first; summarize trend direction before giving advice."
             ),
             "natural_style_notes": [
-                "Tell one coherent story: what changed, what it implies — avoid sectioned KPI reports.",
-                "Highlight one main trend, not five competing themes.",
-                "Give one concrete coaching implication from the trend.",
+                "Progress check-in: **≤3 sentences** total; verdict (direction) → simple qualitative explanation → optional guidance tied to that insight.",
+                "Prefer words like improving, more controlled, still inconsistent — **≤1** optional number in the whole reply; do not stack %, deltas, and bands together.",
+                "Conversational, short sentences; avoid *indicating*, *moving you into*, *positive shift from last week*; avoid generic *keep focusing on consistency* unless truly the only honest cue.",
             ],
         },
         "run_analysis": {
