@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import copy
 import statistics
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import bindparam, text
@@ -72,6 +73,22 @@ def _delta_distance_display(this_mi: float, med_mi: float) -> str:
         return "Distance same vs recent median"
     sign = "+" if d > 0 else ""
     return f"Distance {sign}{d:.2f} mi vs recent median"
+
+
+def _activity_start_utc_iso(start_date: Any) -> Optional[str]:
+    """UTC instant for mobile local-time formatting (naive DB values treated as UTC)."""
+    if start_date is None:
+        return None
+    try:
+        if not hasattr(start_date, "isoformat"):
+            return None
+        dt = start_date
+        if isinstance(dt, datetime) and dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        s = dt.isoformat()
+        return s.replace("+00:00", "Z") if s.endswith("+00:00") else s
+    except Exception:
+        return None
 
 
 def _fetch_activity_context(
@@ -144,6 +161,7 @@ def build_get_run_insight_payload(
     facts: Dict[str, Any] = {
         "title": (name or "Run")[:200],
         "local_date": local_date_str,
+        "start_time_utc_iso": _activity_start_utc_iso(start_date),
         "start_local_time_display": format_time_utc(start_date),
         "distance_display": format_distance_mi(distance_mi),
         "moving_time_display": format_duration_seconds(int(moving_time or 0)),
@@ -231,6 +249,7 @@ def build_get_run_insight_payload(
         "facts": {
             "title": (name or "Run")[:200],
             "local_date": local_date_str,
+            "start_time_utc_iso": _activity_start_utc_iso(start_date),
             "start_local_time_display": format_time_utc(start_date),
             "distance_display": format_distance_mi(distance_mi),
             "moving_time_display": format_duration_seconds(int(moving_time or 0)),
