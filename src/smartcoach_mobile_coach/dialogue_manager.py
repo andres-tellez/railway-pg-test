@@ -173,9 +173,8 @@ def plan_response(
             )
         elif intent == "training_trend":
             target_len = (
-                "**≤3 sentences**, **one idea per sentence** (Progress check-in): verdict → qualitative trend → "
-                "optional guidance. **Prefer zero numbers**; **≤1** only if essential. No report phrasing (*showing*, "
-                "*in the yellow zone*, *over last week*). See OUTPUT STRUCTURE."
+                "**≤3 sentences**, **pattern lock**: verdict → constraint → action; **~6–10 words** per sentence when "
+                "possible; **spoken** coach (mid/post run). **Prefer zero numbers**; **≤1** if essential. See OUTPUT STRUCTURE."
             )
         return ResponseDirective(
             turn_type=turn_type,
@@ -249,10 +248,10 @@ def plan_response(
             )
         elif intent == "training_trend":
             target_len_dd = (
-                "Progress/readiness: **≤3 sentences**, one idea each, **prefer no numbers** — never 4+. "
-                "Else if not a trend ask: 2-4 sentences."
+                "Progress/readiness: **≤3 sentences**, verdict→constraint→action, **~6–10 words** each when possible — "
+                "never 4+. **Prefer no numbers**. Else if not a trend ask: 2-4 sentences."
             )
-            focus_dd = "One simple interpretation per sentence; no metric+classification+comparison piles; verbal check-in tone."
+            focus_dd = "No corporate (*room for improvement*, *steady progress*); athletic constraint line + clear action."
         return ResponseDirective(
             turn_type=turn_type,
             intent=intent,
@@ -286,10 +285,10 @@ def plan_response(
             )
         elif intent == "training_trend":
             target_len_fu = (
-                "Progress/readiness: **≤3 sentences**, one idea each, **prefer no numbers** — **never** 4+. "
-                "Else: 2-4 sentences max."
+                "Progress/readiness: **≤3 sentences**, verdict→constraint→action, **~6–10 words** — **never** 4+. "
+                "**Prefer no numbers**. Else: 2-4 sentences max."
             )
-            focus_fu = "~2 second read; use steadying coach lines (*keep it steady*, *stay controlled*) not generic consistency slogans."
+            focus_fu = "Spoken not written; short clauses; third line = one clear coaching action."
         return ResponseDirective(
             turn_type=turn_type,
             intent=intent,
@@ -314,10 +313,10 @@ def plan_response(
         focus_nt = "Run recap with card: verdict + one explanation sentence + optional guidance; else address the topic directly."
     elif intent == "training_trend":
         target_len_nt = (
-            "Progress/readiness: **≤3 sentences**, one idea each, **prefer no numbers**. "
+            "Progress/readiness: **≤3 sentences**, verdict→constraint→action, **~6–10 words**, **prefer no numbers**. "
             "Else: 2-4 sentences by default; expand only if asked."
         )
-        focus_nt = "No analysis voice; ban *showing* / *indicating* / zone-in-prose; optional third line = short coaching cue."
+        focus_nt = "Gold-standard shape: good progress → controlled but not fully consistent → keep it steady / move forward."
     return ResponseDirective(
         turn_type="new_topic",
         intent=intent,
@@ -366,7 +365,7 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "- Stay tool-grounded for numbers; follow OUTPUT STRUCTURE + STYLE in the base prompt "
             "(run_summary + card: **≤3** sentences in content, **never** 4+; explanation = **one** sentence; "
             "**≤1** anchor in sentence 2, **prefer HR drift**; conversational not report-like; card carries metrics; "
-            "progress/readiness (training_trend): **≤3** sentences, **one idea per sentence**, **prefer no numbers**, Progress check-in; "
+            "progress/readiness (training_trend): **≤3** sentences, **verdict→constraint→action**, **~6–10 words** when possible, **prefer no numbers**, Progress check-in; "
             "other topics: woven prose where appropriate).\n"
             f"{natural_lines}"
         )
@@ -476,14 +475,13 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
         "training_trend": {
             "narration_mode": "coach_story",
             "tool_strategy": (
-                "Use weekly insight / training KPI tools first; summarize trend direction in your head, then speak in plain coach language — not a stat readout."
+                "Use weekly insight / training KPI tools first; decide verdict + constraint + action in plain athletic language — then say it in three short lines, not a stat readout."
             ),
             "natural_style_notes": [
-                "**One idea per sentence** — never metric + band + % + comparison + interpretation in one line.",
-                "**Default: no numbers** for progress replies; if one number is essential, **only one** in the whole message — never % + deltas + band labels together; avoid *in the yellow zone* style prose.",
-                "Ban report words: *showing*, *indicating*, *which is*, *over last week*. Short clauses; ~2 second grasp; no analysis voice.",
-                "Guidance: prefer *Keep it steady — that's what moves you forward* / *Stay controlled — that's where the gains come from* over *keep focusing on maintaining consistency* unless nothing else fits.",
-                "*Am I making progress?* shape (adapt to tools): upbeat verdict → qualitative effort/control → steadying line (e.g. keep it steady / moves you forward).",
+                "**Pattern lock:** sentence 1 = **verdict** (confident, simple). Sentence 2 = **constraint** (specific limitation — *more controlled*, *not fully consistent yet*, *still drifting* — never *room for improvement* / *steady progress* / review-speak). Sentence 3 = **action** (one clear direction — e.g. *Keep it steady — that's what will move you forward*).",
+                "**~6–10 words** per sentence when possible; **spoken** rhythm, not memo prose; one idea per sentence — never metric + band + % + comparison in one line.",
+                "**Default: no numbers**; **≤1** only if essential — never % + deltas + bands together; ban *showing*, *indicating*, *in the yellow zone*, *over last week*.",
+                "**Gold standard** (adapt claims to tools): *You're making good progress.* / *Your effort is more controlled, but not fully consistent yet.* / *Keep it steady — that's what will move you forward.*",
             ],
         },
         "run_analysis": {
