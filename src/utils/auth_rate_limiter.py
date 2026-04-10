@@ -11,7 +11,8 @@ This module provides rate limiting decorators specifically for auth endpoints:
 
 Rate Limits:
 -----------
-- Login/OAuth callbacks: 10 requests per 5 minutes per IP
+- Login: 10 requests per 5 minutes per IP
+- OAuth callbacks (Strava): 25 requests per 5 minutes per IP (separate bucket from login)
 - Token refresh: 30 requests per 15 minutes per IP
 - Webhook events: 100 requests per minute per IP (allows bursty webhook traffic)
 - Webhook verification: 10 requests per 5 minutes per IP (verification is rare)
@@ -35,7 +36,10 @@ logger = logging.getLogger(__name__)
 # Rate limit configurations
 RATE_LIMITS = {
     "login": {"requests": 10, "window_seconds": 300},  # 10 per 5 minutes
-    "oauth_callback": {"requests": 10, "window_seconds": 300},  # 10 per 5 minutes
+    "oauth_callback": {
+        "requests": 25,
+        "window_seconds": 300,
+    },  # 25 per 5 minutes (retries + redirects)
     "token_refresh": {"requests": 30, "window_seconds": 900},  # 30 per 15 minutes
     "webhook": {
         "requests": 100,
@@ -48,7 +52,7 @@ RATE_LIMITS = {
     "general": {"requests": 20, "window_seconds": 300},  # 20 per 5 minutes
 }
 
-# In-memory storage (per IP address)
+# In-memory storage (per IP + limit type so login vs oauth_callback don't share one bucket)
 _rate_limit_storage: dict[str, deque] = defaultdict(lambda: deque())
 
 
@@ -69,12 +73,16 @@ def _get_client_identifier() -> str:
     return client_ip
 
 
-def _cleanup_old_requests(identifier: str, window_seconds: int):
+def _storage_key(identifier: str, limit_type: str) -> str:
+    return f"{identifier}\x1f{limit_type}"
+
+
+def _cleanup_old_requests(storage_key: str, window_seconds: int):
     """Remove request timestamps outside the rate limit window."""
     now = time.time()
     cutoff = now - window_seconds
 
-    requests_list = _rate_limit_storage[identifier]
+    requests_list = _rate_limit_storage[storage_key]
     while requests_list and requests_list[0] < cutoff:
         requests_list.popleft()
 
@@ -94,11 +102,13 @@ def _check_rate_limit(identifier: str, limit_type: str) -> tuple[bool, float]:
     max_requests = limits["requests"]
     window_seconds = limits["window_seconds"]
 
+    storage_key = _storage_key(identifier, limit_type)
+
     # Clean up old requests
-    _cleanup_old_requests(identifier, window_seconds)
+    _cleanup_old_requests(storage_key, window_seconds)
 
     # Get current request count
-    requests_list = _rate_limit_storage[identifier]
+    requests_list = _rate_limit_storage[storage_key]
     current_count = len(requests_list)
 
     if current_count >= max_requests:
@@ -111,10 +121,10 @@ def _check_rate_limit(identifier: str, limit_type: str) -> tuple[bool, float]:
     return True, 0.0
 
 
-def _record_request(identifier: str):
+def _record_request(identifier: str, limit_type: str):
     """Record that a request was made."""
     now = time.time()
-    _rate_limit_storage[identifier].append(now)
+    _rate_limit_storage[_storage_key(identifier, limit_type)].append(now)
 
 
 def rate_limit_auth(limit_type: str = "general"):
@@ -155,7 +165,7 @@ def rate_limit_auth(limit_type: str = "general"):
                 )
 
             # Record the request
-            _record_request(identifier)
+            _record_request(identifier, limit_type)
 
             # Call the original function
             return func(*args, **kwargs)
@@ -174,7 +184,10 @@ def reset_rate_limits(identifier: str = None):
     """
     global _rate_limit_storage
     if identifier:
-        _rate_limit_storage.pop(identifier, None)
+        prefix = f"{identifier}\x1f"
+        for k in list(_rate_limit_storage.keys()):
+            if k == identifier or k.startswith(prefix):
+                _rate_limit_storage.pop(k, None)
     else:
         _rate_limit_storage.clear()
     logger.info(f"Rate limits reset for {identifier or 'all clients'}")
@@ -190,17 +203,20 @@ def get_rate_limit_stats(identifier: str = None) -> dict:
     Returns:
         Dictionary with rate limit statistics
     """
+    stats: dict = {}
     if identifier:
-        identifiers = [identifier]
+        prefix = f"{identifier}\x1f"
+        for k, requests_list in _rate_limit_storage.items():
+            if k == identifier or k.startswith(prefix):
+                stats[k] = {
+                    "request_count": len(requests_list),
+                    "oldest_request": requests_list[0] if requests_list else None,
+                }
     else:
-        identifiers = list(_rate_limit_storage.keys())
-
-    stats = {}
-    for ident in identifiers:
-        requests_list = _rate_limit_storage[ident]
-        stats[ident] = {
-            "request_count": len(requests_list),
-            "oldest_request": requests_list[0] if requests_list else None,
-        }
+        for k, requests_list in _rate_limit_storage.items():
+            stats[k] = {
+                "request_count": len(requests_list),
+                "oldest_request": requests_list[0] if requests_list else None,
+            }
 
     return stats
