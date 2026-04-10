@@ -28,6 +28,8 @@ from src.smartcoach_mobile_coach.run_insight import (
     apply_insight_table_labels,
     build_get_run_insight_payload,
 )
+from src.smartcoach_mobile_coach.run_metrics import distance_miles_from_meters
+from src.smartcoach_mobile_coach.run_splits import tool_get_run_splits
 from src.smartcoach_mobile_coach.training_kpi_service import (
     get_run_kpi_detail,
     get_training_progress,
@@ -46,12 +48,6 @@ logger = logging.getLogger("smartcoach_mobile_coach")
 
 _DEFAULT_KPI_WEEKS = 4
 _MAX_KPI_WEEKS = 52
-
-
-def _distance_miles_from_meters(meters) -> float:
-    if meters is None:
-        return 0.0
-    return float(meters) * 0.000621371
 
 
 def _increment_tool_call_count(session: Session, tool_name: str) -> None:
@@ -181,7 +177,7 @@ def tool_find_runs_by_date(
         act = ActivityDAO.get_by_id(session, aid)
         if not act or str(act.user_id) != str(internal_user_id):
             continue
-        dm = _distance_miles_from_meters(act.distance)
+        dm = distance_miles_from_meters(act.distance)
         candidates.append(
             {
                 "activity_id": int(aid),
@@ -235,7 +231,7 @@ def tool_search_runs(
             "activity_id": r["activity_id"],
             "title": (r.get("name") or "Run")[:120],
             "distance_display": format_distance_mi(
-                _distance_miles_from_meters(r.get("distance"))
+                distance_miles_from_meters(r.get("distance"))
             ),
             "start_local_time_display": format_time_utc(r.get("start_date")),
             "start_local_date": (
@@ -294,7 +290,7 @@ def tool_aggregate_runs_in_range(
         return agg
 
     total_m = float(agg["total_distance_m"])
-    miles = _distance_miles_from_meters(total_m)
+    miles = distance_miles_from_meters(total_m)
     weekly_rows = agg.get("weekly_summaries") or []
     weekly_summaries: List[Dict[str, Any]] = []
     for row in weekly_rows:
@@ -307,7 +303,7 @@ def tool_aggregate_runs_in_range(
             except ValueError:
                 week_label = None
         w_total_m = float(row.get("total_distance_m") or 0.0)
-        w_miles = _distance_miles_from_meters(w_total_m)
+        w_miles = distance_miles_from_meters(w_total_m)
         weekly_summaries.append(
             {
                 "iso_week": row.get("iso_week"),
@@ -566,6 +562,7 @@ _TOOL_HANDLERS = {
     "search_runs": "search_runs",
     "aggregate_runs_in_range": "aggregate_runs_in_range",
     "get_run_summary": "get_run_summary",
+    "get_run_splits": "get_run_splits",
     "get_training_kpis": "get_training_kpis",
     "get_weekly_training_insight": "get_weekly_training_insight",
     "get_marathon_projection": "get_marathon_projection",
@@ -674,6 +671,15 @@ def execute_tool(
                 include_execution_kpis=inc_kpis,
                 include_hr_profile=inc_hr,
             )
+
+        if handler_key == "get_run_splits":
+            aid = _parse_activity_id(args)
+            if aid is None:
+                return {
+                    "error": "missing_activity_id",
+                    "message": "activity_id must be a positive integer.",
+                }
+            return tool_get_run_splits(session, internal_user_id, aid)
 
         if handler_key == "get_training_kpis":
             weeks = args.get("weeks", _DEFAULT_KPI_WEEKS)

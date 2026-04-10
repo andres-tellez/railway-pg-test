@@ -149,6 +149,7 @@ SEED_TOOLS = [
             "`easy_pct_display`, `z2_band_pct_display`); "
             "Always: `hr_drift_band_zones` — min/max % drift per color (app-wide, same as Weekly Insights; use when user asks band definitions). "
             "`include_hr_profile` → `user_hr_profile` (Z1–Z5 bpm, hrmax_used_bpm, resting_hr_used_bpm, method). "
+            "For **lap / mile-by-mile** pace and avg HR rows, use **`get_run_splits`** (same activity_id), not this tool alone. "
             "Only call after activity_id is known (find_runs_by_date or user-provided)."
         ),
         "when_to_call": (
@@ -197,6 +198,41 @@ SEED_TOOLS = [
         "data_source": "run_insight + v_easy_runs",
         "is_enabled": True,
         "sort_order": 20,
+    },
+    {
+        "name": "get_run_splits",
+        "display_name": "Get Run Splits",
+        "category": "run_analysis",
+        "description": (
+            "Load **per-lap / per-split** rows for one **activity_id** from the `splits` table (Strava lap ingestion). "
+            "Each row includes **segment_label**, **distance_display**, **moving_time_display**, **avg_pace_display**, "
+            "**avg_heart_rate_display** (display strings — quote exactly). "
+            "Use for **mile over mile**, **each mile**, **lap by lap**, **split-by-split** HR or pace, or any ask for "
+            "finer progression than **get_run_summary.training_kpis** (early/late/peak HR). "
+            "**scope** in the payload explains lap boundaries (often ~1 mi, not guaranteed). "
+            "Session-level drift % and Z2 KPIs stay on **get_run_summary**; do not recompute splits yourself."
+        ),
+        "when_to_call": (
+            "User wants split-level or per-mile / per-lap breakdown of pace or heart rate for a run you can identify "
+            "with **activity_id** (same run as a prior **get_run_summary** when continuing that thread)."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "activity_id": {
+                    "type": "integer",
+                    "description": "Strava activity id for this user's run.",
+                },
+            },
+            "required": ["activity_id"],
+        },
+        "returns_description": (
+            "activity_id, title, splits_count, splits[] (lap_index, segment_label, display fields), scope; "
+            "or empty splits with message when no lap rows stored."
+        ),
+        "data_source": "splits (+ activities ownership check)",
+        "is_enabled": True,
+        "sort_order": 21,
     },
     {
         "name": "search_runs",

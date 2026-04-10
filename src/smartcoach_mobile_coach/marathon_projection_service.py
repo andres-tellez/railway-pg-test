@@ -10,11 +10,11 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Session
 
 from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
+from src.smartcoach_mobile_coach.run_metrics import METERS_TO_MILES
 from src.smartcoach_mobile_coach.training_kpi_service import get_training_progress
 from src.utils.activity_local_date_sql import ACTIVITY_LOCAL_DATE_SQL_FRAGMENT
 
 MARATHON_DISTANCE_MILES = 26.2188
-M_TO_MI = 0.000621371
 
 _RECENT_RUNS_SQL = text(
     f"""
@@ -110,7 +110,7 @@ def get_marathon_projection(
         moving_time = int(r.moving_time or 0)
         if distance_m <= 0 or moving_time <= 0:
             continue
-        miles = distance_m * M_TO_MI
+        miles = distance_m * METERS_TO_MILES
         if miles <= 0:
             continue
         pace_sec = moving_time / miles

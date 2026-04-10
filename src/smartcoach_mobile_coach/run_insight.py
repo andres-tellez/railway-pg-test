@@ -23,21 +23,11 @@ from src.smartcoach_mobile_coach.display_format import (
     format_time_utc,
     table_row_date_label,
 )
+from src.smartcoach_mobile_coach.run_metrics import (
+    distance_miles_from_meters,
+    pace_sec_per_mi,
+)
 from src.utils.activity_local_date_sql import ACTIVITY_LOCAL_DATE_SQL_FRAGMENT
-
-
-def _distance_miles_from_meters(meters: Optional[float]) -> float:
-    if meters is None:
-        return 0.0
-    return float(meters) * 0.000621371
-
-
-def _pace_sec_per_mi(
-    moving_time: Optional[int], distance_miles: float
-) -> Optional[float]:
-    if not moving_time or moving_time <= 0 or distance_miles <= 0:
-        return None
-    return float(moving_time) / distance_miles
 
 
 def _median(vals: List[float]) -> Optional[float]:
@@ -146,8 +136,8 @@ def build_get_run_insight_payload(
     if (act_type or "") != "Run":
         return {"error": "unsupported", "message": "Only Run activities are supported."}
 
-    distance_mi = _distance_miles_from_meters(distance_m)
-    pace_sec = _pace_sec_per_mi(moving_time, distance_mi)
+    distance_mi = distance_miles_from_meters(distance_m)
+    pace_sec = pace_sec_per_mi(moving_time, distance_mi)
     act = ActivityDAO.get_by_id(session, activity_id)
     if not act or str(act.user_id) != str(internal_user_id):
         return {"error": "not_found", "message": "Activity not found for this user."}
@@ -188,8 +178,8 @@ def build_get_run_insight_payload(
     peer_dists: List[float] = []
 
     for p in peers:
-        p_mi = _distance_miles_from_meters(p.distance)
-        p_pace = _pace_sec_per_mi(p.moving_time, p_mi)
+        p_mi = distance_miles_from_meters(p.distance)
+        p_pace = pace_sec_per_mi(p.moving_time, p_mi)
         p_hr = float(p.average_heartrate) if p.average_heartrate is not None else None
         if p_pace:
             peer_paces.append(p_pace)

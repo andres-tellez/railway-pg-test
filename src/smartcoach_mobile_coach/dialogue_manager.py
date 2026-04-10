@@ -165,6 +165,16 @@ def plan_response(
 
     if turn_type == "opening":
         target_len = "short recap allowed; keep tight and scannable"
+        focus_open = "answer the initial ask with tool-grounded context"
+        if intent == "split_detail":
+            target_len = (
+                "Resolve **activity_id**, call **get_run_splits**. Prefer a short list or 2–4 tight sentences; "
+                "quote **avg_heart_rate_display** / **avg_pace_display** per row from the tool."
+            )
+            focus_open = (
+                "Per-lap data from **get_run_splits**; add **get_run_summary** only if session KPIs or facts are "
+                "also required. Do not narrate process."
+            )
         if intent == "run_analysis":
             target_len = (
                 "**≤3 sentences** in `content` (**never** 4+): **1** verdict + **1** explanation sentence "
@@ -181,7 +191,7 @@ def plan_response(
             intent=intent,
             target_length=target_len,
             tone_hint="coach-like, direct, grounded",
-            focus="answer the initial ask with tool-grounded context",
+            focus=focus_open,
             avoid_repeating_metrics=[],
             allow_full_recap=True,
             narration_mode=addon["narration_mode"],
@@ -237,7 +247,17 @@ def plan_response(
             "Answer the why directly, avoid metric dumping, and use only tool-grounded numbers. "
             "Include one practical coaching interpretation when useful."
         )
-        if intent == "run_analysis":
+        if intent == "split_detail":
+            target_len_dd = (
+                "Answer from **get_run_splits** (short list allowed). **Do not** restate overall run distance, "
+                "total duration, avg pace, session avg HR, early/late HR, peak split HR, or drift % from a prior "
+                "turn unless the user asked to recap."
+            )
+            focus_dd = (
+                "Split-level numbers only from **get_run_splits**; one short sentence to tie laps together is OK. "
+                "Session summary was already given — do not re-dump it."
+            )
+        elif intent == "run_analysis":
             target_len_dd = (
                 "If reply is **run_summary** with card: **≤3 sentences** in `content` only (Insight + Facts) — "
                 "never 4+. Else: 2-4 sentences, plain and human."
@@ -274,7 +294,13 @@ def plan_response(
             "Answer the follow-up directly and avoid repeating prior full metric blocks. "
             "Use the smallest set of numbers needed, grounded in tool outputs, then stop."
         )
-        if intent == "run_analysis":
+        if intent == "split_detail":
+            target_len_fu = (
+                "**get_run_splits** first; short list or compact prose from row display fields. "
+                "**Do not** repeat session-level HR drift story or overall run stats you already gave."
+            )
+            focus_fu = "Only lap/split-level insight; avoid re-quoting **get_run_summary** aggregates from earlier in the thread."
+        elif intent == "run_analysis":
             target_len_fu = (
                 "If **run_summary** with card: **≤3 sentences** in `content` (Insight + Facts) — **never** 4+. "
                 "Else: 2-4 sentences max."
@@ -305,7 +331,10 @@ def plan_response(
     # new_topic fallback
     target_len_nt = "2-4 sentences by default; expand only if asked"
     focus_nt = "address the new topic directly"
-    if intent == "run_analysis":
+    if intent == "split_detail":
+        target_len_nt = "Use **get_run_splits** after resolving **activity_id**; short list or 2–4 sentences from tool rows."
+        focus_nt = "Per-lap pace and HR from **get_run_splits**; call **get_run_summary** only if session context is also needed."
+    elif intent == "run_analysis":
         target_len_nt = (
             "If **run_summary** with card: **≤3 sentences** in `content` (Insight + Facts). "
             "Else: 2-4 sentences by default; expand only if asked."
@@ -407,6 +436,22 @@ def infer_intent(user_message: str) -> str:
     if any(
         k in t
         for k in (
+            "mile over mile",
+            "mile-by-mile",
+            "mile by mile",
+            "per mile",
+            "each mile",
+            "every mile",
+            "split",
+            "splits",
+            "lap by lap",
+            "by mile",
+        )
+    ):
+        return "split_detail"
+    if any(
+        k in t
+        for k in (
             "last 30 days",
             "this month",
             "total miles",
@@ -484,6 +529,17 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "**Gold standard** (adapt claims to tools): *You're making good progress.* / *Your effort is more controlled, but not fully consistent yet.* / *Keep it steady — that's what will move you forward.*",
             ],
         },
+        "split_detail": {
+            "narration_mode": "woven_coach",
+            "tool_strategy": (
+                "After **activity_id** is known, call **get_run_splits** for per-lap HR and pace. "
+                "Use **get_run_summary** only if session KPIs or facts are still missing for the same run."
+            ),
+            "natural_style_notes": [
+                "Quote split row **display** fields exactly; respect **scope** about lap length.",
+                "If the user already got a run recap, do **not** repeat session-level stats or drift — only add lap table or lap narrative.",
+            ],
+        },
         "run_analysis": {
             "narration_mode": "run_recap",
             "tool_strategy": (
@@ -527,6 +583,8 @@ def _extract_metrics(text: str) -> Set[str]:
         metrics.add("time")
     if "avg. hr" in text_l or "average hr" in text_l:
         metrics.add("avg_hr")
+    if "bpm" in text_l or "heart rate" in text_l:
+        metrics.add("heart_rate")
     if "max hr" in text_l:
         metrics.add("max_hr")
     if "hr drift" in text_l or "drift" in text_l:

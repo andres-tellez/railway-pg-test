@@ -207,6 +207,29 @@ _GET_MARATHON_PROJECTION_OPENAI_TOOL: Dict[str, Any] = {
     },
 }
 
+# Kept in sync with scripts/setup_coach_tools.py `get_run_splits`.
+_GET_RUN_SPLITS_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_run_splits",
+        "description": (
+            "Per-lap/split pace and avg HR for one run (splits table). Use for mile-by-mile, lap-by-lap, or "
+            "split-level HR/pace questions after activity_id is known. Quote row display fields exactly; "
+            "see scope in the payload for lap-boundary caveats."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "activity_id": {
+                    "type": "integer",
+                    "description": "Strava activity id for this user's run.",
+                },
+            },
+            "required": ["activity_id"],
+        },
+    },
+}
+
 
 def _openai_tool_names(tools: List[Dict[str, Any]]) -> Set[str]:
     names = set()
@@ -264,6 +287,16 @@ def _ensure_get_marathon_projection_tool(
     return list(tools) + [_GET_MARATHON_PROJECTION_OPENAI_TOOL]
 
 
+def _ensure_get_run_splits_tool(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Inject get_run_splits if missing from enabled coach_tools."""
+    if "get_run_splits" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled get_run_splits; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_GET_RUN_SPLITS_OPENAI_TOOL]
+
+
 def _load_tools_from_db(session: Session) -> List[Dict[str, Any]]:
     """
     Build the OpenAI tools array from coach_tools table.
@@ -317,7 +350,7 @@ CONVERSATION & BREVITY
 - **Progress / readiness / weekly trend** (holistic *how am I doing*, *on track*, *this week* — **not** structured **`run_summary`**): **≤3 sentences** hard cap — see **OUTPUT STRUCTURE — Progress check-in**; **one idea per sentence**; **spoken** (mid-run / post-run coach), not written analysis.
 - **Default voice (non-run-recap topics):** **woven coach prose** — short paragraphs, **bold** the key numbers (Markdown `**…**`) where helpful. See **OUTPUT STRUCTURE** below. Do **not** open with process filler ("Let me pull…", "Now let me calculate…").
 - **First open-ended run question** in the thread (e.g. "how was my run", "how did today go"): when a **structured run summary** is present, **`content`** is **strictly ≤3 sentences** — **OUTPUT STRUCTURE — Insight + Facts** (verdict → **one** explanation sentence with **≤1** anchor → optional guidance sentence). **Never** a fourth sentence; not report-like.
-- **Follow-ups and narrow questions:** reply **only** to the new ask. **Do not repeat** distance, pace, duration, HR, or conclusions you already gave unless they ask to repeat or recap.
+- **Follow-ups and narrow questions:** reply **only** to the new ask. **Do not repeat** distance, pace, duration, HR, session-level KPI numbers you already stated (e.g. early/late HR, peak split HR, drift %), or the same conclusions unless they ask to repeat or recap.
 - Prior assistant messages are visible — **treat them as shared context**; do not re-dump the same analysis.
 - The mobile app **renders Markdown** — use **bold** for key values; use bullet lists **only** when the user asks for a breakdown/list or when many comparable rows (e.g. per-week totals) are clearer as a short list than a wall of prose.
 
@@ -337,6 +370,8 @@ DATA RETRIEVAL & TOOL RULES
 - When the user refers to "my run" or "last run" **without** having just discussed another specific run, treat it as the run on the system-provided date unless they name another day.
 - For follow-up requests about **today’s** same run (e.g. "include KPIs", "add Z2 pace", "show HR drift") with no new date, resolve with `find_runs_by_date` using the **system-provided anchor date** before answering.
 - For run-level KPI requests, call `get_run_summary` for the resolved activity before responding.
+- **Per-mile / lap / split HR or pace** (e.g. "mile over mile", "each mile", "splits", "lap by lap"): with a resolved **`activity_id`**, call **`get_run_splits`**. Answer from **`splits`** rows (**`avg_heart_rate_display`**, **`avg_pace_display`**, **`segment_label`**) and **`scope`**. If **`splits`** is empty, say no stored laps and stay honest — do not invent a per-mile table.
+- **Follow-up after a session recap:** if they ask for split-level detail, call **`get_run_splits`** and **do not** re-quote overall run **`facts`** (distance, total time, avg pace, avg HR) or the same **early/late/peak HR** and **drift %** story from **`get_run_summary`** unless they explicitly ask to recap — add **only** lap-level numbers plus a short tie-together.
 - `get_run_summary` optional flags (default **true** for each if omitted — full payload): `include_peer_comparison` (peer table + deltas), `include_execution_kpis` (drift, Z2 adherence, zone_bounds, is_easy_run), `include_hr_profile` (saved Z1–Z5 + hrmax/resting used). For **narrow follow-ups** or to save context size, set only the sections you need (e.g. `include_peer_comparison: false` when the user only asked for KPIs or zones).
 - Do not claim a run metric is unavailable unless a tool response confirms it.
 
@@ -805,10 +840,12 @@ def run_mobile_agent_turn(
     max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
     timeout = float(os.getenv("OPENAI_TIMEOUT", "30.0"))
 
-    openai_tools = _ensure_get_marathon_projection_tool(
-        _ensure_get_training_kpis_tool(
-            _ensure_aggregate_runs_in_range_tool(
-                _ensure_search_runs_tool(_load_tools_from_db(session))
+    openai_tools = _ensure_get_run_splits_tool(
+        _ensure_get_marathon_projection_tool(
+            _ensure_get_training_kpis_tool(
+                _ensure_aggregate_runs_in_range_tool(
+                    _ensure_search_runs_tool(_load_tools_from_db(session))
+                )
             )
         )
     )
