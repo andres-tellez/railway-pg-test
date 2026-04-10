@@ -30,7 +30,11 @@ from src.utils.response_utils import (
 )
 from src.utils.strava_validators import validate_oauth_code
 from src.utils.auth_rate_limiter import rate_limit_auth
-from src.utils.oauth_state_manager import generate_state_token, validate_state_token
+from src.utils.oauth_state_manager import (
+    generate_state_token,
+    split_strava_state_mobile_suffix,
+    validate_state_token,
+)
 from src.utils.audit_logger import log_oauth_callback
 from src.utils.strava_exceptions import (
     StravaOAuthError,
@@ -52,6 +56,7 @@ from src.utils.strava_helpers import (
     get_authenticated_user_with_athlete,
     run_background_job,
     get_frontend_redirect_url,
+    get_strava_mobile_success_redirect_url,
     is_uuid_format,
     normalize_redirect_uri,
 )
@@ -122,9 +127,13 @@ def strava_login_redirect():
         # The state token will use the internal_user_id
         user_id_for_state = auth0_sub or internal_user_id or "unknown"
 
+        mobile_client = request.args.get("client", "").strip().lower() == "mobile"
+
         # Generate cryptographically secure state token for CSRF protection
         try:
-            state_token = generate_state_token(user_id_for_state)
+            state_token = generate_state_token(
+                user_id_for_state, mobile_client=mobile_client
+            )
         except Exception as e:
             logger.error(f"Failed to generate state token: {e}", exc_info=True)
             # Fallback: use a simple state if session is not available
@@ -208,8 +217,10 @@ def strava_callback_get():
                 field="state",
             )
 
+        state_core, mobile_return = split_strava_state_mobile_suffix(state)
+
         # Validate state token to prevent CSRF attacks and extract user_id
-        is_valid, error_msg, extracted_user_id = validate_state_token(state)
+        is_valid, error_msg, extracted_user_id = validate_state_token(state_core)
         if not is_valid:
             logger.warning(f"OAuth state validation failed: {error_msg}")
             log_oauth_callback(
@@ -290,6 +301,11 @@ def strava_callback_get():
         run_full_ingestion_and_enrichment(None, athlete_id, user_id=user_id_str)
 
     run_background_job(ingestion_job, athlete_id, user_id)
+
+    if mobile_return:
+        mobile_url = get_strava_mobile_success_redirect_url()
+        logger.info("Redirecting mobile Strava client to app scheme: %s", mobile_url)
+        return redirect(mobile_url)
 
     frontend_redirect = get_frontend_redirect_url()
     logger.info(f"Redirecting user to: {frontend_redirect}")

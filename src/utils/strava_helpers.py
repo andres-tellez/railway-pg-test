@@ -181,6 +181,17 @@ def run_background_job(job_func: Callable, *args, **kwargs) -> None:
     )
 
 
+def get_strava_mobile_success_redirect_url() -> str:
+    """
+    URL to open the native app after successful Strava OAuth (custom scheme).
+
+    Override with env ``STRAVA_MOBILE_SUCCESS_REDIRECT`` (full URL, e.g.
+    ``smartcoachmobile://strava-callback?status=connected``).
+    """
+    default = "smartcoachmobile://strava-callback?status=connected"
+    return (os.getenv("STRAVA_MOBILE_SUCCESS_REDIRECT") or default).strip()
+
+
 def get_frontend_redirect_url(default: str = "https://localhost:5173/setup") -> str:
     """
     Get frontend redirect URL from environment or use default.

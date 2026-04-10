@@ -29,16 +29,20 @@ logger = logging.getLogger(__name__)
 # State token expires after 5 minutes
 STATE_TOKEN_TTL_SEC = 300
 
+# Third segment on Strava OAuth state when flow was started from the mobile app (custom-scheme return).
+_MOBILE_CLIENT_MARKER = "m"
 
-def generate_state_token(user_id: str) -> str:
+
+def generate_state_token(user_id: str, *, mobile_client: bool = False) -> str:
     """
     Generate a cryptographically secure random state token with embedded user_id.
 
     Args:
         user_id: User ID to associate with the state (for validation)
+        mobile_client: If True, append ``.m`` so the Strava callback can redirect to the app scheme.
 
     Returns:
-        State token in format: {random_token}.{base64url_encoded_user_id}
+        State token: ``{random}.{base64url_user_id}`` or the same with ``.m`` when mobile_client.
     """
     random_token = secrets.token_urlsafe(32)  # 32 bytes = 256 bits of entropy
     expiry = time.time() + STATE_TOKEN_TTL_SEC
@@ -64,8 +68,28 @@ def generate_state_token(user_id: str) -> str:
         )
         # Don't raise - we can still extract user_id from the state token itself
 
-    logger.debug(f"Generated OAuth state token for user {user_id}")
+    if mobile_client:
+        state_token = f"{state_token}.{_MOBILE_CLIENT_MARKER}"
+
+    logger.debug(
+        f"Generated OAuth state token for user {user_id} mobile={mobile_client}"
+    )
     return state_token
+
+
+def split_strava_state_mobile_suffix(state: str) -> tuple[str, bool]:
+    """
+    Strip mobile-app marker from Strava OAuth state before validate_state_token.
+
+    Format (mobile): {random}.{base64url_user_id}.m
+    Format (web):    {random}.{base64url_user_id}
+    """
+    if not state:
+        return state, False
+    parts = state.split(".")
+    if len(parts) >= 3 and parts[-1] == _MOBILE_CLIENT_MARKER:
+        return ".".join(parts[:-1]), True
+    return state, False
 
 
 def validate_state_token(
