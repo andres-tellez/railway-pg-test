@@ -35,7 +35,9 @@ Registered in `src/app.py` as `smartcoach_mobile_coach_bp`.
 
 Uses the same OpenAI env vars as the rest of the API (`OPENAI_API_KEY`, `OPENAI_CONVERSATION_MODEL`, etc.).
 
-**HTTP worker timeout:** `gunicorn.conf.py` sets **`timeout = 300`** by default (override with **`GUNICORN_TIMEOUT`**). **`railway.toml`** sets **`deploy.startCommand`** to `gunicorn -c gunicorn.conf.py run:app` so Railway does not fall back to auto-detected `gunicorn run:app` (**30s** worker kill). `nixpacks.toml` / `Procfile` match. If a proxy still caps lower, raise that limit too.
+**HTTP worker timeout:** `gunicorn.conf.py` sets **`timeout = 300`** by default (override with **`GUNICORN_TIMEOUT`**). `nixpacks.toml` / `Procfile` use `gunicorn -c gunicorn.conf.py run:app`.
+
+**Railway (multi-service repo):** Do **not** put a **root** `railway.toml` with `deploy.startCommand` here — Railway applies that to **every** service (including the Vite **frontend**), which then crashes with `gunicorn: command not found`. On the **Python API** service only, set **Deploy → Start command** to: `gunicorn -c gunicorn.conf.py run:app` (or rely on Nixpacks if that service builds from this repo with `nixpacks.toml`). If a proxy still caps lower than Gunicorn, raise that limit too.
 
 ## Optional client header
 
