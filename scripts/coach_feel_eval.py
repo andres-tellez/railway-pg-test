@@ -33,6 +33,7 @@ import os
 import sys
 import time
 from datetime import date
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import requests
@@ -66,6 +67,21 @@ PROMPTS: List[str] = [
     "Ok but what should I do tomorrow?",
     "Can you simplify that?",
 ]
+
+
+def _load_local_dotenv() -> None:
+    """Load repo-root `.env.local` if present (does not override existing env)."""
+    root = Path(__file__).resolve().parent.parent
+    env_path = root / ".env.local"
+    if not env_path.is_file():
+        return
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(env_path, override=False)
+    except ImportError:
+        pass
+
 
 PASS_CONFIG: List[Tuple[str, str]] = [
     (
@@ -205,6 +221,8 @@ def write_workbook(
 
 
 def main() -> None:
+    _load_local_dotenv()
+
     parser = argparse.ArgumentParser(
         description="Coach feel eval → Excel (two model passes)."
     )
