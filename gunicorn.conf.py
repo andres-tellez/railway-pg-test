@@ -4,6 +4,11 @@ Gunicorn settings for SmartCoach API (Railway + local).
 Railpack / dashboard auto-detect often omits --timeout; default worker silence
 timeout is 30s, which matches agent-messages 500s at ~30s. Override with env
 GUNICORN_TIMEOUT if needed.
+
+Railway: set start command on the **API** service only:
+  gunicorn -c gunicorn.conf.py run:app
+Do not use a repo-root railway.toml startCommand — it applies to all services
+(e.g. frontend) and breaks with ``gunicorn: command not found``.
 """
 
 import os
