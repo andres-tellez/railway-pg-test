@@ -904,7 +904,10 @@ def run_mobile_agent_turn(
     model = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
     temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
     max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
-    timeout = float(os.getenv("OPENAI_TIMEOUT", "30.0"))
+    # Tool-using turns need multiple completions; 30s per call + Gunicorn's default --timeout 30
+    # produced ~30s 500s on follow-up agent-messages. Mobile defaults to 120s per completion
+    # (does not inherit OPENAI_TIMEOUT=30 — set OPENAI_MOBILE_AGENT_TIMEOUT to cap explicitly).
+    timeout = float(os.getenv("OPENAI_MOBILE_AGENT_TIMEOUT", "120.0"))
 
     openai_tools = _ensure_get_run_splits_tool(
         _ensure_get_marathon_projection_tool(

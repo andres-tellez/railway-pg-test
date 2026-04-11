@@ -16,7 +16,7 @@
 | Path | Role |
 |------|------|
 | `src/smartcoach_mobile_coach/routes.py` | Flask blueprint, auth, HTTP rate limit, persistence |
-| `src/smartcoach_mobile_coach/orchestrator.py` | OpenAI tool loop (max 3 iterations) |
+| `src/smartcoach_mobile_coach/orchestrator.py` | OpenAI tool loop (bounded iterations; see `SMARTCOACH_AGENT_MAX_LOOPS`) |
 | `src/smartcoach_mobile_coach/agent_tools.py` | `list_runs_for_local_date`, `get_run_insight` |
 | `src/smartcoach_mobile_coach/run_insight.py` | Facts + peer comparison JSON (`*_display` fields) |
 | `src/smartcoach_mobile_coach/insight_cache.py` | Per-user TTL cache for `get_run_insight` |
@@ -31,8 +31,11 @@ Registered in `src/app.py` as `smartcoach_mobile_coach_bp`.
 | `SMARTCOACH_MOBILE_AGENT_ENABLED` | `true` | Set to `false` / `0` / `off` to disable the route (503). |
 | `SMARTCOACH_MOBILE_AGENT_HTTP_RPM` | `8` | Max `agent-messages` requests per user per minute (HTTP layer). |
 | `SMARTCOACH_MOBILE_INSIGHT_CACHE_TTL` | `3600` | Insight tool cache TTL (seconds). |
+| `OPENAI_MOBILE_AGENT_TIMEOUT` | `120` | Per **completion** (seconds) for each `chat_completion_with_tools` in the mobile agent loop. **Does not** read `OPENAI_TIMEOUT` — mobile needs a higher ceiling than generic 30s coach calls. Lower this only if you accept more timeouts on heavy tool turns. |
 
 Uses the same OpenAI env vars as the rest of the API (`OPENAI_API_KEY`, `OPENAI_CONVERSATION_MODEL`, etc.).
+
+**HTTP worker timeout:** `nixpacks.toml` / `Procfile` run Gunicorn with **`--timeout 180`** so one `agent-messages` request can span several completions + tool work (the default was **30s**, which matched your ~30s 500s). If a proxy in front caps lower than Gunicorn, raise the proxy limit too.
 
 ## Optional client header
 
