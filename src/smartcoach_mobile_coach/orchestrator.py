@@ -891,6 +891,7 @@ def run_mobile_agent_turn(
     *,
     anchor_local_date: str,
     client_timezone: Optional[str] = None,
+    eval_model_override: Optional[str] = None,
 ) -> Tuple[Union[str, Dict[str, Any]], Dict[str, Any]]:
     """
     Returns (assistant_reply, metadata with usage, cost, loops).
@@ -899,9 +900,11 @@ def run_mobile_agent_turn(
     ``{"type": "run_summary", "content": str, "data": {...}}`` when get_run_summary succeeded this turn.
 
     anchor_local_date: YYYY-MM-DD from the mobile device (or server fallback); grounds "today".
+    eval_model_override: optional OpenAI model id (e.g. gpt-4o-mini) when HTTP layer allows it
+        for scripted eval only — normally unset.
     """
     service = get_openai_service()
-    model = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
+    model = eval_model_override or os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
     temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
     max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
     # Per completion (httpx/OpenAI). Default 180s — deploys that still use Gunicorn's 30s
