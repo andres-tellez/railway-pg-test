@@ -31,11 +31,11 @@ Registered in `src/app.py` as `smartcoach_mobile_coach_bp`.
 | `SMARTCOACH_MOBILE_AGENT_ENABLED` | `true` | Set to `false` / `0` / `off` to disable the route (503). |
 | `SMARTCOACH_MOBILE_AGENT_HTTP_RPM` | `8` | Max `agent-messages` requests per user per minute (HTTP layer). |
 | `SMARTCOACH_MOBILE_INSIGHT_CACHE_TTL` | `3600` | Insight tool cache TTL (seconds). |
-| `OPENAI_MOBILE_AGENT_TIMEOUT` | `120` | Per **completion** (seconds) for each `chat_completion_with_tools` in the mobile agent loop. **Does not** read `OPENAI_TIMEOUT` — mobile needs a higher ceiling than generic 30s coach calls. Lower this only if you accept more timeouts on heavy tool turns. |
+| `OPENAI_MOBILE_AGENT_TIMEOUT` | `180` | Per **completion** (seconds) for each `chat_completion_with_tools` in the mobile agent loop. **Does not** read `OPENAI_TIMEOUT`. |
 
 Uses the same OpenAI env vars as the rest of the API (`OPENAI_API_KEY`, `OPENAI_CONVERSATION_MODEL`, etc.).
 
-**HTTP worker timeout:** `nixpacks.toml` / `Procfile` run Gunicorn with **`--timeout 180`** so one `agent-messages` request can span several completions + tool work (the default was **30s**, which matched your ~30s 500s). If a proxy in front caps lower than Gunicorn, raise the proxy limit too.
+**HTTP worker timeout:** `gunicorn.conf.py` sets **`timeout = 300`** by default (override with **`GUNICORN_TIMEOUT`**). **`railway.toml`** sets **`deploy.startCommand`** to `gunicorn -c gunicorn.conf.py run:app` so Railway does not fall back to auto-detected `gunicorn run:app` (**30s** worker kill). `nixpacks.toml` / `Procfile` match. If a proxy still caps lower, raise that limit too.
 
 ## Optional client header
 
