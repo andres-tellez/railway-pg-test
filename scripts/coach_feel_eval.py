@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 """
-Coach “feel” eval — two passes (gpt-4o-mini vs gpt-4o), one workbook.
+Coach "feel" eval — two passes (gpt-4o-mini vs gpt-4o), one workbook.
 
 Responses are **only** from SmartCoach `POST /api/conversations/.../agent-messages`
 (verbatim JSON/text in the spreadsheet). You rate empty columns yourself.
 
 Prerequisites
 -------------
-1. API must accept per-request eval models:
+1. API must allow eval model header (pick one on the **API** server — staging recommended):
+
+   **Option A — override flag** (any authenticated client can pick allowlisted models):
+
      export SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE=1
-   on the **API** server (use **staging**; leave **off** in prod unless you trust callers).
+
+   **Option B — shared secret** (script sends ``X-SmartCoach-Eval-Secret``):
+
+     export SMARTCOACH_COACH_EVAL_REQUEST_SECRET="your-long-random-string"
+
+   Set the **same** ``SMARTCOACH_COACH_EVAL_REQUEST_SECRET`` in your shell or ``.env.local``
+   when running this script so it can send the header.
 
 2. A valid Auth0 (or SmartCoach) **Bearer** token for a real user with coach data:
      export SMARTCOACH_EVAL_BEARER_TOKEN="eyJ..."
@@ -18,11 +27,20 @@ Prerequisites
 3. Run:
      python scripts/coach_feel_eval.py --output coach_feel_eval.xlsx
 
+   Rate limits: use ``--pause`` and/or a subset, e.g. first 5 prompts only:
+     python scripts/coach_feel_eval.py -o coach_feel_eval.xlsx --max-prompts 5 --pause 15
+
+   One question at a time (mini only), print coach text (not one-line JSON):
+     python scripts/coach_feel_eval.py --pass-models gpt-4o-mini --prompt-index 1 --print
+
+   Same plus indented full payload:
+     python scripts/coach_feel_eval.py --pass-models gpt-4o-mini --prompt-index 1 --print --print-json
+
 The script creates **two worksheets** (sheet names: ``gpt-4o-mini`` and ``gpt-4o``).
 Each sheet is one **continuous** conversation (same prompt order as below).
 
 If ``X-SmartCoach-Model-Used`` does not match the requested pass model, the script
-prints a warning (usually means ``SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE`` is off).
+prints a warning (eval headers not enabled on API, or secret/env mismatch).
 """
 
 from __future__ import annotations
@@ -39,7 +57,6 @@ from typing import Any, Dict, List, Tuple
 import requests
 import xlsxwriter
 
-# Fixed prompt order (single thread per pass).
 PROMPTS: List[str] = [
     # Core run feedback
     "How was my run?",
@@ -131,10 +148,13 @@ def _post_agent_message(
         "message": message,
         "client_local_date": date.today().isoformat(),
     }
-    headers = {
+    headers: Dict[str, str] = {
         "X-SmartCoach-Client": "mobile",
         "X-SmartCoach-Eval-Model": eval_model,
     }
+    eval_secret = (os.environ.get("SMARTCOACH_COACH_EVAL_REQUEST_SECRET") or "").strip()
+    if eval_secret:
+        headers["X-SmartCoach-Eval-Secret"] = eval_secret
     r = sess.post(url, json=body, headers=headers, timeout=300)
     text = r.text
     try:
@@ -154,13 +174,16 @@ def run_pass(
     base_url: str,
     eval_model: str,
     pause_s: float,
+    prompts: List[str],
+    first_row_num: int = 1,
 ) -> List[Tuple[int, str, str, str, str]]:
     """
-    Returns rows: (#, prompt, response_text, model_header, mismatch_note)
+    Returns rows: (#, prompt, response_text, model_header, mismatch_note).
+    ``first_row_num`` is the display index for the first prompt (e.g. 7 for Q7 only).
     """
     cid = _create_conversation(sess, base_url)
     rows: List[Tuple[int, str, str, str, str]] = []
-    for i, prompt in enumerate(PROMPTS, start=1):
+    for i, prompt in enumerate(prompts, start=first_row_num):
         data, model_hdr = _post_agent_message(sess, base_url, cid, prompt, eval_model)
         raw_resp = data.get("response")
         cell = _format_assistant_response(raw_resp)
@@ -168,7 +191,11 @@ def run_pass(
         if model_hdr and model_hdr != eval_model:
             note = f"WARN: header model {model_hdr!r} != requested {eval_model!r}"
         elif not model_hdr:
-            note = "WARN: no X-SmartCoach-Model-Used (SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE off?)"
+            note = (
+                "WARN: no X-SmartCoach-Model-Used — set SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE=1 "
+                "on API, or SMARTCOACH_COACH_EVAL_REQUEST_SECRET on API and the same env var "
+                "when running this script."
+            )
         rows.append((i, prompt, cell, model_hdr, note))
         if pause_s > 0:
             time.sleep(pause_s)
@@ -213,18 +240,72 @@ def write_workbook(
             ws.write(ridx, 0, num)
             ws.write(ridx, 1, prompt)
             ws.write(ridx, 2, response, wrap)
-            # rating columns left blank for you
             if meta_note:
                 ws.write(ridx, 7, meta_note, wrap)
 
     workbook.close()
 
 
+def _coach_clipboard_parts(cell: str) -> Tuple[str, str | None]:
+    """
+    Prefer the human coach string (``content``) for copy/paste; keep full pretty
+    JSON available when the payload is a JSON object.
+    """
+    try:
+        obj = json.loads(cell)
+    except (json.JSONDecodeError, TypeError):
+        return cell, None
+    if isinstance(obj, dict):
+        pretty = json.dumps(obj, ensure_ascii=False, indent=2)
+        c = obj.get("content")
+        if isinstance(c, str) and c.strip():
+            return c.strip(), pretty
+        return pretty, None
+    if isinstance(obj, str):
+        return obj, None
+    return json.dumps(obj, ensure_ascii=False, indent=2), None
+
+
+def _print_stdout_copypaste(
+    all_rows: Dict[str, List[Tuple[int, str, str, str, str]]],
+    *,
+    include_full_json: bool,
+) -> None:
+    """Blocks for pasting: coach text first; optional pretty JSON; meta on stderr."""
+    for eval_model, rows in all_rows.items():
+        for num, prompt, cell, _hdr, note in rows:
+            primary, full_pretty = _coach_clipboard_parts(cell)
+            print(f"=== Q{num} | {eval_model} ===", flush=True)
+            print("Prompt:", flush=True)
+            print(prompt, flush=True)
+            print("---", flush=True)
+            print("Coach:", flush=True)
+            print(primary, flush=True)
+            if include_full_json:
+                print("", flush=True)
+                print("Full JSON:", flush=True)
+                if full_pretty is not None:
+                    print(full_pretty, flush=True)
+                else:
+                    try:
+                        obj = json.loads(cell)
+                        print(
+                            json.dumps(obj, ensure_ascii=False, indent=2),
+                            flush=True,
+                        )
+                    except (json.JSONDecodeError, TypeError):
+                        print(cell, flush=True)
+            if note:
+                print(note, file=sys.stderr, flush=True)
+            print(flush=True)
+
+
 def main() -> None:
     _load_local_dotenv()
 
+    known_models = [m for m, _ in PASS_CONFIG]
     parser = argparse.ArgumentParser(
-        description="Coach feel eval → Excel (two model passes)."
+        description="Coach feel eval to Excel (two model passes) or stdout (--print)."
     )
     parser.add_argument(
         "--base-url",
@@ -248,6 +329,41 @@ def main() -> None:
         default=0.75,
         help="Seconds between agent-messages calls (rate limits / server breathing room)",
     )
+    sel = parser.add_mutually_exclusive_group()
+    sel.add_argument(
+        "--max-prompts",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Only the first N prompts in order (default: all %d)." % len(PROMPTS),
+    )
+    sel.add_argument(
+        "--prompt-index",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Run only prompt N from the fixed list (1-based, e.g. 1 for Q1).",
+    )
+    parser.add_argument(
+        "--pass-models",
+        default=None,
+        metavar="LIST",
+        help=(
+            "Comma-separated models to run, in order (default: %s). "
+            "Example: gpt-4o-mini to skip gpt-4o and reduce TPM."
+            % ",".join(known_models)
+        ),
+    )
+    parser.add_argument(
+        "--print",
+        action="store_true",
+        help="Print Q blocks to stdout for copy/paste; do not write Excel.",
+    )
+    parser.add_argument(
+        "--print-json",
+        action="store_true",
+        help="With --print, also print pretty-printed full JSON after coach text.",
+    )
     args = parser.parse_args()
 
     base_url = (args.base_url or "").strip() or (
@@ -264,6 +380,47 @@ def main() -> None:
         print("Set --token or SMARTCOACH_EVAL_BEARER_TOKEN", file=sys.stderr)
         sys.exit(2)
 
+    n_all = len(PROMPTS)
+    first_row_num = 1
+    if args.prompt_index is not None:
+        if args.prompt_index < 1 or args.prompt_index > n_all:
+            print(
+                f"--prompt-index must be between 1 and {n_all} (got {args.prompt_index})",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        prompts_run = [PROMPTS[args.prompt_index - 1]]
+        first_row_num = args.prompt_index
+    elif args.max_prompts is None:
+        prompts_run = PROMPTS
+    else:
+        if args.max_prompts < 1 or args.max_prompts > n_all:
+            print(
+                f"--max-prompts must be between 1 and {n_all} (got {args.max_prompts})",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        prompts_run = PROMPTS[: args.max_prompts]
+
+    if args.pass_models is None:
+        pass_plan: List[Tuple[str, str]] = list(PASS_CONFIG)
+    else:
+        raw = [p.strip() for p in args.pass_models.split(",") if p.strip()]
+        if not raw:
+            print("--pass-models must list at least one model.", file=sys.stderr)
+            sys.exit(2)
+        known_set = set(known_models)
+        bad = [m for m in raw if m not in known_set]
+        if bad:
+            print(
+                f"Unknown model(s) in --pass-models: {bad!r}. "
+                f"Allowed: {', '.join(known_models)}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        title_by_id = dict(PASS_CONFIG)
+        pass_plan = [(m, title_by_id[m]) for m in raw]
+
     sess = requests.Session()
     sess.headers.update(
         {
@@ -275,23 +432,41 @@ def main() -> None:
 
     all_rows: Dict[str, List[Tuple[int, str, str, str, str]]] = {}
     pass_titles = {mid: title for mid, title in PASS_CONFIG}
+    progress_out = sys.stderr if args.print else sys.stdout
 
-    for eval_model, _title in PASS_CONFIG:
+    for eval_model, _title in pass_plan:
         print(
-            f"--- Running pass: {eval_model} ({len(PROMPTS)} prompts) ---", flush=True
+            f"--- Running pass: {eval_model} ({len(prompts_run)} prompts) ---",
+            flush=True,
+            file=progress_out,
         )
         try:
-            rows = run_pass(sess, base_url, eval_model, args.pause)
+            rows = run_pass(
+                sess,
+                base_url,
+                eval_model,
+                args.pause,
+                prompts_run,
+                first_row_num,
+            )
         except Exception as exc:
             print(f"ERROR pass {eval_model}: {exc}", file=sys.stderr)
             sys.exit(1)
         all_rows[eval_model] = rows
         for num, _p, _c, hdr, note in rows[:1]:
             if note:
-                print(note, flush=True)
+                print(note, flush=True, file=progress_out)
 
-    write_workbook(args.output, all_rows, pass_titles)
-    print(f"Wrote {args.output}", flush=True)
+    if args.print:
+        _print_stdout_copypaste(all_rows, include_full_json=bool(args.print_json))
+        print(
+            "Done (--print: no Excel file written).",
+            flush=True,
+            file=sys.stderr,
+        )
+    else:
+        write_workbook(args.output, all_rows, pass_titles)
+        print(f"Wrote {args.output}", flush=True)
 
 
 if __name__ == "__main__":

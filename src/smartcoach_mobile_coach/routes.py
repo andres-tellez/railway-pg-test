@@ -6,6 +6,7 @@ POST /api/conversations/<conversation_id>/agent-messages
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -43,9 +44,35 @@ def _eval_model_override_enabled() -> bool:
     return v in ("1", "true", "yes", "on")
 
 
+def _eval_request_secret_configured() -> str:
+    """Shared secret for scripted eval (optional alternative to override flag)."""
+    return (os.getenv("SMARTCOACH_COACH_EVAL_REQUEST_SECRET") or "").strip()
+
+
+def _eval_request_secret_matches() -> bool:
+    """True when client sent X-SmartCoach-Eval-Secret matching SMARTCOACH_COACH_EVAL_REQUEST_SECRET."""
+    secret = _eval_request_secret_configured()
+    if not secret:
+        return False  # never treat empty server secret as valid
+    hdr = (request.headers.get("X-SmartCoach-Eval-Secret") or "").strip()
+    if len(hdr) != len(secret):
+        return False
+    return hmac.compare_digest(hdr, secret)
+
+
+def _eval_headers_allowed() -> bool:
+    """
+    Allow X-SmartCoach-Eval-Model when either:
+    - SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE is on, or
+    - SMARTCOACH_COACH_EVAL_REQUEST_SECRET is set on the server and the request
+      includes matching X-SmartCoach-Eval-Secret (for local/staging eval scripts).
+    """
+    return _eval_model_override_enabled() or _eval_request_secret_matches()
+
+
 def _coerce_eval_model_header() -> Optional[str]:
-    """When SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE is on, honor X-SmartCoach-Eval-Model."""
-    if not _eval_model_override_enabled():
+    """Honor X-SmartCoach-Eval-Model when eval headers are allowed (override or secret)."""
+    if not _eval_headers_allowed():
         return None
     raw = request.headers.get("X-SmartCoach-Eval-Model")
     if not raw or not isinstance(raw, str):
