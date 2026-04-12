@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 MODEL_PRICING = {
     "gpt-4o": {"input": 2.50, "output": 10.00},
     "gpt-4o-2024-08-06": {"input": 2.50, "output": 10.00},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "gpt-4": {"input": 30.00, "output": 60.00},
     "gpt-4-turbo": {"input": 10.00, "output": 30.00},
     "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
@@ -72,11 +73,14 @@ def _calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> f
     Returns:
         Cost in USD
     """
-    # Normalize model name (remove version suffix if present)
+    # Normalize model name for pricing lookup (order matters: mini before generic 4o)
     base_model = (
         model.split("-")[0] + "-" + model.split("-")[1] if "-" in model else model
     )
-    if "4o" in model:
+    mlow = model.lower()
+    if "4o-mini" in mlow:
+        base_model = "gpt-4o-mini"
+    elif "4o" in mlow:
         base_model = "gpt-4o"
     elif "3.5" in model:
         base_model = "gpt-3.5-turbo"

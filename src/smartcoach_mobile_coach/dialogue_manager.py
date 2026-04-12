@@ -192,28 +192,29 @@ def plan_response(
         elif intent == "run_analysis":
             if depth_ask:
                 target_len = (
-                    "**Depth request:** OUTPUT STRUCTURE — Insight + Facts **depth exception** for `run_summary` + card: "
-                    "**≤5** sentences in `content` (**never** 6+); **up to 2** sentences may carry *why* / reframing; "
-                    "**≤2** tool-verbatim numeric anchors total (**prefer HR drift** for one); optional last sentence = "
-                    "**qualitative** guidance only. **No** full stat lineup — card holds metrics."
+                    "**Depth request:** OUTPUT STRUCTURE — Insight + Facts depth mode for `run_summary` + card: "
+                    "usually **up to 5** insight sentences in `content`; **up to 2** sentences may carry *why* / reframing; "
+                    "**≤2** tool-verbatim numeric anchors total (**prefer HR drift** for one); optional last insight sentence = "
+                    "**qualitative** guidance only; **optional** one short engagement question after (OUTPUT STRUCTURE **Optional close**). **No** full stat lineup — card holds metrics."
                 )
             else:
                 target_len = (
-                    "**≤3 sentences** in `content` (**never** 4+): **1** verdict + **1** explanation sentence "
-                    "(full *why* in that sentence only; **≤1** anchor, **prefer HR drift**) + **1** optional guidance. "
-                    "Conversational, not report-like — see OUTPUT STRUCTURE — Insight + Facts."
+                    "Usually **2–3 insight sentences** in `content`; **flexible** shape — "
+                    "vary opener and flow (not fixed verdict→number→advice); **≤1** numeric anchor in `content` when it helps "
+                    "(**prefer HR drift** when it is the main signal). **Optional** one short engagement question after "
+                    "(OUTPUT STRUCTURE **Optional close**) when it adds value. Conversational, not report-like — see OUTPUT STRUCTURE — Insight + Facts."
                 )
         elif intent == "training_trend":
             if depth_ask:
                 target_len = (
-                    "**Depth request:** Progress check-in **depth exception**: **≤5** sentences; keep **verdict → constraint → action** "
+                    "**Depth request:** Progress check-in depth mode: usually **up to 5** body sentences; keep **verdict → constraint → action** "
                     "(constraint may use **2** short sentences); **~6–12 words** per line when possible; **spoken** coach; "
-                    "**prefer zero numbers**, **≤2** tool-verbatim numerals in the **whole** reply if essential. See OUTPUT STRUCTURE."
+                    "**prefer zero numbers**, **≤2** tool-verbatim numerals in the **whole** reply if essential; **optional** one short engagement question after (OUTPUT STRUCTURE **Optional close**). See OUTPUT STRUCTURE."
                 )
             else:
                 target_len = (
-                    "**≤3 sentences**, **pattern lock**: verdict → constraint → action; **~6–10 words** per sentence when "
-                    "possible; **spoken** coach (mid/post run). **Prefer zero numbers**; **≤1** if essential. See OUTPUT STRUCTURE."
+                    "Usually **2–3 body sentences**, **preferred order**: verdict → constraint → action; **~6–10 words** per sentence when "
+                    "possible; **spoken** coach (mid/post run). **Prefer zero numbers**; **≤1** if essential; **optional** one short engagement question after when it adds value (OUTPUT STRUCTURE **Optional close**). See OUTPUT STRUCTURE."
                 )
         return ResponseDirective(
             turn_type=turn_type,
@@ -293,28 +294,28 @@ def plan_response(
         elif intent == "run_analysis":
             if depth_ask:
                 target_len_dd = (
-                    "If **run_summary** with card: OUTPUT STRUCTURE **depth exception** — **≤5** sentences in `content`, "
-                    "**≤2** anchors total, **up to 2** sentences for *why* if needed (**never** 6+); **no** full stat dump. "
+                    "If **run_summary** with card: OUTPUT STRUCTURE depth mode — usually **up to 5** insight sentences in `content`, "
+                    "**≤2** anchors total, **up to 2** sentences for *why* if needed; **optional** one short engagement question after; **no** full stat dump. "
                     "Else: 2-4 sentences, plain and human."
                 )
                 focus_dd = (
-                    "Structured run recap: verdict + explanation (**may use 2 sentences** for *why* when depth requested) "
-                    "+ optional qualitative guidance; **≤2** anchors total, **prefer HR drift**. Otherwise answer directly."
+                    "Structured run recap: **flexible** Insight + Facts — **≤2** anchors total, **prefer HR drift** when it is the main signal; "
+                    "vary flow vs prior turns. Otherwise answer directly."
                 )
             else:
                 target_len_dd = (
-                    "If reply is **run_summary** with card: **≤3 sentences** in `content` only (Insight + Facts) — "
-                    "never 4+. Else: 2-4 sentences, plain and human."
+                    "If reply is **run_summary** with card: usually **2–3 insight sentences** in `content` only (Insight + Facts); "
+                    "**optional** one short engagement question after (OUTPUT STRUCTURE **Optional close**). Else: 2-4 sentences, plain and human."
                 )
                 focus_dd = (
-                    "For structured run recap: verdict + one explanation sentence + optional guidance; "
-                    "≤1 anchor in explanation, prefer HR drift. Otherwise answer the drill-down directly."
+                    "For structured run recap: **flexible** shape, **≤1** anchor in `content`, **prefer HR drift** when it is the main signal. "
+                    "Otherwise answer the drill-down directly."
                 )
         elif intent == "training_trend":
             if depth_ask:
                 target_len_dd = (
-                    "Progress/readiness + depth: **≤5** sentences, OUTPUT STRUCTURE Progress check-in **depth exception**; "
-                    "verdict→constraint→action (constraint may be **2** sentences); **≤2** numerals in whole reply if needed. "
+                    "Progress/readiness + depth: usually **up to 5** body sentences, OUTPUT STRUCTURE Progress check-in depth mode; "
+                    "verdict→constraint→action (constraint may be **2** sentences); **≤2** numerals in whole reply if needed; **optional** one short engagement question after. "
                     "Else: 2-4 sentences."
                 )
                 focus_dd = (
@@ -323,8 +324,8 @@ def plan_response(
                 )
             else:
                 target_len_dd = (
-                    "Progress/readiness: **≤3 sentences**, verdict→constraint→action, **~6–10 words** each when possible — "
-                    "never 4+. **Prefer no numbers**. Else if not a trend ask: 2-4 sentences."
+                    "Progress/readiness: usually **2–3 body sentences**, verdict→constraint→action, **~6–10 words** each when possible; "
+                    "**optional** one short engagement question after. **Prefer no numbers**. Else if not a trend ask: 2-4 sentences."
                 )
                 focus_dd = "No corporate (*room for improvement*, *steady progress*); athletic constraint line + clear action."
         return ResponseDirective(
@@ -362,32 +363,32 @@ def plan_response(
         elif intent == "run_analysis":
             if depth_ask:
                 target_len_fu = (
-                    "If **run_summary** with card: **depth exception** — **≤5** sentences, **≤2** anchors, **never** 6+. "
+                    "If **run_summary** with card: depth mode — usually **up to 5** insight sentences, **≤2** anchors, **optional** one short engagement question after. "
                     "Else: 2-4 sentences max."
                 )
                 focus_fu = (
-                    "Structured run recap: Insight + Facts depth mode — **up to 2** explanation sentences if needed; "
-                    "**≤2** anchors; **no** stat dump. Otherwise: smallest tool-backed set, then stop."
+                    "Structured run recap: Insight + Facts depth mode — **flexible** flow, **≤2** anchors; **no** stat dump. "
+                    "Otherwise: smallest tool-backed set, then stop."
                 )
             else:
                 target_len_fu = (
-                    "If **run_summary** with card: **≤3 sentences** in `content` (Insight + Facts) — **never** 4+. "
+                    "If **run_summary** with card: usually **2–3 insight sentences** in `content` (Insight + Facts); **optional** one short engagement question after. "
                     "Else: 2-4 sentences max."
                 )
                 focus_fu = (
-                    "Structured run recap: same Insight + Facts as opening (one explanation sentence; ≤1 anchor, "
-                    "prefer drift). Otherwise: smallest set of tool numbers, then stop."
+                    "Structured run recap: same Insight + Facts caps as opening — **flexible** shape; **≤1** anchor; "
+                    "**prefer drift** when it is the main signal. Otherwise: smallest set of tool numbers, then stop."
                 )
         elif intent == "training_trend":
             if depth_ask:
                 target_len_fu = (
-                    "Progress/readiness + depth: **≤5** sentences (Progress check-in depth exception); **≤2** numerals if needed. "
+                    "Progress/readiness + depth: usually **up to 5** body sentences (Progress check-in depth mode); **≤2** numerals if needed; **optional** one short engagement question after. "
                     "Else: 2-4 sentences max."
                 )
                 focus_fu = "Keep verdict→constraint→action; spoken rhythm; one clear action line."
             else:
                 target_len_fu = (
-                    "Progress/readiness: **≤3 sentences**, verdict→constraint→action, **~6–10 words** — **never** 4+. "
+                    "Progress/readiness: usually **2–3 body sentences**, verdict→constraint→action, **~6–10 words**; **optional** one short engagement question after. "
                     "**Prefer no numbers**. Else: 2-4 sentences max."
                 )
                 focus_fu = "Spoken not written; short clauses; third line = one clear coaching action."
@@ -420,29 +421,26 @@ def plan_response(
     elif intent == "run_analysis":
         if depth_ask:
             target_len_nt = (
-                "If **run_summary** with card: **depth exception** — **≤5** sentences, **≤2** anchors (**never** 6+). "
+                "If **run_summary** with card: depth mode — usually **up to 5** insight sentences, **≤2** anchors; **optional** one short engagement question after. "
                 "Else: 2-4 sentences by default; expand only if asked."
             )
-            focus_nt = (
-                "Run recap with card: verdict + **up to 2** explanation sentences if needed + optional qualitative guidance; "
-                "**no** stat dump."
-            )
+            focus_nt = "Run recap with card: **flexible** Insight + Facts, **≤2** anchors; **no** stat dump."
         else:
             target_len_nt = (
-                "If **run_summary** with card: **≤3 sentences** in `content` (Insight + Facts). "
+                "If **run_summary** with card: usually **2–3 insight sentences** in `content` (Insight + Facts); **optional** one short engagement question after. "
                 "Else: 2-4 sentences by default; expand only if asked."
             )
-            focus_nt = "Run recap with card: verdict + one explanation sentence + optional guidance; else address the topic directly."
+            focus_nt = "Run recap with card: **flexible** Insight + Facts, **≤1** anchor; else address the topic directly."
     elif intent == "training_trend":
         if depth_ask:
             target_len_nt = (
-                "Progress/readiness + depth: **≤5** sentences (Progress check-in depth exception), **≤2** numerals if needed. "
+                "Progress/readiness + depth: usually **up to 5** body sentences (Progress check-in depth mode), **≤2** numerals if needed; **optional** one short engagement question after. "
                 "Else: 2-4 sentences by default; expand only if asked."
             )
             focus_nt = "Gold-standard shape with a bit more room: verdict → constraint (may be 2 lines) → clear action."
         else:
             target_len_nt = (
-                "Progress/readiness: **≤3 sentences**, verdict→constraint→action, **~6–10 words**, **prefer no numbers**. "
+                "Progress/readiness: usually **2–3 body sentences**, verdict→constraint→action, **~6–10 words**, **prefer no numbers**; **optional** one short engagement question after. "
                 "Else: 2-4 sentences by default; expand only if asked."
             )
             focus_nt = "Gold-standard shape: good progress → controlled but not fully consistent → keep it steady / move forward."
@@ -495,11 +493,12 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "\n\n### Human coach style addon\n"
             "- Keep the reply sounding like one coach talking to one athlete, not a report or dashboard.\n"
             "- Stay tool-grounded for numbers; follow OUTPUT STRUCTURE + STYLE in the base prompt "
-            "(run_summary + card: **≤3** sentences in content by default (**≤5** + **≤2** anchors when **Coaching depth requested: yes**); "
-            "default: explanation = **one** sentence, **≤1** anchor in sentence 2, **prefer HR drift**; "
+            "(run_summary + card: usually **2–3** insight sentences in content by default (depth: usually up to **5** with **≤2** anchors); "
+            "**optional** one short engagement question after when it adds value (**Optional close**); "
+            "**flexible** shape; **≤1** anchor by default (**≤2** with depth); **prefer HR drift** when it is the main signal; "
             "conversational not report-like; card carries metrics; "
-            "progress/readiness (training_trend): **≤3** sentences by default (**≤5** with depth), **verdict→constraint→action**, "
-            "**~6–10 words** when possible, **prefer no numbers**, Progress check-in; "
+            "progress/readiness (training_trend): usually **2–3** body sentences by default (depth: usually up to **5**), **verdict→constraint→action**, "
+            "**~6–10 words** when possible, **prefer no numbers**, Progress check-in, plus same optional engagement question rule; "
             "split_detail: **short table/list + human coaching read**, grounded derived comparisons from split rows allowed; "
             "other topics: woven prose where appropriate).\n"
             f"{natural_lines}"
@@ -594,7 +593,7 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
         "tool_strategy": "Use the minimum required tools, then answer directly from results.",
         "natural_style_notes": [
             "Default to short, scannable prose; lead with takeaway; bold key numbers when it helps — not labeled report sections or stat-bullet dumps unless the user asks for a list or breakdown.",
-            "For run-level recap: verdict first, brief explanation second; let structured run summary carry detailed metrics.",
+            "For run-level recap: lead with a clear coaching read, then one concise explanation; let structured run summary carry detailed metrics.",
             "Do not narrate your process (no 'let me pull' / 'now let me calculate').",
             "If tool data is thin, say so in one honest line.",
         ],
@@ -629,8 +628,8 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "Use weekly insight / training KPI tools first; decide verdict + constraint + action in plain athletic language — then say it in three short lines, not a stat readout."
             ),
             "natural_style_notes": [
-                "**Pattern lock:** sentence 1 = **verdict** (confident, simple). Sentence 2 = **constraint** (specific limitation — *more controlled*, *not fully consistent yet*, *still drifting* — never *room for improvement* / *steady progress* / review-speak). Sentence 3 = **action** (one clear direction — e.g. *Keep it steady — that's what will move you forward*).",
-                "**~6–10 words** per sentence when possible; **spoken** rhythm, not memo prose; one idea per sentence — never metric + band + % + comparison in one line.",
+                "**Preferred order:** verdict → constraint → action (spoken, athletic wording; avoid review-speak such as *room for improvement* / *steady progress*).",
+                "**~6–10 words** per sentence when possible; **spoken** rhythm, not memo prose; one idea per sentence — avoid metric + band + % + comparison in one line.",
                 "**Default: no numbers**; **≤1** only if essential — never % + deltas + bands together; ban *showing*, *indicating*, *in the yellow zone*, *over last week*.",
                 "**Gold standard** (adapt claims to tools): *You're making good progress.* / *Your effort is more controlled, but not fully consistent yet.* / *Keep it steady — that's what will move you forward.*",
             ],
@@ -654,9 +653,9 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "Resolve run identity first, then use run summary payload for facts and interpretation."
             ),
             "natural_style_notes": [
-                "Insight + Facts: `content` = coaching insight only — **≤3 sentences total, never 4+**; card below has metrics.",
-                "Structure: (1) verdict — short/direct, no filler (*today*, *you completed*, *this run was*). (2) **One** explanation sentence only (full *why* here; **≤1** anchor, **prefer HR drift**). (3) Optional guidance — qualitative, no numbers.",
-                "No report tone (short clauses, not *which indicates… for a controlled pace*). Do not split explanation across two sentences. Do not paste hr_drift_summary_display into content.",
+                "Insight + Facts: `content` = coaching insight only — usually **2–3 insight sentences**; **optional** one short engagement question after (OUTPUT STRUCTURE **Optional close**) when it adds value; card below has metrics.",
+                "Vary structure from reply to reply — avoid the same verdict→drift%→advice pattern every time. **≤1** numeric anchor in `content` by default (**prefer HR drift** when it is the main signal); no filler openers (*today*, *you completed*, *this run was*).",
+                "No report tone (short clauses, not *which indicates… for a controlled pace*). Do not paste hr_drift_summary_display into content.",
             ],
         },
         "metric_explainer": {

@@ -32,8 +32,27 @@ Registered in `src/app.py` as `smartcoach_mobile_coach_bp`.
 | `SMARTCOACH_MOBILE_AGENT_HTTP_RPM` | `8` | Max `agent-messages` requests per user per minute (HTTP layer). |
 | `SMARTCOACH_MOBILE_INSIGHT_CACHE_TTL` | `3600` | Insight tool cache TTL (seconds). |
 | `OPENAI_MOBILE_AGENT_TIMEOUT` | `180` | Per **completion** (seconds) for each `chat_completion_with_tools` in the mobile agent loop. **Does not** read `OPENAI_TIMEOUT`. |
+| `SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE` | `off` | When `1` / `true`, `POST …/agent-messages` may honor header **`X-SmartCoach-Eval-Model`** with an allowlisted OpenAI model (`gpt-4o`, `gpt-4o-mini`, `gpt-4o-2024-08-06`) for **scripted eval only**. **Leave off in production** unless you accept authenticated users picking the model. Response includes **`X-SmartCoach-Model-Used`**. |
+| `SMARTCOACH_COACH_EVAL_REQUEST_SECRET` | *(unset)* | When set to a non-empty string, requests that send header **`X-SmartCoach-Eval-Secret`** with the **same** value (constant-time compare) may use **`X-SmartCoach-Eval-Model`** as if the override flag were on. Use a long random secret; rotate if leaked. `coach_feel_eval.py` reads this env and sends the header. Prefer this over the override flag when only **you** run eval scripts. |
 
 Uses the same OpenAI env vars as the rest of the API (`OPENAI_API_KEY`, `OPENAI_CONVERSATION_MODEL`, etc.).
+
+### Scripted “feel” eval (Excel)
+
+From repo root, with a real bearer token and API base URL:
+
+```bash
+# On the API server: either eval override, or a shared secret (see env table above).
+export SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE=1
+# Or: export SMARTCOACH_COACH_EVAL_REQUEST_SECRET='…'  # same value in shell below
+
+export SMARTCOACH_EVAL_API_BASE_URL=https://…
+export SMARTCOACH_EVAL_BEARER_TOKEN=eyJ…
+# If using SMARTCOACH_COACH_EVAL_REQUEST_SECRET on the API, set it here too.
+python scripts/coach_feel_eval.py -o coach_feel_eval.xlsx
+```
+
+Produces two worksheets (**`gpt-4o-mini`** and **`gpt-4o`**), each a **single continuous** conversation over the fixed prompt list; **Prompt** and **Response** columns are filled — you rate the rest locally.
 
 **HTTP worker timeout:** `gunicorn.conf.py` sets **`timeout = 300`** by default (override with **`GUNICORN_TIMEOUT`**). `nixpacks.toml` / `Procfile` use `gunicorn -c gunicorn.conf.py run:app`.
 

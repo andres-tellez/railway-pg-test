@@ -6,8 +6,10 @@ POST /api/conversations/<conversation_id>/agent-messages
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -31,6 +33,58 @@ from src.smartcoach_mobile_coach.orchestrator import run_mobile_agent_turn
 from src.utils.response_utils import error_response
 
 logger = logging.getLogger("smartcoach_mobile_coach")
+
+_EVAL_MODEL_ALLOWLIST = frozenset(
+    {"gpt-4o", "gpt-4o-mini", "gpt-4o-2024-08-06"},
+)
+
+
+def _eval_model_override_enabled() -> bool:
+    v = (os.getenv("SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
+def _eval_request_secret_configured() -> str:
+    """Shared secret for scripted eval (optional alternative to override flag)."""
+    return (os.getenv("SMARTCOACH_COACH_EVAL_REQUEST_SECRET") or "").strip()
+
+
+def _eval_request_secret_matches() -> bool:
+    """True when client sent X-SmartCoach-Eval-Secret matching SMARTCOACH_COACH_EVAL_REQUEST_SECRET."""
+    secret = _eval_request_secret_configured()
+    if not secret:
+        return False  # never treat empty server secret as valid
+    hdr = (request.headers.get("X-SmartCoach-Eval-Secret") or "").strip()
+    if len(hdr) != len(secret):
+        return False
+    return hmac.compare_digest(hdr, secret)
+
+
+def _eval_headers_allowed() -> bool:
+    """
+    Allow X-SmartCoach-Eval-Model when either:
+    - SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE is on, or
+    - SMARTCOACH_COACH_EVAL_REQUEST_SECRET is set on the server and the request
+      includes matching X-SmartCoach-Eval-Secret (for local/staging eval scripts).
+    """
+    return _eval_model_override_enabled() or _eval_request_secret_matches()
+
+
+def _coerce_eval_model_header() -> Optional[str]:
+    """Honor X-SmartCoach-Eval-Model when eval headers are allowed (override or secret)."""
+    if not _eval_headers_allowed():
+        return None
+    raw = request.headers.get("X-SmartCoach-Eval-Model")
+    if not raw or not isinstance(raw, str):
+        return None
+    name = raw.strip()
+    if name in _EVAL_MODEL_ALLOWLIST:
+        return name
+    logger.warning(
+        "[smartcoach_mobile_coach] ignored X-SmartCoach-Eval-Model=%r (not in allowlist)",
+        name[:80],
+    )
+    return None
 
 
 def _llm_plain_text_from_stored_message(role: str, content: str) -> str:
@@ -193,6 +247,7 @@ def agent_messages(conversation_id):
                 message.strip(),
                 anchor_local_date=anchor_date,
                 client_timezone=client_tz,
+                eval_model_override=_coerce_eval_model_header(),
             )
         except RateLimitExceededError as e:
             session.rollback()
@@ -246,6 +301,11 @@ def agent_messages(conversation_id):
             response_shape,
         )
 
+        model_used = str(meta.get("model") or "")
+        resp_headers = {}
+        if model_used:
+            resp_headers["X-SmartCoach-Model-Used"] = model_used
+
         return (
             jsonify(
                 {
@@ -259,11 +319,12 @@ def agent_messages(conversation_id):
                             "completion_tokens", 0
                         ),
                         "total_tokens": meta.get("usage", {}).get("total_tokens", 0),
-                        "model": meta.get("model", ""),
+                        "model": model_used,
                     },
                 }
             ),
             200,
+            resp_headers,
         )
 
     except Exception as e:
