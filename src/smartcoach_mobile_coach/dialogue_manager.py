@@ -578,6 +578,8 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "“I’d aim for…”, “you should…”, progression or workout assignment — **unless** clearly required for "
             "**safety** (e.g. sharp pain → stop / see a professional).\n"
             "- **Do** end with **exactly one** short, specific **clarifying question** whose answer would change your guidance. "
+            "Prefer a **concrete fork** (A vs B, or A / B / other) when honestly possible — not a vague “tell me more.”\n"
+            "- **Do not** meta-justify the question (no “so I can understand…”, “this will help me…”, “I’m asking because…”). Ask directly.\n"
             "One optional brief acknowledgment of the tension **before** the question is OK (still **≤2** short sentences total before the question).\n"
             "- **Do not** ask multiple stacked questions. **Do not** open with a full run recap to “prove” the contradiction; "
             "tools may still ground you internally, but the **user-visible** shape stays **question-first**.\n"
