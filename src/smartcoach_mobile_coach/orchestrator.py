@@ -29,6 +29,10 @@ from src.smartcoach_mobile_coach.dialogue_manager import (
     plan_response,
     response_directive_section,
 )
+from src.smartcoach_mobile_coach.thread_derived_context import (
+    DerivedThreadCoachContext,
+    derive_thread_coach_context,
+)
 from src.utils.hr_zone_constants import (
     ALLOWED_METRICS,
     COACHING_LEVEL_DEFAULTS,
@@ -353,6 +357,7 @@ CONVERSATION & BREVITY
 - **Default voice (non-run-recap topics):** **woven coach prose** — short paragraphs, **bold** the key numbers (Markdown `**…**`) where helpful. See **OUTPUT STRUCTURE** below. Do **not** open with process filler ("Let me pull…", "Now let me calculate…").
 - **First open-ended run question** in the thread (e.g. "how was my run", "how did today go"): when a **structured run summary** is present, **`content`** follows **OUTPUT STRUCTURE — Insight + Facts** — **≤3 insight sentences**, flexible shape (not a fixed verdict→number→advice template). **Do not** add a **fourth insight** sentence. You **may** add **one optional 4th sentence** that is **only** a short, specific follow-up question when it adds value for engagement (see **OUTPUT STRUCTURE — Optional close**); not every turn. Not report-like.
 - **Follow-ups and narrow questions:** reply **only** to the new ask. **Do not repeat** distance, pace, duration, HR, session-level KPI numbers you already stated (e.g. early/late HR, peak split HR, drift %), or the same conclusions unless they ask to repeat or recap.
+- **Same-run follow-ups (thread-led, not analysis-led):** When the thread already discussed this run (especially when **## Thread-led coach context** is present), **sentence 1** must **answer the user's latest message** (feeling, worry, contradiction, or new angle) — **not** a fresh opener that re-describes the run (miles / pace / HR / drift) as if starting from scratch. **At most one** new tool-grounded fact in the opening when it is **strictly necessary** for that answer; otherwise continuity beats re-narration.
 - Prior assistant messages are visible — **treat them as shared context**; do not re-dump the same analysis.
 - The mobile app **renders Markdown** — use **bold** for key values; use bullet lists **only** when the user asks for a breakdown/list or when many comparable rows (e.g. per-week totals) are clearer as a short list than a wall of prose.
 - **Engagement:** It is OK to **occasionally** end with **one short, specific** follow-up question when it invites useful next-step dialogue — not generic closings. See **OUTPUT STRUCTURE — Optional close**.
@@ -366,6 +371,7 @@ COACH BEHAVIOR
 **Read the user, not only the data**
 - **Match energy:** Short vent → short empathy + one concrete move. Pure “how was my run?” → lead with the run read, not life advice.
 - **Notice tension:** If what they say **doesn’t fit** the tool picture (e.g. “that was easy” but HR/pace suggests a harder effort), you **should** name it gently and reconcile using **only** tool facts — **only when confidence is high** (a clear contradiction supported by **this turn’s tool payloads** plus what they actually said in the conversation). If signals are ambiguous or tools are incomplete, **do not** force a “gotcha” or create false “which one is it?” moments; stay neutral or ask **one** narrow factual clarifier if needed.
+- **Cross-turn tensions (explicitly, when reasonably clear — usually sentence 1 or 2):** (1) **User now vs tool signals** — same as **Notice tension** above. (2) **User now vs user earlier** — if their **latest** message **conflicts** with an **earlier user message** in this thread (e.g. first “felt easy,” later “really hard”), **acknowledge that shift first** in plain, kind language (“you said X earlier; now Y — …”) **before** re-explaining the run or the data. (3) **Assistant earlier vs user now** — if they **push back**, **narrow**, or **change framing** vs what you said last turn, **engage that** before repeating the same coaching paragraph.
 - **Pushback / myths** (“easy runs do nothing”, “I should go hard every day”): stay respectful, **challenge the idea** with one clear athletic reason + one alternative **they can do next**; avoid lecturing.
 
 **Response priority (apply in order)**
@@ -873,6 +879,40 @@ def _hr_calibration_system_section(session: Session, internal_user_id: str) -> s
     )
 
 
+def _thread_led_system_section(ctx: DerivedThreadCoachContext) -> str:
+    """
+    Injected once per turn from derived history (no DB flags).
+    Omitted when there is no structured run_summary in prior messages.
+    """
+    if not ctx.prior_run_summary_in_thread:
+        return ""
+    lines = [
+        "## Thread-led coach context (authoritative for this request)",
+        "Derived from stored chat only. When continuity here conflicts with re-stating the same run opener, follow this section.",
+    ]
+    if ctx.last_structured_run_activity_id is not None:
+        lines.append(
+            f"- **Most recent structured run in thread:** `activity_id` **{ctx.last_structured_run_activity_id}** "
+            "(from the newest `run_summary` payload in this chat). Re-call tools if you need fresh numbers; do not invent a different id."
+        )
+    else:
+        lines.append(
+            "- A structured **`run_summary`** exists earlier in this chat, but **`activity_id` was not recoverable** from saved payloads. "
+            "Re-resolve the run with **DATA RETRIEVAL & TOOL RULES** (`find_runs_by_date` / `search_runs`, then `get_run_summary`)."
+        )
+    lines.extend(
+        [
+            "- **Same-run follow-ups:** **Sentence 1** must respond to the **user's latest message** (continuity, empathy, or the specific tension) — **not** a fresh distance/pace/HR/duration recap unless they explicitly ask to recap, repeat stats, or ask for numbers.",
+            "- **Information budget:** Add **at most one** new tool-grounded fact in the opening when it is **strictly needed** for what they just asked; otherwise avoid re-narrating the same run story the card and prior insight already covered.",
+        ]
+    )
+    if not ctx.last_assistant_was_run_summary:
+        lines.append(
+            "- **Note:** The latest assistant message may **not** be a run card — still apply the bullets above when they are clearly continuing the same run topic."
+        )
+    return "\n".join(lines) + "\n"
+
+
 def _intent_priority_override_section(intent: str) -> str:
     """Intent-aware hard overrides that can supersede base prompt defaults."""
     if intent != "race_projection":
@@ -939,6 +979,7 @@ def run_mobile_agent_turn(
         logger.warning("No enabled tools in coach_tools table; agent has no tools")
 
     prefs = _load_coaching_preferences(session, internal_user_id)
+    thread_ctx = derive_thread_coach_context(conversation_history)
     turn_type = classify_turn(user_message, conversation_history)
     conversation_state = extract_conversation_state(conversation_history)
     response_directive = plan_response(
@@ -967,6 +1008,8 @@ def run_mobile_agent_turn(
         + "\n\n"
         + response_directive_section(response_directive)
         + "\n\n"
+        + _thread_led_system_section(thread_ctx)
+        + "\n"
         + _intent_priority_override_section(response_directive.intent)
     )
     messages: List[Dict[str, Any]] = [{"role": "system", "content": system_content}]
@@ -1064,6 +1107,7 @@ def run_mobile_agent_turn(
                     "tool_strategy": response_directive.tool_strategy,
                     "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
                     "allow_full_recap": response_directive.allow_full_recap,
+                    "thread_derived": thread_ctx.as_dict(),
                 },
             }
             if latest_run_summary is not None:
@@ -1102,5 +1146,6 @@ def run_mobile_agent_turn(
             "tool_strategy": response_directive.tool_strategy,
             "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
             "allow_full_recap": response_directive.allow_full_recap,
+            "thread_derived": thread_ctx.as_dict(),
         },
     }
