@@ -694,28 +694,43 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "You may state the **tension in plain words** in **≤2** short sentences (acknowledgment only). The **only** "
             "analytic move this turn is the **question** itself. **Safety** (e.g. sharp pain → stop / professional): "
             "**one** short sentence, **no** diagnosis.\n"
+            "- **No metrics before the question:** In all user-visible text **before** the final clarifying question, **do not** "
+            "restate, interpret, or reference **any** run metrics (distance, duration, pace, HR, drift %, zones, splits) — "
+            "**including a single number** offered as “quick context.” Tools may run internally; **do not** surface numbers "
+            "in `content` until a **later** turn after they answer. **Safety** wording: prefer plain language; avoid numbers if possible.\n"
             "- **Do not** ask multiple stacked questions. **Do not** open with a full run recap to “prove” the contradiction; "
             "tools may still ground you internally, but the **user-visible** shape stays **question-first**.\n"
             "- After the user answers, a **later** turn may interpret and advise normally."
         )
-    if directive.natural_style_notes:
-        natural_lines = "\n".join(
-            [f"- {line}" for line in directive.natural_style_notes]
-        )
-        base += (
-            "\n\n### Human coach style addon\n"
-            "- Keep the reply sounding like one coach talking to one athlete, not a report or dashboard.\n"
-            "- Stay tool-grounded for numbers; follow OUTPUT STRUCTURE + STYLE in the base prompt "
-            "(run_summary + card: usually **2–3** insight sentences in content by default (depth: usually up to **5** with **≤2** anchors); "
-            "**optional** one short engagement question after when it adds value (**Optional close**); "
-            "**flexible** shape; **≤1** anchor by default (**≤2** with depth); **prefer HR drift** when it is the main signal; "
-            "conversational not report-like; card carries metrics; "
-            "progress/readiness (training_trend): usually **2–3** body sentences by default (depth: usually up to **5**), **verdict→constraint→action**, "
-            "**~6–10 words** when possible, **prefer no numbers**, Progress check-in, plus same optional engagement question rule; "
-            "split_detail: **short table/list + human coaching read**, grounded derived comparisons from split rows allowed; "
-            "other topics: woven prose where appropriate).\n"
-            f"{natural_lines}"
-        )
+    inv_addon = directive.investigate_first and directive.turn_type != "acknowledgment"
+    if directive.natural_style_notes or inv_addon:
+        if inv_addon:
+            base += (
+                "\n\n### Human coach style addon\n"
+                "- Keep the reply sounding like one coach talking to one athlete, not a report or dashboard.\n"
+                "- **Investigation-first this turn:** Do **not** apply intent `natural_style_notes` or generic OUTPUT STRUCTURE "
+                "habits that push metrics, multi-sentence run insight in `content`, HR drift anchors, or split tables **before** "
+                "the final clarifying question — defer those to the **next** turn after the user answers. This turn’s "
+                "user-visible shape follows **### Investigation-first gate** only.\n"
+            )
+        else:
+            natural_lines = "\n".join(
+                [f"- {line}" for line in directive.natural_style_notes]
+            )
+            base += (
+                "\n\n### Human coach style addon\n"
+                "- Keep the reply sounding like one coach talking to one athlete, not a report or dashboard.\n"
+                "- Stay tool-grounded for numbers; follow OUTPUT STRUCTURE + STYLE in the base prompt "
+                "(run_summary + card: usually **2–3** insight sentences in content by default (depth: usually up to **5** with **≤2** anchors); "
+                "**optional** one short engagement question after when it adds value (**Optional close**); "
+                "**flexible** shape; **≤1** anchor by default (**≤2** with depth); **prefer HR drift** when it is the main signal; "
+                "conversational not report-like; card carries metrics; "
+                "progress/readiness (training_trend): usually **2–3** body sentences by default (depth: usually up to **5**), **verdict→constraint→action**, "
+                "**~6–10 words** when possible, **prefer no numbers**, Progress check-in, plus same optional engagement question rule; "
+                "split_detail: **short table/list + human coaching read**, grounded derived comparisons from split rows allowed; "
+                "other topics: woven prose where appropriate).\n"
+                f"{natural_lines}"
+            )
 
     if directive.turn_type == "acknowledgment":
         ack_hard = (
