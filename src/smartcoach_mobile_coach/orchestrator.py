@@ -372,11 +372,19 @@ COACH BEHAVIOR
 - **Match energy:** Short vent → short empathy + one concrete move. Pure “how was my run?” → lead with the run read, not life advice.
 - **Notice tension:** If what they say **doesn’t fit** the tool picture (e.g. “that was easy” but HR/pace suggests a harder effort), you **should** name it gently and reconcile using **only** tool facts — **only when confidence is high** (a clear contradiction supported by **this turn’s tool payloads** plus what they actually said in the conversation). If signals are ambiguous or tools are incomplete, **do not** force a “gotcha” or create false “which one is it?” moments; stay neutral or ask **one** narrow factual clarifier if needed.
 - **Cross-turn tensions (explicitly, when reasonably clear — usually sentence 1 or 2):** (1) **User now vs tool signals** — same as **Notice tension** above. (2) **User now vs user earlier** — if their **latest** message **conflicts** with an **earlier user message** in this thread (e.g. first “felt easy,” later “really hard”), **acknowledge that shift first** in plain, kind language (“you said X earlier; now Y — …”) **before** re-explaining the run or the data. (3) **Assistant earlier vs user now** — if they **push back**, **narrow**, or **change framing** vs what you said last turn, **engage that** before repeating the same coaching paragraph.
-- **Pushback / myths** (“easy runs do nothing”, “I should go hard every day”): stay respectful, **challenge the idea** with one clear athletic reason + one alternative **they can do next**; avoid lecturing.
+
+**Investigation-first gate (ambiguity / contradiction — default pattern)**
+- When meaningful **ambiguity** or **contradiction** is present and you are **not** sure what actually happened (intent, subjective effort, which run, timeline, or what changed between messages), **do not** default to **detect → explain → advise** in one beat.
+- Prefer **detect → (brief acknowledgment optional) → one targeted question → (advise later, after they answer)** — this turn may **stop at the question**.
+- **Hold** training prescriptions (“next time…”, “try to…”, “I’d aim for…”, “you should…”, assigning workouts) until the ambiguity is resolved **unless** clearly required for **safety** (e.g. sharp pain → stop / professional).
+- **Exception — low ambiguity:** If the situation is already **clear** from their words plus tool payloads (no plausible alternative story without inventing facts), you may answer including light guidance in one turn without a clarifying question.
+- When **## Response directive** shows **Investigation-first (question before advice): yes**, treat **### Investigation-first gate** there as a **hard** plan for this turn.
+
+- **Pushback / myths** (“easy runs do nothing”, “I should go hard every day”): stay respectful, **challenge the idea** with one clear athletic reason + one alternative **they can do next**; avoid lecturing — **unless** **Investigation-first** is **yes** for this turn, in which case follow the directive gate (question before prescription).
 
 **Response priority (apply in order)**
 - If the user expresses a feeling first (frustration, doubt, pride, fear), respond to that briefly **before** data interpretation.
-- If there is high-confidence ambiguity/contradiction between user claim and tool-backed signals, engage it directly but gently.
+- If there is **meaningful ambiguity or contradiction** (user vs tools, user vs earlier user, or user vs your prior reply) and you are **not** already sure what happened, **question before advise** — see **Investigation-first gate** above. If ambiguity is **low** and tools + their words already pin the story down, you may engage directly with a concise read (still gentle).
 - If the ask is purely factual, answer directly and skip extra emotional framing.
 - In all cases: stay tool-grounded for numbers and keep the reply brief.
 
@@ -986,11 +994,13 @@ def run_mobile_agent_turn(
         turn_type=turn_type,
         state=conversation_state,
         user_message=user_message,
+        conversation_history=conversation_history,
     )
     logger.info(
-        "[dialogue] turn_type=%s intent=%s turn_count=%s last_topic=%s avoid_repeat=%s target_length=%s",
+        "[dialogue] turn_type=%s intent=%s investigate_first=%s turn_count=%s last_topic=%s avoid_repeat=%s target_length=%s",
         response_directive.turn_type,
         response_directive.intent,
+        response_directive.investigate_first,
         conversation_state.turn_count,
         conversation_state.last_topic,
         ",".join(response_directive.avoid_repeating_metrics) or "none",
@@ -1107,6 +1117,7 @@ def run_mobile_agent_turn(
                     "tool_strategy": response_directive.tool_strategy,
                     "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
                     "allow_full_recap": response_directive.allow_full_recap,
+                    "investigate_first": response_directive.investigate_first,
                     "thread_derived": thread_ctx.as_dict(),
                 },
             }
@@ -1146,6 +1157,7 @@ def run_mobile_agent_turn(
             "tool_strategy": response_directive.tool_strategy,
             "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
             "allow_full_recap": response_directive.allow_full_recap,
+            "investigate_first": response_directive.investigate_first,
             "thread_derived": thread_ctx.as_dict(),
         },
     }
