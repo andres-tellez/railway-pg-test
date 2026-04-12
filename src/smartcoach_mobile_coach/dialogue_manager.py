@@ -616,24 +616,34 @@ def _interaction_mode_subsection(directive: ResponseDirective) -> str:
             "Follow **### Investigation-first gate** below as the executable contract for this mode.\n"
         )
     if mode == "experiential":
-        brevity = (
-            "**Coaching depth requested: yes** in the directive header — allow up to **4** short sentences total; "
-            "you may add **one** extra beat for *why* only if essential. Still **no** long paragraphs or essay structure."
+        depth_cap = (
+            "\n- **Coaching depth requested: yes** — cap at **4** short sentences total; you may add **one** short *why* beat "
+            "**only** if they explicitly asked to explain more; still **no** prescriptive training plan unless they explicitly "
+            "asked what to do."
             if directive.coaching_depth_requested
-            else "**Coaching depth requested: no** — keep the **whole** reply to **≤3** short sentences (**≤2** when you can stay clear): "
-            "validation → optional **one** data-backed reassurance line → stop unless one forked question is needed."
+            else ""
         )
         return (
             "\n\n### Interaction mode — experiential (mandatory; overrides conflicting Target length / Focus above)\n"
-            f"- {brevity}\n"
-            "- **Anti-paragraph:** **no** wall of text, **no** multi-sentence “because / which means / the reason is” chains unless **Coaching depth requested: yes** and they explicitly asked to go deeper.\n"
-            "- **Sentence 1** must **validate** or **normalize** what they said (effort, worry, confusion) in **plain, human** "
-            "language — before data recap or prescriptions.\n"
-            "- **Do not** open sentence 1 with distance, duration, pace, avg HR, or drift numbers (tools + card may still ground you in later sentences).\n"
-            "- **Defer prescriptions** (“next time…”, “try to…”, “you should…”, assigning workouts) until **after** validation — "
-            "usually **sentence 3+**, and **omit** if reassurance alone already answers “is it ok / normal?”.\n"
-            "- **You may** add **one** short tool-grounded sentence after validation if it **directly** answers whether they’re OK — without becoming a lecture.\n"
-            "- If real uncertainty remains after validation, **one** forked clarifier is OK (see **Questions — form and filler**); otherwise skip extra questions.\n"
+            "- **Experiential turns only:** sound like **texting a coach**, not a lesson. This block **overrides** default "
+            "coaching / explanatory habits from OUTPUT STRUCTURE, intent add-ons, and long **Insight + Facts** patterns for "
+            "**this** reply.\n"
+            "- **Do not** give general training **explanations**, **causes**, physiology, or **advice** (what to do next, "
+            "plans, workouts) **unless** the user **explicitly** asked what to do / what they should change / how to fix it.\n"
+            "- **Avoid** coach-explanation templates: “this can happen when…”, “this indicates that…”, “often that means…”, "
+            "“from a training perspective…”, “what’s going on is…”, “which suggests…”.\n"
+            "- **Avoid prescriptive softeners:** “consider…”, “make sure to…”, “you should…”, “try to…”, “it’s important to…”, "
+            "“I’d recommend…” — same as hard prescriptions here unless they explicitly asked for guidance.\n"
+            "- **Default shape:** (1) **One sentence** — validation / normalization in **plain** language. "
+            "(2) **One sentence** — a **simple** read of what it means for them in **everyday** words (**no** deep mechanism, "
+            "**no** data tour). (3) **Optional:** **one** short follow-up question (a **fork** is OK per **Questions — form and filler**) "
+            "if it genuinely helps; otherwise **stop**.\n"
+            "- **Length:** usually **≤2–3 short sentences** total; **≤2** when you can stay clear. **No** paragraphs or stacked "
+            "“because / which means” chains.\n"
+            + depth_cap
+            + "- **Do not** open sentence 1 with distance, pace, HR, time, or drift numbers. If one tool-backed number helps answer "
+            "“is it ok / normal?”, keep it to **at most one** plain mention in sentence 2 — **not** a stat recap.\n"
+            + "- If uncertainty remains after those sentences, **one** forked clarifier is OK; otherwise skip.\n"
         )
     if mode == "factual":
         return (
