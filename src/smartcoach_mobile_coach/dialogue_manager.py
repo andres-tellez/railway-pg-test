@@ -616,8 +616,17 @@ def _interaction_mode_subsection(directive: ResponseDirective) -> str:
             "Follow **### Investigation-first gate** below as the executable contract for this mode.\n"
         )
     if mode == "experiential":
+        brevity = (
+            "**Coaching depth requested: yes** in the directive header — allow up to **4** short sentences total; "
+            "you may add **one** extra beat for *why* only if essential. Still **no** long paragraphs or essay structure."
+            if directive.coaching_depth_requested
+            else "**Coaching depth requested: no** — keep the **whole** reply to **≤3** short sentences (**≤2** when you can stay clear): "
+            "validation → optional **one** data-backed reassurance line → stop unless one forked question is needed."
+        )
         return (
-            "\n\n### Interaction mode — experiential (mandatory; overrides generic explain→advise ordering)\n"
+            "\n\n### Interaction mode — experiential (mandatory; overrides conflicting Target length / Focus above)\n"
+            f"- {brevity}\n"
+            "- **Anti-paragraph:** **no** wall of text, **no** multi-sentence “because / which means / the reason is” chains unless **Coaching depth requested: yes** and they explicitly asked to go deeper.\n"
             "- **Sentence 1** must **validate** or **normalize** what they said (effort, worry, confusion) in **plain, human** "
             "language — before data recap or prescriptions.\n"
             "- **Do not** open sentence 1 with distance, duration, pace, avg HR, or drift numbers (tools + card may still ground you in later sentences).\n"
@@ -679,7 +688,12 @@ def response_directive_section(directive: ResponseDirective) -> str:
             "- **Do** end with **exactly one** short, specific **clarifying question** whose answer would change your guidance. "
             "Prefer a **concrete fork** (A vs B, or A / B / other) when honestly possible — not a vague “tell me more.”\n"
             "- **Do not** meta-justify the question (no “so I can understand…”, “this will help me…”, “I’m asking because…”). Ask directly.\n"
-            "One optional brief acknowledgment of the tension **before** the question is OK (still **≤2** short sentences total before the question).\n"
+            "- **Hard stop — no causal explanation before the question:** In all user-visible text **before** the final "
+            "clarifying question, **do not** give **causal** stories, **why** tours, **reconciliation with tool facts** "
+            "(pace/HR/drift narratives, “what likely happened”), or **mechanistic interpretation** — even if tools ran. "
+            "You may state the **tension in plain words** in **≤2** short sentences (acknowledgment only). The **only** "
+            "analytic move this turn is the **question** itself. **Safety** (e.g. sharp pain → stop / professional): "
+            "**one** short sentence, **no** diagnosis.\n"
             "- **Do not** ask multiple stacked questions. **Do not** open with a full run recap to “prove” the contradiction; "
             "tools may still ground you internally, but the **user-visible** shape stays **question-first**.\n"
             "- After the user answers, a **later** turn may interpret and advise normally."
