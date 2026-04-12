@@ -41,6 +41,31 @@ _RECAP_RE = re.compile(
     re.IGNORECASE,
 )
 _DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+# Effort / contradiction cues → prefer question-first before prescribing (see investigation-first gate).
+_EASY_SENTIMENT_RE = re.compile(
+    r"\b(felt\s+(really\s+)?easy|too\s+easy|super\s+easy|pretty\s+easy|very\s+easy|"
+    r"easy\s+day|piece\s+of\s+cake|like\s+a\s+breeze)\b",
+    re.IGNORECASE,
+)
+_HARD_SENTIMENT_RE = re.compile(
+    r"\b(felt\s+(really\s+)?hard|really\s+hard|so\s+hard|brutal|"
+    r"destroyed\s+me|trashed\s+me|struggled\s+(badly|a\s+lot)|"
+    r"felt\s+impossible|could\s+hardly)\b",
+    re.IGNORECASE,
+)
+_INVESTIGATE_FIRST_CUE_RE = re.compile(
+    r"\b(actually|i\s+meant|on\s+second\s+thought|wait[,!\s]|hold\s+on)\b|"
+    r"(doesn'?t|does\s+not)\s+(match|add\s+up|make\s+sense)|"
+    r"that\s+can'?t\s+be\s+right|doesn'?t\s+sound\s+right|"
+    r"i'?m\s+confused|feels?\s+inconsistent|contradicts|"
+    r"you\s+said\b.*\bbut\b",
+    re.IGNORECASE,
+)
+_FACTUAL_SNAPSHOT_ONLY_RE = re.compile(
+    r"^\s*(what('?s| is)|how\s+(much|many|long)|was\s+my|what\s+was\s+my|"
+    r"what\s+pace|what'?s\s+drift|heart\s+rate|avg\s+hr|average\s+hr)\b",
+    re.IGNORECASE,
+)
 # Avoid matching the substring "run" inside "runs", "running", etc.
 _RUN_WORD_RE = re.compile(r"\b(runs?|running)\b", re.IGNORECASE)
 
@@ -71,9 +96,56 @@ class ResponseDirective:
     tool_strategy: str
     natural_style_notes: List[str]
     coaching_depth_requested: bool = False
+    investigate_first: bool = False
+    """True → directive enforces question-first, no prescriptions this turn."""
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+def _should_investigate_first(
+    user_message: str,
+    conversation_history: List[Dict[str, str]],
+    turn_type: str,
+    coaching_depth_requested: bool,
+) -> bool:
+    """
+    Likely ambiguity or contradiction — prefer one clarifying question before advising.
+
+    Conservative: off for acknowledgments, clarifications, explicit depth asks, and
+    short factual snapshot questions without tension cues.
+    """
+    if coaching_depth_requested or turn_type in ("acknowledgment", "clarification"):
+        return False
+    cur = (user_message or "").strip()
+    if len(cur) < 6:
+        return False
+
+    cur_low = cur.lower()
+    if (
+        len(cur) <= 120
+        and _FACTUAL_SNAPSHOT_ONLY_RE.search(cur_low)
+        and not _INVESTIGATE_FIRST_CUE_RE.search(cur_low)
+    ):
+        return False
+
+    prior_user = " ".join(
+        (m.get("content") or "").strip()
+        for m in conversation_history
+        if (m.get("role") or "").strip() == "user"
+    )
+
+    if prior_user:
+        if _EASY_SENTIMENT_RE.search(prior_user) and _HARD_SENTIMENT_RE.search(cur_low):
+            return True
+        if _HARD_SENTIMENT_RE.search(prior_user) and _EASY_SENTIMENT_RE.search(cur_low):
+            return True
+
+    if turn_type in ("follow_up", "drill_down", "new_topic"):
+        if _INVESTIGATE_FIRST_CUE_RE.search(cur_low):
+            return True
+
+    return False
 
 
 def _user_requests_coaching_depth(user_message: str, turn_type: str) -> bool:
@@ -167,9 +239,13 @@ def plan_response(
     turn_type: str,
     state: ConversationState,
     user_message: str,
+    conversation_history: List[Dict[str, str]],
 ) -> ResponseDirective:
     """Create a compact per-turn response directive."""
     depth_ask = _user_requests_coaching_depth(user_message, turn_type)
+    investigate = _should_investigate_first(
+        user_message, conversation_history, turn_type, depth_ask
+    )
     intent = infer_intent(user_message)
     addon = _intent_addon(intent)
     asks_recap = bool(_RECAP_RE.search((user_message or "").lower()))
@@ -228,6 +304,7 @@ def plan_response(
             tool_strategy=addon["tool_strategy"],
             natural_style_notes=addon["natural_style_notes"],
             coaching_depth_requested=depth_ask,
+            investigate_first=investigate,
         )
 
     if turn_type == "acknowledgment":
@@ -254,6 +331,7 @@ def plan_response(
             tool_strategy=addon["tool_strategy"],
             natural_style_notes=addon["natural_style_notes"],
             coaching_depth_requested=depth_ask,
+            investigate_first=investigate,
         )
 
     if turn_type == "clarification":
@@ -269,6 +347,7 @@ def plan_response(
             tool_strategy=addon["tool_strategy"],
             natural_style_notes=addon["natural_style_notes"],
             coaching_depth_requested=depth_ask,
+            investigate_first=investigate,
         )
 
     if turn_type == "drill_down":
@@ -340,6 +419,7 @@ def plan_response(
             tool_strategy=addon["tool_strategy"],
             natural_style_notes=addon["natural_style_notes"],
             coaching_depth_requested=depth_ask,
+            investigate_first=investigate,
         )
 
     if turn_type == "follow_up":
@@ -404,6 +484,7 @@ def plan_response(
             tool_strategy=addon["tool_strategy"],
             natural_style_notes=addon["natural_style_notes"],
             coaching_depth_requested=depth_ask,
+            investigate_first=investigate,
         )
 
     # new_topic fallback
@@ -456,6 +537,7 @@ def plan_response(
         tool_strategy=addon["tool_strategy"],
         natural_style_notes=addon["natural_style_notes"],
         coaching_depth_requested=depth_ask,
+        investigate_first=investigate,
     )
 
 
@@ -470,12 +552,14 @@ def response_directive_section(directive: ResponseDirective) -> str:
         avoid_line = "none"
     recap_line = "yes" if directive.allow_full_recap else "no"
     depth_line = "yes" if directive.coaching_depth_requested else "no"
+    inv_line = "yes" if directive.investigate_first else "no"
 
     base = (
         "## Response directive (current turn)\n"
         f"- Turn type: **{directive.turn_type}**\n"
         f"- Intent: **{directive.intent}**\n"
         f"- Coaching depth requested: **{depth_line}**\n"
+        f"- Investigation-first (question before advice): **{inv_line}**\n"
         f"- Target length: {directive.target_length}\n"
         f"- Tone: {directive.tone_hint}\n"
         f"- Focus: {directive.focus}\n"
@@ -485,6 +569,20 @@ def response_directive_section(directive: ResponseDirective) -> str:
         f"- Full recap requested by user: {recap_line}\n"
         "- Prior assistant messages are shared context. Do not re-explain unchanged points."
     )
+    if directive.investigate_first and directive.turn_type != "acknowledgment":
+        base += (
+            "\n\n### Investigation-first gate (mandatory this turn; overrides conflicting length/focus above)\n"
+            "- Planner flagged **likely ambiguity or contradiction** (effort wording shifted vs earlier user text, "
+            "or explicit hedging / mismatch cues).\n"
+            "- **Do not** give training prescriptions in this reply: **no** “next time…”, “try to…”, "
+            "“I’d aim for…”, “you should…”, progression or workout assignment — **unless** clearly required for "
+            "**safety** (e.g. sharp pain → stop / see a professional).\n"
+            "- **Do** end with **exactly one** short, specific **clarifying question** whose answer would change your guidance. "
+            "One optional brief acknowledgment of the tension **before** the question is OK (still **≤2** short sentences total before the question).\n"
+            "- **Do not** ask multiple stacked questions. **Do not** open with a full run recap to “prove” the contradiction; "
+            "tools may still ground you internally, but the **user-visible** shape stays **question-first**.\n"
+            "- After the user answers, a **later** turn may interpret and advise normally."
+        )
     if directive.natural_style_notes:
         natural_lines = "\n".join(
             [f"- {line}" for line in directive.natural_style_notes]
