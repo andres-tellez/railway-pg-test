@@ -66,6 +66,19 @@ _FACTUAL_SNAPSHOT_ONLY_RE = re.compile(
     r"what\s+pace|what'?s\s+drift|heart\s+rate|avg\s+hr|average\s+hr)\b",
     re.IGNORECASE,
 )
+# Experiential / reassurance → validate before explaining or prescribing (interaction_mode).
+_EXPERIENTIAL_MODE_RE = re.compile(
+    r"\b(is that|is it|was that)\s+(ok|okay|fine|normal|alright)\b|"
+    r"\b(should i|do i need to)\s+worry\b|"
+    r"\b(am i|are we)\s+(ok|okay|normal)\b|"
+    r"\bworried (that|about)\b|"
+    r"\b(nervous|anxious) about\b|"
+    r"\bscared (that|about|i'?m)\b|"
+    r"\b(feel|feeling|felt)\s+(really\s+)?(weird|off|wrong|sketchy)\b|"
+    r"\bfelt\s+(really\s+)?(easy|hard)\b.*\?|"
+    r"\?.*\bfelt\s+(really\s+)?(easy|hard)\b",
+    re.IGNORECASE,
+)
 # Avoid matching the substring "run" inside "runs", "running", etc.
 _RUN_WORD_RE = re.compile(r"\b(runs?|running)\b", re.IGNORECASE)
 
@@ -98,9 +111,50 @@ class ResponseDirective:
     coaching_depth_requested: bool = False
     investigate_first: bool = False
     """True → directive enforces question-first, no prescriptions this turn."""
+    interaction_mode: str = "clear_coaching"
+    """
+    Top-level response shape for this turn:
+    minimal | factual | ambiguous | experiential | clear_coaching
+    """
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+def derive_interaction_mode(
+    user_message: str,
+    conversation_history: List[Dict[str, str]],
+    turn_type: str,
+    investigate_first: bool,
+) -> str:
+    """
+    Single high-level mode switch (gates explain / validate / question / factual brevity).
+
+    Order: acknowledgment → ambiguous (investigate) → experiential → factual → default.
+    ``conversation_history`` reserved for future cues; unused for now.
+    """
+    _ = conversation_history
+    if turn_type == "acknowledgment":
+        return "minimal"
+    if investigate_first:
+        return "ambiguous"
+
+    raw = (user_message or "").strip()
+    msg_low = raw.lower()
+    if not msg_low:
+        return "clear_coaching"
+
+    if _EXPERIENTIAL_MODE_RE.search(msg_low):
+        return "experiential"
+
+    if (
+        len(raw) <= 120
+        and _FACTUAL_SNAPSHOT_ONLY_RE.search(msg_low)
+        and not _INVESTIGATE_FIRST_CUE_RE.search(msg_low)
+    ):
+        return "factual"
+
+    return "clear_coaching"
 
 
 def _should_investigate_first(
@@ -246,6 +300,9 @@ def plan_response(
     investigate = _should_investigate_first(
         user_message, conversation_history, turn_type, depth_ask
     )
+    mode = derive_interaction_mode(
+        user_message, conversation_history, turn_type, investigate
+    )
     intent = infer_intent(user_message)
     addon = _intent_addon(intent)
     asks_recap = bool(_RECAP_RE.search((user_message or "").lower()))
@@ -305,6 +362,7 @@ def plan_response(
             natural_style_notes=addon["natural_style_notes"],
             coaching_depth_requested=depth_ask,
             investigate_first=investigate,
+            interaction_mode=mode,
         )
 
     if turn_type == "acknowledgment":
@@ -332,6 +390,7 @@ def plan_response(
             natural_style_notes=addon["natural_style_notes"],
             coaching_depth_requested=depth_ask,
             investigate_first=investigate,
+            interaction_mode=mode,
         )
 
     if turn_type == "clarification":
@@ -348,6 +407,7 @@ def plan_response(
             natural_style_notes=addon["natural_style_notes"],
             coaching_depth_requested=depth_ask,
             investigate_first=investigate,
+            interaction_mode=mode,
         )
 
     if turn_type == "drill_down":
@@ -420,6 +480,7 @@ def plan_response(
             natural_style_notes=addon["natural_style_notes"],
             coaching_depth_requested=depth_ask,
             investigate_first=investigate,
+            interaction_mode=mode,
         )
 
     if turn_type == "follow_up":
@@ -485,6 +546,7 @@ def plan_response(
             natural_style_notes=addon["natural_style_notes"],
             coaching_depth_requested=depth_ask,
             investigate_first=investigate,
+            interaction_mode=mode,
         )
 
     # new_topic fallback
@@ -538,7 +600,40 @@ def plan_response(
         natural_style_notes=addon["natural_style_notes"],
         coaching_depth_requested=depth_ask,
         investigate_first=investigate,
+        interaction_mode=mode,
     )
+
+
+def _interaction_mode_subsection(directive: ResponseDirective) -> str:
+    """Hard prompt block for the derived interaction mode (acknowledgment: none)."""
+    if directive.turn_type == "acknowledgment":
+        return ""
+    mode = directive.interaction_mode
+    if mode == "ambiguous":
+        return (
+            "\n\n### Interaction mode — ambiguous (mandatory)\n"
+            "- Ambiguity or contradiction wins over default coaching flow. "
+            "Follow **### Investigation-first gate** below as the executable contract for this mode.\n"
+        )
+    if mode == "experiential":
+        return (
+            "\n\n### Interaction mode — experiential (mandatory; overrides generic explain→advise ordering)\n"
+            "- **Sentence 1** must **validate** or **normalize** what they said (effort, worry, confusion) in **plain, human** "
+            "language — before data recap or prescriptions.\n"
+            "- **Do not** open sentence 1 with distance, duration, pace, avg HR, or drift numbers (tools + card may still ground you in later sentences).\n"
+            "- **Defer prescriptions** (“next time…”, “try to…”, “you should…”, assigning workouts) until **after** validation — "
+            "usually **sentence 3+**, and **omit** if reassurance alone already answers “is it ok / normal?”.\n"
+            "- **You may** add **one** short tool-grounded sentence after validation if it **directly** answers whether they’re OK — without becoming a lecture.\n"
+            "- If real uncertainty remains after validation, **one** forked clarifier is OK (see **Questions — form and filler**); otherwise skip extra questions.\n"
+        )
+    if mode == "factual":
+        return (
+            "\n\n### Interaction mode — factual (mandatory)\n"
+            "- Answer **only** what they asked. Lead with the **direct** tool-backed fact.\n"
+            "- **No** extended coaching interpretation, training prescription, or “here’s what to do next” unless they explicitly asked for that.\n"
+            "- **≤2–3 short sentences** by default; skip optional engagement questions unless they clear an ambiguity.\n"
+        )
+    return ""
 
 
 def response_directive_section(directive: ResponseDirective) -> str:
@@ -554,8 +649,11 @@ def response_directive_section(directive: ResponseDirective) -> str:
     depth_line = "yes" if directive.coaching_depth_requested else "no"
     inv_line = "yes" if directive.investigate_first else "no"
 
+    mode_line = directive.interaction_mode.replace("_", " ")
+
     base = (
         "## Response directive (current turn)\n"
+        f"- **Interaction mode (read this first):** **{directive.interaction_mode}** ({mode_line})\n"
         f"- Turn type: **{directive.turn_type}**\n"
         f"- Intent: **{directive.intent}**\n"
         f"- Coaching depth requested: **{depth_line}**\n"
@@ -569,6 +667,7 @@ def response_directive_section(directive: ResponseDirective) -> str:
         f"- Full recap requested by user: {recap_line}\n"
         "- Prior assistant messages are shared context. Do not re-explain unchanged points."
     )
+    base += _interaction_mode_subsection(directive)
     if directive.investigate_first and directive.turn_type != "acknowledgment":
         base += (
             "\n\n### Investigation-first gate (mandatory this turn; overrides conflicting length/focus above)\n"

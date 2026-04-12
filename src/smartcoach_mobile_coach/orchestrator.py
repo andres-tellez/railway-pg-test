@@ -383,6 +383,9 @@ COACH BEHAVIOR
 
 - **Pushback / myths** (“easy runs do nothing”, “I should go hard every day”): stay respectful, **challenge the idea** with one clear athletic reason + one alternative **they can do next**; avoid lecturing — **unless** **Investigation-first** is **yes** for this turn, in which case follow the directive gate (question before prescription).
 
+**Interaction mode (server-chosen each turn)**
+- Before composing, read **## Response directive → Interaction mode** and any **### Interaction mode — …** subsection for this turn. That choice **gates** validate vs investigate vs factual brevity vs default coaching — apply it **before** falling back to generic explain→advise habits.
+
 **Response priority (apply in order)**
 - If the user expresses a feeling first (frustration, doubt, pride, fear), respond to that briefly **before** data interpretation.
 - If there is **meaningful ambiguity or contradiction** (user vs tools, user vs earlier user, or user vs your prior reply) and you are **not** already sure what happened, **question before advise** — see **Investigation-first gate** above. If ambiguity is **low** and tools + their words already pin the story down, you may engage directly with a concise read (still gentle).
@@ -1005,9 +1008,10 @@ def run_mobile_agent_turn(
         conversation_history=conversation_history,
     )
     logger.info(
-        "[dialogue] turn_type=%s intent=%s investigate_first=%s turn_count=%s last_topic=%s avoid_repeat=%s target_length=%s",
+        "[dialogue] turn_type=%s intent=%s interaction_mode=%s investigate_first=%s turn_count=%s last_topic=%s avoid_repeat=%s target_length=%s",
         response_directive.turn_type,
         response_directive.intent,
+        response_directive.interaction_mode,
         response_directive.investigate_first,
         conversation_state.turn_count,
         conversation_state.last_topic,
@@ -1126,6 +1130,7 @@ def run_mobile_agent_turn(
                     "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
                     "allow_full_recap": response_directive.allow_full_recap,
                     "investigate_first": response_directive.investigate_first,
+                    "interaction_mode": response_directive.interaction_mode,
                     "thread_derived": thread_ctx.as_dict(),
                 },
             }
@@ -1166,6 +1171,7 @@ def run_mobile_agent_turn(
             "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
             "allow_full_recap": response_directive.allow_full_recap,
             "investigate_first": response_directive.investigate_first,
+            "interaction_mode": response_directive.interaction_mode,
             "thread_derived": thread_ctx.as_dict(),
         },
     }
