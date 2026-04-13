@@ -37,10 +37,11 @@ from src.utils.oauth_state_manager import (
 )
 from src.utils.audit_logger import log_oauth_callback
 from src.utils.strava_exceptions import (
+    StravaAPIError,
+    StravaAthleteAlreadyLinkedError,
+    StravaOAuthCodeExchangeError,
     StravaOAuthError,
     StravaTokenError,
-    StravaAPIError,
-    StravaOAuthCodeExchangeError,
 )
 from src.db.dao.user_athletes_dao import get_by_user_id, delete_by_user_id
 from src.db.dao.token_dao import delete_tokens_sa
@@ -283,11 +284,15 @@ def strava_callback_get():
         safe_details = sanitize_exception_details(
             e.details if hasattr(e, "details") else {}
         )
+        if isinstance(e, StravaAthleteAlreadyLinkedError):
+            status_code = 409
+        elif isinstance(e, (StravaOAuthError, StravaTokenError)):
+            status_code = 400
+        else:
+            status_code = 500
         return error_response(
             message=safe_message,
-            status_code=(
-                400 if isinstance(e, (StravaOAuthError, StravaTokenError)) else 500
-            ),
+            status_code=status_code,
             error_code=type(e).__name__,
             details=safe_details,
         )
@@ -372,11 +377,15 @@ def strava_callback_post():
             provider="strava",
             details={"error": safe_message},
         )
+        if isinstance(e, StravaAthleteAlreadyLinkedError):
+            status_code = 409
+        elif isinstance(e, (StravaOAuthError, StravaTokenError)):
+            status_code = 400
+        else:
+            status_code = 500
         return error_response(
             message=safe_message,
-            status_code=(
-                400 if isinstance(e, (StravaOAuthError, StravaTokenError)) else 500
-            ),
+            status_code=status_code,
             error_code=type(e).__name__,
             details=safe_details,
         )
@@ -417,7 +426,7 @@ def process_strava_callback(session, code, state_or_sub, create_if_missing=True)
     2. If UUID → use directly.
     3. If auth0_sub → resolve to user_id.
     4. Exchanges code for Strava tokens.
-    5. Links athlete ↔ user.
+    5. Links athlete ↔ user (rejects if athlete_id is already linked to another user).
 
     ⚠️ Does NOT trigger ingestion — caller should do that
        after closing the session, with a fresh one.
@@ -470,7 +479,12 @@ def process_strava_callback(session, code, state_or_sub, create_if_missing=True)
             user_id=user_id,
         )
         logger.info(f"Stored tokens for athlete {athlete_id}")
-    except (StravaOAuthCodeExchangeError, StravaTokenError, StravaAPIError) as e:
+    except (
+        StravaAthleteAlreadyLinkedError,
+        StravaOAuthCodeExchangeError,
+        StravaTokenError,
+        StravaAPIError,
+    ) as e:
         # Re-raise Strava-specific errors as-is
         raise
     except Exception as e:

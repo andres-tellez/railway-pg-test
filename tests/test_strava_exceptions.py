@@ -18,6 +18,7 @@ from src.utils.strava_exceptions import (
     StravaIngestionValidationError,
     StravaIngestionSyncError,
     StravaIngestionEnrichmentError,
+    StravaAthleteAlreadyLinkedError,
     StravaOAuthError,
     StravaOAuthCodeExchangeError,
     StravaOAuthStateError,
@@ -148,6 +149,13 @@ class TestStravaOAuthErrors:
         assert error.reason == "Expired state"
         assert "Expired state" in error.message
 
+    def test_strava_athlete_already_linked_error(self):
+        """Test StravaAthleteAlreadyLinkedError."""
+        error = StravaAthleteAlreadyLinkedError(athlete_id=619645)
+        assert error.athlete_id == 619645
+        assert error.details.get("error_code") == "ATHLETE_ALREADY_LINKED"
+        assert "already linked" in error.message.lower()
+
 
 class TestStravaConfigurationError:
     """Tests for configuration-related exceptions."""
@@ -184,6 +192,7 @@ class TestExceptionHierarchy:
         # OAuth errors
         assert issubclass(StravaOAuthCodeExchangeError, StravaOAuthError)
         assert issubclass(StravaOAuthStateError, StravaOAuthError)
+        assert issubclass(StravaAthleteAlreadyLinkedError, StravaOAuthError)
         assert issubclass(StravaOAuthError, StravaError)
 
         # Configuration error

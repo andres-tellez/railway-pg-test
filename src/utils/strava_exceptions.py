@@ -189,6 +189,33 @@ class StravaOAuthStateError(StravaOAuthError):
         super().__init__(msg, details={"reason": reason})
 
 
+class StravaAthleteAlreadyLinkedError(StravaOAuthError):
+    """
+    Raised when Strava's athlete_id is already linked to a different app user.
+
+    Prevents token rows from moving between accounts and avoids ambiguous
+    user_athletes conflicts during OAuth.
+    """
+
+    def __init__(
+        self,
+        athlete_id: int,
+        message: str | None = None,
+    ):
+        self.athlete_id = athlete_id
+        msg = message or (
+            "This Strava account is already linked to another SmartCoach account. "
+            "Disconnect Strava from the other account, or sign in with the account that owns it."
+        )
+        super().__init__(
+            msg,
+            details={
+                "athlete_id": athlete_id,
+                "error_code": "ATHLETE_ALREADY_LINKED",
+            },
+        )
+
+
 class StravaConfigurationError(StravaError):
     """Raised when Strava configuration is missing or invalid."""
 
