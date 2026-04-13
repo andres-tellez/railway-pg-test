@@ -61,6 +61,7 @@ References:
 
 import json
 import logging
+import uuid as uuid_lib
 import requests
 from datetime import datetime
 
@@ -70,10 +71,23 @@ from src.db.dao.token_dao import get_tokens_sa, insert_token_sa
 from src.db.models.tokens import Token
 from sqlalchemy.exc import IntegrityError
 from src.db.dao import user_athletes_dao  # add this import
-from src.utils.strava_exceptions import StravaOAuthCodeExchangeError
+from src.utils.strava_exceptions import (
+    StravaAthleteAlreadyLinkedError,
+    StravaOAuthCodeExchangeError,
+)
 
 
 logger = logging.getLogger(__name__)
+
+
+def _internal_user_id_str(value) -> str:
+    """Normalize stored or passed user id to canonical string for comparison."""
+    if value is None:
+        return ""
+    try:
+        return str(uuid_lib.UUID(str(value)))
+    except (ValueError, TypeError, AttributeError):
+        return str(value).strip()
 
 
 def get_session():
@@ -419,6 +433,28 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
     )  # Summit is boolean indicating paid subscription
     premium_checked_at = datetime.utcnow()
 
+    # Block linking the same Strava athlete to a second app user (prevents token
+    # row churn and confusing sync_status rows). Same user reconnecting is allowed.
+    if user_id:
+        from src.db.models.user_athletes import UserAthleteLink
+
+        existing_for_athlete = (
+            session.query(UserAthleteLink)
+            .filter_by(athlete_id=strava_athlete_id)
+            .first()
+        )
+        if existing_for_athlete and _internal_user_id_str(
+            existing_for_athlete.user_id
+        ) != _internal_user_id_str(user_id):
+            logger.warning(
+                "Strava OAuth rejected: athlete_id=%s already linked to user_id=%s "
+                "(current flow user_id=%s)",
+                strava_athlete_id,
+                existing_for_athlete.user_id,
+                user_id,
+            )
+            raise StravaAthleteAlreadyLinkedError(strava_athlete_id)
+
     # ✅ 1. Ensure athlete exists in user_athletes BEFORE inserting token
     if user_id:
         try:
@@ -434,10 +470,27 @@ def store_tokens_from_callback(code, session, redirect_uri, user_id: str | None 
             )
         except IntegrityError:
             session.rollback()  # clear failed transaction
-            logger.debug(f"Link already exists for user {user_id}")
-            # Update existing link with premium status (same pattern as token update)
             from src.db.models.user_athletes import UserAthleteLink
 
+            other = (
+                session.query(UserAthleteLink)
+                .filter_by(athlete_id=strava_athlete_id)
+                .first()
+            )
+            if other and _internal_user_id_str(other.user_id) != _internal_user_id_str(
+                user_id
+            ):
+                logger.warning(
+                    "Strava OAuth IntegrityError: athlete_id=%s owned by user_id=%s, "
+                    "not current user_id=%s",
+                    strava_athlete_id,
+                    other.user_id,
+                    user_id,
+                )
+                raise StravaAthleteAlreadyLinkedError(strava_athlete_id)
+
+            logger.debug(f"Link already exists for user {user_id}")
+            # Update existing link with premium status (same pattern as token update)
             existing_link = (
                 session.query(UserAthleteLink).filter_by(user_id=user_id).first()
             )
