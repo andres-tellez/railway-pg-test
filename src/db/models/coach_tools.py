@@ -1,6 +1,6 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, func, text
 from src.db.db_session import Base
+from src.db.models.user_profile import SqliteJSONB
 
 
 class CoachTool(Base):
@@ -12,7 +12,9 @@ class CoachTool(Base):
     category = Column(String, nullable=False)
     description = Column(Text, nullable=False)
     when_to_call = Column(Text)
-    parameters_schema = Column(JSONB, nullable=False, server_default="{}")
+    parameters_schema = Column(
+        SqliteJSONB(), nullable=False, server_default=text("'{}'")
+    )
     returns_description = Column(Text)
     data_source = Column(String)
     is_enabled = Column(Boolean, nullable=False, server_default="true")

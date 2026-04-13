@@ -17,11 +17,12 @@ from datetime import date, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import bindparam, text
+from sqlalchemy import Integer, bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Session
 
 from src.services.security.external_apis.openai_service import get_openai_service
+from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
 from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
 from src.utils.hr_zone_constants import (
     COACHING_LEVEL_DEFAULTS,
@@ -43,24 +44,26 @@ logger = logging.getLogger("smartcoach_mobile_coach")
 _WEEK_KPIS_SQL = """
 WITH classified_runs AS (
     SELECT
-        *,
+        v.*,
         CASE
-            WHEN is_easy_run THEN 'easy'
+            WHEN v.is_easy_run THEN 'easy'
             WHEN (
-                moving_time_seconds >= 1800
-                AND z2_high IS NOT NULL
-                AND easy_pct IS NOT NULL
-                AND easy_pct < 0.70
-                AND avg_hr IS NOT NULL
-                AND avg_hr > z2_high
+                v.moving_time_seconds >= 1800
+                AND v.z2_high IS NOT NULL
+                AND v.easy_pct IS NOT NULL
+                AND v.easy_pct < 0.70
+                AND v.avg_hr IS NOT NULL
+                AND v.avg_hr > v.z2_high
             ) THEN 'threshold'
             ELSE NULL
         END AS training_system
-    FROM v_easy_runs
-    WHERE user_id = :uid
-      AND activity_date >= :ws
-      AND activity_date <= :we
-      AND activity_type = 'Run'
+    FROM v_easy_runs v
+    INNER JOIN public.activities a ON a.activity_id = v.activity_id
+    WHERE v.user_id = :uid
+      AND a.athlete_id = :athlete_id
+      AND v.activity_date >= :ws
+      AND v.activity_date <= :we
+      AND v.activity_type = 'Run'
 )
 SELECT
     COUNT(*) AS total_runs,
@@ -89,13 +92,16 @@ FROM classified_runs
 _USERS_WITH_EASY_RUNS_SQL = """
 WITH classified_runs AS (
     SELECT
-        user_id,
-        activity_date,
+        v.user_id,
+        v.activity_date,
         CASE
-            WHEN is_easy_run THEN 'easy'
+            WHEN v.is_easy_run THEN 'easy'
             ELSE NULL
         END AS training_system
-    FROM v_easy_runs
+    FROM v_easy_runs v
+    INNER JOIN public.activities a ON a.activity_id = v.activity_id
+    INNER JOIN public.user_athletes ua
+        ON ua.user_id = v.user_id AND a.athlete_id = ua.athlete_id
 )
 SELECT DISTINCT user_id
 FROM classified_runs
@@ -229,11 +235,24 @@ def last_completed_week_bounds(today: Optional[date] = None) -> Tuple[date, date
 
 
 def _fetch_week_kpis(
-    session: Session, user_id: str, week_start: date, week_end: date
+    session: Session,
+    user_id: str,
+    week_start: date,
+    week_end: date,
+    athlete_id: int,
 ) -> Dict[str, Any]:
-    stmt = text(_WEEK_KPIS_SQL).bindparams(bindparam("uid", type_=PGUUID))
+    stmt = text(_WEEK_KPIS_SQL).bindparams(
+        bindparam("uid", type_=PGUUID),
+        bindparam("athlete_id", type_=Integer),
+    )
     row = session.execute(
-        stmt, {"uid": user_id, "ws": str(week_start), "we": str(week_end)}
+        stmt,
+        {
+            "uid": user_id,
+            "athlete_id": athlete_id,
+            "ws": str(week_start),
+            "we": str(week_end),
+        },
     ).fetchone()
 
     if not row:
@@ -276,10 +295,14 @@ def _fetch_week_kpis(
 
 
 def _fetch_week_kpis_by_system(
-    session: Session, user_id: str, week_start: date, week_end: date
+    session: Session,
+    user_id: str,
+    week_start: date,
+    week_end: date,
+    athlete_id: int,
 ) -> Dict[TrainingSystem, Dict[str, Any]]:
     """Fetch weekly KPI inputs for all systems. EASY + THRESHOLD are implemented."""
-    weekly = _fetch_week_kpis(session, user_id, week_start, week_end)
+    weekly = _fetch_week_kpis(session, user_id, week_start, week_end, athlete_id)
     return {
         TrainingSystem.EASY: {
             "easy_run_count": weekly.get("easy_run_count", 0),
@@ -599,8 +622,19 @@ def generate_weekly_insight(
     if ref_date is None:
         ref_date = date.today()
 
+    athlete_id = get_primary_athlete_id(session, str(user_id))
+    if athlete_id is None:
+        return {
+            "user_id": user_id,
+            "skipped": True,
+            "reason": "no_athlete",
+            "message": "No linked Strava athlete; weekly insight not generated.",
+        }
+
     week_start, week_end = _week_bounds(ref_date)
-    kpis_by_system = _fetch_week_kpis_by_system(session, user_id, week_start, week_end)
+    kpis_by_system = _fetch_week_kpis_by_system(
+        session, user_id, week_start, week_end, athlete_id
+    )
     easy_kpis = kpis_by_system[TrainingSystem.EASY]
 
     if easy_kpis["easy_run_count"] == 0:
@@ -860,6 +894,14 @@ def get_weekly_insight_history(
     """
     weeks = max(1, min(weeks, 12))
 
+    athlete_id = get_primary_athlete_id(session, str(user_id))
+    if athlete_id is None:
+        return {
+            "has_history": False,
+            "message": "No linked Strava athlete.",
+            "systems": {},
+        }
+
     cal_week_start, _ = _week_bounds(date.today())
     week_windows = [
         (
@@ -944,7 +986,7 @@ def get_weekly_insight_history(
     prev_threshold_pace: Optional[float] = None
     threshold_points: List[Dict[str, Any]] = []
     for ws, we in week_windows:
-        wk = _fetch_week_kpis(session, user_id, ws, we)
+        wk = _fetch_week_kpis(session, user_id, ws, we, athlete_id)
         stab: Optional[float] = None
         if int(wk.get("threshold_run_count") or 0) > 0:
             raw_s = wk.get("effort_stability_min_per_mi")

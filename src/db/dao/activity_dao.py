@@ -6,7 +6,7 @@
 # @usage: Used in ingestion orchestration and enrichment
 # @prerequisites: Activity table must exist with correct schema
 
-from typing import Any, List, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 from datetime import date
 import uuid
 import logging
@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from uuid import UUID
 
 from src.db.models.activities import Activity
+from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
 from src.utils.activity_local_date_sql import ACTIVITY_LOCAL_DATE_SQL_FRAGMENT
 from src.utils.logger import get_logger
 from src.utils.conversions import convert_metrics  # assumed to exist
@@ -30,12 +31,15 @@ class ActivityDAO:
         session: Session,
         athlete_id: int,
         activities: List[Dict],
-        user_id: UUID,
+        user_id: Optional[Union[UUID, str]] = None,
     ) -> int:
         """
         Upsert 'Run' activities into the database.
-        Requires activity_id, user_id (UUID), and minimum required fields.
         Skips invalid or non-Run types.
+
+        When ``user_id`` is set, it is only stored if it matches the user's primary
+        linked Strava athlete (``user_athletes``); otherwise rows are saved without
+        app ownership to avoid mixing accounts (Phase 3).
         """
 
         if not activities:
@@ -52,6 +56,17 @@ class ActivityDAO:
                     f"Invalid user_id format (not UUID): {user_id}, continuing without user_id: {e}"
                 )
                 uid = None  # Continue without user_id rather than failing completely
+
+        if uid is not None:
+            primary_aid = get_primary_athlete_id(session, str(uid))
+            if primary_aid is not None and int(primary_aid) != int(athlete_id):
+                logger.warning(
+                    "[SKIP] Not linking user_id on upsert: athlete_id=%s != primary=%s for user %s",
+                    athlete_id,
+                    primary_aid,
+                    uid,
+                )
+                uid = None
 
         logger.info(
             f"[INFO] Preparing to upsert {len(activities)} activities for athlete={athlete_id}, user_id={uid}"
@@ -155,10 +170,11 @@ class ActivityDAO:
         try:
             stmt = insert(Activity).values(rows)
 
+            # Include user_id on conflict so re-sync can correct ownership; activity_id is PK.
             update_cols = {
                 col.name: getattr(stmt.excluded, col.name)
                 for col in Activity.__table__.columns
-                if col.name not in ("activity_id", "user_id")
+                if col.name != "activity_id"
             }
 
             stmt = stmt.on_conflict_do_update(

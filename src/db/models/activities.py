@@ -15,7 +15,7 @@ class Activity(Base):
     user_id = Column(
         SqliteUUID(),  # SQLite-compatible UUID type
         ForeignKey("user_identity.user_id"),
-        nullable=False,
+        nullable=True,  # NULL = not linked to an app account (e.g. wrong-athlete cleanup f013)
         index=True,
     )
 
