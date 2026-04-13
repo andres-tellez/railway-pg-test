@@ -14,8 +14,7 @@ Authorization (what can you do?) is handled here.
 """
 
 from functools import wraps
-import os
-from typing import Optional, Set
+from typing import Collection, Optional
 
 from flask import g, jsonify
 
@@ -24,34 +23,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-def _admin_athlete_ids() -> Set[int]:
-    """Strava athlete IDs from ADMIN_ATHLETE_IDS (comma-separated) or single ADMIN_ATHLETE_ID."""
-    raw = (
-        os.getenv("ADMIN_ATHLETE_IDS") or os.getenv("ADMIN_ATHLETE_ID") or ""
-    ).strip()
-    if not raw:
-        return set()
-    out: Set[int] = set()
-    for part in raw.replace(";", ",").split(","):
-        p = part.strip()
-        if not p:
-            continue
-        try:
-            out.add(int(p))
-        except ValueError:
-            logger.warning("is_admin: ignoring invalid ADMIN_ATHLETE id %r", p)
-    return out
+# Only SmartCoach users with a user_athletes row for this Strava athlete_id may pass
+# is_admin() (used for admin account deletion). Not configurable via env.
+ADMIN_OPERATOR_ATHLETE_IDS: frozenset[int] = frozenset({347085})
 
 
-def _admin_user_id_allowlist() -> Set[str]:
-    raw = (os.getenv("ADMIN_USER_IDS") or "").strip()
-    if not raw:
-        return set()
-    return {part.strip() for part in raw.split(",") if part.strip()}
-
-
-def _user_linked_to_athlete_ids(internal_user_id: str, athlete_ids: Set[int]) -> bool:
+def _user_linked_to_athlete_ids(
+    internal_user_id: str, athlete_ids: Collection[int]
+) -> bool:
     if not athlete_ids:
         return False
     from src.db.db_session import get_session
@@ -193,21 +172,14 @@ def check_user_owns_resource(
 
 def is_admin(user_id: Optional[str] = None) -> bool:
     """
-    Check if user has admin role.
+    Check if user has admin role (hardcoded operator Strava athlete id).
 
     Args:
         user_id: User ID to check (defaults to g.user_id)
 
     Returns:
-        True if user is admin, False otherwise
-
-    Any **one** of the following grants admin (OR):
-
-    - **ADMIN_ATHLETE_IDS** or **ADMIN_ATHLETE_ID**: comma-separated Strava athlete IDs
-      (e.g. ``347085``). Caller must have a ``user_athletes`` row linking ``g.user_id``
-      to one of those athlete IDs.
-
-    - **ADMIN_USER_IDS**: comma-separated internal UUID strings (same as ``g.user_id``).
+        True if ``user_id`` has a ``user_athletes`` link to one of
+        ``ADMIN_OPERATOR_ATHLETE_IDS`` (currently only ``347085``).
     """
     if user_id is None:
         user_id = getattr(g, "user_id", None)
@@ -216,16 +188,7 @@ def is_admin(user_id: Optional[str] = None) -> bool:
         return False
 
     uid_str = str(user_id)
-
-    athlete_ids = _admin_athlete_ids()
-    if athlete_ids and _user_linked_to_athlete_ids(uid_str, athlete_ids):
-        return True
-
-    allow_ids = _admin_user_id_allowlist()
-    if allow_ids and uid_str in allow_ids:
-        return True
-
-    return False
+    return _user_linked_to_athlete_ids(uid_str, ADMIN_OPERATOR_ATHLETE_IDS)
 
 
 def requires_admin(fn):

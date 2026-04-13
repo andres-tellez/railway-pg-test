@@ -25,7 +25,7 @@ GET  /admin/athletes
     Get list of all athletes for admin dropdown (requires auth)
 
 POST /admin/delete-user
-    Permanently delete a user account by internal user_id (admin only; see ADMIN_ATHLETE_IDS)
+    Permanently delete a user account by internal user_id (admin only; Strava athlete 347085)
 
 POST /admin/sync-activities
     Sync activities for a specific athlete in a date range
@@ -229,7 +229,7 @@ def admin_delete_user():
     """
     Permanently delete another user's account (internal user_id).
 
-    Requires is_admin(): caller linked to ADMIN_ATHLETE_IDS, or listed in ADMIN_USER_IDS.
+    Requires is_admin(): caller must be linked to Strava athlete_id 347085 in user_athletes.
     Body: {"user_id": "<uuid>", "confirm": true}
     """
     from flask import g
@@ -239,7 +239,7 @@ def admin_delete_user():
             jsonify(
                 {
                     "error": "Admin access required",
-                    "hint": "Set ADMIN_ATHLETE_IDS (e.g. 347085) so your user_athletes row matches, or set ADMIN_USER_IDS.",
+                    "hint": "Only the SmartCoach user linked to Strava athlete_id 347085 may delete other accounts.",
                 }
             ),
             403,
