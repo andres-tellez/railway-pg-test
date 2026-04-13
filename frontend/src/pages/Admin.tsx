@@ -288,9 +288,12 @@ const Admin: React.FC = () => {
             <h2 className="text-lg font-semibold text-gray-900 mb-2">Delete user account</h2>
             <p className="text-sm text-gray-600 mb-3">
               Permanently removes the selected user&apos;s identity, profile, Strava link, tokens,
-              activities, plans, and related rows. The signed-in account must be listed in{' '}
-              <code className="text-xs bg-red-100 px-1 rounded">ADMIN_USER_IDS</code> on the server.
-              You cannot delete your own account here; use the GDPR / account deletion flow instead.
+              activities, plans, and related rows. The server must recognize you as admin: set{' '}
+              <code className="text-xs bg-red-100 px-1 rounded">ADMIN_ATHLETE_IDS</code> (e.g.{' '}
+              <code className="text-xs bg-red-100 px-1 rounded">347085</code>) so your account is
+              linked to that Strava athlete, or set{' '}
+              <code className="text-xs bg-red-100 px-1 rounded">ADMIN_USER_IDS</code>. You cannot
+              delete your own account here; use the GDPR / account deletion flow instead.
             </p>
             <div className="mb-3">
               <label className="block text-sm font-medium text-gray-700 mb-2">
