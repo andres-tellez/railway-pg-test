@@ -14,6 +14,7 @@ Authorization (what can you do?) is handled here.
 """
 
 from functools import wraps
+import os
 from typing import Optional
 from flask import g, jsonify
 from src.utils.response_utils import unauthorized_response
@@ -147,7 +148,8 @@ def is_admin(user_id: Optional[str] = None) -> bool:
     Returns:
         True if user is admin, False otherwise
 
-    Note: This is a placeholder. Implement actual admin check based on your requirements.
+    Set ADMIN_USER_IDS to a comma-separated list of internal user_id UUID strings
+    (the same values as g.user_id after Auth resolution).
     """
     if user_id is None:
         user_id = getattr(g, "user_id", None)
@@ -155,14 +157,12 @@ def is_admin(user_id: Optional[str] = None) -> bool:
     if not user_id:
         return False
 
-    # TODO: Implement actual admin check
-    # Options:
-    # 1. Check user_identity.role or user_identity.is_admin field
-    # 2. Check against admin_users table
-    # 3. Check against environment variable ADMIN_USER_IDS
+    raw = (os.getenv("ADMIN_USER_IDS") or "").strip()
+    if not raw:
+        return False
 
-    # For now, return False (no admins)
-    return False
+    allowed = {part.strip() for part in raw.split(",") if part.strip()}
+    return str(user_id) in allowed
 
 
 def requires_admin(fn):
