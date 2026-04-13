@@ -9,7 +9,7 @@ import statistics
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import bindparam, text
+from sqlalchemy import Integer, bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from src.smartcoach_mobile_coach.run_metrics import (
     distance_miles_from_meters,
     pace_sec_per_mi,
 )
+from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
 from src.utils.activity_local_date_sql import ACTIVITY_LOCAL_DATE_SQL_FRAGMENT
 
 
@@ -84,6 +85,9 @@ def _activity_start_utc_iso(start_date: Any) -> Optional[str]:
 def _fetch_activity_context(
     session: Session, internal_user_id: str, activity_id: int
 ) -> Optional[Tuple[Any, ...]]:
+    athlete_id = get_primary_athlete_id(session, str(internal_user_id))
+    if athlete_id is None:
+        return None
     q = text(
         f"""
         SELECT
@@ -96,10 +100,18 @@ def _fetch_activity_context(
             average_heartrate,
             type
         FROM public.activities
-        WHERE activity_id = :aid AND user_id = :uid
+        WHERE activity_id = :aid
+          AND user_id = :uid
+          AND athlete_id = :athlete_id
         """
-    ).bindparams(bindparam("uid", type_=PGUUID))
-    row = session.execute(q, {"aid": activity_id, "uid": internal_user_id}).fetchone()
+    ).bindparams(
+        bindparam("uid", type_=PGUUID),
+        bindparam("athlete_id", type_=Integer),
+    )
+    row = session.execute(
+        q,
+        {"aid": activity_id, "uid": internal_user_id, "athlete_id": athlete_id},
+    ).fetchone()
     return row
 
 
@@ -139,7 +151,13 @@ def build_get_run_insight_payload(
     distance_mi = distance_miles_from_meters(distance_m)
     pace_sec = pace_sec_per_mi(moving_time, distance_mi)
     act = ActivityDAO.get_by_id(session, activity_id)
-    if not act or str(act.user_id) != str(internal_user_id):
+    primary_aid = get_primary_athlete_id(session, str(internal_user_id))
+    if (
+        not act
+        or str(act.user_id) != str(internal_user_id)
+        or primary_aid is None
+        or int(act.athlete_id) != int(primary_aid)
+    ):
         return {"error": "not_found", "message": "Activity not found for this user."}
 
     local_date_str = (

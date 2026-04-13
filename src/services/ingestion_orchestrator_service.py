@@ -116,6 +116,9 @@ logger = logging.getLogger(__name__)
 # Automatic retries when Strava API headroom is too low (see rate-limit check below).
 MAX_SYNC_AUTO_RETRIES = 5
 
+# Fetch + enrich in segments so headroom is checked per segment (~2 weeks).
+STRAVA_SYNC_CHUNK_SECONDS = 14 * 24 * 60 * 60
+
 USER_MSG_HEADROOM_DEFERRED = (
     "Strava is extra busy right now, so we paused your run import on purpose — "
     "that avoids broken or partial data. SmartCoach will try again automatically in a few minutes. "
@@ -342,214 +345,319 @@ def run_full_ingestion_and_enrichment(
             datetime.fromtimestamp(after_ts, tz=timezone.utc).isoformat(),
             datetime.fromtimestamp(before_ts, tz=timezone.utc).isoformat(),
         )
-        sync_progress(20, "Fetching activities from Strava…")
+
+        chunk_boundaries: list[tuple[int, int]] = []
+        ca = after_ts
+        while ca < before_ts:
+            cb = min(ca + STRAVA_SYNC_CHUNK_SECONDS, before_ts)
+            chunk_boundaries.append((ca, cb))
+            ca = cb
+
+        if not chunk_boundaries:
+            logger.warning(
+                "Empty Strava sync window (after_ts >= before_ts); skipping fetch"
+            )
+            sync_progress(75, "Nothing to sync")
+            update_last_sync_timestamp(session, athlete_id)
+            sync_complete()
+            return {"synced": 0, "enriched": 0}
+
+        num_chunks = len(chunk_boundaries)
+        if num_chunks > 1:
+            logger.info(
+                "Splitting Strava sync into %d chunk(s) of up to %d days each "
+                "(headroom + success rate).",
+                num_chunks,
+                STRAVA_SYNC_CHUNK_SECONDS // 86400,
+            )
 
         service = ActivityIngestionService(session, athlete_id)
-        logger.info("Fetching recent runs from Strava...")
+        total_inserted = 0
+        total_enriched = 0
 
-        try:
-            all_fetched = service.fetch_all_activities(
-                after=after_ts,
-                before=before_ts,
-                per_page=per_page,
-                type_filter="Run",
-                type_limit=None,
+        for idx, (chunk_after, chunk_before) in enumerate(chunk_boundaries):
+            fetch_pct = 20.0 + (idx / num_chunks) * 15.0
+            sync_progress(
+                fetch_pct,
+                "Fetching activities from Strava…",
+                detail=(
+                    f"Chunk {idx + 1}/{num_chunks}: "
+                    f"{datetime.fromtimestamp(chunk_after, tz=timezone.utc).date()} → "
+                    f"{datetime.fromtimestamp(chunk_before, tz=timezone.utc).date()}"
+                ),
             )
-        except StravaTokenError as e:
-            logger.error(f"Token error during activity fetch: {e}", exc_info=True)
-            raise StravaIngestionSyncError(
-                athlete_id=athlete_id,
-                reason=f"Token error: {e.message}",
-                message="Failed to fetch activities due to token error",
-            )
-        except Exception as e:
-            logger.error(f"Failed to fetch activities: {e}", exc_info=True)
-            raise StravaIngestionSyncError(
-                athlete_id=athlete_id,
-                reason=str(e),
-                message="Failed to fetch activities from Strava API",
-            )
-
-        logger.info(f"Fetched {len(all_fetched)} run activities")
-        runs_only = filter_strava_runs_in_six_week_window(
-            six_week_start_dt, all_fetched
-        )
-        projected_enrichment_calls = 0
-        for act in runs_only:
-            start_date_str = act.get("start_date")
-            try:
-                start_dt = (
-                    datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
-                    if start_date_str
-                    else None
-                )
-            except Exception:
-                start_dt = None
-            projected_enrichment_calls += 2  # detail + zones
-            if start_dt and start_dt >= two_week_cutoff_dt:
-                projected_enrichment_calls += 1  # streams/splits
-
-        rate_limiter = get_rate_limiter()
-        stats = rate_limiter.get_stats()
-        remaining_15m = stats.get("remaining_15min", 0)
-        logger.info(
-            "Projected Strava calls: detail/zones/streams=%d, remaining window=%d",
-            projected_enrichment_calls,
-            remaining_15m,
-        )
-
-        RATE_BUFFER = 10
-        if projected_enrichment_calls + RATE_BUFFER > remaining_15m:
-            wait_seconds = max(stats.get("wait_time_seconds", 0), 60)
-            logger.warning(
-                "Rate limit headroom too low (%d remaining, %d needed). Aborting sync "
-                "(sync_retry_attempt=%s).",
-                remaining_15m,
-                projected_enrichment_calls + RATE_BUFFER,
-                sync_retry_attempt,
-            )
-            session.rollback()
-            if not user_id:
-                sync_error(
-                    USER_MSG_GENERIC_SYNC_FAILURE,
-                    error_code="RATE_LIMIT_HEADROOM_NO_USER",
-                )
-                raise StravaIngestionSyncError(
-                    athlete_id=athlete_id,
-                    reason="rate_limit_headroom_no_user",
-                    message=(
-                        "Strava is handling a lot of requests right now. "
-                        f"Please wait about {int(wait_seconds // 60) + 1} minutes before trying again."
-                    ),
-                )
-            if sync_retry_attempt >= MAX_SYNC_AUTO_RETRIES:
-                sync_error(
-                    USER_MSG_HEADROOM_EXHAUSTED,
-                    error_code="RATE_LIMIT_EXHAUSTED",
-                )
-                raise StravaIngestionSyncError(
-                    athlete_id=athlete_id,
-                    reason="rate_limit_retries_exhausted",
-                    message="Strava ingestion retries exhausted",
-                )
-            retry_delay = max(float(wait_seconds), 120.0)
-            schedule_strava_ingestion_retry(
-                user_id, athlete_id, retry_delay, sync_retry_attempt + 1
-            )
-            sync_error(
-                USER_MSG_HEADROOM_DEFERRED,
-                error_code="RATE_LIMIT_HEADROOM_DEFERRED",
-            )
-            return {"synced": 0, "enriched": 0, "deferred": True}
-
-        sync_progress(
-            35,
-            "Processing activities",
-            detail=f"Fetched {len(runs_only)} runs",
-        )
-
-        inserted_count = 0
-        if runs_only:
-            fetched_ids = [
-                int(a.get("id") or a.get("activity_id"))
-                for a in runs_only
-                if a.get("id") or a.get("activity_id")
-            ]
-            existing_ids = {
-                r[0]
-                for r in session.query(Activity.activity_id)
-                .filter(Activity.activity_id.in_(fetched_ids))
-                .all()
-            }
-
-            new_activities = [
-                a
-                for a in runs_only
-                if int(a.get("id") or a.get("activity_id")) not in existing_ids
-            ]
-            for a in new_activities:
-                a["activity_id"] = a.pop("id", None) or a.get("activity_id")
-                a["user_id"] = user_id  # store user_id (UUID) alongside activity
-
-            # Deduplicate by activity_id
-            dedup = {
-                int(a["activity_id"]): a for a in new_activities if a.get("activity_id")
-            }
-            unique_new_activities = list(dedup.values())
-
-            logger.info(f"Saving {len(unique_new_activities)} new runs...")
-
-            inserted_count = ActivityDAO.upsert_activities(
-                session, athlete_id, unique_new_activities, user_id=user_id
-            )
-
-            logger.info(f"Synced {inserted_count} new runs")
-        else:
             logger.info(
-                "No new runs found from Strava API (activities may already exist)"
-            )
-
-        sync_progress(
-            60,
-            "Saving activities",
-            detail=f"Saved {inserted_count} new runs",
-        )
-
-        # ALWAYS run enrichment if date range is provided, even if no new activities were synced
-        # This ensures existing activities in the date range get enriched
-        should_enrich = True
-        if after is None and before is None:
-            # Only skip enrichment if no date range provided AND no activities were synced
-            should_enrich = inserted_count > 0
-
-        if should_enrich:
-            logger.info("Enriching activities...")
-            print(
-                f"🔄 [Orchestrator] About to call run_enrichment_batch with: "
-                f"athlete_id={athlete_id}, batch_size={batch_size}, "
-                f"after={after}, before={before}",
-                flush=True,
+                "Fetching Strava runs chunk %d/%d after=%s before=%s",
+                idx + 1,
+                num_chunks,
+                datetime.fromtimestamp(chunk_after, tz=timezone.utc).isoformat(),
+                datetime.fromtimestamp(chunk_before, tz=timezone.utc).isoformat(),
             )
 
             try:
-                enriched = (
-                    run_enrichment_batch(
-                        session,
-                        athlete_id,
-                        batch_size=batch_size,
-                        split_cutoff=two_week_cutoff_dt,
-                        after=after,  # Pass date range to enrichment
-                        before=before,  # Pass date range to enrichment
-                    )
-                    or 0
+                all_fetched = service.fetch_all_activities(
+                    after=chunk_after,
+                    before=chunk_before,
+                    per_page=per_page,
+                    type_filter="Run",
+                    type_limit=None,
                 )
-                print(
-                    f"✅ [Orchestrator] run_enrichment_batch returned: enriched={enriched}",
-                    flush=True,
-                )
-                logger.info(f"Enriched {enriched} activities")
             except StravaTokenError as e:
-                logger.error(f"Token error during enrichment: {e}", exc_info=True)
-                # Don't fail ingestion if enrichment fails - log and continue
-                enriched = 0
-                logger.warning(
-                    f"Enrichment skipped due to token error, but ingestion completed"
+                logger.error(f"Token error during activity fetch: {e}", exc_info=True)
+                raise StravaIngestionSyncError(
+                    athlete_id=athlete_id,
+                    reason=f"Token error: {e.message}",
+                    message="Failed to fetch activities due to token error",
                 )
             except Exception as e:
-                logger.error(f"Enrichment failed: {e}", exc_info=True)
-                # Don't fail ingestion if enrichment fails - log and continue
-                enriched = 0
-                logger.warning(f"Enrichment failed, but ingestion completed")
-        else:
+                logger.error(f"Failed to fetch activities: {e}", exc_info=True)
+                raise StravaIngestionSyncError(
+                    athlete_id=athlete_id,
+                    reason=str(e),
+                    message="Failed to fetch activities from Strava API",
+                )
+
             logger.info(
-                "Skipping enrichment (no date range provided and no new activities)"
+                "Chunk %d/%d: fetched %d run activities from Strava",
+                idx + 1,
+                num_chunks,
+                len(all_fetched),
             )
-            enriched = 0
+            runs_only = filter_strava_runs_in_six_week_window(
+                six_week_start_dt, all_fetched
+            )
+
+            # Persist new run summaries before enrichment headroom check so a deferral
+            # still leaves Strava list data in the DB (ActivityDAO commits per upsert).
+            inserted_count = 0
+            proc_pct = 35.0 + (idx / num_chunks) * 20.0
+            sync_progress(
+                proc_pct,
+                "Processing activities",
+                detail=f"Chunk {idx + 1}/{num_chunks}: {len(runs_only)} runs",
+            )
+            if runs_only:
+                fetched_ids = [
+                    int(a.get("id") or a.get("activity_id"))
+                    for a in runs_only
+                    if a.get("id") or a.get("activity_id")
+                ]
+                existing_ids = {
+                    r[0]
+                    for r in session.query(Activity.activity_id)
+                    .filter(Activity.activity_id.in_(fetched_ids))
+                    .all()
+                }
+
+                new_activities = [
+                    a
+                    for a in runs_only
+                    if int(a.get("id") or a.get("activity_id")) not in existing_ids
+                ]
+                for a in new_activities:
+                    a["activity_id"] = a.pop("id", None) or a.get("activity_id")
+                    a["user_id"] = user_id  # store user_id (UUID) alongside activity
+
+                # Deduplicate by activity_id
+                dedup = {
+                    int(a["activity_id"]): a
+                    for a in new_activities
+                    if a.get("activity_id")
+                }
+                unique_new_activities = list(dedup.values())
+
+                logger.info(
+                    "Chunk %d/%d: saving %d new runs...",
+                    idx + 1,
+                    num_chunks,
+                    len(unique_new_activities),
+                )
+
+                inserted_count = ActivityDAO.upsert_activities(
+                    session, athlete_id, unique_new_activities, user_id=user_id
+                )
+
+                logger.info(
+                    "Chunk %d/%d: synced %d new runs",
+                    idx + 1,
+                    num_chunks,
+                    inserted_count,
+                )
+            else:
+                logger.info(
+                    "Chunk %d/%d: no new runs from Strava list (may already exist)",
+                    idx + 1,
+                    num_chunks,
+                )
+
+            total_inserted += inserted_count
+
+            save_pct = 55.0 + (idx / num_chunks) * 10.0
+            sync_progress(
+                min(save_pct, 65.0),
+                "Saving activities",
+                detail=f"Chunk {idx + 1}/{num_chunks}: saved {inserted_count} new runs",
+            )
+
+            projected_enrichment_calls = 0
+            for act in runs_only:
+                start_date_str = act.get("start_date")
+                try:
+                    start_dt = (
+                        datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
+                        if start_date_str
+                        else None
+                    )
+                except Exception:
+                    start_dt = None
+                projected_enrichment_calls += 2  # detail + zones
+                if start_dt and start_dt >= two_week_cutoff_dt:
+                    projected_enrichment_calls += 1  # streams/splits
+
+            rate_limiter = get_rate_limiter()
+            stats = rate_limiter.get_stats()
+            remaining_15m = stats.get("remaining_15min", 0)
+            logger.info(
+                "Chunk %d/%d: projected enrichment Strava calls=%d, remaining_15min=%d",
+                idx + 1,
+                num_chunks,
+                projected_enrichment_calls,
+                remaining_15m,
+            )
+
+            RATE_BUFFER = 10
+            if projected_enrichment_calls + RATE_BUFFER > remaining_15m:
+                wait_seconds = max(stats.get("wait_time_seconds", 0), 60)
+                logger.warning(
+                    "Rate limit headroom too low (%d remaining, %d needed). Deferring "
+                    "after chunk %d/%d (runs already saved for this chunk). "
+                    "(sync_retry_attempt=%s).",
+                    remaining_15m,
+                    projected_enrichment_calls + RATE_BUFFER,
+                    idx + 1,
+                    num_chunks,
+                    sync_retry_attempt,
+                )
+                if not user_id:
+                    sync_error(
+                        USER_MSG_GENERIC_SYNC_FAILURE,
+                        error_code="RATE_LIMIT_HEADROOM_NO_USER",
+                    )
+                    raise StravaIngestionSyncError(
+                        athlete_id=athlete_id,
+                        reason="rate_limit_headroom_no_user",
+                        message=(
+                            "Strava is handling a lot of requests right now. "
+                            f"Please wait about {int(wait_seconds // 60) + 1} minutes before trying again."
+                        ),
+                    )
+                if sync_retry_attempt >= MAX_SYNC_AUTO_RETRIES:
+                    sync_error(
+                        USER_MSG_HEADROOM_EXHAUSTED,
+                        error_code="RATE_LIMIT_EXHAUSTED",
+                    )
+                    raise StravaIngestionSyncError(
+                        athlete_id=athlete_id,
+                        reason="rate_limit_retries_exhausted",
+                        message="Strava ingestion retries exhausted",
+                    )
+                retry_delay = max(float(wait_seconds), 120.0)
+                schedule_strava_ingestion_retry(
+                    user_id, athlete_id, retry_delay, sync_retry_attempt + 1
+                )
+                sync_error(
+                    USER_MSG_HEADROOM_DEFERRED,
+                    error_code="RATE_LIMIT_HEADROOM_DEFERRED",
+                )
+                return {
+                    "synced": total_inserted,
+                    "enriched": total_enriched,
+                    "deferred": True,
+                }
+
+            enrich_after = chunk_after
+            enrich_before = chunk_before
+            if after is None and before is None:
+                if num_chunks > 1:
+                    should_enrich = len(runs_only) > 0
+                else:
+                    should_enrich = inserted_count > 0
+            else:
+                should_enrich = True
+
+            if should_enrich:
+                logger.info(
+                    "Chunk %d/%d: enriching (after=%s before=%s)...",
+                    idx + 1,
+                    num_chunks,
+                    enrich_after,
+                    enrich_before,
+                )
+                print(
+                    f"🔄 [Orchestrator] run_enrichment_batch chunk {idx + 1}/{num_chunks} "
+                    f"athlete_id={athlete_id}, after={enrich_after}, before={enrich_before}",
+                    flush=True,
+                )
+
+                try:
+                    enriched = (
+                        run_enrichment_batch(
+                            session,
+                            athlete_id,
+                            batch_size=batch_size,
+                            split_cutoff=two_week_cutoff_dt,
+                            after=enrich_after,
+                            before=enrich_before,
+                        )
+                        or 0
+                    )
+                    print(
+                        f"✅ [Orchestrator] chunk {idx + 1}/{num_chunks} enriched={enriched}",
+                        flush=True,
+                    )
+                    logger.info(
+                        "Chunk %d/%d: enriched %d activities",
+                        idx + 1,
+                        num_chunks,
+                        enriched,
+                    )
+                except StravaTokenError as e:
+                    logger.error(f"Token error during enrichment: {e}", exc_info=True)
+                    enriched = 0
+                    logger.warning(
+                        "Enrichment skipped due to token error, but ingestion continued"
+                    )
+                except Exception as e:
+                    logger.error(f"Enrichment failed: {e}", exc_info=True)
+                    enriched = 0
+                    logger.warning("Enrichment failed, but ingestion continued")
+            else:
+                logger.info(
+                    "Chunk %d/%d: skipping enrichment (no new rows this chunk)",
+                    idx + 1,
+                    num_chunks,
+                )
+                enriched = 0
+
+            total_enriched += enriched
+
+            done_pct = 65.0 + ((idx + 1) / num_chunks) * 15.0
+            sync_progress(
+                min(done_pct, 79.0),
+                "Enrichment progress",
+                detail=(
+                    f"Chunk {idx + 1}/{num_chunks}: enriched {enriched} "
+                    f"(total {total_enriched})"
+                ),
+            )
+
+        inserted_count = total_inserted
+        enriched = total_enriched
 
         sync_progress(
             80,
             "Enrichment complete",
-            detail=f"Enriched {enriched} activities",
+            detail=f"Enriched {enriched} activities across {num_chunks} chunk(s)",
         )
 
         # Refresh materialized views after successful ingestion

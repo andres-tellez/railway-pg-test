@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from src.db.db_session import Base
+from src.db.models.user_profile import SqliteJSONB
 
 
 class WeeklyTrainingInsight(Base):
@@ -30,5 +31,5 @@ class WeeklyTrainingInsight(Base):
     summary_text = Column(Text)
     action_text = Column(Text)
 
-    kpi_snapshot = Column(JSONB)
+    kpi_snapshot = Column(SqliteJSONB())
     generated_at = Column(DateTime(timezone=True), server_default=func.now())

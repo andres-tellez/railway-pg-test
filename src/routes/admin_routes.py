@@ -508,29 +508,34 @@ def sync_activities():
                 400,
             )
 
-        # Get user_id for this athlete if not already set
-        if not user_id:
-            mapping = (
-                session.query(UserAthleteLink).filter_by(athlete_id=athlete_id).first()
+        # Ingestion must use the Strava-linked account owner, not only the admin JWT user,
+        # so sync_status / retries / activity.user_id stay consistent.
+        owner_link = (
+            session.query(UserAthleteLink).filter_by(athlete_id=athlete_id).first()
+        )
+        ingestion_user_id = str(owner_link.user_id) if owner_link else None
+        if not ingestion_user_id:
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": (
+                            f"No user linked to Strava athlete_id={athlete_id}. "
+                            "That account must connect Strava before activities can be synced."
+                        ),
+                    }
+                ),
+                404,
             )
-            if mapping:
-                user_id = mapping.user_id
-                logger.info(
-                    f"✅ [Sync Activities] Found user_id={user_id} for athlete_id={athlete_id}"
-                )
 
-        # Log if syncing for different athlete (audit trail for admin operations)
-        if user_id:
-            mapping = (
-                session.query(UserAthleteLink)
-                .filter_by(user_id=user_id, athlete_id=athlete_id)
-                .first()
+        actor_user_id = str(user_id) if user_id else None
+        if actor_user_id and actor_user_id != ingestion_user_id:
+            logger.info(
+                "🔄 [Sync Activities] Admin actor=%s running sync for athlete %s (owner user_id=%s)",
+                actor_user_id,
+                athlete_id,
+                ingestion_user_id,
             )
-            if not mapping:
-                logger.info(
-                    f"🔄 [Sync Activities] Admin sync: User {user_id} syncing athlete {athlete_id} "
-                    f"(not their own athlete - admin operation)"
-                )
 
         # MODE 2: Date range sync
         if start_date and end_date:
@@ -619,7 +624,13 @@ def sync_activities():
                         f"✅ [Background Sync] Sync completed: synced={result.get('synced', 0)}, "
                         f"enriched={result.get('enriched', 0)}"
                     )
-                    if result.get("enriched", 0) == 0:
+                    if result.get("deferred"):
+                        logger.info(
+                            "[Background Sync] Deferred (e.g. rate headroom); "
+                            "new runs may be saved; enrichment will retry. result=%s",
+                            result,
+                        )
+                    elif result.get("enriched", 0) == 0:
                         print(
                             f"⚠️ [Background Sync] No activities were enriched! Result: {result}",
                             file=sys.stdout,
@@ -641,7 +652,11 @@ def sync_activities():
                 f"🚀 [Sync Activities] Launching background job for athlete {athlete_id}..."
             )
             run_background_job(
-                sync_job, athlete_id, user_id, start_timestamp, end_timestamp
+                sync_job,
+                athlete_id,
+                ingestion_user_id,
+                start_timestamp,
+                end_timestamp,
             )
             logger.info(
                 f"✅ [Sync Activities] Background job launched, returning 202 response"
@@ -652,7 +667,10 @@ def sync_activities():
                 jsonify(
                     {
                         "status": "success",
-                        "message": f"Sync started for athlete {athlete_id} from {start_date} to {end_date}. Processing in background...",
+                        "message": (
+                            f"Sync queued for athlete {athlete_id} (owner user) from {start_date} to {end_date}. "
+                            "Processing in the background; check deploy logs or strava_sync_status for completion."
+                        ),
                         "athlete_id": athlete_id,
                         "date_range": f"{start_date} to {end_date}",
                     }
@@ -667,8 +685,9 @@ def sync_activities():
         )
 
         result = run_full_ingestion_and_enrichment(
-            session=session,
-            athlete_id=athlete_id,
+            None,
+            athlete_id,
+            user_id=ingestion_user_id,
             lookback_days=lookback_days,
             max_activities=max_activities,
             batch_size=10,

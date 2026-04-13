@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta
@@ -60,7 +62,7 @@ def test_upsert_activities_single_activity(mock_convert):
 
     activities = [
         {
-            "id": 101,
+            "activity_id": 101,
             "name": "Run",
             "type": "Run",
             "start_date": "2023-01-01T00:00:00Z",
@@ -106,7 +108,7 @@ def test_upsert_activities_multiple_activities(mock_convert):
 
     activities = [
         {
-            "id": 201,
+            "activity_id": 201,
             "name": "Morning Run",
             "type": "Run",
             "start_date": "2023-01-01T06:00:00Z",
@@ -117,7 +119,7 @@ def test_upsert_activities_multiple_activities(mock_convert):
             "external_id": "ext-201",
         },
         {
-            "id": 202,
+            "activity_id": 202,
             "name": "Treadmill Run",
             "type": "Run",
             "start_date": "2023-01-02T07:00:00Z",
@@ -141,6 +143,49 @@ def test_upsert_activities_multiple_activities(mock_convert):
     assert mock_convert.call_count == 2
     mock_session.execute.assert_called_once()
     mock_session.commit.assert_called_once()
+
+
+@patch("src.db.dao.activity_dao.logger")
+@patch("src.db.dao.activity_dao.get_primary_athlete_id", return_value=999)
+@patch("src.db.dao.activity_dao.convert_metrics")
+def test_upsert_skips_user_id_when_primary_athlete_mismatch(
+    mock_convert, mock_primary, mock_logger
+):
+    """Phase 3: do not link app user_id when it belongs to another primary athlete."""
+    mock_session = MagicMock()
+    mock_convert.return_value = {
+        "conv_distance": 100,
+        "conv_elevation_feet": 50,
+        "conv_avg_speed": 5,
+        "conv_max_speed": 10,
+        "conv_moving_time": 60,
+        "conv_elapsed_time": 65,
+    }
+    uid = uuid.uuid4()
+    activities = [
+        {
+            "activity_id": 301,
+            "name": "Run",
+            "type": "Run",
+            "start_date": "2023-01-01T00:00:00Z",
+            "distance": 1000,
+            "elapsed_time": 65,
+            "moving_time": 60,
+            "total_elevation_gain": 15,
+            "external_id": "ext-301",
+        }
+    ]
+    mock_result = MagicMock()
+    mock_result.rowcount = 1
+    mock_session.execute.return_value = mock_result
+
+    ActivityDAO.upsert_activities(
+        mock_session, athlete_id=42, activities=activities, user_id=uid
+    )
+
+    mock_primary.assert_called_once_with(mock_session, str(uid))
+    warn_texts = [str(c) for c in mock_logger.warning.call_args_list]
+    assert any("Not linking user_id" in t for t in warn_texts)
 
 
 def test_get_recent_activities():

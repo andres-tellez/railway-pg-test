@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text, and_
 
 from coach.utils.error_handler import CoachErrorHandler, ErrorSeverity
+from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
 
 
 @dataclass
@@ -78,6 +79,10 @@ class ActivityFetcher:
             Only returns activities of type "Run"
         """
         try:
+            athlete_id = get_primary_athlete_id(self.session, str(self.user_id))
+            if athlete_id is None:
+                return []
+
             # Convert dates to datetime range (inclusive of entire end day)
             week_start_dt = datetime.combine(week_start, datetime.min.time())
             week_end_dt = datetime.combine(week_end, datetime.max.time())
@@ -102,6 +107,7 @@ class ActivityFetcher:
                     a.hr_zone_5
                 FROM activities a
                 WHERE a.user_id = :user_id
+                  AND a.athlete_id = :athlete_id
                   AND a.type = 'Run'
                   AND a.start_date >= :week_start
                   AND a.start_date <= :week_end
@@ -113,6 +119,7 @@ class ActivityFetcher:
                 query,
                 {
                     "user_id": self.user_id,
+                    "athlete_id": athlete_id,
                     "week_start": week_start_dt,
                     "week_end": week_end_dt,
                 },

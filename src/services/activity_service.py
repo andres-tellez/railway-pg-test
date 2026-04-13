@@ -713,7 +713,9 @@ class ActivityIngestionService:
         for act in all_activities:
             act["user_id"] = self.user_id
 
-        ActivityDAO.upsert_activities(self.session, self.athlete_id, all_activities)
+        ActivityDAO.upsert_activities(
+            self.session, self.athlete_id, all_activities, self.user_id
+        )
         return len(all_activities)
 
     def ingest_between(self, start_date, end_date, max_activities=None, per_page=None):
@@ -733,7 +735,9 @@ class ActivityIngestionService:
         for act in activities:
             act["user_id"] = self.user_id
 
-        return ActivityDAO.upsert_activities(self.session, self.athlete_id, activities)
+        return ActivityDAO.upsert_activities(
+            self.session, self.athlete_id, activities, self.user_id
+        )
 
 
 def run_enrichment_batch(

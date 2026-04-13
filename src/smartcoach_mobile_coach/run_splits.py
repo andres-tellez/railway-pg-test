@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from src.db.dao.activity_dao import ActivityDAO
 from src.db.dao.split_dao import get_splits_by_activity_id
+from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
 from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_duration_seconds,
@@ -30,7 +31,13 @@ def tool_get_run_splits(
     Verifies activity ownership and type Run.
     """
     act = ActivityDAO.get_by_id(session, activity_id)
-    if not act or str(act.user_id) != str(internal_user_id):
+    primary_aid = get_primary_athlete_id(session, str(internal_user_id))
+    if (
+        not act
+        or str(act.user_id) != str(internal_user_id)
+        or primary_aid is None
+        or int(act.athlete_id) != int(primary_aid)
+    ):
         return {
             "error": "not_found",
             "message": "Activity not found for this user.",

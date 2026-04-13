@@ -14,10 +14,11 @@ import logging
 from datetime import date as date_cls, datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Date, bindparam, text
+from sqlalchemy import Date, Integer, bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Session
 
+from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
 from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_pace_sec_per_mi,
@@ -43,11 +44,13 @@ def _pct_fraction_to_display(frac: Optional[float]) -> Optional[str]:
 
 _WEEKLY_SUMMARY_SQL = """
 WITH user_easy AS (
-    SELECT *
-    FROM v_easy_runs
-    WHERE user_id = :uid
-      AND activity_type = 'Run'
-      AND start_date >= (now() - make_interval(weeks => :weeks))
+    SELECT v.*
+    FROM v_easy_runs v
+    INNER JOIN public.activities a ON a.activity_id = v.activity_id
+    WHERE v.user_id = :uid
+      AND a.athlete_id = :athlete_id
+      AND v.activity_type = 'Run'
+      AND v.start_date >= (now() - make_interval(weeks => :weeks))
 ),
 weekly AS (
     SELECT
@@ -77,12 +80,14 @@ SELECT * FROM weekly
 
 _WEEKLY_SUMMARY_RANGE_SQL = """
 WITH user_easy AS (
-    SELECT *
-    FROM v_easy_runs
-    WHERE user_id = :uid
-      AND activity_type = 'Run'
-      AND activity_date::date >= :start_date_from
-      AND activity_date::date <= :start_date_to
+    SELECT v.*
+    FROM v_easy_runs v
+    INNER JOIN public.activities a ON a.activity_id = v.activity_id
+    WHERE v.user_id = :uid
+      AND a.athlete_id = :athlete_id
+      AND v.activity_type = 'Run'
+      AND v.activity_date::date >= :start_date_from
+      AND v.activity_date::date <= :start_date_to
 ),
 weekly AS (
     SELECT
@@ -112,31 +117,33 @@ SELECT * FROM weekly
 
 _RUN_KPI_SQL = """
 SELECT
-    activity_id,
-    activity_name,
-    activity_date,
-    activity_type,
-    distance_miles,
-    moving_time_seconds,
-    avg_hr,
-    avg_pace,
-    z2_low,
-    z2_high,
-    zone_method,
-    total_splits,
-    easy_pct,
-    z2_band_pct,
-    hr_drift_pct,
-    early_hr,
-    late_hr,
-    peak_split_hr,
-    fastest_split_pace,
-    slowest_split_pace,
-    pace_spread,
-    is_easy_run
-FROM v_easy_runs
-WHERE activity_id = :aid
-  AND user_id = :uid
+    v.activity_id,
+    v.activity_name,
+    v.activity_date,
+    v.activity_type,
+    v.distance_miles,
+    v.moving_time_seconds,
+    v.avg_hr,
+    v.avg_pace,
+    v.z2_low,
+    v.z2_high,
+    v.zone_method,
+    v.total_splits,
+    v.easy_pct,
+    v.z2_band_pct,
+    v.hr_drift_pct,
+    v.early_hr,
+    v.late_hr,
+    v.peak_split_hr,
+    v.fastest_split_pace,
+    v.slowest_split_pace,
+    v.pace_spread,
+    v.is_easy_run
+FROM v_easy_runs v
+INNER JOIN public.activities a ON a.activity_id = v.activity_id
+WHERE v.activity_id = :aid
+  AND v.user_id = :uid
+  AND a.athlete_id = :athlete_id
 """
 
 
@@ -246,9 +253,20 @@ def get_training_progress(
             "message": "start_date_from must be on or before start_date_to.",
         }
 
+    athlete_id = get_primary_athlete_id(session, str(user_id))
+    if athlete_id is None:
+        return {
+            "error": "no_athlete",
+            "message": "No linked Strava athlete for KPI summaries.",
+            "weekly_summaries": [],
+            "trends": {},
+            "hr_drift_band_zones": hr_drift_band_zones_chart(),
+        }
+
     if start_date_from is not None and start_date_to is not None:
         stmt = text(_WEEKLY_SUMMARY_RANGE_SQL).bindparams(
             bindparam("uid", type_=PGUUID),
+            bindparam("athlete_id", type_=Integer),
             bindparam("start_date_from", type_=Date()),
             bindparam("start_date_to", type_=Date()),
         )
@@ -256,13 +274,19 @@ def get_training_progress(
             stmt,
             {
                 "uid": user_id,
+                "athlete_id": athlete_id,
                 "start_date_from": start_date_from,
                 "start_date_to": start_date_to,
             },
         ).fetchall()
     else:
-        stmt = text(_WEEKLY_SUMMARY_SQL).bindparams(bindparam("uid", type_=PGUUID))
-        rows = session.execute(stmt, {"uid": user_id, "weeks": weeks}).fetchall()
+        stmt = text(_WEEKLY_SUMMARY_SQL).bindparams(
+            bindparam("uid", type_=PGUUID),
+            bindparam("athlete_id", type_=Integer),
+        )
+        rows = session.execute(
+            stmt, {"uid": user_id, "athlete_id": athlete_id, "weeks": weeks}
+        ).fetchall()
 
     if not rows:
         out = {
@@ -317,9 +341,9 @@ def get_training_progress(
         "weekly_summaries_scope": (
             "Each row is one ISO week (Monday–Sunday). Use **week_label** (Monday M/D) when listing a week. "
             "**iso_week** is the canonical id. **week_start_date** is the first run in that week, not the Monday. "
-            "Counts and miles are from **v_easy_runs** only (easy-classified / KPI-eligible runs), "
-            "not every Strava activity. Compare against aggregate_runs_in_range only when the same "
-            "calendar window is provided."
+            "Counts and miles are from **v_easy_runs** for the user's **primary linked Strava athlete only** "
+            "(same athlete_id as aggregate_runs_in_range), not other Strava accounts that may share this login. "
+            "Not every Strava activity. Compare against aggregate_runs_in_range when the same calendar window is provided."
         ),
         "trends": trends,
         "hr_drift_band_zones": hr_drift_band_zones_chart(),
@@ -341,8 +365,17 @@ def get_run_kpi_detail(
     with training-specific metrics. Includes HR drift %, band (green/yellow/orange/red),
     and hr_drift_summary_display aligned with Weekly Insights thresholds.
     """
-    stmt = text(_RUN_KPI_SQL).bindparams(bindparam("uid", type_=PGUUID))
-    row = session.execute(stmt, {"uid": user_id, "aid": activity_id}).fetchone()
+    athlete_id = get_primary_athlete_id(session, str(user_id))
+    if athlete_id is None:
+        return {"error": "no_athlete", "message": "No linked Strava athlete."}
+
+    stmt = text(_RUN_KPI_SQL).bindparams(
+        bindparam("uid", type_=PGUUID),
+        bindparam("athlete_id", type_=Integer),
+    )
+    row = session.execute(
+        stmt, {"uid": user_id, "aid": activity_id, "athlete_id": athlete_id}
+    ).fetchone()
 
     if not row:
         return {"error": "not_found", "message": "Run not found in KPI view."}
