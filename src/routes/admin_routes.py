@@ -22,7 +22,10 @@ POST /admin/fetch-activity/<activity_id>
     Manually fetch a single activity from Strava
 
 GET  /admin/athletes
-    Get list of all athletes for admin dropdown
+    Get list of all athletes for admin dropdown (requires auth)
+
+POST /admin/delete-user
+    Permanently delete a user account by internal user_id (admin only; ADMIN_USER_IDS)
 
 POST /admin/sync-activities
     Sync activities for a specific athlete in a date range
@@ -49,8 +52,12 @@ from src.services.strava_access_service import StravaClient
 from src.services.token_service import get_valid_token
 from src.db.dao.activity_dao import ActivityDAO
 from src.db.models.user_athletes import UserAthleteLink
+from src.db.models.user_identity import UserIdentity
 import logging
+import uuid
 from src.utils.auth0_jwt import requires_auth
+from src.utils.authorization import is_admin
+from src.services.user_account_deletion_service import delete_all_user_account_data
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 logger = logging.getLogger(__name__)
@@ -170,23 +177,129 @@ def fetch_single_activity(activity_id):
 
 
 @admin_bp.route("/athletes")
+@requires_auth
 def get_athletes():
-    """Get list of all athletes for admin dropdown."""
+    """Get list of all athletes for admin dropdown (name + athlete_id + internal user_id)."""
     session = get_session()
     try:
-        athletes = session.query(UserAthleteLink).all()
-        athlete_list = [
-            {
-                "athlete_id": athlete.athlete_id,
-                "user_id": str(athlete.user_id),
-                "display_name": f"Athlete {athlete.athlete_id}",
-            }
-            for athlete in athletes
-        ]
+        links = session.query(UserAthleteLink).all()
+        uid_strings = [str(link.user_id) for link in links]
+        uuid_list = []
+        for s in uid_strings:
+            try:
+                uuid_list.append(uuid.UUID(s))
+            except ValueError:
+                continue
+        identities = (
+            session.query(UserIdentity)
+            .filter(UserIdentity.user_id.in_(uuid_list))
+            .all()
+            if uuid_list
+            else []
+        )
+        by_user_id = {str(row.user_id): row for row in identities}
+
+        athlete_list = []
+        for link in links:
+            uid = str(link.user_id)
+            ident = by_user_id.get(uid)
+            name = (ident.name or "").strip() if ident else ""
+            email = (ident.email or "").strip() if ident else ""
+            label = name or email or "Unknown"
+            athlete_list.append(
+                {
+                    "athlete_id": link.athlete_id,
+                    "user_id": uid,
+                    "user_name": name or None,
+                    "email": email or None,
+                    "display_name": label,
+                }
+            )
         return jsonify({"athletes": athlete_list}), 200
     except Exception as e:
         logger.exception(f"❌ Failed to fetch athletes")
         return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        session.close()
+
+
+@admin_bp.route("/delete-user", methods=["POST"])
+@requires_auth
+def admin_delete_user():
+    """
+    Permanently delete another user's account (internal user_id).
+
+    Requires ADMIN_USER_IDS to include the caller's internal g.user_id.
+    Body: {"user_id": "<uuid>", "confirm": true}
+    """
+    from flask import g
+
+    if not is_admin():
+        return (
+            jsonify(
+                {
+                    "error": "Admin access required",
+                    "hint": "Set ADMIN_USER_IDS to a comma-separated list of internal user UUIDs.",
+                }
+            ),
+            403,
+        )
+
+    payload = request.get_json(silent=True) or {}
+    target_user_id = (payload.get("user_id") or "").strip()
+    if payload.get("confirm") is not True:
+        return jsonify({"error": "confirm must be true"}), 400
+    if not target_user_id:
+        return jsonify({"error": "user_id is required"}), 400
+
+    try:
+        uuid.UUID(target_user_id)
+    except ValueError:
+        return jsonify({"error": "user_id must be a valid UUID"}), 400
+
+    actor = str(getattr(g, "user_id", "") or "")
+    if actor and actor == target_user_id:
+        return (
+            jsonify(
+                {
+                    "error": "Refusing to delete your own account via admin; use account settings / GDPR delete.",
+                }
+            ),
+            400,
+        )
+
+    session = get_session()
+    try:
+        exists = (
+            session.query(UserIdentity)
+            .filter_by(user_id=uuid.UUID(target_user_id))
+            .first()
+        )
+        if not exists:
+            return jsonify({"error": "User not found"}), 404
+
+        deletions = delete_all_user_account_data(session, target_user_id)
+        session.commit()
+        logger.warning(
+            "Admin delete-user: actor=%s deleted user_id=%s summary=%s",
+            actor,
+            target_user_id,
+            deletions,
+        )
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "message": "User account permanently deleted",
+                    "deleted": deletions,
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        session.rollback()
+        logger.exception("admin_delete_user failed: %s", e)
+        return jsonify({"error": "Failed to delete user", "detail": str(e)}), 500
     finally:
         session.close()
 

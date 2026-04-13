@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApiClient } from '../utils/apiClient';
 import { useAuthSetup } from '../hooks/useAuthSetup';
 import { AuthGuard } from '../components/AuthGuard';
@@ -7,6 +7,8 @@ interface Athlete {
   athlete_id: number;
   user_id: string;
   display_name: string;
+  user_name?: string | null;
+  email?: string | null;
 }
 
 interface SyncResult {
@@ -35,6 +37,15 @@ const Admin: React.FC = () => {
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [updatingPace, setUpdatingPace] = useState(false);
   const [updatePaceResult, setUpdatePaceResult] = useState<any>(null);
+  const [selectedDeleteUserId, setSelectedDeleteUserId] = useState('');
+  const [deleteUserAck, setDeleteUserAck] = useState(false);
+  const [deletingUser, setDeletingUser] = useState(false);
+  const [deleteUserResult, setDeleteUserResult] = useState<{
+    success?: boolean;
+    message?: string;
+    deleted?: Record<string, number>;
+    error?: string;
+  } | null>(null);
 
   // Set default date range (last 7 days)
   useEffect(() => {
@@ -174,6 +185,67 @@ const Admin: React.FC = () => {
     }
   };
 
+  const athleteOptionLabel = (a: Athlete) =>
+    `${a.display_name} — athlete ${a.athlete_id}`;
+
+  const athletesUniqueByUserId = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Athlete[] = [];
+    for (const a of athletes) {
+      if (seen.has(a.user_id)) continue;
+      seen.add(a.user_id);
+      out.push(a);
+    }
+    return out;
+  }, [athletes]);
+
+  const handleAdminDeleteUser = async () => {
+    if (!selectedDeleteUserId) {
+      setDeleteUserResult({
+        success: false,
+        error: 'Select a user to delete',
+      });
+      return;
+    }
+    if (!deleteUserAck) {
+      setDeleteUserResult({
+        success: false,
+        error: 'Confirm that you understand this action is permanent.',
+      });
+      return;
+    }
+
+    setDeletingUser(true);
+    setDeleteUserResult(null);
+
+    try {
+      const response = await apiClient.post('/admin/delete-user', {
+        user_id: selectedDeleteUserId,
+        confirm: true,
+      });
+      setDeleteUserResult({
+        success: true,
+        message: response.data.message,
+        deleted: response.data.deleted,
+      });
+      setSelectedDeleteUserId('');
+      setDeleteUserAck(false);
+      const reload = await apiClient.get('/admin/athletes');
+      setAthletes(reload.data.athletes || []);
+    } catch (error: any) {
+      const msg =
+        error.response?.data?.error ||
+        error.response?.data?.message ||
+        'Delete failed';
+      setDeleteUserResult({
+        success: false,
+        error: msg,
+      });
+    } finally {
+      setDeletingUser(false);
+    }
+  };
+
   const handleUpdateCurrentWeekPace = async () => {
     if (!selectedUserId) {
       setUpdatePaceResult({
@@ -210,6 +282,75 @@ const Admin: React.FC = () => {
       <div className="max-w-2xl mx-auto px-4">
         <div className="bg-white rounded-lg shadow p-6">
           <h1 className="text-2xl font-bold text-gray-900 mb-6">Admin Tools</h1>
+
+          {/* Delete user account (admin) */}
+          <div className="mb-8 p-4 bg-red-50 rounded-lg border border-red-200">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Delete user account</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              Permanently removes the selected user&apos;s identity, profile, Strava link, tokens,
+              activities, plans, and related rows. The signed-in account must be listed in{' '}
+              <code className="text-xs bg-red-100 px-1 rounded">ADMIN_USER_IDS</code> on the server.
+              You cannot delete your own account here; use the GDPR / account deletion flow instead.
+            </p>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select user
+              </label>
+              <select
+                value={selectedDeleteUserId}
+                onChange={(e) => setSelectedDeleteUserId(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+              >
+                <option value="">Choose a user...</option>
+                {athletesUniqueByUserId.map((athlete) => (
+                  <option key={athlete.user_id} value={athlete.user_id}>
+                    {athleteOptionLabel(athlete)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <label className="flex items-start gap-2 mb-3 text-sm text-gray-800">
+              <input
+                type="checkbox"
+                checked={deleteUserAck}
+                onChange={(e) => setDeleteUserAck(e.target.checked)}
+                className="mt-1 rounded border-gray-300"
+                disabled={deletingUser}
+              />
+              <span>I understand this permanently deletes the user and cannot be undone.</span>
+            </label>
+            <button
+              type="button"
+              onClick={handleAdminDeleteUser}
+              disabled={deletingUser || !selectedDeleteUserId || !deleteUserAck}
+              className="bg-red-700 text-white py-2 px-4 rounded-md hover:bg-red-800 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              {deletingUser ? 'Deleting…' : 'Delete user permanently'}
+            </button>
+            {deleteUserResult && (
+              <div
+                className={`mt-4 p-3 rounded-md text-sm ${
+                  deleteUserResult.success
+                    ? 'bg-green-50 border border-green-200 text-green-900'
+                    : 'bg-red-50 border border-red-200 text-red-900'
+                }`}
+              >
+                {deleteUserResult.success ? (
+                  <>
+                    <p className="font-medium">User deleted</p>
+                    {deleteUserResult.message && <p className="mt-1">{deleteUserResult.message}</p>}
+                    {deleteUserResult.deleted && (
+                      <pre className="mt-2 text-xs bg-white/80 p-2 rounded overflow-auto max-h-40">
+                        {JSON.stringify(deleteUserResult.deleted, null, 2)}
+                      </pre>
+                    )}
+                  </>
+                ) : (
+                  <p>{deleteUserResult.error}</p>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Database Migration Section */}
           <div className="mb-8 p-4 bg-purple-50 rounded-lg border border-purple-200">
@@ -307,8 +448,11 @@ const Admin: React.FC = () => {
               >
                 <option value="">Choose a user...</option>
                 {athletes.map((athlete) => (
-                  <option key={athlete.user_id} value={athlete.user_id}>
-                    {athlete.display_name} (User: {athlete.user_id.substring(0, 8)}...)
+                  <option
+                    key={`${athlete.user_id}-${athlete.athlete_id}`}
+                    value={athlete.user_id}
+                  >
+                    {athleteOptionLabel(athlete)}
                   </option>
                 ))}
               </select>
@@ -517,7 +661,7 @@ const Admin: React.FC = () => {
                 <option value="">Choose an athlete...</option>
                 {athletes.map((athlete) => (
                   <option key={athlete.athlete_id} value={athlete.athlete_id}>
-                    {athlete.display_name} (ID: {athlete.athlete_id})
+                    {athleteOptionLabel(athlete)}
                   </option>
                 ))}
               </select>

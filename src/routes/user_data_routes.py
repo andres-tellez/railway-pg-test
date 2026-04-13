@@ -24,8 +24,8 @@ from src.db.models.user_identity import UserIdentity
 from src.db.models.user_profile import UserProfile
 from src.db.models.user_athletes import UserAthleteLink
 from src.db.models.activities import Activity
-from src.db.models.tokens import Token
 from src.db.models.plans import Plan
+from src.services.user_account_deletion_service import delete_all_user_account_data
 
 user_data_bp = Blueprint("user_data", __name__, url_prefix="/api")
 
@@ -159,69 +159,9 @@ def delete_user_account():
 
         print(f"🗑️ Starting account deletion for user: {internal_user_id}", flush=True)
 
-        # Track deletions
-        deletions = {
-            "activities": 0,
-            "plans": 0,
-            "athlete_links": 0,
-            "tokens": 0,
-            "profile": 0,
-            "identity": 0,
-        }
+        deletions = delete_all_user_account_data(session, str(internal_user_id))
+        print(f"  ✓ Deletion summary: {deletions}", flush=True)
 
-        # 1. Delete activities
-        activities_result = (
-            session.query(Activity).filter_by(user_id=internal_user_id).delete()
-        )
-        deletions["activities"] = activities_result
-        print(f"  ✓ Deleted {activities_result} activities", flush=True)
-
-        # 2. Delete training plans
-        plans_result = session.query(Plan).filter_by(user_id=internal_user_id).delete()
-        deletions["plans"] = plans_result
-        print(f"  ✓ Deleted {plans_result} training plans", flush=True)
-
-        # 3. Delete athlete links and associated tokens (cover both link + token cleanup)
-        athlete_links = (
-            session.query(UserAthleteLink).filter_by(user_id=internal_user_id).all()
-        )
-        for link in athlete_links:
-            # Delete tokens for this athlete
-            tokens_result = (
-                session.query(Token).filter_by(athlete_id=link.athlete_id).delete()
-            )
-            deletions["tokens"] += tokens_result
-
-        # Also delete any tokens directly tied to this user (safety net)
-        user_token_result = (
-            session.query(Token).filter_by(user_id=internal_user_id).delete()
-        )
-        deletions["tokens"] += user_token_result
-
-        athlete_links_result = (
-            session.query(UserAthleteLink).filter_by(user_id=internal_user_id).delete()
-        )
-        deletions["athlete_links"] = athlete_links_result
-        print(
-            f"  ✓ Deleted {athlete_links_result} athlete links and {deletions['tokens']} tokens",
-            flush=True,
-        )
-
-        # 4. Delete user profile
-        profile_result = (
-            session.query(UserProfile).filter_by(user_id=internal_user_id).delete()
-        )
-        deletions["profile"] = profile_result
-        print(f"  ✓ Deleted user profile", flush=True)
-
-        # 5. Delete user identity (this should cascade to any remaining data)
-        identity_result = (
-            session.query(UserIdentity).filter_by(user_id=internal_user_id).delete()
-        )
-        deletions["identity"] = identity_result
-        print(f"  ✓ Deleted user identity", flush=True)
-
-        # Commit all deletions
         session.commit()
 
         print(f"✅ Account deletion complete for user: {internal_user_id}", flush=True)
