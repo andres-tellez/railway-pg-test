@@ -78,7 +78,7 @@ References:
 import os
 import time
 import logging
-from datetime import datetime, timedelta, timezone, time as dt_time
+from datetime import datetime, timedelta, timezone
 
 from src.db.db_session import get_session
 from src.db.dao.token_dao import get_tokens_sa
@@ -103,10 +103,35 @@ from src.utils.strava_exceptions import (
     StravaTokenError,
 )
 from src.db.dao.strava_sync_status_dao import StravaSyncStatusDAO
-from src.utils.date_helpers import get_current_week_start
 from src.utils.rate_limiter import get_rate_limiter
+from src.services.strava_reconciliation_service import (
+    compute_strava_six_week_window,
+    filter_strava_runs_in_six_week_window,
+)
+from src.services.strava_sync_retry_service import schedule_strava_ingestion_retry
+from src.db.dao.strava_ingestion_retry_dao import delete_retry_standalone
 
 logger = logging.getLogger(__name__)
+
+# Automatic retries when Strava API headroom is too low (see rate-limit check below).
+MAX_SYNC_AUTO_RETRIES = 5
+
+USER_MSG_HEADROOM_DEFERRED = (
+    "Strava is extra busy right now, so we paused your run import on purpose — "
+    "that avoids broken or partial data. SmartCoach will try again automatically in a few minutes. "
+    "You can keep using the app and chatting with your coach in the meantime."
+)
+
+USER_MSG_HEADROOM_EXHAUSTED = (
+    "We couldn't finish importing your runs after several automatic tries because "
+    "Strava's API has been very busy. Please try again in an hour, or disconnect and reconnect Strava "
+    "from your profile. Your account is otherwise fine."
+)
+
+USER_MSG_GENERIC_SYNC_FAILURE = (
+    "Something went wrong while importing your runs from Strava. "
+    "Please try again in a little while. If this keeps happening, reconnect Strava from your profile."
+)
 
 
 def run_full_ingestion_and_enrichment(
@@ -120,6 +145,7 @@ def run_full_ingestion_and_enrichment(
     after=None,
     before=None,
     force_full_sync=False,
+    sync_retry_attempt=0,
 ):
     """
     Run full ingestion and enrichment for an athlete.
@@ -135,6 +161,7 @@ def run_full_ingestion_and_enrichment(
         after: Unix timestamp - only fetch activities after this time (optional)
         before: Unix timestamp - only fetch activities before this time (optional)
         force_full_sync: Force full sync instead of incremental (default: False)
+        sync_retry_attempt: Internal counter for automatic headroom retries (default: 0)
 
     Returns:
         Dict with "synced" and "enriched" counts
@@ -228,8 +255,9 @@ def run_full_ingestion_and_enrichment(
                 user_id, athlete_id, progress=100.0, step=message
             )
             sync_status_dao.mark_complete(user_id, athlete_id)
+            delete_retry_standalone(str(user_id), int(athlete_id))
         except Exception as exc:  # pragma: no cover
-            logger.warning(f"Failed to mark sync complete: {exc}")
+            logger.warning("Failed to mark sync complete: %s", exc)
 
     def sync_error(detail: str, error_code: str | None = None):
         if not sync_status_dao:
@@ -253,33 +281,11 @@ def run_full_ingestion_and_enrichment(
         sync_start()
         sync_progress(5, "Preparing sync")
 
-        current_week_start = get_current_week_start()
-        six_week_start = current_week_start - timedelta(weeks=6)
-        two_week_cutoff = current_week_start - timedelta(weeks=2)
-
-        six_week_start_dt = datetime.combine(
-            six_week_start, dt_time.min, tzinfo=timezone.utc
-        )
-        two_week_cutoff_dt = datetime.combine(
-            two_week_cutoff, dt_time.min, tzinfo=timezone.utc
-        )
-
-        window_after_ts = int(six_week_start_dt.timestamp())
-        now_ts = int(datetime.utcnow().replace(tzinfo=timezone.utc).timestamp())
-
-        current_week_start = get_current_week_start()
-        six_week_start = current_week_start - timedelta(weeks=6)
-        two_week_cutoff = current_week_start - timedelta(weeks=2)
-
-        six_week_start_dt = datetime.combine(
-            six_week_start, dt_time.min, tzinfo=timezone.utc
-        )
-        two_week_cutoff_dt = datetime.combine(
-            two_week_cutoff, dt_time.min, tzinfo=timezone.utc
-        )
-
-        window_after_ts = int(six_week_start_dt.timestamp())
-        now_ts = int(datetime.utcnow().replace(tzinfo=timezone.utc).timestamp())
+        win = compute_strava_six_week_window()
+        six_week_start_dt = win.six_week_start_dt
+        two_week_cutoff_dt = win.two_week_cutoff_dt
+        window_after_ts = win.window_after_ts
+        now_ts = win.before_ts
 
         batch_size = batch_size or config.DEFAULT_BATCH_SIZE
         per_page = per_page or config.DEFAULT_PER_PAGE
@@ -365,19 +371,9 @@ def run_full_ingestion_and_enrichment(
             )
 
         logger.info(f"Fetched {len(all_fetched)} run activities")
-        runs_only = []
-        for activity in all_fetched:
-            start_date_str = activity.get("start_date")
-            if not start_date_str:
-                runs_only.append(activity)
-                continue
-            try:
-                start_dt = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
-            except ValueError:
-                runs_only.append(activity)
-                continue
-            if start_dt >= six_week_start_dt:
-                runs_only.append(activity)
+        runs_only = filter_strava_runs_in_six_week_window(
+            six_week_start_dt, all_fetched
+        )
         projected_enrichment_calls = 0
         for act in runs_only:
             start_date_str = act.get("start_date")
@@ -405,21 +401,46 @@ def run_full_ingestion_and_enrichment(
         RATE_BUFFER = 10
         if projected_enrichment_calls + RATE_BUFFER > remaining_15m:
             wait_seconds = max(stats.get("wait_time_seconds", 0), 60)
-            message = (
-                "Strava is handling a lot of requests right now. "
-                f"Please wait about {int(wait_seconds // 60) + 1} minutes before trying again."
-            )
             logger.warning(
-                "Rate limit headroom too low (%d remaining, %d needed). Aborting sync.",
+                "Rate limit headroom too low (%d remaining, %d needed). Aborting sync "
+                "(sync_retry_attempt=%s).",
                 remaining_15m,
                 projected_enrichment_calls + RATE_BUFFER,
+                sync_retry_attempt,
             )
-            sync_error(message, error_code="RATE_LIMIT_WINDOW")
-            raise StravaIngestionSyncError(
-                athlete_id=athlete_id,
-                reason="rate_limit_headroom_exceeded",
-                message=message,
+            session.rollback()
+            if not user_id:
+                sync_error(
+                    USER_MSG_GENERIC_SYNC_FAILURE,
+                    error_code="RATE_LIMIT_HEADROOM_NO_USER",
+                )
+                raise StravaIngestionSyncError(
+                    athlete_id=athlete_id,
+                    reason="rate_limit_headroom_no_user",
+                    message=(
+                        "Strava is handling a lot of requests right now. "
+                        f"Please wait about {int(wait_seconds // 60) + 1} minutes before trying again."
+                    ),
+                )
+            if sync_retry_attempt >= MAX_SYNC_AUTO_RETRIES:
+                sync_error(
+                    USER_MSG_HEADROOM_EXHAUSTED,
+                    error_code="RATE_LIMIT_EXHAUSTED",
+                )
+                raise StravaIngestionSyncError(
+                    athlete_id=athlete_id,
+                    reason="rate_limit_retries_exhausted",
+                    message="Strava ingestion retries exhausted",
+                )
+            retry_delay = max(float(wait_seconds), 120.0)
+            schedule_strava_ingestion_retry(
+                user_id, athlete_id, retry_delay, sync_retry_attempt + 1
             )
+            sync_error(
+                USER_MSG_HEADROOM_DEFERRED,
+                error_code="RATE_LIMIT_HEADROOM_DEFERRED",
+            )
+            return {"synced": 0, "enriched": 0, "deferred": True}
 
         sync_progress(
             35,
@@ -567,12 +588,24 @@ def run_full_ingestion_and_enrichment(
         StravaIngestionSyncError,
         StravaIngestionEnrichmentError,
     ) as e:
-        # Re-raise our custom exceptions as-is
         session.rollback()
-        sync_error(f"Sync failed: {e}", error_code=e.__class__.__name__)
+        if user_id:
+            delete_retry_standalone(str(user_id), int(athlete_id))
+        if isinstance(e, StravaIngestionSyncError) and getattr(e, "reason", None) in (
+            "rate_limit_retries_exhausted",
+            "rate_limit_headroom_no_user",
+        ):
+            raise
+        if isinstance(e, StravaIngestionSyncError):
+            logger.warning("Strava ingestion sync error: %s", e, exc_info=True)
+            sync_error(USER_MSG_GENERIC_SYNC_FAILURE, error_code="STRAVA_SYNC_ERROR")
+        else:
+            sync_error(f"Sync failed: {e}", error_code=e.__class__.__name__)
         raise
     except StravaTokenError as e:
         session.rollback()
+        if user_id:
+            delete_retry_standalone(str(user_id), int(athlete_id))
         logger.exception(f"Token error during ingestion: {e}")
         sync_error(f"Token error during sync: {e.message}", error_code="TOKEN_ERROR")
         raise StravaIngestionSyncError(
@@ -582,6 +615,8 @@ def run_full_ingestion_and_enrichment(
         )
     except Exception as e:
         session.rollback()
+        if user_id:
+            delete_retry_standalone(str(user_id), int(athlete_id))
         logger.exception(f"Ingestion failed: {e}")
         sync_error(f"Ingestion failed: {e}", error_code="INGESTION_ERROR")
         raise StravaIngestionSyncError(
