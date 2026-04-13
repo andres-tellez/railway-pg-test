@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from src.db.models.activities import Activity
 from src.db.models.plans import Plan
+from src.db.models.splits import Split
 from src.db.models.tokens import Token
 from src.db.models.user_athletes import UserAthleteLink
 from src.db.models.user_profile import UserProfile
@@ -38,6 +39,7 @@ def delete_all_user_account_data(
     uid_uuid = uuid.UUID(uid_str)
 
     deletions: Dict[str, int] = {
+        "splits": 0,
         "activities": 0,
         "plans": 0,
         "athlete_links": 0,
@@ -58,6 +60,16 @@ def delete_all_user_account_data(
     )
     deletions["user_hr_zones"] = (
         session.query(UserHrZones).filter_by(user_id=uid_str).delete()
+    )
+
+    # Splits reference activities; production FK may not CASCADE — delete splits first.
+    activity_ids_for_user = session.query(Activity.activity_id).filter_by(
+        user_id=internal_user_id
+    )
+    deletions["splits"] = (
+        session.query(Split)
+        .filter(Split.activity_id.in_(activity_ids_for_user))
+        .delete(synchronize_session=False)
     )
 
     deletions["activities"] = (
