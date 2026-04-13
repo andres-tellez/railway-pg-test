@@ -50,6 +50,10 @@ import src.services.token_service as token_service
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
 )
+from src.services.strava_reconciliation_service import (
+    build_sync_health_payload,
+    reconcile_missing_runs,
+)
 from src.utils.strava_helpers import (
     get_authenticated_user_id,
     get_user_athlete_link,
@@ -672,6 +676,97 @@ def get_strava_status():
         )
         return internal_error_response(
             message="Failed to fetch Strava status",
+            log_error=e,
+            details={"detail": str(e)},
+        )
+    finally:
+        session.close()
+
+
+@strava_connection_bp.get("/strava/sync-health")
+@requires_auth
+def strava_sync_health():
+    """
+    Compare Strava Run IDs vs DB for the same ~6-week window used by ingestion.
+
+    Read-only aside from Strava list requests needed to compute the diff.
+    """
+    session = get_session()
+    try:
+        user_id, athlete_link, error = get_authenticated_user_with_athlete()
+        if error:
+            return error
+
+        payload = build_sync_health_payload(session, athlete_link.athlete_id, user_id)
+        return success_response(
+            data=payload,
+            message="Strava sync health",
+        )
+    except (StravaTokenError, StravaAPIError) as e:
+        status = 401 if isinstance(e, StravaTokenError) else 502
+        return error_response(
+            message=str(e),
+            status_code=status,
+            error_code="STRAVA_API_ERROR",
+        )
+    except Exception as e:
+        logger.error("strava_sync_health failed: %s", e, exc_info=True)
+        return internal_error_response(
+            message="Failed to compute Strava sync health",
+            log_error=e,
+            details={"detail": str(e)},
+        )
+    finally:
+        session.close()
+
+
+@strava_connection_bp.post("/strava/reconcile")
+@requires_auth
+def strava_reconcile():
+    """
+    Bounded repair: fetch missing Run details from Strava and upsert into DB.
+
+    Respects the same rolling window as ingestion. Honors API headroom; may
+    return deferred=true when the short window is too tight.
+    """
+    session = get_session()
+    try:
+        user_id, athlete_link, error = get_authenticated_user_with_athlete()
+        if error:
+            return error
+
+        body = request.get_json(silent=True) or {}
+        raw_max = body.get("max_fetch", 15)
+        try:
+            max_fetch = int(raw_max)
+        except (TypeError, ValueError):
+            max_fetch = 15
+
+        result = reconcile_missing_runs(
+            session,
+            athlete_link.athlete_id,
+            user_id,
+            max_fetch=max_fetch,
+        )
+        return success_response(
+            data=result,
+            message=(
+                "Reconcile deferred — try again shortly"
+                if result.get("deferred")
+                else "Reconcile complete"
+            ),
+        )
+    except (StravaTokenError, StravaAPIError) as e:
+        status = 401 if isinstance(e, StravaTokenError) else 502
+        return error_response(
+            message=str(e),
+            status_code=status,
+            error_code="STRAVA_API_ERROR",
+        )
+    except Exception as e:
+        logger.error("strava_reconcile failed: %s", e, exc_info=True)
+        return internal_error_response(
+            message="Failed to reconcile Strava activities",
             log_error=e,
             details={"detail": str(e)},
         )
