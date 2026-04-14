@@ -207,6 +207,24 @@ class TestRequiresAuth:
         assert data["user_id"] == "user-uuid-123"
         assert data["sub"] == "auth0|test-user-123"
 
+    @patch("src.utils.auth0_jwt.verify_and_decode")
+    @patch("src.utils.auth0_jwt.resolve_user_id_from_auth_provider")
+    def test_identity_resolution_failure_returns_500(
+        self, mock_resolve, mock_verify, client, test_route
+    ):
+        """DB/identity failures should not be reported as invalid token."""
+        mock_verify.return_value = {"sub": "auth0|test-user"}
+        mock_resolve.side_effect = RuntimeError("db blew up")
+
+        response = client.get(
+            "/test-protected", headers={"Authorization": "Bearer valid.token.here"}
+        )
+
+        assert response.status_code == 500
+        data = response.get_json()
+        assert data.get("error") == "internal_error"
+        assert data.get("reason") == "identity_resolution_failed"
+
 
 class TestJWKSCaching:
     """Tests for JWKS caching behavior."""

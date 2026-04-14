@@ -72,28 +72,13 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({ onClose }) => {
               </div>
             </div>
 
-            {/* Ask Coach */}
-            <div className="bg-green-50 border border-green-100 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-xl">💬</span>
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 mb-1">Ask Coach</h3>
-                  <p className="text-sm text-gray-700 leading-relaxed">
-                    Get personalized advice from your AI coach. Ask questions about your training,
-                    get tips for improvement, or discuss your race strategy.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Call to Action */}
           <div className="bg-gray-50 rounded-lg p-4 mb-6">
             <p className="text-sm text-gray-700 leading-relaxed">
               <strong>💡 Tip:</strong> Start by exploring your <strong>Weekly Activity Progress</strong>.
-              When you are ready, you can create a training plan. Use <strong>Ask Coach</strong> whenever you have questions!
+              When you are ready, you can create a training plan.
             </p>
           </div>
 

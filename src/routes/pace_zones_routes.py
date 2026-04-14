@@ -31,10 +31,9 @@ Author: SmartCoach Development Team
 Last Updated: December 2025
 """
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, g
 from src.db.db_session import get_session
 from src.utils.auth0_jwt import requires_auth
-from src.utils.auth_helpers import get_user_id_from_request
 from src.services.training_plan.pace import get_initial_pace_seed
 from src.db.dao.plans_dao import get_active_plan
 from datetime import datetime
@@ -59,12 +58,8 @@ def get_pace_zones():
         JSON response with pace zones in seconds per mile
     """
     try:
-        user_id, error = get_user_id_from_request()
-        if error:
-            return error
-
-        # Convert UUID to string for validation
-        user_id = str(user_id)
+        # user_id is already resolved by @requires_auth.
+        user_id = str(g.user_id)
 
         session = get_session()
         try:

@@ -226,13 +226,6 @@ const NewPlanFormV2: React.FC = () => {
     setPendingRequestPayload(null);
   };
 
-  const handleAskGPT = () => {
-    // TODO: Navigate to GPT chat interface
-    // For now, just close the dialog
-    console.log("Navigate to GPT chat - TODO: implement");
-    handleValidationCancel();
-  };
-
   const selectedGoal = methods.watch("primary_goal");
   const selectedDays = methods.watch("training_days") || [];
   const daysCount = selectedDays.length;
@@ -272,7 +265,6 @@ const NewPlanFormV2: React.FC = () => {
           validation={raceDateValidation}
           onProceed={handleValidationProceed}
           onCancel={handleValidationCancel}
-          onAskGPT={handleAskGPT}
         />
       )}
       <div className="min-h-screen bg-gray-50 py-12">

@@ -39,7 +39,6 @@ import PlanOverviewTable from "./pages/PlanOverviewTable";
 import SetupPage from "./pages/LandingPage";
 import PostOAuth from "./pages/PostOAuth";
 import HomeScreen from "./pages/HomeScreen";
-import AskGptMvpUI from "./pages/AskGptMvpUI";
 import AuthTestPage from "./pages/AuthTestPage";
 import WelcomePage from "./pages/WelcomePage";
 import SimpleMetrics from "./pages/SimpleMetrics";
@@ -249,14 +248,6 @@ export default function App() {
             <PlanLayout>
               <PlansManagement />
             </PlanLayout>
-          </Layout>
-        }
-      />
-      <Route
-        path="/ask"
-        element={
-          <Layout>
-            <AskGptMvpUI />
           </Layout>
         }
       />

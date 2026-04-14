@@ -1,70 +1,56 @@
 """
-Test suite for frontend routing functionality
-Tests both old and new routes to ensure compatibility
+Lightweight checks that core frontend routes remain declared in App.tsx.
+
+The legacy web "Ask Coach" page at /ask has been removed; the mobile app
+continues to use /api/conversations/* on the backend.
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestFrontendRouting:
-    """Test frontend routing functionality"""
+    """Verify key routes exist in frontend/src/App.tsx (source-level)."""
 
-    def test_ask_route_exists(self):
-        """Test that the /ask route is properly configured"""
-        # This would typically be tested with a frontend testing framework
-        # like Jest/React Testing Library, but we can verify the route exists
-        # by checking if the component is properly imported
-        try:
-            from frontend.src.pages.AskGptMvpUI import AskGptMvpUI
-            assert AskGptMvpUI is not None
-        except ImportError:
-            pytest.fail("AskGptMvpUI component not found")
-
-    def test_route_configuration(self):
-        """Test that all expected routes are configured"""
-        expected_routes = [
-            "/", "/login", "/post-oauth", "/onboarding",
-            "/plan/:id", "/plan", "/plan/overview", "/home", "/ask"
-        ]
-
-        # In a real frontend test, you'd check the router configuration
-        # For now, we verify the routes exist in the App.tsx file
-        with open("frontend/src/App.tsx", "r") as f:
+    def test_app_tsx_has_core_routes(self):
+        with open("frontend/src/App.tsx", "r", encoding="utf-8") as f:
             app_content = f.read()
 
-        for route in expected_routes:
-            if route == "/plan/:id":
-                assert "path=\"/plan/:id\"" in app_content
-            else:
-                assert f"path=\"{route}\"" in app_content
+        for path in (
+            "/",
+            "/login",
+            "/post-oauth",
+            "/profile",
+            "/home",
+            "/plan/overview",
+            "/metrics",
+        ):
+            assert f'path="{path}"' in app_content, f"missing route {path}"
+
+        assert 'path="/plan/:id"' in app_content
+        assert (
+            'path="/ask"' not in app_content
+        ), "removed web Ask Coach route must not return"
 
 
 class TestBackendEndpointCompatibility:
-    """Test backend endpoint compatibility with frontend changes"""
+    """Smoke checks against a test Flask app."""
 
     @pytest.fixture
     def mock_app(self):
-        """Create a test Flask app with all blueprints"""
         from src.app import create_app
+
         app = create_app(test_config={"TESTING": True})
         return app.test_client()
 
-    def test_ask_endpoint_exists(self, mock_app):
-        """Test that the /ask endpoint is available"""
-        response = mock_app.post("/ask", json={
-            "question": "Test question",
-            "athlete_id": 123
-        })
-        # Should not return 404 (endpoint exists)
+    def test_health_endpoint_exists(self, mock_app):
+        response = mock_app.get("/health")
         assert response.status_code != 404
 
-    def test_training_plan_endpoints_exist(self, mock_app):
-        """Test that training plan endpoints are still available"""
+    def test_training_plan_endpoints_are_registered(self, mock_app):
+        """Without auth, protected plan routes should not be 404 (typically 401)."""
         endpoints_to_test = [
             ("/api/plan/current", "GET"),
-            ("/api/plan/generate", "POST"),
-            ("/api/plan/1", "GET")
+            ("/api/plan/draft", "POST"),
         ]
 
         for endpoint, method in endpoints_to_test:
@@ -72,42 +58,9 @@ class TestBackendEndpointCompatibility:
                 response = mock_app.get(endpoint)
             else:
                 response = mock_app.post(endpoint, json={})
-
-            # Should not return 404 (endpoint exists)
-            assert response.status_code != 404
+            assert response.status_code != 404, f"{method} {endpoint} returned 404"
 
     def test_cors_headers_present(self, mock_app):
-        """Test that CORS headers are properly set for frontend access"""
-        response = mock_app.options("/ask")
-
-        # Check for CORS headers
+        response = mock_app.open("/health", method="OPTIONS")
         assert "Access-Control-Allow-Origin" in response.headers
         assert "Access-Control-Allow-Methods" in response.headers
-
-
-class TestFunctionalityComparison:
-    """Compare old vs new functionality"""
-
-    def test_ask_functionality_consistency(self):
-        """Test that the new /ask route provides consistent functionality"""
-        # This would test that the AskGptMvpUI component
-        # provides the same functionality as any previous implementation
-
-        # Mock the component and test its behavior
-        with patch('frontend.src.pages.AskGptMvpUI.AskGptMvpUI') as mock_component:
-            # Verify component has expected props/methods
-            assert hasattr(mock_component, 'handleAsk')
-            assert hasattr(mock_component, 'question')
-            assert hasattr(mock_component, 'response')
-
-    def test_authentication_consistency(self):
-        """Test that authentication works consistently across routes"""
-        # All protected routes should use the same authentication mechanism
-        with open("frontend/src/App.tsx", "r") as f:
-            app_content = f.read()
-
-        # Count ProtectedRoute usage
-        protected_route_count = app_content.count("<ProtectedRoute>")
-        expected_protected_routes = 7  # All routes except /login, /post-oauth, and wildcard
-
-        assert protected_route_count == expected_protected_routes

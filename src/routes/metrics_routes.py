@@ -91,8 +91,6 @@ from src.services.metrics_cache_service import (
     _get_cache_key,
 )
 from src.utils.auth0_jwt import requires_auth
-from src.utils.auth_helpers import get_user_id_from_request
-from src.utils.normalize_claims import normalize_claims
 from src.utils.planned_metrics_calculator import get_planned_miles_for_current_week
 from src.utils.logger import get_logger
 from sqlalchemy import text
@@ -484,14 +482,8 @@ def get_all_metrics_combined():
     session = get_session()
 
     try:
-        from src.utils.auth_helpers import get_user_id_from_request
-
-        claims = getattr(g, "current_user", {}) or {}
-        claims = normalize_claims(claims)
-
-        user_id, error = get_user_id_from_request(claims, create_if_missing=False)
-        if error:
-            return error
+        # user_id is already resolved by @requires_auth.
+        user_id = g.user_id
 
         # Get athlete_id for this user
         athlete_id = get_athlete_id_for_user(session, user_id)

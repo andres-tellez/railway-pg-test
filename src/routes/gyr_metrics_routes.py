@@ -104,21 +104,12 @@ def get_gyr_scores():
     # Import here to avoid circular import issues at module level
     from src.db.db_session import get_session
     from src.services.gyr_metrics_service import GYRMetricsService
-    from src.utils.auth_helpers import get_user_id_from_request
-    from src.utils.normalize_claims import normalize_claims
 
     session = get_session()
 
     try:
-        # Get authenticated user
-        from src.utils.auth_helpers import get_user_id_from_request
-
-        claims = getattr(g, "current_user", {}) or {}
-        claims = normalize_claims(claims)
-
-        user_id, error = get_user_id_from_request(claims, create_if_missing=False)
-        if error:
-            return error
+        # user_id is already resolved by @requires_auth.
+        user_id = g.user_id
 
         # Get athlete_id for this user
         athlete_id = get_athlete_id_for_user(session, user_id)
