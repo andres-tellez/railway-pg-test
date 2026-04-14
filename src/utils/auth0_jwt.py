@@ -144,59 +144,66 @@ def requires_auth(fn):
             return jsonify({"error": "unauthorized", "reason": "no_bearer"}), 401
 
         token = auth.split(" ", 1)[1]
+
         try:
             # Verify JWT
             claims = verify_and_decode(token)
-            g.current_user = claims
-
-            sub = claims.get("sub")
-            if not sub:
-                logger.warning(f"[requires_auth] Missing sub claim in token")
-                return jsonify({"error": "unauthorized", "reason": "no_sub"}), 401
-
-            # 🔍 DEBUG: Log only non-sensitive claims (never log email, name, picture, or full token)
+        except Exception as e:
+            # JWT verification/decode errors should remain 401.
             if DEBUG_AUTH:
-                # Only log safe, non-sensitive fields
-                safe_fields = ["sub", "aud", "iss", "exp", "iat", "azp"]
-                safe_claims = {k: v for k, v in claims.items() if k in safe_fields}
-                logger.debug(f"🔍 Decoded JWT claims (safe): {safe_claims}")
-                # NEVER log: email, email_verified, name, picture, or full token content
+                logger.exception(f"[requires_auth] ❌ Token verification failed: {e}")
+            else:
+                logger.warning(
+                    f"[requires_auth] ❌ Token verification failed: {e}", exc_info=True
+                )
+            return jsonify({"error": "unauthorized", "reason": "invalid_token"}), 401
 
+        g.current_user = claims
+        sub = claims.get("sub")
+        if not sub:
+            logger.warning(f"[requires_auth] Missing sub claim in token")
+            return jsonify({"error": "unauthorized", "reason": "no_sub"}), 401
+
+        # 🔍 DEBUG: Log only non-sensitive claims (never log email, name, picture, or full token)
+        if DEBUG_AUTH:
+            # Only log safe, non-sensitive fields
+            safe_fields = ["sub", "aud", "iss", "exp", "iat", "azp"]
+            safe_claims = {k: v for k, v in claims.items() if k in safe_fields}
+            logger.debug(f"🔍 Decoded JWT claims (safe): {safe_claims}")
+            # NEVER log: email, email_verified, name, picture, or full token content
+
+        try:
             # 🔑 Resolve internal UUID from identity table
             internal_id = resolve_user_id_from_auth_provider(
                 sub, claims, create_if_missing=True
             )
-
-            if not internal_id:
-                logger.warning(
-                    f"[requires_auth] Could not resolve internal user_id for sub={sub}"
-                )
-                return (
-                    jsonify({"error": "unauthorized", "reason": "no_internal_user_id"}),
-                    401,
-                )
-
-            g.user_id = str(internal_id)
-
-            if DEBUG_AUTH:
-                aud = claims.get("aud")
-                iss = claims.get("iss")
-                logger.debug(
-                    f"[requires_auth] ✅ OK sub={sub} internal_id={internal_id} aud={aud} iss={iss}"
-                )
-
-            return fn(*args, **kwargs)
-
         except Exception as e:
-            # Log full error details server-side only (for debugging)
-            if DEBUG_AUTH:
-                logger.exception(f"[requires_auth] ❌ Authentication failed: {e}")
-            else:
-                logger.warning(
-                    f"[requires_auth] ❌ Authentication failed: {e}", exc_info=True
-                )
+            logger.exception(f"[requires_auth] ❌ Identity resolution failed: {e}")
+            return (
+                jsonify(
+                    {"error": "internal_error", "reason": "identity_resolution_failed"}
+                ),
+                500,
+            )
 
-            # Return generic error to client (don't leak internal details)
-            return jsonify({"error": "unauthorized", "reason": "invalid_token"}), 401
+        if not internal_id:
+            logger.warning(
+                f"[requires_auth] Could not resolve internal user_id for sub={sub}"
+            )
+            return (
+                jsonify({"error": "unauthorized", "reason": "no_internal_user_id"}),
+                401,
+            )
+
+        g.user_id = str(internal_id)
+
+        if DEBUG_AUTH:
+            aud = claims.get("aud")
+            iss = claims.get("iss")
+            logger.debug(
+                f"[requires_auth] ✅ OK sub={sub} internal_id={internal_id} aud={aud} iss={iss}"
+            )
+
+        return fn(*args, **kwargs)
 
     return wrapper

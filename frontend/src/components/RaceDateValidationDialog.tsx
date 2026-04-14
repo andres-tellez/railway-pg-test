@@ -21,14 +21,12 @@ interface RaceDateValidationDialogProps {
   validation: RaceDateValidation;
   onProceed: () => void;
   onCancel: () => void;
-  onAskGPT?: () => void;
 }
 
 const RaceDateValidationDialog: React.FC<RaceDateValidationDialogProps> = ({
   validation,
   onProceed,
   onCancel,
-  onAskGPT,
 }) => {
   const { status, message, ready_date, timeline_gap_weeks, can_proceed, available_weeks, required_weeks } = validation;
 
@@ -167,14 +165,6 @@ const RaceDateValidationDialog: React.FC<RaceDateValidationDialogProps> = ({
                   className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   Create Plan Anyway
-                </button>
-              )}
-              {onAskGPT && (
-                <button
-                  onClick={onAskGPT}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  Ask GPT Coach
                 </button>
               )}
               <button

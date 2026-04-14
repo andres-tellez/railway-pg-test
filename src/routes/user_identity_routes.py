@@ -49,7 +49,6 @@ from flask import Blueprint, request, g
 from sqlalchemy.exc import IntegrityError
 
 from src.utils.auth0_jwt import requires_auth
-from src.utils.auth_helpers import get_sub_from_claims, get_user_id_from_request
 from src.utils.response_utils import (
     error_response,
     validation_error_response,
@@ -82,12 +81,9 @@ user_identity_bp = Blueprint("user_identity", __name__, url_prefix="/api")
 @requires_auth
 def get_user_identity():
     """
-    Minimal identity read (no writes). Uses claims to ensure a row exists.
+    Minimal identity read (no writes). user_id is resolved by @requires_auth.
     """
-    claims = getattr(g, "current_user", {})
-    user_id, error = get_user_id_from_request(claims, create_if_missing=False)
-    if error:
-        return error
+    user_id = g.user_id
     identity = db.session.get(UserIdentity, user_id)
 
     if not identity:
@@ -98,9 +94,7 @@ def get_user_identity():
 @user_identity_bp.get("/user/link")
 @requires_auth
 def get_user_link():
-    user_id, error = get_user_id_from_request(create_if_missing=False)
-    if error:
-        return error
+    user_id = g.user_id
 
     row = get_by_user_id(user_id)
     if not row:
@@ -111,9 +105,7 @@ def get_user_link():
 @user_identity_bp.post("/user/link")
 @requires_auth
 def post_user_link():
-    user_id, error = get_user_id_from_request(create_if_missing=False)
-    if error:
-        return error
+    user_id = g.user_id
 
     payload = request.get_json(silent=True) or {}
     try:
@@ -142,9 +134,7 @@ def post_user_link():
 @user_identity_bp.delete("/user/link")
 @requires_auth
 def delete_user_link():
-    user_id, error = get_user_id_from_request(create_if_missing=False)
-    if error:
-        return error
+    user_id = g.user_id
 
     deleted = delete_by_user_id(user_id)
     if not deleted:
@@ -157,9 +147,7 @@ def delete_user_link():
 def save_identity():
     claims = getattr(g, "current_user", {})
     claims = normalize_claims(claims)
-    user_id, error = get_user_id_from_request(claims, create_if_missing=True)
-    if error:
-        return error
+    user_id = g.user_id
 
     payload = {
         "user_id": user_id,
@@ -181,9 +169,7 @@ def get_user_info():
 
     logger = logging.getLogger(__name__)
 
-    user_id, error = get_user_id_from_request(create_if_missing=False)
-    if error:
-        return error
+    user_id = g.user_id
 
     print(
         f"[DEBUG] 📋 GET /api/user - user_id={user_id} (type: {type(user_id).__name__})"
@@ -236,10 +222,8 @@ def me():
     claims = getattr(g, "current_user", {}) or {}
     claims = normalize_claims(claims)
 
-    # 🔑 Resolve a proper UUID for this user
-    user_id, error = get_user_id_from_request(claims, create_if_missing=True)
-    if error:
-        return error
+    # user_id is already resolved by @requires_auth.
+    user_id = g.user_id
 
     # Prepare the payload for upsert
     payload = {

@@ -138,37 +138,6 @@ def ab_test(
     return decorator
 
 
-# Example A/B test configurations
-def setup_ask_endpoint_ab_test():
-    """Setup A/B test for /ask endpoint implementations"""
-
-    def old_implementation():
-        """Original /ask endpoint implementation"""
-        # This would be the original implementation
-        pass
-
-    def new_implementation():
-        """New /ask endpoint implementation with improvements"""
-        # This would be the new implementation
-        pass
-
-    ab_manager.register_test(
-        "ask_endpoint_v2",
-        {"old": old_implementation, "new": new_implementation},
-        {"old": 0.5, "new": 0.5},  # 50% traffic  # 50% traffic
-    )
-
-
-def setup_frontend_ab_test():
-    """Setup A/B test for frontend implementations"""
-
-    ab_manager.register_test(
-        "frontend_ask_ui",
-        {"original": "original_ask_component", "improved": "improved_ask_component"},
-        {"original": 0.3, "improved": 0.7},  # 30% traffic  # 70% traffic
-    )
-
-
 def generate_ab_report():
     """Generate A/B testing report"""
     print("\n" + "=" * 60)
@@ -207,34 +176,5 @@ def generate_ab_report():
     print("=" * 60)
 
 
-# Usage example for Flask routes
-def example_ask_route_ab_test():
-    """Example of how to use A/B testing in a Flask route"""
-
-    def old_ask_logic():
-        """Original ask endpoint logic - REMOVED"""
-        return {"error": "Old ask endpoint removed - use conversation system"}
-
-    def new_ask_logic():
-        """New ask endpoint logic with improvements"""
-        # Enhanced implementation
-        pass
-
-    @ab_test(
-        "ask_endpoint_improvement",
-        {"old": old_ask_logic, "new": new_ask_logic},
-        {"old": 0.5, "new": 0.5},
-    )
-    def ask_route():
-        """A/B tested ask route"""
-        # This will automatically route to the appropriate variant
-        pass
-
-
 if __name__ == "__main__":
-    # Setup example A/B tests
-    setup_ask_endpoint_ab_test()
-    setup_frontend_ab_test()
-
-    # Generate report
     generate_ab_report()

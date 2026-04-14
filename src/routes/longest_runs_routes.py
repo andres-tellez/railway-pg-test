@@ -47,8 +47,6 @@ from src.services.metrics_cache_service import (
     _get_cache_key,
 )
 from src.utils.auth0_jwt import requires_auth
-from src.utils.auth_helpers import get_user_id_from_request
-from src.utils.normalize_claims import normalize_claims
 from sqlalchemy import text
 import time
 import traceback
@@ -196,15 +194,8 @@ def get_longest_runs_data():
     session = get_session()
 
     try:
-        # Get user identity (same as metrics)
-        from src.utils.auth_helpers import get_user_id_from_request
-
-        claims = getattr(g, "current_user", {}) or {}
-        claims = normalize_claims(claims)
-
-        user_id, error = get_user_id_from_request(claims, create_if_missing=False)
-        if error:
-            return error
+        # user_id is already resolved by @requires_auth.
+        user_id = g.user_id
 
         # Get athlete_id
         athlete_id = get_athlete_id_for_user(session, user_id)

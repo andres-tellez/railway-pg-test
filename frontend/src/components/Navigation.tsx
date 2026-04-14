@@ -19,7 +19,6 @@ import { useApiClient } from '../utils/apiClient';
 const DEFAULT_NAV_ITEMS = [
   { label: 'Training Plan', path: '/plan/overview', icon: '📊' },
   { label: 'Metrics', path: '/metrics', icon: '📊' },
-  { label: 'Ask Coach', path: '/ask', icon: '💬' },
 ];
 
 const Navigation: React.FC = () => {

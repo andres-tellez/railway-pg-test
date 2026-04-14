@@ -4,6 +4,7 @@ from typing import Mapping, Any, Optional, Dict
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 
 from src.db.db_session import get_session
 from src.db.models.user_identity import UserIdentity
@@ -75,10 +76,31 @@ def upsert_identity(payload: Mapping[str, Any]) -> uuid.UUID:
     # Always return canonical user_id (not payload's)
     stmt = stmt.returning(UserIdentity.user_id)
 
-    result = db.execute(stmt).scalar()
-    db.commit()
-    db.close()
-    return result
+    try:
+        result = db.execute(stmt).scalar()
+        db.commit()
+        return result
+    except IntegrityError:
+        # Safety net for legacy rows where user_id already exists but the email
+        # conflict target does not match (e.g., previously NULL email).
+        db.rollback()
+        existing = (
+            db.query(UserIdentity)
+            .filter(UserIdentity.user_id == payload.get("user_id"))
+            .one_or_none()
+        )
+        if not existing:
+            raise
+
+        existing.email = payload.get("email")
+        existing.email_verified = payload.get("email_verified")
+        existing.name = payload.get("name")
+        existing.picture = payload.get("picture")
+        existing.updated_at = payload.get("updated_at")
+        db.commit()
+        return existing.user_id
+    finally:
+        db.close()
 
 
 # ----------------------
