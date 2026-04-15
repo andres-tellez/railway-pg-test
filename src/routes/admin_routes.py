@@ -16,7 +16,7 @@ POST /admin/refresh-metrics
     Manually trigger metrics refresh
 
 POST /admin/refresh-weekly-training-insights
-    Recompute weekly_training_insights for the latest completed week and current week
+    Recompute weekly_training_insights for six completed weeks and current week
 
 POST /admin/trigger-ingest/<athlete_id>
     Manually trigger activity ingestion for an athlete
@@ -149,7 +149,7 @@ def refresh_weekly_training_insights():
     """
     Batch-refresh ``weekly_training_insights`` for the mobile Insights tab.
 
-    Runs (1) latest completed Mon–Sun week and (2) current calendar week
+    Runs (1) six completed Mon–Sun weeks (oldest → newest) and (2) current calendar week
     (``in_progress``) for users with easy runs in each window.
     """
     session = get_session()
@@ -159,7 +159,7 @@ def refresh_weekly_training_insights():
         )
 
         payload = run_weekly_insights_admin_batch(session)
-        err_c = payload["last_completed_week"].get("errors", 0)
+        err_c = payload["six_completed_weeks"]["totals"].get("errors", 0)
         err_p = payload["current_week_in_progress"].get("errors", 0)
         if err_c or err_p:
             payload["status"] = "partial"

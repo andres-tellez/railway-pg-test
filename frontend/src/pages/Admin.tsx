@@ -671,9 +671,16 @@ const Admin: React.FC = () => {
               Recomputes rows in <code className="text-xs bg-indigo-100 px-1 rounded">weekly_training_insights</code>{' '}
               so the mobile app&apos;s <strong>Insights</strong> tab (and{' '}
               <code className="text-xs bg-indigo-100 px-1 rounded">/api/training-insights/weekly</code>) show up-to-date
-              scores. Runs two batches: the <strong>latest completed</strong> Mon–Sun week (same as the weekly cron),
-              and the <strong>current calendar week</strong> as an in-progress snapshot (Mon through today). Only users
-              with easy runs in each window are processed.
+              scores. Runs <strong>six completed</strong> Mon–Sun weeks (oldest → newest, same span as post–Strava
+              ingestion backfill), then the <strong>current calendar week</strong> as an in-progress snapshot (Mon
+              through today). Only users with easy runs in each window are processed.
+            </p>
+            <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
+              <strong>Runtime:</strong> each (week × user) pair runs a full insight recomputation against the database.
+              Active users can trigger <em>many</em> sequential jobs in one request (six historical passes plus current
+              week), so this can take tens of seconds or longer. Keep the browser tab open until it finishes. If you
+              see a gateway timeout (502/504), raise the reverse-proxy or app server HTTP timeout, or run the same logic
+              from a shell / scheduled job instead of this button.
             </p>
             <button
               onClick={handleRefreshWeeklyTrainingInsights}
@@ -742,23 +749,41 @@ const Admin: React.FC = () => {
             </button>
 
             {/* Results */}
-            {result && (
+            {result && (() => {
+              const st = (result as { status?: string }).status;
+              const ok = st === 'success' || st === 'partial';
+              const partial = st === 'partial';
+              const weeklyPayload =
+                'six_completed_weeks' in (result as object) ||
+                'current_week_in_progress' in (result as object);
+              return (
               <div className={`p-4 rounded-md ${
-                result.status === 'success'
-                  ? 'bg-green-50 border border-green-200'
+                ok
+                  ? partial
+                    ? 'bg-amber-50 border border-amber-200'
+                    : 'bg-green-50 border border-green-200'
                   : 'bg-red-50 border border-red-200'
               }`}>
                 <h3 className={`font-medium ${
-                  result.status === 'success' ? 'text-green-800' : 'text-red-800'
+                  ok ? (partial ? 'text-amber-900' : 'text-green-800') : 'text-red-800'
                 }`}>
-                  {result.status === 'success' ? 'Sync Successful' : 'Sync Failed'}
+                  {ok
+                    ? partial
+                      ? 'Completed with warnings'
+                      : 'Sync Successful'
+                    : 'Sync Failed'}
                 </h3>
                 {result.message && (
                   <p className={`mt-1 text-sm ${
-                    result.status === 'success' ? 'text-green-700' : 'text-red-700'
+                    ok ? (partial ? 'text-amber-800' : 'text-green-700') : 'text-red-700'
                   }`}>
                     {result.message}
                   </p>
+                )}
+                {weeklyPayload && (
+                  <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-96">
+                    {JSON.stringify(result, null, 2)}
+                  </pre>
                 )}
                 {result.result && (
                   <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto">
@@ -766,7 +791,8 @@ const Admin: React.FC = () => {
                   </pre>
                 )}
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       </div>
