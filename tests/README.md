@@ -1,5 +1,9 @@
 # Coach Architecture Test Suite
 
+**Scope:** Tests under **`tests/coach/`** target the experimental **`coach/`** package — not **`src/smartcoach_mobile_coach/`** (production mobile Coach tab agent). For the latter’s architecture and HTTP contract, see **`docs/smartcoach_mobile_coach/README.md`**.
+
+---
+
 This directory contains all tests for the Coach architecture system.
 
 ## Test Structure

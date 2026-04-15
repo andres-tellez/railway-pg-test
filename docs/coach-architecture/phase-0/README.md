@@ -1,5 +1,9 @@
 # Coach Architecture - Phase 0 Documentation
 
+**Scope:** Phase 0 deliverables for the **experimental `coach/` v2 program** — not the production **`smartcoach_mobile_coach`** chat agent. For the shipped mobile Coach tab backend, read **[`docs/smartcoach_mobile_coach/README.md`](../../smartcoach_mobile_coach/README.md)** and the parent **[`docs/coach-architecture/README.md`](../README.md)**.
+
+---
+
 This directory contains all Phase 0 deliverables for the Coach Architecture project.
 
 ## Documents
@@ -48,5 +52,6 @@ After Phase 0 completion:
 
 ## Related Documentation
 
-- Main architecture: `docs/coach-architecture/architecture.md` (to be created)
+- **Production mobile Coach tab (chat) agent:** [`docs/smartcoach_mobile_coach/README.md`](../../smartcoach_mobile_coach/README.md) — not superseded by Phase 0 docs.
+- **This doc tree (v2 / experimental):** [`docs/coach-architecture/README.md`](../README.md)
 - Phase 1 specs: `docs/coach-architecture/phase-1/` (to be created)
