@@ -1,10 +1,14 @@
 """
 Per-lap / per-split payload for coach tools (pace and HR by segment).
+
+Long runs: split rows are capped (head + tail by lap order) so tool JSON and
+LLM context stay bounded. Override with SMARTCOACH_RUN_SPLITS_MAX_ROWS (8–64).
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import os
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +25,32 @@ from src.smartcoach_mobile_coach.run_metrics import (
     distance_miles_from_meters,
     pace_sec_per_mi,
 )
+
+
+def max_splits_rows_for_coach() -> int:
+    """Max split rows returned to the model (head + tail when truncated). Clamped 8–64."""
+    raw = (os.getenv("SMARTCOACH_RUN_SPLITS_MAX_ROWS") or "24").strip()
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 24
+    return max(8, min(n, 64))
+
+
+def cap_split_rows_for_coach(
+    splits_out: List[Dict[str, Any]], max_rows: int
+) -> Tuple[List[Dict[str, Any]], bool, int]:
+    """
+    If splits_out exceeds max_rows, keep the first ceil(max/2) and last floor(max/2)
+    laps (by existing lap order) so early warmup and late fade stay visible.
+    """
+    total = len(splits_out)
+    if total <= max_rows or max_rows < 2:
+        return splits_out, False, total
+    head = (max_rows + 1) // 2
+    tail = max_rows - head
+    combined = splits_out[:head] + splits_out[-tail:]
+    return combined, True, total
 
 
 def tool_get_run_splits(
@@ -102,15 +132,34 @@ def tool_get_run_splits(
             }
         )
 
-    return {
+    max_rows = max_splits_rows_for_coach()
+    capped, truncated, total_laps = cap_split_rows_for_coach(splits_out, max_rows)
+    scope_parts = [
+        "Each row is one stored lap/split from Strava ingestion. "
+        "Distance and segment_label reflect device lap boundaries (often ~1 mi, not guaranteed). "
+        "Use these rows for mile-by-mile or lap-by-lap pace and average HR; "
+        "session-level drift and KPIs remain on get_run_summary.training_kpis.",
+    ]
+    if truncated:
+        scope_parts.append(
+            f"Payload capped at {max_rows} laps for speed: first and last segments in lap order "
+            f"({len(capped)} rows shown of {total_laps} total). Do not infer missing middle laps."
+        )
+
+    out: Dict[str, Any] = {
         "activity_id": activity_id,
         "title": (act.name or "Run")[:200],
-        "splits_count": len(splits_out),
-        "splits": splits_out,
-        "scope": (
-            "Each row is one stored lap/split from Strava ingestion. "
-            "Distance and segment_label reflect device lap boundaries (often ~1 mi, not guaranteed). "
-            "Use these rows for mile-by-mile or lap-by-lap pace and average HR; "
-            "session-level drift and KPIs remain on get_run_summary.training_kpis."
-        ),
+        "splits_count": len(capped),
+        "splits_total_count": total_laps,
+        "splits_returned": len(capped),
+        "splits_truncated": truncated,
+        "splits": capped,
+        "scope": " ".join(scope_parts),
     }
+    if truncated:
+        out["splits_cap"] = {
+            "max_rows": max_rows,
+            "policy": "head_tail_by_lap_index",
+            "omitted_middle_count": max(0, total_laps - len(capped)),
+        }
+    return out
