@@ -29,6 +29,7 @@ const Admin: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SyncResult | null>(null);
   const [refreshingMetrics, setRefreshingMetrics] = useState(false);
+  const [refreshingWeeklyInsights, setRefreshingWeeklyInsights] = useState(false);
   const [migrating, setMigrating] = useState(false);
   const [migrationResult, setMigrationResult] = useState<any>(null);
   const [fullMigration, setFullMigration] = useState(false);
@@ -130,6 +131,25 @@ const Admin: React.FC = () => {
       });
     } finally {
       setRefreshingMetrics(false);
+    }
+  };
+
+  const handleRefreshWeeklyTrainingInsights = async () => {
+    setRefreshingWeeklyInsights(true);
+    setResult(null);
+
+    try {
+      const response = await apiClient.post('/admin/refresh-weekly-training-insights');
+      setResult(response.data);
+    } catch (error: any) {
+      console.error('Weekly training insights refresh failed:', error);
+      setResult({
+        status: 'error',
+        message:
+          error.response?.data?.message || 'Weekly training insights refresh failed',
+      });
+    } finally {
+      setRefreshingWeeklyInsights(false);
     }
   };
 
@@ -642,6 +662,25 @@ const Admin: React.FC = () => {
               className="bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               {refreshingMetrics ? 'Refreshing Metrics...' : '🔄 Refresh Metrics'}
+            </button>
+          </div>
+
+          <div className="mb-8 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Weekly training insights</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              Recomputes rows in <code className="text-xs bg-indigo-100 px-1 rounded">weekly_training_insights</code>{' '}
+              so the mobile app&apos;s <strong>Insights</strong> tab (and{' '}
+              <code className="text-xs bg-indigo-100 px-1 rounded">/api/training-insights/weekly</code>) show up-to-date
+              scores. Runs two batches: the <strong>latest completed</strong> Mon–Sun week (same as the weekly cron),
+              and the <strong>current calendar week</strong> as an in-progress snapshot (Mon through today). Only users
+              with easy runs in each window are processed.
+            </p>
+            <button
+              onClick={handleRefreshWeeklyTrainingInsights}
+              disabled={refreshingWeeklyInsights}
+              className="bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+              {refreshingWeeklyInsights ? 'Refreshing insights…' : '📊 Refresh weekly training insights'}
             </button>
           </div>
 

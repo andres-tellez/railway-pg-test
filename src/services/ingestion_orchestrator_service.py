@@ -689,6 +689,22 @@ def run_full_ingestion_and_enrichment(
         sync_progress(95, "Finalizing sync")
         logger.info(f"Finished ingestion. Synced={inserted_count}, Enriched={enriched}")
         sync_complete()
+        if user_id:
+            try:
+                from src.services.weekly_insight_post_ingestion_backfill import (
+                    schedule_weekly_insights_after_strava_ingestion,
+                )
+
+                schedule_weekly_insights_after_strava_ingestion(
+                    str(user_id),
+                    force_full_sync=force_full_sync,
+                    inserted_count=int(inserted_count or 0),
+                )
+            except Exception:
+                logger.warning(
+                    "schedule_weekly_insights_after_strava_ingestion failed",
+                    exc_info=True,
+                )
         return {"synced": inserted_count, "enriched": enriched}
 
     except (

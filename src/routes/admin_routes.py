@@ -15,6 +15,9 @@ GET/POST /admin/test-no-auth
 POST /admin/refresh-metrics
     Manually trigger metrics refresh
 
+POST /admin/refresh-weekly-training-insights
+    Recompute weekly_training_insights for the latest completed week and current week
+
 POST /admin/trigger-ingest/<athlete_id>
     Manually trigger activity ingestion for an athlete
 
@@ -138,6 +141,36 @@ def refresh_metrics():
         print(f"🔴 [REFRESH-METRICS] Exception: {e}", flush=True)
         logger.exception(f"❌ Exception during metrics refresh: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@admin_bp.route("/refresh-weekly-training-insights", methods=["POST"])
+@requires_auth
+def refresh_weekly_training_insights():
+    """
+    Batch-refresh ``weekly_training_insights`` for the mobile Insights tab.
+
+    Runs (1) latest completed Mon–Sun week and (2) current calendar week
+    (``in_progress``) for users with easy runs in each window.
+    """
+    session = get_session()
+    try:
+        from src.services.admin_weekly_insights_batch_service import (
+            run_weekly_insights_admin_batch,
+        )
+
+        payload = run_weekly_insights_admin_batch(session)
+        err_c = payload["last_completed_week"].get("errors", 0)
+        err_p = payload["current_week_in_progress"].get("errors", 0)
+        if err_c or err_p:
+            payload["status"] = "partial"
+        else:
+            payload["status"] = "success"
+        return jsonify(payload), 200
+    except Exception as e:
+        logger.exception("refresh_weekly_training_insights failed: %s", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        session.close()
 
 
 # Legacy endpoints - kept for backward compatibility but deprecated
