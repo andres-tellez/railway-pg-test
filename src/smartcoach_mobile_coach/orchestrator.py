@@ -1100,12 +1100,16 @@ def run_mobile_agent_turn(
         cc_messages.append({"role": "user", "content": user_message.strip()})
         try:
             _t_llm0 = time.perf_counter()
+            _fp_cap = int(
+                os.getenv("SMARTCOACH_RUN_RECAP_FASTPATH_MAX_TOKENS", "768") or "0"
+            )
+            _fp_max_tokens = min(max_tokens, _fp_cap) if _fp_cap > 0 else max_tokens
             cc_result = service.chat_completion(
                 messages=cc_messages,
                 user_id=str(internal_user_id),
                 model=model,
                 temperature=temperature,
-                max_tokens=max_tokens,
+                max_tokens=_fp_max_tokens,
                 timeout=timeout,
             )
             timings_ms["fastpath_llm_ms"] = round(
