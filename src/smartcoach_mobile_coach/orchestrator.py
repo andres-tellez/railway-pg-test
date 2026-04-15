@@ -7,6 +7,9 @@ If `search_runs`, `aggregate_runs_in_range`, `get_training_kpis`, or
 (enabled list), built-in definitions are injected so tools still work without re-seeding.
 
 Max loops default 8; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–15).
+
+Opening "how was my run?"–style turns can use ``run_recap_fastpath`` (single
+``chat_completion`` without tools) when ``SMARTCOACH_RUN_RECAP_FASTPATH`` is enabled.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from sqlalchemy.orm import Session
@@ -28,6 +32,11 @@ from src.smartcoach_mobile_coach.dialogue_manager import (
     extract_conversation_state,
     plan_response,
     response_directive_section,
+)
+from src.smartcoach_mobile_coach.run_recap_fastpath import (
+    prefetch_opening_anchor_run_recap,
+    system_appendix_for_prefetch,
+    wants_run_recap_fastpath,
 )
 from src.smartcoach_mobile_coach.thread_derived_context import (
     DerivedThreadCoachContext,
@@ -986,6 +995,7 @@ def run_mobile_agent_turn(
     # worker default need headroom on multi-step tool turns. Cap with OPENAI_MOBILE_AGENT_TIMEOUT.
     timeout = float(os.getenv("OPENAI_MOBILE_AGENT_TIMEOUT", "180.0"))
 
+    t_agent0 = time.perf_counter()
     openai_tools = _ensure_get_run_splits_tool(
         _ensure_get_marathon_projection_tool(
             _ensure_get_training_kpis_tool(
@@ -998,6 +1008,7 @@ def run_mobile_agent_turn(
     if not openai_tools:
         logger.warning("No enabled tools in coach_tools table; agent has no tools")
 
+    t_after_tools = time.perf_counter()
     prefs = _load_coaching_preferences(session, internal_user_id)
     thread_ctx = derive_thread_coach_context(conversation_history)
     turn_type = classify_turn(user_message, conversation_history)
@@ -1041,6 +1052,13 @@ def run_mobile_agent_turn(
             messages.append({"role": m["role"], "content": m["content"]})
     messages.append({"role": "user", "content": user_message.strip()})
 
+    t_after_prep = time.perf_counter()
+    timings_ms: Dict[str, Any] = {
+        "setup_tools_ms": round((t_after_tools - t_agent0) * 1000, 2),
+        "prep_dialogue_messages_ms": round((t_after_prep - t_after_tools) * 1000, 2),
+    }
+    loop_details: List[Dict[str, Any]] = []
+
     total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     total_cost = 0.0
     loops = 0
@@ -1048,8 +1066,110 @@ def run_mobile_agent_turn(
     max_loops = _max_agent_loops()
     latest_run_summary: Optional[Dict[str, Any]] = None
 
+    prefetch: Optional[Dict[str, Any]] = None
+    if wants_run_recap_fastpath(user_message, conversation_history):
+        _tp0 = time.perf_counter()
+        prefetch = prefetch_opening_anchor_run_recap(
+            session, internal_user_id, anchor_local_date
+        )
+        timings_ms["fastpath_prefetch_ms"] = round(
+            (time.perf_counter() - _tp0) * 1000, 2
+        )
+        if prefetch:
+            logger.info(
+                "[coach_fastpath] run_recap_opening user=%s… activity_id=%s",
+                str(internal_user_id)[:8],
+                prefetch["activity_id"],
+            )
+
+    if prefetch:
+        augmented_system = system_content + system_appendix_for_prefetch(
+            prefetch, anchor_local_date
+        )
+        cc_messages: List[Dict[str, str]] = [
+            {"role": "system", "content": augmented_system}
+        ]
+        for m in conversation_history[-12:]:
+            if m.get("role") in ("user", "assistant") and m.get("content"):
+                cc_messages.append(
+                    {
+                        "role": str(m["role"]),
+                        "content": str(m.get("content", "")).strip(),
+                    }
+                )
+        cc_messages.append({"role": "user", "content": user_message.strip()})
+        try:
+            _t_llm0 = time.perf_counter()
+            cc_result = service.chat_completion(
+                messages=cc_messages,
+                user_id=str(internal_user_id),
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=timeout,
+            )
+            timings_ms["fastpath_llm_ms"] = round(
+                (time.perf_counter() - _t_llm0) * 1000, 2
+            )
+        except Exception:
+            logger.exception(
+                "[coach_fastpath] chat_completion failed; using full agent loop"
+            )
+        else:
+            text_fp = (cc_result.content or "").strip()
+            ok_payload = _valid_run_summary_tool_payload(prefetch["get_run_summary"])
+            if text_fp and ok_payload is not None:
+                for k in total_usage:
+                    total_usage[k] = cc_result.usage.get(k, 0)
+                total_cost = cc_result.cost
+                loops = 1
+                timings_ms["agent_loop_rounds"] = []
+                timings_ms["agent_orchestrator_total_ms"] = round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                )
+                meta_fp: Dict[str, Any] = {
+                    "usage": total_usage,
+                    "cost": total_cost,
+                    "loops": loops,
+                    "max_loops": max_loops,
+                    "model": model,
+                    "run_recap_fastpath": True,
+                    "timings_ms": timings_ms,
+                    "dialogue": {
+                        "turn_type": response_directive.turn_type,
+                        "intent": response_directive.intent,
+                        "turn_count": conversation_state.turn_count,
+                        "last_topic": conversation_state.last_topic,
+                        "target_length": response_directive.target_length,
+                        "narration_mode": response_directive.narration_mode,
+                        "tool_strategy": response_directive.tool_strategy,
+                        "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                        "allow_full_recap": response_directive.allow_full_recap,
+                        "investigate_first": response_directive.investigate_first,
+                        "interaction_mode": response_directive.interaction_mode,
+                        "thread_derived": thread_ctx.as_dict(),
+                    },
+                }
+                structured_fp = {
+                    "type": "run_summary",
+                    "content": text_fp,
+                    "data": ok_payload,
+                }
+                logger.info(
+                    "[smartcoach_mobile_coach] response_shape=run_summary "
+                    "loops=%s fastpath=1 content_len=%s timings_ms=%s",
+                    loops,
+                    len(text_fp),
+                    timings_ms,
+                )
+                return structured_fp, meta_fp
+            logger.warning(
+                "[coach_fastpath] empty model text or invalid summary; using full agent loop"
+            )
+
     for _ in range(max_loops):
         loops += 1
+        t_openai0 = time.perf_counter()
         result = service.chat_completion_with_tools(
             messages=messages,
             user_id=str(internal_user_id),
@@ -1059,6 +1179,12 @@ def run_mobile_agent_turn(
             max_tokens=max_tokens,
             timeout=timeout,
         )
+        openai_ms = round((time.perf_counter() - t_openai0) * 1000, 2)
+        loop_entry: Dict[str, Any] = {
+            "loop": loops,
+            "openai_ms": openai_ms,
+            "tools": [],
+        }
 
         for k in total_usage:
             total_usage[k] += result.usage.get(k, 0)
@@ -1090,7 +1216,11 @@ def run_mobile_agent_turn(
                 sig = (name, arguments)
                 if sig in tool_result_cache:
                     out = tool_result_cache[sig]
+                    loop_entry["tools"].append(
+                        {"name": name, "ms": 0.0, "cached": True}
+                    )
                 else:
+                    tt0 = time.perf_counter()
                     out = execute_tool(
                         session,
                         internal_user_id,
@@ -1099,27 +1229,46 @@ def run_mobile_agent_turn(
                         anchor_local_date=anchor_local_date,
                     )
                     tool_result_cache[sig] = out
+                    loop_entry["tools"].append(
+                        {
+                            "name": name,
+                            "ms": round((time.perf_counter() - tt0) * 1000, 2),
+                            "cached": False,
+                        }
+                    )
                 if name in ("get_run_summary", "get_run_insight"):
                     ok_payload = _valid_run_summary_tool_payload(out)
                     if ok_payload is not None:
                         latest_run_summary = ok_payload
+                _tj0 = time.perf_counter()
+                tool_content = json.dumps(out)
+                loop_entry["tools"][-1]["json_serialize_ms"] = round(
+                    (time.perf_counter() - _tj0) * 1000, 2
+                )
                 messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tc["id"],
-                        "content": json.dumps(out),
+                        "content": tool_content,
                     }
                 )
+            loop_details.append(loop_entry)
             continue
 
         if result.content is not None:
             text = (result.content or "").strip()
+            loop_details.append(loop_entry)
+            timings_ms["agent_loop_rounds"] = loop_details
+            timings_ms["agent_orchestrator_total_ms"] = round(
+                (time.perf_counter() - t_agent0) * 1000, 2
+            )
             meta: Dict[str, Any] = {
                 "usage": total_usage,
                 "cost": total_cost,
                 "loops": loops,
                 "max_loops": max_loops,
                 "model": model,
+                "timings_ms": timings_ms,
                 "dialogue": {
                     "turn_type": response_directive.turn_type,
                     "intent": response_directive.intent,
@@ -1154,6 +1303,10 @@ def run_mobile_agent_turn(
         "I couldn't complete that within the allowed steps. Try asking about one run at a time, "
         "or try again in a moment."
     )
+    timings_ms["agent_loop_rounds"] = loop_details
+    timings_ms["agent_orchestrator_total_ms"] = round(
+        (time.perf_counter() - t_agent0) * 1000, 2
+    )
     return fallback, {
         "usage": total_usage,
         "cost": total_cost,
@@ -1161,6 +1314,7 @@ def run_mobile_agent_turn(
         "max_loops": max_loops,
         "truncated": True,
         "model": model,
+        "timings_ms": timings_ms,
         "dialogue": {
             "turn_type": response_directive.turn_type,
             "intent": response_directive.intent,

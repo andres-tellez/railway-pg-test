@@ -203,12 +203,14 @@ def agent_messages(conversation_id):
 
     session = get_session()
     start = time.time()
+    t_route0 = time.perf_counter()
     try:
         conversation = (
             session.query(Conversation)
             .filter_by(id=conversation_id, user_id=user_id)
             .first()
         )
+        t_route1 = time.perf_counter()
         if not conversation:
             return jsonify({"error": "Conversation not found"}), 404
 
@@ -218,6 +220,7 @@ def agent_messages(conversation_id):
             .order_by(ConversationMessage.created_at.asc())
             .all()
         )
+        t_route2 = time.perf_counter()
         history = [
             {
                 "role": m.role,
@@ -225,6 +228,7 @@ def agent_messages(conversation_id):
             }
             for m in prior
         ]
+        t_route3 = time.perf_counter()
         anchor_date, client_tz = _resolve_anchor_local_date(data)
 
         user_msg = ConversationMessage(
@@ -239,6 +243,7 @@ def agent_messages(conversation_id):
                 "..." if len(message) > 50 else ""
             )
 
+        t_route4 = time.perf_counter()
         try:
             gpt_response, meta = run_mobile_agent_turn(
                 session,
@@ -273,6 +278,7 @@ def agent_messages(conversation_id):
             if isinstance(gpt_response, dict)
             else gpt_response
         )
+        t_route5 = time.perf_counter()
         assistant_msg = ConversationMessage(
             conversation_id=conversation_id,
             role="assistant",
@@ -281,14 +287,25 @@ def agent_messages(conversation_id):
         session.add(assistant_msg)
         conversation.updated_at = datetime.utcnow()
         session.commit()
+        t_route6 = time.perf_counter()
 
         elapsed = time.time() - start
+        route_timings_ms = {
+            "db_conversation_ms": round((t_route1 - t_route0) * 1000, 2),
+            "db_prior_messages_ms": round((t_route2 - t_route1) * 1000, 2),
+            "build_history_ms": round((t_route3 - t_route2) * 1000, 2),
+            "prepare_user_turn_ms": round((t_route4 - t_route3) * 1000, 2),
+            "coach_orchestrator_ms": round((t_route5 - t_route4) * 1000, 2),
+            "serialize_persist_commit_ms": round((t_route6 - t_route5) * 1000, 2),
+            "http_handler_total_ms": round((t_route6 - t_route0) * 1000, 2),
+        }
         response_shape = (
             gpt_response.get("type") if isinstance(gpt_response, dict) else "text"
         )
         logger.info(
             "[smartcoach_mobile_coach] ok correlation_id=%s user=%s conversation=%s "
-            "loops=%s max_loops=%s truncated=%s cost=%.6f tokens=%s duration_ms=%d response_shape=%s",
+            "loops=%s max_loops=%s truncated=%s cost=%.6f tokens=%s duration_ms=%d response_shape=%s "
+            "route_timings_ms=%s agent_timings_ms=%s",
             correlation_id,
             uid_str,
             conversation_id,
@@ -299,6 +316,10 @@ def agent_messages(conversation_id):
             meta.get("usage", {}).get("total_tokens", 0),
             int(elapsed * 1000),
             response_shape,
+            json.dumps(route_timings_ms, separators=(",", ":")),
+            json.dumps(
+                meta.get("timings_ms") or {}, default=str, separators=(",", ":")
+            ),
         )
 
         model_used = str(meta.get("model") or "")
