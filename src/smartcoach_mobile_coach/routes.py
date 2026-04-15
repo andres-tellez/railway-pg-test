@@ -30,6 +30,9 @@ from src.smartcoach_mobile_coach.http_rate_limit import (
     record_agent_http_request,
 )
 from src.smartcoach_mobile_coach.orchestrator import run_mobile_agent_turn
+from src.smartcoach_mobile_coach.thread_derived_context import (
+    derive_thread_coach_context,
+)
 from src.utils.response_utils import error_response
 
 logger = logging.getLogger("smartcoach_mobile_coach")
@@ -143,6 +146,24 @@ def _resolve_anchor_local_date(payload: dict) -> Tuple[str, Optional[str]]:
     return anchor, tz
 
 
+def _coerce_last_activity_id(payload: dict) -> Optional[int]:
+    """
+    Optional fastpath hint from client.
+
+    Accepts `last_activity_id` or `lastActivityId` as a positive integer.
+    """
+    raw = payload.get("last_activity_id")
+    if raw is None:
+        raw = payload.get("lastActivityId")
+    if raw is None:
+        return None
+    try:
+        aid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return aid if aid > 0 else None
+
+
 smartcoach_mobile_coach_bp = Blueprint(
     "smartcoach_mobile_coach",
     __name__,
@@ -221,6 +242,7 @@ def agent_messages(conversation_id):
             .all()
         )
         t_route2 = time.perf_counter()
+        raw_history = [{"role": m.role, "content": m.content or ""} for m in prior]
         history = [
             {
                 "role": m.role,
@@ -228,6 +250,10 @@ def agent_messages(conversation_id):
             }
             for m in prior
         ]
+        thread_ctx_raw = derive_thread_coach_context(raw_history)
+        hint_activity_id = _coerce_last_activity_id(data)
+        if hint_activity_id is None:
+            hint_activity_id = thread_ctx_raw.last_structured_run_activity_id
         t_route3 = time.perf_counter()
         anchor_date, client_tz = _resolve_anchor_local_date(data)
 
@@ -253,6 +279,7 @@ def agent_messages(conversation_id):
                 anchor_local_date=anchor_date,
                 client_timezone=client_tz,
                 eval_model_override=_coerce_eval_model_header(),
+                last_activity_id_hint=hint_activity_id,
             )
         except RateLimitExceededError as e:
             session.rollback()

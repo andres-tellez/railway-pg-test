@@ -28,6 +28,14 @@ def _fastpath_enabled() -> bool:
     )
 
 
+def _split_fastpath_enabled() -> bool:
+    return os.getenv("SMARTCOACH_SPLIT_DETAIL_FASTPATH", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
+
 def _is_opening_turn(conversation_history: List[Dict[str, str]]) -> bool:
     """True when there is no prior assistant prose (first coach exchange)."""
     return not any(
@@ -120,6 +128,73 @@ def prefetch_opening_anchor_run_recap(
     return {"activity_id": aid, "find_runs_by_date": fr, "get_run_summary": summary}
 
 
+def wants_split_detail_fastpath(intent: str) -> bool:
+    """Allow split-detail fast path when intent is already known."""
+    if not _split_fastpath_enabled():
+        return False
+    return (intent or "").strip() == "split_detail"
+
+
+def prefetch_split_detail(
+    session: Session,
+    internal_user_id: str,
+    anchor_local_date: str,
+    *,
+    last_activity_id_hint: Optional[int] = None,
+    thread_activity_id: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Resolve one run activity and prefetch split rows for single-call split detail replies.
+
+    Resolution order:
+    1) last_activity_id_hint (client/server hint from prior run_summary)
+    2) thread_activity_id (derived from stored thread context)
+    3) find_runs_by_date(anchor_local_date), only when exactly one run exists
+    """
+    from src.smartcoach_mobile_coach.agent_tools import (
+        tool_find_runs_by_date,
+        tool_get_run_splits,
+    )
+
+    ld = (anchor_local_date or "").strip()[:10]
+    if len(ld) != 10:
+        return None
+
+    activity_id: Optional[int] = None
+    resolved_from = "none"
+
+    if isinstance(last_activity_id_hint, int) and last_activity_id_hint > 0:
+        activity_id = int(last_activity_id_hint)
+        resolved_from = "last_activity_id_hint"
+    elif isinstance(thread_activity_id, int) and thread_activity_id > 0:
+        activity_id = int(thread_activity_id)
+        resolved_from = "thread_context"
+
+    fr: Optional[Dict[str, Any]] = None
+    if activity_id is None:
+        fr = tool_find_runs_by_date(session, internal_user_id, ld)
+        if fr.get("error") or fr.get("no_runs") or fr.get("disambiguation_needed"):
+            return None
+        raw_aid = fr.get("activity_id")
+        if not isinstance(raw_aid, int):
+            return None
+        activity_id = raw_aid
+        resolved_from = "find_runs_by_date"
+
+    splits = tool_get_run_splits(session, internal_user_id, int(activity_id))
+    if splits.get("error"):
+        return None
+
+    out: Dict[str, Any] = {
+        "activity_id": int(activity_id),
+        "resolved_from": resolved_from,
+        "get_run_splits": splits,
+    }
+    if fr is not None:
+        out["find_runs_by_date"] = fr
+    return out
+
+
 def _compact_run_context_for_llm(
     prefetch: Dict[str, Any], anchor_local_date: str
 ) -> Dict[str, Any]:
@@ -151,6 +226,31 @@ def _compact_run_context_for_llm(
     return out
 
 
+def _compact_split_context_for_llm(
+    prefetch: Dict[str, Any], anchor_local_date: str
+) -> Dict[str, Any]:
+    """Minimal split payload for the split-detail fast path prompt."""
+    splits_payload = prefetch.get("get_run_splits") or {}
+    splits_rows = splits_payload.get("splits")
+    if not isinstance(splits_rows, list):
+        splits_rows = []
+    ld = (anchor_local_date or "").strip()[:10]
+    out: Dict[str, Any] = {
+        "anchor_local_date": ld,
+        "activity_id": prefetch.get("activity_id"),
+        "title": splits_payload.get("title"),
+        "splits_count": splits_payload.get("splits_count"),
+        "splits_total_count": splits_payload.get("splits_total_count"),
+        "splits_returned": splits_payload.get("splits_returned"),
+        "splits_truncated": splits_payload.get("splits_truncated"),
+        "splits": splits_rows,
+        "scope": splits_payload.get("scope"),
+    }
+    if isinstance(splits_payload.get("splits_cap"), dict):
+        out["splits_cap"] = splits_payload.get("splits_cap")
+    return out
+
+
 def system_appendix_for_prefetch(
     prefetch: Dict[str, Any], anchor_local_date: str
 ) -> str:
@@ -169,5 +269,27 @@ def system_appendix_for_prefetch(
         "**Do not call any tools** — use only the JSON above for numbers.",
         "Answer using the same coaching rules as when you had called those tools yourself "
         "(Insight + Facts; interpretation-first opener for this kind of question).",
+    ]
+    return "\n".join(lines)
+
+
+def system_appendix_for_split_prefetch(
+    prefetch: Dict[str, Any], anchor_local_date: str
+) -> str:
+    """Append compact split data JSON + no-tools instruction."""
+    ld = (anchor_local_date or "").strip()[:10]
+    compact = _compact_split_context_for_llm(prefetch, ld)
+    lines = [
+        "",
+        "## Pre-loaded split data (server-side, compact)",
+        f"The user is asking for split detail on their run near **{ld}**.",
+        f"Resolved **activity_id** `{prefetch.get('activity_id')}` via `{prefetch.get('resolved_from')}`.",
+        "Authoritative per-lap rows for this turn (`get_run_splits` source):",
+        "```json",
+        json.dumps(compact, default=str),
+        "```",
+        "**Do not call any tools** — use only the JSON above for split rows and numbers.",
+        "Answer with a short list/table of split rows when helpful plus a concise coaching read.",
+        "Do not re-state session recap stats unless the user explicitly asks for recap.",
     ]
     return "\n".join(lines)

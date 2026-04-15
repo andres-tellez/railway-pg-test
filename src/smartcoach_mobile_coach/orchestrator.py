@@ -34,8 +34,11 @@ from src.smartcoach_mobile_coach.dialogue_manager import (
     response_directive_section,
 )
 from src.smartcoach_mobile_coach.run_recap_fastpath import (
+    prefetch_split_detail,
     prefetch_opening_anchor_run_recap,
     system_appendix_for_prefetch,
+    system_appendix_for_split_prefetch,
+    wants_split_detail_fastpath,
     wants_run_recap_fastpath,
 )
 from src.smartcoach_mobile_coach.thread_derived_context import (
@@ -977,6 +980,7 @@ def run_mobile_agent_turn(
     anchor_local_date: str,
     client_timezone: Optional[str] = None,
     eval_model_override: Optional[str] = None,
+    last_activity_id_hint: Optional[int] = None,
 ) -> Tuple[Union[str, Dict[str, Any]], Dict[str, Any]]:
     """
     Returns (assistant_reply, metadata with usage, cost, loops).
@@ -1170,6 +1174,110 @@ def run_mobile_agent_turn(
                 return structured_fp, meta_fp
             logger.warning(
                 "[coach_fastpath] empty model text or invalid summary; using full agent loop"
+            )
+
+    split_prefetch: Optional[Dict[str, Any]] = None
+    if wants_split_detail_fastpath(response_directive.intent):
+        _sp0 = time.perf_counter()
+        split_prefetch = prefetch_split_detail(
+            session,
+            internal_user_id,
+            anchor_local_date,
+            last_activity_id_hint=last_activity_id_hint,
+            thread_activity_id=thread_ctx.last_structured_run_activity_id,
+        )
+        timings_ms["split_fastpath_prefetch_ms"] = round(
+            (time.perf_counter() - _sp0) * 1000, 2
+        )
+        if split_prefetch:
+            logger.info(
+                "[coach_fastpath] split_detail user=%s… activity_id=%s source=%s",
+                str(internal_user_id)[:8],
+                split_prefetch.get("activity_id"),
+                split_prefetch.get("resolved_from"),
+            )
+
+    if split_prefetch:
+        augmented_system = system_content + system_appendix_for_split_prefetch(
+            split_prefetch, anchor_local_date
+        )
+        cc_messages: List[Dict[str, str]] = [
+            {"role": "system", "content": augmented_system}
+        ]
+        for m in conversation_history[-12:]:
+            if m.get("role") in ("user", "assistant") and m.get("content"):
+                cc_messages.append(
+                    {
+                        "role": str(m["role"]),
+                        "content": str(m.get("content", "")).strip(),
+                    }
+                )
+        cc_messages.append({"role": "user", "content": user_message.strip()})
+        try:
+            _t_sllm0 = time.perf_counter()
+            _sp_cap = int(
+                os.getenv("SMARTCOACH_SPLIT_DETAIL_FASTPATH_MAX_TOKENS", "1024") or "0"
+            )
+            _sp_max_tokens = min(max_tokens, _sp_cap) if _sp_cap > 0 else max_tokens
+            cc_result = service.chat_completion(
+                messages=cc_messages,
+                user_id=str(internal_user_id),
+                model=model,
+                temperature=temperature,
+                max_tokens=_sp_max_tokens,
+                timeout=timeout,
+            )
+            timings_ms["split_fastpath_llm_ms"] = round(
+                (time.perf_counter() - _t_sllm0) * 1000, 2
+            )
+        except Exception:
+            logger.exception(
+                "[coach_fastpath] split_detail chat_completion failed; using full agent loop"
+            )
+        else:
+            text_fp = (cc_result.content or "").strip()
+            if text_fp:
+                for k in total_usage:
+                    total_usage[k] = cc_result.usage.get(k, 0)
+                total_cost = cc_result.cost
+                loops = 1
+                timings_ms["agent_loop_rounds"] = []
+                timings_ms["agent_orchestrator_total_ms"] = round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                )
+                meta_fp: Dict[str, Any] = {
+                    "usage": total_usage,
+                    "cost": total_cost,
+                    "loops": loops,
+                    "max_loops": max_loops,
+                    "model": model,
+                    "split_detail_fastpath": True,
+                    "timings_ms": timings_ms,
+                    "dialogue": {
+                        "turn_type": response_directive.turn_type,
+                        "intent": response_directive.intent,
+                        "turn_count": conversation_state.turn_count,
+                        "last_topic": conversation_state.last_topic,
+                        "target_length": response_directive.target_length,
+                        "narration_mode": response_directive.narration_mode,
+                        "tool_strategy": response_directive.tool_strategy,
+                        "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                        "allow_full_recap": response_directive.allow_full_recap,
+                        "investigate_first": response_directive.investigate_first,
+                        "interaction_mode": response_directive.interaction_mode,
+                        "thread_derived": thread_ctx.as_dict(),
+                    },
+                }
+                logger.info(
+                    "[smartcoach_mobile_coach] response_shape=text "
+                    "loops=%s split_fastpath=1 content_len=%s timings_ms=%s",
+                    loops,
+                    len(text_fp),
+                    timings_ms,
+                )
+                return text_fp, meta_fp
+            logger.warning(
+                "[coach_fastpath] split_detail empty model text; using full agent loop"
             )
 
     for _ in range(max_loops):
