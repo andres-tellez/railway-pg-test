@@ -788,6 +788,9 @@ def get_weekly_insight_history(
 
     EASY: one point per calendar week (oldest → newest), aligned with the X axis even when
     a week has no stored insight (null metrics for that week).
+
+    The newest column is the **calendar week containing today** (including in-progress
+    rows keyed by that week's Monday), not the prior completed week only.
     """
     weeks = max(1, min(weeks, 12))
 
@@ -799,7 +802,7 @@ def get_weekly_insight_history(
             "systems": {},
         }
 
-    cal_week_start, _ = _week_bounds(date.today())
+    cal_week_start, _ = calendar_week_containing(date.today())
     week_windows = [
         (
             cal_week_start - timedelta(weeks=offset),

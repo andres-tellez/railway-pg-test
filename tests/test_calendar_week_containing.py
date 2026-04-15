@@ -22,3 +22,15 @@ def test_week_bounds_completed_not_same_as_calendar_midweek():
     mon_b, sun_b = _week_bounds(d)
     assert (mon_c, sun_c) != (mon_b, sun_b)
     assert mon_b < mon_c
+
+
+def test_weekly_history_newest_monday_matches_calendar_week_anchor():
+    """get_weekly_insight_history must include the in-progress week (same Monday as here)."""
+    from datetime import timedelta
+
+    today = date(2026, 4, 15)
+    newest_mon, _ = calendar_week_containing(today)
+    weeks = 6
+    oldest_mon = newest_mon - timedelta(weeks=weeks - 1)
+    assert newest_mon == date(2026, 4, 13)
+    assert oldest_mon == date(2026, 3, 9)
