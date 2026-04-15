@@ -10,6 +10,8 @@ Max loops default 8; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–1
 
 Opening "how was my run?"–style turns can use ``run_recap_fastpath`` (single
 ``chat_completion`` without tools) when ``SMARTCOACH_RUN_RECAP_FASTPATH`` is enabled.
+The LLM appendix uses **facts-only** compact JSON by default
+(``SMARTCOACH_RUN_RECAP_PREFETCH_SLIM``); full ``get_run_summary`` is still returned for the card.
 
 Split-detail turns (intent ``split_detail``) can use ``prefetch_split_detail`` +
 ``system_appendix_for_split_prefetch`` (single ``chat_completion`` without tools)

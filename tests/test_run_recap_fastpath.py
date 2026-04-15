@@ -28,7 +28,8 @@ def test_rejects_with_prior_assistant():
     assert not wants_run_recap_fastpath("How was my run?", hist)
 
 
-def test_compact_run_context_strips_heavy_keys():
+def test_compact_run_context_default_slim_omits_kpis(monkeypatch):
+    monkeypatch.delenv("SMARTCOACH_RUN_RECAP_PREFETCH_SLIM", raising=False)
     prefetch = {
         "activity_id": 42,
         "get_run_summary": {
@@ -43,8 +44,32 @@ def test_compact_run_context_strips_heavy_keys():
     compact = _compact_run_context_for_llm(prefetch, "2026-04-14")
     assert compact["activity_id"] == 42
     assert compact["facts"]["title"] == "Morning run"
+    assert "training_kpis" not in compact
+    assert "comparison" not in compact
+    assert "zone_bounds" not in compact
+    assert "hr_drift_band_zones" not in compact
+
+
+def test_compact_run_context_legacy_includes_kpis(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_RUN_RECAP_PREFETCH_SLIM", "0")
+    prefetch = {
+        "activity_id": 42,
+        "get_run_summary": {
+            "facts": {"title": "Morning run", "distance_display": "5.0 mi"},
+            "training_kpis": {"hr_drift_pct": 3.2, "hr_drift_band": "green"},
+            "is_easy_run": True,
+            "zone_bounds": {"z2_low": 120, "z2_high": 140},
+            "hr_drift_band_zones": [{"band": "green", "min": 0, "max": 2.5}],
+            "comparison": {"peer_runs": [{"x": 1}]},
+        },
+    }
+    compact = _compact_run_context_for_llm(prefetch, "2026-04-14")
     assert compact["training_kpis"]["hr_drift_band"] == "green"
     assert "comparison" not in compact
+
+
+def test_rejects_when_user_asks_drift():
+    assert not wants_run_recap_fastpath("How was my run and what was my HR drift?", [])
 
 
 def test_disabled_env(monkeypatch):
