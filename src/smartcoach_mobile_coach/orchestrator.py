@@ -228,7 +228,8 @@ _GET_RUN_SPLITS_OPENAI_TOOL: Dict[str, Any] = {
         "description": (
             "Per-lap/split pace and avg HR for one run (splits table). Use for mile-by-mile, lap-by-lap, or "
             "split-level HR/pace questions after activity_id is known. Quote row display fields exactly; "
-            "see scope in the payload for lap-boundary caveats."
+            "see scope in the payload for lap-boundary caveats. Long runs may return splits_truncated with "
+            "first+last laps only—respect splits_total_count and do not invent middle laps."
         ),
         "parameters": {
             "type": "object",
@@ -438,7 +439,7 @@ DATA RETRIEVAL & TOOL RULES
 - When the user refers to "my run" or "last run" **without** having just discussed another specific run, treat it as the run on the system-provided date unless they name another day.
 - For follow-up requests about **today’s** same run (e.g. "include KPIs", "add Z2 pace", "show HR drift") with no new date, resolve with `find_runs_by_date` using the **system-provided anchor date** before answering.
 - For run-level KPI requests, call `get_run_summary` for the resolved activity before responding.
-- **Per-mile / lap / split HR or pace** (e.g. "mile over mile", "each mile", "splits", "lap by lap"): with a resolved **`activity_id`**, call **`get_run_splits`**. Answer from **`splits`** rows (**`avg_heart_rate_display`**, **`avg_pace_display`**, **`segment_label`**) and **`scope`**. If **`splits`** is empty, say no stored laps and stay honest — do not invent a per-mile table.
+- **Per-mile / lap / split HR or pace** (e.g. "mile over mile", "each mile", "splits", "lap by lap"): with a resolved **`activity_id`**, call **`get_run_splits`**. Answer from **`splits`** rows (**`avg_heart_rate_display`**, **`avg_pace_display`**, **`segment_label`**) and **`scope`**. If **`splits`** is empty, say no stored laps and stay honest — do not invent a per-mile table. If **`splits_truncated`** is true, only **returned** laps are present (first+last by lap order); use **`splits_total_count`** for how many laps exist and **do not** infer missing middle laps.
 - **Split-detail answers from `get_run_splits`:** you may compute **grounded** comparisons across returned rows (deltas, halves, outlier checks) — **only** from those rows, not from recall. Look for patterns a human coach would flag: **warmup** first split, **late fade**, a **one-off surge**, **steadier middle miles**, whether **pace change** explains an **HR** move.
 - **Follow-up after a session recap:** if they ask for split-level detail, call **`get_run_splits`** and **do not** re-quote overall run **`facts`** (distance, total time, avg pace, avg HR) or the same **early/late/peak HR** and **drift %** story from **`get_run_summary`** unless they explicitly ask to recap — add **only** lap-level numbers, **derived split-level observations** grounded in those rows, and a **short coaching takeaway**.
 - `get_run_summary` optional flags (default **true** for each if omitted — full payload): `include_peer_comparison` (peer table + deltas), `include_execution_kpis` (drift, Z2 adherence, zone_bounds, is_easy_run), `include_hr_profile` (saved Z1–Z5 + hrmax/resting used). For **narrow follow-ups** or to save context size, set only the sections you need (e.g. `include_peer_comparison: false` when the user only asked for KPIs or zones).

@@ -2,9 +2,14 @@
 """
 Create coach_tools table and seed with initial tool definitions.
 
+Upserts every row in SEED_TOOLS (ON CONFLICT (name) DO UPDATE), so re-run this
+after changing tool copy in this file to refresh production/staging descriptions.
+
 Usage:
-    python scripts/setup_coach_tools.py          # dev database
-    python scripts/setup_coach_tools.py --prod    # prod database
+    python scripts/setup_coach_tools.py                    # dev (DATABASE_URL)
+    python scripts/setup_coach_tools.py --prod             # prod (PROD_DATABASE_URL)
+    python scripts/setup_coach_tools.py --only=get_run_splits
+    python scripts/setup_coach_tools.py --prod --only=get_run_splits,search_runs
 """
 
 import json
@@ -39,6 +44,27 @@ CREATE TABLE IF NOT EXISTS coach_tools (
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
+
+
+def _tools_to_seed_from_argv(argv: list[str]) -> list[dict]:
+    """If --only=a,b is present, seed only those tool names; else full SEED_TOOLS."""
+    only_arg = None
+    for a in argv:
+        if a.startswith("--only="):
+            only_arg = a.split("=", 1)[1].strip()
+            break
+    if not only_arg:
+        return list(SEED_TOOLS)
+    want = {x.strip() for x in only_arg.split(",") if x.strip()}
+    picked = [t for t in SEED_TOOLS if t["name"] in want]
+    unknown = want - {t["name"] for t in picked}
+    if unknown:
+        print(f"WARNING: --only mentions unknown tool name(s): {sorted(unknown)}")
+    if not picked:
+        print("ERROR: --only matched no tools; check names against SEED_TOOLS.")
+        sys.exit(1)
+    return picked
+
 
 SEED_TOOLS = [
     {
@@ -210,6 +236,8 @@ SEED_TOOLS = [
             "Use for **mile over mile**, **each mile**, **lap by lap**, **split-by-split** HR or pace, or any ask for "
             "finer progression than **get_run_summary.training_kpis** (early/late/peak HR). "
             "**scope** in the payload explains lap boundaries (often ~1 mi, not guaranteed). "
+            "Long activities: payload may cap rows (first and last laps by lap order); check **splits_truncated** "
+            "and **splits_total_count**. "
             "Session-level drift % and Z2 KPIs stay on **get_run_summary**; do not recompute splits yourself."
         ),
         "when_to_call": (
@@ -227,8 +255,9 @@ SEED_TOOLS = [
             "required": ["activity_id"],
         },
         "returns_description": (
-            "activity_id, title, splits_count, splits[] (lap_index, segment_label, display fields), scope; "
-            "or empty splits with message when no lap rows stored."
+            "activity_id, title, splits[], splits_count (rows in splits), splits_total_count (laps in run), "
+            "splits_truncated, scope; when truncated, splits_cap.policy head_tail_by_lap_index. "
+            "Or empty splits with message when no lap rows stored."
         ),
         "data_source": "splits (+ activities ownership check)",
         "is_enabled": True,
@@ -434,8 +463,9 @@ def main():
     s.commit()
     print("  Done.")
 
-    print(f"\nSeeding {len(SEED_TOOLS)} tools...")
-    for tool in SEED_TOOLS:
+    tools = _tools_to_seed_from_argv(sys.argv)
+    print(f"\nSeeding {len(tools)} tool(s)...")
+    for tool in tools:
         s.execute(
             text(
                 """
