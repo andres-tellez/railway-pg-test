@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from src.smartcoach_mobile_coach.run_recap_fastpath import wants_run_recap_fastpath
+from src.smartcoach_mobile_coach.run_recap_fastpath import (
+    _compact_run_context_for_llm,
+    wants_run_recap_fastpath,
+)
 
 
 def test_wants_fastpath_how_was_my_run_opening():
@@ -23,6 +26,25 @@ def test_rejects_with_prior_assistant():
         {"role": "assistant", "content": "Hey — how can I help?"},
     ]
     assert not wants_run_recap_fastpath("How was my run?", hist)
+
+
+def test_compact_run_context_strips_heavy_keys():
+    prefetch = {
+        "activity_id": 42,
+        "get_run_summary": {
+            "facts": {"title": "Morning run", "distance_display": "5.0 mi"},
+            "training_kpis": {"hr_drift_pct": 3.2, "hr_drift_band": "green"},
+            "is_easy_run": True,
+            "zone_bounds": {"z2_low": 120, "z2_high": 140},
+            "hr_drift_band_zones": [{"band": "green", "min": 0, "max": 2.5}],
+            "comparison": {"peer_runs": [{"x": 1}]},
+        },
+    }
+    compact = _compact_run_context_for_llm(prefetch, "2026-04-14")
+    assert compact["activity_id"] == 42
+    assert compact["facts"]["title"] == "Morning run"
+    assert compact["training_kpis"]["hr_drift_band"] == "green"
+    assert "comparison" not in compact
 
 
 def test_disabled_env(monkeypatch):
