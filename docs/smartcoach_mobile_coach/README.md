@@ -47,7 +47,7 @@ flowchart TB
 
 1. **HTTP** — Auth, rate limit, load/save `ConversationMessage`, build **plain-text** history for the LLM vs **raw** JSON for thread-derived `activity_id` (`thread_derived_context.py`).
 2. **Orchestration** — System prompt assembly, then one of:
-   - **Run recap fastpath** — Opening anchor-day recap; prefetches `find_runs_by_date` + slim `get_run_summary`; one `chat_completion` without tools; returns structured `run_summary` when valid.
+   - **Run recap fastpath** — Opening anchor-day recap; prefetches `find_runs_by_date` + `get_run_summary` (execution KPIs for the **card**); **LLM appendix** uses compact **facts-only** JSON by default (`SMARTCOACH_RUN_RECAP_PREFETCH_SLIM`); one `chat_completion` without tools; returns structured `run_summary` when valid. Messages that ask for **drift** in the same turn skip fastpath so the tool loop can answer.
    - **Split detail fastpath** — Intent `split_detail`; prefetches `get_run_splits` after resolving `activity_id` (hint, thread, or single run on anchor date); one `chat_completion` without tools; plain text response + metadata `split_detail_fastpath`.
    - **Tool loop** — Default: bounded `chat_completion_with_tools` + `execute_tool`.
 3. **Tools** — Definitions from **`coach_tools`** (seeded by `scripts/setup_coach_tools.py`); critical tools may be **injected** from `orchestrator.py` if missing from DB.
@@ -113,6 +113,7 @@ Device anchor, HR calibration (when needed), thread-led, and race intent overrid
 | `OPENAI_MOBILE_AGENT_TIMEOUT` | `180` | Per completion timeout (seconds). |
 | `OPENAI_CONVERSATION_MODEL` | `gpt-4o` | Default model. |
 | `SMARTCOACH_RUN_RECAP_FASTPATH` | `1` | Disable with `0`/`false`/`no`. |
+| `SMARTCOACH_RUN_RECAP_PREFETCH_SLIM` | `1` | When on (default), recap fastpath **system appendix** JSON is **facts only** (no `training_kpis` / drift bands in the prompt); full summary still returned for the RunSummaryCard. Set `0`/`false`/`no`/`off` for legacy compact KPIs in the appendix. |
 | `SMARTCOACH_RUN_RECAP_FASTPATH_MAX_TOKENS` | `768` | Cap completion tokens on recap fastpath. |
 | `SMARTCOACH_SPLIT_DETAIL_FASTPATH` | `1` | Split-detail single-call path. |
 | `SMARTCOACH_SPLIT_DETAIL_FASTPATH_MAX_TOKENS` | `1024` | Cap completion tokens on split fastpath. |

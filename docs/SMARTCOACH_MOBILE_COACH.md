@@ -48,6 +48,7 @@ Registered in `src/app.py` as `smartcoach_mobile_coach_bp`.
 | `SMARTCOACH_MOBILE_INSIGHT_CACHE_TTL` | `3600` | Insight tool cache TTL (seconds). |
 | `OPENAI_MOBILE_AGENT_TIMEOUT` | `180` | Per **completion** (seconds) for each model call in the mobile agent loop. **Does not** read `OPENAI_TIMEOUT`. |
 | `SMARTCOACH_RUN_RECAP_FASTPATH` | `1` | Opening recap single-call fastpath (`0` / `false` / `no` to disable). |
+| `SMARTCOACH_RUN_RECAP_PREFETCH_SLIM` | `1` | Recap fastpath LLM appendix: **facts-only** compact JSON by default; card payload still includes full `get_run_summary`. `0` restores KPIs in the appendix. |
 | `SMARTCOACH_SPLIT_DETAIL_FASTPATH` | `1` | Split-detail single-call fastpath. |
 | `SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE` | `off` | When `1` / `true`, `POST …/agent-messages` may honor header **`X-SmartCoach-Eval-Model`** with an allowlisted OpenAI model (`gpt-4o`, `gpt-4o-mini`, `gpt-4o-2024-08-06`) for **scripted eval only**. **Leave off in production** unless you accept authenticated users picking the model. Response includes **`X-SmartCoach-Model-Used`**. |
 | `SMARTCOACH_COACH_EVAL_REQUEST_SECRET` | *(unset)* | When set to a non-empty string, requests that send header **`X-SmartCoach-Eval-Secret`** with the **same** value (constant-time compare) may use **`X-SmartCoach-Eval-Model`** as if the override flag were on. Use a long random secret; rotate if leaked. `coach_feel_eval.py` reads this env and sends the header. Prefer this over the override flag when only **you** run eval scripts. |
