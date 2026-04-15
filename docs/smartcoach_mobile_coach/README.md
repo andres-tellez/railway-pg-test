@@ -50,7 +50,7 @@ flowchart TB
    - **Run recap fastpath** — Opening anchor-day recap; prefetches `find_runs_by_date` + `get_run_summary` (execution KPIs for the **card**); **LLM appendix** uses compact **facts-only** JSON by default (`SMARTCOACH_RUN_RECAP_PREFETCH_SLIM`); one `chat_completion` without tools; returns structured `run_summary` when valid. Messages that ask for **drift** in the same turn skip fastpath so the tool loop can answer.
    - **Split detail fastpath** — Intent `split_detail`; prefetches `get_run_splits` after resolving `activity_id` (hint, thread, or single run on anchor date); one `chat_completion` without tools; plain text response + metadata `split_detail_fastpath`.
    - **Tool loop** — Default: bounded `chat_completion_with_tools` + `execute_tool`.
-3. **Tools** — Definitions from **`coach_tools`** (seeded by `scripts/setup_coach_tools.py`); critical tools may be **injected** from `orchestrator.py` if missing from DB.
+3. **Tools** — Definitions from **`coach_tools`** (seeded by `scripts/setup_coach_tools.py`); critical tools may be **injected** from `orchestrator.py` if missing from DB. **`get_weekly_training_insight`** defaults to an **orientation** payload for the model (`week_start`, `week_end`, `overall_band`) unless the tool call sets **`include_kpi_detail`: true** (`SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM`); REST weekly insight stays full.
 4. **Dialogue** — `dialogue_manager.py` classifies turn, infers intent, sets tool strategy / length (prompt sections only; no extra network).
 
 ---
@@ -114,6 +114,7 @@ Device anchor, HR calibration (when needed), thread-led, and race intent overrid
 | `OPENAI_CONVERSATION_MODEL` | `gpt-4o` | Default model. |
 | `SMARTCOACH_RUN_RECAP_FASTPATH` | `1` | Disable with `0`/`false`/`no`. |
 | `SMARTCOACH_RUN_RECAP_PREFETCH_SLIM` | `1` | When on (default), recap fastpath **system appendix** JSON is **facts only** (no `training_kpis` / drift bands in the prompt); full summary still returned for the RunSummaryCard. Set `0`/`false`/`no`/`off` for legacy compact KPIs in the appendix. |
+| `SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM` | `1` | When on (default), coach tool **`get_weekly_training_insight`** returns **orientation** only (`week_start`, `week_end`, `overall_band`) unless the model passes **`include_kpi_detail`: true**. REST `GET /api/training-insights/weekly` is always full. `0`/`false`/`no`/`off` restores legacy default (full KPI payload on every tool call). |
 | `SMARTCOACH_RUN_RECAP_FASTPATH_MAX_TOKENS` | `768` | Cap completion tokens on recap fastpath. |
 | `SMARTCOACH_SPLIT_DETAIL_FASTPATH` | `1` | Split-detail single-call path. |
 | `SMARTCOACH_SPLIT_DETAIL_FASTPATH_MAX_TOKENS` | `1024` | Cap completion tokens on split fastpath. |

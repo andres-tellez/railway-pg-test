@@ -62,21 +62,23 @@ WEEKLY_INSIGHT_TOOL = {
     "display_name": "Get Weekly Training Insight",
     "category": "training_progress",
     "description": (
-        "Get the user's latest precomputed weekly training scoreboard: overall band, "
-        "HR drift/Z2 pace/efficiency bands, deltas, and coaching summary/action text. "
-        "Use this first for weekly progress/status questions."
+        "Latest weekly insight. Default: orientation (week + overall_band). "
+        "include_kpi_detail=true for full KPIs, deltas, and zone charts."
     ),
     "when_to_call": (
-        "User asks weekly progress questions like 'am I on track', 'how am I doing this week', "
-        "'weekly status', or wants a concise progress scoreboard."
+        "Weekly progress / on-track questions for the current insight week."
     ),
     "parameters_schema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+            "include_kpi_detail": {
+                "type": "boolean",
+                "description": "Return full KPI payload when true.",
+            },
+        },
     },
     "returns_description": (
-        "If available: has_insight=true with week range, overall band, KPI cards, "
-        "summary_text, action_text. If not available: has_insight=false with message."
+        "Orientation or full scoreboard; see setup_coach_tools get_weekly_training_insight."
     ),
     "data_source": "weekly_training_insights",
     "is_enabled": True,

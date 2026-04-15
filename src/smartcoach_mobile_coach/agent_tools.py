@@ -36,6 +36,7 @@ from src.smartcoach_mobile_coach.training_kpi_service import (
 )
 from src.smartcoach_mobile_coach.weekly_insights_service import (
     get_latest_weekly_insight,
+    weekly_insight_tool_slim_default_from_env,
 )
 from src.utils.config import config
 from src.utils.hr_zone_constants import (
@@ -438,10 +439,37 @@ def tool_get_training_kpis(
 # ---------------------------------------------------------------------------
 
 
+def _parse_include_kpi_detail_arg(raw: Any) -> Optional[bool]:
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return bool(int(raw))
+    if isinstance(raw, str):
+        t = raw.strip().lower()
+        if t in ("1", "true", "yes", "on"):
+            return True
+        if t in ("0", "false", "no", "off"):
+            return False
+    return None
+
+
 def tool_get_weekly_training_insight(
-    session: Session, internal_user_id: str
+    session: Session,
+    internal_user_id: str,
+    *,
+    include_kpi_detail: Optional[bool] = None,
 ) -> Dict[str, Any]:
-    return get_latest_weekly_insight(session, internal_user_id)
+    """
+    Coach tool: default payload is orientation-only when
+    SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM is on (see weekly_insights_service).
+    """
+    if include_kpi_detail is None:
+        want_full = not weekly_insight_tool_slim_default_from_env()
+    else:
+        want_full = bool(include_kpi_detail)
+    return get_latest_weekly_insight(session, internal_user_id, slim=not want_full)
 
 
 # ---------------------------------------------------------------------------
@@ -706,7 +734,10 @@ def execute_tool(
             )
 
         if handler_key == "get_weekly_training_insight":
-            return tool_get_weekly_training_insight(session, internal_user_id)
+            detail_raw = _parse_include_kpi_detail_arg(args.get("include_kpi_detail"))
+            return tool_get_weekly_training_insight(
+                session, internal_user_id, include_kpi_detail=detail_raw
+            )
 
         if handler_key == "get_marathon_projection":
             d_target = _parse_optional_date(args.get("target_race_date"))

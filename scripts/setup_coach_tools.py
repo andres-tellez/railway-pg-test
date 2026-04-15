@@ -330,25 +330,37 @@ SEED_TOOLS = [
         "display_name": "Get Weekly Training Insight",
         "category": "training_progress",
         "description": (
-            "Get the user's latest precomputed weekly training scoreboard: overall band, "
-            "HR drift / Avg. Z2 pace / efficiency bands, deltas, and coaching summary/action text. "
-            "Use this first for **this week's** holistic status. "
+            "Latest precomputed weekly insight. **Default (coach):** orientation only — "
+            "`week_start`, `week_end`, `overall_band` (`insight_detail_level` = `orientation`); "
+            "no per-KPI numbers, deltas, zone charts, or run counts. "
+            "Set **include_kpi_detail** true for the full scoreboard (HR drift / Z2 pace / efficiency, "
+            "deltas, `hr_drift_band_zones`, `systems`, counts, summary/action when present). "
+            "Use first for **this week's** holistic vibe. "
             "**Not** for a table of weekly mileage totals across many weeks — use "
-            "**aggregate_runs_in_range** weekly_summaries for that."
+            "**aggregate_runs_in_range** `weekly_summaries` for that."
         ),
         "when_to_call": (
             "User asks weekly progress questions like 'am I on track', 'how am I doing this week', "
-            "'weekly status', or wants a concise scoreboard for the **current** insight week. "
+            "'weekly status', or wants a concise read for the **current** insight week. "
             "Do **not** use this alone when they want **per-week mileage** over roughly the last month."
         ),
         "parameters_schema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "include_kpi_detail": {
+                    "type": "boolean",
+                    "description": (
+                        "When true, return full KPI payload (drift/Z2/efficiency, deltas, zone charts, "
+                        "systems). Omit or false for default orientation-only (saves context; answer "
+                        "from overall_band + week unless user wants numbers)."
+                    ),
+                },
+            },
         },
         "returns_description": (
-            "Always includes hr_drift_band_zones (HR drift % min/max per color, app-wide). "
-            "If available: has_insight=true with week range, overall band, KPI cards, "
-            "summary_text, action_text. If not available: has_insight=false with message."
+            "Default: insight_detail_level=orientation, week_start/week_end/overall_band, orientation_note. "
+            "Full: kpis, systems, hr_drift_band_zones, aerobic_efficiency_band_zones, counts, etc. "
+            "If no row: has_insight=false and message (full mode also includes zone charts for definitions)."
         ),
         "data_source": "weekly_training_insights",
         "is_enabled": True,

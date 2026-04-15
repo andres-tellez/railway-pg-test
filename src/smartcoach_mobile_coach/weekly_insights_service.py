@@ -4,12 +4,16 @@ Weekly Training Insights Service
 Computes deterministic KPI bands, overall score, and deltas. Numeric truth
 is computed in SQL + Python; weekly rows store metrics for the mobile
 Insights charts (no LLM copy).
+
+``get_latest_weekly_insight(..., slim=True)`` returns an orientation-only dict
+for the coach tool (week + ``overall_band``); REST uses ``slim=False`` (full).
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import date, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -30,6 +34,21 @@ from src.utils.hr_zone_constants import (
 )
 
 logger = logging.getLogger("smartcoach_mobile_coach")
+
+# Coach tool default: orientation-only payload (week + overall_band) unless
+# include_kpi_detail=true. REST `/api/training-insights/weekly` always uses slim=False.
+WEEKLY_INSIGHT_ORIENTATION_NOTE = (
+    "Orientation-only: week range + overall_band. Do not invent HR drift %, Z2 pace, "
+    "efficiency, deltas, or zone thresholds. Call get_weekly_training_insight again with "
+    "include_kpi_detail=true (or use get_training_kpis) when the user asks for KPI numbers "
+    "or band definitions."
+)
+
+
+def weekly_insight_tool_slim_default_from_env() -> bool:
+    raw = (os.getenv("SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
 
 # ---------------------------------------------------------------------------
 # SQL
@@ -671,8 +690,15 @@ def generate_weekly_insight(
     }
 
 
-def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
-    """Return the most recent weekly insight for the REST API."""
+def get_latest_weekly_insight(
+    session: Session, user_id: str, *, slim: bool = False
+) -> Dict[str, Any]:
+    """Return the most recent weekly insight.
+
+    ``slim=False`` (default): full scoreboard for REST / mobile Insights API.
+    ``slim=True``: coach orientation payload only (``week_start``, ``week_end``,
+    ``overall_band``) — no per-KPI values, zone charts, or run counts.
+    """
     row = session.execute(
         text(
             "SELECT * FROM weekly_training_insights "
@@ -683,6 +709,16 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
     ).fetchone()
 
     if not row:
+        if slim:
+            return {
+                "has_insight": False,
+                "insight_detail_level": "orientation",
+                "message": (
+                    "No weekly insight rows yet. Trend charts can still appear from your "
+                    "history once we have enough weeks of stored metrics (including easy runs)."
+                ),
+                "orientation_note": WEEKLY_INSIGHT_ORIENTATION_NOTE,
+            }
         return {
             "has_insight": False,
             "message": (
@@ -692,6 +728,16 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
             "systems": {},
             "hr_drift_band_zones": hr_drift_band_zones_chart(),
             "aerobic_efficiency_band_zones": aerobic_efficiency_band_zones_chart(),
+        }
+
+    if slim:
+        return {
+            "has_insight": True,
+            "insight_detail_level": "orientation",
+            "week_start": str(row.week_start),
+            "week_end": str(row.week_end),
+            "overall_band": row.overall_band,
+            "orientation_note": WEEKLY_INSIGHT_ORIENTATION_NOTE,
         }
 
     pace_display = "—"
@@ -766,6 +812,7 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
 
     return {
         "has_insight": True,
+        "insight_detail_level": "full",
         "week_start": str(row.week_start),
         "week_end": str(row.week_end),
         "overall_band": row.overall_band,
