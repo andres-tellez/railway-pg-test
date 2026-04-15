@@ -184,6 +184,18 @@ class ActivityDAO:
             result = session.execute(stmt)
             session.commit()
             logger.info(f"[SUCCESS] Successfully upserted {result.rowcount} activities")
+            if uid is not None and result.rowcount and int(result.rowcount) > 0:
+                try:
+                    from src.services.weekly_insight_post_activity_hook import (
+                        schedule_post_activity_weekly_insight_refresh,
+                    )
+
+                    schedule_post_activity_weekly_insight_refresh(str(uid))
+                except Exception:
+                    logger.warning(
+                        "schedule_post_activity_weekly_insight_refresh failed",
+                        exc_info=True,
+                    )
             return result.rowcount
         except Exception as e:
             session.rollback()

@@ -1,37 +1,31 @@
 """
 Weekly Training Insights Service
 
-Computes deterministic KPI bands, overall score, deltas, and generates
-an LLM-powered weekly summary. All numeric truth is computed here —
-the LLM only interprets; it never overrides values or bands.
-
-Principle: System = Judge, Coach = Translator.
+Computes deterministic KPI bands, overall score, and deltas. Numeric truth
+is computed in SQL + Python; weekly rows store metrics for the mobile
+Insights charts (no LLM copy).
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import date, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from sqlalchemy import Integer, bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Session
 
-from src.services.security.external_apis.openai_service import get_openai_service
 from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
 from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
 from src.utils.hr_zone_constants import (
-    COACHING_LEVEL_DEFAULTS,
     aerobic_efficiency_band_from_value,
     aerobic_efficiency_band_zones_chart,
     hr_drift_band_zones_chart,
     OVERALL_SCORE_RULES,
     TREND_BAND_THRESHOLDS,
-    VERBOSITY_RULES,
     hr_drift_band_from_pct,
 )
 
@@ -211,6 +205,14 @@ def _week_bounds(ref_date: date) -> Tuple[date, date]:
     if sunday >= ref_date:
         monday -= timedelta(weeks=1)
         sunday -= timedelta(weeks=1)
+    return monday, sunday
+
+
+def calendar_week_containing(d: date) -> Tuple[date, date]:
+    """Monday–Sunday **calendar** week that contains ``d`` (both ends inclusive)."""
+    dow = d.weekday()
+    monday = d - timedelta(days=dow)
+    sunday = monday + timedelta(days=6)
     return monday, sunday
 
 
@@ -507,105 +509,6 @@ def _compute_system_pipeline(
 
 
 # ---------------------------------------------------------------------------
-# LLM summary generation (interpreter layer — never changes truth)
-# ---------------------------------------------------------------------------
-
-_SUMMARY_SYSTEM = """You are SmartCoach, a supportive running coach generating a weekly training summary.
-
-Rules:
-- You MUST NOT invent numbers. Only reference the KPI values provided.
-- You MUST NOT override or reinterpret the band colors. Green means good, yellow means watch, red means concern.
-- Output valid JSON with exactly two keys: "summary" (2-3 sentences) and "action" (1 actionable sentence).
-- Match the tone instructions provided."""
-
-
-def _build_summary_prompt(
-    kpis: Dict[str, Any],
-    bands: Dict[str, Optional[str]],
-    deltas: Dict[str, Optional[float]],
-    overall: str,
-    coaching_level: str,
-) -> str:
-    level_cfg = COACHING_LEVEL_DEFAULTS.get(
-        coaching_level, COACHING_LEVEL_DEFAULTS["beginner"]
-    )
-
-    pace_display = "—"
-    if kpis.get("z2_pace_min_per_mi"):
-        pace_display = format_pace_sec_per_mi(kpis["z2_pace_min_per_mi"] * 60)
-
-    data_block = (
-        f"Week: {kpis.get('week_start')} to {kpis.get('week_end')}\n"
-        f"Easy runs: {kpis.get('easy_run_count', 0)}\n"
-        f"HR drift: {kpis.get('hr_drift_pct', '—')}% ({bands.get('hr_drift', 'no data')})\n"
-        f"Avg. Z2 pace: {pace_display} ({bands.get('z2_pace', 'no data')})\n"
-        f"Efficiency: {kpis.get('efficiency', '—')} ({bands.get('efficiency', 'no data')})\n"
-        f"Overall: {overall}\n"
-    )
-
-    delta_block = ""
-    if deltas.get("hr_drift_delta") is not None:
-        sign = "+" if deltas["hr_drift_delta"] > 0 else ""
-        delta_block += f"HR drift vs last week: {sign}{deltas['hr_drift_delta']}%\n"
-    if deltas.get("z2_pace_delta") is not None:
-        sign = "+" if deltas["z2_pace_delta"] > 0 else ""
-        delta_block += (
-            f"Avg. Z2 pace vs last week: {sign}{deltas['z2_pace_delta']} min/mi\n"
-        )
-    if deltas.get("efficiency_delta") is not None:
-        sign = "+" if deltas["efficiency_delta"] > 0 else ""
-        delta_block += f"Efficiency vs last week: {sign}{deltas['efficiency_delta']}\n"
-
-    deltas_section = (
-        "Deltas:\n" + delta_block if delta_block else "No prior week for comparison."
-    )
-
-    return (
-        f"Tone: {level_cfg['tone']}\n\n"
-        f"KPI Data:\n{data_block}\n"
-        f"{deltas_section}\n"
-        "Generate the weekly summary JSON."
-    )
-
-
-def _generate_llm_summary(
-    kpis: Dict[str, Any],
-    bands: Dict[str, Optional[str]],
-    deltas: Dict[str, Optional[float]],
-    overall: str,
-    user_id: str,
-    coaching_level: str = "beginner",
-) -> Tuple[Optional[str], Optional[str]]:
-    """Returns (summary_text, action_text). Fails gracefully — never blocks insight storage."""
-    try:
-        service = get_openai_service()
-        model = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
-
-        prompt = _build_summary_prompt(kpis, bands, deltas, overall, coaching_level)
-
-        response = service.chat_completion(
-            messages=[
-                {"role": "system", "content": _SUMMARY_SYSTEM},
-                {"role": "user", "content": prompt},
-            ],
-            user_id=user_id,
-            model=model,
-            temperature=0.6,
-            max_tokens=300,
-            require_json=True,
-        )
-
-        parsed = json.loads(response.content)
-        return parsed.get("summary"), parsed.get("action")
-    except Exception:
-        logger.warning(
-            "LLM summary generation failed; storing insight without summary",
-            exc_info=True,
-        )
-        return None, None
-
-
-# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -614,10 +517,17 @@ def generate_weekly_insight(
     session: Session,
     user_id: str,
     ref_date: Optional[date] = None,
+    insight_week: Literal["completed", "in_progress"] = "completed",
 ) -> Dict[str, Any]:
     """
     Compute and store a weekly training insight for a user.
     Idempotent: re-running for the same week updates the existing row.
+
+    ``insight_week``:
+    - ``completed`` (default): last fully completed Mon–Sun week (cron / batch).
+    - ``in_progress``: calendar week containing ``ref_date``; KPIs use
+      Monday through ``min(ref_date, Sunday)`` so mid-week activity updates
+      the same ``week_start`` row.
     """
     if ref_date is None:
         ref_date = date.today()
@@ -631,9 +541,15 @@ def generate_weekly_insight(
             "message": "No linked Strava athlete; weekly insight not generated.",
         }
 
-    week_start, week_end = _week_bounds(ref_date)
+    if insight_week == "in_progress":
+        week_start, week_end = calendar_week_containing(ref_date)
+        kpi_end = min(ref_date, week_end)
+    else:
+        week_start, week_end = _week_bounds(ref_date)
+        kpi_end = week_end
+
     kpis_by_system = _fetch_week_kpis_by_system(
-        session, user_id, week_start, week_end, athlete_id
+        session, user_id, week_start, kpi_end, athlete_id
     )
     easy_kpis = kpis_by_system[TrainingSystem.EASY]
 
@@ -669,29 +585,8 @@ def generate_weekly_insight(
     pace_band = bands["z2_pace"]
     eff_band = bands["efficiency"]
 
-    coaching_level = "beginner"
-    try:
-        pref_row = session.execute(
-            text(
-                "SELECT coaching_level FROM user_coach_preferences "
-                "WHERE user_id = CAST(:uid AS uuid)"
-            ),
-            {"uid": user_id},
-        ).fetchone()
-        if pref_row and pref_row.coaching_level:
-            coaching_level = pref_row.coaching_level
-    except Exception:
-        pass
-
-    kpi_payload = {
-        **kpis,
-        "week_start": str(week_start),
-        "week_end": str(week_end),
-    }
-
-    summary_text, action_text = _generate_llm_summary(
-        kpi_payload, bands, deltas, overall, user_id, coaching_level
-    )
+    summary_text: Optional[str] = None
+    action_text: Optional[str] = None
 
     snapshot = {
         "kpis": {k: v for k, v in kpis.items() if k != "avg_hr"},
@@ -700,7 +595,6 @@ def generate_weekly_insight(
         "overall_band": overall,
         "training_system": TrainingSystem.EASY.value,
         "systems": pipeline["systems"],
-        "coaching_level": coaching_level,
     }
 
     session.execute(
@@ -791,7 +685,10 @@ def get_latest_weekly_insight(session: Session, user_id: str) -> Dict[str, Any]:
     if not row:
         return {
             "has_insight": False,
-            "message": "No weekly insights yet. We'll generate your first summary after a week of easy runs.",
+            "message": (
+                "No weekly insight rows yet. Trend charts can still appear from your "
+                "history once we have enough weeks of stored metrics (including easy runs)."
+            ),
             "systems": {},
             "hr_drift_band_zones": hr_drift_band_zones_chart(),
             "aerobic_efficiency_band_zones": aerobic_efficiency_band_zones_chart(),
