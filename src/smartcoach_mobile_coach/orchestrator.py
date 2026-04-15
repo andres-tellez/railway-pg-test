@@ -10,6 +10,10 @@ Max loops default 8; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–1
 
 Opening "how was my run?"–style turns can use ``run_recap_fastpath`` (single
 ``chat_completion`` without tools) when ``SMARTCOACH_RUN_RECAP_FASTPATH`` is enabled.
+
+Split-detail turns (intent ``split_detail``) can use ``prefetch_split_detail`` +
+``system_appendix_for_split_prefetch`` (single ``chat_completion`` without tools)
+when ``SMARTCOACH_SPLIT_DETAIL_FASTPATH`` is enabled. See ``docs/smartcoach_mobile_coach/README.md``.
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionServ
 from src.services.security.external_apis.openai_service import get_openai_service
 from src.smartcoach_mobile_coach.agent_tools import execute_tool
 from src.smartcoach_mobile_coach.dialogue_manager import (
+    ResponseDirective,
     classify_turn,
     extract_conversation_state,
     plan_response,
@@ -801,6 +806,69 @@ STYLE
 """
 
 
+# ---------------------------------------------------------------------------
+# Prompt experiment: minimal layers (ChatGPT-feel A/B) — original SYSTEM_PROMPT_BASE
+# stays intact above. Toggle with env vars (default off). Logs
+# [coach_prompt_experiment] when any flag is active.
+#
+# Motivation (short): the full stack concatenates a very long base + preferences
+# + a long per-turn response_directive_section that re-states OUTPUT STRUCTURE
+# rules — that duplication strongly drives “template voice.” These flags let
+# you isolate impact without deleting the production contract.
+#
+# | Env | Effect |
+# |-----|--------|
+# | SMARTCOACH_EXPERIMENT_MINIMAL_BASE=1 | Replace SYSTEM_PROMPT_BASE with MINIMAL_SYSTEM_PROMPT_BASE (short + grounding). |
+# | SMARTCOACH_EXPERIMENT_MINIMAL_PREFS=1 | Omit _coaching_preferences_section (metric priority / presentation rubric). |
+# | SMARTCOACH_EXPERIMENT_MINIMAL_DIRECTIVE=1 | Omit full response_directive_section; use a tiny stub (turn/intent/mode + one grounding line). |
+#
+# Device anchor, HR calibration (when uncalibrated), thread-led context, and
+# race_projection intent override are unchanged so “today,” continuity, and
+# calibration hints still work.
+#
+# Combinable: e.g. only DIRECTIVE=1 is the highest-leverage first experiment.
+# ---------------------------------------------------------------------------
+
+MINIMAL_SYSTEM_PROMPT_BASE = """
+You are SmartCoach — a knowledgeable, conversational running coach chatting with one athlete.
+Match the user’s tone and scope: answer what they asked in natural language; vary structure when it fits.
+For any run metrics (pace, HR, distance, time, drift, splits, zones, etc.), use **only** values from tool results in this turn — never invent, estimate from memory, or contradict tool payloads.
+Call tools when the question depends on their data; for general concepts or reassurance without a data ask, reply without tools unless they want their numbers.
+Stay concise unless they ask for depth; skip filler openers (“Great question!”, “I’d be happy to…”).
+Do not provide medical diagnoses; suggest a professional for serious pain or health concerns.
+""".strip()
+
+
+def _env_experiment_minimal_flag(name: str) -> bool:
+    """True when env var is 1/true/yes/on (case-insensitive)."""
+    raw = (os.getenv(name) or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _experiment_response_directive_stub(directive: ResponseDirective) -> str:
+    """
+    Tiny stand-in for response_directive_section() when
+    SMARTCOACH_EXPERIMENT_MINIMAL_DIRECTIVE is on — drops interaction-mode
+    essays, investigation-first gate walls, natural_style_notes re-runs, etc.
+    """
+    inv = "yes" if directive.investigate_first else "no"
+    depth = "yes" if directive.coaching_depth_requested else "no"
+    return (
+        "## Response directive (EXPERIMENT — stub)\n"
+        f"- Turn type: **{directive.turn_type}** | Intent: **{directive.intent}** | "
+        f"Interaction mode: **{directive.interaction_mode}** | "
+        f"Investigation-first: **{inv}** | Coaching depth requested: **{depth}**\n"
+        "- Write like a human coach in chat; answer the user’s latest message first on follow-ups.\n"
+        "- **Numbers:** tool-grounded only; never fabricate metrics.\n"
+        "- Full per-turn rubric is **disabled** for this experiment "
+        "(`SMARTCOACH_EXPERIMENT_MINIMAL_DIRECTIVE`).\n"
+    )
+
+
+def _join_nonempty_system_sections(*sections: str) -> str:
+    return "\n\n".join(s.strip() for s in sections if (s or "").strip())
+
+
 _DEFAULT_PREFS = {
     "coaching_level": "beginner",
     "run_summary_priority": None,
@@ -1036,20 +1104,36 @@ def run_mobile_agent_turn(
         response_directive.target_length,
     )
 
-    system_content = (
-        SYSTEM_PROMPT_BASE
-        + "\n\n"
-        + _coaching_preferences_section(prefs)
-        + "\n\n"
-        + _device_anchor_system_section(anchor_local_date, client_timezone)
-        + "\n\n"
-        + _hr_calibration_system_section(session, internal_user_id)
-        + "\n\n"
-        + response_directive_section(response_directive)
-        + "\n\n"
-        + _thread_led_system_section(thread_ctx)
-        + "\n"
-        + _intent_priority_override_section(response_directive.intent)
+    # --- Prompt experiment (optional): see MINIMAL_SYSTEM_PROMPT_BASE block above ---
+    use_min_base = _env_experiment_minimal_flag("SMARTCOACH_EXPERIMENT_MINIMAL_BASE")
+    use_min_prefs = _env_experiment_minimal_flag("SMARTCOACH_EXPERIMENT_MINIMAL_PREFS")
+    use_min_directive = _env_experiment_minimal_flag(
+        "SMARTCOACH_EXPERIMENT_MINIMAL_DIRECTIVE"
+    )
+    if use_min_base or use_min_prefs or use_min_directive:
+        logger.info(
+            "[coach_prompt_experiment] user=%s… minimal_base=%s minimal_prefs=%s minimal_directive=%s",
+            str(internal_user_id)[:8],
+            use_min_base,
+            use_min_prefs,
+            use_min_directive,
+        )
+
+    base_block = MINIMAL_SYSTEM_PROMPT_BASE if use_min_base else SYSTEM_PROMPT_BASE
+    prefs_block = "" if use_min_prefs else _coaching_preferences_section(prefs)
+    directive_block = (
+        _experiment_response_directive_stub(response_directive)
+        if use_min_directive
+        else response_directive_section(response_directive)
+    )
+    system_content = _join_nonempty_system_sections(
+        base_block,
+        prefs_block,
+        _device_anchor_system_section(anchor_local_date, client_timezone),
+        _hr_calibration_system_section(session, internal_user_id),
+        directive_block,
+        _thread_led_system_section(thread_ctx),
+        _intent_priority_override_section(response_directive.intent),
     )
     messages: List[Dict[str, Any]] = [{"role": "system", "content": system_content}]
     for m in conversation_history[-12:]:

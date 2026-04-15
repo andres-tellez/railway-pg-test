@@ -1,5 +1,9 @@
 # Coach Architecture
 
+**Not the production mobile Coach tab agent.** This package (`coach/`) and `tests/coach/` are the **experimental / v2** modular coach stack. For the **shipped** Flask chat agent (`src/smartcoach_mobile_coach/`), see **`docs/smartcoach_mobile_coach/README.md`** in this repo.
+
+---
+
 AI-powered running coach system with modular architecture.
 
 ## Structure
