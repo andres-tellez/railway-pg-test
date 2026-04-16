@@ -7,7 +7,10 @@ logged in orchestrator metadata.
 
 Pre-fetches find_runs_by_date + get_run_summary server-side, optionally adds
 **comparison_sessions** (prior days, facts-only, no KPIs) via
-``run_recap_comparison_bundle``, then uses a single OpenAI chat completion
+``run_recap_comparison_bundle``, and **week_volume_context** (this ISO week vs
+last ISO week run count + miles via ``run_recap_week_volume_bundle``). When
+``comparison_sessions`` is non-empty, the system appendix **requires** one
+grounded day-to-day contrast from that JSON only. Then uses a single OpenAI chat completion
 **without** tools so the model does not spend 2+ extra round-trips deciding
 which tools to call.
 
@@ -33,6 +36,10 @@ from src.smartcoach_mobile_coach.run_recap_comparison_bundle import (
     run_recap_comparison_bundle_enabled,
 )
 from src.smartcoach_mobile_coach.run_recap_policy import decide_run_recap_fastpath
+from src.smartcoach_mobile_coach.run_recap_week_volume_bundle import (
+    build_week_volume_context_for_llm,
+    run_recap_week_volume_bundle_enabled,
+)
 
 
 def run_recap_fastpath_retry_on_empty_enabled() -> bool:
@@ -134,11 +141,18 @@ def prefetch_opening_anchor_run_recap(
             exclude_activity_id=aid,
         )
 
+    week_volume_for_llm: Optional[Dict[str, Any]] = None
+    if run_recap_week_volume_bundle_enabled():
+        week_volume_for_llm = build_week_volume_context_for_llm(
+            session, internal_user_id, ld
+        )
+
     return {
         "activity_id": aid,
         "find_runs_by_date": fr,
         "get_run_summary": summary,
         "comparison_for_llm": comparison_for_llm,
+        "week_volume_for_llm": week_volume_for_llm,
     }
 
 
@@ -245,6 +259,14 @@ def _compact_run_context_for_llm(
     comp = prefetch.get("comparison_for_llm")
     if isinstance(comp, list) and comp:
         out["comparison_sessions"] = comp
+    wv = prefetch.get("week_volume_for_llm")
+    if isinstance(wv, dict) and wv.get("this_week") and wv.get("last_week"):
+        out["week_volume_context"] = {
+            "scope": wv.get("scope"),
+            "anchor_local_date": wv.get("anchor_local_date"),
+            "this_week": wv.get("this_week"),
+            "last_week": wv.get("last_week"),
+        }
     return out
 
 
@@ -305,17 +327,35 @@ def system_appendix_for_prefetch(
                 "as a numeric anchor **for this reply** when those fields are absent from the JSON.",
             ]
         )
+    if compact.get("week_volume_context"):
+        lines.extend(
+            [
+                "**Week volume (`week_volume_context`):** Compare **`this_week`** vs **`last_week`** "
+                "using **only** `run_count` and `total_mi_display` (and `week_label` / `week_monday` "
+                "for wording). You **should** weave **at most one** short clause into the reply "
+                "(may merge with the today recap) — e.g. volume or run frequency vs last week. "
+                "**Do not** invent other weekly stats, KPIs, or trends not in this JSON.",
+            ]
+        )
     if compact.get("comparison_sessions"):
         lines.extend(
             [
-                "**Optional context — `comparison_sessions`:** Each item is another **recent** "
-                "calendar day (before the anchor) with **exactly one** run, **headline facts only** "
-                "(no KPIs). You may draw **at most one** short, grounded contrast (pace, HR, distance, "
-                "or title) if it helps the athlete feel **seen** and motivated — use **only** fields "
-                "present in the JSON. Close with **one** practical suggestion to keep improving "
-                "(tone, consistency, or recovery — not medical). **Do not** invent runs, dates, or "
-                "numbers beyond this payload.",
+                "**Required — `comparison_sessions`:** Each item is a **prior** calendar day (before "
+                "the anchor) with **exactly one** run — **headline facts only** (no KPIs). You **must** "
+                "include **exactly one** short sentence that contrasts **today’s** run with **one** of "
+                "those items, using **only** fields present in the JSON for anchor `facts` and that "
+                "item (pace, HR, distance, time, or title). When you reference the prior day, use its "
+                "**calendar_local_date** from the JSON. Avoid sweeping claims (“you’re clearly "
+                "improving”) unless the numbers in JSON plainly support it; prefer “compared to your "
+                "[date] run, today …”. Then add **one** practical suggestion (consistency, recovery, "
+                "or effort choice — not medical). **Do not** invent runs, dates, or numbers outside this JSON.",
             ]
+        )
+    else:
+        lines.append(
+            "**Prior-run contrast:** The JSON has **no** `comparison_sessions` — do **not** describe "
+            "another **specific day's** run from memory. Anchor metrics come from today's `facts` only; "
+            "week-to-week volume may use `week_volume_context` if present."
         )
     return "\n".join(lines)
 

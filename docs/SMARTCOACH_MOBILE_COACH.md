@@ -29,6 +29,7 @@
 | `src/smartcoach_mobile_coach/orchestrator.py` | Tool loop, fastpaths, system prompt assembly |
 | `src/smartcoach_mobile_coach/run_recap_fastpath.py` | Opening recap + split-detail prefetch, no-tools completions |
 | `src/smartcoach_mobile_coach/run_recap_comparison_bundle.py` | Optional prior single-run-day facts (KPI-free) for recap LLM appendix |
+| `src/smartcoach_mobile_coach/run_recap_week_volume_bundle.py` | Optional this vs last ISO week volume (KPI-free) for recap LLM appendix |
 | `src/smartcoach_mobile_coach/run_recap_policy.py` | Recap fastpath eligibility + reason codes |
 | `src/smartcoach_mobile_coach/dialogue_manager.py` | Turn / intent / response directive |
 | `src/smartcoach_mobile_coach/agent_tools.py` | `execute_tool`: `find_runs_by_date`, `get_run_summary`, `get_run_splits`, … (legacy names `list_runs_for_local_date` / `get_run_insight` map here) |
@@ -55,6 +56,7 @@ Registered in `src/app.py` as `smartcoach_mobile_coach_bp`.
 | `SMARTCOACH_RUN_RECAP_COMPARISON_BUNDLE` | `1` | Prior **single-run** local days (facts-only `comparison_sessions` in appendix). `0` disables. |
 | `SMARTCOACH_RUN_RECAP_COMPARISON_LOOKBACK_DAYS` | `7` | Days before anchor to scan; clamped `1`–`21`. |
 | `SMARTCOACH_RUN_RECAP_COMPARISON_MAX` | `2` | Max prior days attached; clamped `1`–`3`. |
+| `SMARTCOACH_RUN_RECAP_WEEK_VOLUME_BUNDLE` | `1` | Recap appendix: **`week_volume_context`** (this vs last ISO week miles + run count from `aggregate_runs_in_range`). `0` disables. |
 | `SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM` | `1` | Coach tool `get_weekly_training_insight`: **orientation** payload by default; set `include_kpi_detail` true for full KPIs / zone charts. `0` = always full from tool. |
 | `SMARTCOACH_SPLIT_DETAIL_FASTPATH` | `1` | Split-detail single-call fastpath. |
 | `SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE` | `off` | When `1` / `true`, `POST …/agent-messages` may honor header **`X-SmartCoach-Eval-Model`** with an allowlisted OpenAI model (`gpt-4o`, `gpt-4o-mini`, `gpt-4o-2024-08-06`) for **scripted eval only**. **Leave off in production** unless you accept authenticated users picking the model. Response includes **`X-SmartCoach-Model-Used`**. |
