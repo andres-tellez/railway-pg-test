@@ -12,6 +12,7 @@ from src.smartcoach_mobile_coach.run_recap_comparison_bundle import (
 )
 from src.smartcoach_mobile_coach.run_recap_fastpath import (
     _compact_run_context_for_llm,
+    system_appendix_for_prefetch,
 )
 
 
@@ -127,3 +128,32 @@ def test_compact_includes_comparison_sessions():
 def test_comparison_bundle_env_off(monkeypatch):
     monkeypatch.setenv("SMARTCOACH_RUN_RECAP_COMPARISON_BUNDLE", "0")
     assert not run_recap_comparison_bundle_enabled()
+
+
+def test_appendix_requires_comparison_when_sessions_present():
+    prefetch = {
+        "activity_id": 1,
+        "get_run_summary": {"facts": {"title": "Today", "avg_pace_display": "9:00/mi"}},
+        "comparison_for_llm": [
+            {
+                "calendar_local_date": "2026-04-15",
+                "activity_id": 2,
+                "facts": {"title": "Prior", "avg_pace_display": "9:30/mi"},
+            }
+        ],
+    }
+    out = system_appendix_for_prefetch(prefetch, "2026-04-16")
+    assert "Required — `comparison_sessions`" in out
+    assert "You **must**" in out
+    assert "Optional context" not in out
+
+
+def test_appendix_forbids_memory_comparison_when_sessions_absent():
+    prefetch = {
+        "activity_id": 1,
+        "get_run_summary": {"facts": {"title": "Today"}},
+        "comparison_for_llm": [],
+    }
+    out = system_appendix_for_prefetch(prefetch, "2026-04-16")
+    assert "**Prior-run contrast:**" in out
+    assert "no** `comparison_sessions`" in out

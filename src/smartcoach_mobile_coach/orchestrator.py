@@ -1181,11 +1181,12 @@ def run_mobile_agent_turn(
         )
         if prefetch:
             logger.info(
-                "[coach_fastpath] run_recap_opening user=%s… activity_id=%s gate=%s comparisons=%s",
+                "[coach_fastpath] run_recap_opening user=%s… activity_id=%s gate=%s comparisons=%s week_volume=%s",
                 str(internal_user_id)[:8],
                 prefetch["activity_id"],
                 recap_decision.reason_code,
                 len(prefetch.get("comparison_for_llm") or []),
+                1 if prefetch.get("week_volume_for_llm") else 0,
             )
 
     if prefetch:
