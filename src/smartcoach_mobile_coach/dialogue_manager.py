@@ -810,7 +810,15 @@ def infer_intent(user_message: str) -> str:
         k in t
         for k in (
             "how was my run",
+            "how's my run",
+            "hows my run",
+            "how is my run",
+            "how did my run",
+            "how went my run",
             "analyze my run",
+            "how did today go",
+            "how was today",
+            "how did today",
             "this run",
             "that run",
             "last run",

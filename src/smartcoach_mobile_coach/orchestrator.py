@@ -10,6 +10,9 @@ Max loops default 8; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–1
 
 Opening "how was my run?"–style turns can use ``run_recap_fastpath`` (single
 ``chat_completion`` without tools) when ``SMARTCOACH_RUN_RECAP_FASTPATH`` is enabled.
+Gating lives in ``run_recap_policy`` (first user turn + phrase match); metadata includes
+``run_recap_fastpath_gate``. Empty first completion may trigger one retry
+(``SMARTCOACH_RUN_RECAP_FASTPATH_RETRY``) before the full tool loop.
 The LLM appendix uses **facts-only** compact JSON by default
 (``SMARTCOACH_RUN_RECAP_PREFETCH_SLIM``); full ``get_run_summary`` is still returned for the card.
 
@@ -41,13 +44,15 @@ from src.smartcoach_mobile_coach.dialogue_manager import (
     response_directive_section,
 )
 from src.smartcoach_mobile_coach.run_recap_fastpath import (
-    prefetch_split_detail,
+    RUN_RECAP_FASTPATH_RETRY_APPENDIX,
     prefetch_opening_anchor_run_recap,
+    prefetch_split_detail,
+    run_recap_fastpath_retry_on_empty_enabled,
     system_appendix_for_prefetch,
     system_appendix_for_split_prefetch,
     wants_split_detail_fastpath,
-    wants_run_recap_fastpath,
 )
+from src.smartcoach_mobile_coach.run_recap_policy import decide_run_recap_fastpath
 from src.smartcoach_mobile_coach.thread_derived_context import (
     DerivedThreadCoachContext,
     derive_thread_coach_context,
@@ -1158,8 +1163,15 @@ def run_mobile_agent_turn(
     max_loops = _max_agent_loops()
     latest_run_summary: Optional[Dict[str, Any]] = None
 
+    recap_decision = decide_run_recap_fastpath(user_message, conversation_history)
+    timings_ms["run_recap_fastpath_gate"] = {
+        "eligible": recap_decision.eligible,
+        "reason_code": recap_decision.reason_code,
+        "prior_user_turns": recap_decision.prior_user_turn_count,
+    }
+
     prefetch: Optional[Dict[str, Any]] = None
-    if wants_run_recap_fastpath(user_message, conversation_history):
+    if recap_decision.eligible:
         _tp0 = time.perf_counter()
         prefetch = prefetch_opening_anchor_run_recap(
             session, internal_user_id, anchor_local_date
@@ -1169,9 +1181,10 @@ def run_mobile_agent_turn(
         )
         if prefetch:
             logger.info(
-                "[coach_fastpath] run_recap_opening user=%s… activity_id=%s",
+                "[coach_fastpath] run_recap_opening user=%s… activity_id=%s gate=%s",
                 str(internal_user_id)[:8],
                 prefetch["activity_id"],
+                recap_decision.reason_code,
             )
 
     if prefetch:
@@ -1214,10 +1227,56 @@ def run_mobile_agent_turn(
         else:
             text_fp = (cc_result.content or "").strip()
             ok_payload = _valid_run_summary_tool_payload(prefetch["get_run_summary"])
+            completions_for_usage: List[Any] = [cc_result]
+
+            if (
+                not text_fp
+                and run_recap_fastpath_retry_on_empty_enabled()
+                and ok_payload is not None
+            ):
+                augmented_retry = augmented_system + RUN_RECAP_FASTPATH_RETRY_APPENDIX
+                cc_retry: List[Dict[str, str]] = [
+                    {"role": "system", "content": augmented_retry}
+                ]
+                for m in conversation_history[-12:]:
+                    if m.get("role") in ("user", "assistant") and m.get("content"):
+                        cc_retry.append(
+                            {
+                                "role": str(m["role"]),
+                                "content": str(m.get("content", "")).strip(),
+                            }
+                        )
+                cc_retry.append({"role": "user", "content": user_message.strip()})
+                try:
+                    _t_r0 = time.perf_counter()
+                    cc_result_retry = service.chat_completion(
+                        messages=cc_retry,
+                        user_id=str(internal_user_id),
+                        model=model,
+                        temperature=min(temperature, 0.35),
+                        max_tokens=_fp_max_tokens,
+                        timeout=timeout,
+                    )
+                    timings_ms["fastpath_retry_llm_ms"] = round(
+                        (time.perf_counter() - _t_r0) * 1000, 2
+                    )
+                    completions_for_usage.append(cc_result_retry)
+                    text_fp = (cc_result_retry.content or "").strip()
+                    logger.info(
+                        "[coach_fastpath] run_recap_empty_retry user=%s… len=%s",
+                        str(internal_user_id)[:8],
+                        len(text_fp),
+                    )
+                except Exception:
+                    logger.exception(
+                        "[coach_fastpath] retry chat_completion failed; using full agent loop"
+                    )
+
             if text_fp and ok_payload is not None:
-                for k in total_usage:
-                    total_usage[k] = cc_result.usage.get(k, 0)
-                total_cost = cc_result.cost
+                for res in completions_for_usage:
+                    for k in total_usage:
+                        total_usage[k] += res.usage.get(k, 0)
+                    total_cost += res.cost
                 loops = 1
                 timings_ms["agent_loop_rounds"] = []
                 timings_ms["agent_orchestrator_total_ms"] = round(

@@ -1,12 +1,16 @@
 """
-Opening-turn fast path for "how was my run?" style questions.
+Anchor-day run recap fast path for "how was my run?" style questions.
+
+Eligibility (phrase match, blocks, first user turn) lives in
+``run_recap_policy.decide_run_recap_fastpath`` — see that module for reason codes
+logged in orchestrator metadata.
 
 Pre-fetches find_runs_by_date + get_run_summary server-side, then uses a single
 OpenAI chat completion **without** tools so the model does not spend 2+ extra
 round-trips deciding which tools to call.
 
 Prefetch uses **get_run_summary** with execution KPIs for the **HTTP/card**
-payload (RunSummaryCard drift row, etc.). The **LLM system appendix** uses a
+payload (structured run summary). The **LLM system appendix** uses a
 **compact** JSON slice: by default **facts only** (session headline: distance,
 pace, time, HR averages when present) so the opener does not anchor on drift /
 Z2 / band KPIs. Set ``SMARTCOACH_RUN_RECAP_PREFETCH_SLIM=0`` to put
@@ -22,13 +26,27 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from src.smartcoach_mobile_coach.run_recap_policy import decide_run_recap_fastpath
 
-def _fastpath_enabled() -> bool:
-    return os.getenv("SMARTCOACH_RUN_RECAP_FASTPATH", "1").strip().lower() not in (
+
+def run_recap_fastpath_retry_on_empty_enabled() -> bool:
+    """Second completion when the first fastpath reply is empty (saves full tool loop)."""
+    return (
+        os.getenv("SMARTCOACH_RUN_RECAP_FASTPATH_RETRY", "1")
+    ).strip().lower() not in (
         "0",
         "false",
         "no",
+        "off",
     )
+
+
+# Appended to system on empty first completion only.
+RUN_RECAP_FASTPATH_RETRY_APPENDIX = (
+    "\n\n## Required output\n"
+    "Your previous attempt produced no text. Reply with **2–4 sentences** of coaching "
+    "about this run using only the pre-loaded JSON. **Do not** leave the reply empty."
+)
 
 
 def _split_fastpath_enabled() -> bool:
@@ -49,57 +67,16 @@ def _run_recap_prefetch_slim_for_llm() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
-def _is_opening_turn(conversation_history: List[Dict[str, str]]) -> bool:
-    """True when there is no prior assistant prose (first coach exchange)."""
-    return not any(
-        m.get("role") == "assistant" and (m.get("content") or "").strip()
-        for m in conversation_history
-    )
-
-
 def wants_run_recap_fastpath(
     user_message: str, conversation_history: List[Dict[str, str]]
 ) -> bool:
     """
-    Narrow, conservative matcher: anchor-day run recap only, opening thread.
+    Anchor-day run recap fastpath gate.
 
-    Excludes follow-ups ("that run"), "last run" (may mean most recent, not
-    anchor day), and explicit past-date phrases.
+    Delegates to :func:`run_recap_policy.decide_run_recap_fastpath` (phrase
+    match, safety blocks, first user turn in thread).
     """
-    if not _fastpath_enabled():
-        return False
-    if not _is_opening_turn(conversation_history):
-        return False
-    t = (user_message or "").lower().strip()
-    if not t:
-        return False
-    blocked = (
-        "last run",
-        "that run",
-        "last race",
-        "this run",
-        "yesterday",
-        "last week",
-        "last sunday",
-        "last monday",
-        "on sunday",
-        "on monday",
-    )
-    if any(b in t for b in blocked):
-        return False
-    # Opening message asks for KPI/drift detail: fastpath has no tools — use
-    # the normal loop so get_run_summary can supply execution KPIs.
-    if "drift" in t:
-        return False
-    phrases = (
-        "how was my run",
-        "how did my run go",
-        "how did today go",
-        "how was today",
-        "how did today",
-        "analyze my run",
-    )
-    return any(p in t for p in phrases)
+    return decide_run_recap_fastpath(user_message, conversation_history).eligible
 
 
 def prefetch_opening_anchor_run_recap(
@@ -129,7 +106,7 @@ def prefetch_opening_anchor_run_recap(
         return None
 
     # Opening recap: skip peer tables + saved HR profile (large / slow). Keep execution
-    # KPIs so RunSummaryCard drift row and coaching still have drift + Z2 signals.
+    # KPIs in the structured payload for the app card / continuity.
     summary = tool_get_run_summary(
         session,
         internal_user_id,
