@@ -5,9 +5,11 @@ Eligibility (phrase match, blocks, first user turn) lives in
 ``run_recap_policy.decide_run_recap_fastpath`` — see that module for reason codes
 logged in orchestrator metadata.
 
-Pre-fetches find_runs_by_date + get_run_summary server-side, then uses a single
-OpenAI chat completion **without** tools so the model does not spend 2+ extra
-round-trips deciding which tools to call.
+Pre-fetches find_runs_by_date + get_run_summary server-side, optionally adds
+**comparison_sessions** (prior days, facts-only, no KPIs) via
+``run_recap_comparison_bundle``, then uses a single OpenAI chat completion
+**without** tools so the model does not spend 2+ extra round-trips deciding
+which tools to call.
 
 Prefetch uses **get_run_summary** with execution KPIs for the **HTTP/card**
 payload (structured run summary). The **LLM system appendix** uses a
@@ -26,6 +28,10 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from src.smartcoach_mobile_coach.run_recap_comparison_bundle import (
+    build_comparison_sessions_facts_only,
+    run_recap_comparison_bundle_enabled,
+)
 from src.smartcoach_mobile_coach.run_recap_policy import decide_run_recap_fastpath
 
 
@@ -119,7 +125,21 @@ def prefetch_opening_anchor_run_recap(
     if summary.get("error"):
         return None
 
-    return {"activity_id": aid, "find_runs_by_date": fr, "get_run_summary": summary}
+    comparison_for_llm: List[Dict[str, Any]] = []
+    if run_recap_comparison_bundle_enabled():
+        comparison_for_llm = build_comparison_sessions_facts_only(
+            session,
+            internal_user_id,
+            ld,
+            exclude_activity_id=aid,
+        )
+
+    return {
+        "activity_id": aid,
+        "find_runs_by_date": fr,
+        "get_run_summary": summary,
+        "comparison_for_llm": comparison_for_llm,
+    }
 
 
 def wants_split_detail_fastpath(intent: str) -> bool:
@@ -222,6 +242,9 @@ def _compact_run_context_for_llm(
         zones = summary.get("hr_drift_band_zones")
         if zones is not None:
             out["hr_drift_band_zones"] = zones
+    comp = prefetch.get("comparison_for_llm")
+    if isinstance(comp, list) and comp:
+        out["comparison_sessions"] = comp
     return out
 
 
@@ -280,6 +303,18 @@ def system_appendix_for_prefetch(
                 "Do **not** invent or guess those values. The next user turn uses the normal tool "
                 "loop if they ask for drift/KPIs. **Ignore** any global instruction to “prefer HR drift” "
                 "as a numeric anchor **for this reply** when those fields are absent from the JSON.",
+            ]
+        )
+    if compact.get("comparison_sessions"):
+        lines.extend(
+            [
+                "**Optional context — `comparison_sessions`:** Each item is another **recent** "
+                "calendar day (before the anchor) with **exactly one** run, **headline facts only** "
+                "(no KPIs). You may draw **at most one** short, grounded contrast (pace, HR, distance, "
+                "or title) if it helps the athlete feel **seen** and motivated — use **only** fields "
+                "present in the JSON. Close with **one** practical suggestion to keep improving "
+                "(tone, consistency, or recovery — not medical). **Do not** invent runs, dates, or "
+                "numbers beyond this payload.",
             ]
         )
     return "\n".join(lines)

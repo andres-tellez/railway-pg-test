@@ -16,7 +16,7 @@
 | **`scripts/setup_coach_tools.py`** | Tool names, descriptions, schemas for DB + OpenAI tool loop. | Adding/renaming tools or changing tool descriptions. |
 | **Module docstrings** (`orchestrator.py`, `run_recap_fastpath.py`, `dialogue_manager.py`, `routes.py`) | Implementation detail next to code. | Always update when behavior changes (even if this README is updated in the same PR). |
 
-**PR rule:** If you touch `run_mobile_agent_turn`, fastpath helpers, `agent_messages` request/response shape, or tool injection in `orchestrator.py` / `routes.py` / `run_recap_fastpath.py`, update **this README** (and [`SMARTCOACH_MOBILE_COACH.md`](../SMARTCOACH_MOBILE_COACH.md) if env or HTTP contract changed).
+**PR rule:** If you touch `run_mobile_agent_turn`, fastpath helpers, `agent_messages` request/response shape, or tool injection in `orchestrator.py` / `routes.py` / `run_recap_fastpath.py` / `run_recap_comparison_bundle.py`, update **this README** (and [`SMARTCOACH_MOBILE_COACH.md`](../SMARTCOACH_MOBILE_COACH.md) if env or HTTP contract changed).
 
 ---
 
@@ -47,7 +47,7 @@ flowchart TB
 
 1. **HTTP** — Auth, rate limit, load/save `ConversationMessage`, build **plain-text** history for the LLM vs **raw** JSON for thread-derived `activity_id` (`thread_derived_context.py`).
 2. **Orchestration** — System prompt assembly, then one of:
-   - **Run recap fastpath** — Opening anchor-day recap; prefetches `find_runs_by_date` + `get_run_summary` (execution KPIs for the **card**); **LLM appendix** uses compact **facts-only** JSON by default (`SMARTCOACH_RUN_RECAP_PREFETCH_SLIM`); one `chat_completion` without tools; returns structured `run_summary` when valid. Messages that ask for **drift** in the same turn skip fastpath so the tool loop can answer.
+   - **Run recap fastpath** — Opening anchor-day recap; prefetches `find_runs_by_date` + `get_run_summary` (execution KPIs for the **card**); **LLM appendix** uses compact **facts-only** JSON by default (`SMARTCOACH_RUN_RECAP_PREFETCH_SLIM`); optionally prefetches **1–2 prior calendar days** that each had a **single** run (`run_recap_comparison_bundle.py`, `SMARTCOACH_RUN_RECAP_COMPARISON_*`) so the model can sound grounded with a short contrast—**no KPI/drift** in that comparison JSON; one `chat_completion` without tools; returns structured `run_summary` when valid. Messages that ask for **drift** in the same turn skip fastpath so the tool loop can answer.
    - **Split detail fastpath** — Intent `split_detail`; prefetches `get_run_splits` after resolving `activity_id` (hint, thread, or single run on anchor date); one `chat_completion` without tools; plain text response + metadata `split_detail_fastpath`.
    - **Tool loop** — Default: bounded `chat_completion_with_tools` + `execute_tool`.
 3. **Tools** — Definitions from **`coach_tools`** (seeded by `scripts/setup_coach_tools.py`); critical tools may be **injected** from `orchestrator.py` if missing from DB. **`get_weekly_training_insight`** defaults to an **orientation** payload for the model (`week_start`, `week_end`, `overall_band`) unless the tool call sets **`include_kpi_detail`: true** (`SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM`); REST weekly insight stays full.
@@ -80,6 +80,7 @@ flowchart TB
 | `routes.py` | Blueprint, auth, rate limit, history shaping, `last_activity_id` hint, persistence. |
 | `orchestrator.py` | Tool list load/inject, system prompt, fastpaths, agent loop, metadata. |
 | `run_recap_fastpath.py` | Recap + split-detail prefetch and “no tools” system appendices. |
+| `run_recap_comparison_bundle.py` | Optional **prior single-run day** facts (KPI-free) for recap LLM appendix. |
 | `run_recap_policy.py` | Anchor-day recap fastpath eligibility (phrases, blocks, first user turn) + reason codes for logs/metadata. |
 | `dialogue_manager.py` | Turn type, intent, response directive (feeds system sections). |
 | `thread_derived_context.py` | Parse prior structured `run_summary` from stored assistant rows. |
@@ -116,6 +117,9 @@ Device anchor, HR calibration (when needed), thread-led, and race intent overrid
 | `SMARTCOACH_RUN_RECAP_FASTPATH` | `1` | Disable with `0`/`false`/`no`. |
 | `SMARTCOACH_RUN_RECAP_FASTPATH_RETRY` | `1` | When on (default), if the first fastpath completion is **empty** but prefetch is valid, **one** follow-up `chat_completion` runs before falling back to the full tool loop. Set `0`/`false`/`no`/`off` to skip. |
 | `SMARTCOACH_RUN_RECAP_PREFETCH_SLIM` | `1` | When on (default), recap fastpath **system appendix** JSON is **facts only** (no `training_kpis` / drift bands in the prompt); full summary still returned for the RunSummaryCard. Set `0`/`false`/`no`/`off` for legacy compact KPIs in the appendix. |
+| `SMARTCOACH_RUN_RECAP_COMPARISON_BUNDLE` | `1` | When on (default), recap prefetch may add **`comparison_sessions`** for up to **N** prior **calendar days** before anchor, each with **exactly one** resolved run (skips ambiguous days); **facts-only** JSON (no KPI/drift/Z2). `0`/`false`/`no`/`off` disables the extra `find_runs_by_date` / `get_run_summary` calls. |
+| `SMARTCOACH_RUN_RECAP_COMPARISON_LOOKBACK_DAYS` | `7` | How far back (in local days before anchor) to scan for single-run days; clamped `1`–`21`. |
+| `SMARTCOACH_RUN_RECAP_COMPARISON_MAX` | `2` | Max prior comparison days to attach; clamped `1`–`3`. |
 | `SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM` | `1` | When on (default), coach tool **`get_weekly_training_insight`** returns **orientation** only (`week_start`, `week_end`, `overall_band`) unless the model passes **`include_kpi_detail`: true**. REST `GET /api/training-insights/weekly` is always full. `0`/`false`/`no`/`off` restores legacy default (full KPI payload on every tool call). |
 | `SMARTCOACH_RUN_RECAP_FASTPATH_MAX_TOKENS` | `768` | Cap completion tokens on recap fastpath. |
 | `SMARTCOACH_SPLIT_DETAIL_FASTPATH` | `1` | Split-detail single-call path. |
