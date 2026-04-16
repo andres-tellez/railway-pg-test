@@ -80,6 +80,7 @@ flowchart TB
 | `routes.py` | Blueprint, auth, rate limit, history shaping, `last_activity_id` hint, persistence. |
 | `orchestrator.py` | Tool list load/inject, system prompt, fastpaths, agent loop, metadata. |
 | `run_recap_fastpath.py` | Recap + split-detail prefetch and “no tools” system appendices. |
+| `run_recap_policy.py` | Anchor-day recap fastpath eligibility (phrases, blocks, first user turn) + reason codes for logs/metadata. |
 | `dialogue_manager.py` | Turn type, intent, response directive (feeds system sections). |
 | `thread_derived_context.py` | Parse prior structured `run_summary` from stored assistant rows. |
 | `agent_tools.py` | `execute_tool` dispatch; implements `find_runs_by_date`, `get_run_summary`, `get_run_splits`, etc. |
@@ -113,6 +114,7 @@ Device anchor, HR calibration (when needed), thread-led, and race intent overrid
 | `OPENAI_MOBILE_AGENT_TIMEOUT` | `180` | Per completion timeout (seconds). |
 | `OPENAI_CONVERSATION_MODEL` | `gpt-4o` | Default model. |
 | `SMARTCOACH_RUN_RECAP_FASTPATH` | `1` | Disable with `0`/`false`/`no`. |
+| `SMARTCOACH_RUN_RECAP_FASTPATH_RETRY` | `1` | When on (default), if the first fastpath completion is **empty** but prefetch is valid, **one** follow-up `chat_completion` runs before falling back to the full tool loop. Set `0`/`false`/`no`/`off` to skip. |
 | `SMARTCOACH_RUN_RECAP_PREFETCH_SLIM` | `1` | When on (default), recap fastpath **system appendix** JSON is **facts only** (no `training_kpis` / drift bands in the prompt); full summary still returned for the RunSummaryCard. Set `0`/`false`/`no`/`off` for legacy compact KPIs in the appendix. |
 | `SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM` | `1` | When on (default), coach tool **`get_weekly_training_insight`** returns **orientation** only (`week_start`, `week_end`, `overall_band`) unless the model passes **`include_kpi_detail`: true**. REST `GET /api/training-insights/weekly` is always full. `0`/`false`/`no`/`off` restores legacy default (full KPI payload on every tool call). |
 | `SMARTCOACH_RUN_RECAP_FASTPATH_MAX_TOKENS` | `768` | Cap completion tokens on recap fastpath. |

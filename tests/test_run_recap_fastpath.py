@@ -6,6 +6,7 @@ from src.smartcoach_mobile_coach.run_recap_fastpath import (
     _compact_run_context_for_llm,
     wants_run_recap_fastpath,
 )
+from src.smartcoach_mobile_coach.run_recap_policy import decide_run_recap_fastpath
 
 
 def test_wants_fastpath_how_was_my_run_opening():
@@ -20,12 +21,28 @@ def test_rejects_last_run():
     assert not wants_run_recap_fastpath("How was my last run?", [])
 
 
-def test_rejects_with_prior_assistant():
+def test_rejects_when_prior_user_turn_exists():
     hist = [
         {"role": "user", "content": "Hi"},
         {"role": "assistant", "content": "Hey — how can I help?"},
     ]
     assert not wants_run_recap_fastpath("How was my run?", hist)
+    d = decide_run_recap_fastpath("How was my run?", hist)
+    assert d.reason_code == "not_first_user_turn"
+
+
+def test_allows_assistant_only_preamble_then_first_user_recap():
+    """Welcome / coach preamble without a prior user message does not block fastpath."""
+    hist = [
+        {"role": "assistant", "content": "Hey — I'm here to help with your training."}
+    ]
+    assert wants_run_recap_fastpath("How was my run?", hist)
+    d = decide_run_recap_fastpath("How was my run?", hist)
+    assert d.eligible and d.reason_code == "eligible"
+
+
+def test_contraction_hows_my_run():
+    assert wants_run_recap_fastpath("How's my run?", [])
 
 
 def test_compact_run_context_default_slim_omits_kpis(monkeypatch):

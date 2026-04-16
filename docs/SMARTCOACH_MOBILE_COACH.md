@@ -28,6 +28,7 @@
 | `src/smartcoach_mobile_coach/routes.py` | Flask blueprint, auth, HTTP rate limit, persistence, history + `last_activity_id` hint |
 | `src/smartcoach_mobile_coach/orchestrator.py` | Tool loop, fastpaths, system prompt assembly |
 | `src/smartcoach_mobile_coach/run_recap_fastpath.py` | Opening recap + split-detail prefetch, no-tools completions |
+| `src/smartcoach_mobile_coach/run_recap_policy.py` | Recap fastpath eligibility + reason codes |
 | `src/smartcoach_mobile_coach/dialogue_manager.py` | Turn / intent / response directive |
 | `src/smartcoach_mobile_coach/agent_tools.py` | `execute_tool`: `find_runs_by_date`, `get_run_summary`, `get_run_splits`, … (legacy names `list_runs_for_local_date` / `get_run_insight` map here) |
 | `src/smartcoach_mobile_coach/run_insight.py` | Run summary / facts JSON (`*_display` fields) |
@@ -48,6 +49,7 @@ Registered in `src/app.py` as `smartcoach_mobile_coach_bp`.
 | `SMARTCOACH_MOBILE_INSIGHT_CACHE_TTL` | `3600` | Insight tool cache TTL (seconds). |
 | `OPENAI_MOBILE_AGENT_TIMEOUT` | `180` | Per **completion** (seconds) for each model call in the mobile agent loop. **Does not** read `OPENAI_TIMEOUT`. |
 | `SMARTCOACH_RUN_RECAP_FASTPATH` | `1` | Opening recap single-call fastpath (`0` / `false` / `no` to disable). |
+| `SMARTCOACH_RUN_RECAP_FASTPATH_RETRY` | `1` | Retry once on empty fastpath completion before full tool loop (`0` to disable). |
 | `SMARTCOACH_RUN_RECAP_PREFETCH_SLIM` | `1` | Recap fastpath LLM appendix: **facts-only** compact JSON by default; card payload still includes full `get_run_summary`. `0` restores KPIs in the appendix. |
 | `SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM` | `1` | Coach tool `get_weekly_training_insight`: **orientation** payload by default; set `include_kpi_detail` true for full KPIs / zone charts. `0` = always full from tool. |
 | `SMARTCOACH_SPLIT_DETAIL_FASTPATH` | `1` | Split-detail single-call fastpath. |
