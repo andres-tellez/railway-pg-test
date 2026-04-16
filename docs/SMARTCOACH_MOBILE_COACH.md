@@ -28,6 +28,7 @@
 | `src/smartcoach_mobile_coach/routes.py` | Flask blueprint, auth, HTTP rate limit, persistence, history + `last_activity_id` hint |
 | `src/smartcoach_mobile_coach/orchestrator.py` | Tool loop, fastpaths, system prompt assembly |
 | `src/smartcoach_mobile_coach/run_recap_fastpath.py` | Opening recap + split-detail prefetch, no-tools completions |
+| `src/smartcoach_mobile_coach/run_recap_comparison_bundle.py` | Optional prior single-run-day facts (KPI-free) for recap LLM appendix |
 | `src/smartcoach_mobile_coach/run_recap_policy.py` | Recap fastpath eligibility + reason codes |
 | `src/smartcoach_mobile_coach/dialogue_manager.py` | Turn / intent / response directive |
 | `src/smartcoach_mobile_coach/agent_tools.py` | `execute_tool`: `find_runs_by_date`, `get_run_summary`, `get_run_splits`, … (legacy names `list_runs_for_local_date` / `get_run_insight` map here) |
@@ -51,6 +52,9 @@ Registered in `src/app.py` as `smartcoach_mobile_coach_bp`.
 | `SMARTCOACH_RUN_RECAP_FASTPATH` | `1` | Opening recap single-call fastpath (`0` / `false` / `no` to disable). |
 | `SMARTCOACH_RUN_RECAP_FASTPATH_RETRY` | `1` | Retry once on empty fastpath completion before full tool loop (`0` to disable). |
 | `SMARTCOACH_RUN_RECAP_PREFETCH_SLIM` | `1` | Recap fastpath LLM appendix: **facts-only** compact JSON by default; card payload still includes full `get_run_summary`. `0` restores KPIs in the appendix. |
+| `SMARTCOACH_RUN_RECAP_COMPARISON_BUNDLE` | `1` | Prior **single-run** local days (facts-only `comparison_sessions` in appendix). `0` disables. |
+| `SMARTCOACH_RUN_RECAP_COMPARISON_LOOKBACK_DAYS` | `7` | Days before anchor to scan; clamped `1`–`21`. |
+| `SMARTCOACH_RUN_RECAP_COMPARISON_MAX` | `2` | Max prior days attached; clamped `1`–`3`. |
 | `SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM` | `1` | Coach tool `get_weekly_training_insight`: **orientation** payload by default; set `include_kpi_detail` true for full KPIs / zone charts. `0` = always full from tool. |
 | `SMARTCOACH_SPLIT_DETAIL_FASTPATH` | `1` | Split-detail single-call fastpath. |
 | `SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE` | `off` | When `1` / `true`, `POST …/agent-messages` may honor header **`X-SmartCoach-Eval-Model`** with an allowlisted OpenAI model (`gpt-4o`, `gpt-4o-mini`, `gpt-4o-2024-08-06`) for **scripted eval only**. **Leave off in production** unless you accept authenticated users picking the model. Response includes **`X-SmartCoach-Model-Used`**. |
