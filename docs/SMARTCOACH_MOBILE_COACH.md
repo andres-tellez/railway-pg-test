@@ -31,8 +31,9 @@
 | `src/smartcoach_mobile_coach/run_recap_comparison_bundle.py` | Optional prior single-run-day facts (KPI-free) for recap LLM appendix |
 | `src/smartcoach_mobile_coach/run_recap_week_volume_bundle.py` | Optional this vs last ISO week volume (KPI-free) for recap LLM appendix |
 | `src/smartcoach_mobile_coach/run_recap_policy.py` | Recap fastpath eligibility + reason codes |
+| `src/smartcoach_mobile_coach/plan_intake_flow.py` | Deterministic chat-first plan intake state and final request validation |
 | `src/smartcoach_mobile_coach/dialogue_manager.py` | Turn / intent / response directive |
-| `src/smartcoach_mobile_coach/agent_tools.py` | `execute_tool`: `find_runs_by_date`, `get_run_summary`, `get_run_splits`, … (legacy names `list_runs_for_local_date` / `get_run_insight` map here) |
+| `src/smartcoach_mobile_coach/agent_tools.py` | `execute_tool`: run tools + plan tools (`update_plan_intake`, `generate_training_plan`), … (legacy names `list_runs_for_local_date` / `get_run_insight` map here) |
 | `src/smartcoach_mobile_coach/run_insight.py` | Run summary / facts JSON (`*_display` fields) |
 | `src/smartcoach_mobile_coach/insight_cache.py` | Per-user TTL cache for run insight builds |
 | `scripts/setup_coach_tools.py` | Seeds **`coach_tools`** table (OpenAI tool definitions for the tool loop) |

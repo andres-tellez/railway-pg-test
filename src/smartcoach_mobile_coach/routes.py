@@ -103,7 +103,7 @@ def _llm_plain_text_from_stored_message(role: str, content: str) -> str:
         obj: Any = json.loads(stripped)
     except json.JSONDecodeError:
         return content
-    if isinstance(obj, dict) and obj.get("type") == "run_summary":
+    if isinstance(obj, dict):
         inner = obj.get("content")
         if isinstance(inner, str):
             return inner
