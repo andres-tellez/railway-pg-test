@@ -67,6 +67,30 @@ from src.utils.hr_zone_constants import (
 logger = logging.getLogger("smartcoach_mobile_coach")
 
 
+def _ordered_plan_tool_calls(
+    tool_calls: Optional[List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    """
+    Run update_plan_intake before generate_training_plan when both appear in one completion.
+
+    OpenAI may return multiple function calls in any order; execution order matters because
+    generate_training_plan reads latest_plan_intake_state updated by update_plan_intake.
+    """
+    if not tool_calls:
+        return []
+
+    def _rank(tc: Dict[str, Any]) -> int:
+        fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
+        name = (fn.get("name") or "") if isinstance(fn, dict) else ""
+        if name == "update_plan_intake":
+            return 0
+        if name == "generate_training_plan":
+            return 2
+        return 1
+
+    return sorted(tool_calls, key=_rank)
+
+
 def _max_agent_loops() -> int:
     """Cap on model turns (tool rounds + final reply). Env: SMARTCOACH_AGENT_MAX_LOOPS, default 8."""
     raw = os.getenv("SMARTCOACH_AGENT_MAX_LOOPS", "8").strip()
@@ -1202,6 +1226,7 @@ def run_mobile_agent_turn(
     client_timezone: Optional[str] = None,
     eval_model_override: Optional[str] = None,
     last_activity_id_hint: Optional[int] = None,
+    thread_derived_context: Optional[DerivedThreadCoachContext] = None,
 ) -> Tuple[Union[str, Dict[str, Any]], Dict[str, Any]]:
     """
     Returns (assistant_reply, metadata with usage, cost, loops).
@@ -1212,6 +1237,9 @@ def run_mobile_agent_turn(
     anchor_local_date: YYYY-MM-DD from the mobile device (or server fallback); grounds "today".
     eval_model_override: optional OpenAI model id (e.g. gpt-4o-mini) when HTTP layer allows it
         for scripted eval only — normally unset.
+    thread_derived_context: optional context from **raw** stored message bodies (e.g. JSON
+        assistant rows). Must be supplied when ``conversation_history`` is plain-text–only
+        (see routes); otherwise ``plan_intake_state`` from prior turns is invisible here.
     """
     service = get_openai_service()
     model = eval_model_override or os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
@@ -1240,7 +1268,11 @@ def run_mobile_agent_turn(
 
     t_after_tools = time.perf_counter()
     prefs = _load_coaching_preferences(session, internal_user_id)
-    thread_ctx = derive_thread_coach_context(conversation_history)
+    thread_ctx = (
+        thread_derived_context
+        if thread_derived_context is not None
+        else derive_thread_coach_context(conversation_history)
+    )
     turn_type = classify_turn(user_message, conversation_history)
     conversation_state = extract_conversation_state(conversation_history)
     response_directive = plan_response(
@@ -1630,7 +1662,7 @@ def run_mobile_agent_turn(
                 )
             messages.append(assistant_msg)
 
-            for tc in result.tool_calls:
+            for tc in _ordered_plan_tool_calls(result.tool_calls):
                 fn = tc["function"]
                 name = fn["name"]
                 arguments = fn["arguments"] or "{}"
