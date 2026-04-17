@@ -66,6 +66,16 @@ from src.utils.hr_zone_constants import (
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
+_PLAN_CREATION_TOOL_NAMES: Set[str] = {"update_plan_intake", "generate_training_plan"}
+_PLAN_CREATION_INTENT_HINTS: Tuple[str, ...] = (
+    "create a plan",
+    "build a plan",
+    "training plan",
+    "plan for",
+    "help me train",
+    "make me a plan",
+)
+
 
 def _ordered_plan_tool_calls(
     tool_calls: Optional[List[Dict[str, Any]]],
@@ -99,6 +109,58 @@ def _max_agent_loops() -> int:
     except ValueError:
         n = 8
     return max(2, min(n, 15))
+
+
+def _env_int_with_bounds(name: str, default: int, lo: int, hi: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return default
+    return max(lo, min(parsed, hi))
+
+
+def _tool_function_name(t: Dict[str, Any]) -> str:
+    if not isinstance(t, dict):
+        return ""
+    fn = t.get("function")
+    if not isinstance(fn, dict):
+        return ""
+    n = fn.get("name")
+    return n if isinstance(n, str) else ""
+
+
+def _is_plan_creation_turn(
+    intent: str,
+    user_message: str,
+    thread_ctx: DerivedThreadCoachContext,
+) -> bool:
+    if intent == "plan_creation":
+        return True
+    if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict):
+        return True
+    msg = (user_message or "").lower()
+    return any(h in msg for h in _PLAN_CREATION_INTENT_HINTS)
+
+
+def _filter_tools_for_turn(
+    tools: List[Dict[str, Any]], *, plan_creation_mode: bool
+) -> List[Dict[str, Any]]:
+    if not plan_creation_mode:
+        return tools
+    filtered = [t for t in tools if _tool_function_name(t) in _PLAN_CREATION_TOOL_NAMES]
+    if filtered:
+        logger.info(
+            "[smartcoach_mobile_coach] plan_creation_mode tools=%s",
+            [_tool_function_name(t) for t in filtered],
+        )
+    else:
+        logger.warning(
+            "[smartcoach_mobile_coach] plan_creation_mode requested but no plan tools remained"
+        )
+    return filtered
 
 
 # Kept in sync with scripts/setup_coach_tools.py `search_runs` (for DBs not yet re-seeded).
@@ -955,6 +1017,18 @@ Stay concise unless they ask for depth; skip filler openers (“Great question!�
 Do not provide medical diagnoses; suggest a professional for serious pain or health concerns.
 """.strip()
 
+PLAN_CREATION_SYSTEM_PROMPT_BASE = """
+You are SmartCoach helping one runner create a training plan through deterministic server tools.
+Primary objective: collect plan intake fields reliably, then confirm and generate.
+
+Rules for this mode:
+- Always use `update_plan_intake` to capture new plan details from the latest user message.
+- Ask for only one missing required field at a time.
+- Only call `generate_training_plan` after explicit user confirmation with `confirm=true`.
+- Keep user-facing wording short and conversational (usually 1-3 sentences).
+- Tool payload is the source of truth; never invent field values not returned by tools.
+""".strip()
+
 
 def _env_experiment_minimal_flag(name: str) -> bool:
     """True when env var is 1/true/yes/on (case-insensitive)."""
@@ -979,6 +1053,17 @@ def _experiment_response_directive_stub(directive: ResponseDirective) -> str:
         "- **Numbers:** tool-grounded only; never fabricate metrics.\n"
         "- Full per-turn rubric is **disabled** for this experiment "
         "(`SMARTCOACH_EXPERIMENT_MINIMAL_DIRECTIVE`).\n"
+    )
+
+
+def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
+    return (
+        "## Response directive (plan creation mode)\n"
+        f"- Turn type: **{directive.turn_type}** | Intent: **{directive.intent}**\n"
+        "- Keep the response concise and practical.\n"
+        "- If details are missing, ask for one missing item only.\n"
+        "- If all required details exist, show confirmation summary and ask explicit yes/no.\n"
+        "- Do not discuss unrelated run-analysis topics in this mode.\n"
     )
 
 
@@ -1242,15 +1327,17 @@ def run_mobile_agent_turn(
         (see routes); otherwise ``plan_intake_state`` from prior turns is invisible here.
     """
     service = get_openai_service()
-    model = eval_model_override or os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
+    default_model = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
+    model = eval_model_override or default_model
     temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
-    max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
+    max_tokens_default = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
+    max_tokens = max_tokens_default
     # Per completion (httpx/OpenAI). Default 180s — deploys that still use Gunicorn's 30s
     # worker default need headroom on multi-step tool turns. Cap with OPENAI_MOBILE_AGENT_TIMEOUT.
     timeout = float(os.getenv("OPENAI_MOBILE_AGENT_TIMEOUT", "180.0"))
 
     t_agent0 = time.perf_counter()
-    openai_tools = _ensure_generate_training_plan_tool(
+    openai_tools_all = _ensure_generate_training_plan_tool(
         _ensure_update_plan_intake_tool(
             _ensure_get_run_splits_tool(
                 _ensure_get_marathon_projection_tool(
@@ -1263,7 +1350,7 @@ def run_mobile_agent_turn(
             )
         )
     )
-    if not openai_tools:
+    if not openai_tools_all:
         logger.warning("No enabled tools in coach_tools table; agent has no tools")
 
     t_after_tools = time.perf_counter()
@@ -1292,6 +1379,33 @@ def run_mobile_agent_turn(
         ",".join(response_directive.avoid_repeating_metrics) or "none",
         response_directive.target_length,
     )
+    plan_creation_mode = _is_plan_creation_turn(
+        response_directive.intent, user_message, thread_ctx
+    )
+    openai_tools = _filter_tools_for_turn(
+        openai_tools_all, plan_creation_mode=plan_creation_mode
+    )
+    history_window = (
+        _env_int_with_bounds("OPENAI_PLAN_CREATION_HISTORY_TURNS", 6, 2, 12)
+        if plan_creation_mode
+        else 12
+    )
+    if plan_creation_mode:
+        plan_tokens_cap = _env_int_with_bounds(
+            "OPENAI_PLAN_CREATION_MAX_TOKENS", 700, 128, 2000
+        )
+        max_tokens = min(max_tokens_default, plan_tokens_cap)
+        if not eval_model_override:
+            plan_model = (os.getenv("OPENAI_PLAN_CREATION_MODEL") or "").strip()
+            if plan_model:
+                model = plan_model
+        logger.info(
+            "[smartcoach_mobile_coach] plan_creation_mode=1 tools=%s model=%s max_tokens=%s history_window=%s",
+            len(openai_tools),
+            model,
+            max_tokens,
+            history_window,
+        )
 
     # --- Prompt experiment (optional): see MINIMAL_SYSTEM_PROMPT_BASE block above ---
     use_min_base = _env_experiment_minimal_flag("SMARTCOACH_EXPERIMENT_MINIMAL_BASE")
@@ -1307,30 +1421,44 @@ def run_mobile_agent_turn(
             use_min_prefs,
             use_min_directive,
         )
-
-    base_block = MINIMAL_SYSTEM_PROMPT_BASE if use_min_base else SYSTEM_PROMPT_BASE
-    prefs_block = "" if use_min_prefs else _coaching_preferences_section(prefs)
-    directive_block = (
-        _experiment_response_directive_stub(response_directive)
-        if use_min_directive
-        else response_directive_section(response_directive)
+    use_full_prompt_for_plan = _env_experiment_minimal_flag(
+        "SMARTCOACH_PLAN_CREATION_USE_FULL_PROMPT"
     )
-    system_content = _join_nonempty_system_sections(
-        base_block,
-        prefs_block,
-        _device_anchor_system_section(anchor_local_date, client_timezone),
-        _hr_calibration_system_section(session, internal_user_id),
-        directive_block,
-        _thread_led_system_section(thread_ctx),
-        _intent_priority_override_section(response_directive.intent),
-        _plan_creation_system_section(
-            user_message,
-            response_directive.intent,
-            thread_ctx,
-        ),
-    )
+    if plan_creation_mode and not use_full_prompt_for_plan:
+        system_content = _join_nonempty_system_sections(
+            PLAN_CREATION_SYSTEM_PROMPT_BASE,
+            _device_anchor_system_section(anchor_local_date, client_timezone),
+            _plan_creation_directive_stub(response_directive),
+            _plan_creation_system_section(
+                user_message,
+                response_directive.intent,
+                thread_ctx,
+            ),
+        )
+    else:
+        base_block = MINIMAL_SYSTEM_PROMPT_BASE if use_min_base else SYSTEM_PROMPT_BASE
+        prefs_block = "" if use_min_prefs else _coaching_preferences_section(prefs)
+        directive_block = (
+            _experiment_response_directive_stub(response_directive)
+            if use_min_directive
+            else response_directive_section(response_directive)
+        )
+        system_content = _join_nonempty_system_sections(
+            base_block,
+            prefs_block,
+            _device_anchor_system_section(anchor_local_date, client_timezone),
+            _hr_calibration_system_section(session, internal_user_id),
+            directive_block,
+            _thread_led_system_section(thread_ctx),
+            _intent_priority_override_section(response_directive.intent),
+            _plan_creation_system_section(
+                user_message,
+                response_directive.intent,
+                thread_ctx,
+            ),
+        )
     messages: List[Dict[str, Any]] = [{"role": "system", "content": system_content}]
-    for m in conversation_history[-12:]:
+    for m in conversation_history[-history_window:]:
         if m.get("role") in ("user", "assistant") and m.get("content"):
             messages.append({"role": m["role"], "content": m["content"]})
     messages.append({"role": "user", "content": user_message.strip()})
@@ -1355,15 +1483,23 @@ def run_mobile_agent_turn(
     )
     latest_plan_generation: Optional[Dict[str, Any]] = None
 
-    recap_decision = decide_run_recap_fastpath(user_message, conversation_history)
-    timings_ms["run_recap_fastpath_gate"] = {
-        "eligible": recap_decision.eligible,
-        "reason_code": recap_decision.reason_code,
-        "prior_user_turns": recap_decision.prior_user_turn_count,
-    }
+    if plan_creation_mode:
+        recap_decision = None
+        timings_ms["run_recap_fastpath_gate"] = {
+            "eligible": False,
+            "reason_code": "disabled_for_plan_creation_mode",
+            "prior_user_turns": 0,
+        }
+    else:
+        recap_decision = decide_run_recap_fastpath(user_message, conversation_history)
+        timings_ms["run_recap_fastpath_gate"] = {
+            "eligible": recap_decision.eligible,
+            "reason_code": recap_decision.reason_code,
+            "prior_user_turns": recap_decision.prior_user_turn_count,
+        }
 
     prefetch: Optional[Dict[str, Any]] = None
-    if recap_decision.eligible:
+    if recap_decision is not None and recap_decision.eligible:
         _tp0 = time.perf_counter()
         prefetch = prefetch_opening_anchor_run_recap(
             session, internal_user_id, anchor_local_date
@@ -1388,7 +1524,7 @@ def run_mobile_agent_turn(
         cc_messages: List[Dict[str, str]] = [
             {"role": "system", "content": augmented_system}
         ]
-        for m in conversation_history[-12:]:
+        for m in conversation_history[-history_window:]:
             if m.get("role") in ("user", "assistant") and m.get("content"):
                 cc_messages.append(
                     {
@@ -1432,7 +1568,7 @@ def run_mobile_agent_turn(
                 cc_retry: List[Dict[str, str]] = [
                     {"role": "system", "content": augmented_retry}
                 ]
-                for m in conversation_history[-12:]:
+                for m in conversation_history[-history_window:]:
                     if m.get("role") in ("user", "assistant") and m.get("content"):
                         cc_retry.append(
                             {
@@ -1517,7 +1653,9 @@ def run_mobile_agent_turn(
             )
 
     split_prefetch: Optional[Dict[str, Any]] = None
-    if wants_split_detail_fastpath(response_directive.intent):
+    if (not plan_creation_mode) and wants_split_detail_fastpath(
+        response_directive.intent
+    ):
         _sp0 = time.perf_counter()
         split_prefetch = prefetch_split_detail(
             session,
@@ -1544,7 +1682,7 @@ def run_mobile_agent_turn(
         cc_messages: List[Dict[str, str]] = [
             {"role": "system", "content": augmented_system}
         ]
-        for m in conversation_history[-12:]:
+        for m in conversation_history[-history_window:]:
             if m.get("role") in ("user", "assistant") and m.get("content"):
                 cc_messages.append(
                     {
