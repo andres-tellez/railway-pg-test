@@ -259,6 +259,69 @@ _GET_RUN_SPLITS_OPENAI_TOOL: Dict[str, Any] = {
     },
 }
 
+# Kept in sync with scripts/setup_coach_tools.py `update_plan_intake`.
+_UPDATE_PLAN_INTAKE_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "update_plan_intake",
+        "description": (
+            "Deterministically capture/update plan intake fields from user answers. "
+            "Use for creating a training plan in chat. Returns missing required fields "
+            "and confirmation summary. Does not generate or save a plan."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "updates": {
+                    "type": "object",
+                    "description": (
+                        "Partial plan fields from the latest user answer. Allowed keys: "
+                        "race_date (YYYY-MM-DD), race_distance, race_name, race_location, "
+                        "primary_goal (Just Finish|Target Time), target_time, training_days "
+                        "(array or comma text), long_run_day, notes, plan_name."
+                    ),
+                },
+                "clear_fields": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional field names to clear from draft.",
+                },
+                "reset": {
+                    "type": "boolean",
+                    "description": "If true, reset existing draft before applying updates.",
+                },
+            },
+        },
+    },
+}
+
+# Kept in sync with scripts/setup_coach_tools.py `generate_training_plan`.
+_GENERATE_TRAINING_PLAN_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "generate_training_plan",
+        "description": (
+            "Generate and save a deterministic training plan from collected intake state. "
+            "Call only after update_plan_intake reports ready_to_generate and the user "
+            "explicitly confirms."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "confirm": {
+                    "type": "boolean",
+                    "description": "Must be true after explicit user confirmation.",
+                },
+                "activity_weeks": {
+                    "type": "integer",
+                    "description": "Optional lookback window for activity baseline (default 12).",
+                },
+            },
+            "required": ["confirm"],
+        },
+    },
+}
+
 
 def _openai_tool_names(tools: List[Dict[str, Any]]) -> Set[str]:
     names = set()
@@ -324,6 +387,28 @@ def _ensure_get_run_splits_tool(tools: List[Dict[str, Any]]) -> List[Dict[str, A
         "coach_tools has no enabled get_run_splits; injecting built-in OpenAI tool definition"
     )
     return list(tools) + [_GET_RUN_SPLITS_OPENAI_TOOL]
+
+
+def _ensure_update_plan_intake_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if "update_plan_intake" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled update_plan_intake; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_UPDATE_PLAN_INTAKE_OPENAI_TOOL]
+
+
+def _ensure_generate_training_plan_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if "generate_training_plan" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled generate_training_plan; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_GENERATE_TRAINING_PLAN_OPENAI_TOOL]
 
 
 def _load_tools_from_db(session: Session) -> List[Dict[str, Any]]:
@@ -1037,6 +1122,66 @@ def _intent_priority_override_section(intent: str) -> str:
     )
 
 
+def _plan_creation_system_section(
+    user_message: str,
+    intent: str,
+    thread_ctx: Any,
+) -> str:
+    msg = (user_message or "").lower()
+    intake_state = (
+        thread_ctx.latest_plan_intake_state
+        if hasattr(thread_ctx, "latest_plan_intake_state")
+        else None
+    )
+    active = (
+        intent == "plan_creation"
+        or isinstance(intake_state, dict)
+        or any(
+            k in msg
+            for k in (
+                "create a plan",
+                "build a plan",
+                "training plan",
+                "plan for",
+                "help me train",
+                "make me a plan",
+            )
+        )
+    )
+    if not active:
+        return ""
+
+    lines = [
+        "## Plan creation flow (deterministic intake + deterministic generation)",
+        "- When this turn is about creating/updating a plan, always use tool `update_plan_intake` to capture the latest user details.",
+        "- Ask only one missing required field at a time (race date, race distance, goal type, training days, target_time only when goal is Target Time).",
+        "- Do not claim details are saved unless `update_plan_intake` confirms them.",
+        "- When `ready_to_generate=true`, present the confirmation summary and ask for explicit yes/no.",
+        "- Call `generate_training_plan` only after explicit confirmation, with `confirm=true`.",
+        "- Keep user-facing wording natural; the tool payload is the source of truth for intake state.",
+    ]
+    if isinstance(intake_state, dict):
+        lines.extend(
+            [
+                "- Current deterministic intake state (from prior turn payload):",
+                "```json",
+                json.dumps(
+                    {
+                        "status": intake_state.get("status"),
+                        "missing_required": intake_state.get("missing_required"),
+                        "ready_to_generate": intake_state.get("ready_to_generate"),
+                        "confirmation_summary": intake_state.get(
+                            "confirmation_summary"
+                        ),
+                    },
+                    default=str,
+                ),
+                "```",
+            ]
+        )
+    return "\n".join(lines)
+
+
 def _valid_run_summary_tool_payload(out: Any) -> Optional[Dict[str, Any]]:
     """Success shape from get_run_summary — has facts for RunSummaryCard; exclude error stubs."""
     if not isinstance(out, dict) or out.get("error"):
@@ -1077,11 +1222,15 @@ def run_mobile_agent_turn(
     timeout = float(os.getenv("OPENAI_MOBILE_AGENT_TIMEOUT", "180.0"))
 
     t_agent0 = time.perf_counter()
-    openai_tools = _ensure_get_run_splits_tool(
-        _ensure_get_marathon_projection_tool(
-            _ensure_get_training_kpis_tool(
-                _ensure_aggregate_runs_in_range_tool(
-                    _ensure_search_runs_tool(_load_tools_from_db(session))
+    openai_tools = _ensure_generate_training_plan_tool(
+        _ensure_update_plan_intake_tool(
+            _ensure_get_run_splits_tool(
+                _ensure_get_marathon_projection_tool(
+                    _ensure_get_training_kpis_tool(
+                        _ensure_aggregate_runs_in_range_tool(
+                            _ensure_search_runs_tool(_load_tools_from_db(session))
+                        )
+                    )
                 )
             )
         )
@@ -1142,6 +1291,11 @@ def run_mobile_agent_turn(
         directive_block,
         _thread_led_system_section(thread_ctx),
         _intent_priority_override_section(response_directive.intent),
+        _plan_creation_system_section(
+            user_message,
+            response_directive.intent,
+            thread_ctx,
+        ),
     )
     messages: List[Dict[str, Any]] = [{"role": "system", "content": system_content}]
     for m in conversation_history[-12:]:
@@ -1162,6 +1316,12 @@ def run_mobile_agent_turn(
     tool_result_cache: Dict[tuple, Dict[str, Any]] = {}
     max_loops = _max_agent_loops()
     latest_run_summary: Optional[Dict[str, Any]] = None
+    latest_plan_intake_state: Optional[Dict[str, Any]] = (
+        thread_ctx.latest_plan_intake_state
+        if isinstance(thread_ctx.latest_plan_intake_state, dict)
+        else None
+    )
+    latest_plan_generation: Optional[Dict[str, Any]] = None
 
     recap_decision = decide_run_recap_fastpath(user_message, conversation_history)
     timings_ms["run_recap_fastpath_gate"] = {
@@ -1488,6 +1648,7 @@ def run_mobile_agent_turn(
                         name,
                         arguments,
                         anchor_local_date=anchor_local_date,
+                        plan_intake_state=latest_plan_intake_state,
                     )
                     tool_result_cache[sig] = out
                     loop_entry["tools"].append(
@@ -1501,6 +1662,13 @@ def run_mobile_agent_turn(
                     ok_payload = _valid_run_summary_tool_payload(out)
                     if ok_payload is not None:
                         latest_run_summary = ok_payload
+                if name in ("update_plan_intake", "generate_training_plan"):
+                    pis = out.get("plan_intake_state")
+                    if isinstance(pis, dict):
+                        latest_plan_intake_state = pis
+                    pg = out.get("plan_generation")
+                    if isinstance(pg, dict):
+                        latest_plan_generation = pg
                 _tj0 = time.perf_counter()
                 tool_content = json.dumps(out)
                 loop_entry["tools"][-1]["json_serialize_ms"] = round(
@@ -1558,6 +1726,24 @@ def run_mobile_agent_turn(
                 )
                 return structured, meta
             if text:
+                if (
+                    latest_plan_intake_state is not None
+                    or latest_plan_generation is not None
+                ):
+                    structured_text: Dict[str, Any] = {
+                        "type": "text",
+                        "content": text,
+                        "data": {},
+                    }
+                    if latest_plan_intake_state is not None:
+                        structured_text["data"][
+                            "plan_intake_state"
+                        ] = latest_plan_intake_state
+                    if latest_plan_generation is not None:
+                        structured_text["data"][
+                            "plan_generation"
+                        ] = latest_plan_generation
+                    return structured_text, meta
                 return text, meta
 
     fallback = (

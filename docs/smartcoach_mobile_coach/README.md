@@ -50,6 +50,7 @@ flowchart TB
    - **Run recap fastpath** — Opening anchor-day recap; prefetches `find_runs_by_date` + `get_run_summary` (execution KPIs for the **card**); **LLM appendix** uses compact **facts-only** JSON by default (`SMARTCOACH_RUN_RECAP_PREFETCH_SLIM`); optionally prefetches **1–2 prior calendar days** that each had a **single** run (`run_recap_comparison_bundle.py`, `SMARTCOACH_RUN_RECAP_COMPARISON_*`, includes **`when_vs_anchor`** for human phrasing) and **this ISO week vs last ISO week** run count + miles (`run_recap_week_volume_bundle.py`, `SMARTCOACH_RUN_RECAP_WEEK_VOLUME_BUNDLE`, **`spoken_timeframe`** “this week” / “last week”) via `aggregate_runs_in_range` / `weekly_summaries`—**no KPI/drift** in those JSON slices; one `chat_completion` without tools; returns structured `run_summary` when valid. Messages that ask for **drift** in the same turn skip fastpath so the tool loop can answer.
    - **Split detail fastpath** — Intent `split_detail`; prefetches `get_run_splits` after resolving `activity_id` (hint, thread, or single run on anchor date); one `chat_completion` without tools; plain text response + metadata `split_detail_fastpath`.
    - **Tool loop** — Default: bounded `chat_completion_with_tools` + `execute_tool`.
+   - **Plan intake + generation (chat-first, deterministic):** in plan-creation threads, model phrasing is conversational but state is deterministic via tools `update_plan_intake` (collect/validate required fields) and `generate_training_plan` (explicit confirmation required; runs v2 deterministic generator + `PlanStorageService`).
 3. **Tools** — Definitions from **`coach_tools`** (seeded by `scripts/setup_coach_tools.py`); critical tools may be **injected** from `orchestrator.py` if missing from DB. **`get_weekly_training_insight`** defaults to an **orientation** payload for the model (`week_start`, `week_end`, `overall_band`) unless the tool call sets **`include_kpi_detail`: true** (`SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM`); REST weekly insight stays full.
 4. **Dialogue** — `dialogue_manager.py` classifies turn, infers intent, sets tool strategy / length (prompt sections only; no extra network).
 
@@ -85,7 +86,8 @@ flowchart TB
 | `run_recap_policy.py` | Anchor-day recap fastpath eligibility (phrases, blocks, first user turn) + reason codes for logs/metadata. |
 | `dialogue_manager.py` | Turn type, intent, response directive (feeds system sections). |
 | `thread_derived_context.py` | Parse prior structured `run_summary` from stored assistant rows. |
-| `agent_tools.py` | `execute_tool` dispatch; implements `find_runs_by_date`, `get_run_summary`, `get_run_splits`, etc. |
+| `plan_intake_flow.py` | Deterministic plan intake merge/validation and final request build for chat-first plan creation. |
+| `agent_tools.py` | `execute_tool` dispatch; implements run tools plus plan tools (`update_plan_intake`, `generate_training_plan`). |
 | `run_splits.py` | Lap/split rows for `get_run_splits` (cap via `SMARTCOACH_RUN_SPLITS_MAX_ROWS`). |
 | `run_insight.py` / `insight_cache.py` | Run summary payload + TTL cache for expensive insight builds. |
 

@@ -809,6 +809,18 @@ def infer_intent(user_message: str) -> str:
     if any(
         k in t
         for k in (
+            "create a plan",
+            "build a plan",
+            "training plan",
+            "make me a plan",
+            "help me train",
+            "plan for",
+        )
+    ):
+        return "plan_creation"
+    if any(
+        k in t
+        for k in (
             "how was my run",
             "how's my run",
             "hows my run",
@@ -917,6 +929,18 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
             "tool_strategy": "Confirm intent briefly and apply preference tool update.",
             "natural_style_notes": [
                 "One-line confirmation is enough unless user asked for details.",
+            ],
+        },
+        "plan_creation": {
+            "narration_mode": "coach_intake",
+            "tool_strategy": (
+                "Use deterministic plan-intake tools: update_plan_intake each turn, then "
+                "generate_training_plan only after explicit confirmation."
+            ),
+            "natural_style_notes": [
+                "Ask one clear intake question at a time; keep the tone conversational.",
+                "Summarize captured details before asking for final confirmation.",
+                "After generation, lead with a concise what-to-expect-this-week overview.",
             ],
         },
     }

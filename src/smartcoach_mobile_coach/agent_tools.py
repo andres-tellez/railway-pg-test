@@ -24,6 +24,11 @@ from src.smartcoach_mobile_coach.insight_cache import cache_key, get_cached, set
 from src.smartcoach_mobile_coach.marathon_projection_service import (
     get_marathon_projection,
 )
+from src.smartcoach_mobile_coach.plan_intake_flow import (
+    build_plan_request_from_state,
+    summarize_this_week_from_plan_rows,
+    update_plan_intake_state,
+)
 from src.smartcoach_mobile_coach.run_insight import (
     apply_insight_table_labels,
     build_get_run_insight_payload,
@@ -38,6 +43,8 @@ from src.smartcoach_mobile_coach.weekly_insights_service import (
     get_latest_weekly_insight,
     weekly_insight_tool_slim_default_from_env,
 )
+from src.routes.plan_generation_v2 import run_v2_plan_generation
+from src.services.training_plan.plan_storage_service import PlanStorageService
 from src.utils.config import config
 from src.utils.hr_zone_constants import (
     ALLOWED_METRICS,
@@ -581,6 +588,151 @@ def tool_save_coach_preference(
     }
 
 
+def tool_update_plan_intake(
+    session: Session,
+    internal_user_id: str,
+    args: Dict[str, Any],
+    *,
+    current_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Deterministically merge plan intake fields and report missing required items.
+    """
+    updates = args.get("updates")
+    if updates is None:
+        updates = {}
+    clear_fields = args.get("clear_fields")
+    if not isinstance(clear_fields, list):
+        clear_fields = []
+    reset = _coerce_tool_bool(args.get("reset"), False)
+
+    state = update_plan_intake_state(
+        current_state,
+        updates=updates if isinstance(updates, dict) else {},
+        clear_fields=[str(f) for f in clear_fields if isinstance(f, str)],
+        reset=reset,
+    )
+    return {
+        "plan_intake_state": state,
+        "status": state.get("status"),
+        "ready_to_generate": bool(state.get("ready_to_generate")),
+        "missing_required": state.get("missing_required", []),
+        "missing_required_labels": state.get("missing_required_labels", []),
+        "errors": state.get("errors", []),
+        "confirmation_summary": state.get("confirmation_summary"),
+        "message": (
+            "Plan intake updated. Ask one missing field next."
+            if not state.get("ready_to_generate")
+            else "All required fields are present. Ask for confirmation before generating."
+        ),
+    }
+
+
+def tool_generate_training_plan(
+    session: Session,
+    internal_user_id: str,
+    args: Dict[str, Any],
+    *,
+    current_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Deterministically generate and save plan once intake is complete and confirmed.
+    """
+    if not isinstance(current_state, dict) or not current_state.get("draft"):
+        return {
+            "error": "no_plan_intake_state",
+            "message": "No plan intake state found. Collect plan details first.",
+        }
+
+    confirm = _coerce_tool_bool(args.get("confirm"), False)
+    if not confirm:
+        return {
+            "error": "confirmation_required",
+            "message": (
+                "Ask for explicit confirmation before generating. "
+                "Call again with confirm=true once the user says yes."
+            ),
+            "plan_intake_state": current_state,
+            "confirmation_summary": current_state.get("confirmation_summary"),
+        }
+
+    activity_weeks_raw = args.get("activity_weeks", 12)
+    try:
+        activity_weeks = int(activity_weeks_raw)
+    except (TypeError, ValueError):
+        activity_weeks = 12
+    activity_weeks = max(4, min(activity_weeks, 24))
+
+    try:
+        plan_request = build_plan_request_from_state(current_state)
+    except Exception as e:
+        return {
+            "error": "invalid_plan_intake_state",
+            "message": str(e),
+            "plan_intake_state": current_state,
+        }
+
+    try:
+        result = run_v2_plan_generation(
+            session=session,
+            user_id=str(internal_user_id),
+            plan_request=plan_request,
+            activity_weeks=activity_weeks,
+            mode="rolling",
+        )
+    except Exception as e:
+        logger.exception("Plan generation failed user=%s", internal_user_id)
+        return {
+            "error": "plan_generation_failed",
+            "message": str(e),
+            "plan_intake_state": current_state,
+        }
+
+    if not result.get("valid") or not result.get("validated_plan"):
+        return {
+            "error": "plan_validation_failed",
+            "message": "Generated plan failed validation.",
+            "violations": result.get("violations", []),
+            "plan_intake_state": current_state,
+        }
+
+    validation_payload = {
+        "valid": True,
+        "validated_plan": result["validated_plan"],
+        "violations": result.get("violations", []),
+    }
+    plan_id = PlanStorageService.save_validated_plan(
+        session=session,
+        user_id=str(internal_user_id),
+        validated_plan=validation_payload,
+        plan_request=plan_request,
+    )
+    session.commit()
+
+    from src.db.dao.plans_dao import get_plan_with_workouts
+
+    saved = get_plan_with_workouts(session, int(plan_id), str(internal_user_id)) or {}
+    week_summary = summarize_this_week_from_plan_rows(saved.get("workouts") or [])
+    next_state = dict(current_state)
+    next_state["status"] = "generated"
+    next_state["last_generated_plan_id"] = int(plan_id)
+    return {
+        "ok": True,
+        "plan_id": int(plan_id),
+        "plan_name": saved.get("plan_name"),
+        "race_date": saved.get("race_date"),
+        "race_distance": saved.get("race_distance"),
+        "this_week": week_summary,
+        "plan_intake_state": next_state,
+        "plan_generation": {
+            "plan_id": int(plan_id),
+            "plan_name": saved.get("plan_name"),
+            "this_week": week_summary,
+        },
+        "message": "Plan created and activated successfully.",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
@@ -595,6 +747,8 @@ _TOOL_HANDLERS = {
     "get_weekly_training_insight": "get_weekly_training_insight",
     "get_marathon_projection": "get_marathon_projection",
     "save_coach_preference": "save_coach_preference",
+    "update_plan_intake": "update_plan_intake",
+    "generate_training_plan": "generate_training_plan",
     # Legacy names → map to current handlers
     "list_runs_for_local_date": "find_runs_by_date",
     "get_run_insight": "get_run_summary",
@@ -608,6 +762,7 @@ def execute_tool(
     arguments_json: str,
     *,
     anchor_local_date: Optional[str] = None,
+    plan_intake_state: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     try:
         args = json.loads(arguments_json or "{}")
@@ -759,6 +914,22 @@ def execute_tool(
 
         if handler_key == "save_coach_preference":
             return tool_save_coach_preference(session, internal_user_id, args)
+
+        if handler_key == "update_plan_intake":
+            return tool_update_plan_intake(
+                session,
+                internal_user_id,
+                args,
+                current_state=plan_intake_state,
+            )
+
+        if handler_key == "generate_training_plan":
+            return tool_generate_training_plan(
+                session,
+                internal_user_id,
+                args,
+                current_state=plan_intake_state,
+            )
 
         return {"error": "unknown_tool", "message": f"Unknown tool: {name}"}
     except Exception as e:
