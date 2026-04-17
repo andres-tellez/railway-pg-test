@@ -53,10 +53,10 @@ Registered in `src/app.py` as `smartcoach_mobile_coach_bp`.
 | `SMARTCOACH_RUN_RECAP_FASTPATH` | `1` | Opening recap single-call fastpath (`0` / `false` / `no` to disable). |
 | `SMARTCOACH_RUN_RECAP_FASTPATH_RETRY` | `1` | Retry once on empty fastpath completion before full tool loop (`0` to disable). |
 | `SMARTCOACH_RUN_RECAP_PREFETCH_SLIM` | `1` | Recap fastpath LLM appendix: **facts-only** compact JSON by default; card payload still includes full `get_run_summary`. `0` restores KPIs in the appendix. |
-| `SMARTCOACH_RUN_RECAP_COMPARISON_BUNDLE` | `1` | Prior **single-run** local days (facts-only `comparison_sessions` in appendix). `0` disables. |
+| `SMARTCOACH_RUN_RECAP_COMPARISON_BUNDLE` | `1` | Prior **single-run** local days (facts-only `comparison_sessions` + **`when_vs_anchor`** phrasing). `0` disables. |
 | `SMARTCOACH_RUN_RECAP_COMPARISON_LOOKBACK_DAYS` | `7` | Days before anchor to scan; clamped `1`–`21`. |
 | `SMARTCOACH_RUN_RECAP_COMPARISON_MAX` | `2` | Max prior days attached; clamped `1`–`3`. |
-| `SMARTCOACH_RUN_RECAP_WEEK_VOLUME_BUNDLE` | `1` | Recap appendix: **`week_volume_context`** (this vs last ISO week miles + run count from `aggregate_runs_in_range`). `0` disables. |
+| `SMARTCOACH_RUN_RECAP_WEEK_VOLUME_BUNDLE` | `1` | Recap appendix: **`week_volume_context`** (this vs last ISO week miles + run count + **`spoken_timeframe`**). `0` disables. |
 | `SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM` | `1` | Coach tool `get_weekly_training_insight`: **orientation** payload by default; set `include_kpi_detail` true for full KPIs / zone charts. `0` = always full from tool. |
 | `SMARTCOACH_SPLIT_DETAIL_FASTPATH` | `1` | Split-detail single-call fastpath. |
 | `SMARTCOACH_COACH_EVAL_MODEL_OVERRIDE` | `off` | When `1` / `true`, `POST …/agent-messages` may honor header **`X-SmartCoach-Eval-Model`** with an allowlisted OpenAI model (`gpt-4o`, `gpt-4o-mini`, `gpt-4o-2024-08-06`) for **scripted eval only**. **Leave off in production** unless you accept authenticated users picking the model. Response includes **`X-SmartCoach-Model-Used`**. |

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import date
 from unittest.mock import MagicMock
-
-import pytest
 
 from src.smartcoach_mobile_coach.run_recap_comparison_bundle import (
     build_comparison_sessions_facts_only,
+    comparison_when_vs_anchor_phrase,
     run_recap_comparison_bundle_enabled,
 )
 from src.smartcoach_mobile_coach.run_recap_fastpath import (
@@ -61,7 +61,9 @@ def test_build_comparison_respects_order_and_kpis_off(monkeypatch):
     assert len(out) == 2
     assert out[0]["calendar_local_date"] == "2026-04-17"
     assert out[0]["activity_id"] == 201
+    assert out[0]["when_vs_anchor"] == "yesterday"
     assert out[1]["calendar_local_date"] == "2026-04-16"
+    assert out[1]["when_vs_anchor"] == "earlier this week on Thursday"
     assert "training_kpis" not in out[0]["facts"]
 
 
@@ -115,6 +117,7 @@ def test_compact_includes_comparison_sessions():
         "comparison_for_llm": [
             {
                 "calendar_local_date": "2026-04-15",
+                "when_vs_anchor": "yesterday",
                 "activity_id": 2,
                 "facts": {"title": "Prior", "distance_display": "5 mi"},
             }
@@ -137,6 +140,7 @@ def test_appendix_requires_comparison_when_sessions_present():
         "comparison_for_llm": [
             {
                 "calendar_local_date": "2026-04-15",
+                "when_vs_anchor": "yesterday",
                 "activity_id": 2,
                 "facts": {"title": "Prior", "avg_pace_display": "9:30/mi"},
             }
@@ -145,6 +149,7 @@ def test_appendix_requires_comparison_when_sessions_present():
     out = system_appendix_for_prefetch(prefetch, "2026-04-16")
     assert "Required — `comparison_sessions`" in out
     assert "You **must**" in out
+    assert "when_vs_anchor" in out
     assert "Optional context" not in out
 
 
@@ -157,3 +162,17 @@ def test_appendix_forbids_memory_comparison_when_sessions_absent():
     out = system_appendix_for_prefetch(prefetch, "2026-04-16")
     assert "**Prior-run contrast:**" in out
     assert "no** `comparison_sessions`" in out
+
+
+def test_comparison_when_vs_anchor_yesterday():
+    assert (
+        comparison_when_vs_anchor_phrase(date(2026, 4, 16), date(2026, 4, 15))
+        == "yesterday"
+    )
+
+
+def test_comparison_when_vs_anchor_last_week_on_weekday():
+    assert (
+        comparison_when_vs_anchor_phrase(date(2026, 4, 16), date(2026, 4, 7))
+        == "last week on Tuesday"
+    )
