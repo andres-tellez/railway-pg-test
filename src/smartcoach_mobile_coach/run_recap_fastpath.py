@@ -314,6 +314,10 @@ def system_appendix_for_prefetch(
         "**Do not call any tools** — use only the JSON above for numbers.",
         "Answer using the same coaching rules as when you had called those tools yourself "
         "(Insight + Facts; interpretation-first opener for this kind of question).",
+        "**User-facing dates:** In prose to the athlete, say **today** for the anchor run — **never** "
+        "read out `anchor_local_date`, `calendar_local_date`, or `week_monday` as YYYY-MM-DD or "
+        "numeric slash dates. Use `when_vs_anchor` for prior single-run days and `spoken_timeframe` "
+        "for week volume rows.",
     ]
     if slim:
         lines.extend(
@@ -331,10 +335,11 @@ def system_appendix_for_prefetch(
         lines.extend(
             [
                 "**Week volume (`week_volume_context`):** Compare **`this_week`** vs **`last_week`** "
-                "using **only** `run_count` and `total_mi_display` (and `week_label` / `week_monday` "
-                "for wording). You **should** weave **at most one** short clause into the reply "
-                "(may merge with the today recap) — e.g. volume or run frequency vs last week. "
-                "**Do not** invent other weekly stats, KPIs, or trends not in this JSON.",
+                "using **only** `run_count`, `total_mi_display`, and each row’s **`spoken_timeframe`** "
+                "(say “this week” / “last week” — **not** `week_monday` in the reply). You **should** "
+                "weave **at most one** short clause into the reply (may merge with the today recap) — "
+                "e.g. volume or run frequency. **Do not** invent other weekly stats, KPIs, or trends "
+                "not in this JSON.",
             ]
         )
     if compact.get("comparison_sessions"):
@@ -344,11 +349,12 @@ def system_appendix_for_prefetch(
                 "the anchor) with **exactly one** run — **headline facts only** (no KPIs). You **must** "
                 "include **exactly one** short sentence that contrasts **today’s** run with **one** of "
                 "those items, using **only** fields present in the JSON for anchor `facts` and that "
-                "item (pace, HR, distance, time, or title). When you reference the prior day, use its "
-                "**calendar_local_date** from the JSON. Avoid sweeping claims (“you’re clearly "
-                "improving”) unless the numbers in JSON plainly support it; prefer “compared to your "
-                "[date] run, today …”. Then add **one** practical suggestion (consistency, recovery, "
-                "or effort choice — not medical). **Do not** invent runs, dates, or numbers outside this JSON.",
+                "item (pace, HR, distance, time, or title). When you name that prior day in prose, use "
+                "**`when_vs_anchor`** (e.g. “yesterday”, “last week on Thursday”) — **never** quote "
+                "`calendar_local_date` or ISO dates to the user. Avoid sweeping claims (“you’re clearly "
+                "improving”) unless the numbers in JSON plainly support it. Then add **one** practical "
+                "suggestion (consistency, recovery, or effort choice — not medical). **Do not** invent "
+                "runs, dates, or numbers outside this JSON.",
             ]
         )
     else:

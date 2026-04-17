@@ -17,7 +17,6 @@ from sqlalchemy.orm import Session
 
 _FACT_KEYS_FOR_COMPARISON = (
     "title",
-    "local_date",
     "distance_display",
     "moving_time_display",
     "avg_pace_display",
@@ -58,6 +57,46 @@ def _parse_anchor_date(anchor_local_date: str) -> Optional[date]:
         return None
 
 
+def comparison_when_vs_anchor_phrase(anchor: date, prior_day: date) -> str:
+    """
+    Short spoken phrase for a prior calendar day vs anchor (no ISO strings).
+
+    ``prior_day`` must be strictly before ``anchor`` on the calendar.
+    """
+    delta = (anchor - prior_day).days
+    if delta <= 0:
+        return "another day"
+    if delta == 1:
+        return "yesterday"
+
+    weekday = (
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    )[prior_day.weekday()]
+
+    def _iso_week_monday(d: date) -> date:
+        return d - timedelta(days=d.weekday())
+
+    anchor_mon = _iso_week_monday(anchor)
+    prior_mon = _iso_week_monday(prior_day)
+    week_gap = (anchor_mon - prior_mon).days // 7
+
+    if week_gap == 0:
+        return f"earlier this week on {weekday}"
+    if week_gap == 1:
+        return f"last week on {weekday}"
+    if week_gap == 2:
+        return f"the week before last on {weekday}"
+    if week_gap <= 5:
+        return f"{week_gap} weeks ago on {weekday}"
+    return f"{delta} days back on {weekday}"
+
+
 def _trim_facts_for_comparison(facts: Any) -> Dict[str, Any]:
     if not isinstance(facts, dict):
         return {}
@@ -82,7 +121,9 @@ def build_comparison_sessions_facts_only(
     """
     Return up to ``comparison_max_sessions()`` prior single-run days before anchor.
 
-    Each entry: ``calendar_local_date``, ``activity_id``, ``facts`` (trimmed).
+    Each entry: ``calendar_local_date`` (for grounding only), ``when_vs_anchor``
+    (spoken relative phrase — use this in user-facing prose), ``activity_id``,
+    ``facts`` (trimmed; no ISO ``local_date`` in facts).
     """
     from src.smartcoach_mobile_coach.agent_tools import (
         tool_find_runs_by_date,
@@ -129,6 +170,7 @@ def build_comparison_sessions_facts_only(
         out.append(
             {
                 "calendar_local_date": ds,
+                "when_vs_anchor": comparison_when_vs_anchor_phrase(anchor, day),
                 "activity_id": aid,
                 "facts": facts,
             }

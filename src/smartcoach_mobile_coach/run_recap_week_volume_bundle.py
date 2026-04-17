@@ -33,10 +33,6 @@ def _parse_anchor_date(anchor_local_date: str) -> Optional[date]:
         return None
 
 
-def _week_label_for_monday(monday: date) -> str:
-    return f"Week of {monday.month}/{monday.day}"
-
-
 def build_week_volume_context_for_llm(
     session: Session,
     internal_user_id: str,
@@ -76,13 +72,13 @@ def build_week_volume_context_for_llm(
         if isinstance(wm, str) and len(wm) >= 10:
             by_monday[wm[:10]] = row
 
-    def pack(mon: date) -> Dict[str, Any]:
+    def pack(mon: date, *, spoken_timeframe: str) -> Dict[str, Any]:
         iso = mon.isoformat()
         r = by_monday.get(iso)
         if not r:
             return {
                 "week_monday": iso,
-                "week_label": _week_label_for_monday(mon),
+                "spoken_timeframe": spoken_timeframe,
                 "run_count": 0,
                 "total_mi_display": format_distance_mi(0.0),
             }
@@ -93,12 +89,9 @@ def build_week_volume_context_for_llm(
             except (TypeError, ValueError):
                 miles = 0.0
             mi_disp = format_distance_mi(miles)
-        wl = r.get("week_label")
-        if not isinstance(wl, str) or not wl.strip():
-            wl = _week_label_for_monday(mon)
         return {
             "week_monday": iso,
-            "week_label": wl.strip(),
+            "spoken_timeframe": spoken_timeframe,
             "run_count": int(r.get("run_count") or 0),
             "total_mi_display": mi_disp.strip(),
         }
@@ -110,6 +103,6 @@ def build_week_volume_context_for_llm(
             "(same basis as `aggregate_runs_in_range` weekly_summaries)."
         ),
         "anchor_local_date": ld,
-        "this_week": pack(this_week_monday),
-        "last_week": pack(last_week_monday),
+        "this_week": pack(this_week_monday, spoken_timeframe="this week"),
+        "last_week": pack(last_week_monday, spoken_timeframe="last week"),
     }

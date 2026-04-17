@@ -47,9 +47,11 @@ def test_build_week_volume_maps_this_and_last_week(monkeypatch):
     out = build_week_volume_context_for_llm(MagicMock(), "user-id", "2026-04-16")
     assert out is not None
     assert out["this_week"]["week_monday"] == "2026-04-13"
+    assert out["this_week"]["spoken_timeframe"] == "this week"
     assert out["this_week"]["run_count"] == 2
     assert out["this_week"]["total_mi_display"] == "10.50 mi"
     assert out["last_week"]["week_monday"] == "2026-04-06"
+    assert out["last_week"]["spoken_timeframe"] == "last week"
     assert out["last_week"]["run_count"] == 1
     assert out["last_week"]["total_mi_display"] == "5.00 mi"
 
@@ -66,7 +68,9 @@ def test_build_week_volume_zeros_when_weeks_missing(monkeypatch):
     assert out is not None
     assert out["this_week"]["run_count"] == 0
     assert out["this_week"]["total_mi_display"] == "0.00 mi"
+    assert out["this_week"]["spoken_timeframe"] == "this week"
     assert out["last_week"]["run_count"] == 0
+    assert out["last_week"]["spoken_timeframe"] == "last week"
 
 
 def test_build_week_volume_returns_none_on_tool_error(monkeypatch):
@@ -90,13 +94,13 @@ def test_compact_includes_week_volume_context():
             "anchor_local_date": "2026-04-16",
             "this_week": {
                 "week_monday": "2026-04-13",
-                "week_label": "W1",
+                "spoken_timeframe": "this week",
                 "run_count": 2,
                 "total_mi_display": "10 mi",
             },
             "last_week": {
                 "week_monday": "2026-04-06",
-                "week_label": "W0",
+                "spoken_timeframe": "last week",
                 "run_count": 1,
                 "total_mi_display": "5 mi",
             },
@@ -116,13 +120,13 @@ def test_appendix_mentions_week_volume_when_present():
             "anchor_local_date": "2026-04-16",
             "this_week": {
                 "week_monday": "2026-04-13",
-                "week_label": "W1",
+                "spoken_timeframe": "this week",
                 "run_count": 2,
                 "total_mi_display": "10.00 mi",
             },
             "last_week": {
                 "week_monday": "2026-04-06",
-                "week_label": "W0",
+                "spoken_timeframe": "last week",
                 "run_count": 1,
                 "total_mi_display": "5.00 mi",
             },
@@ -130,6 +134,7 @@ def test_appendix_mentions_week_volume_when_present():
     }
     out = system_appendix_for_prefetch(prefetch, "2026-04-16")
     assert "Week volume (`week_volume_context`)" in out
+    assert "spoken_timeframe" in out
 
 
 def test_week_volume_bundle_env_off(monkeypatch):
