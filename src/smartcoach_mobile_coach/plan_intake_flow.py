@@ -10,8 +10,11 @@ This module keeps collection/validation state outside the LLM:
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
+
+from dateutil import parser as date_parser
 
 from src.schemas.plan_schema import PlanCreateSchema, PrimaryGoal
 from src.utils.date_helpers import DAY_NAMES_ABBREV
@@ -94,6 +97,104 @@ def _normalize_date_yyyy_mm_dd(value: Any) -> Optional[str]:
         return t
     except ValueError:
         return None
+
+
+def _parse_race_date_natural_language(raw: Any) -> Optional[str]:
+    """
+    Accept strict YYYY-MM-DD or common spoken / typed race dates.
+
+    Uses dateutil for flexible phrases (e.g. "October 11 of 2026", "Oct 11, 2026").
+    """
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip()
+    if not s:
+        return None
+    strict = _normalize_date_yyyy_mm_dd(s)
+    if strict:
+        return strict
+    try:
+        default = datetime.now().replace(
+            month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        dt = date_parser.parse(s, default=default, fuzzy=True)
+    except (ValueError, TypeError, OverflowError, OSError):
+        return None
+    return dt.date().isoformat()
+
+
+def _normalize_target_time_phrase(raw: Any) -> Optional[str]:
+    """
+    Map common spoken goal times into a short clock string (max 20 chars for schema).
+
+    Examples: "3 hours 40 minutes" -> "3:40:00", "3h40m" -> "3:40:00", "3:40" -> "3:40".
+    """
+    if not isinstance(raw, str):
+        return None
+    t = raw.strip()
+    if not t:
+        return None
+    if re.match(r"^\d{1,2}:\d{2}(:\d{2})?$", t):
+        return t[:20]
+    compact = re.sub(r"\s+", " ", t)
+    m = re.match(
+        r"(?i)^\s*(\d{1,2})\s*h(?:rs?|ours?)?\s*(\d{1,2})\s*m(?:ins?|inutes?)?\s*$",
+        compact,
+    )
+    if m:
+        return f"{int(m.group(1))}:{int(m.group(2)):02d}:00"[:20]
+    m = re.search(
+        r"(?i)(\d{1,2})\s*(?:hours?|hrs?)\s*(?:and\s*)?(\d{1,2})\s*(?:minutes?|mins?)",
+        compact,
+    )
+    if m:
+        return f"{int(m.group(1))}:{int(m.group(2)):02d}:00"[:20]
+    return t[:20]
+
+
+def user_confirms_plan_intake(user_message: str) -> bool:
+    """
+    True when the user is clearly confirming a ready-to-generate plan summary.
+
+    Short messages only; negation / correction cues disable the fast path.
+    """
+    raw = (user_message or "").strip()
+    if not raw or len(raw) > 96:
+        return False
+    s = raw.lower()
+    if re.search(
+        r"\b(but|except|change|wrong|actually|instead|not quite|hold on|wait)\b",
+        s,
+    ):
+        return False
+    if re.search(r"\b(no|nope|cancel|stop|don'?t)\b", s):
+        return False
+    core = re.sub(r"[\s.!?…,;:\"'`]+", " ", s).strip()
+    if raw.strip() in ("👍", "✓", "✅"):
+        return True
+    one_word = core.replace(" ", "")
+    if one_word in (
+        "y",
+        "ye",
+        "yes",
+        "yep",
+        "yup",
+        "ok",
+        "okay",
+        "k",
+        "sure",
+        "👍",
+        "✓",
+    ):
+        return True
+    if re.match(
+        r"^(yes|yeah|yep|yup|correct|right|confirm|confirmed|absolutely|definitely|"
+        r"looks good|look good|sounds good|sound good|go ahead|please do|"
+        r"that'?s right|that is right|all good|perfect)(\b|[\s.!?]|$)",
+        core,
+    ):
+        return True
+    return False
 
 
 def _coerce_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -182,9 +283,12 @@ def update_plan_intake_state(
 
     for key, raw in up.items():
         if key == "race_date":
-            nd = _normalize_date_yyyy_mm_dd(raw)
+            nd = _parse_race_date_natural_language(raw)
             if nd is None:
-                errors.append("race_date must be YYYY-MM-DD.")
+                errors.append(
+                    "race_date must be a real calendar day "
+                    "(e.g. 2026-10-11 or October 11, 2026)."
+                )
             else:
                 draft["race_date"] = nd
         elif key == "race_distance":
@@ -216,7 +320,7 @@ def update_plan_intake_state(
             if raw is None:
                 draft.pop("target_time", None)
             elif isinstance(raw, str) and raw.strip():
-                draft["target_time"] = raw.strip()[:20]
+                draft["target_time"] = _normalize_target_time_phrase(raw.strip())
             else:
                 errors.append("target_time must be a non-empty string when provided.")
         elif key == "training_days":
