@@ -35,7 +35,11 @@ from sqlalchemy import text
 from src.db.dao.user_profile_dao import get_user_profile
 from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
 from src.services.security.external_apis.openai_service import get_openai_service
-from src.smartcoach_mobile_coach.agent_tools import execute_tool
+from src.smartcoach_mobile_coach.agent_tools import (
+    execute_tool,
+    tool_generate_training_plan,
+)
+from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_intake
 from src.smartcoach_mobile_coach.dialogue_manager import (
     ResponseDirective,
     classify_turn,
@@ -362,8 +366,10 @@ _UPDATE_PLAN_INTAKE_OPENAI_TOOL: Dict[str, Any] = {
                     "type": "object",
                     "description": (
                         "Partial plan fields from the latest user answer. Allowed keys: "
-                        "race_date (YYYY-MM-DD), race_distance, race_name, race_location, "
-                        "primary_goal (Just Finish|Target Time), target_time, training_days "
+                        "race_date (YYYY-MM-DD or natural language, e.g. Oct 11 2026), "
+                        "race_distance, race_name, race_location, "
+                        "primary_goal (Just Finish|Target Time), target_time "
+                        "(clock or phrases like 3h40m), training_days "
                         "(array or comma text), long_run_day, notes, plan_name."
                     ),
                 },
@@ -1027,6 +1033,7 @@ Rules for this mode:
 - Only call `generate_training_plan` after explicit user confirmation with `confirm=true`.
 - Keep user-facing wording short and conversational (usually 1-3 sentences).
 - Tool payload is the source of truth; never invent field values not returned by tools.
+- The server accepts common **spoken dates** and **goal-time phrases** in tool updates; still pass what the user said in `updates`.
 """.strip()
 
 
@@ -1034,6 +1041,12 @@ def _env_experiment_minimal_flag(name: str) -> bool:
     """True when env var is 1/true/yes/on (case-insensitive)."""
     raw = (os.getenv(name) or "").strip().lower()
     return raw in ("1", "true", "yes", "on")
+
+
+def _plan_confirm_fastpath_enabled() -> bool:
+    """Deterministic yes→generate without an LLM round. Env SMARTCOACH_PLAN_CONFIRM_FASTPATH (default on)."""
+    raw = (os.getenv("SMARTCOACH_PLAN_CONFIRM_FASTPATH") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
 
 
 def _experiment_response_directive_stub(directive: ResponseDirective) -> str:
@@ -1379,6 +1392,90 @@ def run_mobile_agent_turn(
         ",".join(response_directive.avoid_repeating_metrics) or "none",
         response_directive.target_length,
     )
+
+    prior_plan_state = (
+        thread_ctx.latest_plan_intake_state
+        if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict)
+        else None
+    )
+    if (
+        _plan_confirm_fastpath_enabled()
+        and prior_plan_state
+        and prior_plan_state.get("ready_to_generate")
+        and user_confirms_plan_intake(user_message)
+        and not eval_model_override
+    ):
+        t_plan_fast = time.perf_counter()
+        out = tool_generate_training_plan(
+            session,
+            str(internal_user_id),
+            {"confirm": True},
+            current_state=prior_plan_state,
+        )
+        if out.get("ok"):
+            timings_fast: Dict[str, Any] = {
+                "plan_confirm_fastpath_ms": round(
+                    (time.perf_counter() - t_plan_fast) * 1000, 2
+                ),
+                "agent_orchestrator_total_ms": round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                ),
+            }
+            meta_fast: Dict[str, Any] = {
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+                "cost": 0.0,
+                "loops": 0,
+                "max_loops": _max_agent_loops(),
+                "model": model,
+                "plan_confirm_fastpath": True,
+                "timings_ms": timings_fast,
+                "dialogue": {
+                    "turn_type": response_directive.turn_type,
+                    "intent": response_directive.intent,
+                    "turn_count": conversation_state.turn_count,
+                    "last_topic": conversation_state.last_topic,
+                    "target_length": response_directive.target_length,
+                    "narration_mode": response_directive.narration_mode,
+                    "tool_strategy": response_directive.tool_strategy,
+                    "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                    "allow_full_recap": response_directive.allow_full_recap,
+                    "investigate_first": response_directive.investigate_first,
+                    "interaction_mode": response_directive.interaction_mode,
+                    "thread_derived": thread_ctx.as_dict(),
+                },
+            }
+            race_d = out.get("race_date") or ""
+            race_dist = out.get("race_distance") or "race"
+            intro = (
+                f"Your {race_dist} plan is saved for {race_d}. "
+                "Here’s a quick look at this week — tell me if you want any tweaks."
+            )
+            structured_ok: Dict[str, Any] = {
+                "type": "text",
+                "content": intro,
+                "data": {},
+            }
+            pis = out.get("plan_intake_state")
+            if isinstance(pis, dict):
+                structured_ok["data"]["plan_intake_state"] = pis
+            pg = out.get("plan_generation")
+            if isinstance(pg, dict):
+                structured_ok["data"]["plan_generation"] = pg
+            logger.info(
+                "[smartcoach_mobile_coach] response_shape=text plan_confirm_fastpath=1 "
+                "plan_id=%s",
+                out.get("plan_id"),
+            )
+            return structured_ok, meta_fast
+        logger.warning(
+            "[smartcoach_mobile_coach] plan_confirm_fastpath skipped: %s",
+            out.get("error") or out.get("message") or "unknown",
+        )
+
     plan_creation_mode = _is_plan_creation_turn(
         response_directive.intent, user_message, thread_ctx
     )
