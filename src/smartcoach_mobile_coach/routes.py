@@ -280,6 +280,7 @@ def agent_messages(conversation_id):
                 client_timezone=client_tz,
                 eval_model_override=_coerce_eval_model_header(),
                 last_activity_id_hint=hint_activity_id,
+                thread_derived_context=thread_ctx_raw,
             )
         except RateLimitExceededError as e:
             session.rollback()

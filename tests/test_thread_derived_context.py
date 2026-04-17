@@ -49,6 +49,23 @@ def test_thread_context_extracts_plan_intake_state():
     assert out.latest_plan_intake_state["status"] == "collecting"
 
 
+def test_thread_context_plain_llm_history_drops_plan_intake():
+    """
+    History passed to the model strips structured assistant JSON to inner ``content`` only.
+    Re-deriving thread context from that stripped history must not recover plan_intake_state
+    (or the orchestrator would never see prior intake).
+    """
+    inner = "Please confirm your race details."
+    history = [
+        {
+            "role": "assistant",
+            "content": inner,
+        }
+    ]
+    out = derive_thread_coach_context(history)
+    assert out.latest_plan_intake_state is None
+
+
 def test_thread_context_extracts_plan_generation_payload():
     history = [
         {
