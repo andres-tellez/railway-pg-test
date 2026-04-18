@@ -148,5 +148,5 @@ def test_plan_generation_brief_includes_preview_and_plan_tab_handoff():
     assert "| Day | Run Type | Miles |" in out
     assert "| Mon | Easy | 4.0 |" in out
     assert "| Wed | Tempo | 6.0 |" in out
-    assert "**View your Plan:** click on the Plan tab" in out
+    assert "**View your Plan:** click on Plan " in out
     assert "**Questions** - Any questions?" in out
