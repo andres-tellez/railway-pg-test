@@ -975,8 +975,8 @@ def _build_plan_generation_brief(
     lines.extend(
         [
             "",
-            "**View your Plan:** click on the Plan tab![Plan tab](smartcoach-tab-icon://plan) to see "
-            "full details and upcoming phases.",
+            "**View your Plan:** click on Plan ![Plan tab](smartcoach-tab-icon://plan) to see full details "
+            "and upcoming phases.",
             "",
             "**Questions** - Any questions?",
         ]

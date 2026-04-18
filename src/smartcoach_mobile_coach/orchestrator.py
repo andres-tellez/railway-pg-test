@@ -1144,7 +1144,7 @@ def _plan_generation_fastpath_reply(tool_out: Dict[str, Any]) -> str:
         intro += f" for {race_d}"
     intro += "."
     return (
-        f"{intro} View your Plan: open the Plan tab to review the full week-by-week schedule, "
+        f"{intro} View your Plan: click Plan in the app to review the full week-by-week schedule, "
         "and tell me if you want any tweaks."
     )
 
