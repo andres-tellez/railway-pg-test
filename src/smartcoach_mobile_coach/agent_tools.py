@@ -594,6 +594,7 @@ def tool_update_plan_intake(
     args: Dict[str, Any],
     *,
     current_state: Optional[Dict[str, Any]] = None,
+    source_user_message: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Deterministically merge plan intake fields and report missing required items.
@@ -606,11 +607,18 @@ def tool_update_plan_intake(
         clear_fields = []
     reset = _coerce_tool_bool(args.get("reset"), False)
 
+    msg = source_user_message
+    if not (isinstance(msg, str) and msg.strip()):
+        raw_ctx = args.get("source_user_message")
+        if isinstance(raw_ctx, str) and raw_ctx.strip():
+            msg = raw_ctx.strip()
+
     state = update_plan_intake_state(
         current_state,
         updates=updates if isinstance(updates, dict) else {},
         clear_fields=[str(f) for f in clear_fields if isinstance(f, str)],
         reset=reset,
+        source_user_message=msg if isinstance(msg, str) else None,
     )
     return {
         "plan_intake_state": state,
@@ -1130,6 +1138,7 @@ def execute_tool(
     *,
     anchor_local_date: Optional[str] = None,
     plan_intake_state: Optional[Dict[str, Any]] = None,
+    source_user_message: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
         args = json.loads(arguments_json or "{}")
@@ -1288,6 +1297,7 @@ def execute_tool(
                 internal_user_id,
                 args,
                 current_state=plan_intake_state,
+                source_user_message=source_user_message,
             )
 
         if handler_key == "generate_training_plan":

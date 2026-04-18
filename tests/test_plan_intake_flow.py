@@ -105,6 +105,115 @@ def test_plan_intake_target_time_from_spoken_duration():
     assert state["ready_to_generate"] is True
 
 
+def test_plan_intake_training_days_monday_through_saturday_string():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-12",
+            "race_distance": "Marathon",
+            "primary_goal": "Just Finish",
+            "training_days": "Monday through Saturday",
+        },
+    )
+    assert state["draft"]["training_days"] == [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat",
+    ]
+    assert state["ready_to_generate"] is True
+
+
+def test_plan_intake_training_days_weekdays_plus_saturday():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-12",
+            "race_distance": "Marathon",
+            "primary_goal": "Just Finish",
+            "training_days": "weekdays plus Saturday",
+        },
+    )
+    assert state["draft"]["training_days"] == [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat",
+    ]
+
+
+def test_plan_intake_training_days_wraparound_range():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-12",
+            "race_distance": "Marathon",
+            "primary_goal": "Just Finish",
+            "training_days": "Friday through Monday",
+        },
+    )
+    assert state["draft"]["training_days"] == ["Fri", "Sat", "Sun", "Mon"]
+
+
+def test_plan_intake_infers_marathon_from_race_name_only():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_name": "Chicago Marathon",
+            "race_date": "2026-10-12",
+            "primary_goal": "Just Finish",
+            "training_days": ["Tue", "Thu", "Sat"],
+        },
+    )
+    assert state["draft"]["race_distance"] == "Marathon"
+    assert state["draft"]["race_name"] == "Chicago Marathon"
+    assert state["ready_to_generate"] is True
+
+
+def test_plan_intake_normalizes_race_distance_synonyms():
+    state = update_plan_intake_state(
+        None,
+        updates={"race_distance": "full marathon"},
+    )
+    assert state["draft"]["race_distance"] == "Marathon"
+
+
+def test_plan_intake_fills_race_name_from_source_user_message():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-12",
+            "race_distance": "Marathon",
+            "primary_goal": "Just Finish",
+            "training_days": ["Tue", "Thu", "Sat"],
+        },
+        source_user_message=(
+            "Please build a plan for the Bank of America Chicago Marathon on that date."
+        ),
+    )
+    assert state["draft"]["race_name"] == "Bank of America Chicago Marathon"
+    assert state["ready_to_generate"] is True
+
+
+def test_plan_intake_does_not_overwrite_explicit_race_name_when_user_message_differs():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_name": "Berlin Marathon",
+            "race_date": "2026-09-27",
+            "race_distance": "Marathon",
+            "primary_goal": "Just Finish",
+            "training_days": ["Tue", "Thu", "Sat"],
+        },
+        source_user_message="I was also thinking about Chicago Marathon someday",
+    )
+    assert state["draft"]["race_name"] == "Berlin Marathon"
+
+
 def test_user_confirms_plan_intake_short_affirmations():
     assert user_confirms_plan_intake("Y") is True
     assert user_confirms_plan_intake("y.") is True
