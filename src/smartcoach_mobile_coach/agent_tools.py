@@ -636,6 +636,35 @@ def _safe_float(value: Any) -> Optional[float]:
     return out
 
 
+def _safe_int(value: Any) -> Optional[int]:
+    try:
+        out = int(value)
+    except (TypeError, ValueError):
+        return None
+    return out
+
+
+def _format_short_day(date_str: str) -> str:
+    raw = str(date_str or "").strip()[:10]
+    try:
+        dt = datetime.strptime(raw, "%Y-%m-%d")
+    except ValueError:
+        return raw
+    return dt.strftime("%a %b %d").replace(" 0", " ")
+
+
+def _format_week_range(start_week: Optional[int], end_week: Optional[int]) -> str:
+    if start_week is None and end_week is None:
+        return "—"
+    if start_week is None:
+        return str(end_week)
+    if end_week is None:
+        return str(start_week)
+    if start_week == end_week:
+        return str(start_week)
+    return f"{start_week}-{end_week}"
+
+
 def _extract_plan_weeks(validation_result: Dict[str, Any]) -> List[Dict[str, Any]]:
     validated_plan = validation_result.get("validated_plan")
     if isinstance(validated_plan, dict) and isinstance(
@@ -655,17 +684,45 @@ def _plan_overview_from_validation(
 ) -> Dict[str, Any]:
     weeks = _extract_plan_weeks(validation_result)
     phase_sequence: List[str] = []
+    phase_blocks: List[Dict[str, Any]] = []
+    phase_idx: Dict[str, int] = {}
     peak_weekly_miles: Optional[float] = None
     peak_long_run_miles: Optional[float] = None
     for w in weeks:
         phase = str(w.get("phase") or "").strip()
         if phase and phase not in phase_sequence:
             phase_sequence.append(phase)
+        week_num = _safe_int(w.get("week_number"))
         weekly = _safe_float(w.get("weekly_mileage"))
         if weekly is not None:
             peak_weekly_miles = (
                 weekly if peak_weekly_miles is None else max(peak_weekly_miles, weekly)
             )
+        if phase:
+            if phase not in phase_idx:
+                phase_idx[phase] = len(phase_blocks)
+                phase_blocks.append(
+                    {
+                        "phase": phase,
+                        "start_week": week_num,
+                        "end_week": week_num,
+                        "peak_weekly_miles": weekly,
+                    }
+                )
+            else:
+                block = phase_blocks[phase_idx[phase]]
+                if week_num is not None:
+                    start_week = _safe_int(block.get("start_week"))
+                    end_week = _safe_int(block.get("end_week"))
+                    if start_week is None or week_num < start_week:
+                        block["start_week"] = week_num
+                    if end_week is None or week_num > end_week:
+                        block["end_week"] = week_num
+                if weekly is not None:
+                    prev_peak = _safe_float(block.get("peak_weekly_miles"))
+                    block["peak_weekly_miles"] = (
+                        weekly if prev_peak is None else max(prev_peak, weekly)
+                    )
         long_run = _safe_float(w.get("long_run_miles"))
         if long_run is not None:
             peak_long_run_miles = (
@@ -705,6 +762,20 @@ def _plan_overview_from_validation(
         "race_distance": saved_plan.get("race_distance"),
         "total_weeks": len(weeks) if weeks else None,
         "phase_sequence": phase_sequence,
+        "phase_blocks": [
+            {
+                "phase": str(block.get("phase") or "").strip(),
+                "start_week": _safe_int(block.get("start_week")),
+                "end_week": _safe_int(block.get("end_week")),
+                "peak_weekly_miles": (
+                    round(float(block["peak_weekly_miles"]), 1)
+                    if _safe_float(block.get("peak_weekly_miles")) is not None
+                    else None
+                ),
+            }
+            for block in phase_blocks
+            if str(block.get("phase") or "").strip()
+        ],
         "peak_weekly_miles": (
             round(float(peak_weekly_miles), 1)
             if peak_weekly_miles is not None
@@ -762,7 +833,8 @@ def _build_plan_generation_brief(
     ) or "TBD"
     lines: List[str] = [
         f"Your {race_label} plan is saved for {race_day}.",
-        f"Plan start: {start_day}.",
+        "",
+        f"**Week 1 starts:** {start_day}",
     ]
 
     if isinstance(baseline, dict):
@@ -774,43 +846,78 @@ def _build_plan_generation_brief(
                 base_bits.append(f"{avg_mpw:.1f} mi/week")
             if long_run is not None:
                 base_bits.append(f"{long_run:.1f} mi longest recent run")
-            lines.append(f"Baseline used: {', '.join(base_bits)}.")
+            lines.extend(["", f"**Baseline used:** {', '.join(base_bits)}."])
 
     if isinstance(overview, dict):
-        bits: List[str] = []
         total_weeks = overview.get("total_weeks")
-        if isinstance(total_weeks, int) and total_weeks > 0:
-            bits.append(f"{total_weeks} weeks")
-        phase_sequence = overview.get("phase_sequence")
-        if isinstance(phase_sequence, list):
-            named = [str(p).strip() for p in phase_sequence if str(p).strip()]
-            if named:
-                bits.append(f"phases: {' -> '.join(named)}")
         peak_lr = overview.get("peak_long_run_miles")
+        phase_blocks = overview.get("phase_blocks")
+        lines.append("")
+        if isinstance(total_weeks, int) and total_weeks > 0:
+            lines.append(f"**Plan shape** ({total_weeks} weeks)")
+        else:
+            lines.append("**Plan shape**")
+        if isinstance(phase_blocks, list) and phase_blocks:
+            lines.append("")
+            lines.append("| Phase | Weeks | Peak Miles |")
+            lines.append("| --- | --- | --- |")
+            for block in phase_blocks:
+                if not isinstance(block, dict):
+                    continue
+                phase_name = str(block.get("phase") or "").strip() or "Phase"
+                week_range = _format_week_range(
+                    _safe_int(block.get("start_week")),
+                    _safe_int(block.get("end_week")),
+                )
+                peak_phase_miles = _safe_float(block.get("peak_weekly_miles"))
+                peak_phase_label = (
+                    f"{peak_phase_miles:.1f} mpw"
+                    if peak_phase_miles is not None
+                    else "—"
+                )
+                lines.append(f"| {phase_name} | {week_range} | {peak_phase_label} |")
+        else:
+            phase_sequence = overview.get("phase_sequence")
+            if isinstance(phase_sequence, list):
+                named = [str(p).strip() for p in phase_sequence if str(p).strip()]
+                if named:
+                    lines.extend(["", f"Phases: {' → '.join(named)}"])
         if peak_lr is not None:
-            bits.append(f"peak long run {float(peak_lr):.1f} mi")
-        if bits:
-            lines.append(f"Plan shape: {', '.join(bits)}.")
+            lines.append(f"- Longest run callout: **{float(peak_lr):.1f} miles**")
 
     if isinstance(this_week, dict):
         workouts = this_week.get("workouts")
         if isinstance(workouts, list) and workouts:
-            lines.append("Week 1 preview:")
+            lines.extend(
+                [
+                    "",
+                    "**Week 1 preview**",
+                    "",
+                    "| Day | Run Type | Miles |",
+                    "| --- | --- | --- |",
+                ]
+            )
             for w in workouts[:6]:
                 if not isinstance(w, dict):
                     continue
-                d = str(w.get("date") or "")[:10]
-                wt = str(w.get("workout_type") or "run").replace("_", " ").strip()
+                d = _format_short_day(str(w.get("date") or ""))
+                wt_raw = str(w.get("workout_type") or "run").replace("_", " ").strip()
+                wt = wt_raw.title() if wt_raw else "Run"
                 miles = _safe_float(w.get("miles"))
-                miles_text = f" ({miles:.1f} mi)" if miles is not None else ""
-                lines.append(f"- {d}: {wt}{miles_text}")
+                miles_text = f"{miles:.1f}" if miles is not None else "—"
+                lines.append(f"| {d} | {wt} | {miles_text} |")
         else:
             lines.append(
                 "Week-by-week workouts are ready in Plan. Open that tab for the full schedule."
             )
 
-    lines.append("Open the Plan tab to see full details and upcoming phases.")
-    lines.append("Tell me if you want any tweaks to training days or target pace.")
+    lines.extend(
+        [
+            "",
+            "🗂️ Open the **Plan** tab to see full details and upcoming phases.",
+            "Do you have any questions, or want to adjust training days or goal pace?",
+        ]
+    )
     return "\n".join(lines)
 
 

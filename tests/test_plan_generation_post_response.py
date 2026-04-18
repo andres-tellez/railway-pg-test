@@ -54,6 +54,26 @@ def test_plan_overview_extracts_phases_and_peaks():
     assert out["plan_start_date"] == "2026-06-08"
     assert out["total_weeks"] == 4
     assert out["phase_sequence"] == ["Base", "Build", "Peak"]
+    assert out["phase_blocks"] == [
+        {
+            "phase": "Base",
+            "start_week": 1,
+            "end_week": 1,
+            "peak_weekly_miles": 28.0,
+        },
+        {
+            "phase": "Build",
+            "start_week": 2,
+            "end_week": 3,
+            "peak_weekly_miles": 35.2,
+        },
+        {
+            "phase": "Peak",
+            "start_week": 4,
+            "end_week": 4,
+            "peak_weekly_miles": 40.0,
+        },
+    ]
     assert out["peak_weekly_miles"] == 40.0
     assert out["peak_long_run_miles"] == 18.0
     assert out["training_days"] == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -85,6 +105,20 @@ def test_plan_generation_brief_includes_preview_and_plan_tab_handoff():
             "plan_start_date": "2026-06-08",
             "total_weeks": 18,
             "phase_sequence": ["Base", "Build", "Peak", "Taper"],
+            "phase_blocks": [
+                {
+                    "phase": "Base",
+                    "start_week": 1,
+                    "end_week": 6,
+                    "peak_weekly_miles": 32.0,
+                },
+                {
+                    "phase": "Build",
+                    "start_week": 7,
+                    "end_week": 13,
+                    "peak_weekly_miles": 40.5,
+                },
+            ],
             "peak_long_run_miles": 20.0,
         },
         "baseline": {
@@ -101,12 +135,11 @@ def test_plan_generation_brief_includes_preview_and_plan_tab_handoff():
     out = _build_plan_generation_brief("Marathon", "2026-10-11", payload)
 
     assert "Your Marathon plan is saved for 2026-10-11." in out
-    assert "Plan start: 2026-06-08." in out
-    assert "Baseline used: 22.5 mi/week, 10.2 mi longest recent run." in out
-    assert (
-        "Plan shape: 18 weeks, phases: Base -> Build -> Peak -> Taper, peak long run 20.0 mi."
-        in out
-    )
-    assert "Week 1 preview:" in out
-    assert "- 2026-06-08: easy (4.0 mi)" in out
-    assert "Open the Plan tab to see full details and upcoming phases." in out
+    assert "**Week 1 starts:** 2026-06-08" in out
+    assert "**Baseline used:** 22.5 mi/week, 10.2 mi longest recent run." in out
+    assert "| Phase | Weeks | Peak Miles |" in out
+    assert "| Base | 1-6 | 32.0 mpw |" in out
+    assert "- Longest run callout: **20.0 miles**" in out
+    assert "| Day | Run Type | Miles |" in out
+    assert "| Mon Jun 8 | Easy | 4.0 |" in out
+    assert "🗂️ Open the **Plan** tab to see full details and upcoming phases." in out
