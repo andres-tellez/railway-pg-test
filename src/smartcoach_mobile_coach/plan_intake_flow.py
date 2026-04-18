@@ -68,24 +68,318 @@ def _normalize_day(value: Any) -> Optional[str]:
     return aliases.get(t)
 
 
+def _text_suggests_half_marathon(s: str) -> bool:
+    """Match `race_distance_factory_v2._is_half_marathon` without importing a private helper."""
+    if not s:
+        return False
+    tl = s.lower()
+    return "half" in tl or "13.1" in tl
+
+
+def _try_infer_race_distance(text: str) -> Optional[str]:
+    """
+    Infer Half Marathon vs Marathon from free text (race names, user phrases).
+
+    Returns None when there is no clear signal so we do not guess arbitrary events.
+    """
+    if not isinstance(text, str):
+        return None
+    s = text.strip()
+    if not s:
+        return None
+    if _text_suggests_half_marathon(s):
+        return "Half Marathon"
+    tl = s.lower()
+    if "marathon" in tl or "26.2" in tl:
+        return "Marathon"
+    if re.search(r"\bfull\b", tl) and "half" not in tl:
+        return "Marathon"
+    return None
+
+
+def _normalize_race_distance_intake(raw: str) -> str:
+    """Map common synonyms onto supported labels; otherwise keep stripped text."""
+    s = raw.strip()
+    if not s:
+        return s
+    inferred = _try_infer_race_distance(s)
+    if inferred:
+        return inferred
+    return s
+
+
+def _fill_race_distance_from_named_event(draft: Dict[str, Any]) -> None:
+    """When distance is still empty, infer from race_name / location / plan_name if unambiguous."""
+    rd = draft.get("race_distance")
+    if isinstance(rd, str) and rd.strip():
+        return
+    parts: List[str] = []
+    for k in ("race_name", "race_location", "plan_name"):
+        v = draft.get(k)
+        if isinstance(v, str) and v.strip():
+            parts.append(v.strip())
+    blob = " ".join(parts)
+    inferred = _try_infer_race_distance(blob)
+    if inferred:
+        draft["race_distance"] = inferred
+
+
+# Prefixes too generic to treat as a race title when followed by "Marathon".
+_RACE_NAME_TRIVIAL_PREFIXES = frozenset(
+    {
+        "my",
+        "a",
+        "an",
+        "the",
+        "any",
+        "this",
+        "that",
+        "our",
+        "your",
+        "for",
+        "full",
+        "half",
+        "running",
+        "do",
+        "doing",
+        "training",
+        "train",
+        "plan",
+        "race",
+        "next",
+        "another",
+        "first",
+        "spring",
+        "fall",
+        "winter",
+        "summer",
+    }
+)
+
+# Leading words that often start the *sentence*, not the race title (overlap scan).
+_RACE_NAME_BOILERPLATE_FIRST = frozenset(
+    {
+        "please",
+        "can",
+        "could",
+        "would",
+        "should",
+        "will",
+        "help",
+        "want",
+        "wanna",
+        "need",
+        "looking",
+        "hoping",
+        "trying",
+        "build",
+        "create",
+        "make",
+        "give",
+        "set",
+        "start",
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "thank",
+        "ok",
+        "okay",
+        "yes",
+        "yeah",
+        "yep",
+        "sure",
+        "i",
+        "we",
+        "you",
+        "got",
+    }
+)
+
+
+def _extract_race_name_from_user_text(text: str) -> Optional[str]:
+    """
+    Best-effort event title from the user's message (e.g. "Chicago Marathon").
+
+    Conservative: only matches ... Half Marathon / ... Marathon patterns, skips
+    trivial leading words ("my marathon"), returns None when unsure.
+    """
+    if not isinstance(text, str):
+        return None
+    s = text.strip()
+    if not s:
+        return None
+    if len(s) > 2000:
+        s = s[:2000]
+
+    def _clean_prefix(raw: str) -> str:
+        p = re.sub(r"\s+", " ", raw.strip())
+        p = re.sub(r"(?i)^the\s+", "", p).strip()
+        return p
+
+    def _usable_prefix(p: str) -> bool:
+        if len(p) < 2:
+            return False
+        pl = p.lower()
+        if pl in _RACE_NAME_TRIVIAL_PREFIXES:
+            return False
+        if pl.isdigit():
+            return False
+        first = pl.split()[0] if pl.split() else ""
+        if first in _RACE_NAME_TRIVIAL_PREFIXES:
+            return False
+        if first in _RACE_NAME_BOILERPLATE_FIRST:
+            return False
+        return True
+
+    def _best_name_from_pattern(
+        pat: re.Pattern[str], suffix_words: str
+    ) -> Optional[str]:
+        """Scan with overlapping windows so we keep the longest usable title (not just the leftmost match)."""
+        best: Optional[str] = None
+        pos = 0
+        while pos < len(s):
+            m = pat.search(s, pos)
+            if not m:
+                break
+            prefix = _clean_prefix(m.group(1))
+            if _usable_prefix(prefix):
+                pl = prefix.lower()
+                if suffix_words == "Marathon" and pl.endswith(" half"):
+                    pos = m.start() + 1
+                    continue
+                name = f"{prefix} {suffix_words}"
+                name = re.sub(r"\s+", " ", name).strip()
+                if 8 <= len(name) <= 255 and (best is None or len(name) > len(best)):
+                    best = name[:255]
+            pos = m.start() + 1
+        return best
+
+    # Longer suffix first so "… Half Marathon" wins when we also see the word "marathon".
+    half_pat = re.compile(
+        r"(?is)(?:\bthe\s+)?\b([A-Za-z0-9][\w\s\-',.&]{1,120}?)\s+half\s+marathon\b"
+    )
+    half_best = _best_name_from_pattern(half_pat, "Half Marathon")
+    if half_best:
+        return half_best
+
+    marathon_pat = re.compile(
+        r"(?is)(?:\bthe\s+)?\b([A-Za-z0-9][\w\s\-',.&]{1,120}?)\s+(?<!half\s)marathon\b"
+    )
+    return _best_name_from_pattern(marathon_pat, "Marathon")
+
+
+def _fill_race_name_from_user_text(draft: Dict[str, Any], text: Optional[str]) -> None:
+    """When race_name is still empty, derive it from the latest user message if it clearly names an event."""
+    existing = draft.get("race_name")
+    if isinstance(existing, str) and existing.strip():
+        return
+    extracted = _extract_race_name_from_user_text(text or "")
+    if extracted:
+        draft["race_name"] = extracted[:255]
+
+
+def _expand_day_range(start_raw: str, end_raw: str) -> Optional[List[str]]:
+    start = _normalize_day(start_raw.strip())
+    end = _normalize_day(end_raw.strip())
+    if start is None or end is None:
+        return None
+    si = DAY_NAMES_ABBREV.index(start)
+    ei = DAY_NAMES_ABBREV.index(end)
+    if si <= ei:
+        return list(DAY_NAMES_ABBREV[si : ei + 1])
+    return list(DAY_NAMES_ABBREV[si:]) + list(DAY_NAMES_ABBREV[: ei + 1])
+
+
+def _training_day_phrase_sets() -> Dict[str, List[str]]:
+    wk = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+    we = ["Sat", "Sun"]
+    all7 = list(DAY_NAMES_ABBREV)
+    return {
+        "weekdays": wk,
+        "weekday": wk,
+        "business days": wk,
+        "business days of the week": wk,
+        "weekends": we,
+        "weekend": we,
+        "every day": all7,
+        "everyday": all7,
+        "daily": all7,
+        "all week": all7,
+        "all seven days": all7,
+        "seven days a week": all7,
+    }
+
+
+def _split_training_day_segments(s: str) -> List[str]:
+    """Split user/comma text into pieces (comma, semicolon, 'and', 'plus')."""
+    t = (s or "").strip()
+    if not t:
+        return []
+    t = re.sub(r"\s+and\s+", ",", t, flags=re.I)
+    t = re.sub(r"\s+plus\s+", ",", t, flags=re.I)
+    t = t.replace(";", ",").replace("/", ",")
+    return [p.strip() for p in t.split(",") if p.strip()]
+
+
+def _merge_training_day_chunks(chunks: List[List[str]]) -> List[str]:
+    """Preserve first-seen order (ranges stay chronological, incl. Fri→Mon wraps)."""
+    seen: set[str] = set()
+    out: List[str] = []
+    for chunk in chunks:
+        for d in chunk:
+            if d not in seen:
+                seen.add(d)
+                out.append(d)
+    return out
+
+
+def _expand_training_days_segment(segment: str) -> Optional[List[str]]:
+    """
+    One phrase → weekday abbrevs, or None if not parseable.
+
+    Supports ranges (Monday through Saturday), phrase presets (weekdays), and single days.
+    """
+    p = segment.strip()
+    if not p:
+        return []
+    pl = re.sub(r"\s+", " ", p.lower())
+    presets = _training_day_phrase_sets()
+    if pl in presets:
+        return list(presets[pl])
+    m = re.match(
+        r"(?is)^(.+?)\s+(?:through|thru|to|-|–|—)\s+(.+)$",
+        p,
+    )
+    if m:
+        return _expand_day_range(m.group(1), m.group(2))
+    nd = _normalize_day(p)
+    if nd:
+        return [nd]
+    return None
+
+
 def _normalize_training_days(value: Any) -> Optional[List[str]]:
-    raw_days: List[Any]
+    segments: List[str] = []
     if isinstance(value, list):
-        raw_days = value
+        for item in value:
+            if not isinstance(item, str):
+                return None
+            segments.extend(_split_training_day_segments(item))
     elif isinstance(value, str):
-        cleaned = value.replace("/", ",").replace(" and ", ",")
-        raw_days = [p.strip() for p in cleaned.split(",") if p.strip()]
+        segments = _split_training_day_segments(value)
     else:
         return None
 
-    out: List[str] = []
-    for d in raw_days:
-        nd = _normalize_day(d)
-        if nd is None:
+    chunks: List[List[str]] = []
+    for seg in segments:
+        chunk = _expand_training_days_segment(seg)
+        if chunk is None:
             return None
-        if nd not in out:
-            out.append(nd)
-    return out or None
+        chunks.append(chunk)
+
+    merged = _merge_training_day_chunks(chunks)
+    return merged or None
 
 
 def _normalize_date_yyyy_mm_dd(value: Any) -> Optional[str]:
@@ -267,6 +561,7 @@ def update_plan_intake_state(
     updates: Optional[Dict[str, Any]] = None,
     clear_fields: Optional[List[str]] = None,
     reset: bool = False,
+    source_user_message: Optional[str] = None,
 ) -> Dict[str, Any]:
     state = _coerce_state(None if reset else current_state)
     draft: Dict[str, Any] = dict(state.get("draft") or {})
@@ -293,7 +588,7 @@ def update_plan_intake_state(
                 draft["race_date"] = nd
         elif key == "race_distance":
             if isinstance(raw, str) and raw.strip():
-                draft["race_distance"] = raw.strip()
+                draft["race_distance"] = _normalize_race_distance_intake(raw)
             else:
                 errors.append("race_distance must be a non-empty string.")
         elif key == "race_name":
@@ -327,7 +622,8 @@ def update_plan_intake_state(
             ndays = _normalize_training_days(raw)
             if ndays is None:
                 errors.append(
-                    "training_days must be day abbreviations or names (e.g. Tue, Thu, Sat)."
+                    "training_days must be weekdays or ranges (e.g. Monday through Saturday, "
+                    "weekdays), abbreviations, or comma-separated lists."
                 )
             else:
                 draft["training_days"] = ndays
@@ -347,6 +643,9 @@ def update_plan_intake_state(
                 draft[key] = raw.strip()
             else:
                 errors.append(f"{key} must be a string.")
+
+    _fill_race_distance_from_named_event(draft)
+    _fill_race_name_from_user_text(draft, source_user_message)
 
     if "training_days" in draft and draft.get("long_run_day"):
         tdays = draft.get("training_days") or []

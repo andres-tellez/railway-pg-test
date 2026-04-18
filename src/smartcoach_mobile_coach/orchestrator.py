@@ -372,7 +372,8 @@ _UPDATE_PLAN_INTAKE_OPENAI_TOOL: Dict[str, Any] = {
                         "race_distance, race_name, race_location, "
                         "primary_goal (Just Finish|Target Time), target_time "
                         "(clock or phrases like 3h40m), training_days "
-                        "(array or comma text), long_run_day, notes, plan_name."
+                        "(list and/or comma text; ranges like Monday through Saturday, weekdays, Mon thru Fri), "
+                        "long_run_day, notes, plan_name."
                     ),
                 },
                 "clear_fields": {
@@ -1049,9 +1050,13 @@ Intake behavior:
 - For `primary_goal`, the only valid values are **Just Finish** and **Target Time** (exactly those phrases
   in `updates`). Frame the question as finishing the race vs hitting a goal time; if Target Time, ask for their
   goal finish time (clock or spoken duration); pass it as `target_time`.
-- For `race_distance`, prefer wording like “Half marathon or marathon?” and map their words into `race_distance`.
+- For `race_distance`, when the user names a **full marathon** event (e.g. “Chicago Marathon”, “Boston”, “a fall
+  marathon”) or clearly means 26.2, set `race_distance` to **Marathon** in the same `update_plan_intake` call and
+  **do not** ask half vs full again. Only ask half vs full when the goal distance is ambiguous (no named marathon,
+  no “half” / “13.1” / “marathon” / “26.2” signal). Same turn: set `race_name` to the event string they used.
 - For `race_date`, ask when the race is; accept natural language and pass it as `race_date`.
-- Encourage `race_name` when it helps (e.g. “Which race?”) but do not block intake if they only give distance + date.
+- Whenever the user names a specific race, pass **`race_name`** in `updates` (exactly as they said is fine) so it
+  appears on the saved plan; do not wait for a separate prompt if they already named it.
 - After required fields are satisfied (`ready_to_generate` true) **and before** you ask for final yes/no to generate,
   you may ask **once** for optional `notes` (injuries, travel, constraints)—if they decline or ignore, proceed.
 
@@ -1060,7 +1065,8 @@ Confirmation and generate:
 - Keep user-facing wording short and conversational (usually 1-3 sentences during intake; up to a short
   multi-line walkthrough right after successful generation).
 - Tool payload is the source of truth; never invent field values not returned by tools.
-- The server accepts common **spoken dates** and **goal-time phrases** in tool updates; still pass what the user said in `updates`.
+- The server accepts common **spoken dates**, **spoken training-day ranges** (e.g. “Monday through Saturday”,
+  “weekdays plus Saturday”), and **goal-time phrases** in tool updates; still pass what the user said in `updates`.
 
 After a successful `generate_training_plan`, provide a compact walkthrough using `plan_generation` payload:
   1) confirm plan saved and mention start date (if present),
@@ -1110,7 +1116,8 @@ def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
         "- Keep the response concise and practical.\n"
         "- If details are missing, ask for **one** missing item only; follow `missing_required` from "
         "`update_plan_intake` (race_distance → race_date → primary_goal → training_days; "
-        "target_time when goal is Target Time).\n"
+        "target_time when goal is Target Time). Infer Marathon from named full marathons when unambiguous; "
+        "do not re-ask half vs full in that case.\n"
         "- Do not ask experience level, plan length in weeks, or unsupported race distances (only Half / Marathon).\n"
         "- If all required details exist, show confirmation summary and ask explicit yes/no.\n"
         "- Do not discuss unrelated run-analysis topics in this mode.\n"
@@ -1336,6 +1343,8 @@ def _plan_creation_system_section(
         "- When this turn is about creating/updating a plan, always use tool `update_plan_intake` to capture the latest user details.",
         "- Ask only one missing required field at a time, in server order: race_distance, race_date, "
         "primary_goal (Just Finish | Target Time only), training_days, then target_time when goal is Target Time.",
+        "- If the user names a full marathon (e.g. Chicago Marathon) or clearly means 26.2, pass `race_distance` "
+        "(Marathon) and `race_name` in `update_plan_intake` the same turn—do not ask half vs full again.",
         "- Do not ask experience level, how many weeks the plan should run, or non-supported race distances; "
         "plan generation supports Half Marathon and Marathon only.",
         "- Do not claim details are saved unless `update_plan_intake` confirms them.",
@@ -1971,6 +1980,7 @@ def run_mobile_agent_turn(
                         arguments,
                         anchor_local_date=anchor_local_date,
                         plan_intake_state=latest_plan_intake_state,
+                        source_user_message=(user_message or "").strip() or None,
                     )
                     tool_result_cache[sig] = out
                     loop_entry["tools"].append(

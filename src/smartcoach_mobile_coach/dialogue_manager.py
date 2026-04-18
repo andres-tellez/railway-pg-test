@@ -940,6 +940,8 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
             "natural_style_notes": [
                 "Ask one clear intake question at a time, driven by update_plan_intake missing_required; "
                 "half marathon and marathon only—no experience quiz or plan-length-in-weeks question.",
+                "When they name a full marathon event, set Marathon + race_name in update_plan_intake the same turn; "
+                "accept spoken training-day ranges (e.g. Monday through Saturday) via the tool—no need to force abbreviations.",
                 "Summarize captured details before asking for final confirmation.",
                 "After generation, lead with a concise what-to-expect-this-week overview.",
             ],
