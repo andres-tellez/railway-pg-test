@@ -7,6 +7,16 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
 )
 
 
+def test_plan_intake_missing_required_order_for_empty_draft():
+    state = update_plan_intake_state(None)
+    assert state["missing_required"] == [
+        "race_distance",
+        "race_date",
+        "primary_goal",
+        "training_days",
+    ]
+
+
 def test_plan_intake_updates_to_ready_state():
     state = update_plan_intake_state(
         None,

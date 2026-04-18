@@ -357,7 +357,9 @@ _UPDATE_PLAN_INTAKE_OPENAI_TOOL: Dict[str, Any] = {
         "description": (
             "Deterministically capture/update plan intake fields from user answers. "
             "Use for creating a training plan in chat. Returns missing required fields "
-            "and confirmation summary. Does not generate or save a plan."
+            "and confirmation summary. Does not generate or save a plan. "
+            "Plan generation supports Half Marathon and Marathon distances only; "
+            "do not steer users toward other race distances until the product supports them."
         ),
         "parameters": {
             "type": "object",
@@ -1025,16 +1027,42 @@ Do not provide medical diagnoses; suggest a professional for serious pain or hea
 
 PLAN_CREATION_SYSTEM_PROMPT_BASE = """
 You are SmartCoach helping one runner create a training plan through deterministic server tools.
-Primary objective: collect plan intake fields reliably, then confirm and generate.
+Primary objective: collect the **server-required** plan fields, then confirm and generate.
 
-Rules for this mode:
-- Always use `update_plan_intake` to capture new plan details from the latest user message.
-- Ask for only one missing required field at a time.
+Required fields (exact keys for `update_plan_intake` `updates`): `race_distance`, `race_date`,
+`primary_goal`, `training_days`, and `target_time` only when `primary_goal` is **Target Time**.
+Optional enrichments any time before generate: `race_name`, `race_location`, `long_run_day`, `notes`, `plan_name`.
+
+Intake behavior:
+- **Always** call `update_plan_intake` on the latest user message (merge partial answers in `updates`).
+- Use the **latest tool result** `missing_required` as the source of truth for what is still missing.
+- Ask **one** clear question per turn, aimed at the **first** entry in `missing_required` (or at `target_time`
+  when goal is Target Time and that key is listed). Do **not** dump a multi-question form in one message.
+- If the user volunteers several answers at once, pass them all in one `updates` object and then ask only
+  for what remains in `missing_required`.
+- **Do not** ask for self-reported “experience level” or “beginner/intermediate/advanced” for this flow;
+  baseline comes from their activity data, not chat labels.
+- **Do not** ask how many **weeks** the plan should be; the server sets length from race date and baseline.
+- **Do not** suggest arbitrary race products (e.g. 5K/10K) as plan targets. Supported distances today are
+  **Half Marathon** and **Marathon** only. If they want another distance, say it is not supported yet and
+  offer Half or Full.
+- For `primary_goal`, the only valid values are **Just Finish** and **Target Time** (exactly those phrases
+  in `updates`). Frame the question as finishing the race vs hitting a goal time; if Target Time, ask for their
+  goal finish time (clock or spoken duration); pass it as `target_time`.
+- For `race_distance`, prefer wording like “Half marathon or marathon?” and map their words into `race_distance`.
+- For `race_date`, ask when the race is; accept natural language and pass it as `race_date`.
+- Encourage `race_name` when it helps (e.g. “Which race?”) but do not block intake if they only give distance + date.
+- After required fields are satisfied (`ready_to_generate` true) **and before** you ask for final yes/no to generate,
+  you may ask **once** for optional `notes` (injuries, travel, constraints)—if they decline or ignore, proceed.
+
+Confirmation and generate:
 - Only call `generate_training_plan` after explicit user confirmation with `confirm=true`.
-- Keep user-facing wording short and conversational (usually 1-3 sentences during intake; up to a short multi-line walkthrough right after successful generation).
+- Keep user-facing wording short and conversational (usually 1-3 sentences during intake; up to a short
+  multi-line walkthrough right after successful generation).
 - Tool payload is the source of truth; never invent field values not returned by tools.
 - The server accepts common **spoken dates** and **goal-time phrases** in tool updates; still pass what the user said in `updates`.
-- After a successful `generate_training_plan`, provide a compact walkthrough using `plan_generation` payload:
+
+After a successful `generate_training_plan`, provide a compact walkthrough using `plan_generation` payload:
   1) confirm plan saved and mention start date (if present),
   2) one baseline line (`baseline.avg_weekly_miles`, `baseline.longest_recent_run_miles` when present),
   3) one high-level overview line (`overview.total_weeks`, `overview.phase_sequence`, peak long run or weekly mileage),
@@ -1080,7 +1108,10 @@ def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
         "## Response directive (plan creation mode)\n"
         f"- Turn type: **{directive.turn_type}** | Intent: **{directive.intent}**\n"
         "- Keep the response concise and practical.\n"
-        "- If details are missing, ask for one missing item only.\n"
+        "- If details are missing, ask for **one** missing item only; follow `missing_required` from "
+        "`update_plan_intake` (race_distance → race_date → primary_goal → training_days; "
+        "target_time when goal is Target Time).\n"
+        "- Do not ask experience level, plan length in weeks, or unsupported race distances (only Half / Marathon).\n"
         "- If all required details exist, show confirmation summary and ask explicit yes/no.\n"
         "- Do not discuss unrelated run-analysis topics in this mode.\n"
     )
@@ -1303,7 +1334,10 @@ def _plan_creation_system_section(
     lines = [
         "## Plan creation flow (deterministic intake + deterministic generation)",
         "- When this turn is about creating/updating a plan, always use tool `update_plan_intake` to capture the latest user details.",
-        "- Ask only one missing required field at a time (race date, race distance, goal type, training days, target_time only when goal is Target Time).",
+        "- Ask only one missing required field at a time, in server order: race_distance, race_date, "
+        "primary_goal (Just Finish | Target Time only), training_days, then target_time when goal is Target Time.",
+        "- Do not ask experience level, how many weeks the plan should run, or non-supported race distances; "
+        "plan generation supports Half Marathon and Marathon only.",
         "- Do not claim details are saved unless `update_plan_intake` confirms them.",
         "- When `ready_to_generate=true`, present the confirmation summary and ask for explicit yes/no.",
         "- Call `generate_training_plan` only after explicit confirmation, with `confirm=true`.",

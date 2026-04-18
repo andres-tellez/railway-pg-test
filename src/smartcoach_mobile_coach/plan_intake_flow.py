@@ -20,8 +20,8 @@ from src.schemas.plan_schema import PlanCreateSchema, PrimaryGoal
 from src.utils.date_helpers import DAY_NAMES_ABBREV
 
 REQUIRED_FIELDS: tuple[str, ...] = (
-    "race_date",
     "race_distance",
+    "race_date",
     "primary_goal",
     "training_days",
 )

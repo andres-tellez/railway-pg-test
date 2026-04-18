@@ -938,7 +938,8 @@ def _intent_addon(intent: str) -> Dict[str, Any]:
                 "generate_training_plan only after explicit confirmation."
             ),
             "natural_style_notes": [
-                "Ask one clear intake question at a time; keep the tone conversational.",
+                "Ask one clear intake question at a time, driven by update_plan_intake missing_required; "
+                "half marathon and marathon only—no experience quiz or plan-length-in-weeks question.",
                 "Summarize captured details before asking for final confirmation.",
                 "After generation, lead with a concise what-to-expect-this-week overview.",
             ],
