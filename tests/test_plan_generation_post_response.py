@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+from src.smartcoach_mobile_coach.agent_tools import (
+    _build_plan_generation_brief,
+    _plan_baseline_from_validation,
+    _plan_overview_from_validation,
+)
+
+
+def test_plan_overview_extracts_phases_and_peaks():
+    validation_result = {
+        "validated_plan": {
+            "start_date": "2026-06-08",
+            "weeks": [
+                {
+                    "week_number": 1,
+                    "phase": "Base",
+                    "weekly_mileage": 28,
+                    "long_run_miles": 10,
+                },
+                {
+                    "week_number": 2,
+                    "phase": "Build",
+                    "weekly_mileage": 32.4,
+                    "long_run_miles": 12,
+                },
+                {
+                    "week_number": 3,
+                    "phase": "Build",
+                    "weekly_mileage": 35.2,
+                    "long_run_miles": 14,
+                },
+                {
+                    "week_number": 4,
+                    "phase": "Peak",
+                    "weekly_mileage": 40,
+                    "long_run_miles": 18,
+                },
+            ],
+        }
+    }
+    plan_request = {
+        "training_days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        "long_run_day": "Sat",
+    }
+    saved = {
+        "race_date": "2026-10-11",
+        "race_distance": "Marathon",
+        "workouts": [],
+    }
+
+    out = _plan_overview_from_validation(validation_result, plan_request, saved)
+
+    assert out["plan_start_date"] == "2026-06-08"
+    assert out["total_weeks"] == 4
+    assert out["phase_sequence"] == ["Base", "Build", "Peak"]
+    assert out["peak_weekly_miles"] == 40.0
+    assert out["peak_long_run_miles"] == 18.0
+    assert out["training_days"] == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    assert out["long_run_day"] == "Sat"
+
+
+def test_plan_baseline_uses_pass1_rationale():
+    validation_result = {
+        "pass1_rationale": {
+            "base_mpw": 24.36,
+            "longest_recent": 9.84,
+            "start_lr": 10.0,
+            "recommended_weeks": 18,
+        }
+    }
+    out = _plan_baseline_from_validation(validation_result, activity_weeks=12)
+
+    assert out["source"] == "materialized_view"
+    assert out["lookback_weeks_requested"] == 12
+    assert out["avg_weekly_miles"] == 24.4
+    assert out["longest_recent_run_miles"] == 9.8
+    assert out["starting_long_run_miles"] == 10.0
+    assert out["recommended_weeks"] == 18
+
+
+def test_plan_generation_brief_includes_preview_and_plan_tab_handoff():
+    payload = {
+        "overview": {
+            "plan_start_date": "2026-06-08",
+            "total_weeks": 18,
+            "phase_sequence": ["Base", "Build", "Peak", "Taper"],
+            "peak_long_run_miles": 20.0,
+        },
+        "baseline": {
+            "avg_weekly_miles": 22.5,
+            "longest_recent_run_miles": 10.2,
+        },
+        "this_week": {
+            "workouts": [
+                {"date": "2026-06-08", "workout_type": "easy", "miles": 4},
+                {"date": "2026-06-10", "workout_type": "tempo", "miles": 6},
+            ]
+        },
+    }
+    out = _build_plan_generation_brief("Marathon", "2026-10-11", payload)
+
+    assert "Your Marathon plan is saved for 2026-10-11." in out
+    assert "Plan start: 2026-06-08." in out
+    assert "Baseline used: 22.5 mi/week, 10.2 mi longest recent run." in out
+    assert (
+        "Plan shape: 18 weeks, phases: Base -> Build -> Peak -> Taper, peak long run 20.0 mi."
+        in out
+    )
+    assert "Week 1 preview:" in out
+    assert "- 2026-06-08: easy (4.0 mi)" in out
+    assert "Open the Plan tab to see full details and upcoming phases." in out
