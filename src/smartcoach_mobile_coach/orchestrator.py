@@ -1031,9 +1031,15 @@ Rules for this mode:
 - Always use `update_plan_intake` to capture new plan details from the latest user message.
 - Ask for only one missing required field at a time.
 - Only call `generate_training_plan` after explicit user confirmation with `confirm=true`.
-- Keep user-facing wording short and conversational (usually 1-3 sentences).
+- Keep user-facing wording short and conversational (usually 1-3 sentences during intake; up to a short multi-line walkthrough right after successful generation).
 - Tool payload is the source of truth; never invent field values not returned by tools.
 - The server accepts common **spoken dates** and **goal-time phrases** in tool updates; still pass what the user said in `updates`.
+- After a successful `generate_training_plan`, provide a compact walkthrough using `plan_generation` payload:
+  1) confirm plan saved and mention start date (if present),
+  2) one baseline line (`baseline.avg_weekly_miles`, `baseline.longest_recent_run_miles` when present),
+  3) one high-level overview line (`overview.total_weeks`, `overview.phase_sequence`, peak long run or weekly mileage),
+  4) show Week 1 workouts from `this_week.workouts` when present; otherwise say workouts are ready in Plan,
+  5) explicitly direct the runner to the Plan tab for full details.
 """.strip()
 
 
@@ -1082,6 +1088,27 @@ def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
 
 def _join_nonempty_system_sections(*sections: str) -> str:
     return "\n\n".join(s.strip() for s in sections if (s or "").strip())
+
+
+def _plan_generation_fastpath_reply(tool_out: Dict[str, Any]) -> str:
+    """
+    Deterministic post-generation copy for yes->generate fastpath.
+
+    Prefers the tool-provided brief so payload and UX wording stay decoupled.
+    """
+    brief = tool_out.get("post_generation_brief")
+    if isinstance(brief, str) and brief.strip():
+        return brief.strip()
+    race_d = str(tool_out.get("race_date") or "").strip()
+    race_dist = str(tool_out.get("race_distance") or "").strip() or "race"
+    intro = f"Your {race_dist} plan is saved"
+    if race_d:
+        intro += f" for {race_d}"
+    intro += "."
+    return (
+        f"{intro} Open the Plan tab to review the full week-by-week schedule, "
+        "and tell me if you want any tweaks."
+    )
 
 
 _DEFAULT_PREFS = {
@@ -1448,15 +1475,9 @@ def run_mobile_agent_turn(
                     "thread_derived": thread_ctx.as_dict(),
                 },
             }
-            race_d = out.get("race_date") or ""
-            race_dist = out.get("race_distance") or "race"
-            intro = (
-                f"Your {race_dist} plan is saved for {race_d}. "
-                "Here’s a quick look at this week — tell me if you want any tweaks."
-            )
             structured_ok: Dict[str, Any] = {
                 "type": "text",
-                "content": intro,
+                "content": _plan_generation_fastpath_reply(out),
                 "data": {},
             }
             pis = out.get("plan_intake_state")
