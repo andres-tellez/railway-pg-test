@@ -644,25 +644,59 @@ def _safe_int(value: Any) -> Optional[int]:
     return out
 
 
-def _format_short_day(date_str: str) -> str:
+def _ordinal_day(n: int) -> str:
+    if 11 <= (n % 100) <= 13:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def _format_friendly_week_one_start(date_str: str) -> str:
+    """e.g. Mon., April 20th (from YYYY-MM-DD)."""
     raw = str(date_str or "").strip()[:10]
     try:
         dt = datetime.strptime(raw, "%Y-%m-%d")
     except ValueError:
         return raw
-    return dt.strftime("%a %b %d").replace(" 0", " ")
+    weekdays = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    months = (
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    )
+    wd = weekdays[dt.weekday()]
+    mon = months[dt.month - 1]
+    return f"{wd}., {mon} {_ordinal_day(dt.day)}"
 
 
-def _format_week_range(start_week: Optional[int], end_week: Optional[int]) -> str:
-    if start_week is None and end_week is None:
-        return "—"
-    if start_week is None:
-        return str(end_week)
-    if end_week is None:
-        return str(start_week)
-    if start_week == end_week:
-        return str(start_week)
-    return f"{start_week}-{end_week}"
+def _format_weekday_only(date_str: str) -> str:
+    """Mon, Tue, … from YYYY-MM-DD (no month/day)."""
+    raw = str(date_str or "").strip()[:10]
+    try:
+        dt = datetime.strptime(raw, "%Y-%m-%d")
+    except ValueError:
+        return raw[:3] if len(raw) >= 3 else raw
+    return ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")[dt.weekday()]
+
+
+def _phase_block_week_count(block: Dict[str, Any]) -> Optional[int]:
+    sw = _safe_int(block.get("start_week"))
+    ew = _safe_int(block.get("end_week"))
+    if sw is not None and ew is not None:
+        return max(1, ew - sw + 1)
+    if sw is not None or ew is not None:
+        return 1
+    return None
 
 
 def _extract_plan_weeks(validation_result: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -828,25 +862,50 @@ def _build_plan_generation_brief(
 
     race_label = (race_distance or "race").strip() or "race"
     race_day = (race_date or "").strip() or "TBD"
-    start_day = (
+    start_raw = (
         overview.get("plan_start_date") if isinstance(overview, dict) else None
     ) or "TBD"
+    start_friendly = (
+        _format_friendly_week_one_start(str(start_raw))
+        if start_raw != "TBD" and len(str(start_raw).strip()) >= 10
+        else str(start_raw)
+    )
     lines: List[str] = [
         f"Your {race_label} plan is saved for {race_day}.",
         "",
-        f"**Week 1 starts:** {start_day}",
+        f"**Week 1 starts:** {start_friendly}",
     ]
 
     if isinstance(baseline, dict):
         avg_mpw = baseline.get("avg_weekly_miles")
         long_run = baseline.get("longest_recent_run_miles")
-        if avg_mpw is not None or long_run is not None:
-            base_bits: List[str] = []
+        lookback = baseline.get("lookback_weeks_requested")
+        has_metrics = avg_mpw is not None or long_run is not None
+        lines.append("")
+        if has_metrics:
+            if isinstance(lookback, int) and lookback > 0:
+                lines.append(
+                    f"To create the plan, I used your running data from the last **{lookback}** weeks."
+                )
+            else:
+                lines.append(
+                    "To create the plan, I used your recent running data from synced activities."
+                )
+            lines.append("")
             if avg_mpw is not None:
-                base_bits.append(f"{avg_mpw:.1f} mi/week")
+                lines.append(f"- **Weekly miles:** {avg_mpw:.1f} mi/week")
+            else:
+                lines.append("- **Weekly miles:** —")
             if long_run is not None:
-                base_bits.append(f"{long_run:.1f} mi longest recent run")
-            lines.extend(["", f"**Baseline used:** {', '.join(base_bits)}."])
+                lines.append(f"- **Longest run:** {long_run:.1f} mi")
+            else:
+                lines.append("- **Longest run:** —")
+        else:
+            lines.append(
+                "There wasn’t enough recent running history to personalize this plan from your "
+                "mileage yet, so the schedule follows a solid built-in progression. "
+                "Keep syncing runs so future plans can reflect your fitness."
+            )
 
     if isinstance(overview, dict):
         total_weeks = overview.get("total_weeks")
@@ -854,28 +913,20 @@ def _build_plan_generation_brief(
         phase_blocks = overview.get("phase_blocks")
         lines.append("")
         if isinstance(total_weeks, int) and total_weeks > 0:
-            lines.append(f"**Plan shape** ({total_weeks} weeks)")
+            lines.append(f"**Plan overview** ({total_weeks} weeks)")
         else:
-            lines.append("**Plan shape**")
+            lines.append("**Plan overview**")
         if isinstance(phase_blocks, list) and phase_blocks:
             lines.append("")
-            lines.append("| Phase | Weeks | Peak Miles |")
-            lines.append("| --- | --- | --- |")
+            lines.append("| Phase | Weeks |")
+            lines.append("| --- | --- |")
             for block in phase_blocks:
                 if not isinstance(block, dict):
                     continue
                 phase_name = str(block.get("phase") or "").strip() or "Phase"
-                week_range = _format_week_range(
-                    _safe_int(block.get("start_week")),
-                    _safe_int(block.get("end_week")),
-                )
-                peak_phase_miles = _safe_float(block.get("peak_weekly_miles"))
-                peak_phase_label = (
-                    f"{peak_phase_miles:.1f} mpw"
-                    if peak_phase_miles is not None
-                    else "—"
-                )
-                lines.append(f"| {phase_name} | {week_range} | {peak_phase_label} |")
+                week_count = _phase_block_week_count(block)
+                week_label = str(week_count) if week_count is not None else "—"
+                lines.append(f"| {phase_name} | {week_label} |")
         else:
             phase_sequence = overview.get("phase_sequence")
             if isinstance(phase_sequence, list):
@@ -883,7 +934,9 @@ def _build_plan_generation_brief(
                 if named:
                     lines.extend(["", f"Phases: {' → '.join(named)}"])
         if peak_lr is not None:
-            lines.append(f"- Longest run callout: **{float(peak_lr):.1f} miles**")
+            lines.append(
+                f"- **Peak long run (plan):** {float(peak_lr):.1f} mi",
+            )
 
     if isinstance(this_week, dict):
         workouts = this_week.get("workouts")
@@ -900,7 +953,7 @@ def _build_plan_generation_brief(
             for w in workouts[:6]:
                 if not isinstance(w, dict):
                     continue
-                d = _format_short_day(str(w.get("date") or ""))
+                d = _format_weekday_only(str(w.get("date") or ""))
                 wt_raw = str(w.get("workout_type") or "run").replace("_", " ").strip()
                 wt = wt_raw.title() if wt_raw else "Run"
                 miles = _safe_float(w.get("miles"))
@@ -914,8 +967,12 @@ def _build_plan_generation_brief(
     lines.extend(
         [
             "",
-            "🗂️ Open the **Plan** tab to see full details and upcoming phases.",
-            "Do you have any questions, or want to adjust training days or goal pace?",
+            "Open the **Plan** tab![Plan tab](smartcoach-tab-icon://plan) to see full details "
+            "and upcoming phases.",
+            "",
+            "**Questions**",
+            "",
+            "Any questions?",
         ]
     )
     return "\n".join(lines)

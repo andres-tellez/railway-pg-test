@@ -122,6 +122,7 @@ def test_plan_generation_brief_includes_preview_and_plan_tab_handoff():
             "peak_long_run_miles": 20.0,
         },
         "baseline": {
+            "lookback_weeks_requested": 12,
             "avg_weekly_miles": 22.5,
             "longest_recent_run_miles": 10.2,
         },
@@ -135,11 +136,21 @@ def test_plan_generation_brief_includes_preview_and_plan_tab_handoff():
     out = _build_plan_generation_brief("Marathon", "2026-10-11", payload)
 
     assert "Your Marathon plan is saved for 2026-10-11." in out
-    assert "**Week 1 starts:** 2026-06-08" in out
-    assert "**Baseline used:** 22.5 mi/week, 10.2 mi longest recent run." in out
-    assert "| Phase | Weeks | Peak Miles |" in out
-    assert "| Base | 1-6 | 32.0 mpw |" in out
-    assert "- Longest run callout: **20.0 miles**" in out
+    assert "**Week 1 starts:** Mon., June 8th" in out
+    assert "from the last **12** weeks" in out
+    assert "- **Weekly miles:** 22.5 mi/week" in out
+    assert "- **Longest run:** 10.2 mi" in out
+    assert "**Plan overview**" in out
+    assert "| Phase | Weeks |" in out
+    assert "| Base | 6 |" in out
+    assert "| Build | 7 |" in out
+    assert "- **Peak long run (plan):** 20.0 mi" in out
     assert "| Day | Run Type | Miles |" in out
-    assert "| Mon Jun 8 | Easy | 4.0 |" in out
-    assert "🗂️ Open the **Plan** tab to see full details and upcoming phases." in out
+    assert "| Mon | Easy | 4.0 |" in out
+    assert "| Wed | Tempo | 6.0 |" in out
+    assert (
+        "Open the **Plan** tab![Plan tab](smartcoach-tab-icon://plan) to see full details"
+        in out
+    )
+    assert "**Questions**" in out
+    assert "Any questions?" in out
