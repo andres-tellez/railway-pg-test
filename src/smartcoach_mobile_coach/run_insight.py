@@ -178,6 +178,19 @@ def build_get_run_insight_payload(
         "max_heart_rate_display": format_hr_bpm(act.max_heartrate) or "—",
         "sport_type": "run",
     }
+    if act.executed_type or act.run_score:
+        facts["execution_summary"] = {
+            "matched_plan_workout_id": act.matched_plan_workout_id,
+            "planned_type": act.planned_type,
+            "executed_type": act.executed_type,
+            "zone_compliance_pct": act.zone_compliance_pct,
+            "pct_above_zone": act.pct_above_zone,
+            "pct_below_zone": act.pct_below_zone,
+            "run_score": act.run_score,
+            "planned_miles": act.planned_miles,
+            "actual_miles": act.actual_miles,
+            "completion_pct": act.completion_pct,
+        }
 
     if not include_peer_comparison:
         return {
@@ -265,6 +278,7 @@ def build_get_run_insight_payload(
             "avg_heart_rate_display": format_hr_bpm(avg_hr) or "—",
             "max_heart_rate_display": format_hr_bpm(act.max_heartrate) or "—",
             "sport_type": "run",
+            "execution_summary": facts.get("execution_summary"),
         },
         "comparison": {
             "peer_criteria_summary": "Up to 5 prior runs for this athlete before this activity",

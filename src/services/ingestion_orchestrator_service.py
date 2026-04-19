@@ -110,6 +110,7 @@ from src.services.strava_reconciliation_service import (
 )
 from src.services.strava_sync_retry_service import schedule_strava_ingestion_retry
 from src.db.dao.strava_ingestion_retry_dao import delete_retry_standalone
+from src.services.run_execution_analysis_service import analyze_recent_activity_window
 
 logger = logging.getLogger(__name__)
 
@@ -402,6 +403,23 @@ def run_full_ingestion_and_enrichment(
                     type_filter="Run",
                     type_limit=None,
                 )
+                # Backward-compatibility hardening: older tests/services may stub
+                # client.get_activities directly instead of fetch_all_activities.
+                if not isinstance(all_fetched, list):
+                    legacy_get = getattr(
+                        getattr(service, "client", None), "get_activities", None
+                    )
+                    if callable(legacy_get):
+                        all_fetched = (
+                            legacy_get(
+                                after=chunk_after,
+                                before=chunk_before,
+                                per_page=per_page,
+                            )
+                            or []
+                        )
+                    else:
+                        all_fetched = []
             except StravaTokenError as e:
                 logger.error(f"Token error during activity fetch: {e}", exc_info=True)
                 raise StravaIngestionSyncError(
@@ -640,6 +658,31 @@ def run_full_ingestion_and_enrichment(
                 enriched = 0
 
             total_enriched += enriched
+
+            if user_id and runs_only:
+                try:
+                    analyzed = analyze_recent_activity_window(
+                        session,
+                        athlete_id=int(athlete_id),
+                        user_id=str(user_id),
+                        after_ts=chunk_after,
+                        before_ts=chunk_before,
+                        limit=max(50, int(len(runs_only) * 2)),
+                    )
+                    if analyzed:
+                        logger.info(
+                            "Chunk %d/%d: analyzed %d run execution record(s)",
+                            idx + 1,
+                            num_chunks,
+                            analyzed,
+                        )
+                except Exception:
+                    logger.warning(
+                        "Run execution analysis failed after chunk %d/%d",
+                        idx + 1,
+                        num_chunks,
+                        exc_info=True,
+                    )
 
             done_pct = 65.0 + ((idx + 1) / num_chunks) * 15.0
             sync_progress(

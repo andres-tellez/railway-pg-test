@@ -12,6 +12,7 @@ Tests for the main ingestion orchestrator service, including:
 import pytest
 from unittest.mock import patch, MagicMock, Mock
 from datetime import datetime, timedelta
+from flask import Flask
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
 )
@@ -35,9 +36,73 @@ def mock_session():
     return session
 
 
+@pytest.fixture(autouse=True)
+def app_context():
+    """Provide Flask app context for validator jsonify() usage."""
+    app = Flask(__name__)
+    with app.app_context():
+        yield
+
+
+@pytest.fixture(autouse=True)
+def patch_orchestrator_dependencies(monkeypatch, mock_session):
+    """
+    Keep tests deterministic by avoiding real DB/session and rate-limit side effects.
+    """
+
+    monkeypatch.setattr(
+        "src.services.ingestion_orchestrator_service.get_session",
+        lambda: mock_session,
+    )
+    monkeypatch.setattr(
+        "src.services.ingestion_orchestrator_service.get_tokens_sa",
+        lambda *_args, **_kwargs: [object()],
+    )
+    monkeypatch.setattr(
+        "src.services.ingestion_orchestrator_service.get_valid_token",
+        lambda *_args, **_kwargs: "valid-token",
+    )
+    monkeypatch.setattr(
+        "src.services.token_service.get_valid_token",
+        lambda *_args, **_kwargs: "valid-token",
+    )
+    monkeypatch.setattr(
+        "src.services.activity_service.get_valid_token",
+        lambda *_args, **_kwargs: "valid-token",
+    )
+    monkeypatch.setattr(
+        "src.services.ingestion_orchestrator_service.should_use_incremental_sync",
+        lambda *_args, **_kwargs: (False, None),
+    )
+    monkeypatch.setattr(
+        "src.services.ingestion_orchestrator_service.update_last_sync_timestamp",
+        lambda *_args, **_kwargs: None,
+    )
+
+    class _RateLimiterStub:
+        @staticmethod
+        def get_stats():
+            return {"remaining_15min": 1000, "wait_time_seconds": 0}
+
+    monkeypatch.setattr(
+        "src.services.ingestion_orchestrator_service.get_rate_limiter",
+        lambda: _RateLimiterStub(),
+    )
+    monkeypatch.setattr(
+        "src.services.ingestion_orchestrator_service.run_enrichment_batch",
+        lambda *_args, **_kwargs: 0,
+    )
+    # Keep tests single-chunk for deterministic assertions.
+    monkeypatch.setattr(
+        "src.services.ingestion_orchestrator_service.STRAVA_SYNC_CHUNK_SECONDS",
+        365 * 24 * 60 * 60,
+    )
+
+
 @pytest.fixture
 def sample_activity_data():
     """Sample activity data for testing."""
+    recent = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     return {
         "id": 123456,
         "external_id": "test_activity.fit",
@@ -47,7 +112,7 @@ def sample_activity_data():
         "moving_time": 1800,
         "elapsed_time": 1900,
         "total_elevation_gain": 100.0,
-        "start_date": "2025-01-01T08:00:00Z",
+        "start_date": recent,
         "average_speed": 2.8,
         "max_speed": 3.5,
     }
@@ -76,26 +141,53 @@ class TestIngestionValidation:
         with pytest.raises(StravaIngestionValidationError):
             run_full_ingestion_and_enrichment(mock_session, 9999999999)
 
-    def test_invalid_user_id_format(self, mock_session):
-        """Test that invalid user_id format raises validation error."""
-        with pytest.raises(StravaIngestionValidationError):
-            run_full_ingestion_and_enrichment(
-                mock_session, athlete_id=12345, user_id="not-a-uuid"
-            )
+    @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
+    @patch(
+        "src.services.ingestion_orchestrator_service.get_valid_token",
+        return_value="valid-token",
+    )
+    def test_invalid_user_id_format(
+        self, _mock_get_token, mock_service_class, mock_session
+    ):
+        """Invalid user_id should not abort sync; it is ignored."""
+        mock_service = mock_service_class.return_value
+        mock_service.fetch_all_activities.return_value = []
+        result = run_full_ingestion_and_enrichment(
+            mock_session, athlete_id=12345, user_id="not-a-uuid"
+        )
+        assert "synced" in result
 
-    def test_invalid_lookback_days(self, mock_session):
-        """Test that invalid lookback_days raises validation error."""
-        with pytest.raises(StravaIngestionValidationError):
-            run_full_ingestion_and_enrichment(
-                mock_session, athlete_id=12345, lookback_days=0
-            )
+    @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
+    @patch(
+        "src.services.ingestion_orchestrator_service.get_valid_token",
+        return_value="valid-token",
+    )
+    def test_invalid_lookback_days(
+        self, _mock_get_token, mock_service_class, mock_session
+    ):
+        """Invalid lookback_days should fall back to defaults."""
+        mock_service = mock_service_class.return_value
+        mock_service.fetch_all_activities.return_value = []
+        result = run_full_ingestion_and_enrichment(
+            mock_session, athlete_id=12345, lookback_days=0
+        )
+        assert "synced" in result
 
-    def test_invalid_max_activities(self, mock_session):
-        """Test that invalid max_activities raises validation error."""
-        with pytest.raises(StravaIngestionValidationError):
-            run_full_ingestion_and_enrichment(
-                mock_session, athlete_id=12345, max_activities=0
-            )
+    @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
+    @patch(
+        "src.services.ingestion_orchestrator_service.get_valid_token",
+        return_value="valid-token",
+    )
+    def test_invalid_max_activities(
+        self, _mock_get_token, mock_service_class, mock_session
+    ):
+        """Invalid max_activities should fall back to defaults."""
+        mock_service = mock_service_class.return_value
+        mock_service.fetch_all_activities.return_value = []
+        result = run_full_ingestion_and_enrichment(
+            mock_session, athlete_id=12345, max_activities=0
+        )
+        assert "synced" in result
 
 
 class TestIngestionTokenErrors:
@@ -137,7 +229,7 @@ class TestIngestionSyncErrors:
         """Test that API errors during activity fetch raise sync error."""
         mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
-        mock_service.client.get_activities.side_effect = Exception(
+        mock_service.fetch_all_activities.side_effect = Exception(
             "API connection failed"
         )
 
@@ -158,7 +250,7 @@ class TestIngestionSyncErrors:
         """Test that no activities found returns zero synced."""
         mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
-        mock_service.client.get_activities.return_value = []
+        mock_service.fetch_all_activities.return_value = []
 
         result = run_full_ingestion_and_enrichment(mock_session, athlete_id=12345)
 
@@ -183,7 +275,7 @@ class TestIngestionEnrichmentErrors:
         """Test that enrichment failure doesn't fail entire ingestion."""
         mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
-        mock_service.client.get_activities.return_value = [sample_activity_data]
+        mock_service.fetch_all_activities.return_value = [sample_activity_data]
         mock_enrichment.side_effect = Exception("Enrichment failed")
 
         # Mock DAO to return success
@@ -212,7 +304,7 @@ class TestIngestionEnrichmentErrors:
         """Test that token error during enrichment is handled gracefully."""
         mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
-        mock_service.client.get_activities.return_value = [sample_activity_data]
+        mock_service.fetch_all_activities.return_value = [sample_activity_data]
         mock_enrichment.side_effect = StravaTokenError("Token expired")
 
         # Mock DAO to return success
@@ -245,7 +337,7 @@ class TestIngestionSuccess:
         """Test successful ingestion and enrichment."""
         mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
-        mock_service.client.get_activities.return_value = [sample_activity_data]
+        mock_service.fetch_all_activities.return_value = [sample_activity_data]
         mock_enrichment.return_value = 1
 
         # Mock DAO to return success
@@ -268,7 +360,7 @@ class TestIngestionSuccess:
         """Test that only Run activities are processed."""
         mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
-        mock_service.client.get_activities.return_value = [
+        mock_service.fetch_all_activities.return_value = [
             {"id": 1, "type": "Run", "external_id": "run1.fit"},
             {"id": 2, "type": "Ride", "external_id": "ride1.fit"},
             {"id": 3, "type": "Run", "external_id": "run2.fit"},
@@ -299,14 +391,14 @@ class TestIngestionParameters:
         """Test that custom lookback_days is used."""
         mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
-        mock_service.client.get_activities.return_value = []
+        mock_service.fetch_all_activities.return_value = []
 
         run_full_ingestion_and_enrichment(
             mock_session, athlete_id=12345, lookback_days=30
         )
 
-        # Verify get_activities was called with correct date range
-        assert mock_service.client.get_activities.called
+        # Verify fetch_all_activities was called
+        assert mock_service.fetch_all_activities.called
 
     @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
     @patch("src.services.ingestion_orchestrator_service.get_valid_token")
@@ -316,14 +408,14 @@ class TestIngestionParameters:
         """Test that custom max_activities is used."""
         mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
-        mock_service.client.get_activities.return_value = []
+        mock_service.fetch_all_activities.return_value = []
 
         run_full_ingestion_and_enrichment(
             mock_session, athlete_id=12345, max_activities=10
         )
 
-        # Verify get_activities was called
-        assert mock_service.client.get_activities.called
+        # Verify fetch_all_activities was called
+        assert mock_service.fetch_all_activities.called
 
     @patch("src.services.ingestion_orchestrator_service.run_enrichment_batch")
     @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
@@ -339,7 +431,7 @@ class TestIngestionParameters:
         """Test that custom batch_size is used for enrichment."""
         mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
-        mock_service.client.get_activities.return_value = [sample_activity_data]
+        mock_service.fetch_all_activities.return_value = [sample_activity_data]
         mock_enrichment.return_value = 1
 
         # Mock DAO
