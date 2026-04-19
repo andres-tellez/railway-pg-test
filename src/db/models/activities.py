@@ -1,6 +1,17 @@
-from sqlalchemy import Column, BigInteger, Integer, String, Float, DateTime, ForeignKey
+from sqlalchemy import (
+    Column,
+    BigInteger,
+    Integer,
+    String,
+    Float,
+    DateTime,
+    ForeignKey,
+)
 from src.db.db_session import Base
-from src.db.models.user_profile import SqliteUUID  # Import SQLite-compatible UUID type
+from src.db.models.user_profile import (
+    SqliteUUID,
+    SqliteJSONB,
+)  # Import SQLite-compatible types
 
 
 class Activity(Base):
@@ -49,3 +60,18 @@ class Activity(Base):
     hr_zone_3 = Column(Float)
     hr_zone_4 = Column(Float)
     hr_zone_5 = Column(Float)
+
+    # Phase 1: planned vs executed classification + scoring
+    matched_plan_workout_id = Column(
+        Integer, ForeignKey("plan_workouts.id"), nullable=True, index=True
+    )
+    planned_type = Column(String(32), nullable=True)
+    executed_type = Column(String(32), nullable=True)
+    zone_compliance_pct = Column(Float, nullable=True)
+    pct_above_zone = Column(Float, nullable=True)
+    pct_below_zone = Column(Float, nullable=True)
+    run_score = Column(String(16), nullable=True)
+    scoring_detail = Column(SqliteJSONB(), nullable=True)
+    planned_miles = Column(Float, nullable=True)
+    actual_miles = Column(Float, nullable=True)
+    completion_pct = Column(Float, nullable=True)

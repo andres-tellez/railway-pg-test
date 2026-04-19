@@ -131,7 +131,17 @@ def get_activities():
                 type,
                 average_heartrate,
                 average_cadence,
-                max_cadence
+                max_cadence,
+                matched_plan_workout_id,
+                planned_type,
+                executed_type,
+                zone_compliance_pct,
+                pct_above_zone,
+                pct_below_zone,
+                run_score,
+                planned_miles,
+                actual_miles,
+                completion_pct
             FROM public.activities
             WHERE athlete_id = :aid
             AND start_date >= NOW() - INTERVAL '30 days'
@@ -167,6 +177,22 @@ def get_activities():
                 "average_heartrate": float(row[6]) if row[6] is not None else None,
                 "average_cadence": float(row[7]) if row[7] is not None else None,
                 "max_cadence": float(row[8]) if row[8] is not None else None,
+                "execution": {
+                    "matched_plan_workout_id": (
+                        int(row[9]) if row[9] is not None else None
+                    ),
+                    "planned_type": row[10],
+                    "executed_type": row[11],
+                    "zone_compliance_pct": (
+                        float(row[12]) if row[12] is not None else None
+                    ),
+                    "pct_above_zone": float(row[13]) if row[13] is not None else None,
+                    "pct_below_zone": float(row[14]) if row[14] is not None else None,
+                    "run_score": row[15],
+                    "planned_miles": float(row[16]) if row[16] is not None else None,
+                    "actual_miles": float(row[17]) if row[17] is not None else None,
+                    "completion_pct": float(row[18]) if row[18] is not None else None,
+                },
             }
             for row in activities_result
         ]
