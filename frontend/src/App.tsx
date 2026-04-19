@@ -54,6 +54,7 @@ import DateTestPage from "./pages/DateTestPage";
 import HeartRateZones from "./pages/HeartRateZones";
 import PaceZones from "./pages/PaceZones";
 
+import { getAuth0RedirectUri } from "./auth/auth0RedirectUri";
 import Layout from "./components/Layout";
 import PlanLayout from "./components/layout/PlanLayout";
 import SmartRouter from "./components/SmartRouter";
@@ -94,7 +95,7 @@ function LoginPage() {
           onClick={() =>
             loginWithRedirect({
               authorizationParams: {
-                redirect_uri: import.meta.env.VITE_AUTH0_REDIRECT_URI,
+                redirect_uri: getAuth0RedirectUri(),
                 audience: import.meta.env.VITE_AUTH0_AUDIENCE,
                 scope: "openid profile email offline_access",
               },

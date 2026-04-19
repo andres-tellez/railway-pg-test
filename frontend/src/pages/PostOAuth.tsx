@@ -8,6 +8,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
+
+import { getAuth0RedirectUri } from "@/auth/auth0RedirectUri";
 import type { GetTokenSilentlyVerboseResponse } from "@auth0/auth0-react";
 import { useApiClient } from "@/utils/apiClient";
 
@@ -153,7 +155,7 @@ const PostOAuth: React.FC = () => {
               prompt: "login",
               audience: import.meta.env.VITE_AUTH0_AUDIENCE,
               scope: "openid profile email offline_access",
-              redirect_uri: window.location.origin + "/post-oauth",
+              redirect_uri: getAuth0RedirectUri(),
             },
             appState: {
               returnTo: window.location.pathname + window.location.search,

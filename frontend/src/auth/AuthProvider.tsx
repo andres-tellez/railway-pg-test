@@ -3,10 +3,12 @@ import { Auth0Provider } from "@auth0/auth0-react";
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
+import { getAuth0RedirectUri } from "./auth0RedirectUri";
+
 const AuthProviderWithHistory: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const domain = import.meta.env.VITE_AUTH0_DOMAIN;
   const clientId = import.meta.env.VITE_AUTH0_CLIENT_ID;
-  const redirectUri = import.meta.env.VITE_AUTH0_REDIRECT_URI;
+  const redirectUri = getAuth0RedirectUri();
   const audience = import.meta.env.VITE_AUTH0_AUDIENCE;
 
   const navigate = useNavigate();
