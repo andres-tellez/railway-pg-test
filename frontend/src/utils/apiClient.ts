@@ -3,6 +3,8 @@ import axios from "axios";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useMemo } from "react";
 
+import { getAuth0RedirectUri } from "@/auth/auth0RedirectUri";
+
 export function useApiClient() {
   const { getAccessTokenSilently, loginWithRedirect } = useAuth0();
 
@@ -54,7 +56,12 @@ export function useApiClient() {
           });
 
           await loginWithRedirect({
-            authorizationParams: { prompt: "login" },
+            authorizationParams: {
+              prompt: "login",
+              redirect_uri: getAuth0RedirectUri(),
+              audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+              scope: "openid profile email offline_access",
+            },
             appState: { returnTo: window.location.pathname || "/dashboard" },
           });
           return config; // Prevent the request from continuing
