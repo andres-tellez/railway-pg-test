@@ -204,6 +204,7 @@ def get_user_info():
         "hasOnboarded": bool(status.get("hasOnboarded")),
         "hasStrava": bool(status.get("hasStrava")),
         "hasActivities": bool(status.get("hasActivities")),
+        "hasTrainingPlan": bool(status.get("hasTrainingPlan")),
         "hasStravaPremium": has_strava_premium,
     }
     return success_response(payload)

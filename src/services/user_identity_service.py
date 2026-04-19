@@ -8,6 +8,7 @@ from src.db.db_session import get_session
 from src.db.models import UserIdentity
 from src.db.models.user_profile import UserProfile
 from src.db.models.activities import Activity
+from src.db.dao.plans_dao import get_active_plan
 from src.db.dao.user_athletes_dao import get_by_user_id
 
 from src.db.dao.user_identity_dao import (
@@ -30,7 +31,7 @@ def get_user_status(user_id: str) -> dict:
     user_id_str = str(user_id) if user_id else None
     if not user_id_str:
         logger.warning("get_user_status called with None or empty user_id")
-        return {"hasOnboarded": False, "hasStrava": False}
+        return {"hasOnboarded": False, "hasStrava": False, "hasTrainingPlan": False}
 
     print(
         f"[DEBUG] 🔍 get_user_status called with user_id={user_id_str} (type: {type(user_id).__name__})"
@@ -60,6 +61,9 @@ def get_user_status(user_id: str) -> dict:
             is not None
         )
 
+        active_plan = get_active_plan(session, user_id_str)
+        has_training_plan = active_plan is not None
+
         print(
             f"[DEBUG] ✅ User status for {user_id_str}: hasOnboarded={has_onboarded}, hasStrava={has_strava}, "
             f"hasActivities={activity_exists}, link={'found' if link else 'not found'}"
@@ -81,6 +85,7 @@ def get_user_status(user_id: str) -> dict:
             "hasOnboarded": has_onboarded,
             "hasStrava": has_strava,
             "hasActivities": activity_exists,
+            "hasTrainingPlan": has_training_plan,
         }
     finally:
         session.close()
