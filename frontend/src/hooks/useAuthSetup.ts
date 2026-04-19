@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth0 } from "@auth0/auth0-react";
 import { useApiClient } from "../utils/apiClient";
+import { isAuthRedirectError } from "../utils/authRenewal";
 
 interface AuthSetupResult {
   isReady: boolean;
@@ -42,11 +43,17 @@ export function useAuthSetup(): AuthSetupResult {
         setIsReady(true);
         console.log("✅ Auth setup complete - User ID:", newUserId);
       })
-      .catch((err) => {
-        const errorMessage = err.response?.data?.message || err.message || "Failed to setup authentication";
+      .catch((err: unknown) => {
+        if (isAuthRedirectError(err)) {
+          hasSetupIdentity.current = false;
+          console.warn("🔐 Session renewal redirect — not showing Auth0 error in UI");
+          return;
+        }
+        const ax = err as { response?: { data?: { message?: string } }; message?: string };
+        const errorMessage =
+          ax.response?.data?.message || ax.message || "Failed to setup authentication";
         setError(errorMessage);
         console.error("❌ Auth setup failed:", errorMessage);
-        // Still mark as ready to prevent infinite loading
         setIsReady(true);
       });
   }, [isAuthenticated, isLoading, api]);

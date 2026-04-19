@@ -4,6 +4,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import { useMemo } from "react";
 
 import { getAuth0RedirectUri } from "@/auth/auth0RedirectUri";
+import { createAuthRedirectError, needsReauthentication } from "@/utils/authRenewal";
 
 export function useApiClient() {
   const { getAccessTokenSilently, loginWithRedirect } = useAuth0();
@@ -35,36 +36,31 @@ export function useApiClient() {
           console.warn("⚠️ API Request - No token available:", config.url);
         }
         return config;
-      } catch (err: any) {
-        const msg = String(err?.error || err?.message || "").toLowerCase();
-        const needsConsent =
-          msg.includes("missing_refresh_token") ||
-          msg.includes("consent_required") ||
-          msg.includes("login_required") ||
-          msg.includes("invalid refresh token") ||
-          msg.includes("invalid_refresh_token") ||
-          msg.includes("unknown or invalid refresh token");
-
-        if (needsConsent) {
-          // Clear invalid tokens from localStorage before redirecting
-          console.warn("⚠️ Invalid refresh token detected. Clearing auth cache and redirecting to login.");
-          // Clear Auth0 cache keys from localStorage
+      } catch (err: unknown) {
+        if (needsReauthentication(err)) {
+          console.warn(
+            "⚠️ Session cannot be refreshed. Clearing Auth0 cache and redirecting to login.",
+            err,
+          );
           Object.keys(localStorage).forEach((key) => {
             if (key.startsWith("@@auth0spa@@")) {
               localStorage.removeItem(key);
             }
           });
 
-          await loginWithRedirect({
+          void loginWithRedirect({
             authorizationParams: {
               prompt: "login",
               redirect_uri: getAuth0RedirectUri(),
               audience: import.meta.env.VITE_AUTH0_AUDIENCE,
               scope: "openid profile email offline_access",
             },
-            appState: { returnTo: window.location.pathname || "/dashboard" },
+            appState: {
+              returnTo: `${window.location.pathname}${window.location.search}`,
+            },
           });
-          return config; // Prevent the request from continuing
+          /* Do not send API calls without Bearer — page should navigate to Auth0 */
+          return Promise.reject(createAuthRedirectError());
         }
         throw err;
       }
