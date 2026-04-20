@@ -375,6 +375,7 @@ def run_full_ingestion_and_enrichment(
         service = ActivityIngestionService(session, athlete_id)
         total_inserted = 0
         total_enriched = 0
+        total_analyzed = 0
 
         for idx, (chunk_after, chunk_before) in enumerate(chunk_boundaries):
             fetch_pct = 20.0 + (idx / num_chunks) * 15.0
@@ -670,6 +671,7 @@ def run_full_ingestion_and_enrichment(
                         limit=max(50, int(len(runs_only) * 2)),
                     )
                     if analyzed:
+                        total_analyzed += analyzed
                         logger.info(
                             "Chunk %d/%d: analyzed %d run execution record(s)",
                             idx + 1,
@@ -679,6 +681,34 @@ def run_full_ingestion_and_enrichment(
                 except Exception:
                     logger.warning(
                         "Run execution analysis failed after chunk %d/%d",
+                        idx + 1,
+                        num_chunks,
+                        exc_info=True,
+                    )
+
+            # Always run a lightweight window-scoped pass for this chunk so runs
+            # that were already present in DB still get analyzed/matched.
+            if user_id:
+                try:
+                    analyzed_backfill = analyze_recent_activity_window(
+                        session,
+                        athlete_id=int(athlete_id),
+                        user_id=str(user_id),
+                        after_ts=chunk_after,
+                        before_ts=chunk_before,
+                        limit=max(120, int(len(runs_only) * 4) if runs_only else 160),
+                    )
+                    if analyzed_backfill:
+                        total_analyzed += analyzed_backfill
+                        logger.info(
+                            "Chunk %d/%d: backfill analyzed %d run execution record(s)",
+                            idx + 1,
+                            num_chunks,
+                            analyzed_backfill,
+                        )
+                except Exception:
+                    logger.warning(
+                        "Run execution backfill failed after chunk %d/%d",
                         idx + 1,
                         num_chunks,
                         exc_info=True,
@@ -696,6 +726,11 @@ def run_full_ingestion_and_enrichment(
 
         inserted_count = total_inserted
         enriched = total_enriched
+        if total_analyzed:
+            logger.info(
+                "Run execution analysis updated %d record(s) during sync",
+                total_analyzed,
+            )
 
         sync_progress(
             80,
