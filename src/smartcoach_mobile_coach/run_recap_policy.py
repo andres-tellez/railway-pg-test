@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Dict, List
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 
 
 def _fastpath_enabled() -> bool:
@@ -30,13 +31,14 @@ def prior_user_turn_count(conversation_history: List[Dict[str, str]]) -> int:
     )
 
 
-# Substrings: if any appear, do not use anchor-day recap fastpath.
+# Substrings: if any appear, do not use anchor-day recap fastpath (except
+# "yesterday", which is handled via device anchor minus one calendar day when
+# a recap phrase matches).
 _ANCHOR_RECAP_BLOCKED = (
     "last run",
     "that run",
     "last race",
     "this run",
-    "yesterday",
     "last week",
     "last sunday",
     "last monday",
@@ -61,15 +63,32 @@ _ANCHOR_RECAP_PHRASES = (
 )
 
 
-def _message_matches_anchor_recap(user_message: str) -> bool:
+def _recap_phrase_hit(user_message: str) -> bool:
     t = (user_message or "").lower().strip()
-    if not t:
-        return False
-    if any(b in t for b in _ANCHOR_RECAP_BLOCKED):
-        return False
-    if "drift" in t:
+    if not t or "drift" in t:
         return False
     return any(p in t for p in _ANCHOR_RECAP_PHRASES)
+
+
+def _blocked_calendar_ambiguity(user_message: str) -> bool:
+    t = (user_message or "").lower()
+    return any(b in t for b in _ANCHOR_RECAP_BLOCKED)
+
+
+def _wants_yesterday_run(user_message: str) -> bool:
+    return "yesterday" in (user_message or "").lower()
+
+
+def _previous_local_calendar_date(anchor_local_date: str) -> Optional[str]:
+    """Return YYYY-MM-DD for the calendar day before ``anchor_local_date``."""
+    ld = (anchor_local_date or "").strip()[:10]
+    if len(ld) != 10:
+        return None
+    try:
+        d = datetime.strptime(ld, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    return (d - timedelta(days=1)).isoformat()
 
 
 @dataclass(frozen=True)
@@ -79,10 +98,13 @@ class RunRecapFastpathDecision:
     eligible: bool
     reason_code: str
     prior_user_turn_count: int
+    prefetch_local_date: Optional[str] = None
 
 
 def decide_run_recap_fastpath(
-    user_message: str, conversation_history: List[Dict[str, str]]
+    user_message: str,
+    conversation_history: List[Dict[str, str]],
+    anchor_local_date: str = "",
 ) -> RunRecapFastpathDecision:
     """
     Whether to attempt prefetch + single completion (no tools).
@@ -92,12 +114,27 @@ def decide_run_recap_fastpath(
     - message matches anchor recap phrases (and passes safety blocks)
     - **no prior user turns** in thread (assistant-only preamble like a welcome
       is OK — this is the athlete's first question in the Coach thread)
+
+    When the user says **yesterday** alongside a recap phrase, prefetch uses
+    ``anchor_local_date`` minus one calendar day (device-local). If
+    ``anchor_local_date`` is missing or invalid, that variant is not eligible.
     """
     turns = prior_user_turn_count(conversation_history)
     if not _fastpath_enabled():
         return RunRecapFastpathDecision(False, "fastpath_disabled", turns)
     if turns > 0:
         return RunRecapFastpathDecision(False, "not_first_user_turn", turns)
-    if not _message_matches_anchor_recap(user_message):
+    if not _recap_phrase_hit(user_message):
         return RunRecapFastpathDecision(False, "phrase_or_block_mismatch", turns)
+    if _blocked_calendar_ambiguity(user_message):
+        return RunRecapFastpathDecision(False, "phrase_or_block_mismatch", turns)
+    if _wants_yesterday_run(user_message):
+        prev_day = _previous_local_calendar_date(anchor_local_date)
+        if not prev_day:
+            return RunRecapFastpathDecision(
+                False, "invalid_anchor_for_yesterday", turns
+            )
+        return RunRecapFastpathDecision(
+            True, "eligible_yesterday", turns, prefetch_local_date=prev_day
+        )
     return RunRecapFastpathDecision(True, "eligible", turns)

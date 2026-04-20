@@ -89,6 +89,23 @@ def test_rejects_when_user_asks_drift():
     assert not wants_run_recap_fastpath("How was my run and what was my HR drift?", [])
 
 
+def test_yesterday_recap_eligible_with_device_anchor():
+    """'Yesterday' must not force the slow tool loop when anchor resolves the run day."""
+    msg = "How was my run yesterday?"
+    anchor = "2026-04-19"
+    assert wants_run_recap_fastpath(msg, [], anchor)
+    d = decide_run_recap_fastpath(msg, [], anchor)
+    assert d.eligible and d.reason_code == "eligible_yesterday"
+    assert d.prefetch_local_date == "2026-04-18"
+
+
+def test_yesterday_without_anchor_not_eligible():
+    msg = "How was my run yesterday?"
+    assert not wants_run_recap_fastpath(msg, [])
+    d = decide_run_recap_fastpath(msg, [])
+    assert not d.eligible and d.reason_code == "invalid_anchor_for_yesterday"
+
+
 def test_disabled_env(monkeypatch):
     monkeypatch.setenv("SMARTCOACH_RUN_RECAP_FASTPATH", "0")
     try:

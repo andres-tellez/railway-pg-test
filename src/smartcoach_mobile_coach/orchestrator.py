@@ -1652,7 +1652,9 @@ def run_mobile_agent_turn(
             "prior_user_turns": 0,
         }
     else:
-        recap_decision = decide_run_recap_fastpath(user_message, conversation_history)
+        recap_decision = decide_run_recap_fastpath(
+            user_message, conversation_history, anchor_local_date
+        )
         timings_ms["run_recap_fastpath_gate"] = {
             "eligible": recap_decision.eligible,
             "reason_code": recap_decision.reason_code,
@@ -1661,9 +1663,15 @@ def run_mobile_agent_turn(
 
     prefetch: Optional[Dict[str, Any]] = None
     if recap_decision is not None and recap_decision.eligible:
+        recap_run_local_date = (
+            recap_decision.prefetch_local_date or anchor_local_date
+        ).strip()[:10]
+        prose_anchor_day = (
+            "yesterday" if recap_decision.prefetch_local_date else "today"
+        )
         _tp0 = time.perf_counter()
         prefetch = prefetch_opening_anchor_run_recap(
-            session, internal_user_id, anchor_local_date
+            session, internal_user_id, recap_run_local_date
         )
         timings_ms["fastpath_prefetch_ms"] = round(
             (time.perf_counter() - _tp0) * 1000, 2
@@ -1680,7 +1688,9 @@ def run_mobile_agent_turn(
 
     if prefetch:
         augmented_system = system_content + system_appendix_for_prefetch(
-            prefetch, anchor_local_date
+            prefetch,
+            recap_run_local_date,
+            prose_anchor_day=prose_anchor_day,
         )
         cc_messages: List[Dict[str, str]] = [
             {"role": "system", "content": augmented_system}

@@ -81,15 +81,20 @@ def _run_recap_prefetch_slim_for_llm() -> bool:
 
 
 def wants_run_recap_fastpath(
-    user_message: str, conversation_history: List[Dict[str, str]]
+    user_message: str,
+    conversation_history: List[Dict[str, str]],
+    anchor_local_date: str = "",
 ) -> bool:
     """
     Anchor-day run recap fastpath gate.
 
     Delegates to :func:`run_recap_policy.decide_run_recap_fastpath` (phrase
-    match, safety blocks, first user turn in thread).
+    match, safety blocks, first user turn in thread). Pass ``anchor_local_date``
+    (YYYY-MM-DD) so questions that name **yesterday** can resolve the run day.
     """
-    return decide_run_recap_fastpath(user_message, conversation_history).eligible
+    return decide_run_recap_fastpath(
+        user_message, conversation_history, anchor_local_date
+    ).eligible
 
 
 def prefetch_opening_anchor_run_recap(
@@ -296,10 +301,17 @@ def _compact_split_context_for_llm(
 
 
 def system_appendix_for_prefetch(
-    prefetch: Dict[str, Any], anchor_local_date: str
+    prefetch: Dict[str, Any],
+    recap_run_local_date: str,
+    *,
+    prose_anchor_day: str = "today",
 ) -> str:
     """Append compact run context JSON + no-tools instruction (minimal tokens)."""
-    ld = (anchor_local_date or "").strip()[:10]
+    ld = (recap_run_local_date or "").strip()[:10]
+    day = (prose_anchor_day or "today").strip().lower()
+    if day not in ("today", "yesterday"):
+        day = "today"
+    poss = "today's" if day == "today" else "yesterday's"
     slim = _run_recap_prefetch_slim_for_llm()
     compact = _compact_run_context_for_llm(prefetch, ld)
     lines = [
@@ -314,7 +326,7 @@ def system_appendix_for_prefetch(
         "**Do not call any tools** — use only the JSON above for numbers.",
         "Answer using the same coaching rules as when you had called those tools yourself "
         "(Insight + Facts; interpretation-first opener for this kind of question).",
-        "**User-facing dates:** In prose to the athlete, say **today** for the anchor run — **never** "
+        f"**User-facing dates:** In prose to the athlete, say **{day}** for the anchor run — **never** "
         "read out `anchor_local_date`, `calendar_local_date`, or `week_monday` as YYYY-MM-DD or "
         "numeric slash dates. Use `when_vs_anchor` for prior single-run days and `spoken_timeframe` "
         "for week volume rows.",
@@ -337,7 +349,7 @@ def system_appendix_for_prefetch(
                 "**Week volume (`week_volume_context`):** Compare **`this_week`** vs **`last_week`** "
                 "using **only** `run_count`, `total_mi_display`, and each row’s **`spoken_timeframe`** "
                 "(say “this week” / “last week” — **not** `week_monday` in the reply). You **should** "
-                "weave **at most one** short clause into the reply (may merge with the today recap) — "
+                f"weave **at most one** short clause into the reply (may merge with the {day} run recap) — "
                 "e.g. volume or run frequency. **Do not** invent other weekly stats, KPIs, or trends "
                 "not in this JSON.",
             ]
@@ -347,7 +359,7 @@ def system_appendix_for_prefetch(
             [
                 "**Required — `comparison_sessions`:** Each item is a **prior** calendar day (before "
                 "the anchor) with **exactly one** run — **headline facts only** (no KPIs). You **must** "
-                "include **exactly one** short sentence that contrasts **today’s** run with **one** of "
+                f"include **exactly one** short sentence that contrasts **{poss}** run with **one** of "
                 "those items, using **only** fields present in the JSON for anchor `facts` and that "
                 "item (pace, HR, distance, time, or title). When you name that prior day in prose, use "
                 "**`when_vs_anchor`** (e.g. “yesterday”, “last week on Thursday”) — **never** quote "
@@ -360,7 +372,7 @@ def system_appendix_for_prefetch(
     else:
         lines.append(
             "**Prior-run contrast:** The JSON has **no** `comparison_sessions` — do **not** describe "
-            "another **specific day's** run from memory. Anchor metrics come from today's `facts` only; "
+            f"another **specific day's** run from memory. Anchor metrics come from {poss} `facts` only; "
             "week-to-week volume may use `week_volume_context` if present."
         )
     return "\n".join(lines)
