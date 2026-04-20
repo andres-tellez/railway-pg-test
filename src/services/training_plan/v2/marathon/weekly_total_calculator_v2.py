@@ -190,12 +190,15 @@ def calculate_weekly_totals_from_long_runs(
             prev_prev_total = prev_total
             prev_total = None
 
-        # Determine if this week is a cutback (>20% drop) to flag next week as rebuild
-        if prev_prev_total is not None and prev_total is not None:
-            if prev_prev_total > 0 and prev_total <= prev_prev_total * 0.8:
-                rebuild_next_week = True
-            else:
-                rebuild_next_week = False
+        # Keep rebuild cadence aligned with the long-run spine.
+        # Prefer explicit spine metadata over inferred mileage drops.
+        if "is_cutback" in week:
+            rebuild_next_week = bool(week.get("is_cutback"))
+        elif prev_prev_total is not None and prev_total is not None:
+            # Backward-compatible fallback for callers that don't pass `is_cutback`.
+            rebuild_next_week = (
+                prev_prev_total > 0 and prev_total <= prev_prev_total * 0.8
+            )
         else:
             rebuild_next_week = False
 

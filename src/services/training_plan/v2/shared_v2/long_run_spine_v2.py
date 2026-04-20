@@ -198,6 +198,19 @@ def weeks_until(race: Optional[Union[str, date, datetime]]) -> Optional[int]:
         return None
 
 
+def _cap_forced_peak_jump(previous: float, target: float, unit_system: str) -> float:
+    """
+    Smooth only the synthetic end-of-build peak append.
+
+    This avoids abrupt injections like 15→20 while leaving normal build/cutback
+    progression untouched.
+    """
+    if target <= previous:
+        return target
+    max_jump = 2.0 if unit_system == "metric" else 3.0
+    return min(target, previous + max_jump)
+
+
 def validate_phase_quality(
     weeks: List[Dict[str, float]],
     *,
@@ -448,6 +461,7 @@ def generate_long_run_spine(
     pre_cutback_lr: Optional[float] = None
     last_was_cutback = False
     peaked = False
+    declared_peak_week_num: Optional[int] = None
 
     # Dynamic length mode: build organically until peak, then add recovery + taper
     if derive_length:
@@ -468,8 +482,8 @@ def generate_long_run_spine(
         )
         if lr >= peak - 1e-6:
             peaked = True
+            declared_peak_week_num = 1
         week_num += 1
-        build_counter += 1
 
         # Build to peak
         min_lr_dynamic = config.min_long_run_miles if config else 5.0
@@ -499,16 +513,17 @@ def generate_long_run_spine(
                 )
 
                 last_was_cutback = False
-                build_counter = 1
+                build_counter = 0
             else:
-                # Check if cutback time: every cutback_every build weeks
-                # CRITICAL FIX: build_counter must be >= cutback_every to prevent consecutive cutbacks
-                # ADDITIONAL SAFETY: Never allow cutback if we just had a cutback (defensive check)
-                if (
+                # Keep cutback cadence aligned with fixed-length mode:
+                # first cutback at build week (cutback_every - 1), then every cutback_every build weeks.
+                build_counter += 1
+                is_first_cutback = build_counter == cutback_every - 1
+                is_subsequent_cutback = (
                     build_counter >= cutback_every
                     and (build_counter % cutback_every) == 0
-                    and not last_was_cutback
-                ):
+                )
+                if (is_first_cutback or is_subsequent_cutback) and not last_was_cutback:
                     pre_cutback_lr = lr
                     new_lr = round_to_half_mile(
                         max(min_lr_dynamic, lr * cutback_factor)
@@ -535,7 +550,6 @@ def generate_long_run_spine(
                     build_counter = 0
                 else:
                     lr = min(peak, lr + inc_miles)
-                    build_counter += 1
 
             # Track if this was a cutback week
             week_is_cutback = last_was_cutback  # Set before we clear the flag
@@ -551,6 +565,7 @@ def generate_long_run_spine(
             )
             if not peaked and lr >= peak - 1e-6:
                 peaked = True
+                declared_peak_week_num = week_num
             week_num += 1
 
             # Safety limit
@@ -585,8 +600,12 @@ def generate_long_run_spine(
                 ratios = [0.70, 0.50, 0.25]
             else:
                 ratios = [taper_factor, 0.40]
+        taper_anchor = max(
+            min_lr,
+            max((float(w.get("long_run_miles", 0.0)) for w in weeks), default=peak),
+        )
         for r in ratios:
-            t = round_to_half_mile(max(min_lr, peak * r))
+            t = round_to_half_mile(max(min_lr, taper_anchor * r))
             weeks.append(
                 {
                     "week_number": week_num,
@@ -705,6 +724,7 @@ def generate_long_run_spine(
             )
 
             last_was_cutback = False
+            current_is_cutback = False
             # GUARDRAIL: Resume week does NOT count toward cutback cycle
             # We need at least cutback_every build weeks AFTER resume before next cutback
             # Start at 0 so we need 4 build weeks (total 4) before next cutback
@@ -784,21 +804,25 @@ def generate_long_run_spine(
         )
         if not peaked and lr >= peak - 1e-6:
             peaked = True
+            declared_peak_week_num = i
 
         i += 1
 
-    # Ensure peak present at end of build (safety check)
+    # Ensure final build week keeps progressing, but avoid abrupt forced jumps.
     if not weeks or weeks[-1]["long_run_miles"] < peak:
+        prev_lr = weeks[-1]["long_run_miles"] if weeks else 0.0
+        safe_candidate = _cap_forced_peak_jump(prev_lr, peak, unit_system)
         peak_week_num = len(weeks) + 1
         weeks.append(
             {
                 "week_number": peak_week_num,
-                "long_run_miles": round_to_half_mile(peak),
+                "long_run_miles": round_to_half_mile(safe_candidate),
                 "phase": "",
                 "is_cutback": False,
             }
         )
-        peaked = True
+        peaked = safe_candidate >= peak - 1e-6
+        declared_peak_week_num = peak_week_num
 
     # Update total_weeks_in_plan to reflect actual plan length
     actual_weeks_so_far = len(weeks)
@@ -872,12 +896,15 @@ def generate_long_run_spine(
 
         # Enforce post-peak monotonic decrease through pre-taper segment
         # Find peak index in current weeks (should exist by construction)
-        try:
-            peak_idx_local = max(
-                range(len(weeks)), key=lambda i: weeks[i]["long_run_miles"]
-            )  # noqa: E731
-        except Exception:
-            peak_idx_local = 0
+        if declared_peak_week_num and declared_peak_week_num > 0:
+            peak_idx_local = min(len(weeks) - 1, declared_peak_week_num - 1)
+        else:
+            try:
+                peak_idx_local = max(
+                    range(len(weeks)), key=lambda i: weeks[i]["long_run_miles"]
+                )  # noqa: E731
+            except Exception:
+                peak_idx_local = 0
         for i in range(peak_idx_local + 1, len(weeks)):
             prev = weeks[i - 1]["long_run_miles"]
             if weeks[i]["long_run_miles"] > prev:
@@ -892,12 +919,15 @@ def generate_long_run_spine(
         start_cap = max(0, pre_taper_len - cap_weeks)
 
         # Find peak index to exclude it and all build weeks from capping
-        try:
-            peak_idx_for_cap = max(
-                range(len(weeks)), key=lambda i: weeks[i]["long_run_miles"]
-            )
-        except Exception:
-            peak_idx_for_cap = -1  # No peak found, safe to cap all
+        if declared_peak_week_num and declared_peak_week_num > 0:
+            peak_idx_for_cap = min(len(weeks) - 1, declared_peak_week_num - 1)
+        else:
+            try:
+                peak_idx_for_cap = max(
+                    range(len(weeks)), key=lambda i: weeks[i]["long_run_miles"]
+                )
+            except Exception:
+                peak_idx_for_cap = -1  # No peak found, safe to cap all
 
         for i in range(start_cap, pre_taper_len):
             # Don't cap:
@@ -939,8 +969,12 @@ def generate_long_run_spine(
                     ratios = [0.70, 0.50, 0.25][:taper_weeks_to_create]
                 else:
                     ratios = [taper_factor, 0.40][:taper_weeks_to_create]
+            taper_anchor = max(
+                min_lr,
+                max((float(w.get("long_run_miles", 0.0)) for w in weeks), default=peak),
+            )
             for r in ratios:
-                t = round_to_half_mile(max(min_lr, peak * r))
+                t = round_to_half_mile(max(min_lr, taper_anchor * r))
                 weeks.append(
                     {
                         "week_number": wk,
@@ -953,18 +987,23 @@ def generate_long_run_spine(
 
     # Label phases using data-driven approach: find actual peak, then label accordingly
     # This ensures the peak week is labeled "Peak", not "Taper"
-    try:
-        peak_idx_label = max(
-            range(len(weeks)), key=lambda i: weeks[i]["long_run_miles"]
-        )
-        peak_week_num = weeks[peak_idx_label]["week_number"]
-    except Exception:
-        peak_idx_label = -1
-        peak_week_num = 0
+    if declared_peak_week_num and declared_peak_week_num > 0:
+        peak_week_num = int(declared_peak_week_num)
+    else:
+        try:
+            peak_idx_label = max(
+                range(len(weeks)), key=lambda i: weeks[i]["long_run_miles"]
+            )
+            peak_week_num = weeks[peak_idx_label]["week_number"]
+        except Exception:
+            peak_week_num = 0
+
+    pre_taper_last_week = max(1, len(weeks) - taper_weeks)
+    peak_phase_start = max(1, peak_week_num - 1)
+    peak_phase_end = max(peak_phase_start, min(pre_taper_last_week, peak_week_num))
 
     for w in weeks:
         i = int(w["week_number"])
-        week_lr = w.get("long_run_miles", 0)
 
         # Data-driven phase labeling:
         # - Weeks before peak: Base/Build
@@ -972,18 +1011,18 @@ def generate_long_run_spine(
         # - Weeks after peak but before taper: Peak (maintenance)
         # - Last taper_weeks: Taper
 
-        if i < peak_week_num:
-            # Before peak: Base or Build
-            if i <= max(1, len(weeks) // 4):
-                w["phase"] = "Base"
-            else:
-                w["phase"] = "Build"
-        elif i == peak_week_num:
-            # Peak week itself
+        if i < peak_phase_start:
+            # Before peak: use a larger Base slice (~35% of pre-peak weeks)
+            # so long plans don't spend excessive time in heavy Build.
+            pre_peak_weeks = max(1, peak_phase_start - 1)
+            base_cutoff = max(1, int(round(pre_peak_weeks * 0.35)))
+            w["phase"] = "Base" if i <= base_cutoff else "Build"
+        elif peak_phase_start <= i <= peak_phase_end:
+            # Keep a short, explicit peak block (typically 1-2 weeks) before taper.
             w["phase"] = "Peak"
-        elif i <= len(weeks) - taper_weeks:
-            # After peak, before taper: Peak (maintenance)
-            w["phase"] = "Peak"
+        elif i <= pre_taper_last_week:
+            # Pre-taper weeks outside the explicit peak block remain Build.
+            w["phase"] = "Build"
         else:
             # Last taper_weeks: Taper
             w["phase"] = "Taper"

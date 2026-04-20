@@ -76,6 +76,20 @@ class PlanConstraintsService:
     - Trim plans that exceed constraints
     """
 
+    MIN_START_POLICY_CURRENT_WEEK = "current_week"
+    MIN_START_POLICY_NEXT_WEEK = "next_week"
+
+    def __init__(self, min_start_policy: str = MIN_START_POLICY_CURRENT_WEEK):
+        """
+        Initialize constraints service with a single configurable min-start policy.
+
+        Args:
+            min_start_policy:
+                - "current_week": Monday starting the Mon–Sun week that contains "today" (default)
+                - "next_week": Monday of the following calendar week (legacy behavior)
+        """
+        self.min_start_policy = min_start_policy
+
     @staticmethod
     def _parse_date(value: Any) -> Optional[date]:
         """Parse various date formats to date object."""
@@ -90,6 +104,33 @@ class PlanConstraintsService:
         except Exception:
             return None
 
+    def _resolve_min_start_date(
+        self,
+        reference_date: Optional[date] = None,
+        user_timezone: Optional[str] = None,
+    ) -> date:
+        """Resolve min start date from configured policy."""
+        if reference_date is not None:
+            today = reference_date
+        elif user_timezone:
+            from src.utils.timezone_helpers import get_today_date_in_timezone
+
+            today = get_today_date_in_timezone(user_timezone)
+        else:
+            today = datetime.now().date()
+
+        if self.min_start_policy == self.MIN_START_POLICY_CURRENT_WEEK:
+            return get_week_start_for_date(today)
+
+        if self.min_start_policy == self.MIN_START_POLICY_NEXT_WEEK:
+            return get_next_monday(today, include_today=False)
+
+        raise ValueError(
+            f"Unknown min_start_policy='{self.min_start_policy}'. "
+            f"Supported: {self.MIN_START_POLICY_CURRENT_WEEK}, "
+            f"{self.MIN_START_POLICY_NEXT_WEEK}"
+        )
+
     def calculate_available_weeks(
         self,
         *,
@@ -98,41 +139,40 @@ class PlanConstraintsService:
     ) -> Optional[int]:
         """
         Calculate available training weeks from race date.
-        
+
         This is used BEFORE the selector makes its recommendation, so the selector
         can consider available time when making its decision.
-        
+
         Args:
             race_date: Race date (any format)
             min_start_date: Minimum start date (if None, calculates from today)
-            
+
         Returns:
             Available training weeks (None if no race_date), or None if race_date invalid
         """
         if min_start_date is None:
-            today = datetime.now().date()
-            min_start_date = get_next_monday(today, include_today=False)
-        
+            min_start_date = self.get_min_start_date()
+
         if not race_date:
             return None
-            
+
         race_d = self._parse_date(race_date)
         if not race_d:
             return None
-            
+
         race_week_start = get_week_start_for_date(race_d)
         days_to_race = (race_week_start - min_start_date).days
-        
+
         # Calculate available training weeks (race week is added separately later)
         # Use integer division: days_to_race // 7 gives training weeks
         available_weeks = max(1, days_to_race // 7)
-        
+
         logger.info(
             f"📅 Available weeks calculation: {available_weeks} weeks "
             f"(race_date={race_d.isoformat()}, min_start={min_start_date.isoformat()}, "
             f"days_to_race={days_to_race})"
         )
-        
+
         return available_weeks
 
     def calculate_plan_constraints(
@@ -144,10 +184,10 @@ class PlanConstraintsService:
     ) -> PlanConstraints:
         """
         Calculate plan constraints for validation and date alignment.
-        
+
         NOTE: The selector (Pass1WeeksSelector) now handles the time-aware decision.
         This method primarily validates and stores values for date alignment.
-        
+
         Args:
             race_date: Race date (any format)
             recommended_weeks: Time-aware recommended plan length (from selector)
@@ -157,8 +197,7 @@ class PlanConstraintsService:
             PlanConstraints with validated constraints
         """
         if min_start_date is None:
-            today = datetime.now().date()
-            min_start_date = get_next_monday(today, include_today=False)
+            min_start_date = self.get_min_start_date()
 
         # recommended_weeks already includes time-aware adjustment from selector
         target_weeks = recommended_weeks
@@ -174,7 +213,7 @@ class PlanConstraintsService:
                     race_date=race_date,
                     min_start_date=min_start_date,
                 )
-                
+
                 # Validate that recommended_weeks doesn't exceed available_weeks
                 if available_weeks is not None and recommended_weeks > available_weeks:
                     logger.warning(
@@ -214,9 +253,9 @@ class PlanConstraintsService:
 
         Priority:
         1. If race_date provided: Calculate backwards from race date (for alignment)
-        2. Ensure minimum start is the week AFTER current week (no past dates)
+        2. Enforce configured minimum start policy (current-week or next-week Monday)
         3. Fallback to provided start_date if available
-        4. Default to next Monday if all else fails
+        4. Default to minimum start policy if all else fails
 
         Args:
             race_date: Race date (any format)
@@ -231,8 +270,7 @@ class PlanConstraintsService:
             return self._parse_date(fallback_start)
 
         if min_start_date is None:
-            today = datetime.now().date()
-            min_start_date = get_next_monday(today, include_today=False)
+            min_start_date = self.get_min_start_date()
 
         calculated_start = None
 
@@ -252,26 +290,28 @@ class PlanConstraintsService:
                         f"Failed to align start date from race_date={race_date}: {e}"
                     )
 
-        # Priority: Start as soon as possible (next Monday) when there's enough time
+        # Priority: Start as soon as allowed by min-start policy when there's enough time
         # Strategy: Use min_start_date when there's enough time, then adjust dates forward to align race week
         if calculated_start:
             race_week_start = get_week_start_for_date(race_d) if race_d else None
             if race_week_start:
                 # Calculate where the race week would be if we start on min_start_date
-                plan_end_from_min_start = min_start_date + timedelta(weeks=plan_length_weeks - 1)
-                
+                plan_end_from_min_start = min_start_date + timedelta(
+                    weeks=plan_length_weeks - 1
+                )
+
                 logger.info(
                     f"Date check: min_start={min_start_date}, plan_length={plan_length_weeks}, "
                     f"plan_end_from_min_start={plan_end_from_min_start}, race_week_start={race_week_start}"
                 )
-                
+
                 # If starting on min_start_date would end before or on the race week, use min_start_date
                 # The date adjustment code will align the race week later
                 if plan_end_from_min_start <= race_week_start:
-                    # Starting on next Monday fits - use it (start as soon as possible)
+                    # Starting on minimum start date fits - use it (start as soon as possible)
                     start_date = min_start_date
                     logger.info(
-                        f"✅ Using minimum start date {min_start_date} (next Monday) - "
+                        f"✅ Using minimum start date {min_start_date} - "
                         f"plan fits before race week {race_week_start} "
                         f"(plan would end on {plan_end_from_min_start}, race week starts {race_week_start}). "
                         f"Dates will be adjusted forward to align race week."
@@ -286,20 +326,24 @@ class PlanConstraintsService:
                     )
             else:
                 # No race date - use calculated start if available, otherwise min_start
-                start_date = max(calculated_start, min_start_date) if calculated_start else min_start_date
+                start_date = (
+                    max(calculated_start, min_start_date)
+                    if calculated_start
+                    else min_start_date
+                )
         else:
             parsed_fallback = self._parse_date(fallback_start)
             if parsed_fallback:
                 start_date = parsed_fallback
             else:
-                # Default to next Monday
+                # Default to minimum start date policy
                 start_date = min_start_date
 
         # CRITICAL: Ensure start date is never in the past
         if start_date < min_start_date:
             logger.warning(
                 f"Start date {start_date} is in the past. "
-                f"Adjusting to minimum start date: {min_start_date} (week after current week)"
+                f"Adjusting to minimum start date: {min_start_date}"
             )
             start_date = min_start_date
 
@@ -430,14 +474,24 @@ class PlanConstraintsService:
 
         return weeks_aligned, aligned_start_date
 
-    def get_min_start_date(self) -> date:
+    def get_min_start_date(
+        self,
+        reference_date: Optional[date] = None,
+        user_timezone: Optional[str] = None,
+    ) -> date:
         """
-        Get the minimum start date (week AFTER current week).
+        Get the minimum start date from configured policy.
 
-        This is the earliest date a plan can start, ensuring it's never in the past.
+        This is the earliest date a plan can start based on current policy.
+
+        Args:
+            reference_date: Optional fixed calendar date (tests / deterministic callers).
+            user_timezone: Optional IANA timezone; when set (and reference_date is None),
+                "today" is resolved in that zone for current-week policy.
 
         Returns:
-            Date object representing the Monday of the week after current week
+            Date object representing policy-selected Monday boundary
         """
-        today = datetime.now().date()
-        return get_next_monday(today, include_today=False)
+        return self._resolve_min_start_date(
+            reference_date=reference_date, user_timezone=user_timezone
+        )

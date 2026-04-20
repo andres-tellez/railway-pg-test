@@ -15,6 +15,8 @@ from datetime import date, datetime, timedelta
 import logging
 
 from .race_configs.base_config import RaceDistanceConfig
+from .plan_constraints_service import PlanConstraintsService
+from src.utils.date_helpers import get_week_start_for_date
 
 logger = logging.getLogger(__name__)
 
@@ -22,14 +24,21 @@ logger = logging.getLogger(__name__)
 class RaceDateValidationService:
     """Validates race date readiness based on user's current fitness and available time."""
 
-    def __init__(self, config: RaceDistanceConfig):
+    def __init__(
+        self,
+        config: RaceDistanceConfig,
+        constraints_service: Optional[PlanConstraintsService] = None,
+    ):
         """
         Initialize validation service with race distance configuration.
 
         Args:
             config: Race distance configuration containing validation thresholds
+            constraints_service: Shared constraints service for min-start policy
         """
         self.config = config
+        # Single source of truth for minimum start-date policy.
+        self.constraints_service = constraints_service or PlanConstraintsService()
 
     def validate(
         self,
@@ -37,6 +46,7 @@ class RaceDateValidationService:
         plan_start_date: Any,
         current_weekly_mileage: float,
         current_long_run: float,
+        user_timezone: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Validate if user has sufficient time and base fitness for marathon training.
@@ -46,6 +56,7 @@ class RaceDateValidationService:
             plan_start_date: Plan start date (str ISO, date, or datetime, or None to calculate)
             current_weekly_mileage: User's current average weekly mileage
             current_long_run: User's current longest run distance (miles)
+            user_timezone: Optional IANA timezone for inferring min start when plan_start_date is absent
 
         Returns:
             {
@@ -76,12 +87,9 @@ class RaceDateValidationService:
         start_d = self._parse_date(plan_start_date)
         if not start_d:
             # Calculate start_date aligned with race_date (same logic as orchestrator)
-            from src.utils.date_helpers import get_week_start_for_date, get_next_monday
-
-            today = datetime.now().date()
-            min_start_date = get_next_monday(
-                today, include_today=False
-            )  # Week after current week
+            min_start_date = self.constraints_service.get_min_start_date(
+                user_timezone=user_timezone
+            )
 
             # Calculate backwards from race_date
             race_week_start = get_week_start_for_date(race_d)
@@ -113,16 +121,13 @@ class RaceDateValidationService:
             required_weeks = min_weeks  # Absolute minimum for training
             # Recalculate start_date to align with race_date using min_training_weeks
             # This ensures ready_date matches what we're telling the user
-            from src.utils.date_helpers import get_week_start_for_date
-
             race_week_start = get_week_start_for_date(race_d)
             offset_weeks = max(0, min_weeks - 1)
             recalculated_start = race_week_start - timedelta(weeks=offset_weeks)
             # Ensure not in the past
-            from src.utils.date_helpers import get_next_monday
-
-            today = datetime.now().date()
-            min_start_date = get_next_monday(today, include_today=False)
+            min_start_date = self.constraints_service.get_min_start_date(
+                user_timezone=user_timezone
+            )
             start_d = (
                 max(recalculated_start, min_start_date)
                 if recalculated_start

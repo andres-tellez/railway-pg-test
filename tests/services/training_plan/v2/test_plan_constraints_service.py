@@ -63,7 +63,7 @@ def test_calculate_plan_constraints_warns_if_exceeds_available():
     )
 
     assert constraints.available_weeks == 16
-    assert constraints.recommended_weeks == 16  # Constrained to available_weeks
+    assert constraints.recommended_weeks == 20  # Preserved as selector recommendation
     assert constraints.target_weeks == 16
 
 
@@ -84,3 +84,40 @@ def test_align_weeks_with_dates_keeps_start_and_race_week():
     assert weeks_out[-1]["week_start_date"] == "2026-03-16"
     assert len(weeks_out) == 17
 
+
+def test_get_min_start_date_defaults_to_current_week_policy():
+    service = PlanConstraintsService()
+
+    # Wednesday should map to Monday of the same week.
+    assert service.get_min_start_date(reference_date=date(2025, 11, 26)) == date(
+        2025, 11, 24
+    )
+    # Monday stays on Monday for current-week policy.
+    assert service.get_min_start_date(reference_date=date(2025, 11, 24)) == date(
+        2025, 11, 24
+    )
+    # Sunday still maps to Monday of the same Mon–Sun week (not the following Monday).
+    assert service.get_min_start_date(reference_date=date(2025, 11, 30)) == date(
+        2025, 11, 24
+    )
+
+
+def test_get_min_start_date_supports_next_week_policy():
+    service = PlanConstraintsService(
+        min_start_policy=PlanConstraintsService.MIN_START_POLICY_NEXT_WEEK
+    )
+
+    # Monday should map to the following Monday.
+    assert service.get_min_start_date(reference_date=date(2025, 11, 24)) == date(
+        2025, 12, 1
+    )
+
+
+def test_get_min_start_date_raises_for_unknown_policy():
+    service = PlanConstraintsService(min_start_policy="unexpected-policy")
+
+    try:
+        service.get_min_start_date(reference_date=date(2025, 11, 24))
+        assert False, "Expected ValueError for unsupported min_start_policy"
+    except ValueError as exc:
+        assert "Unknown min_start_policy" in str(exc)

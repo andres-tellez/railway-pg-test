@@ -289,10 +289,12 @@ def apply_recovery_week_insertion_if_needed(
         else:
             start_d = today_local
     else:
-        # Default: next Monday
-        from src.utils.date_helpers import get_next_monday
+        # Default: Monday of the calendar week containing "today" (Mon–Sun week).
+        # Note: get_next_monday(..., include_today=True) on Sunday points at *next* Monday,
+        # which would skip the in-progress week — use week start instead.
+        from src.utils.date_helpers import get_week_start_for_date
 
-        start_d = get_next_monday(today_local, include_today=True)
+        start_d = get_week_start_for_date(today_local)
 
     current_plan_weeks = len(weeks)
 
