@@ -50,6 +50,7 @@ class TestBackendEndpointCompatibility:
         """Without auth, protected plan routes should not be 404 (typically 401)."""
         endpoints_to_test = [
             ("/api/plan/current", "GET"),
+            ("/api/plan/current-week", "GET"),
             ("/api/plan/draft", "POST"),
         ]
 
