@@ -2,12 +2,15 @@
 
 from flask import Blueprint, jsonify, g, request
 from sqlalchemy.orm import joinedload
+from sqlalchemy import desc
 import uuid
 import logging
 import re
 
 from src.db.db_session import get_session
 from src.db.models.plans import Plan
+from src.db.models.plan_workouts import PlanWorkout
+from src.db.models.activities import Activity
 from src.utils.auth0_jwt import requires_auth
 from src.db.dao.plans_dao import (
     get_plan_with_workouts,
@@ -18,7 +21,12 @@ from src.db.dao.plans_dao import (
 )
 from src.schemas.plan_schema import PlanCreateSchema
 from datetime import datetime, date, timedelta
-from src.utils.timezone_helpers import resolve_timezone
+from src.utils.timezone_helpers import resolve_timezone, get_today_date_in_timezone
+from src.utils.run_type_constants import (
+    RUN_TYPE_DEFINITIONS,
+    RUN_TYPE_EASY,
+    normalize_run_type_key,
+)
 from src.routes.plan_generation_v2 import (
     run_v2_plan_generation,
     build_standard_draft_payload,
@@ -38,6 +46,53 @@ def inject_user_id():
             g.user_id = uuid.UUID(user_id)
         except ValueError:
             g.user_id = None
+
+
+def _infer_run_type_key_for_hr(w) -> str:
+    """Same inference as GET /current for PlanStorageService HR zones."""
+    run_type_key = w.run_type_key
+    if not run_type_key:
+        workout_type_lower = (w.workout_type or "").lower()
+        if "threshold" in workout_type_lower or "tempo" in workout_type_lower:
+            run_type_key = "threshold"
+        elif "steady" in workout_type_lower or "aerobic" in workout_type_lower:
+            run_type_key = "steady"
+        elif "long" in workout_type_lower or "endurance" in workout_type_lower:
+            run_type_key = "long"
+        elif "easy" in workout_type_lower or "recovery" in workout_type_lower:
+            run_type_key = "easy"
+        else:
+            run_type_key = "easy"
+    return run_type_key or "easy"
+
+
+def _monday_sunday_bounds(today: date) -> tuple[date, date]:
+    """Calendar week where Monday is the first day (Python weekday: Mon=0)."""
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+    return week_start, week_end
+
+
+def _internal_user_uuid(raw) -> uuid.UUID:
+    """JWT auth stores g.user_id as str; X-User-Id uses UUID. Normalize for ORM binds."""
+    if isinstance(raw, uuid.UUID):
+        return raw
+    return uuid.UUID(str(raw))
+
+
+def _execution_payload(activity: Activity) -> dict:
+    return {
+        "activity_id": int(activity.activity_id),
+        "start_date": activity.start_date.isoformat() if activity.start_date else None,
+        "planned_type": activity.planned_type,
+        "executed_type": activity.executed_type,
+        "run_score": activity.run_score,
+        "zone_compliance_pct": activity.zone_compliance_pct,
+        "planned_miles": activity.planned_miles,
+        "actual_miles": activity.actual_miles,
+        "completion_pct": activity.completion_pct,
+        "scoring_detail": activity.scoring_detail,
+    }
 
 
 # ✅ /api/plan/current — get current active plan (read-only)
@@ -252,6 +307,166 @@ def get_current_plan():
                     "race_distance": plan.race_distance,  # Include race distance for frontend
                     "notes": plan.notes,
                     "workouts": workouts_data,
+                }
+            ),
+            200,
+        )
+
+
+@plan_bp.route("/current-week", methods=["GET"])
+@requires_auth
+def get_current_plan_week():
+    """
+    Plan workouts for the athlete's current calendar week (Mon–Sun) in an
+    optional IANA timezone (`tz` query param or `X-User-Timezone` header; UTC default).
+
+    Each day may include `execution` when an activity is matched via
+    `activities.matched_plan_workout_id`.
+    """
+    user_id = _internal_user_uuid(g.user_id)
+    tz = request.args.get("tz") or request.headers.get("X-User-Timezone") or "UTC"
+    if not isinstance(tz, str) or not tz.strip():
+        tz = "UTC"
+    else:
+        tz = tz.strip()
+
+    weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    with get_session() as session:
+        # Avoid loading full Plan.user_id through PG UUID processors on SQLite test DB.
+        plan_row = (
+            session.query(Plan.id, Plan.plan_name, Plan.race_date, Plan.race_distance)
+            .filter(Plan.user_id == user_id, Plan.is_active.is_(True))
+            .order_by(Plan.created_at.desc())
+            .first()
+        )
+        if not plan_row:
+            plan_row = (
+                session.query(
+                    Plan.id, Plan.plan_name, Plan.race_date, Plan.race_distance
+                )
+                .filter(Plan.user_id == user_id)
+                .order_by(Plan.created_at.desc())
+                .first()
+            )
+
+        if not plan_row:
+            return jsonify({"error": "No plan found"}), 404
+
+        plan_id = plan_row.id
+        plan_name = plan_row.plan_name
+        plan_race_date = plan_row.race_date
+        plan_race_distance = plan_row.race_distance
+
+        today = get_today_date_in_timezone(tz)
+        week_start, week_end = _monday_sunday_bounds(today)
+        workouts = (
+            session.query(PlanWorkout)
+            .filter(
+                PlanWorkout.plan_id == plan_id,
+                PlanWorkout.date >= week_start,
+                PlanWorkout.date <= week_end,
+            )
+            .order_by(PlanWorkout.date)
+            .all()
+        )
+
+        from src.db.dao.user_profile_dao import get_user_profile
+        from src.services.training_plan.plan_storage_service import PlanStorageService
+
+        user_profile = get_user_profile(session, str(user_id))
+
+        pw_ids = [w.id for w in workouts]
+        execution_by_pw: dict[int, Activity] = {}
+        if pw_ids:
+            acts = (
+                session.query(Activity)
+                .filter(
+                    Activity.matched_plan_workout_id.in_(pw_ids),
+                    Activity.user_id == user_id,
+                )
+                .order_by(desc(Activity.start_date))
+                .all()
+            )
+            for a in acts:
+                mpw = a.matched_plan_workout_id
+                if mpw is not None and mpw not in execution_by_pw:
+                    execution_by_pw[mpw] = a
+
+        days = []
+        for w in workouts:
+            hr_key = _infer_run_type_key_for_hr(w)
+            target_hr = w.target_hr
+            if not target_hr:
+                if hr_key:
+                    target_hr = PlanStorageService._calculate_hr_zone(
+                        hr_key, user_profile
+                    )
+            elif hr_key:
+                expected_hr = PlanStorageService._calculate_hr_zone(
+                    hr_key, user_profile
+                )
+                stored_zone_match = (
+                    re.search(r"Z[1-5]", target_hr) if target_hr else None
+                )
+                expected_zone_match = (
+                    re.search(r"Z[1-5]", expected_hr) if expected_hr else None
+                )
+                stored_zone = stored_zone_match.group(0) if stored_zone_match else None
+                expected_zone = (
+                    expected_zone_match.group(0) if expected_zone_match else None
+                )
+                if stored_zone != expected_zone:
+                    target_hr = expected_hr
+
+            canonical = (
+                normalize_run_type_key(hr_key)
+                or normalize_run_type_key(w.run_type_key)
+                or RUN_TYPE_EASY
+            )
+            rt_def = (
+                RUN_TYPE_DEFINITIONS.get(canonical)
+                or RUN_TYPE_DEFINITIONS[RUN_TYPE_EASY]
+            )
+
+            act = execution_by_pw.get(w.id)
+            execution = _execution_payload(act) if act else None
+
+            days.append(
+                {
+                    "date": w.date.isoformat(),
+                    "weekday": weekday_labels[w.date.weekday()],
+                    "plan_workout_id": w.id,
+                    "run_type_key": canonical,
+                    "run_type": {
+                        "key": rt_def.key,
+                        "display_name": rt_def.display_name,
+                        "target_zone_ids": list(rt_def.target_zone_ids),
+                    },
+                    "workout_type": w.workout_type,
+                    "intensity": w.intensity,
+                    "description": w.description,
+                    "miles": w.miles,
+                    "target_zone": w.target_zone,
+                    "target_hr": target_hr,
+                    "focus": w.focus,
+                    "phase": w.phase,
+                    "execution": execution,
+                }
+            )
+
+        return (
+            jsonify(
+                {
+                    "plan_id": plan_id,
+                    "plan_name": plan_name,
+                    "race_date": plan_race_date.isoformat() if plan_race_date else None,
+                    "race_distance": plan_race_distance,
+                    "timezone": tz,
+                    "today": today.isoformat(),
+                    "week_start": week_start.isoformat(),
+                    "week_end": week_end.isoformat(),
+                    "days": days,
                 }
             ),
             200,
