@@ -62,7 +62,8 @@ def build_spine(
         inc_miles=cfg["inc"],
         cutback_every=cfg["cutEvery"],
         cutback_factor=cfg["cutFactor"],
-        peak_offset_before_taper=4 if (total_weeks or 0) >= 15 else 1,
+        # Keep peak closer to taper so Peak feels distinct from Build.
+        peak_offset_before_taper=2 if (total_weeks or 0) >= 15 else 1,
         config=config,  # Pass config to spine generator
         unit_system=unit_system,
     )
@@ -267,6 +268,9 @@ class Pass1LongRunFirstV2:
 
         start_rule_miles = trusted_start
 
+        # Keep caller intent before `recommended_weeks` is overwritten with output length.
+        fixed_length_requested = bool(recommended_weeks and recommended_weeks > 0)
+
         # Use readiness-based recommended weeks if provided, otherwise use dynamic length mode
         # recommended_weeks comes from Pass1WeeksSelector based on user's weekly mileage
         if recommended_weeks and recommended_weeks > 0:
@@ -340,11 +344,7 @@ class Pass1LongRunFirstV2:
             "consecutive_count": consecutive_analysis["consecutive_count"],
             "weekly_long_runs": consecutive_analysis["weekly_long_runs"],
             "recommended_weeks": recommended_weeks,  # Log the readiness-based recommendation used
-            "mode": (
-                "fixed_length"
-                if recommended_weeks and recommended_weeks > 0
-                else "dynamic_length"
-            ),
+            "mode": "fixed_length" if fixed_length_requested else "dynamic_length",
         }
 
         return {

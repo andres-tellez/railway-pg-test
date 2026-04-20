@@ -72,6 +72,7 @@ PACE_GUIDANCE = {k: v["pace_guidance"] for k, v in WORKOUT_DEFINITIONS.items()}
 from src.services.metrics_helper_service import (
     get_weekly_fitness_from_materialized_view,
 )
+from src.utils.timezone_helpers import resolve_timezone
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +106,11 @@ class PlanGenerationOrchestratorV2:
         self.pass4 = Pass4WorkoutDetails()
         self.validator = PlanValidationServiceV2(config=config, unit_system="imperial")
         self.pass1_selector = Pass1WeeksSelectorV2()
-        self.race_date_validator = RaceDateValidationService(config=config)
         self.constraints_service = PlanConstraintsService()
+        self.race_date_validator = RaceDateValidationService(
+            config=config,
+            constraints_service=self.constraints_service,
+        )
         self.scenario_adjustments = ScenarioAdjustmentsService()
 
     def generate_longrun_first(
@@ -191,7 +195,12 @@ class PlanGenerationOrchestratorV2:
         # This is the calendar constraint (time available)
         race_date = plan_request.get("race_date")
         start_date = plan_request.get("start_date")
-        min_start_date = self.constraints_service.get_min_start_date()
+        user_tz = resolve_timezone(plan_request)
+        if not plan_request.get("user_timezone"):
+            plan_request["user_timezone"] = user_tz
+        min_start_date = self.constraints_service.get_min_start_date(
+            user_timezone=user_tz
+        )
         available_weeks = self.constraints_service.calculate_available_weeks(
             race_date=race_date,
             min_start_date=min_start_date,
@@ -254,6 +263,7 @@ class PlanGenerationOrchestratorV2:
                 plan_start_date=plan_start_date,
                 current_weekly_mileage=weekly_mileage,
                 current_long_run=longest_run,
+                user_timezone=user_tz,
             )
 
             logger.info(
