@@ -379,6 +379,32 @@ class TestIngestionSuccess:
             assert result["synced"] == 2
             assert result["enriched"] == 2
 
+    @patch("src.services.ingestion_orchestrator_service.analyze_recent_activity_window")
+    @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
+    @patch("src.services.ingestion_orchestrator_service.get_valid_token")
+    def test_backfill_analysis_runs_even_when_no_new_rows(
+        self,
+        mock_get_token,
+        mock_service_class,
+        mock_analyze_recent,
+        mock_session,
+    ):
+        """Always run window-scoped execution analysis even with zero fetched runs."""
+        mock_get_token.return_value = "valid-token"
+        mock_service = mock_service_class.return_value
+        mock_service.fetch_all_activities.return_value = []
+        mock_analyze_recent.return_value = 0
+
+        result = run_full_ingestion_and_enrichment(
+            mock_session,
+            athlete_id=12345,
+            user_id="e3362637-9045-4aac-83ed-92bc1f2643b9",
+        )
+
+        assert result["synced"] == 0
+        assert result["enriched"] == 0
+        assert mock_analyze_recent.called
+
 
 class TestIngestionParameters:
     """Tests for ingestion parameter handling."""
