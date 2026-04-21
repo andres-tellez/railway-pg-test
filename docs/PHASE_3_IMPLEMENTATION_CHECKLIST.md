@@ -44,7 +44,7 @@
 |----|----|----|----|
 | 0.A | **`run_insight.py` becomes single source** for per-run `planned.*` / `actual.*` namespaced blocks; `get_run_summary` and `GET /api/plan/current-week` both read from it; no parallel "plan vs actual" builder in `plan_routes.py` | **Not started** | Backend |
 | 0.B | **One `completion_pct` computation** feeds per-run score, weekly `adherence_runs_pct`, and coach payload; the 0.50 "completed" threshold lives as a named constant (e.g. `COMPLETION_THRESHOLD = 0.50` in `run_type_constants.py` or a new `adherence_constants.py`), not inlined | **Not started** | Backend |
-| 0.C | **Resolve `get_weekly_training_insight` vs `get_weekly_plan`** — either deprecate `get_weekly_training_insight` (fold into `get_weekly_plan` when the question centers on the plan) or document the scope split explicitly; mark deprecations with `# DEPRECATED V1.6 (PHASE_3_IMPLEMENTATION_CHECKLIST 0.C): ...` | **Decision required** | Backend (`src/smartcoach_mobile_coach/agent_tools.py`) |
+| 0.C | **Resolve `get_weekly_training_insight` vs `get_weekly_plan`** — either deprecate `get_weekly_training_insight` (fold into `get_weekly_plan` when the question centers on the plan) or document the scope split explicitly; mark deprecations with `# DEPRECATED V1.6 (PHASE_3_IMPLEMENTATION_CHECKLIST 0.C): ...` | **Decision made & Done** (2026-04-21) — **DEPRECATE.** Replacement is `get_weekly_plan` (V1.7, AGENTIC_COACH.md Topic 9), which will enforce V1.6 §6 namespace isolation and the future-week payload contract. Policy: **NO NEW CONSUMERS.** Existing consumers preserved so live coach flows do not break. Changes landed: (1) module-level deprecation block + `_GWTI_DEPRECATION_MESSAGE` constant + `DeprecationWarning` emitted on every `tool_get_weekly_training_insight()` call in `src/smartcoach_mobile_coach/agent_tools.py`; (2) `# DEPRECATED V1.6 (... 0.C): ...` comment on the `_TOOL_HANDLERS` entry and the `scripts/setup_coach_tools.py` OpenAI schema block; (3) LLM-facing description now opens with `[DEPRECATED — will be replaced by get_weekly_plan …]` to steer the model off the tool; (4) lock-in test `tests/test_get_weekly_training_insight_deprecation.py` (12 cases) that asserts the warning fires, names the replacement, cites 0.C, is filter-able, and that the return contract is preserved. See "0.C no-new-consumers enforcement" below. | Backend (`src/smartcoach_mobile_coach/agent_tools.py`) |
 | 0.D | **Kill GET-time HR zone inference** in `plan_routes.py` (lines 59–67 infer zones from workout name strings); zones must be stored at plan-generation time in `plan_storage_service.py` and read unchanged on GET | **Not started** | Backend |
 | 0.E | **Mobile `weekly-plan-panel.tsx` refactor** — consume `planned.*` / `actual.*` top-level keys directly from the new payload shape; no adapter that "unflattens" the current intermediate form; `weekly-plan-from-workouts.ts:56-60` string-match run-type inference removed (replaced by server-side canonical types only) | **Not started** | Mobile (`smartcoach_app/`) |
 
@@ -243,6 +243,32 @@ Every deterministic field listed in Appendix B of `SMARTCOACH_SYSTEM_SPEC_V1.md`
 | HR zone distribution (percent-of-time per zone) | `src/services/scoring/zone_compliance.py::zone_distribution_from_activity(...)` (**landed 2026-04-21, 0.3**) | `run_execution_analysis_service`, future `deviation_direction` producer |
 | `(zone_compliance_pct, pct_above_zone, pct_below_zone)` | `src/services/scoring/zone_compliance.py::zone_metrics_for_type(...)` (**landed 2026-04-21, 0.3**) | `run_execution_analysis_service`, `deviation_direction` producer (Phase A), any future per-run-type zone scorer |
 
+### 0.C — `get_weekly_training_insight` no-new-consumers enforcement (normative)
+
+Status: **Deprecated 2026-04-21.** Replacement is `get_weekly_plan` (Phase B, V1.7).
+
+**Policy:** No PR may introduce a new caller of `tool_get_weekly_training_insight`, a new entry referencing the handler key `"get_weekly_training_insight"` outside the single existing dispatch line, or any new system-prompt snippet that instructs the LLM to prefer this tool. Existing consumers are preserved during V1.6 so live coach flows do not break.
+
+**Enforcement mechanisms** (in order of precedence):
+
+1. **Runtime — DeprecationWarning.** `tool_get_weekly_training_insight()` emits `DeprecationWarning` via `warnings.warn(_GWTI_DEPRECATION_MESSAGE, DeprecationWarning, stacklevel=2)` on every call. The message cites `V1.6`, `0.C`, and names `get_weekly_plan`, making it grep-able in CI logs and log aggregators.
+2. **Test lock-in.** `tests/test_get_weekly_training_insight_deprecation.py` pins:
+   - exactly one `DeprecationWarning` per invocation,
+   - the message mentions the replacement tool and cites `0.C`,
+   - the return contract is behavior-preserved,
+   - callers may filter the warning when they intentionally consume it.
+   Dropping the warning or weakening the message turns the suite red — forcing a deprecation-policy conversation.
+3. **Code-review checklist.** Reviewers flag any PR that (a) imports `tool_get_weekly_training_insight` outside `agent_tools.py`, (b) adds a new entry with the handler-key string, or (c) adds a new `orchestrator.py` system-prompt rule that tells the LLM to reach for this tool.
+4. **LLM-facing signal.** The OpenAI tool description in `scripts/setup_coach_tools.py` now opens with `[DEPRECATED — will be replaced by get_weekly_plan …]`. The tool remains enabled and callable so live conversations keep working.
+
+**Known current consumers** (grandfathered, do not expand):
+- `src/smartcoach_mobile_coach/agent_tools.py` — the tool function, the `_TOOL_HANDLERS` dispatch entry, and the `execute_tool` handler-key branch.
+- `src/smartcoach_mobile_coach/orchestrator.py` — system-prompt snippets (lines ~631, 657, 660–663, 856, 863, 1307). Rewrites happen in Phase C–F once `get_weekly_plan` is available.
+- `scripts/setup_coach_tools.py` — OpenAI tool schema registration.
+- `tests/test_weekly_insight_lazy_payload.py` — existing behavior tests (kept, now also surface the deprecation warning in pytest summary).
+
+Any consumer not in this list is a new consumer and must be rejected in review.
+
 > **Enforcement:** Each producer module has 100 % test coverage for the rules in the spec it implements. No other file in the repo re-computes these values. Grep check during code review: a commit that introduces `pct_above` arithmetic outside `deviation.py` fails review.
 
 Actual paths above are **proposed locations**. If existing architecture already has a better home (e.g. an existing `scoring/` package), colocate. The rule is **one producer per field**, not the specific path.
@@ -276,8 +302,8 @@ Execute in this order — low-risk to higher-risk:
 5. **0.4** — Grep + replace bare run-type string literals (enables Steady null-handling safely).
 6. **0.A** — Consolidate `run_insight.py` as single source for `planned.*` / `actual.*` blocks.
 7. **0.B** — One `completion_pct` compute + named `COMPLETION_THRESHOLD = 0.50`.
-8. **0.C** — Resolve `get_weekly_training_insight` vs `get_weekly_plan` (decision required; see above).
-9. **0.D** — Kill GET-time HR zone inference in `plan_routes.py`.
+8. **0.C** — Resolve `get_weekly_training_insight` vs `get_weekly_plan`. **Done 2026-04-21** — deprecated with runtime `DeprecationWarning`, test lock-in, and a "no new consumers" governance rule above.
+9. **0.D** — Kill GET-time HR zone inference in `plan_routes.py`. **← Next**
 10. **0.E** — Mobile refactor to consume `planned.*` / `actual.*` directly.
 
 ### Step 2 — Phase A schema work
