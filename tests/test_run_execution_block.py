@@ -336,9 +336,11 @@ def test_insight_summary_shape_parity_with_pre_0a_dict_literal():
 
     # V1.6 Phase B 3B.1 dual-emit shape: top-level pairing controllers
     # + canonical §6 ``planned`` / ``actual`` namespaced blocks +
-    # legacy flat scalars. Every value is sourced from the same
-    # canonical ``block`` (no recompute) — this assertion is the
-    # single-source-of-truth contract lock.
+    # legacy flat scalars + V1.6 3B.7 ``display`` sibling. Every
+    # numeric value is sourced from the same canonical ``block`` (no
+    # recompute); ``display`` strings are a pure formatter over those
+    # same values. This assertion is the single-source-of-truth
+    # contract lock.
     assert summary == {
         "matched_plan_workout_id": 777,
         "plan_status": "executed",
@@ -356,6 +358,19 @@ def test_insight_summary_shape_parity_with_pre_0a_dict_literal():
             "scoring_detail": None,
             "average_heartrate": 138.4,
             "deviation_direction": "on_target",
+        },
+        # V1.6 3B.7 Topic 4 display sibling — formatted strings over
+        # the same numeric values in ``planned`` / ``actual``.
+        "display": {
+            "planned": {"miles": "5.00 mi"},
+            "actual": {
+                "miles": "5.10 mi",
+                "avg_hr": "138 bpm",
+                "zone_compliance_pct": "82 %",
+                "completion_pct": "102 %",
+                "pct_above_zone": "7 %",
+                "pct_below_zone": "10 %",
+            },
         },
         # Top-level convenience copy of ``actual.deviation_direction``.
         "deviation_direction": "on_target",

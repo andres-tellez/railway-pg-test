@@ -79,6 +79,7 @@ from sqlalchemy.orm import Session
 
 from src.db.models.plans import Plan
 from src.db.models.plan_workouts import PlanWorkout
+from src.smartcoach_mobile_coach.display_format import format_distance_mi
 from src.services.phase.phase_priority import (
     phase_kpi_priority_for_phase,
     resolve_week_phase,
@@ -184,6 +185,12 @@ def _build_volume_curve_entry(
         "planned_runs": planned_runs,
         "planned_miles_total": planned_miles_total,
         "week_temporality": temporality.value,
+        # V1.6 3B.7 — Topic 4 display-ready string for the weekly
+        # volume number. Coach can cite ``display.planned_miles_total``
+        # directly instead of rounding the float on the fly.
+        "display": {
+            "planned_miles_total": format_distance_mi(planned_miles_total),
+        },
     }
 
 
@@ -236,6 +243,10 @@ def _group_phase_blocks(
                 "num_runs": num_runs,
                 "total_miles": total_miles,
                 "phase_kpi_priority": priority,
+                # V1.6 3B.7 — display string for the phase's total volume.
+                "display": {
+                    "total_miles": format_distance_mi(total_miles),
+                },
             }
         )
 
@@ -338,6 +349,9 @@ def build_plan_overview_payload(
             "total_weeks": 0,
             "total_planned_runs": 0,
             "total_planned_miles": 0.0,
+            "display": {
+                "total_planned_miles": format_distance_mi(0.0),
+            },
             "phase_blocks": [],
             "volume_curve": [],
             "long_run_progression": [],
@@ -379,18 +393,24 @@ def build_plan_overview_payload(
             )
         )
 
+        long_run_row = _select_long_run(this_week) or {
+            "long_run_date": None,
+            "long_run_miles": None,
+            "long_run_type": None,
+        }
         long_run_progression.append(
             {
                 "week_index": week_index,
                 "week_start": cursor.isoformat(),
-                **(
-                    _select_long_run(this_week)
-                    or {
-                        "long_run_date": None,
-                        "long_run_miles": None,
-                        "long_run_type": None,
-                    }
-                ),
+                **long_run_row,
+                # V1.6 3B.7 — display string for the long-run mileage.
+                "display": {
+                    "long_run_miles": (
+                        format_distance_mi(long_run_row["long_run_miles"])
+                        if long_run_row["long_run_miles"] is not None
+                        else None
+                    ),
+                },
             }
         )
 
@@ -413,6 +433,9 @@ def build_plan_overview_payload(
         "total_weeks": week_index,
         "total_planned_runs": total_planned_runs,
         "total_planned_miles": total_planned_miles,
+        "display": {
+            "total_planned_miles": format_distance_mi(total_planned_miles),
+        },
         "phase_blocks": phase_blocks,
         "volume_curve": volume_curve,
         "long_run_progression": long_run_progression,
