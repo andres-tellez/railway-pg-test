@@ -85,7 +85,20 @@
 | 3A.8 | `adherence_runs_pct` computed weekly (primary) with completion rule `completion_miles_pct ≥ 0.50` | **Not started** | §7 metrics |
 | 3A.9 | `completion_miles_pct` exposed as supporting field per run | **Not started** | §7 metrics |
 | 3A.10 | Unplanned runs excluded from `adherence_runs_pct` numerator and denominator | **Not started** | §7 unplanned rule |
-| 3A.11 | `baseline_status` enum (`insufficient` / `thin` / `strong`) per user, recomputed weekly | **Not started** | §12 baseline_status |
+| 3A.11 | `baseline_status` enum (`insufficient` / `thin` / `strong`) per user, recomputed weekly | **Done 2026-04-21** | §12 baseline_status |
+
+**3A.11 rationale (Done 2026-04-21):**
+- **Single source of truth** — new package `src/services/baseline/` with `baseline_status.py` exposing:
+  - `BaselineStatus(str, Enum)` — wire values `insufficient` / `thin` / `strong`.
+  - `classify_baseline_status(*, runs_in_last_4_weeks, weeks_with_runs_in_last_4)` — pure cascade classifier (no I/O).
+  - `count_runs_and_weeks_in_window(activity_dates, *, today, window_days=28)` — rolling 7-day bucket helper, separately unit-testable and reusable by §16 adaptation callers.
+  - `compute_baseline_status_for_athlete(session, athlete_id, *, today=None)` — DAO-backed adapter that queries `activities` (Run-typed, last 28 days) and dispatches to the pure classifier.
+- **Cascade ordering (spec §12)** — most-restrictive first: `insufficient` (weeks < 2 OR runs < 3) → `strong` (weeks ≥ 4 AND runs ≥ 6) → `thin` (everything else). Ordering is correctness-sensitive: a runner with 4 weeks but only 2 runs must classify as `insufficient`, not `thin`. Locked by `test_four_weeks_two_runs_is_insufficient`.
+- **Window semantics** — rolling 7-day buckets relative to `today` (`bucket = (today - activity_date).days // 7`, 4 buckets). Chosen over ISO-week bucketing to avoid calendar-boundary and locale artefacts; same-day runs count (bucket 0); activities strictly older than 28 days or future-dated activities are excluded. Documented in the module docstring.
+- **Derivation policy** — on-read, not persisted. Matches §12's "recomputed each week when the weekly adaptation pass runs" without the write-invalidation problems persisting the value would introduce; a previously `strong` baseline that erodes as weeks roll out of the window is automatically re-evaluated on next read.
+- **Defensive clamping** — the pure classifier clamps negative and above-cap inputs (`max(0, runs)`, `min(4, weeks)`) rather than raising, so a caller bug in window math returns a safe default rather than crashing the coach.
+- **Wiring posture for V1.6** — producer only. Phase A item 4 ships `BaselineStatus` + both classifier layers so 3B.10's `get_user_context()` tool can consume it directly without touching any classification logic. No mobile type addition yet — the payload surface is defined by the `get_user_context` tool in Phase B.
+- **Testing** — 35 unit cases in `tests/services/baseline/test_baseline_status.py` cover: enum wire values + "exactly three values" invariant + window constants; every cascade branch including all three boundary-exact triples (2 weeks/3 runs, 4 weeks/6 runs, 4 weeks/5 runs); defensive clamping of negative and over-cap inputs; bucket helper for empty iterables, same-day, 7-day boundary, 27/28-day window edges, future-dated skew, distinct-bucket counting, and mixed in-/out-of-window data; DAO-backed adapter against in-memory SQLite for no-activities, 1-run, thin, strong, cross-athlete isolation, stale-history exclusion, non-run-type filtering, and default-`today` fallback.
 | 3A.12 | `phase_kpi_priority` emitted per week (ordered list) | **Not started** | §8 phase_kpi_priority |
 | 3A.13 | Phase transition week resolution (majority-of-days rule; ties → later phase) | **Not started** | §7 transition |
 | 3A.14 | Namespace isolation: every coach-facing tool payload splits `planned.*` and `actual.*` | **Not started** | §6 namespace |
@@ -253,7 +266,7 @@ Every deterministic field listed in Appendix B of `SMARTCOACH_SYSTEM_SPEC_V1.md`
 | `violated_rest_day` | `src/services/plan/plan_status.py::derive_violated_rest_day(*, plan_status_value, day_weekday, plan_training_days)` (**landed 2026-04-21, Phase A item 2** — colocated with `plan_status` producers) | `run_insight.build_run_execution_block` (top-level, alongside `plan_status`; keyword-only `plan_training_days` argument), `execution_block_to_insight_summary_shape` → LLM `get_run_summary` (coach §19.7 stronger-tone gate), `/api/plan/current-week` route (day-level, always `False` by construction; Phase B `get_weekly_plan` will surface the `True` case) |
 | `adherence_runs_pct` | `src/services/scoring/adherence.py::compute_weekly_adherence(...)` (new) | weekly insight, `get_weekly_plan`, coach payloads |
 | `completion_miles_pct` | Same module as `adherence_runs_pct` | per-run score, weekly adherence, coach payloads |
-| `baseline_status` | `src/services/baseline/baseline_status.py::derive_baseline_status(...)` (new) | plan generator, `get_user_context`, adaptation |
+| `baseline_status` | `src/services/baseline/baseline_status.py::compute_baseline_status_for_athlete(...)` + pure `classify_baseline_status(...)` + helper `count_runs_and_weeks_in_window(...)` (**landed 2026-04-21, Phase A item 4**) | Phase B 3B.10 `get_user_context`; §16 weekly adaptation pass; plan generator baseline-fallback branch |
 | `phase_kpi_priority` | `src/services/phase/phase_priority.py::phase_kpi_priority_for(week_start, plan_id)` (new) | `get_weekly_plan`, `get_phase_analysis`, prompt builder |
 | Week temporality (past / current / future) | `src/utils/date_helpers.py::classify_week_temporality(...)` (**landed 2026-04-21, 0.2**) | `get_weekly_plan`, `run_insight.py`, future-week contract enforcement, adaptation gate |
 | Calendar week bounds (Mon–Sun) | `src/utils/date_helpers.py::get_week_bounds_for_date(...)` (**landed 2026-04-21, 0.2**) | `plan_routes.py::/current-week`, any future Mon–Sun range consumer |
