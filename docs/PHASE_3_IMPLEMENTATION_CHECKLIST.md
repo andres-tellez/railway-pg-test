@@ -131,8 +131,37 @@
 - **Derivation policy** — on-read, not persisted (same as `plan_status`, `baseline_status`, `deviation_direction`, `adherence_runs_pct`). Matches resolved open-question #12's "on-demand compute, no persistence" decision. The lookup is trivially fast (≤ ~10 workout rows, one dict lookup per phase) so the trade-off is always in favor of re-compute.
 - **Wiring** — `/api/plan/current-week` now emits a top-level `phase_kpi_priority` object next to `adherence`; shape is `{phase, priority: [{kpi_id, label}, ...], day_counts}` or `null`. Mobile types add `TrainingPhase`, `PhaseKpi`, `CurrentWeekPhaseKpiPriorityBlock`, and the optional `phase_kpi_priority` field on `CurrentWeekPayload`, with JSDoc enforcing the V1.6 §19 "no client-side re-derivation" contract.
 - **Testing** — 33 unit cases in `tests/services/phase/test_phase_priority.py` cover: enum wire values / 4-phase invariant / JSON serialization; spec-verbatim §8 table for every phase; identifier + lowercase invariants for all 12 kpi_ids; straightforward resolver cases (all-same, single workout, clear majority, 4-of-7); every tie-break pair + three-way tie; degenerate cases (empty, all-None, all-unknown, mixed valid/invalid); composed result contract (NamedTuple fields, day_counts mirroring, iterator consumption). Three route integration tests in `tests/test_plan_current_week_route.py` cover plurality, tie-break, and empty-week `null`.
-| 3A.14 | Namespace isolation: every coach-facing tool payload splits `planned.*` and `actual.*` | **Not started** | §6 namespace |
-| 3A.15 | Future-week payload contract: `actual.*` fields and derived-outcome fields omitted/null | **Not started** | §6 future-week |
+| 3A.14 | Namespace isolation: every coach-facing tool payload splits `planned.*` and `actual.*` | **Done 2026-04-21** | §6 namespace |
+| 3A.15 | Future-week payload contract: `actual.*` fields and derived-outcome fields omitted/null | **Done 2026-04-21** | §6 future-week |
+
+**3A.14 / 3A.15 audit rationale (2026-04-21):**
+
+Both requirements are **structurally enforced** by the Phase A + Phase B code already landed — they were implicitly satisfied across 3A.1–3A.13 and 3B.2–3B.10 rather than as standalone work items, so this is a docs-only flip with a verification audit.
+
+**3A.14 — `planned.*` / `actual.*` namespace isolation** (coach-facing tool payloads):
+
+- **`run_insight.py`**: the canonical `execution_block_to_weekly_plan_shape` and `execution_block_to_insight_summary_shape` emit top-level `planned` and `actual` sub-objects that are siblings, never merged. A matching `display` sibling block was added in 3B.7 (runner-facing formatted strings) without collapsing the `planned` / `actual` split. Locked by `tests/test_run_execution_block.py::test_insight_summary_shape_parity_with_pre_0a_dict_literal` (parity at the dict-literal level).
+- **`src/services/plan/weekly_plan.py`**: `_build_past_current_day_entry` emits `{planned: {...}, actual: {...}, display: {planned: {...}, actual: {...}}, plan_status, violated_rest_day, deviation_direction}` per-day. The `planned` and `actual` sub-objects never share keys.
+- **`src/services/plan/phase_analysis.py`**: per-`run_type_key` buckets use `miles_planned_total` vs `miles_actual_total` (prefixed names, single namespace convention), `run_count_planned` vs `run_count_matched`, and distribution blocks (`deviation_direction_distribution`, `run_score_distribution`) that are entirely actual-side; plan-only fields never bleed into the actual buckets.
+- **`src/services/plan/plan_overview.py`**: purely plan-side by construction (no `actual.*` keys anywhere — see 3A.15 below).
+- **Dual-emit transition layer**: `execution_block_to_weekly_plan_shape` preserves the pre-0.A flat fields (as a separate block) for existing mobile consumers; the coach-facing shape is strictly the namespaced block. No consumer on the coach surface reads the flat legacy fields.
+
+**3A.15 — Future-week payload contract** (no `actual.*`, no derived-outcome fields):
+
+- **`src/services/plan/weekly_plan.py::build_weekly_plan_payload`** enforces the contract structurally at three points:
+  1. `if temporality == WeekTemporality.FUTURE:` in the tool body **skips the activity join entirely** (3B.3 — no DB query → no accidental `actual` bleed is possible).
+  2. `_build_future_week_day_entry` is a separate code path from `_build_past_current_day_entry`; it returns `{planned: {...}, display.planned: {...}, plan_status: "planned_only"}` with **no `actual` key and no `deviation_direction`, `violated_rest_day` carve-outs tied to execution**.
+  3. Weekly `adherence` block is hard-wired to `None` for FUTURE weeks (§19.5 returns no `adherence_runs_pct` when there is nothing executed to measure).
+- **`phase_analysis.py`**: future phase-weeks contribute no execution data — future-week `plan_workouts` are counted for the planned side only; the activity-match join is scoped to today and earlier.
+- **`plan_overview.py`**: **no `actual.*` anywhere** regardless of week temporality. `volume_curve` per-week rows carry `week_temporality` stamping but only planned totals; `long_run_progression` is plan-only; `phase_blocks` expose planned miles and workout counts only. The §19.5 future-week carve-out is extended to the entire overview by construction.
+- **`phase_kpi_priority` carve-out**: the ordered emphasis list *is* still emitted for future weeks in `get_weekly_plan` because it is plan-side metadata (derived from the planned composition of the week), not an execution-derived outcome. This is deliberate and documented on 3B.4.
+- **Tests**: five focused contract tests in `tests/test_get_weekly_plan_tool.py` lock down the future-week contract:
+  - `test_future_week_has_no_execution_on_any_day` — every day-entry lacks an `actual` key.
+  - `test_future_week_plan_status_is_planned_only` — status is `planned_only` for every planned day.
+  - `test_future_week_adherence_is_null` — weekly `adherence` block is exactly `None`.
+  - `test_future_week_phase_priority_still_emitted` — `phase_kpi_priority` survives the future-week carve-out (deliberate).
+  - `test_future_week_does_not_surface_seeded_landmine_activity` — seeding a real activity in a future week does not cause the tool to leak it (the activity query is never run).
+- **Conclusion**: no additional code is required for 3A.14 or 3A.15. The structural enforcement is already in place and the tests that prevent regression are already green. The spec/docs surface is brought into sync here.
 
 **Deliverables:**
 - New columns or derived fields in `activities`, `plan_workouts`, `weekly_snapshots` (or equivalent).
@@ -157,7 +186,21 @@ Phase B covers **four** plan read tools, a cross-cutting **user-context** tool, 
 | 3B.6 | New tool `get_phase_analysis(phase_id)` — per-type KPI trend for phase-to-date | **Done 2026-04-21** | Topic 9 |
 | 3B.7 | All plan tools return display-ready strings (pace `M:SS/mi`, HR `142 bpm`, distance with unit) per Topic 4 | **Done 2026-04-21** | AGENTIC_COACH.md Topic 4 |
 | 3B.8 | Tools follow Topic 5 caching: past-week cache-friendly, future-week invalidates on adaptation rewrite | **Done 2026-04-21** | AGENTIC_COACH.md Topic 5 |
-| 3B.9 | Tool descriptions added to orchestrator registry in `src/smartcoach_mobile_coach/agent_tools.py` | **Not started** | orchestrator integration |
+| 3B.9 | Tool descriptions added to orchestrator registry in `src/smartcoach_mobile_coach/agent_tools.py` | **Done 2026-04-21** | orchestrator integration |
+
+**3B.9 rationale (2026-04-21):**
+
+The canonical source of tool copy is `scripts/setup_coach_tools.py::SEED_TOOLS` (the `coach_tools` table in every environment). To keep fresh dev databases, ephemeral branch DBs, and CI working without a re-seed — and to give the OpenAI function-calling layer the plan-aware tools even when the table has not caught up — the orchestrator now also carries **fallback OpenAI tool definitions** for each of the four V1.6 Phase B plan-aware tools and **idempotent `_ensure_*_tool` injectors** that wire them on top of `_load_tools_from_db(session)`.
+
+- **Fallback tool constants** (mirroring `SEED_TOOLS`, kept byte-for-byte compatible on `parameters_schema`) in `src/smartcoach_mobile_coach/orchestrator.py`:
+  - `_GET_WEEKLY_PLAN_OPENAI_TOOL` (3B.2–3B.4)
+  - `_GET_PLAN_OVERVIEW_OPENAI_TOOL` (3B.5)
+  - `_GET_PHASE_ANALYSIS_OPENAI_TOOL` (3B.6)
+  - `_GET_USER_CONTEXT_OPENAI_TOOL` (3B.10)
+- **Injectors** (same pattern as `_ensure_search_runs_tool` / `_ensure_get_training_kpis_tool` / etc.): each returns the input list unchanged when the tool is already advertised (DB was re-seeded), and appends the fallback otherwise, emitting a warning so operators notice the divergence.
+- **Composition** in `run_agent` now chains the four new injectors on top of the existing ones, so the tools array presented to OpenAI is always the superset of {DB-seeded tools, V1.6 fallbacks}. Plan-creation-mode filtering (`_PLAN_CREATION_TOOL_NAMES`) is unaffected — the four plan-aware tools are intentionally excluded from that restricted surface because plan creation runs a dedicated single-turn tool (`generate_training_plan`).
+- **Contract tests** (`tests/test_orchestrator_tool_registry.py`, 34 cases) lock down: each fallback is well-formed (`type=function`, `function.name` matches, `description` non-empty, `parameters.type == object`); only `get_phase_analysis` carries a required arg (`phase_id`); every injector adds the fallback when missing AND is a no-op (same list identity) when the tool is already present; existing tools are preserved on injection; all four injectors compose on an empty list; every fallback name is wired in `agent_tools._TOOL_HANDLERS` (registry / dispatcher drift alarm); every fallback name exists in `SEED_TOOLS`; each fallback description carries the `V1.6` spec anchor; **each fallback's `parameters` block equals the corresponding `SEED_TOOLS[name].parameters_schema` byte-for-byte**, so the DB seed and the fallback cannot silently drift on schema (OpenAI would reject mismatched tool calls).
+- **Why this matters for single-source-of-truth (§X.5 of the system spec):** the fallback is *not* a second source of truth for tool copy — it is a derivative that the parity test anchors back to `SEED_TOOLS`. If SEED_TOOLS ever changes, the parity test forces the fallback to be updated in the same commit; if the fallback drifts, the same test fails.
 
 ### User context tool (new, V1.6 coverage booster)
 

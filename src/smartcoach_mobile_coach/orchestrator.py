@@ -421,6 +421,168 @@ _GENERATE_TRAINING_PLAN_OPENAI_TOOL: Dict[str, Any] = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# V1.6 Phase B plan-aware tool fallbacks (3B.9).
+#
+# The canonical source of tool copy is
+# ``scripts/setup_coach_tools.py::SEED_TOOLS`` — re-seeding the
+# ``coach_tools`` table ships the full descriptions to any deployed
+# environment. The fallbacks below mirror that copy so a fresh DB that
+# has not yet been re-seeded (dev laptop, ephemeral branch DB, CI) still
+# advertises the plan-aware tools to the OpenAI function-calling layer.
+# `execute_tool` implements each one, so the wire behavior is identical
+# either way. When SEED_TOOLS copy changes, update the matching block
+# here in the same commit to keep both surfaces in lockstep.
+# ---------------------------------------------------------------------------
+
+
+# Kept in sync with scripts/setup_coach_tools.py `get_weekly_plan`.
+_GET_WEEKLY_PLAN_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_weekly_plan",
+        "description": (
+            "V1.6 canonical weekly plan + execution read for one Monday-to-Sunday window. "
+            "Use for 'what's on my plan this week', 'how did this week compare to plan', "
+            "'what do I have next week', or any planned-vs-actual question about a specific week. "
+            "Returns per-day planned / actual namespaced blocks (§6 namespace isolation), "
+            "per-day plan_status (planned_only / in_progress / executed / missed / unplanned), "
+            "violated_rest_day and deviation_direction controllers, weekly adherence_runs_pct + band, "
+            "and phase_kpi_priority ordered emphasis list. Future weeks return only planned — "
+            "no actuals, no adherence (§19.5 contract enforced structurally). Malformed or omitted "
+            "week_start_iso resolves to the athlete's current week. Prefer this over "
+            "get_weekly_training_insight whenever the question references the plan."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "week_start_iso": {
+                    "type": "string",
+                    "description": (
+                        "Optional YYYY-MM-DD within the target week. Normalized to that week's Monday. "
+                        "Omit for the athlete's current week. Past and future weeks are allowed."
+                    ),
+                },
+                "tz": {
+                    "type": "string",
+                    "description": (
+                        "Optional IANA timezone for 'current week' resolution "
+                        "(e.g. America/Denver). Defaults to UTC."
+                    ),
+                },
+            },
+        },
+    },
+}
+
+
+# Kept in sync with scripts/setup_coach_tools.py `get_plan_overview`.
+_GET_PLAN_OVERVIEW_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_plan_overview",
+        "description": (
+            "V1.6 end-to-end planned-only overview of the athlete's active (or most recent) plan. "
+            "Use for plan-arc questions: 'what does my whole plan look like', 'what phase am I in "
+            "vs what comes next', 'how does weekly mileage progress over the plan', 'what's my "
+            "long-run build'. Returns phase_blocks (Base/Build/Peak/Taper with week span, workout "
+            "count, planned miles, and canonical phase_kpi_priority), volume_curve (one row per "
+            "plan week with planned_runs + planned_miles_total + week_temporality), and "
+            "long_run_progression (one row per week with the longest planned run date, miles, "
+            "and type). No actuals — the overview never reads activities. Use get_weekly_plan "
+            "when you need plan-vs-actual for a specific week."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tz": {
+                    "type": "string",
+                    "description": (
+                        "Optional IANA timezone for per-week `week_temporality` stamping. "
+                        "Defaults to UTC. Does not affect plan-side fields."
+                    ),
+                },
+            },
+        },
+    },
+}
+
+
+# Kept in sync with scripts/setup_coach_tools.py `get_phase_analysis`.
+_GET_PHASE_ANALYSIS_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_phase_analysis",
+        "description": (
+            "V1.6 per-run-type KPI trend for a given training phase (Base / Build / Peak / Taper) "
+            "through today. Surfaces phase_kpi_priority (the §8 ordered emphasis list the coach "
+            "should lead with for this phase), phase_weeks (total/completed/in_progress/future "
+            "with phase_temporality), phase_window (start/end/evaluated_through), and by_run_type "
+            "for each canonical run-type: planned vs matched run counts, planned/actual miles "
+            "totals, zone_compliance_pct avg + weekly trend series, completion_miles_pct avg, "
+            "deviation_direction distribution, and run_score distribution. All actual-side values "
+            "come from the same canonical producer as get_run_summary and get_weekly_plan. Future "
+            "phase-weeks contribute no execution data (§19.5 extension). phase_id is required "
+            "(case-insensitive)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "phase_id": {
+                    "type": "string",
+                    "description": (
+                        "Required. One of Base / Build / Peak / Taper (case-insensitive)."
+                    ),
+                },
+                "tz": {
+                    "type": "string",
+                    "description": (
+                        "Optional IANA timezone for resolving 'today' (phase-to-date cutoff). "
+                        "Defaults to UTC."
+                    ),
+                },
+            },
+            "required": ["phase_id"],
+        },
+    },
+}
+
+
+# Kept in sync with scripts/setup_coach_tools.py `get_user_context`.
+_GET_USER_CONTEXT_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_user_context",
+        "description": (
+            "V1.6 Phase B user-level context the coach reads at the start of a conversation. "
+            "Single call returns race_goal (race name/date/distance, goal_time, primary_goal, "
+            "weeks_until_race), plan (plan_id, plan_name, plan_start/end, total_weeks, "
+            "current_week_number, current_phase + canonical §8 phase_kpi_priority), "
+            "baseline_status (insufficient/thin/strong via the canonical §12 producer), "
+            "coaching (coaching_level, verbosity, stored run/training summary priorities, "
+            "has_saved_preferences flag), preferences (training_days, derived long_run_day, "
+            "unit_system, timezone), and session_summary (null placeholder for V1.7). Every "
+            "deterministic value comes from an existing canonical producer — this tool never "
+            "re-derives a signal. PII-light: only the first name of user_identity.name is emitted. "
+            "Payload is < 2 KB. Call at the START of a new conversation (opening turn) or when "
+            "the user asks a who-am-I / what-am-I-training-for style question. Prefer this over "
+            "issuing multiple tool calls for race info + plan phase + baseline + prefs."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tz": {
+                    "type": "string",
+                    "description": (
+                        "Optional IANA timezone name. Drives resolution of 'today' for "
+                        "weeks_until_race and current_week_number. Defaults to UTC."
+                    ),
+                },
+            },
+        },
+    },
+}
+
 
 def _openai_tool_names(tools: List[Dict[str, Any]]) -> Set[str]:
     names = set()
@@ -508,6 +670,57 @@ def _ensure_generate_training_plan_tool(
         "coach_tools has no enabled generate_training_plan; injecting built-in OpenAI tool definition"
     )
     return list(tools) + [_GENERATE_TRAINING_PLAN_OPENAI_TOOL]
+
+
+# --- V1.6 Phase B plan-aware tool injectors (3B.9) -------------------------
+
+
+def _ensure_get_weekly_plan_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject get_weekly_plan (V1.6 3B.2–3B.4) if missing from coach_tools."""
+    if "get_weekly_plan" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled get_weekly_plan; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_GET_WEEKLY_PLAN_OPENAI_TOOL]
+
+
+def _ensure_get_plan_overview_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject get_plan_overview (V1.6 3B.5) if missing from coach_tools."""
+    if "get_plan_overview" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled get_plan_overview; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_GET_PLAN_OVERVIEW_OPENAI_TOOL]
+
+
+def _ensure_get_phase_analysis_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject get_phase_analysis (V1.6 3B.6) if missing from coach_tools."""
+    if "get_phase_analysis" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled get_phase_analysis; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_GET_PHASE_ANALYSIS_OPENAI_TOOL]
+
+
+def _ensure_get_user_context_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject get_user_context (V1.6 3B.10) if missing from coach_tools."""
+    if "get_user_context" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled get_user_context; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_GET_USER_CONTEXT_OPENAI_TOOL]
 
 
 def _load_tools_from_db(session: Session) -> List[Dict[str, Any]]:
@@ -1477,13 +1690,30 @@ def run_mobile_agent_turn(
     timeout = float(os.getenv("OPENAI_MOBILE_AGENT_TIMEOUT", "180.0"))
 
     t_agent0 = time.perf_counter()
-    openai_tools_all = _ensure_generate_training_plan_tool(
-        _ensure_update_plan_intake_tool(
-            _ensure_get_run_splits_tool(
-                _ensure_get_marathon_projection_tool(
-                    _ensure_get_training_kpis_tool(
-                        _ensure_aggregate_runs_in_range_tool(
-                            _ensure_search_runs_tool(_load_tools_from_db(session))
+    # V1.6 Phase B 3B.9 — the four plan-aware tool injectors
+    # (get_user_context → get_phase_analysis → get_plan_overview →
+    # get_weekly_plan) sit on top of the existing chain so a DB that has
+    # not been re-seeded still advertises them to OpenAI. Order is
+    # chosen so the weekly-plan layer (the one the coach reaches for
+    # most often) lands last / highest in the injected list, matching
+    # the ordering intuition used by the existing chain.
+    openai_tools_all = _ensure_get_weekly_plan_tool(
+        _ensure_get_plan_overview_tool(
+            _ensure_get_phase_analysis_tool(
+                _ensure_get_user_context_tool(
+                    _ensure_generate_training_plan_tool(
+                        _ensure_update_plan_intake_tool(
+                            _ensure_get_run_splits_tool(
+                                _ensure_get_marathon_projection_tool(
+                                    _ensure_get_training_kpis_tool(
+                                        _ensure_aggregate_runs_in_range_tool(
+                                            _ensure_search_runs_tool(
+                                                _load_tools_from_db(session)
+                                            )
+                                        )
+                                    )
+                                )
+                            )
                         )
                     )
                 )
