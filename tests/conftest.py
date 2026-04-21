@@ -110,6 +110,23 @@ def test_db_session():
     connection.close()
 
 
+@pytest.fixture(autouse=True)
+def _clear_module_level_caches():
+    """
+    Reset module-level caches that otherwise leak between tests (e.g.
+    ``user_context_cache`` populated by ``tool_get_user_context`` in
+    one test confusing assertions in the next). Add new caches here as
+    they're introduced.
+    """
+    try:
+        from src.smartcoach_mobile_coach import user_context_cache
+
+        user_context_cache.clear_all()
+    except Exception:
+        pass
+    yield
+
+
 @pytest.fixture(scope="function")
 def seed_test_data(test_db_session):
     """Seed tokens and activities with safe defaults."""

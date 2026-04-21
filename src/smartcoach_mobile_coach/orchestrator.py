@@ -43,6 +43,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_inta
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
     INTENT_RACE_PROJECTION,
+    TURN_OPENING,
     ResponseDirective,
     classify_turn,
     extract_conversation_state,
@@ -1296,6 +1297,59 @@ def _thread_led_system_section(ctx: DerivedThreadCoachContext) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _user_context_opening_nudge_section(
+    directive: ResponseDirective,
+    *,
+    plan_creation_mode: bool,
+) -> str:
+    """
+    V1.6 Phase B 3B.13 — prompt-level hint to call ``get_user_context``
+    early when the current turn is the **opening** of a conversation.
+
+    Rationale
+    ---------
+    ``get_user_context`` is a single tool call that surfaces race goal,
+    current training phase, ``phase_kpi_priority`` for the week,
+    ``baseline_status``, ``coaching_level``, and stated preferences — all
+    signals the coach should ground its **first** reply in (per §19.2
+    reasoning order PLAN → ACTUAL → GAP → ACTION). Without this nudge
+    the model tends to dive into run-level fact lookups before it knows
+    what phase of the plan the user is in, which produces generic
+    coaching.
+
+    Scope
+    -----
+    * Emitted only when ``turn_type == "opening"`` (first user message in
+      a thread, or a clean topic-open after ``new_topic`` resets).
+    * Suppressed in ``plan_creation_mode`` — the plan-intake flow has
+      its own dedicated prompt stub (:func:`_plan_creation_directive_stub`)
+      and pulling in a full context payload is noise there.
+    * This is a **hint**, not a hard requirement. The prompt MUST NOT
+      say "always call" — the coach may skip ``get_user_context`` when
+      the user's opening message is purely a fact lookup
+      (``get_run_summary`` / ``find_runs_by_date``).
+    """
+    if plan_creation_mode:
+        return ""
+    if getattr(directive, "turn_type", None) != TURN_OPENING:
+        return ""
+    return (
+        "## Opening-turn context priming (V1.6 §19 / 3B.13)\n"
+        "- This is a new conversation (**`turn_type = opening`**). Before answering, "
+        "**consider** calling **`get_user_context`** once to ground the reply in the "
+        "user's race goal, current phase, `phase_kpi_priority`, `baseline_status`, and "
+        "`coaching_level`. The payload is small (<2 KB), cached per request, and keeps "
+        "coaching phase-appropriate.\n"
+        "- **Skip it** when the opening message is a narrow fact lookup "
+        '(e.g. "what was my last run\'s HR drift?", "when was my last marathon?") — '
+        "go straight to the fact-resolution tool (`get_run_summary` / "
+        "`find_runs_by_date` / `search_runs`) instead.\n"
+        "- **Do not** re-call `get_user_context` on follow-up / drill-down turns in the "
+        "same thread — the same payload is already in the tool-result cache for this "
+        "turn.\n"
+    )
+
+
 def _intent_priority_override_section(intent: str) -> str:
     """Intent-aware hard overrides that can supersede base prompt defaults."""
     if intent != INTENT_RACE_PROJECTION:
@@ -1614,6 +1668,9 @@ def run_mobile_agent_turn(
             directive_block,
             _thread_led_system_section(thread_ctx),
             _intent_priority_override_section(response_directive.intent),
+            _user_context_opening_nudge_section(
+                response_directive, plan_creation_mode=plan_creation_mode
+            ),
             _plan_creation_system_section(
                 user_message,
                 response_directive.intent,
