@@ -51,6 +51,15 @@ class _FakeActivity:
     average_heartrate: Any = 138.4
     conv_distance: Any = 5.1
     moving_time: Any = 2754
+    # HR zone time (seconds-like weights) — required for V1.6 Phase A
+    # item 3 deviation_direction derivation. Default distribution
+    # lands this Easy-planned run ON_TARGET: 100% in-target (Z2) →
+    # pct_above_target = 0, pct_below_target = 0 (sub-Z1 impossible).
+    hr_zone_1: Any = 0
+    hr_zone_2: Any = 2754
+    hr_zone_3: Any = 0
+    hr_zone_4: Any = 0
+    hr_zone_5: Any = 0
 
 
 def test_build_run_execution_block_namespaced_shape():
@@ -76,6 +85,9 @@ def test_build_run_execution_block_namespaced_shape():
 
     assert block["planned"] == {"type": "easy", "miles": 5.0}
 
+    # V1.6 §6 Phase A item 3: ``deviation_direction`` lives inside
+    # ``actual`` (namespace-isolation rule). Default fake activity
+    # is 100% in Easy's target band → ``on_target``.
     assert block["actual"] == {
         "type": "easy",
         "miles": 5.1,
@@ -86,7 +98,49 @@ def test_build_run_execution_block_namespaced_shape():
         "pct_below_zone": 10.5,
         "scoring_detail": None,
         "average_heartrate": 138.4,
+        "deviation_direction": "on_target",
     }
+
+
+def test_build_run_execution_block_deviation_direction_too_hard():
+    """Easy plan, ≥15% time above target → actual.deviation_direction
+    = ``too_hard``. V1.6 §5 Phase A item 3."""
+    act = _FakeActivity(
+        hr_zone_1=0, hr_zone_2=500, hr_zone_3=0, hr_zone_4=500, hr_zone_5=0
+    )
+    block = build_run_execution_block(act)
+    assert block["actual"]["deviation_direction"] == "too_hard"
+
+
+def test_build_run_execution_block_deviation_direction_omitted_for_steady():
+    """Spec §5 Steady TODO: deviation_direction must be ``None`` for
+    Steady (deferred to V1.7 — approximation forbidden)."""
+    act = _FakeActivity(planned_type="steady")
+    block = build_run_execution_block(act)
+    assert block["actual"]["deviation_direction"] is None
+
+
+def test_build_run_execution_block_deviation_direction_omitted_for_tempo_v1_6():
+    """V1.6 tempo gap: no main-block-scoped metrics yet →
+    ``deviation_direction`` = ``None`` for tempo. Documented in
+    ``deviation.py`` module docstring."""
+    act = _FakeActivity(planned_type="tempo", hr_zone_3=500, hr_zone_4=1000)
+    block = build_run_execution_block(act)
+    assert block["actual"]["deviation_direction"] is None
+
+
+def test_build_run_execution_block_deviation_direction_omitted_short_run():
+    """Spec §5 rule 2: duration < 600s → deviation_direction None."""
+    act = _FakeActivity(moving_time=599)
+    block = build_run_execution_block(act)
+    assert block["actual"]["deviation_direction"] is None
+
+
+def test_build_run_execution_block_deviation_direction_omitted_no_hr():
+    """Spec §5 rule 2: HR missing (all zones zero) → None."""
+    act = _FakeActivity(hr_zone_1=0, hr_zone_2=0, hr_zone_3=0, hr_zone_4=0, hr_zone_5=0)
+    block = build_run_execution_block(act)
+    assert block["actual"]["deviation_direction"] is None
 
 
 def test_build_run_execution_block_handles_unplanned_activity():
@@ -109,6 +163,10 @@ def test_build_run_execution_block_handles_unplanned_activity():
     assert block["violated_rest_day"] is False
     assert block["planned"] == {"type": None, "miles": None}
     assert block["actual"]["type"] == "easy"
+    # V1.6 Phase A item 3: no planned_type → deviation_direction
+    # omitted (None). Consistent with "the LLM must not derive
+    # deviation from actual alone" (§5 + §19).
+    assert block["actual"]["deviation_direction"] is None
 
 
 def test_build_run_execution_block_violated_rest_day_true_on_rest_day():
@@ -204,6 +262,9 @@ def test_weekly_plan_shape_dual_emit_legacy_parity_and_namespaced():
         "scoring_detail": None,
         "average_heartrate": 138,  # display-augmented: rounded int
         "avg_pace_per_mile": "9:00/mi",  # display-augmented: formatted
+        # V1.6 Phase A item 3: surfaced in the namespaced actual.
+        # Default Easy+in-target distribution → "on_target".
+        "deviation_direction": "on_target",
     }
 
     # Drift guard: legacy flat fields === namespaced counterparts.
@@ -282,6 +343,10 @@ def test_insight_summary_shape_parity_with_pre_0a_dict_literal():
         "zone_compliance_pct": 82.5,
         "pct_above_zone": 7.0,
         "pct_below_zone": 10.5,
+        # V1.6 Phase A item 3: LLM get_run_summary exposes
+        # deviation_direction as a flat key so coach tool calls
+        # don't have to reach into the namespaced structure.
+        "deviation_direction": "on_target",
         "run_score": "green",
         "planned_miles": 5.0,
         "actual_miles": 5.1,
@@ -297,6 +362,17 @@ def test_insight_summary_shape_flips_plan_status_for_unplanned():
     assert summary["plan_status"] == "unplanned"
     # Without training_days context, safe default.
     assert summary["violated_rest_day"] is False
+
+
+def test_insight_summary_shape_carries_deviation_direction_too_hard():
+    """V1.6 §5 Phase A item 3: a too-hard Easy run must reach the
+    LLM via ``summary.deviation_direction == 'too_hard'`` — the
+    coach uses this to decide correction vs progression (§19)."""
+    act = _FakeActivity(
+        hr_zone_1=0, hr_zone_2=500, hr_zone_3=0, hr_zone_4=500, hr_zone_5=0
+    )
+    summary = execution_block_to_insight_summary_shape(build_run_execution_block(act))
+    assert summary["deviation_direction"] == "too_hard"
 
 
 def test_insight_summary_shape_carries_violated_rest_day_true():
