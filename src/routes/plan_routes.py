@@ -2,14 +2,12 @@
 
 from flask import Blueprint, jsonify, g, request
 from sqlalchemy.orm import joinedload
-from sqlalchemy import desc
 import uuid
 import logging
+from datetime import date
 
 from src.db.db_session import get_session
 from src.db.models.plans import Plan
-from src.db.models.plan_workouts import PlanWorkout
-from src.db.models.activities import Activity
 from src.utils.auth0_jwt import requires_auth
 from src.db.dao.plans_dao import (
     get_plan_with_workouts,
@@ -19,26 +17,12 @@ from src.db.dao.plans_dao import (
     delete_plan,
 )
 from src.schemas.plan_schema import PlanCreateSchema
-from datetime import datetime, date, timedelta
-from src.utils.date_helpers import get_week_bounds_for_date
-from src.utils.timezone_helpers import resolve_timezone, get_today_date_in_timezone
+from src.utils.timezone_helpers import resolve_timezone
 from src.utils.run_type_constants import (
-    RUN_TYPE_DEFINITIONS,
     RUN_TYPE_EASY,
     normalize_run_type_key,
 )
-from src.smartcoach_mobile_coach.run_insight import (
-    build_run_execution_block,
-    execution_block_to_weekly_plan_shape,
-)
-from src.services.phase.phase_priority import (
-    compute_phase_kpi_priority_for_week,
-)
-from src.services.plan.plan_status import plan_status_for_day
-from src.services.scoring.adherence import (
-    WeeklyAdherenceEntry,
-    compute_weekly_adherence,
-)
+from src.services.plan.weekly_plan import build_weekly_plan_payload
 from src.routes.plan_generation_v2 import (
     run_v2_plan_generation,
     build_standard_draft_payload,
@@ -300,260 +284,27 @@ def get_current_plan_week():
 
     Each day may include `execution` when an activity is matched via
     `activities.matched_plan_workout_id`.
+
+    V1.6 Phase B 3B.2 — payload construction is delegated to
+    :func:`src.services.plan.weekly_plan.build_weekly_plan_payload`, the
+    single source of truth shared with the LLM ``get_weekly_plan`` tool
+    (§X.5). This route is now an HTTP thin-wrapper.
     """
     user_id = _internal_user_uuid(g.user_id)
     tz = request.args.get("tz") or request.headers.get("X-User-Timezone") or "UTC"
-    if not isinstance(tz, str) or not tz.strip():
-        tz = "UTC"
-    else:
-        tz = tz.strip()
-
-    weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
     with get_session() as session:
-        # Avoid loading full Plan.user_id through PG UUID processors on SQLite test DB.
-        plan_row = (
-            session.query(
-                Plan.id,
-                Plan.plan_name,
-                Plan.race_date,
-                Plan.race_distance,
-                Plan.training_days,
-            )
-            .filter(Plan.user_id == user_id, Plan.is_active.is_(True))
-            .order_by(Plan.created_at.desc())
-            .first()
-        )
-        if not plan_row:
-            plan_row = (
-                session.query(
-                    Plan.id,
-                    Plan.plan_name,
-                    Plan.race_date,
-                    Plan.race_distance,
-                    Plan.training_days,
-                )
-                .filter(Plan.user_id == user_id)
-                .order_by(Plan.created_at.desc())
-                .first()
-            )
+        payload = build_weekly_plan_payload(session, user_id, tz=tz)
 
-        if not plan_row:
-            return jsonify({"error": "No plan found"}), 404
+    if payload.get("error"):
+        # Preserve legacy HTTP error shape (``{"error": "No plan found"}``,
+        # status 404) so mobile clients compiled against the old contract
+        # continue to work. The service-level error envelope
+        # (``{"error": "no_plan", ...}``) is a tool-friendly contract and
+        # stays internal to the service layer.
+        return jsonify({"error": "No plan found"}), 404
 
-        plan_id = plan_row.id
-        plan_name = plan_row.plan_name
-        plan_race_date = plan_row.race_date
-        plan_race_distance = plan_row.race_distance
-        # V1.6 Phase A item 2: needed by ``derive_violated_rest_day``
-        # when an unmatched activity lands on an implicit rest day.
-        # For this route all emitted day entries are planned-workout-
-        # driven so violated_rest_day will always be False on them;
-        # we still thread training_days through so the execution
-        # block built from a matched Activity is correct by
-        # construction (and Phase B unplanned-day callers will read
-        # the true branch once they surface gap-day activities).
-        plan_training_days = plan_row.training_days
-
-        today = get_today_date_in_timezone(tz)
-        week_start, week_end = get_week_bounds_for_date(today)
-        workouts = (
-            session.query(PlanWorkout)
-            .filter(
-                PlanWorkout.plan_id == plan_id,
-                PlanWorkout.date >= week_start,
-                PlanWorkout.date <= week_end,
-            )
-            .order_by(PlanWorkout.date)
-            .all()
-        )
-
-        from src.db.dao.user_profile_dao import get_user_profile
-        from src.services.training_plan.plan_storage_service import PlanStorageService
-
-        user_profile = get_user_profile(session, str(user_id))
-
-        pw_ids = [w.id for w in workouts]
-        execution_by_pw: dict[int, Activity] = {}
-        if pw_ids:
-            acts = (
-                session.query(Activity)
-                .filter(
-                    Activity.matched_plan_workout_id.in_(pw_ids),
-                    Activity.user_id == user_id,
-                )
-                .order_by(desc(Activity.start_date))
-                .all()
-            )
-            for a in acts:
-                mpw = a.matched_plan_workout_id
-                if mpw is not None and mpw not in execution_by_pw:
-                    execution_by_pw[mpw] = a
-
-        # V1.6 Pre-Phase A 0.D:
-        # target_hr is authoritative as stored. Only fall back to a
-        # canonical recomputation when the row has no stored zone
-        # (legacy rows). No zone revalidation, no text-matching inference.
-        days = []
-        # V1.6 Phase A item 5: accumulate per-day adherence entries as
-        # we walk the planned workouts; the canonical weekly aggregate
-        # is computed once at the end via
-        # :func:`compute_weekly_adherence`. No inline ``completed /
-        # planned`` math here — single-source-of-truth (§X.5).
-        adherence_entries: list[WeeklyAdherenceEntry] = []
-        for w in workouts:
-            canonical = _resolve_run_type_key_for_workout(w)
-            target_hr = w.target_hr
-            if not target_hr:
-                target_hr = PlanStorageService._calculate_hr_zone(
-                    canonical, user_profile
-                )
-
-            rt_def = (
-                RUN_TYPE_DEFINITIONS.get(canonical)
-                or RUN_TYPE_DEFINITIONS[RUN_TYPE_EASY]
-            )
-
-            act = execution_by_pw.get(w.id)
-            execution = (
-                execution_block_to_weekly_plan_shape(
-                    build_run_execution_block(
-                        act, plan_training_days=plan_training_days
-                    ),
-                    act,
-                )
-                if act
-                else None
-            )
-
-            # V1.6 Phase A item 1: day-level plan_status.
-            # Every day entry in current-week is driven by a planned
-            # workout, so ``has_planned_workout=True``. ``unplanned``
-            # days (activity on a day with no planned workout) are a
-            # known gap for this route — Phase B ``get_weekly_plan``
-            # will cover them. See ``plan_status.py`` module docstring.
-            day_plan_status = plan_status_for_day(
-                has_planned_workout=True,
-                has_matching_activity=act is not None,
-                day_date=w.date,
-                today=today,
-            )
-
-            # V1.6 Phase A item 5: feed the canonical weekly adherence
-            # aggregator. ``day_plan_status`` is ``None`` only for
-            # empty rest/gap days, which this loop never produces
-            # (every entry is driven by a PlanWorkout); the guard is
-            # defensive to keep the aggregator contract honest. We
-            # read ``completion_pct`` / ``actual_miles`` off the
-            # matched Activity — not the execution block's shape —
-            # so the signal is immune to any future display-side
-            # reshaping in the adapter.
-            if day_plan_status is not None:
-                adherence_entries.append(
-                    WeeklyAdherenceEntry(
-                        plan_status=day_plan_status,
-                        completion_pct=(
-                            getattr(act, "completion_pct", None)
-                            if act is not None
-                            else None
-                        ),
-                        planned_miles=w.miles,
-                        actual_miles=(
-                            getattr(act, "actual_miles", None)
-                            if act is not None
-                            else None
-                        ),
-                    )
-                )
-
-            days.append(
-                {
-                    "date": w.date.isoformat(),
-                    "weekday": weekday_labels[w.date.weekday()],
-                    "plan_workout_id": w.id,
-                    "plan_status": day_plan_status.value if day_plan_status else None,
-                    # V1.6 Phase A item 2: every day entry in this
-                    # route has a planned workout → by definition NOT
-                    # a rest day → violated_rest_day is always False
-                    # here. Emitted explicitly (null-vs-absent
-                    # convention, §4) so the LLM never has to infer.
-                    "violated_rest_day": False,
-                    "run_type_key": canonical,
-                    "run_type": {
-                        "key": rt_def.key,
-                        "display_name": rt_def.display_name,
-                        "target_zone_ids": list(rt_def.target_zone_ids),
-                    },
-                    "workout_type": w.workout_type,
-                    "intensity": w.intensity,
-                    "description": w.description,
-                    "miles": w.miles,
-                    "target_zone": w.target_zone,
-                    "target_hr": target_hr,
-                    "focus": w.focus,
-                    "phase": w.phase,
-                    "execution": execution,
-                }
-            )
-
-        # V1.6 Phase A item 6: week-level phase_kpi_priority block.
-        # Derived on read from the per-workout ``phase`` labels we
-        # already iterated above (majority-of-days rule per §7 with
-        # later-phase tie-break). Single source of truth (§X.5):
-        # ``src/services/phase/phase_priority.py`` owns the
-        # per-phase emphasis table and the transition-week rule.
-        # Rest days don't carry a phase row — the resolver operates
-        # on training-day evidence only, which matches the spec's
-        # intent for "what emphasis should the coach take this week".
-        phase_kpi_result = compute_phase_kpi_priority_for_week(
-            w.phase for w in workouts
-        )
-        if phase_kpi_result.phase is None:
-            phase_kpi_payload = None
-        else:
-            phase_kpi_payload = {
-                "phase": phase_kpi_result.phase.value,
-                "priority": [
-                    {"kpi_id": entry.kpi_id, "label": entry.label}
-                    for entry in phase_kpi_result.priority
-                ],
-                "day_counts": dict(phase_kpi_result.day_counts),
-            }
-
-        # V1.6 Phase A item 5: week-level adherence block. Derived on
-        # read (§X.5 policy) from the entries accumulated above.
-        # Percents are 0-100 scale, unrounded (callers format per
-        # their own precision needs — coach LLM does not re-derive
-        # or override, see §19 LLM contract).
-        adherence_result = compute_weekly_adherence(adherence_entries)
-        adherence_payload = {
-            "adherence_runs_pct": adherence_result.adherence_runs_pct,
-            "completed_runs": adherence_result.completed_runs,
-            "planned_runs": adherence_result.planned_runs,
-            "band": adherence_result.band.value if adherence_result.band else None,
-            "completion_miles_pct": adherence_result.completion_miles_pct_weekly,
-            "planned_miles_total": adherence_result.planned_miles_total,
-            "actual_miles_matched_total": (adherence_result.actual_miles_matched_total),
-        }
-
-        return (
-            jsonify(
-                {
-                    "plan_id": plan_id,
-                    "plan_name": plan_name,
-                    "race_date": plan_race_date.isoformat() if plan_race_date else None,
-                    "race_distance": plan_race_distance,
-                    "timezone": tz,
-                    "today": today.isoformat(),
-                    "week_start": week_start.isoformat(),
-                    "week_end": week_end.isoformat(),
-                    "days": days,
-                    "adherence": adherence_payload,
-                    "phase_kpi_priority": phase_kpi_payload,
-                }
-            ),
-            200,
-        )
+    return jsonify(payload), 200
 
 
 # ✅ /api/plan/<id> — get specific plan by ID (read-only)
