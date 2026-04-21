@@ -722,6 +722,103 @@ def tool_get_plan_overview(
 
 
 # ---------------------------------------------------------------------------
+# Tool: get_phase_analysis (V1.6 Phase B 3B.6)
+#
+# Per-run-type KPI trend for phase-to-date. Given one of the four
+# canonical phases (Base / Build / Peak / Taper), surfaces how each
+# run type is actually being executed in that phase so far:
+#
+# * ``phase_kpi_priority`` — the §8 ordered emphasis list the coach
+#   should lead with ("in Build, talk about Pace Consistency first").
+# * ``phase_weeks`` — total / completed / in_progress / future counts
+#   + completion_pct + phase_temporality.
+# * ``phase_window`` — first-Monday / last-Sunday / evaluated_through
+#   (the later of today or the last evaluable Sunday).
+# * ``by_run_type`` — one entry per canonical run-type key with
+#   planned vs matched counts, mileage totals, zone-compliance avg +
+#   weekly trend series, deviation-direction distribution, and
+#   run-score distribution.
+#
+# §X.5 single-source-of-truth: every actual-side value is sourced
+# from ``build_run_execution_block`` — the same producer the LLM's
+# ``get_run_summary`` and ``get_weekly_plan`` tools use. This module
+# never reads planned / actual fields off ``Activity`` directly.
+#
+# §19.5 future-week contract extension: future phase-weeks contribute
+# **zero** execution data to the trend. Planned counts are still
+# aggregated phase-wide so the coach sees the denominator ("you have
+# 4 planned Tempo runs this phase; you've completed 2 so far").
+#
+# Implementation: thin wrapper over
+# :func:`src.services.plan.phase_analysis.build_phase_analysis_payload`.
+# ---------------------------------------------------------------------------
+
+
+def tool_get_phase_analysis(
+    session: Session,
+    internal_user_id: str,
+    *,
+    phase_id: Optional[str] = None,
+    tz: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Return the V1.6 Phase B 3B.6 phase-analysis payload.
+
+    Args:
+        session: Active SQLAlchemy session.
+        internal_user_id: Internal user UUID string (not Auth0 subject).
+        phase_id: One of ``"Base"``, ``"Build"``, ``"Peak"``,
+            ``"Taper"`` (case-insensitive). Required. Any other value
+            returns an ``invalid_phase`` envelope with the allowed
+            list.
+        tz: Optional IANA timezone name. Defaults to UTC. Used to
+            resolve the athlete's "today" for the phase-to-date cutoff
+            and the per-week trend window.
+
+    Returns:
+        Either a tool-friendly error envelope
+        (``{"error": "no_plan" | "invalid_phase" | "invalid_user_id" |
+        "missing_phase_id", ...}``) or the payload produced by
+        :func:`src.services.plan.phase_analysis.build_phase_analysis_payload`.
+
+    V1.6 contracts enforced by delegation to the service:
+        * §X.5 single-source-of-truth for every actual-side field
+          (read via ``build_run_execution_block``).
+        * §19.5 no execution data on future phase-weeks.
+        * §7 per-week phase resolution agrees byte-exact with
+          ``get_weekly_plan`` / ``get_plan_overview``.
+        * §8 ``phase_kpi_priority`` is the canonical table, not a
+          restatement.
+    """
+    import uuid
+
+    try:
+        user_uuid = uuid.UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        return {
+            "error": "invalid_user_id",
+            "message": "internal_user_id must be a UUID string.",
+        }
+
+    if phase_id is None or (isinstance(phase_id, str) and not phase_id.strip()):
+        return {
+            "error": "missing_phase_id",
+            "message": "phase_id is required (one of Base, Build, Peak, Taper).",
+        }
+
+    tz_value = tz if (isinstance(tz, str) and tz.strip()) else "UTC"
+
+    from src.services.plan.phase_analysis import build_phase_analysis_payload
+
+    return build_phase_analysis_payload(
+        session,
+        user_uuid,
+        phase_id,
+        tz=tz_value,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tool: get_marathon_projection
 # ---------------------------------------------------------------------------
 
@@ -1372,6 +1469,11 @@ _TOOL_HANDLERS = {
     # No activity query ever runs, so §19.5 future-week "no actuals"
     # is structurally extended to every week in the overview.
     "get_plan_overview": "get_plan_overview",
+    # V1.6 Phase B 3B.6 — per-run-type KPI trend for phase-to-date
+    # (Base / Build / Peak / Taper). Surfaces canonical actual.*
+    # fields (zone compliance, completion_pct, deviation direction,
+    # run score) per run_type_key from phase-to-date matched activities.
+    "get_phase_analysis": "get_phase_analysis",
     "get_marathon_projection": "get_marathon_projection",
     "save_coach_preference": "save_coach_preference",
     "update_plan_intake": "update_plan_intake",
@@ -1548,6 +1650,22 @@ def execute_tool(
             return tool_get_plan_overview(
                 session,
                 internal_user_id,
+                tz=tz_val,
+            )
+
+        if handler_key == "get_phase_analysis":
+            # V1.6 Phase B 3B.6 — ``phase_id`` is required. Accepts
+            # any case of the four canonical names ("Base", "build",
+            # "PEAK", "Taper"); the service normalizes. Missing /
+            # non-string values return a ``missing_phase_id`` envelope.
+            phase_raw = args.get("phase_id")
+            phase_val = phase_raw if isinstance(phase_raw, str) else None
+            tz_raw = args.get("tz")
+            tz_val = tz_raw if isinstance(tz_raw, str) else None
+            return tool_get_phase_analysis(
+                session,
+                internal_user_id,
+                phase_id=phase_val,
                 tz=tz_val,
             )
 
