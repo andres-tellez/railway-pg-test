@@ -42,6 +42,43 @@ def format_hr_bpm(hr: Optional[float]) -> Optional[str]:
     return f"{v} bpm"
 
 
+def format_hr_range_bpm(low: Optional[float], high: Optional[float]) -> Optional[str]:
+    """
+    Format an HR range as "138–150 bpm". Collapses to a single value
+    ("142 bpm") when both ends are equal. Returns ``None`` when either
+    end is missing — callers should fall back to the numeric fields.
+    """
+    if low is None or high is None:
+        return None
+    try:
+        lo = int(round(float(low)))
+        hi = int(round(float(high)))
+    except (TypeError, ValueError):
+        return None
+    if lo == hi:
+        return f"{lo} bpm"
+    return f"{lo}\u2013{hi} bpm"
+
+
+def format_percent(value: Optional[float], *, decimals: int = 0) -> Optional[str]:
+    """
+    Format a fractional value (``0.725``) as a percentage string
+    (``"72 %"``  / ``"72.5 %"``). Accepts a value already in %-space
+    (``72.5``) by leaving values above 1.5 untouched — the ambiguous
+    range ``[0, 1.5]`` is interpreted as fractional. Returns ``None``
+    on bad input so callers can degrade to the raw numeric field.
+    """
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if -1.5 <= v <= 1.5:
+        v = v * 100.0
+    return f"{v:.{decimals}f} %"
+
+
 def format_time_utc(dt) -> str:
     if dt is None:
         return "—"

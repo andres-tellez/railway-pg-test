@@ -105,6 +105,10 @@ from src.services.phase.phase_priority import (
     resolve_week_phase,
 )
 from src.services.plan.weekly_plan import resolve_plan_workout_run_type_key
+from src.smartcoach_mobile_coach.display_format import (
+    format_distance_mi,
+    format_percent,
+)
 from src.smartcoach_mobile_coach.run_insight import build_run_execution_block
 from src.utils.date_helpers import get_week_bounds_for_date
 from src.utils.run_type_constants import RUN_TYPE_DEFINITIONS
@@ -382,13 +386,28 @@ def _finalize_bucket(
                 }
             )
 
+    zc_avg = (sum(zc_samples) / len(zc_samples)) if zc_samples else None
+    cp_avg = (sum(cp_samples) / len(cp_samples)) if cp_samples else None
     bucket["zone_compliance_pct"] = {
-        "avg": (sum(zc_samples) / len(zc_samples)) if zc_samples else None,
+        "avg": zc_avg,
         "trend": zc_trend,
     }
-    bucket["completion_miles_pct_avg"] = (
-        (sum(cp_samples) / len(cp_samples)) if cp_samples else None
-    )
+    bucket["completion_miles_pct_avg"] = cp_avg
+    # V1.6 3B.7 — Topic 4 display-ready strings for the per-run-type
+    # aggregate. Distances and percentages are pre-formatted so the
+    # coach can cite them verbatim ("4 runs, 32.00 mi, 78 % ZC") in
+    # phase-level narratives without doing math on the fly. Numeric
+    # fields remain the single source of truth for any comparisons.
+    bucket["display"] = {
+        "miles_planned_total": format_distance_mi(
+            bucket.get("miles_planned_total") or 0.0
+        ),
+        "miles_actual_total": format_distance_mi(
+            bucket.get("miles_actual_total") or 0.0
+        ),
+        "zone_compliance_pct_avg": format_percent(zc_avg),
+        "completion_miles_pct_avg": format_percent(cp_avg),
+    }
 
 
 def _classify_phase_temporality(
@@ -654,6 +673,10 @@ def build_phase_analysis_payload(
             "future": future,
             "completion_pct": completion_pct,
             "phase_temporality": phase_temporality,
+            # V1.6 3B.7 — display string for the phase progress percentage.
+            "display": {
+                "completion_pct": format_percent(completion_pct),
+            },
         },
         "phase_window": {
             "start": phase_start.isoformat(),

@@ -124,6 +124,12 @@ def _clear_module_level_caches():
         user_context_cache.clear_all()
     except Exception:
         pass
+    try:
+        from src.smartcoach_mobile_coach import plan_cache
+
+        plan_cache.clear_all()
+    except Exception:
+        pass
     yield
 
 

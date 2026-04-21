@@ -100,6 +100,7 @@ from src.services.scoring.adherence import (
     WeeklyAdherenceEntry,
     compute_weekly_adherence,
 )
+from src.smartcoach_mobile_coach.display_format import format_distance_mi
 from src.smartcoach_mobile_coach.run_insight import (
     build_run_execution_block,
     execution_block_to_weekly_plan_shape,
@@ -264,6 +265,17 @@ def _build_future_week_day_entry(
         "target_hr": target_hr,
         "focus": w.focus,
         "phase": w.phase,
+        # V1.6 3B.7 — Topic 4 display-ready strings for planned side.
+        # Future weeks have no ``actual``, so only ``planned`` keys
+        # appear here. ``target_hr`` is already a plan-generated
+        # human-readable string (e.g. "Z2 (120-150 bpm)") and is
+        # passed through unchanged.
+        "display": {
+            "planned": {
+                "miles": format_distance_mi(w.miles) if w.miles is not None else None,
+                "target_hr": target_hr,
+            },
+        },
         # 3B.3: future-week contract — ``execution`` is None.
         "execution": None,
     }
@@ -349,6 +361,18 @@ def _build_past_current_day_entry(
         "target_hr": target_hr,
         "focus": w.focus,
         "phase": w.phase,
+        # V1.6 3B.7 — Topic 4 display-ready planned-side strings.
+        # Past / current weeks may also carry a ``display`` block
+        # inside ``execution`` (produced by
+        # ``execution_block_to_weekly_plan_shape``) for the actual
+        # side; this day-level ``display`` only carries the planned
+        # miles + target_hr for symmetry with future-week entries.
+        "display": {
+            "planned": {
+                "miles": format_distance_mi(w.miles) if w.miles is not None else None,
+                "target_hr": target_hr,
+            },
+        },
         "execution": execution,
     }
     return day, entry
