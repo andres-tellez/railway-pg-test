@@ -119,7 +119,7 @@ def test_current_week_returns_days_and_execution(
     workout_date = date(2026, 4, 21)
     _seed_week_plan_and_activity(plan_routes_db, workout_date=workout_date)
     monkeypatch.setattr(
-        "src.routes.plan_routes.get_today_date_in_timezone",
+        "src.services.plan.weekly_plan.get_today_date_in_timezone",
         lambda _tz: date(2026, 4, 22),
     )
 
@@ -260,7 +260,7 @@ def test_current_week_emits_phase_kpi_priority_block(
     plan_routes_db.commit()
 
     monkeypatch.setattr(
-        "src.routes.plan_routes.get_today_date_in_timezone",
+        "src.services.plan.weekly_plan.get_today_date_in_timezone",
         lambda _tz: date(2026, 4, 26),
     )
 
@@ -325,7 +325,7 @@ def test_current_week_phase_kpi_priority_tie_goes_to_later_phase(
     plan_routes_db.commit()
 
     monkeypatch.setattr(
-        "src.routes.plan_routes.get_today_date_in_timezone",
+        "src.services.plan.weekly_plan.get_today_date_in_timezone",
         lambda _tz: date(2026, 4, 26),
     )
 
@@ -372,7 +372,7 @@ def test_current_week_phase_kpi_priority_null_on_empty_week(
     plan_routes_db.commit()
 
     monkeypatch.setattr(
-        "src.routes.plan_routes.get_today_date_in_timezone",
+        "src.services.plan.weekly_plan.get_today_date_in_timezone",
         lambda _tz: date(2026, 4, 22),
     )
 
@@ -456,7 +456,7 @@ def test_current_week_adherence_missed_long_run_medium_band(
     plan_routes_db.commit()
 
     monkeypatch.setattr(
-        "src.routes.plan_routes.get_today_date_in_timezone",
+        "src.services.plan.weekly_plan.get_today_date_in_timezone",
         lambda _tz: date(2026, 4, 26),  # week closed, both days past
     )
 
@@ -512,7 +512,7 @@ def test_current_week_adherence_empty_week_returns_nulls(
     plan_routes_db.commit()
 
     monkeypatch.setattr(
-        "src.routes.plan_routes.get_today_date_in_timezone",
+        "src.services.plan.weekly_plan.get_today_date_in_timezone",
         lambda _tz: date(2026, 4, 22),
     )
 
@@ -575,7 +575,7 @@ def test_current_week_day_level_plan_status_no_activity(
     ]
     for today, expected in cases:
         monkeypatch.setattr(
-            "src.routes.plan_routes.get_today_date_in_timezone",
+            "src.services.plan.weekly_plan.get_today_date_in_timezone",
             lambda _tz, _t=today: _t,
         )
         resp = client.get(
@@ -645,7 +645,7 @@ def test_current_week_uses_canonical_normalization_for_legacy_rows(
     plan_routes_db.commit()
 
     monkeypatch.setattr(
-        "src.routes.plan_routes.get_today_date_in_timezone",
+        "src.services.plan.weekly_plan.get_today_date_in_timezone",
         lambda _tz: workout_date,
     )
 
@@ -702,7 +702,7 @@ def test_current_week_fallback_computes_target_hr_when_missing(
     plan_routes_db.commit()
 
     monkeypatch.setattr(
-        "src.routes.plan_routes.get_today_date_in_timezone",
+        "src.services.plan.weekly_plan.get_today_date_in_timezone",
         lambda _tz: workout_date,
     )
 
@@ -743,7 +743,7 @@ def test_current_week_empty_when_no_workouts_in_range(
     plan_routes_db.commit()
 
     monkeypatch.setattr(
-        "src.routes.plan_routes.get_today_date_in_timezone",
+        "src.services.plan.weekly_plan.get_today_date_in_timezone",
         lambda _tz: date(2026, 4, 22),
     )
 

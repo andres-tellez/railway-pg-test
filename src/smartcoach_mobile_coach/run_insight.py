@@ -314,12 +314,37 @@ def execution_block_to_insight_summary_shape(
     Adapter for the LLM ``get_run_summary`` tool's
     ``facts.execution_summary``.
 
-    Surfaces all pre-0.A fields plus V1.6 Phase A additions
-    (``plan_status`` — Phase A item 1; further Phase A fields follow
-    in subsequent commits). Single source: every value comes from the
-    canonical ``block`` produced by ``build_run_execution_block``.
-    Phase B tools will read ``block`` directly and this adapter will
-    be deprecated.
+    V1.6 Phase B 3B.1 dual-emit shape (SMARTCOACH_SYSTEM_SPEC_V1 §6,
+    Topic 9 tool table):
+
+    * **Canonical V1.6 §6 namespaced blocks** — ``planned`` and
+      ``actual`` sub-objects mirrored byte-exact from the source
+      ``block`` produced by ``build_run_execution_block``. The coach
+      reads these in the Phase B "PLAN → ACTUAL → GAP → ACTION"
+      reasoning frame (§19 LLM contract) so planned wording and actual
+      wording never leak across the namespace boundary. These are the
+      primary surface Phase B ``get_weekly_plan`` / ``get_plan_overview``
+      will consume.
+    * **Top-level deterministic controllers** — ``plan_status``,
+      ``violated_rest_day``, ``matched_plan_workout_id``, and the
+      convenience ``deviation_direction`` copy of
+      ``actual.deviation_direction`` live at the top level because the
+      §19 contract describes them as pairing-level signals (they
+      describe how plan and actual relate, not a property of either
+      side). Top-level placement also matches what the coach validator
+      (Phase C) will assert as "non-overrideable deterministic fields".
+    * **Legacy flat scalars** — pre-0.A fields (``planned_type``,
+      ``executed_type``, ``zone_compliance_pct`` etc.) are preserved
+      verbatim for any existing coach tool-call path or test that
+      reads them by name. Every flat value is sourced from the same
+      canonical block as the namespaced shape above, so they cannot
+      drift. These will be removed in V1.7 once we have evidence no
+      consumer reads them.
+
+    Single-source-of-truth (PHASE_3_IMPLEMENTATION_CHECKLIST §X.5):
+    every value in the returned dict is a read off ``block``. This
+    function never recomputes a metric, never applies a threshold,
+    and never invents a field — it is a pure reshaping adapter.
     """
     planned = block.get("planned") or {}
     actual = block.get("actual") or {}
@@ -327,12 +352,24 @@ def execution_block_to_insight_summary_shape(
         "matched_plan_workout_id": block.get("matched_plan_workout_id"),
         "plan_status": block.get("plan_status"),
         "violated_rest_day": block.get("violated_rest_day"),
+        # V1.6 §6 canonical namespaced shape — Phase B 3B.1. Passed
+        # through as a copy so downstream mutations on either the
+        # adapter output or the source block don't cross-contaminate
+        # (``build_run_execution_block`` is called per-request but
+        # ``execution_summary`` is cached by get_run_summary).
+        "planned": dict(planned),
+        "actual": dict(actual),
+        # Top-level convenience copy of ``actual.deviation_direction``.
+        # 3B.1 requires this be discoverable at the §6 "pairing level"
+        # alongside ``plan_status`` / ``violated_rest_day`` so the
+        # coach validator can look in one place.
+        "deviation_direction": actual.get("deviation_direction"),
+        # Legacy flat scalars — DEPRECATED V1.7.
         "planned_type": planned.get("type"),
         "executed_type": actual.get("type"),
         "zone_compliance_pct": actual.get("zone_compliance_pct"),
         "pct_above_zone": actual.get("pct_above_zone"),
         "pct_below_zone": actual.get("pct_below_zone"),
-        "deviation_direction": actual.get("deviation_direction"),
         "run_score": actual.get("run_score"),
         "planned_miles": planned.get("miles"),
         "actual_miles": actual.get("miles"),

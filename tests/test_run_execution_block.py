@@ -334,24 +334,81 @@ def test_insight_summary_shape_parity_with_pre_0a_dict_literal():
     block = build_run_execution_block(_FakeActivity())
     summary = execution_block_to_insight_summary_shape(block)
 
+    # V1.6 Phase B 3B.1 dual-emit shape: top-level pairing controllers
+    # + canonical §6 ``planned`` / ``actual`` namespaced blocks +
+    # legacy flat scalars. Every value is sourced from the same
+    # canonical ``block`` (no recompute) — this assertion is the
+    # single-source-of-truth contract lock.
     assert summary == {
         "matched_plan_workout_id": 777,
         "plan_status": "executed",
         "violated_rest_day": False,
+        # V1.6 §6 canonical namespaced blocks — Phase B 3B.1.
+        "planned": {"type": "easy", "miles": 5.0},
+        "actual": {
+            "type": "easy",
+            "miles": 5.1,
+            "completion_pct": 1.02,
+            "run_score": "green",
+            "zone_compliance_pct": 82.5,
+            "pct_above_zone": 7.0,
+            "pct_below_zone": 10.5,
+            "scoring_detail": None,
+            "average_heartrate": 138.4,
+            "deviation_direction": "on_target",
+        },
+        # Top-level convenience copy of ``actual.deviation_direction``.
+        "deviation_direction": "on_target",
+        # Legacy flat scalars — DEPRECATED V1.7.
         "planned_type": "easy",
         "executed_type": "easy",
         "zone_compliance_pct": 82.5,
         "pct_above_zone": 7.0,
         "pct_below_zone": 10.5,
-        # V1.6 Phase A item 3: LLM get_run_summary exposes
-        # deviation_direction as a flat key so coach tool calls
-        # don't have to reach into the namespaced structure.
-        "deviation_direction": "on_target",
         "run_score": "green",
         "planned_miles": 5.0,
         "actual_miles": 5.1,
         "completion_pct": 1.02,
     }
+
+
+def test_insight_summary_shape_namespaced_blocks_match_source_block():
+    """
+    V1.6 Phase B 3B.1 single-source-of-truth contract: the
+    ``planned`` and ``actual`` sub-dicts in the insight-summary
+    shape must be byte-exact copies of the corresponding blocks
+    on the canonical source. Any adapter-level massaging would
+    drift the LLM view from the mobile view and break the "one
+    source" guarantee in PHASE_3_IMPLEMENTATION_CHECKLIST §X.5.
+    """
+    block = build_run_execution_block(_FakeActivity())
+    summary = execution_block_to_insight_summary_shape(block)
+
+    assert summary["planned"] == block["planned"]
+    assert summary["actual"] == block["actual"]
+    # Identity must not be shared (adapter returns a copy so a
+    # downstream cache mutation on either side stays local).
+    assert summary["planned"] is not block["planned"]
+    assert summary["actual"] is not block["actual"]
+
+
+def test_insight_summary_shape_top_level_controllers_match_source_block():
+    """
+    V1.6 §6 + Phase B 3B.1: ``plan_status``, ``violated_rest_day``,
+    ``matched_plan_workout_id`` live at the top level of the insight
+    summary because they describe the pairing between plan and
+    actual (§19 non-overrideable deterministic fields — the coach
+    validator in Phase C keys on these exact top-level names).
+    """
+    block = build_run_execution_block(_FakeActivity(matched_plan_workout_id=None))
+    summary = execution_block_to_insight_summary_shape(block)
+
+    assert summary["matched_plan_workout_id"] is None
+    assert summary["plan_status"] == "unplanned"
+    assert summary["violated_rest_day"] is False
+    # Top-level deviation_direction mirrors actual.deviation_direction
+    # (source of truth is actual.*; top-level is a convenience copy).
+    assert summary["deviation_direction"] == summary["actual"]["deviation_direction"]
 
 
 def test_insight_summary_shape_flips_plan_status_for_unplanned():
