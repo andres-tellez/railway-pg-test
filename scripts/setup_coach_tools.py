@@ -522,6 +522,60 @@ SEED_TOOLS = [
         "sort_order": 38,
     },
     {
+        # V1.6 Phase B 3B.10 — light user-level context payload.
+        "name": "get_user_context",
+        "display_name": "Get User Context",
+        "category": "user_context",
+        "description": (
+            "V1.6 Phase B 3B.10 user-level context the coach reads at the start of a conversation. "
+            "Single call returns: race_goal (race name/date/distance, goal_time, primary_goal, "
+            "weeks_until_race), plan (plan_id, plan_name, plan_start/end, total_weeks, "
+            "current_week_number, current_phase + canonical §8 phase_kpi_priority ordered emphasis "
+            "list), baseline_status (insufficient/thin/strong via the canonical §12 producer), "
+            "coaching (coaching_level, verbosity, stored run/training summary priorities from "
+            "user_coach_preferences, has_saved_preferences flag), preferences (training_days, "
+            "derived long_run_day, unit_system, timezone), and session_summary (null placeholder for "
+            "V1.7). All deterministic values come from existing canonical producers — this tool "
+            "never re-derives a signal. PII-light: only the first name of user_identity.name is "
+            "emitted. Payload is < 2 KB."
+        ),
+        "when_to_call": (
+            "Call at the START of a new conversation (turn_type == 'opening') or when the user asks "
+            "a who-am-I/what-am-I-training-for style question. Prefer this over issuing multiple "
+            "tool calls for race info + plan phase + baseline + coaching preferences. Cacheable per "
+            "user for a single request. Do not call again mid-conversation unless the user has "
+            "saved a new preference, generated a new plan, or a new run has landed (each of which "
+            "invalidates the context)."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "tz": {
+                    "type": "string",
+                    "description": (
+                        "Optional IANA timezone name. Drives resolution of 'today' for "
+                        "weeks_until_race and current_week_number. Defaults to UTC."
+                    ),
+                },
+            },
+        },
+        "returns_description": (
+            "schema_version, user_id, display_name (first name only), baseline_status, race_goal "
+            "(race_name/race_distance/race_date/goal_time/primary_goal/weeks_until_race), plan "
+            "(plan_id/plan_name/plan_start/plan_end/total_weeks/current_week_number/is_active/"
+            "current_phase/phase_kpi_priority), coaching (coaching_level/verbosity/"
+            "run_summary_priority/training_summary_priority/has_saved_preferences), preferences "
+            "(training_days/long_run_day/unit_system/timezone), session_summary (null in V1.6), "
+            "generated_at, today."
+        ),
+        "data_source": (
+            "user_identity + user_profile + user_coach_preferences + user_athletes + plans + "
+            "plan_workouts + compute_baseline_status_for_athlete + phase_kpi_priority_for_phase"
+        ),
+        "is_enabled": True,
+        "sort_order": 39,
+    },
+    {
         "name": "get_training_kpis",
         "display_name": "Get Training KPIs",
         "category": "training_progress",
