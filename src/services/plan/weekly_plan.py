@@ -121,15 +121,18 @@ logger = logging.getLogger(__name__)
 _WEEKDAY_LABELS: Tuple[str, ...] = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
-def _resolve_run_type_key(w: PlanWorkout) -> str:
+def resolve_plan_workout_run_type_key(w: PlanWorkout) -> str:
     """
-    Canonical run_type_key for a PlanWorkout row.
+    Canonical ``run_type_key`` for a :class:`PlanWorkout` row.
 
-    Duplicates the intent of
-    ``plan_routes._resolve_run_type_key_for_workout`` because the
-    route-side helper is module-private. Once Phase B stabilizes,
-    that helper should be deleted and its single call site should
-    import from here (§X.5 cleanup tracked separately).
+    V1.6 Phase B §X.5 single source of truth — both
+    :mod:`src.services.plan.weekly_plan` and
+    :mod:`src.services.plan.plan_overview` use this helper so the
+    canonical key for a given plan row is identical across every
+    plan-read surface. The route-side helper in
+    ``plan_routes._resolve_run_type_key_for_workout`` should also
+    consume this once the last inline caller is removed (§X.5 cleanup
+    tracked separately).
 
     Resolution order:
 
@@ -144,6 +147,12 @@ def _resolve_run_type_key(w: PlanWorkout) -> str:
         or normalize_run_type_key(getattr(w, "workout_type", None))
         or RUN_TYPE_EASY
     )
+
+
+# Backward-compatible private alias — kept so any in-module callers
+# or future subclasses importing the old underscore name don't break.
+# New callers MUST use the public name.
+_resolve_run_type_key = resolve_plan_workout_run_type_key
 
 
 def _load_active_or_most_recent_plan(session: Session, user_id: UUID):
@@ -526,4 +535,5 @@ def build_weekly_plan_payload(
 
 __all__ = [
     "build_weekly_plan_payload",
+    "resolve_plan_workout_run_type_key",
 ]

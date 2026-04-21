@@ -636,6 +636,92 @@ def tool_get_weekly_plan(
 
 
 # ---------------------------------------------------------------------------
+# Tool: get_plan_overview (V1.6 Phase B 3B.5)
+#
+# End-to-end, **planned-only** view of the athlete's active (or most
+# recently created) training plan. Supersedes any ad-hoc whole-plan
+# summaries the coach previously had to synthesize from
+# ``get_weekly_training_insight`` + inline math.
+#
+# Surfaces three coach-facing views:
+#
+# * ``phase_blocks`` — contiguous runs of same-phase weeks (Base /
+#   Build / Peak / Taper) with week span, workout count, planned
+#   mileage, and the canonical §8 ``phase_kpi_priority`` emphasis
+#   list. Use this to narrate the plan arc ("you're in Build for the
+#   next 4 weeks; the top emphasis is Pace Consistency").
+# * ``volume_curve`` — one row per plan week (planned_runs +
+#   planned_miles_total) for progression and deload narratives.
+# * ``long_run_progression`` — one row per plan week with the longest
+#   planned run (date, miles, canonical run-type key).
+#
+# §19.5 future-week contract extension
+# ------------------------------------
+# ``get_plan_overview`` is purely plan-side — no ``Activity`` table
+# read runs. Because the tool structurally cannot load an actual, the
+# §19.5 future-week "no actuals" rule applies to **every** week in
+# the overview, not just future weeks. If the coach needs actuals
+# for a past/current week, it must call ``get_weekly_plan``.
+#
+# Implementation: thin wrapper over
+# :func:`src.services.plan.plan_overview.build_plan_overview_payload`.
+# The tool has no parameters other than the implicit ``tz`` — the
+# overview is always "the plan, end to end".
+# ---------------------------------------------------------------------------
+
+
+def tool_get_plan_overview(
+    session: Session,
+    internal_user_id: str,
+    *,
+    tz: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Return the V1.6 Phase B 3B.5 end-to-end plan overview payload.
+
+    Args:
+        session: Active SQLAlchemy session.
+        internal_user_id: Internal user UUID string (not Auth0 subject).
+        tz: Optional IANA timezone name. Defaults to UTC. Only affects
+            the ``week_temporality`` stamp on each ``volume_curve``
+            row — plan-side fields are absolute.
+
+    Returns:
+        Either a tool-friendly error envelope
+        (``{"error": "no_plan", ...}`` /
+        ``{"error": "invalid_user_id", ...}``) or the payload produced
+        by :func:`src.services.plan.plan_overview.build_plan_overview_payload`.
+
+    V1.6 contracts enforced by delegation to the service:
+        * §19.5 no-actuals on every week (structural — no activity
+          query runs).
+        * §8 per-phase emphasis list is the canonical table, not a
+          derived restatement.
+        * §7 majority-of-days / plurality rule drives per-week phase
+          resolution inside the volume curve.
+    """
+    import uuid
+
+    try:
+        user_uuid = uuid.UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        return {
+            "error": "invalid_user_id",
+            "message": "internal_user_id must be a UUID string.",
+        }
+
+    tz_value = tz if (isinstance(tz, str) and tz.strip()) else "UTC"
+
+    from src.services.plan.plan_overview import build_plan_overview_payload
+
+    return build_plan_overview_payload(
+        session,
+        user_uuid,
+        tz=tz_value,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tool: get_marathon_projection
 # ---------------------------------------------------------------------------
 
@@ -1281,6 +1367,11 @@ _TOOL_HANDLERS = {
     # §6 planned.* / actual.* namespace isolation and the §19.5
     # future-week payload contract enforced structurally.
     "get_weekly_plan": "get_weekly_plan",
+    # V1.6 Phase B 3B.5 — end-to-end, planned-only overview of the
+    # active plan (phase blocks + volume curve + long-run progression).
+    # No activity query ever runs, so §19.5 future-week "no actuals"
+    # is structurally extended to every week in the overview.
+    "get_plan_overview": "get_plan_overview",
     "get_marathon_projection": "get_marathon_projection",
     "save_coach_preference": "save_coach_preference",
     "update_plan_intake": "update_plan_intake",
@@ -1444,6 +1535,19 @@ def execute_tool(
                 session,
                 internal_user_id,
                 week_start_iso=week_start_raw,
+                tz=tz_val,
+            )
+
+        if handler_key == "get_plan_overview":
+            # V1.6 Phase B 3B.5 — no required arguments. ``tz`` is
+            # optional and only affects the per-week
+            # ``week_temporality`` stamp on the volume curve; every
+            # other field in the payload is absolute.
+            tz_raw = args.get("tz")
+            tz_val = tz_raw if isinstance(tz_raw, str) else None
+            return tool_get_plan_overview(
+                session,
+                internal_user_id,
                 tz=tz_val,
             )
 
