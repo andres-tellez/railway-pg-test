@@ -31,6 +31,9 @@ from src.smartcoach_mobile_coach.run_insight import (
     build_run_execution_block,
     execution_block_to_weekly_plan_shape,
 )
+from src.services.phase.phase_priority import (
+    compute_phase_kpi_priority_for_week,
+)
 from src.services.plan.plan_status import plan_status_for_day
 from src.services.scoring.adherence import (
     WeeklyAdherenceEntry,
@@ -493,6 +496,30 @@ def get_current_plan_week():
                 }
             )
 
+        # V1.6 Phase A item 6: week-level phase_kpi_priority block.
+        # Derived on read from the per-workout ``phase`` labels we
+        # already iterated above (majority-of-days rule per §7 with
+        # later-phase tie-break). Single source of truth (§X.5):
+        # ``src/services/phase/phase_priority.py`` owns the
+        # per-phase emphasis table and the transition-week rule.
+        # Rest days don't carry a phase row — the resolver operates
+        # on training-day evidence only, which matches the spec's
+        # intent for "what emphasis should the coach take this week".
+        phase_kpi_result = compute_phase_kpi_priority_for_week(
+            w.phase for w in workouts
+        )
+        if phase_kpi_result.phase is None:
+            phase_kpi_payload = None
+        else:
+            phase_kpi_payload = {
+                "phase": phase_kpi_result.phase.value,
+                "priority": [
+                    {"kpi_id": entry.kpi_id, "label": entry.label}
+                    for entry in phase_kpi_result.priority
+                ],
+                "day_counts": dict(phase_kpi_result.day_counts),
+            }
+
         # V1.6 Phase A item 5: week-level adherence block. Derived on
         # read (§X.5 policy) from the entries accumulated above.
         # Percents are 0-100 scale, unrounded (callers format per
@@ -522,6 +549,7 @@ def get_current_plan_week():
                     "week_end": week_end.isoformat(),
                     "days": days,
                     "adherence": adherence_payload,
+                    "phase_kpi_priority": phase_kpi_payload,
                 }
             ),
             200,
