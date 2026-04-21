@@ -20,6 +20,9 @@ from src.services.plan.plan_status import (
     derive_violated_rest_day,
     plan_status_for_activity,
 )
+from src.services.scoring.deviation import (
+    compute_deviation_direction_for_activity,
+)
 from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_duration_seconds,
@@ -166,7 +169,12 @@ def build_run_execution_block(
       Derived via
       ``src.services.plan.plan_status.derive_violated_rest_day``.
     * ``planned`` — fields populated at plan-creation time.
-    * ``actual`` — fields derived from the executed activity.
+    * ``actual`` — fields derived from the executed activity. Per
+      spec §6 namespace-isolation, this includes
+      ``deviation_direction`` (V1.6 §5, Phase A item 3) as a nested
+      field — NOT at block top level — because the direction is a
+      property of the executed-vs-planned comparison that the
+      coach reads inside the "ACTUAL" reasoning frame.
 
     Args:
         act: ``Activity`` or duck-typed object with the attributes
@@ -202,6 +210,13 @@ def build_run_execution_block(
         )
     else:
         violated = False
+    # V1.6 §5 Phase A item 3: ``deviation_direction`` is derived on
+    # read from the single-source-of-truth producer. Result lives in
+    # ``actual.*`` per §6 namespace isolation. Returns ``None`` for
+    # all omission cases (steady, tempo until main-block infra lands,
+    # HR missing, duration < 600s, unknown planned type).
+    deviation = compute_deviation_direction_for_activity(act)
+    deviation_value = deviation.value if deviation is not None else None
     return {
         "matched_plan_workout_id": matched_pw_id,
         "plan_status": plan_status.value,
@@ -220,6 +235,7 @@ def build_run_execution_block(
             "pct_below_zone": getattr(act, "pct_below_zone", None),
             "scoring_detail": getattr(act, "scoring_detail", None),
             "average_heartrate": getattr(act, "average_heartrate", None),
+            "deviation_direction": deviation_value,
         },
     }
 
@@ -316,6 +332,7 @@ def execution_block_to_insight_summary_shape(
         "zone_compliance_pct": actual.get("zone_compliance_pct"),
         "pct_above_zone": actual.get("pct_above_zone"),
         "pct_below_zone": actual.get("pct_below_zone"),
+        "deviation_direction": actual.get("deviation_direction"),
         "run_score": actual.get("run_score"),
         "planned_miles": planned.get("miles"),
         "actual_miles": actual.get("miles"),

@@ -96,6 +96,14 @@ def _seed_week_plan_and_activity(session, *, workout_date: date):
         conv_distance=5.0,
         moving_time=2700,
         average_heartrate=138.4,
+        # V1.6 §5 Phase A item 3: HR zone distribution drives
+        # deviation_direction. 100% in-target (Z2) → on_target for
+        # this Easy run.
+        hr_zone_1=0,
+        hr_zone_2=2700,
+        hr_zone_3=0,
+        hr_zone_4=0,
+        hr_zone_5=0,
     )
     session.add(activity)
     session.commit()
@@ -167,6 +175,14 @@ def test_current_week_returns_days_and_execution(
     assert day["violated_rest_day"] is False
     # Same non-duplication contract as plan_status.
     assert "violated_rest_day" not in day["execution"]
+
+    # V1.6 Phase A item 3: deviation_direction lives inside the
+    # ``actual`` namespace (§6 namespace isolation, not a day-level
+    # pairing field). Activity was seeded 100% in Easy target band →
+    # "on_target". The legacy flat-field block does NOT carry it
+    # (new in V1.6 — no pre-existing mobile consumer to preserve).
+    assert day["execution"]["actual"]["deviation_direction"] == "on_target"
+    assert "deviation_direction" not in day  # day level never carries it
 
 
 def test_current_week_day_level_plan_status_no_activity(
