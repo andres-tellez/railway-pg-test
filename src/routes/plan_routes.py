@@ -80,7 +80,25 @@ def _internal_user_uuid(raw) -> uuid.UUID:
     return uuid.UUID(str(raw))
 
 
+def _avg_pace_per_mile_display(activity: Activity) -> str | None:
+    """M:SS/mi from moving time and converted miles when available."""
+    mi = activity.conv_distance
+    mt = activity.moving_time
+    if not mi or mi <= 0 or not mt or mt <= 0:
+        return None
+    sec_per_mi = float(mt) / float(mi)
+    total_sec = int(round(sec_per_mi))
+    m = total_sec // 60
+    s = total_sec % 60
+    if s == 60:
+        m += 1
+        s = 0
+    return f"{m}:{s:02d}/mi"
+
+
 def _execution_payload(activity: Activity) -> dict:
+    avg_hr = activity.average_heartrate
+    avg_hr_out = int(round(avg_hr)) if avg_hr is not None else None
     return {
         "activity_id": int(activity.activity_id),
         "start_date": activity.start_date.isoformat() if activity.start_date else None,
@@ -92,6 +110,8 @@ def _execution_payload(activity: Activity) -> dict:
         "actual_miles": activity.actual_miles,
         "completion_pct": activity.completion_pct,
         "scoring_detail": activity.scoring_detail,
+        "average_heartrate": avg_hr_out,
+        "avg_pace_per_mile": _avg_pace_per_mile_display(activity),
     }
 
 
