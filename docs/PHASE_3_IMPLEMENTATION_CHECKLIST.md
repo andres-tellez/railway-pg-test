@@ -33,7 +33,7 @@
 | ID | Requirement | Status | Scope |
 |----|----|----|----|
 | 0.1 | **Document `null` vs absent convention** in `AGENTIC_COACH.md` Topic 4 — field **present with `null`** for "checked, no value"; field **absent** only when a whole optional section is suppressed | **Done** (2026-04-21) | Docs |
-| 0.2 | **Centralize "is this week past / present / future?"** into one backend utility (e.g. `src/utils/plan_temporal.py::classify_week_temporality(week_start_iso, user_tz)`); all backend + tool code reads from it | **Not started** | Backend (`railway-pg-test`) |
+| 0.2 | **Centralize "is this week past / present / future?"** into one backend utility; all backend + tool code reads from it | **Done** (2026-04-21) — extended the canonical `src/utils/date_helpers.py` with `WeekTemporality` enum, `classify_week_temporality(target_week_start, user_tz, today=None)`, `is_future_week(...)` thin predicate, and `get_week_bounds_for_date(...)` helper. Removed duplicate `_monday_sunday_bounds` from `plan_routes.py`; call sites use the canonical helpers. 23 tests (21 pass + 2 skipped on environments without `tzdata`). | Backend (`railway-pg-test`) |
 | 0.3 | **Centralize zone compliance / `pct_above` / `pct_below` computation** into one function that all scoring + execution-summary paths call; remove any duplicate implementations | **Not started** | Backend |
 | 0.4 | **Grep + replace bare run-type string literals** (`"easy"`, `"tempo"`, `"steady"`, `"recovery"`, `"long"`) with constants from `src/utils/run_type_constants.py`; required across backend Python and mobile TS | **Partial** — 2 comparison sites fixed in `plan_storage_service.py` and `pace/adjustments.py` (2026-04-21). **Still open:** v2 workout-taxonomy raw keys in `workout_placement_engine.py` (`"long_run"`) and pre-normalization raw types in `week_log_service.py` (`"steady", "threshold", "tempo", "interval"`); dict-key usages (~25 files). Remaining work lives in a separate pass. | Backend + mobile |
 | 0.5 | **Pin `classify_turn` / `derive_interaction_mode` / `infer_intent` return values** as typed enums or `Literal[...]` unions in `dialogue_manager.py`; consumers (prompt builder, validator) import from one place | **Done** (2026-04-21) — added `TurnType` / `InteractionMode` / `Intent` `Literal` unions, named constants, frozensets, and `is_action_oriented_exempt(...)` helper (§19.6 single source of truth). Consumers updated: `orchestrator.py`, `run_recap_fastpath.py`. Zero remaining bare-string literals for these enums outside `dialogue_manager.py`. | Backend (`src/smartcoach_mobile_coach/`) |
@@ -238,6 +238,8 @@ Every deterministic field listed in Appendix B of `SMARTCOACH_SYSTEM_SPEC_V1.md`
 | `completion_miles_pct` | Same module as `adherence_runs_pct` | per-run score, weekly adherence, coach payloads |
 | `baseline_status` | `src/services/baseline/baseline_status.py::derive_baseline_status(...)` (new) | plan generator, `get_user_context`, adaptation |
 | `phase_kpi_priority` | `src/services/phase/phase_priority.py::phase_kpi_priority_for(week_start, plan_id)` (new) | `get_weekly_plan`, `get_phase_analysis`, prompt builder |
+| Week temporality (past / current / future) | `src/utils/date_helpers.py::classify_week_temporality(...)` (**landed 2026-04-21, 0.2**) | `get_weekly_plan`, `run_insight.py`, future-week contract enforcement, adaptation gate |
+| Calendar week bounds (Mon–Sun) | `src/utils/date_helpers.py::get_week_bounds_for_date(...)` (**landed 2026-04-21, 0.2**) | `plan_routes.py::/current-week`, any future Mon–Sun range consumer |
 
 > **Enforcement:** Each producer module has 100 % test coverage for the rules in the spec it implements. No other file in the repo re-computes these values. Grep check during code review: a commit that introduces `pct_above` arithmetic outside `deviation.py` fails review.
 
@@ -265,10 +267,10 @@ Tracked here so it is not lost:
 
 Execute in this order — low-risk to higher-risk:
 
-1. **0.1** — Document `null` vs absent convention in `AGENTIC_COACH.md` Topic 4 (docs-only, 5 min).
-2. **0.5** — Pin enums in `dialogue_manager.py` to typed constants (low-risk, enables all subsequent §19.6 work).
-3. **0.2** — Centralize "is future week" utility (enables future-week contract in 3A.15 and 3B.3).
-4. **0.3** — Centralize zone-compliance / `pct_above` / `pct_below` computation (prerequisite for `deviation_direction`).
+1. **0.1** — Document `null` vs absent convention in `AGENTIC_COACH.md` Topic 4 (docs-only, 5 min). **Done 2026-04-21**.
+2. **0.5** — Pin enums in `dialogue_manager.py` to typed constants (low-risk, enables all subsequent §19.6 work). **Done 2026-04-21**.
+3. **0.2** — Centralize "is future week" utility (enables future-week contract in 3A.15 and 3B.3). **Done 2026-04-21**.
+4. **0.3** — Centralize zone-compliance / `pct_above` / `pct_below` computation (prerequisite for `deviation_direction`). **← Next**
 5. **0.4** — Grep + replace bare run-type string literals (enables Steady null-handling safely).
 6. **0.A** — Consolidate `run_insight.py` as single source for `planned.*` / `actual.*` blocks.
 7. **0.B** — One `completion_pct` compute + named `COMPLETION_THRESHOLD = 0.50`.

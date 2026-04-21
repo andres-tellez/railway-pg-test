@@ -6,11 +6,12 @@ Utilities for consistent date handling across the application,
 especially for week-based metrics and comparisons.
 
 Author: SmartCoach Development Team
-Last Updated: October 14, 2025
+Last Updated: 2026-04-21 (V1.6 Pre-Phase A 0.2 — classify_week_temporality added)
 """
 
 from datetime import datetime, date, timedelta
-from typing import Union
+from enum import Enum
+from typing import Optional, Union
 
 
 def normalize_week_date(week_value: Union[str, datetime, date]) -> str:
@@ -75,6 +76,119 @@ def get_week_start_for_date(target_date: Union[str, datetime, date]) -> date:
 
     days_since_monday = target_date.weekday()
     return target_date - timedelta(days=days_since_monday)
+
+
+def get_week_bounds_for_date(
+    target_date: Union[str, datetime, date],
+) -> tuple[date, date]:
+    """
+    Return the (Monday, Sunday) calendar-week bounds for the week containing
+    the given date.
+
+    Single source of truth for "what Mon-Sun window does this date live in?".
+    Callers that previously computed this inline via ``today - weekday()`` +
+    ``+ timedelta(days=6)`` should use this helper so the V1.6 temporal
+    contract stays consistent.
+
+    Args:
+        target_date: Any date within the target week.
+
+    Returns:
+        Tuple ``(monday, sunday)`` of ``date`` objects.
+    """
+    monday = get_week_start_for_date(target_date)
+    return monday, monday + timedelta(days=6)
+
+
+# ============================================================================
+# WEEK TEMPORALITY CLASSIFICATION (V1.6 Pre-Phase A 0.2)
+#
+# Single source of truth for "is this week past / current / future?" decisions.
+# V1.6 §6 future-week payload contract: only past/current weeks may emit
+# actual.* blocks; future weeks are plan-only. Any caller making a past/current/
+# future decision MUST use classify_week_temporality — do not re-derive this
+# classification inline. Spec ref: SMARTCOACH_SYSTEM_SPEC_V1.md §6, §19.5;
+# PHASE_3_IMPLEMENTATION_CHECKLIST 0.2 and X.5.
+# ============================================================================
+
+
+class WeekTemporality(str, Enum):
+    """Classification of a target week relative to the athlete's local today."""
+
+    PAST = "past"
+    CURRENT = "current"
+    FUTURE = "future"
+
+
+def classify_week_temporality(
+    target_week_start: Union[str, datetime, date],
+    user_tz: Optional[str] = None,
+    *,
+    today: Optional[Union[date, datetime]] = None,
+) -> WeekTemporality:
+    """
+    Classify a target week as past / current / future relative to today.
+
+    The target is interpreted as a Monday-to-Sunday calendar week. If the
+    caller passes any date within the target week, the week's Monday is used
+    for comparison (via get_week_start_for_date), so Wednesday/Friday/Sunday
+    inputs all classify the same week identically.
+
+    "Today" is computed in the athlete's IANA timezone when ``user_tz`` is
+    provided (via timezone_helpers.get_today_date_in_timezone). When
+    ``today`` is passed explicitly, it overrides ``user_tz`` and is used as
+    the reference date unchanged — this keeps unit tests deterministic.
+
+    Args:
+        target_week_start: Any date within the target week (ISO string,
+            datetime, or date). Normalized to the Monday of that week.
+        user_tz: IANA timezone name (e.g. "America/New_York"). When None,
+            empty, or unrecognized, UTC is used.
+        today: Optional override for "today" (keyword-only). When provided,
+            ``user_tz`` is ignored.
+
+    Returns:
+        WeekTemporality.PAST when the target week ends strictly before today.
+        WeekTemporality.CURRENT when today falls within the target week.
+        WeekTemporality.FUTURE when the target week starts strictly after today.
+    """
+    target_monday = get_week_start_for_date(target_week_start)
+    target_sunday = target_monday + timedelta(days=6)
+
+    if today is not None:
+        today_date = today.date() if isinstance(today, datetime) else today
+    else:
+        # Local import keeps timezone_helpers off the date_helpers import graph
+        # for callers that don't need tz-aware dates.
+        from src.utils.timezone_helpers import get_today_date_in_timezone
+
+        today_date = get_today_date_in_timezone(user_tz)
+
+    if today_date < target_monday:
+        return WeekTemporality.FUTURE
+    if today_date > target_sunday:
+        return WeekTemporality.PAST
+    return WeekTemporality.CURRENT
+
+
+def is_future_week(
+    target_week_start: Union[str, datetime, date],
+    user_tz: Optional[str] = None,
+    *,
+    today: Optional[Union[date, datetime]] = None,
+) -> bool:
+    """
+    Convenience predicate: True iff the target week is in the future.
+
+    Thin wrapper over classify_week_temporality so call sites that only need
+    the boolean gate (e.g. V1.6 §6 future-week contract: suppress actual.*)
+    do not need to import the enum. Use classify_week_temporality directly
+    when all three branches are needed.
+    """
+    return (
+        classify_week_temporality(target_week_start, user_tz, today=today)
+        == WeekTemporality.FUTURE
+    )
 
 
 def compare_week_dates(
@@ -257,7 +371,7 @@ def get_next_monday(
 
 
 def get_previous_completed_week_range(
-    target_date: Union[date, datetime] = None
+    target_date: Union[date, datetime] = None,
 ) -> tuple[date, date]:
     """
     Get the date range (Monday to Sunday) for the current week that just completed.
