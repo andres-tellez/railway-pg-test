@@ -52,6 +52,11 @@ from src.smartcoach_mobile_coach.plan_guidance_contract import (
 from src.smartcoach_mobile_coach.plan_vs_actual_contract import (
     plan_vs_actual_contract_section,
 )
+from src.smartcoach_mobile_coach.session_summary_read import (
+    has_prior_assistant_message,
+    read_most_recent_session_summary,
+    session_summary_section,
+)
 from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_intake
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
@@ -1523,6 +1528,55 @@ def _thread_led_system_section(ctx: DerivedThreadCoachContext) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _prior_session_summary_section(
+    session: Session,
+    internal_user_id: str,
+    conversation_history: List[Dict[str, str]],
+    directive: ResponseDirective,
+    *,
+    plan_creation_mode: bool,
+) -> str:
+    """
+    V1.6 Phase C 3C.10–3C.13 — prior session summary read path.
+
+    Injects the most recent curated session summary (if one exists)
+    into the system prompt on the **first-ever** turn of a brand-new
+    conversation, so the coach continues the relationship instead of
+    starting cold.
+
+    Scope gates (all must hold):
+
+    * ``plan_creation_mode`` is False — intake turns run their own
+      restricted prompt and do not benefit from cross-session context.
+    * ``turn_type == "opening"`` — the dialogue classifier marked
+      this as a conversation open.
+    * **No prior assistant message exists in this thread** —
+      distinguishes a brand-new thread (inject) from an
+      ``opening``-classified topic reset inside an ongoing thread
+      (no inject; the recent messages already provide continuity).
+
+    Returns ``""`` when any gate fails, when the reader returns
+    ``None`` (no table yet / no summary for this user / defensive
+    fallback), or when the user_id is missing. ``_join_nonempty_system_sections``
+    drops empty sections silently.
+
+    The writer (end-of-session summary producer, Layer B) lives on
+    the Phase F roadmap — see 3C.14. This read path is complete
+    today and will start emitting summaries with zero code change
+    the moment Phase F lands the ``session_summaries`` table.
+    """
+    if plan_creation_mode:
+        return ""
+    if getattr(directive, "turn_type", None) != TURN_OPENING:
+        return ""
+    if has_prior_assistant_message(conversation_history):
+        return ""
+    if not internal_user_id:
+        return ""
+    summary = read_most_recent_session_summary(session, internal_user_id)
+    return session_summary_section(summary)
+
+
 def _user_context_opening_nudge_section(
     directive: ResponseDirective,
     *,
@@ -1936,6 +1990,21 @@ def run_mobile_agent_turn(
             # intake turns have no plan_status, no adherence band, and
             # no coaching "next action" to enforce.
             coach_tone_contract_section(),
+            # 3C.10–3C.13: prior session summary read path. Injected
+            # only on the first-ever turn of a new conversation
+            # (turn_type == "opening" AND no prior assistant message
+            # in this thread) and only when a curated summary exists
+            # in the `session_summaries` table. Writer (Layer B) is
+            # Phase F — this read path degrades silently to "no
+            # summary" whenever the table is missing / empty, so it
+            # is safe to leave wired in today.
+            _prior_session_summary_section(
+                session,
+                internal_user_id,
+                conversation_history,
+                response_directive,
+                plan_creation_mode=plan_creation_mode,
+            ),
             prefs_block,
             _device_anchor_system_section(anchor_local_date, client_timezone),
             _hr_calibration_system_section(session, internal_user_id),
