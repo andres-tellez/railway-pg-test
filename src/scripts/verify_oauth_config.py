@@ -191,8 +191,9 @@ def verify_oauth_config():
         print("Next steps:")
         print("1. Verify these settings in Strava Developer Portal:")
         print("   https://www.strava.com/settings/api")
-        print("2. Use the verification checklist:")
-        print("   docs/strava-oauth-verification-checklist.md")
+        print(
+            "2. Cross-check OAuth settings against docs/API_DOCUMENTATION.md and the Strava developer portal."
+        )
         return 0
     else:
         if issues:

@@ -1,15 +1,265 @@
-# SmartCoach System Spec — Master Specification V1
+# SmartCoach System Spec — Master Specification V1.5
 
-> **Version:** 1.2
+> **Version:** 1.5
 > **Date:** April 2026
 > **Status:** Approved — Complete Master Specification
 > **Scope:** Globally consistent, adaptive coaching system — based on all architectural decisions made.
 > **Note:** Implementation approach to be decided separately based on current codebase state.
+> **Other docs:** For how legacy markdown relates to this file (avoid drift), see [`DOCUMENTATION_GOVERNANCE.md`](./DOCUMENTATION_GOVERNANCE.md).
+
+---
+
+## Document scope and reviewer charter (non-normative)
+
+> **Relationship to the rest of this document:** The subsections below reproduce the **original design charter** (purpose, principles, and reviewer expectations) in the wording used during design. **Normative** product behavior is defined in **Sections 1–18** and **Appendices A–C** that follow. If anything in this charter disagrees with a numbered section, the **numbered section** prevails for implementation.
+
+### 🧠 1. PURPOSE
+
+This is a fully designed adaptive running coach system.
+
+It is:
+
+- Deterministic
+- Data-driven
+- HR-based
+- Adaptive week-to-week
+
+It has been designed through many constrained decisions.
+
+**Your job is to:**
+
+- Validate internal consistency
+- Identify missing logic or ambiguity
+- Evaluate implementation readiness
+
+Do **not** summarize or rewrite this charter when using it as a checklist against the spec sections that follow.
+
+### 🧠 2. CORE PRINCIPLES
+
+1. HR controls effort (primary signal)
+2. System computes → LLM explains (LLM does **not** calculate)
+3. Run type = HR + intent
+4. Adaptive > rigid
+5. Deterministic plan generation
+6. Plan adjusts over time (not static)
+7. Simplicity in UX, precision in backend
+8. Safety constraints always enforced
+9. Performance ≠ Adherence (separate dimensions)
+
+### ❤️ 3. HEART RATE SYSTEM
+
+- HR zones are visible
+- HR zones are adaptive (not fixed)
+
+**Max HR:**
+
+- User input optional
+- Age-based estimate fallback
+- Continuously refined from real run data
+
+If estimated: the system must communicate: *“We’ll start with an estimate and refine over time.”* (See also Section 2 for the full prescribed product copy when max HR is inferred.)
+
+The system must recalibrate based on observed HR behavior.
+
+### 🏃 4. RUN MODEL
+
+**Run types:**
+
+- Easy (Z1–Z2)
+- Recovery (Z1, stricter than Easy)
+- Steady (high Z2 → low Z3)
+- Tempo (Z3–Z4)
+- Long (Z2, duration-driven)
+
+**Modifier:**
+
+- Strides (not a run type)
+
+**Definition:** Run = HR + intent (purpose + duration)
+
+### 📏 5. TOLERANCE SYSTEM
+
+**Measured by:**
+
+- % time in zone (time-based)
+
+**Tracks:**
+
+- % in zone
+- % above
+- % below
+
+**Rules:**
+
+- Type-specific tolerance
+- Direction matters:
+  - Above (too hard) → higher penalty
+  - Below (too easy) → lower penalty
+
+**Principle:** Tolerance = soft guardrails, not strict pass/fail
+
+### 🔁 6. PLAN VS EXECUTION
+
+Each run has:
+
+- Planned type
+- Executed type
+
+**System:**
+
+- Classifies execution
+- Measures deviation
+
+**Coaching:** Focus = gap between plan and execution
+
+### 📊 7. KPI SYSTEM
+
+**Core KPI:** Zone Compliance (% time in target zone)
+
+**Type-specific KPIs**
+
+- **Easy / Long:** HR Drift; Aerobic Efficiency
+- **Tempo / Steady:** Pace Consistency
+- **Recovery:** Strict compliance
+
+**Supporting detail:** Time-in-zone breakdown — drill-down only; **not** used for scoring (see Section 7).
+
+**Separate dimension — Adherence (completion):** Tracks if the run was completed; **not** part of performance score; **does** influence adaptation.
+
+**Excluded (V1):** HR variability; duration as KPI; RPE
+
+### 📈 8. KPI AGGREGATION
+
+- Per-run evaluation
+- Weekly aggregation
+- Per-run-type trends
+
+**Principle:** Improvement = trend within run type
+
+### 🟢🟡🔴 9. SCORING SYSTEM
+
+- Single score per run
+- Three levels: Green / Yellow / Red
+
+**Primary driver:** Zone compliance
+
+**Secondary refinement:** Drift; consistency; efficiency; direction (too hard vs too easy)
+
+**Rules:** Too hard penalized more than too easy; thresholds fixed (V1); thresholds vary by run type
+
+### 🔄 10. ADAPTATION SYSTEM
+
+**Loop:** Plan → Execute → Analyze → Adjust
+
+**Adjustments apply to:** Next week only (not full rebuild)
+
+**Inputs:** KPIs; adherence; trends
+
+**Rules:** Adjust volume, intensity, structure; must be incremental (no drastic jumps); must preserve phase structure (see Section 16)
+
+### 🧭 11. PHASE SYSTEM
+
+**Phases:** Base; Build; Peak; Taper
+
+**Rules:** Time-based (V1); global durations
+
+**Intensity rules:**
+
+- Base → 0 quality runs
+- Build → introduce 1
+- Peak → up to 2
+- Taper → reduced intensity
+
+### 📊 12. BASELINE SYSTEM
+
+**Source:** Factual data only; last 4 weeks
+
+**Inputs:** Weekly mileage; longest run
+
+**Definition:** Baseline = capacity + endurance
+
+**Missing data handling:** If insufficient data → assume conservative baseline; beginner-safe plan; no compression (see Section 12)
+
+### 📅 13. PLAN DURATION
+
+**Default:** ~18 weeks
+
+**Compression:** Rule-based (tiered); requires **both** strong weekly mileage **and** strong long run
+
+**Minimum:** 10–12 weeks (hard floor)
+
+**Principle:** Personalization within safety boundaries
+
+### 📆 14. WEEKLY STRUCTURE
+
+**Frequency:** Min 3 runs/week; max 6; ≥1 rest day required
+
+User selects preference; **system validates and adjusts if unsafe.**
+
+**Weekly components:** 1 Long Run (mandatory); 0–2 Quality runs (phase-based)
+
+**Quality rules:** No back-to-back quality; spaced by easy/recovery day; second quality only if phase allows (Build/Peak), frequency ≥ 5 runs, baseline supports (see Section 14)
+
+**Long run rules:** Long run = weekly anchor; day after **must** be recovery run **or** rest day (mandatory)
+
+### ⚙️ 15. PLAN GENERATION
+
+- Deterministic (same inputs → same plan)
+- Full plan generated upfront
+
+**UX:** Only current week shown
+
+**Principle:** Plan ahead → focus now
+
+### 🧱 16. WEEK CONSTRUCTION ENGINE
+
+1. Place Long Run (anchor)
+2. Place recovery AFTER Long Run
+3. Place Quality #1 early week
+4. Place Quality #2 mid-week (if applicable)
+5. Fill remaining with Easy/Recovery
+
+**Frequency scaling**
+
+- 3 runs: Long + 1 Quality + 1 Easy
+- 4 runs: Long + 1 Quality + 2 Easy
+- 5 runs: Long + 1–2 Quality + Easy
+- 6 runs: Long + 2 Quality + Easy/Recovery
+
+### 🔄 17. ADAPTATION CONSTRAINTS
+
+- No drastic weekly changes
+- Maintain phase integrity
+- Adjust gradually
+
+### 🧠 18. SYSTEM ENFORCEMENT RULE
+
+All metrics must be computed by backend logic.
+
+**LLM must not:** calculate metrics; infer missing values; replace system logic
+
+### 🔥 FINAL RESULT
+
+This is a complete adaptive coaching system. It includes HR-based control; deterministic plan generation; phase-based progression; baseline-driven personalization; KPI-driven evaluation; adaptive weekly adjustment. The system behaves like a real coach.
+
+### 🎯 WHAT CURSOR MUST DO
+
+1. Validate internal consistency
+2. Identify missing logic
+3. Identify edge cases
+4. Identify implementation risks
+5. Ensure deterministic behavior holds
+6. Ensure adaptation does not break structure
+
+### 🚀 OPTIONAL FOLLOW-UP
+
+Design: data model (Postgres); core services (Python); execution pipeline; weekly generation engine — tracked in code and tests; Appendix C lists review tasks.
 
 ---
 
 ## Table of Contents
 
+0. [Document scope and reviewer charter (non-normative)](#document-scope-and-reviewer-charter-non-normative)
 1. [Core Philosophy](#1-core-philosophy)
 2. [Control Model](#2-control-model)
 3. [Run Model](#3-run-model)
@@ -30,6 +280,7 @@
 18. [System Principles](#18-system-principles)
 19. [Appendix A — Phase Distribution](#appendix-a--phase-appropriate-run-type-distribution)
 20. [Appendix B — Deterministic vs LLM Boundary](#appendix-b--deterministic-vs-llm-boundary)
+21. [Appendix C — Specification review checklist](#appendix-c--specification-review-checklist-implementation)
 
 ---
 
@@ -77,6 +328,14 @@ Pace is an optional reference signal. It is:
 | Real run data (ongoing) | Always used to continuously refine the estimate |
 
 > **Key Principle:** Max HR is **dynamic, not fixed.** It is continuously refined from actual run data. The system improves its accuracy over time regardless of initial input quality.
+
+### User Communication (Estimated Max HR)
+
+When the athlete has **not** provided a measured max HR and the system is using an **age-based or default estimate**, the product must clearly set expectations, for example:
+
+> *“We’ll start with an estimate and refine it over time as we learn from your runs.”*
+
+This is required whenever the initial max HR is inferred rather than user-supplied from a test or known value.
 
 ---
 
@@ -237,6 +496,8 @@ The LLM explains that gap in human terms. It does not re-classify runs, override
 | Time-in-Zone Breakdown | Z1 / Z2 / Z3 distribution across the full run |
 
 > This detail is shown only in the expanded drill-down view — never on the primary run card.
+
+**Scoring boundary:** The per-zone time breakdown (Z1 / Z2 / Z3 / …) is **for education and drill-down context only**. It is **not** a separate scoring input beyond the signals already defined in this section (zone compliance, type-specific KPIs, and direction-aware deviation). Scoring must not double-count the same underlying HR samples under a different label.
 
 ### Adherence / Completion (Separate Dimension)
 
@@ -411,6 +672,18 @@ The baseline uses **factual, recent data only** — no self-reported inputs, no 
 - Whether plan compression is safe (see Section 13)
 - Phase week allocations (see Section 11)
 
+### Insufficient or Missing Baseline Data
+
+When the last **4 weeks** do not contain enough factual running history to infer capacity and endurance reliably (e.g. new athlete, sparse uploads, or large gaps):
+
+| Rule | Behavior |
+|---|---|
+| **Conservative default** | Assume a **beginner-safe** capacity and long-run ceiling until data accumulates |
+| **No compression** | Plan length stays at or toward the **standard ~18-week** window — compression (Section 13) is **not** allowed until baseline signals are strong enough |
+| **No aggressive personalization** | Early plans favor **structure and safety** over squeezing volume or intensity |
+
+> **Principle:** Missing data defaults to **caution**, not optimism.
+
 ---
 
 ## 13. Plan Duration Logic
@@ -478,7 +751,21 @@ These are system-enforced rules, not suggestions:
 | Long Run day | Flexible — user preference (guided, not locked) |
 | Weekly frequency | User preference within bounds (3–6 runs/week) |
 
+The athlete chooses long-run day and weekly frequency **within** the bounds above. If a preference would violate safety rules (rest minimum, long-run anchor, quality spacing, or phase rules), the system **adjusts the week layout** to the nearest valid structure and communicates what changed.
+
 > **Principle:** Same structure, different density. A 3-run week and a 6-run week follow the same structural logic — they differ only in how many Easy runs fill the remaining slots.
+
+### Second Quality Run (When Two Quality Runs Exist)
+
+A **second** quality (Tempo) session in the same calendar week is allowed **only if all** of the following are true:
+
+| Gate | Requirement |
+|---|---|
+| **Phase** | **Build** or **Peak** only — not Base or Taper (see Section 11 and Appendix A) |
+| **Frequency** | **≥ 5** runs scheduled for that week (4-run weeks allow at most **one** quality) |
+| **Baseline** | Baseline signals (Section 12) support the added intensity — if baseline is thin or missing, the system holds at **one** quality regardless of frequency |
+
+Quality runs must still obey **no back-to-back quality**, **minimum recovery spacing** between quality sessions (Appendix B), and calendar placement rules (first quality early, second mid-week).
 
 ---
 
@@ -534,6 +821,16 @@ Adaptation modifies upcoming weeks only. The adjustment scope is targeted — ne
 
 > **Principle:** Plans guide — adaptation personalizes. The plan sets the structure; execution data shapes the future.
 
+### Adaptation Rate and Phase Integrity
+
+| Rule | Description |
+|---|---|
+| **Incremental changes** | Week-over-week adjustments are **bounded** — no drastic jumps in volume, intensity, or structure in a single step |
+| **Preserve phase intent** | Adaptation **reweights** within the current phase’s allowed mix; it does **not** silently rewrite the athlete into a different phase or violate phase-governed quality caps |
+| **Structure preserved** | Long-run anchor, rest minimums, and quality spacing invariants (Sections 14–17, Appendix B) remain **hard** — adaptation works **inside** them |
+
+Cap magnitudes for volume and pace (and any other tunables) are **implementation-defined** but must be documented and enforced as hard limits in code.
+
 ---
 
 ## 17. Weekly Construction Engine
@@ -569,6 +866,7 @@ Adaptation modifies upcoming weeks only. The adjustment scope is targeted — ne
 - Recovery or Rest always follows the Long Run
 - Quality runs are never placed back-to-back
 - Phase rules govern whether 0, 1, or 2 quality runs appear
+- A second quality run appears only when the **Second Quality Run** gates in Section 14 are satisfied
 
 ---
 
@@ -646,6 +944,21 @@ A clear, enforceable boundary. This must not drift during implementation.
 
 ---
 
+## Appendix C — Specification review checklist (implementation)
+
+Use this list when validating internal consistency, edge cases, and implementation readiness against the codebase. It does not change product rules above; it ensures they are **enforced** deterministically.
+
+1. **Internal consistency** — No section contradicts Appendix B (system vs LLM ownership).
+2. **Missing logic** — Every narrative rule in Sections 1–17 maps to a deterministic function or explicit “not yet implemented” gap.
+3. **Edge cases** — Cold-start baseline (Section 12), race week, taper, missing HR, and single-run weeks behave safely.
+4. **Implementation risks** — LLM prompt drift, double-counting KPIs, or bypassing validation on propose/apply paths.
+5. **Determinism** — Same inputs → same plan and same scores; LLM output cannot become a source of truth for metrics.
+6. **Adaptation safety** — Weekly changes stay incremental (Section 16); invariants in Sections 14–17 and Appendix B are never broken.
+
+**Optional engineering follow-up** (outside this document’s normative rules): database schema (PostgreSQL), service boundaries (Python), ingestion and execution pipeline wiring, and automated tests for the week construction engine and adaptation caps.
+
+---
+
 ## Implementation status — backend Phase 1
 
 Validated implementation checklist (canonical run types, plan ↔ activity match, execution classification + score, completion fields, `current-week` + coach surfaces): **[`PHASE_1_IMPLEMENTATION_CHECKLIST.md`](./PHASE_1_IMPLEMENTATION_CHECKLIST.md)**.
@@ -656,4 +969,4 @@ Plan tab + **`GET /api/plan/current-week`** + mobile weekly UI (and gaps vs an e
 
 ---
 
-*SmartCoach System Spec V1.2 — Master Specification. Complete and approved. Implementation decisions to follow based on current codebase inventory.*
+*SmartCoach System Spec V1.5 — Master Specification. Complete and approved. Implementation decisions to follow based on current codebase inventory.*

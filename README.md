@@ -94,15 +94,14 @@ We’ve added a skeleton workflow in `.github/workflows/cron-sync.yml` that:
 
 ## 📚 Documentation
 
-### Strava Production Readiness
-- **Main Checklist:** [`docs/strava-production-readiness.md`](docs/strava-production-readiness.md)
-- **Process Guide:** [`docs/strava-production-process-guide.md`](docs/strava-production-process-guide.md) - Complete walkthrough
-- **OAuth Verification:** [`docs/strava-oauth-verification-checklist.md`](docs/strava-oauth-verification-checklist.md)
-- **Verification Script:** `python src/scripts/verify_oauth_config.py`
+Canonical docs under [`docs/`](docs/):
 
-### Other Documentation
-See [`docs/`](docs/) directory for architecture guides, API docs, and setup instructions.
-- Prod release runbook: [`docs/prod-release-workflow.md`](docs/prod-release-workflow.md)
+- **Product spec:** [`docs/SMARTCOACH_SYSTEM_SPEC_V1.md`](docs/SMARTCOACH_SYSTEM_SPEC_V1.md)
+- **API:** [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md)
+- **Phase checklists:** [`docs/PHASE_1_IMPLEMENTATION_CHECKLIST.md`](docs/PHASE_1_IMPLEMENTATION_CHECKLIST.md), [`docs/PHASE_2_IMPLEMENTATION_CHECKLIST.md`](docs/PHASE_2_IMPLEMENTATION_CHECKLIST.md)
+- **How docs relate:** [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md)
+
+**OAuth helper:** `python src/scripts/verify_oauth_config.py`
 
 ---
 
@@ -116,7 +115,7 @@ railway-pg-test/
 │   ├── services/            → Business logic
 │   ├── db/                  → Database models + sessions
 │   └── utils/               → Utility functions
-├── docs/                    → Documentation (see above)
+├── docs/                    → Product spec, API doc, phase checklists (see Documentation)
 ├── schema.sql               → Creates core DB tables
 ├── run.py                   → Runs the app
 ├── requirements.txt

@@ -6,7 +6,7 @@ pipeline (data collection, insights, validation, storage). The end-to-end plan
 generation logic now lives under
 `src/services/training_plan/v2/plan_generation_orchestrator_v2.py`.
 
-Architecture Documentation: docs/training-plan-architecture-v3.md
+Product spec: docs/SMARTCOACH_SYSTEM_SPEC_V1.md — API: docs/API_DOCUMENTATION.md
 """
 
 from .data_collection_service import DataCollectionService
