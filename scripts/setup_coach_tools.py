@@ -326,10 +326,18 @@ SEED_TOOLS = [
         "sort_order": 15,
     },
     {
+        # DEPRECATED V1.6 (PHASE_3_IMPLEMENTATION_CHECKLIST 0.C):
+        # Registration is preserved so existing LLM flows keep working, but
+        # the description now steers the model toward the orientation path
+        # only. The V1.7 replacement will be `get_weekly_plan`
+        # (AGENTIC_COACH.md Topic 9). Do not add new callers or extend this
+        # description with new capabilities.
         "name": "get_weekly_training_insight",
         "display_name": "Get Weekly Training Insight",
         "category": "training_progress",
         "description": (
+            "[DEPRECATED — will be replaced by get_weekly_plan in a future release; "
+            "prefer get_weekly_plan when available.] "
             "Latest precomputed weekly insight. **Default (coach):** orientation only — "
             "`week_start`, `week_end`, `overall_band` (`insight_detail_level` = `orientation`); "
             "no per-KPI numbers, deltas, zone charts, or run counts. "
