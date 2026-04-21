@@ -469,6 +469,59 @@ SEED_TOOLS = [
         "sort_order": 37,
     },
     {
+        "name": "get_phase_analysis",
+        "display_name": "Get Phase Analysis",
+        "category": "plan_analysis",
+        "description": (
+            "V1.6 per-run-type KPI trend for a given training phase (Base / Build / Peak / Taper) "
+            "through today. Surfaces `phase_kpi_priority` (the §8 ordered emphasis list the coach "
+            "should lead with for this phase), `phase_weeks` (total/completed/in_progress/future with "
+            "phase_temporality), `phase_window` (start/end/evaluated_through), and `by_run_type` — for "
+            "each canonical run-type (easy/recovery/steady/tempo/long) that appears in the phase: planned "
+            "vs matched run counts, planned/actual miles totals, zone_compliance_pct avg + weekly trend "
+            "series, completion_miles_pct avg, deviation_direction distribution (too_hard/too_easy/"
+            "on_target/null), and run_score distribution (green/yellow/red/null). All actual-side "
+            "values come from the same canonical producer as `get_run_summary` and `get_weekly_plan`. "
+            "Future phase-weeks contribute no execution data (§19.5 extension)."
+        ),
+        "when_to_call": (
+            "User asks about how a phase is going ('how is my Base phase going'), phase-level KPI trends "
+            "('is my Tempo compliance improving through Build'), or wants a summary of phase-to-date "
+            "execution quality by run type. Prefer this over summing multiple `get_run_summary` calls. "
+            "`phase_id` is required (Base / Build / Peak / Taper, case-insensitive)."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "phase_id": {
+                    "type": "string",
+                    "description": (
+                        "Required. One of Base / Build / Peak / Taper (case-insensitive)."
+                    ),
+                },
+                "tz": {
+                    "type": "string",
+                    "description": (
+                        "Optional IANA timezone for resolving 'today' (phase-to-date cutoff). "
+                        "Defaults to UTC."
+                    ),
+                },
+            },
+            "required": ["phase_id"],
+        },
+        "returns_description": (
+            "plan_id, plan_name, phase, phase_kpi_priority, phase_weeks (total/completed/"
+            "in_progress/future/completion_pct/phase_temporality), phase_window (start/end/"
+            "evaluated_through), by_run_type{run_type_key -> {run_count_planned/matched, "
+            "miles_planned_total/actual_total, zone_compliance_pct{avg,trend[]}, "
+            "completion_miles_pct_avg, deviation_direction_distribution, run_score_distribution, "
+            "run_type}}."
+        ),
+        "data_source": "plans + plan_workouts + matched activities via build_run_execution_block",
+        "is_enabled": True,
+        "sort_order": 38,
+    },
+    {
         "name": "get_training_kpis",
         "display_name": "Get Training KPIs",
         "category": "training_progress",
