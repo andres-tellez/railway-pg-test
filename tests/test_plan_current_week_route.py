@@ -199,6 +199,190 @@ def test_current_week_returns_days_and_execution(
     assert adherence["actual_miles_matched_total"] == 5.0
 
 
+def test_current_week_emits_phase_kpi_priority_block(
+    client,
+    auth_header,
+    plan_routes_db,
+    monkeypatch,
+):
+    """
+    V1.6 Phase A item 6: GET /api/plan/current-week must emit a
+    week-level ``phase_kpi_priority`` block with ``phase``,
+    ``priority`` (ordered kpi_id + label list), and ``day_counts``.
+    Two Build + one Base transition week → Build wins (plurality).
+    """
+    plan_routes_db.add(UserAthleteLink(user_id=str(DEFAULT_USER_ID), athlete_id=99908))
+    plan = Plan(
+        user_id=DEFAULT_USER_ID,
+        plan_name="Phase transition week",
+        race_date=date(2026, 6, 15),
+        race_distance="Half",
+        is_active=True,
+    )
+    plan_routes_db.add(plan)
+    plan_routes_db.flush()
+    plan_routes_db.add(
+        PlanWorkout(
+            plan_id=plan.id,
+            date=date(2026, 4, 20),
+            workout_type="Easy Run",
+            description="Easy",
+            miles=5.0,
+            intensity="E",
+            run_type_key="easy",
+            phase="Base",
+        )
+    )
+    plan_routes_db.add(
+        PlanWorkout(
+            plan_id=plan.id,
+            date=date(2026, 4, 22),
+            workout_type="Tempo",
+            description="Tempo",
+            miles=6.0,
+            intensity="T",
+            run_type_key="endurance",
+            phase="Build",
+        )
+    )
+    plan_routes_db.add(
+        PlanWorkout(
+            plan_id=plan.id,
+            date=date(2026, 4, 24),
+            workout_type="Long",
+            description="Long",
+            miles=10.0,
+            intensity="E",
+            run_type_key="long",
+            phase="Build",
+        )
+    )
+    plan_routes_db.commit()
+
+    monkeypatch.setattr(
+        "src.routes.plan_routes.get_today_date_in_timezone",
+        lambda _tz: date(2026, 4, 26),
+    )
+
+    resp = client.get("/api/plan/current-week?tz=UTC", headers=auth_header())
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert "phase_kpi_priority" in data
+    block = data["phase_kpi_priority"]
+    # 2 Build + 1 Base → Build wins by plurality.
+    assert block["phase"] == "Build"
+    # §8 Build priority: Pace Consistency (Tempo) → Quality zone →
+    # HR Drift, in that order.
+    priority = block["priority"]
+    assert len(priority) == 3
+    assert priority[0]["kpi_id"] == "pace_consistency_tempo"
+    assert priority[0]["label"] == "Pace Consistency (Tempo)"
+    assert priority[1]["kpi_id"] == "quality_zone_compliance"
+    assert priority[2]["kpi_id"] == "hr_drift"
+    assert block["day_counts"] == {"Base": 1, "Build": 2}
+
+
+def test_current_week_phase_kpi_priority_tie_goes_to_later_phase(
+    client,
+    auth_header,
+    plan_routes_db,
+    monkeypatch,
+):
+    """
+    V1.6 §7 transition rule: 2 Base + 2 Build tie → Build wins (later
+    phase). Route must surface Build's §8 priority list.
+    """
+    plan_routes_db.add(UserAthleteLink(user_id=str(DEFAULT_USER_ID), athlete_id=99909))
+    plan = Plan(
+        user_id=DEFAULT_USER_ID,
+        plan_name="Phase tie week",
+        race_date=date(2026, 6, 15),
+        race_distance="Half",
+        is_active=True,
+    )
+    plan_routes_db.add(plan)
+    plan_routes_db.flush()
+    for i, (d, ph) in enumerate(
+        [
+            (date(2026, 4, 20), "Base"),
+            (date(2026, 4, 21), "Base"),
+            (date(2026, 4, 23), "Build"),
+            (date(2026, 4, 25), "Build"),
+        ]
+    ):
+        plan_routes_db.add(
+            PlanWorkout(
+                plan_id=plan.id,
+                date=d,
+                workout_type=f"W{i}",
+                description=f"W{i}",
+                miles=4.0,
+                intensity="E",
+                run_type_key="easy",
+                phase=ph,
+            )
+        )
+    plan_routes_db.commit()
+
+    monkeypatch.setattr(
+        "src.routes.plan_routes.get_today_date_in_timezone",
+        lambda _tz: date(2026, 4, 26),
+    )
+
+    resp = client.get("/api/plan/current-week?tz=UTC", headers=auth_header())
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    block = data["phase_kpi_priority"]
+    assert block["phase"] == "Build"
+    assert block["day_counts"] == {"Base": 2, "Build": 2}
+
+
+def test_current_week_phase_kpi_priority_null_on_empty_week(
+    client,
+    auth_header,
+    plan_routes_db,
+    monkeypatch,
+):
+    """
+    V1.6 Phase A item 6: empty week (no workouts in range) must
+    surface ``phase_kpi_priority: null`` — the coach must NOT
+    fabricate an emphasis without evidence.
+    """
+    plan = Plan(
+        user_id=DEFAULT_USER_ID,
+        plan_name="Off week",
+        race_date=date(2026, 6, 1),
+        race_distance="10K",
+        is_active=True,
+    )
+    plan_routes_db.add(plan)
+    plan_routes_db.flush()
+    plan_routes_db.add(
+        PlanWorkout(
+            plan_id=plan.id,
+            date=date(2026, 5, 1),
+            workout_type="Easy",
+            description="Far away",
+            miles=3.0,
+            intensity="E",
+            run_type_key="easy",
+            phase="Base",
+        )
+    )
+    plan_routes_db.commit()
+
+    monkeypatch.setattr(
+        "src.routes.plan_routes.get_today_date_in_timezone",
+        lambda _tz: date(2026, 4, 22),
+    )
+
+    resp = client.get("/api/plan/current-week?tz=UTC", headers=auth_header())
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert data["days"] == []
+    assert data["phase_kpi_priority"] is None
+
+
 def test_current_week_adherence_missed_long_run_medium_band(
     client,
     auth_header,
