@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from src.smartcoach_mobile_coach.dialogue_manager import INTENT_SPLIT_DETAIL
 from src.smartcoach_mobile_coach.run_recap_comparison_bundle import (
     build_comparison_sessions_facts_only,
     run_recap_comparison_bundle_enabled,
@@ -165,7 +166,7 @@ def wants_split_detail_fastpath(intent: str) -> bool:
     """Allow split-detail fast path when intent is already known."""
     if not _split_fastpath_enabled():
         return False
-    return (intent or "").strip() == "split_detail"
+    return (intent or "").strip() == INTENT_SPLIT_DETAIL
 
 
 def prefetch_split_detail(

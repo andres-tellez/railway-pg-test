@@ -33,6 +33,7 @@ from src.db.dao.plans_dao import create_plan
 from src.db.dao.plan_workouts_dao import insert_batch
 from src.db.dao.user_profile_dao import get_user_profile
 from src.db.models.plans import Plan
+from src.utils.run_type_constants import RUN_TYPE_LONG
 from src.services.training_plan.workout_detail_rules import (
     INTENSITY_MAP,
     FOCUS_TAGS,
@@ -464,7 +465,7 @@ class PlanStorageService:
         # - Build: Steady pace (S) - slightly faster than Easy
         # - Peak: Easy pace (E) + optional M-finish segments (M)
         # - Taper: Easy pace (E)
-        if run_type_key == "long":
+        if run_type_key == RUN_TYPE_LONG:
             if PlanStorageService._has_marathon_finish(segments):
                 intensity = "M"  # Long run with M finish (Peak phase) - overrides Build
             elif phase == PHASE["BUILD"]:
