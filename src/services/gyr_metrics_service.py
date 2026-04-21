@@ -29,6 +29,7 @@ Last Updated: October 21, 2025
 
 from typing import Dict, List
 from sqlalchemy.orm import Session
+from src.services.scoring.completion import compute_completion_pct
 from src.utils.logger import get_logger
 from src.utils.date_helpers import normalize_week_date
 
@@ -132,11 +133,13 @@ class GYRMetricsService:
             # Get planned miles from training plan for this week
             planned_miles = goals_by_week.get(week_normalized, 0)
 
-            # Calculate percentage of plan completion (miles vs miles)
-            if planned_miles > 0:
-                completion_pct = (actual_miles / planned_miles) * 100
-            else:
-                completion_pct = 0
+            # V1.6 0.B: single canonical completion_pct producer.
+            # ``compute_completion_pct`` returns None for undefined
+            # completion (no plan / zero planned miles); the
+            # ``actual_miles == 0`` status branch below handles the
+            # "gray" path, so coercing None → 0 here is safe.
+            raw_completion = compute_completion_pct(actual_miles, planned_miles)
+            completion_pct = raw_completion if raw_completion is not None else 0
 
             # Determine status based on plan completion
             if actual_miles == 0:

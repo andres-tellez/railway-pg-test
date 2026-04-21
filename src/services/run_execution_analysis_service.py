@@ -19,6 +19,7 @@ from sqlalchemy import and_, text
 from sqlalchemy.orm import Session
 
 from src.db.models.activities import Activity
+from src.services.scoring.completion import compute_completion_pct
 from src.services.scoring.zone_compliance import (
     zone_distribution_from_activity,
     zone_metrics_for_type,
@@ -312,9 +313,10 @@ def analyze_activity_execution(
     actual_miles = (
         float(activity.conv_distance) if activity.conv_distance is not None else None
     )
-    completion_pct = None
-    if planned_miles and planned_miles > 0 and actual_miles is not None:
-        completion_pct = round((actual_miles / planned_miles) * 100.0, 2)
+    raw_completion_pct = compute_completion_pct(actual_miles, planned_miles)
+    completion_pct = (
+        round(raw_completion_pct, 2) if raw_completion_pct is not None else None
+    )
 
     scoring_detail = {
         "schema_version": 1,
