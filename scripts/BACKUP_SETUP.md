@@ -144,5 +144,4 @@ For a typical 10 GB database:
 5. ✅ Test restore process (on staging database)
 6. ✅ Document recovery procedures for your team
 
-For detailed disaster recovery procedures, see: `docs/DISASTER_RECOVERY_PLAN.md`
-
+Team-specific restore and DR steps should live next to operational runbooks or internal wikis. Older DR markdown under `docs/` was retired; recover from git history if needed (`git log -- docs/DISASTER_RECOVERY_PLAN.md`).

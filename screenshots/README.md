@@ -24,7 +24,7 @@ This folder contains screenshots required for Strava production submission.
 
 ## How to Capture
 
-See: [`docs/SCREENSHOT_STEP_BY_STEP_GUIDE.md`](../docs/SCREENSHOT_STEP_BY_STEP_GUIDE.md)
+Follow Strava’s current [application guidelines](https://developers.strava.com/docs/getting-started/) and your submission checklist for required screenshots.
 
 ## Screenshot Requirements
 

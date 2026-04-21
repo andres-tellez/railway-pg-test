@@ -46,5 +46,5 @@ See `tests/services/training_plan/` for unit tests.
 
 ## Documentation
 
-- Full architectural specification: `docs/training-plan-architecture-v3.md`
-- Quick start guide: `docs/QUICK_START.md`
+- Product spec (normative): `docs/SMARTCOACH_SYSTEM_SPEC_V1.md`
+- HTTP / API surface: `docs/API_DOCUMENTATION.md`

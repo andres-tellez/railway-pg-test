@@ -18,7 +18,7 @@ The LLM appendix uses **facts-only** compact JSON by default
 
 Split-detail turns (intent ``split_detail``) can use ``prefetch_split_detail`` +
 ``system_appendix_for_split_prefetch`` (single ``chat_completion`` without tools)
-when ``SMARTCOACH_SPLIT_DETAIL_FASTPATH`` is enabled. See ``docs/smartcoach_mobile_coach/README.md``.
+when ``SMARTCOACH_SPLIT_DETAIL_FASTPATH`` is enabled. See ``docs/SMARTCOACH_SYSTEM_SPEC_V1.md`` and ``docs/API_DOCUMENTATION.md``.
 """
 
 from __future__ import annotations
