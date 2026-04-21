@@ -39,6 +39,9 @@ from src.smartcoach_mobile_coach.agent_tools import (
     execute_tool,
     tool_generate_training_plan,
 )
+from src.smartcoach_mobile_coach.coach_response_validator import (
+    validate_coach_response,
+)
 from src.smartcoach_mobile_coach.coach_tone_contract import (
     coach_tone_contract_section,
 )
@@ -2385,6 +2388,37 @@ def run_mobile_agent_turn(
                     "thread_derived": thread_ctx.as_dict(),
                 },
             }
+            # 3C.8 + 3C.9: post-response validator (observability only).
+            # Scans the final assistant text for §19.9 read-only field
+            # contradictions and §19.1 numeric-grounding failures
+            # against every tool payload produced this turn. Never
+            # rewrites or blocks the response — findings land in
+            # `meta["validator"]` for dashboards and future
+            # enforcement. Opt-out: `SMARTCOACH_RESPONSE_VALIDATOR_DISABLED=1`.
+            if os.environ.get(
+                "SMARTCOACH_RESPONSE_VALIDATOR_DISABLED", ""
+            ).strip() not in ("1", "true", "True", "TRUE"):
+                try:
+                    validator_report = validate_coach_response(
+                        text, list(tool_result_cache.values())
+                    )
+                    meta["validator"] = validator_report
+                    if validator_report["total_findings"] > 0:
+                        logger.warning(
+                            "[smartcoach_mobile_coach] response_validator "
+                            "findings=%s readonly=%s ungrounded=%s",
+                            validator_report["total_findings"],
+                            len(validator_report["readonly_violations"]),
+                            len(validator_report["ungrounded_numbers"]),
+                        )
+                except Exception as exc:
+                    # Defensive: validator failure must never break a
+                    # turn. Log and continue with no validator block
+                    # attached to meta.
+                    logger.warning(
+                        "[smartcoach_mobile_coach] response_validator_error: %s",
+                        exc,
+                    )
             if latest_run_summary is not None:
                 structured = {
                     "type": "run_summary",
