@@ -21,6 +21,7 @@ from src.db.dao.plans_dao import (
 )
 from src.schemas.plan_schema import PlanCreateSchema
 from datetime import datetime, date, timedelta
+from src.utils.date_helpers import get_week_bounds_for_date
 from src.utils.timezone_helpers import resolve_timezone, get_today_date_in_timezone
 from src.utils.run_type_constants import (
     RUN_TYPE_DEFINITIONS,
@@ -64,13 +65,6 @@ def _infer_run_type_key_for_hr(w) -> str:
         else:
             run_type_key = "easy"
     return run_type_key or "easy"
-
-
-def _monday_sunday_bounds(today: date) -> tuple[date, date]:
-    """Calendar week where Monday is the first day (Python weekday: Mon=0)."""
-    week_start = today - timedelta(days=today.weekday())
-    week_end = week_start + timedelta(days=6)
-    return week_start, week_end
 
 
 def _internal_user_uuid(raw) -> uuid.UUID:
@@ -379,7 +373,7 @@ def get_current_plan_week():
         plan_race_distance = plan_row.race_distance
 
         today = get_today_date_in_timezone(tz)
-        week_start, week_end = _monday_sunday_bounds(today)
+        week_start, week_end = get_week_bounds_for_date(today)
         workouts = (
             session.query(PlanWorkout)
             .filter(
