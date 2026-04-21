@@ -94,30 +94,61 @@ def test_build_run_execution_block_handles_unplanned_activity():
     assert block["actual"]["type"] == "easy"
 
 
-def test_weekly_plan_shape_parity_with_pre_0a_execution_payload():
+def test_weekly_plan_shape_dual_emit_legacy_parity_and_namespaced():
     """
-    Byte-exact parity: ``execution_block_to_weekly_plan_shape`` must
-    produce the exact dict the deleted ``plan_routes._execution_payload``
-    produced. If any key drifts (added, removed, or value type changes),
-    the mobile ``CurrentWeekExecutionPayload`` contract breaks.
+    V1.6 0.E dual-emit contract: ``execution_block_to_weekly_plan_shape``
+    must emit BOTH (a) the legacy flat fields in byte-exact parity with
+    the pre-0.A ``plan_routes._execution_payload`` shape (backward compat
+    for any non-0.E consumer) AND (b) the canonical V1.6 §6 namespaced
+    ``planned`` / ``actual`` sub-objects that 0.E mobile reads.
+
+    Drift guard: every legacy flat field must equal its namespaced
+    counterpart (single source of truth per §X.5).
     """
     act = _FakeActivity()
     shape = execution_block_to_weekly_plan_shape(build_run_execution_block(act), act)
 
-    assert shape == {
-        "activity_id": 12345,
-        "start_date": "2026-04-21T12:00:00+00:00",
-        "planned_type": "easy",
-        "executed_type": "easy",
+    # Legacy flat fields — byte-exact pre-0.A shape.
+    assert shape["activity_id"] == 12345
+    assert shape["start_date"] == "2026-04-21T12:00:00+00:00"
+    assert shape["planned_type"] == "easy"
+    assert shape["executed_type"] == "easy"
+    assert shape["run_score"] == "green"
+    assert shape["zone_compliance_pct"] == 82.5
+    assert shape["planned_miles"] == 5.0
+    assert shape["actual_miles"] == 5.1
+    assert shape["completion_pct"] == 1.02
+    assert shape["scoring_detail"] is None
+    assert shape["average_heartrate"] == 138  # rounded to int for UI
+    assert shape["avg_pace_per_mile"] == "9:00/mi"  # 2754 / 5.1 ≈ 540 s/mi
+
+    # V1.6 §6 canonical namespaced shape — 0.E mobile reads these.
+    assert shape["matched_plan_workout_id"] == 777
+    assert shape["planned"] == {"type": "easy", "miles": 5.0}
+    assert shape["actual"] == {
+        "type": "easy",
+        "miles": 5.1,
+        "completion_pct": 1.02,
         "run_score": "green",
         "zone_compliance_pct": 82.5,
-        "planned_miles": 5.0,
-        "actual_miles": 5.1,
-        "completion_pct": 1.02,
+        "pct_above_zone": 7.0,
+        "pct_below_zone": 10.5,
         "scoring_detail": None,
-        "average_heartrate": 138,  # pre-0.A rounded to int
-        "avg_pace_per_mile": "9:00/mi",  # 2754 / 5.1 ≈ 540 s/mi
+        "average_heartrate": 138,  # display-augmented: rounded int
+        "avg_pace_per_mile": "9:00/mi",  # display-augmented: formatted
     }
+
+    # Drift guard: legacy flat fields === namespaced counterparts.
+    assert shape["planned_type"] == shape["planned"]["type"]
+    assert shape["planned_miles"] == shape["planned"]["miles"]
+    assert shape["executed_type"] == shape["actual"]["type"]
+    assert shape["actual_miles"] == shape["actual"]["miles"]
+    assert shape["completion_pct"] == shape["actual"]["completion_pct"]
+    assert shape["run_score"] == shape["actual"]["run_score"]
+    assert shape["zone_compliance_pct"] == shape["actual"]["zone_compliance_pct"]
+    assert shape["scoring_detail"] == shape["actual"]["scoring_detail"]
+    assert shape["average_heartrate"] == shape["actual"]["average_heartrate"]
+    assert shape["avg_pace_per_mile"] == shape["actual"]["avg_pace_per_mile"]
 
 
 def test_weekly_plan_shape_avg_hr_none_when_missing():

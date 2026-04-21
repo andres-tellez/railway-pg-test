@@ -174,26 +174,56 @@ def execution_block_to_weekly_plan_shape(
     block: Dict[str, Any], act: Any
 ) -> Dict[str, Any]:
     """
-    Adapter → legacy flat shape consumed by ``GET /api/plan/current-week``
-    and mobile ``CurrentWeekExecutionPayload`` (smartcoach_app/lib/api/plan.ts).
+    Adapter for ``GET /api/plan/current-week`` and mobile
+    ``CurrentWeekExecutionPayload`` (smartcoach_app/lib/api/plan.ts).
 
-    Byte-exact replacement for the deleted ``plan_routes._execution_payload``
-    so 0.A ships as a behavior-preserving refactor. 0.E will then flip
-    mobile to consume ``block`` directly and this adapter can be
-    deprecated.
+    V1.6 0.E — dual-emit shape:
+
+    - **Canonical V1.6 §6 namespaced blocks:** ``planned`` and ``actual``
+      sub-objects. New mobile consumers (``weekly-plan-panel.tsx`` as
+      of 0.E) and Phase B plan-aware tools MUST read from these.
+      ``actual`` is a display-augmented variant of the canonical
+      block's ``actual`` — ``average_heartrate`` is rounded to an int
+      for UI and ``avg_pace_per_mile`` is the formatted M:SS/mi string.
+
+    - **Legacy flat fields (DEPRECATED post-Phase B):** kept for
+      backward compatibility with any non-0.E consumer. Every flat
+      field is sourced from the same canonical block as the nested
+      namespaces, so they cannot drift. Once all consumers have
+      migrated to ``planned.*`` / ``actual.*``, these can be removed
+      in a separate PR.
     """
     planned = block.get("planned") or {}
     actual = block.get("actual") or {}
     avg_hr = actual.get("average_heartrate")
-    avg_hr_out = int(round(avg_hr)) if avg_hr is not None else None
+    avg_hr_display = int(round(avg_hr)) if avg_hr is not None else None
+    pace_display = _avg_pace_per_mile_display_from_activity(act)
+
+    # Display-augmented actual block: rounded HR + formatted pace for UI,
+    # while preserving all raw KPI fields for the LLM.
+    actual_namespaced: Dict[str, Any] = {
+        **actual,
+        "average_heartrate": avg_hr_display,
+        "avg_pace_per_mile": pace_display,
+    }
+
     start_date = getattr(act, "start_date", None)
+    start_date_iso = (
+        start_date.isoformat()
+        if start_date and hasattr(start_date, "isoformat")
+        else None
+    )
+
     return {
         "activity_id": int(act.activity_id),
-        "start_date": (
-            start_date.isoformat()
-            if start_date and hasattr(start_date, "isoformat")
-            else None
-        ),
+        "start_date": start_date_iso,
+        "matched_plan_workout_id": block.get("matched_plan_workout_id"),
+        # V1.6 §6 canonical namespaced shape — 0.E mobile reads from here.
+        "planned": dict(planned),
+        "actual": actual_namespaced,
+        # Legacy flat fields — DEPRECATED post-Phase B. Sourced from
+        # the same canonical block, so they cannot drift from the
+        # namespaced shape above.
         "planned_type": planned.get("type"),
         "executed_type": actual.get("type"),
         "run_score": actual.get("run_score"),
@@ -202,8 +232,8 @@ def execution_block_to_weekly_plan_shape(
         "actual_miles": actual.get("miles"),
         "completion_pct": actual.get("completion_pct"),
         "scoring_detail": actual.get("scoring_detail"),
-        "average_heartrate": avg_hr_out,
-        "avg_pace_per_mile": _avg_pace_per_mile_display_from_activity(act),
+        "average_heartrate": avg_hr_display,
+        "avg_pace_per_mile": pace_display,
     }
 
 
