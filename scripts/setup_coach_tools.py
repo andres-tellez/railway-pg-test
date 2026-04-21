@@ -375,6 +375,100 @@ SEED_TOOLS = [
         "sort_order": 35,
     },
     {
+        # V1.6 Phase B 3B.2–3B.4 (PHASE_3_IMPLEMENTATION_CHECKLIST):
+        # canonical weekly-plan read. Replaces `get_weekly_training_insight`
+        # for any question that requires planned-vs-actual reasoning.
+        "name": "get_weekly_plan",
+        "display_name": "Get Weekly Plan",
+        "category": "plan_analysis",
+        "description": (
+            "V1.6 canonical weekly plan + execution read for one Monday-to-Sunday window. "
+            "Use for 'what's on my plan this week', 'how did this week compare to plan', "
+            "'what do I have next week', or any planned-vs-actual question about a **specific week**. "
+            "Returns per-day `planned` / `actual` namespaced blocks (§6 namespace isolation), "
+            "per-day `plan_status` (planned_only / in_progress / executed / missed / unplanned), "
+            "`violated_rest_day` and `deviation_direction` controllers, weekly `adherence_runs_pct` + band, "
+            "and `phase_kpi_priority` ordered emphasis list. "
+            "Future weeks return **only planned** — no actuals, no adherence (§19.5 contract enforced structurally). "
+            "Malformed or omitted `week_start_iso` resolves to the athlete's current week."
+        ),
+        "when_to_call": (
+            "User asks about this / next / last week's plan or execution against plan; "
+            "missed runs or rest-day violations in a week; what today's / tomorrow's planned run is; "
+            "how the week shaped up compared to plan. Prefer this over get_weekly_training_insight "
+            "whenever the question references the plan or planned workouts."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "week_start_iso": {
+                    "type": "string",
+                    "description": (
+                        "Optional YYYY-MM-DD within the target week. Normalized to that week's Monday. "
+                        "Omit for the athlete's current week. Past and future weeks are allowed."
+                    ),
+                },
+                "tz": {
+                    "type": "string",
+                    "description": (
+                        "Optional IANA timezone for 'current week' resolution (e.g. America/Denver). "
+                        "Defaults to UTC."
+                    ),
+                },
+            },
+        },
+        "returns_description": (
+            "plan_id, plan_name, race_date, week_start, week_end, week_temporality (past/current/future), "
+            "days[] with per-day planned + actual + plan_status + violated_rest_day, adherence block "
+            "(null for future weeks), phase_kpi_priority ordered list."
+        ),
+        "data_source": "plans + plan_workouts + activities (matched)",
+        "is_enabled": True,
+        "sort_order": 36,
+    },
+    {
+        # V1.6 Phase B 3B.5 — end-to-end plan overview, planned-only.
+        "name": "get_plan_overview",
+        "display_name": "Get Plan Overview",
+        "category": "plan_analysis",
+        "description": (
+            "V1.6 end-to-end **planned-only** overview of the athlete's active (or most recent) plan. "
+            "Use for plan-arc questions: 'what does my whole plan look like', 'what phase am I in vs. "
+            "what comes next', 'how does weekly mileage progress over the plan', 'what's my long-run "
+            "build'. Returns `phase_blocks` (Base/Build/Peak/Taper with week span, workout count, "
+            "planned miles, and canonical `phase_kpi_priority` ordered emphasis list), `volume_curve` "
+            "(one row per plan week with planned_runs + planned_miles_total + week_temporality), and "
+            "`long_run_progression` (one row per week with the longest planned run date, miles, and type). "
+            "**No actuals** — the overview never reads activities. Use `get_weekly_plan` if you need "
+            "plan-vs-actual for a specific week. §19.5 future-week contract structurally applies to "
+            "every week in the overview."
+        ),
+        "when_to_call": (
+            "User asks about the shape of the whole plan, phase structure, weekly volume progression, "
+            "or long-run build-up. Prefer this over calling `get_weekly_plan` N times when the question "
+            "is about the plan arc rather than a specific week."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "tz": {
+                    "type": "string",
+                    "description": (
+                        "Optional IANA timezone for per-week `week_temporality` stamping. "
+                        "Defaults to UTC. Does not affect plan-side fields."
+                    ),
+                },
+            },
+        },
+        "returns_description": (
+            "plan_id, plan_name, race_date, plan_start, plan_end, total_weeks, total_planned_runs, "
+            "total_planned_miles, phase_blocks[], volume_curve[] (planned-only), long_run_progression[]."
+        ),
+        "data_source": "plans + plan_workouts (planned-only; no activities read)",
+        "is_enabled": True,
+        "sort_order": 37,
+    },
+    {
         "name": "get_training_kpis",
         "display_name": "Get Training KPIs",
         "category": "training_progress",
