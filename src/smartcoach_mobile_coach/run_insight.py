@@ -82,6 +82,158 @@ def _activity_start_utc_iso(start_date: Any) -> Optional[str]:
         return None
 
 
+# ---------------------------------------------------------------------------
+# V1.6 Pre-Phase A 0.A — Canonical planned.* / actual.* execution block.
+#
+# SINGLE SOURCE OF TRUTH for per-run plan-vs-actual field extraction from
+# the ``Activity`` row. Both ``get_run_summary`` (LLM tool) and
+# ``GET /api/plan/current-week`` (mobile route) MUST consume this builder
+# via one of the legacy shape adapters below. No caller may read planned
+# or actual fields directly off ``Activity`` for payload construction.
+#
+# Shape rationale (V1.6 §6, SMARTCOACH_SYSTEM_SPEC_V1.md):
+#   - ``planned.*`` holds fields committed at plan-creation time.
+#   - ``actual.*`` holds fields derived from the executed activity.
+#   - Metadata fields (``matched_plan_workout_id``, ``activity_id``,
+#     ``start_date``) live outside the namespaces — they describe the
+#     link, not a side of the plan-vs-actual contract.
+#
+# Adapter strategy during V1.6 transition:
+#   - Mobile and the LLM tool still consume flat shapes today. The two
+#     adapter helpers (``execution_block_to_weekly_plan_shape`` and
+#     ``execution_block_to_insight_summary_shape``) preserve those
+#     byte-exact shapes so 0.A is a behavior-preserving refactor.
+#   - 0.E (mobile refactor) and Phase B (new plan-aware tools) will
+#     consume the namespaced block directly, at which point the
+#     legacy adapters can be deprecated.
+# ---------------------------------------------------------------------------
+
+
+def _avg_pace_per_mile_display_from_activity(act: Any) -> Optional[str]:
+    """M:SS/mi from activity ``conv_distance`` and ``moving_time``.
+
+    Moved here from ``plan_routes.py`` as part of 0.A so the weekly-plan
+    adapter has no dependency on ``plan_routes`` internals.
+    """
+    mi = getattr(act, "conv_distance", None)
+    mt = getattr(act, "moving_time", None)
+    if not mi or mi <= 0 or not mt or mt <= 0:
+        return None
+    sec_per_mi = float(mt) / float(mi)
+    total_sec = int(round(sec_per_mi))
+    m = total_sec // 60
+    s = total_sec % 60
+    if s == 60:
+        m += 1
+        s = 0
+    return f"{m}:{s:02d}/mi"
+
+
+def build_run_execution_block(act: Any) -> Dict[str, Any]:
+    """
+    Canonical V1.6 planned.* / actual.* block for one activity.
+
+    This is the **only** place where planned / actual fields are read
+    off an ``Activity`` for payload construction. All downstream
+    payloads (weekly plan day.execution, get_run_summary
+    execution_summary, future Phase B plan-aware tools) flow from this
+    dict.
+
+    Returns a dict with three keys:
+
+    * ``matched_plan_workout_id`` — FK to ``plan_workouts.id`` (``None``
+      when the activity is unplanned).
+    * ``planned`` — fields populated at plan-creation time.
+    * ``actual`` — fields derived from the executed activity.
+
+    Absent (unlinked) vs null: a ``None`` value means "checked, no
+    value"; the per-key presence always holds (V1.6 §4 null-vs-absent
+    convention). Shape adapters may drop keys to match legacy shapes.
+    """
+    return {
+        "matched_plan_workout_id": getattr(act, "matched_plan_workout_id", None),
+        "planned": {
+            "type": getattr(act, "planned_type", None),
+            "miles": getattr(act, "planned_miles", None),
+        },
+        "actual": {
+            "type": getattr(act, "executed_type", None),
+            "miles": getattr(act, "actual_miles", None),
+            "completion_pct": getattr(act, "completion_pct", None),
+            "run_score": getattr(act, "run_score", None),
+            "zone_compliance_pct": getattr(act, "zone_compliance_pct", None),
+            "pct_above_zone": getattr(act, "pct_above_zone", None),
+            "pct_below_zone": getattr(act, "pct_below_zone", None),
+            "scoring_detail": getattr(act, "scoring_detail", None),
+            "average_heartrate": getattr(act, "average_heartrate", None),
+        },
+    }
+
+
+def execution_block_to_weekly_plan_shape(
+    block: Dict[str, Any], act: Any
+) -> Dict[str, Any]:
+    """
+    Adapter → legacy flat shape consumed by ``GET /api/plan/current-week``
+    and mobile ``CurrentWeekExecutionPayload`` (smartcoach_app/lib/api/plan.ts).
+
+    Byte-exact replacement for the deleted ``plan_routes._execution_payload``
+    so 0.A ships as a behavior-preserving refactor. 0.E will then flip
+    mobile to consume ``block`` directly and this adapter can be
+    deprecated.
+    """
+    planned = block.get("planned") or {}
+    actual = block.get("actual") or {}
+    avg_hr = actual.get("average_heartrate")
+    avg_hr_out = int(round(avg_hr)) if avg_hr is not None else None
+    start_date = getattr(act, "start_date", None)
+    return {
+        "activity_id": int(act.activity_id),
+        "start_date": (
+            start_date.isoformat()
+            if start_date and hasattr(start_date, "isoformat")
+            else None
+        ),
+        "planned_type": planned.get("type"),
+        "executed_type": actual.get("type"),
+        "run_score": actual.get("run_score"),
+        "zone_compliance_pct": actual.get("zone_compliance_pct"),
+        "planned_miles": planned.get("miles"),
+        "actual_miles": actual.get("miles"),
+        "completion_pct": actual.get("completion_pct"),
+        "scoring_detail": actual.get("scoring_detail"),
+        "average_heartrate": avg_hr_out,
+        "avg_pace_per_mile": _avg_pace_per_mile_display_from_activity(act),
+    }
+
+
+def execution_block_to_insight_summary_shape(
+    block: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Adapter → legacy ``facts.execution_summary`` shape consumed by the
+    LLM ``get_run_summary`` tool.
+
+    Byte-exact replacement for the inline dict literal previously in
+    ``build_get_run_insight_payload``. 0.E / Phase B will move the
+    LLM tool to consume ``block`` directly.
+    """
+    planned = block.get("planned") or {}
+    actual = block.get("actual") or {}
+    return {
+        "matched_plan_workout_id": block.get("matched_plan_workout_id"),
+        "planned_type": planned.get("type"),
+        "executed_type": actual.get("type"),
+        "zone_compliance_pct": actual.get("zone_compliance_pct"),
+        "pct_above_zone": actual.get("pct_above_zone"),
+        "pct_below_zone": actual.get("pct_below_zone"),
+        "run_score": actual.get("run_score"),
+        "planned_miles": planned.get("miles"),
+        "actual_miles": actual.get("miles"),
+        "completion_pct": actual.get("completion_pct"),
+    }
+
+
 def _fetch_activity_context(
     session: Session, internal_user_id: str, activity_id: int
 ) -> Optional[Tuple[Any, ...]]:
@@ -178,19 +330,11 @@ def build_get_run_insight_payload(
         "max_heart_rate_display": format_hr_bpm(act.max_heartrate) or "—",
         "sport_type": "run",
     }
+    # V1.6 0.A: sourced from the single canonical planned.* / actual.* block.
     if act.executed_type or act.run_score:
-        facts["execution_summary"] = {
-            "matched_plan_workout_id": act.matched_plan_workout_id,
-            "planned_type": act.planned_type,
-            "executed_type": act.executed_type,
-            "zone_compliance_pct": act.zone_compliance_pct,
-            "pct_above_zone": act.pct_above_zone,
-            "pct_below_zone": act.pct_below_zone,
-            "run_score": act.run_score,
-            "planned_miles": act.planned_miles,
-            "actual_miles": act.actual_miles,
-            "completion_pct": act.completion_pct,
-        }
+        facts["execution_summary"] = execution_block_to_insight_summary_shape(
+            build_run_execution_block(act)
+        )
 
     if not include_peer_comparison:
         return {
@@ -268,16 +412,11 @@ def build_get_run_insight_payload(
         "schema_version": schema_version,
         "activity_id": activity_id,
         "facts": {
-            "title": (name or "Run")[:200],
+            **facts,
             "local_date": local_date_str,
-            "start_time_utc_iso": _activity_start_utc_iso(start_date),
-            "start_local_time_display": format_time_utc(start_date),
-            "distance_display": format_distance_mi(distance_mi),
-            "moving_time_display": format_duration_seconds(int(moving_time or 0)),
-            "avg_pace_display": format_pace_sec_per_mi(pace_sec) if pace_sec else "—",
-            "avg_heart_rate_display": format_hr_bpm(avg_hr) or "—",
-            "max_heart_rate_display": format_hr_bpm(act.max_heartrate) or "—",
-            "sport_type": "run",
+            # Preserve pre-0.A behavior: the full-payload branch always
+            # surfaced ``execution_summary`` as a key (possibly ``None``),
+            # even when the short branch above had not populated it.
             "execution_summary": facts.get("execution_summary"),
         },
         "comparison": {

@@ -27,6 +27,10 @@ from src.utils.run_type_constants import (
     RUN_TYPE_EASY,
     normalize_run_type_key,
 )
+from src.smartcoach_mobile_coach.run_insight import (
+    build_run_execution_block,
+    execution_block_to_weekly_plan_shape,
+)
 from src.routes.plan_generation_v2 import (
     run_v2_plan_generation,
     build_standard_draft_payload,
@@ -81,39 +85,14 @@ def _internal_user_uuid(raw) -> uuid.UUID:
     return uuid.UUID(str(raw))
 
 
-def _avg_pace_per_mile_display(activity: Activity) -> str | None:
-    """M:SS/mi from moving time and converted miles when available."""
-    mi = activity.conv_distance
-    mt = activity.moving_time
-    if not mi or mi <= 0 or not mt or mt <= 0:
-        return None
-    sec_per_mi = float(mt) / float(mi)
-    total_sec = int(round(sec_per_mi))
-    m = total_sec // 60
-    s = total_sec % 60
-    if s == 60:
-        m += 1
-        s = 0
-    return f"{m}:{s:02d}/mi"
-
-
-def _execution_payload(activity: Activity) -> dict:
-    avg_hr = activity.average_heartrate
-    avg_hr_out = int(round(avg_hr)) if avg_hr is not None else None
-    return {
-        "activity_id": int(activity.activity_id),
-        "start_date": activity.start_date.isoformat() if activity.start_date else None,
-        "planned_type": activity.planned_type,
-        "executed_type": activity.executed_type,
-        "run_score": activity.run_score,
-        "zone_compliance_pct": activity.zone_compliance_pct,
-        "planned_miles": activity.planned_miles,
-        "actual_miles": activity.actual_miles,
-        "completion_pct": activity.completion_pct,
-        "scoring_detail": activity.scoring_detail,
-        "average_heartrate": avg_hr_out,
-        "avg_pace_per_mile": _avg_pace_per_mile_display(activity),
-    }
+# V1.6 Pre-Phase A 0.A:
+# Per-run ``planned.*`` / ``actual.*`` field extraction lives in exactly
+# one place: ``src/smartcoach_mobile_coach/run_insight.py::build_run_execution_block``.
+# The legacy flat shape required by mobile ``CurrentWeekExecutionPayload``
+# (smartcoach_app/lib/api/plan.ts) and the deleted ``_execution_payload`` /
+# ``_avg_pace_per_mile_display`` helpers is produced by the adapter
+# ``execution_block_to_weekly_plan_shape``. 0.E will flip mobile to consume
+# the namespaced block directly and the adapter will be deprecated.
 
 
 # ✅ /api/plan/current — get current active plan (read-only)
@@ -403,7 +382,13 @@ def get_current_plan_week():
             )
 
             act = execution_by_pw.get(w.id)
-            execution = _execution_payload(act) if act else None
+            execution = (
+                execution_block_to_weekly_plan_shape(
+                    build_run_execution_block(act), act
+                )
+                if act
+                else None
+            )
 
             days.append(
                 {
