@@ -5,13 +5,149 @@ This module intentionally stays rules-based and deterministic:
 - classify conversational turn type
 - extract minimal state from prior text-only history
 - produce a response directive for the current turn
+
+Canonical enums (V1.6 Pre-Phase A 0.5): turn types, interaction modes, and intents
+are defined once in this module as named constants and Literal type aliases.
+Consumers MUST import from here rather than using bare string literals, so that
+SMARTCOACH_SYSTEM_SPEC_V1.md §19.6 (action-oriented coaching exemptions) stays
+in sync with real runtime enum values.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Literal, Optional, Set
+
+# ---------------------------------------------------------------------------
+# Canonical enum constants (V1.6 Pre-Phase A 0.5)
+#
+# These are the only authoritative string values for the three dialogue-classifier
+# outputs. Do NOT introduce bare string literals for these values elsewhere in
+# the codebase — import the constants from this module instead. Spec reference:
+# SMARTCOACH_SYSTEM_SPEC_V1.md §19.6, Appendix B; PHASE_3_IMPLEMENTATION_CHECKLIST 0.5.
+# ---------------------------------------------------------------------------
+
+# classify_turn() return values.
+TURN_OPENING = "opening"
+TURN_FOLLOW_UP = "follow_up"
+TURN_DRILL_DOWN = "drill_down"
+TURN_NEW_TOPIC = "new_topic"
+TURN_ACKNOWLEDGMENT = "acknowledgment"
+TURN_CLARIFICATION = "clarification"
+
+TurnType = Literal[
+    "opening",
+    "follow_up",
+    "drill_down",
+    "new_topic",
+    "acknowledgment",
+    "clarification",
+]
+
+TURN_TYPES: frozenset[str] = frozenset(
+    (
+        TURN_OPENING,
+        TURN_FOLLOW_UP,
+        TURN_DRILL_DOWN,
+        TURN_NEW_TOPIC,
+        TURN_ACKNOWLEDGMENT,
+        TURN_CLARIFICATION,
+    )
+)
+
+# derive_interaction_mode() return values.
+MODE_MINIMAL = "minimal"
+MODE_FACTUAL = "factual"
+MODE_AMBIGUOUS = "ambiguous"
+MODE_EXPERIENTIAL = "experiential"
+MODE_CLEAR_COACHING = "clear_coaching"
+
+InteractionMode = Literal[
+    "minimal",
+    "factual",
+    "ambiguous",
+    "experiential",
+    "clear_coaching",
+]
+
+INTERACTION_MODES: frozenset[str] = frozenset(
+    (
+        MODE_MINIMAL,
+        MODE_FACTUAL,
+        MODE_AMBIGUOUS,
+        MODE_EXPERIENTIAL,
+        MODE_CLEAR_COACHING,
+    )
+)
+
+# infer_intent() return values.
+INTENT_RACE_PROJECTION = "race_projection"
+INTENT_SPLIT_DETAIL = "split_detail"
+INTENT_VOLUME_QUERY = "volume_query"
+INTENT_TRAINING_TREND = "training_trend"
+INTENT_PLAN_CREATION = "plan_creation"
+INTENT_RUN_ANALYSIS = "run_analysis"
+INTENT_METRIC_EXPLAINER = "metric_explainer"
+INTENT_PREFERENCE_UPDATE = "preference_update"
+INTENT_GENERAL_CHAT = "general_chat"
+
+Intent = Literal[
+    "race_projection",
+    "split_detail",
+    "volume_query",
+    "training_trend",
+    "plan_creation",
+    "run_analysis",
+    "metric_explainer",
+    "preference_update",
+    "general_chat",
+]
+
+INTENTS: frozenset[str] = frozenset(
+    (
+        INTENT_RACE_PROJECTION,
+        INTENT_SPLIT_DETAIL,
+        INTENT_VOLUME_QUERY,
+        INTENT_TRAINING_TREND,
+        INTENT_PLAN_CREATION,
+        INTENT_RUN_ANALYSIS,
+        INTENT_METRIC_EXPLAINER,
+        INTENT_PREFERENCE_UPDATE,
+        INTENT_GENERAL_CHAT,
+    )
+)
+
+# §19.6 action-oriented coaching exemptions — encode the mapping once so prompt
+# builders and validators stay in lock-step with the spec. A turn is exempt when
+# ANY of: turn_type ∈ {acknowledgment, clarification} OR
+# interaction_mode ∈ {factual, ambiguous} OR intent == preference_update.
+ACTION_ORIENTED_EXEMPT_TURN_TYPES: frozenset[str] = frozenset(
+    (TURN_ACKNOWLEDGMENT, TURN_CLARIFICATION)
+)
+ACTION_ORIENTED_EXEMPT_INTERACTION_MODES: frozenset[str] = frozenset(
+    (MODE_FACTUAL, MODE_AMBIGUOUS)
+)
+ACTION_ORIENTED_EXEMPT_INTENTS: frozenset[str] = frozenset((INTENT_PREFERENCE_UPDATE,))
+
+
+def is_action_oriented_exempt(
+    *,
+    turn_type: str,
+    interaction_mode: str,
+    intent: str,
+) -> bool:
+    """Return True when the current turn is exempt from §19.6 action-oriented coaching.
+
+    Single source of truth for the exemption rule — prompt builders and the
+    post-response validator must call this helper rather than re-checking the
+    conditions inline.
+    """
+    return (
+        turn_type in ACTION_ORIENTED_EXEMPT_TURN_TYPES
+        or interaction_mode in ACTION_ORIENTED_EXEMPT_INTERACTION_MODES
+        or intent in ACTION_ORIENTED_EXEMPT_INTENTS
+    )
 
 
 _ACK_TOKEN = (

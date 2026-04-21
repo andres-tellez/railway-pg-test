@@ -41,6 +41,8 @@ from src.smartcoach_mobile_coach.agent_tools import (
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_intake
 from src.smartcoach_mobile_coach.dialogue_manager import (
+    INTENT_PLAN_CREATION,
+    INTENT_RACE_PROJECTION,
     ResponseDirective,
     classify_turn,
     extract_conversation_state,
@@ -141,7 +143,7 @@ def _is_plan_creation_turn(
     user_message: str,
     thread_ctx: DerivedThreadCoachContext,
 ) -> bool:
-    if intent == "plan_creation":
+    if intent == INTENT_PLAN_CREATION:
         return True
     if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict):
         return True
@@ -1296,7 +1298,7 @@ def _thread_led_system_section(ctx: DerivedThreadCoachContext) -> str:
 
 def _intent_priority_override_section(intent: str) -> str:
     """Intent-aware hard overrides that can supersede base prompt defaults."""
-    if intent != "race_projection":
+    if intent != INTENT_RACE_PROJECTION:
         return ""
     return (
         "## Intent priority override: race_projection\n"
@@ -1321,7 +1323,7 @@ def _plan_creation_system_section(
         else None
     )
     active = (
-        intent == "plan_creation"
+        intent == INTENT_PLAN_CREATION
         or isinstance(intake_state, dict)
         or any(
             k in msg

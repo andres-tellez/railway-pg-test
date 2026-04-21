@@ -8,6 +8,8 @@ import logging
 from dataclasses import dataclass
 from typing import List
 
+from src.utils.run_type_constants import RUN_TYPE_EASY, RUN_TYPE_STEADY
+
 from .models import PaceSeed
 from .validation import validate_pace_seed
 
@@ -112,7 +114,9 @@ def _calculate_completion_rate(week_log: List[WeekLogRun]) -> float:
 
 def _calculate_avg_rpe(week_log: List[WeekLogRun]) -> float:
     """Calculate average RPE for easy/steady runs."""
-    easy_rpe = [r.rpe for r in week_log if r.run_type in ("easy", "steady")]
+    easy_rpe = [
+        r.rpe for r in week_log if r.run_type in (RUN_TYPE_EASY, RUN_TYPE_STEADY)
+    ]
     return sum(easy_rpe) / len(easy_rpe) if easy_rpe else 3.0
 
 
