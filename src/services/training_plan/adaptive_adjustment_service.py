@@ -37,6 +37,7 @@ from src.utils.adaptive_constants import (
     MAX_VOLUME_CHANGE_PCT,
     MAX_PACE_CHANGE_SEC,
 )
+from src.utils.run_type_constants import RUN_TYPE_DEFINITIONS, RUN_TYPE_EASY
 
 logger = logging.getLogger(__name__)
 
@@ -120,8 +121,13 @@ class AdaptiveAdjustmentService:
             analysis, phase_rules
         )
 
-        # Detect fatigue patterns
-        fatigue_detected = AdaptiveAdjustmentService._detect_fatigue(analysis, trends)
+        # Detect fatigue patterns (including low zone-compliance guardrail)
+        zone_compliance_guardrail = (
+            AdaptiveAdjustmentService._get_zone_compliance_guardrail(analysis)
+        )
+        fatigue_detected = AdaptiveAdjustmentService._detect_fatigue(
+            analysis, trends
+        ) or bool(zone_compliance_guardrail)
 
         # Apply phase-specific rules
         if phase == "Base":
@@ -145,6 +151,10 @@ class AdaptiveAdjustmentService:
             decision = AdaptiveAdjustmentService._apply_build_phase_rules(
                 analysis, trends, phase_rules, fatigue_detected
             )
+
+        decision = AdaptiveAdjustmentService._apply_zone_compliance_guardrail(
+            decision, zone_compliance_guardrail
+        )
 
         # Set common fields
         decision.match_score = match_score
@@ -454,6 +464,62 @@ class AdaptiveAdjustmentService:
 
         # Require at least 2 indicators
         return fatigue_indicators >= 2
+
+    @staticmethod
+    def _get_zone_compliance_guardrail(
+        analysis: WeekAnalysisResult,
+    ) -> Optional[Dict[str, float]]:
+        """
+        Detect low easy-run zone compliance using canonical tolerance thresholds.
+
+        Returns:
+            Dict with compliance details when below threshold, else None.
+        """
+        easy_compliance = analysis.avg_zone_compliance_by_type.get(RUN_TYPE_EASY)
+        easy_definition = RUN_TYPE_DEFINITIONS.get(RUN_TYPE_EASY)
+        tolerance = easy_definition.tolerance if easy_definition else None
+        if easy_compliance is None or tolerance is None:
+            return None
+
+        min_compliance = tolerance.yellow_min_compliance
+        if easy_compliance >= min_compliance:
+            return None
+
+        return {
+            "easy_zone_compliance_pct": float(easy_compliance),
+            "easy_min_compliance_pct": float(min_compliance),
+        }
+
+    @staticmethod
+    def _apply_zone_compliance_guardrail(
+        decision: AdjustmentDecision,
+        zone_guardrail: Optional[Dict[str, float]],
+    ) -> AdjustmentDecision:
+        """
+        Apply a protective slowdown when easy-run zone compliance is too low.
+
+        This aligns with the existing high-RPE safety behavior by slowing paces and
+        disabling quality work until execution returns to target intensity.
+        """
+        if not zone_guardrail:
+            return decision
+
+        decision.pace_adjustment_sec = max(decision.pace_adjustment_sec, 5.0)
+        decision.disable_quality_workouts = True
+
+        if decision.decision_type == "no_change":
+            decision.decision_type = "pace_decrease"
+
+        low = zone_guardrail["easy_zone_compliance_pct"]
+        threshold = zone_guardrail["easy_min_compliance_pct"]
+        zone_reason = f"Low easy-zone compliance ({low:.1f}% < {threshold:.1f}%)"
+        if decision.trigger_reason.startswith("No adjustments needed"):
+            decision.trigger_reason = zone_reason
+        elif zone_reason not in decision.trigger_reason:
+            decision.trigger_reason = f"{decision.trigger_reason}; {zone_reason}"
+
+        decision.metrics_used.update(zone_guardrail)
+        return decision
 
     @staticmethod
     def _apply_safety_constraints(

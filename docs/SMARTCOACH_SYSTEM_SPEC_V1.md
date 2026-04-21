@@ -646,4 +646,14 @@ A clear, enforceable boundary. This must not drift during implementation.
 
 ---
 
+## Implementation status — backend Phase 1
+
+Validated implementation checklist (canonical run types, plan ↔ activity match, execution classification + score, completion fields, `current-week` + coach surfaces): **[`PHASE_1_IMPLEMENTATION_CHECKLIST.md`](./PHASE_1_IMPLEMENTATION_CHECKLIST.md)**.
+
+## Implementation status — Plan tab Phase 2
+
+Plan tab + **`GET /api/plan/current-week`** + mobile weekly UI (and gaps vs an early component-level spec): **[`PHASE_2_IMPLEMENTATION_CHECKLIST.md`](./PHASE_2_IMPLEMENTATION_CHECKLIST.md)**.
+
+---
+
 *SmartCoach System Spec V1.2 — Master Specification. Complete and approved. Implementation decisions to follow based on current codebase inventory.*
