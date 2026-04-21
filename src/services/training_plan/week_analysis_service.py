@@ -24,7 +24,7 @@ Author: SmartCoach Development Team
 Last Updated: January 2026
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from datetime import date, timedelta
 from sqlalchemy.orm import Session
@@ -35,6 +35,7 @@ import statistics
 from .weekly_adjuster import WeekLogRun
 from src.db.models.plan_workouts import PlanWorkout
 from src.db.models.activities import Activity
+from src.utils.run_type_constants import normalize_run_type_key
 from src.utils.adaptive_constants import (
     AdaptiveConfig,
     FATIGUE_PACE_THRESHOLD_PCT,
@@ -79,6 +80,7 @@ class WeekAnalysisResult:
     total_actual_miles: float
     planned_workouts: int
     completed_workouts: int
+    avg_zone_compliance_by_type: Dict[str, float] = field(default_factory=dict)
 
 
 class WeekAnalysisService:
@@ -215,6 +217,11 @@ class WeekAnalysisService:
             len(planned_workouts_data) if planned_workouts_data else 0
         )
         completed_workouts_count = len([w for w in week_logs if w.done_mi > 0])
+        avg_zone_compliance_by_type = (
+            WeekAnalysisService._calculate_avg_zone_compliance_by_type(
+                session, planned_workouts
+            )
+        )
 
         return WeekAnalysisResult(
             volume_score=volume_score,
@@ -236,6 +243,7 @@ class WeekAnalysisService:
             total_actual_miles=total_actual_miles,
             planned_workouts=planned_workouts_count,
             completed_workouts=completed_workouts_count,
+            avg_zone_compliance_by_type=avg_zone_compliance_by_type,
         )
 
     @staticmethod
@@ -437,6 +445,62 @@ class WeekAnalysisService:
             "current_week_load": current_load,
             "previous_week_load": previous_week_load,
             "load_delta_pct": load_delta_pct,
+        }
+
+    @staticmethod
+    def _calculate_avg_zone_compliance_by_type(
+        session: Session,
+        planned_workouts: List[PlanWorkout],
+    ) -> Dict[str, float]:
+        """
+        Calculate average zone compliance by canonical run type for this week.
+
+        Uses activities matched to the provided plan workouts and aggregates
+        `zone_compliance_pct` by executed (or planned fallback) run type.
+        """
+        if not planned_workouts:
+            return {}
+
+        workout_ids = [w.id for w in planned_workouts if getattr(w, "id", None)]
+        if not workout_ids:
+            return {}
+
+        try:
+            rows = (
+                session.query(
+                    Activity.executed_type,
+                    Activity.planned_type,
+                    Activity.zone_compliance_pct,
+                )
+                .filter(
+                    and_(
+                        Activity.matched_plan_workout_id.in_(workout_ids),
+                        Activity.zone_compliance_pct.isnot(None),
+                    )
+                )
+                .all()
+            )
+        except Exception as e:
+            logger.warning(f"Error calculating zone compliance aggregates: {e}")
+            return {}
+
+        grouped: Dict[str, List[float]] = {}
+        for executed_type, planned_type, zone_compliance in rows:
+            if zone_compliance is None:
+                continue
+
+            run_type_key = normalize_run_type_key(
+                executed_type
+            ) or normalize_run_type_key(planned_type)
+            if not run_type_key:
+                continue
+
+            grouped.setdefault(run_type_key, []).append(float(zone_compliance))
+
+        return {
+            run_type: round(statistics.mean(values), 2)
+            for run_type, values in grouped.items()
+            if values
         }
 
     @staticmethod
