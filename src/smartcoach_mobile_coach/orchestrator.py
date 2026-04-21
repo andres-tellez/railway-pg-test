@@ -40,6 +40,9 @@ from src.smartcoach_mobile_coach.agent_tools import (
     tool_generate_training_plan,
 )
 from src.smartcoach_mobile_coach.metric_glossary import metric_glossary_section
+from src.smartcoach_mobile_coach.plan_vs_actual_contract import (
+    plan_vs_actual_contract_section,
+)
 from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_intake
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
@@ -1898,6 +1901,13 @@ def run_mobile_agent_turn(
             # adherence bands) consistent with the spec and answerable from
             # prompt memory — no tool call needed for "what is Z2?".
             metric_glossary_section(),
+            # 3C.1 + 3C.2: plan-vs-actual coaching contract (spec §§19.2–19.3).
+            # Locks PLAN → ACTUAL → GAP → ACTION reasoning order and the
+            # language-separation rules (distinct phrasing for plan / actual
+            # / comparison; three forbidden collapses). Suppressed in
+            # plan_creation_mode because there is no plan-vs-actual to
+            # reason about during intake.
+            plan_vs_actual_contract_section(),
             prefs_block,
             _device_anchor_system_section(anchor_local_date, client_timezone),
             _hr_calibration_system_section(session, internal_user_id),
