@@ -136,6 +136,124 @@ def test_current_week_returns_days_and_execution(
     assert day["execution"]["avg_pace_per_mile"] == "9:00/mi"
 
 
+def test_current_week_uses_canonical_normalization_for_legacy_rows(
+    client,
+    auth_header,
+    plan_routes_db,
+    monkeypatch,
+):
+    """
+    V1.6 Pre-Phase A 0.D regression test.
+
+    The ``plan_workouts.chk_run_type_key`` constraint currently accepts
+    ``easy``/``steady``/``endurance``/``long``. ``endurance`` is a
+    non-canonical run type that MUST be normalized to canonical ``long``
+    via ``LEGACY_TO_CANONICAL_RUN_TYPE`` at the GET path. Before 0.D,
+    text-matching inference could produce its own divergent key. This
+    test locks in that the canonical map is the single source of truth.
+
+    Also verifies that the stored ``target_hr`` is returned as-is — the
+    GET path MUST NOT revalidate or rewrite HR zones (the old
+    "zone mismatch → expected_hr" mutation was deleted in 0.D).
+    """
+    workout_date = date(2026, 4, 22)
+    plan_routes_db.add(UserAthleteLink(user_id=str(DEFAULT_USER_ID), athlete_id=99902))
+    plan = Plan(
+        user_id=DEFAULT_USER_ID,
+        plan_name="Legacy",
+        race_date=workout_date,
+        race_distance="Half",
+        is_active=True,
+    )
+    plan_routes_db.add(plan)
+    plan_routes_db.flush()
+    plan_routes_db.add(
+        PlanWorkout(
+            plan_id=plan.id,
+            date=workout_date,
+            workout_type="Long Run",
+            description="Legacy endurance",
+            miles=12.0,
+            intensity="E",
+            run_type_key="endurance",
+            # Intentionally stored under a zone that wouldn't match a
+            # recomputation for "long" (Z2) — proves the GET path doesn't
+            # rewrite the stored value.
+            target_hr="Z4 (170-180 bpm)",
+        )
+    )
+    plan_routes_db.commit()
+
+    monkeypatch.setattr(
+        "src.routes.plan_routes.get_today_date_in_timezone",
+        lambda _tz: workout_date,
+    )
+
+    resp = client.get("/api/plan/current-week?tz=UTC", headers=auth_header())
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    day = data["days"][0]
+    assert day["run_type_key"] == "long", (
+        "legacy 'endurance' must normalize to canonical 'long' via "
+        "LEGACY_TO_CANONICAL_RUN_TYPE — the single source of truth"
+    )
+    assert day["run_type"]["display_name"] == "Long"
+    assert day["target_hr"] == "Z4 (170-180 bpm)", (
+        "stored target_hr must be returned verbatim; GET path must not "
+        "revalidate/rewrite HR zones (0.D deletion)"
+    )
+
+
+def test_current_week_fallback_computes_target_hr_when_missing(
+    client,
+    auth_header,
+    plan_routes_db,
+    monkeypatch,
+):
+    """
+    V1.6 Pre-Phase A 0.D: stored ``target_hr`` is authoritative, but when
+    a row truly lacks one (legacy rows predating ``target_hr`` persistence)
+    the GET path may compute it ONCE from the canonical run_type_key. No
+    text-matching inference; no zone revalidation.
+    """
+    workout_date = date(2026, 4, 22)
+    plan_routes_db.add(UserAthleteLink(user_id=str(DEFAULT_USER_ID), athlete_id=99903))
+    plan = Plan(
+        user_id=DEFAULT_USER_ID,
+        plan_name="NoHR",
+        race_date=workout_date,
+        race_distance="Half",
+        is_active=True,
+    )
+    plan_routes_db.add(plan)
+    plan_routes_db.flush()
+    plan_routes_db.add(
+        PlanWorkout(
+            plan_id=plan.id,
+            date=workout_date,
+            workout_type="Easy Run",
+            description="Easy, no HR stored",
+            miles=4.0,
+            intensity="E",
+            run_type_key="easy",
+            target_hr=None,
+        )
+    )
+    plan_routes_db.commit()
+
+    monkeypatch.setattr(
+        "src.routes.plan_routes.get_today_date_in_timezone",
+        lambda _tz: workout_date,
+    )
+
+    resp = client.get("/api/plan/current-week?tz=UTC", headers=auth_header())
+    assert resp.status_code == 200
+    day = json.loads(resp.data)["days"][0]
+    assert day["run_type_key"] == "easy"
+    assert day["target_hr"], "fallback must compute target_hr when stored value missing"
+    assert "Z" in day["target_hr"], "fallback must return a canonical Z[1-5] zone label"
+
+
 def test_current_week_empty_when_no_workouts_in_range(
     client,
     auth_header,
