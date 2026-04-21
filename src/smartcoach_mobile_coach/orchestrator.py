@@ -39,6 +39,9 @@ from src.smartcoach_mobile_coach.agent_tools import (
     execute_tool,
     tool_generate_training_plan,
 )
+from src.smartcoach_mobile_coach.coach_tone_contract import (
+    coach_tone_contract_section,
+)
 from src.smartcoach_mobile_coach.metric_glossary import metric_glossary_section
 from src.smartcoach_mobile_coach.plan_guidance_contract import (
     plan_guidance_contract_section,
@@ -1919,6 +1922,17 @@ def run_mobile_agent_turn(
             # actual.* fields, and numbers not present in the payload.
             # Also suppressed in plan_creation_mode.
             plan_guidance_contract_section(),
+            # 3C.5 + 3C.6 + 3C.7: coach tone contract (spec §§19.6–19.8).
+            # Locks action-oriented response shape (next action OR
+            # guiding question) with five exempt classifications sourced
+            # from the live dialogue_manager enums; unplanned-run first-
+            # sentence acknowledgment + violated_rest_day framing
+            # ("coach the consequence, do not moralize"); and adherence-
+            # band tone (low / medium / high driven by
+            # adherence_runs_pct). Suppressed in plan_creation_mode —
+            # intake turns have no plan_status, no adherence band, and
+            # no coaching "next action" to enforce.
+            coach_tone_contract_section(),
             prefs_block,
             _device_anchor_system_section(anchor_local_date, client_timezone),
             _hr_calibration_system_section(session, internal_user_id),
