@@ -525,6 +525,117 @@ def tool_get_weekly_training_insight(
 
 
 # ---------------------------------------------------------------------------
+# Tool: get_weekly_plan (V1.6 Phase B 3B.2–3B.4)
+#
+# V1.6 §6 canonical weekly-plan read. Supersedes
+# ``get_weekly_training_insight`` as the way the coach learns what a
+# specific week looks like:
+#
+# * **3B.2** — Takes an optional ``week_start_iso`` (Monday) and returns
+#   the plan for any past / current / future Monday-to-Sunday window.
+#   When the arg is omitted, returns the athlete's current week.
+# * **3B.3** — Enforces the future-week payload contract
+#   **structurally**: when the target week is in the future, no
+#   activity join runs, every day's ``execution`` block is ``None``,
+#   every day's ``plan_status`` is ``"planned_only"``, and the weekly
+#   ``adherence`` block is ``None``. The LLM has no way to read an
+#   ``actual.*`` field that doesn't exist.
+# * **3B.4** — For PAST / CURRENT weeks, the payload includes the
+#   canonical weekly ``adherence_runs_pct`` block and the week-level
+#   ``phase_kpi_priority`` block so the coach can emphasize the right
+#   KPIs per §19.4 and calibrate tone by adherence band per §19.8
+#   without re-deriving either signal.
+#
+# Implementation: thin wrapper over
+# :func:`src.services.plan.weekly_plan.build_weekly_plan_payload`.
+# That same service backs ``GET /api/plan/current-week`` so the LLM
+# and the mobile app see byte-exact the same shape (§X.5
+# single-source-of-truth).
+# ---------------------------------------------------------------------------
+
+
+def _parse_week_start_iso(raw: Any) -> Optional[date]:
+    """
+    Parse the ``week_start_iso`` tool argument.
+
+    Returns ``None`` when omitted (caller treats this as "current week").
+    Returns ``None`` for malformed values so the tool degrades to
+    current-week rather than raising — the LLM-facing contract is "we
+    answer with what we can prove", not "we crash on a typo".
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, date) and not isinstance(raw, datetime):
+        return raw
+    if isinstance(raw, datetime):
+        return raw.date()
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return None
+        # Accept "YYYY-MM-DD" and "YYYY-MM-DDTHH:MM:SS" variants.
+        try:
+            return datetime.fromisoformat(s.split("T")[0]).date()
+        except ValueError:
+            return None
+    return None
+
+
+def tool_get_weekly_plan(
+    session: Session,
+    internal_user_id: str,
+    *,
+    week_start_iso: Optional[str] = None,
+    tz: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Return the V1.6 §6 weekly-plan payload for any past / current /
+    future Monday-to-Sunday window.
+
+    Args:
+        session: Active SQLAlchemy session.
+        internal_user_id: Internal user UUID string (not Auth0 subject).
+        week_start_iso: ISO date (``YYYY-MM-DD``) within the target
+            week; normalized to that week's Monday. ``None`` resolves
+            to the athlete's current week in ``tz``.
+        tz: Optional IANA timezone name. Defaults to UTC. Primarily
+            affects "what week is current" — past/future weeks are
+            absolute.
+
+    Returns:
+        Either a tool-friendly error envelope
+        (``{"error": "no_plan", ...}``) or the payload produced by
+        :func:`src.services.plan.weekly_plan.build_weekly_plan_payload`.
+
+    V1.6 contracts enforced by delegation to the service:
+        * §6 namespace isolation (``planned.*`` / ``actual.*`` per day).
+        * §19.5 future-week contract (no actuals, no adherence).
+        * §7 adherence band + §8 phase emphasis for past/current weeks.
+    """
+    import uuid
+
+    try:
+        user_uuid = uuid.UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        return {
+            "error": "invalid_user_id",
+            "message": "internal_user_id must be a UUID string.",
+        }
+
+    target_monday = _parse_week_start_iso(week_start_iso)
+    tz_value = tz if (isinstance(tz, str) and tz.strip()) else "UTC"
+
+    from src.services.plan.weekly_plan import build_weekly_plan_payload
+
+    return build_weekly_plan_payload(
+        session,
+        user_uuid,
+        tz=tz_value,
+        target_week_start=target_monday,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tool: get_marathon_projection
 # ---------------------------------------------------------------------------
 
@@ -1164,8 +1275,12 @@ _TOOL_HANDLERS = {
     "get_training_kpis": "get_training_kpis",
     # DEPRECATED V1.6 (PHASE_3_IMPLEMENTATION_CHECKLIST 0.C): do not add
     # new references to this handler key. Replacement: get_weekly_plan
-    # (V1.7, AGENTIC_COACH.md Topic 9).
+    # (V1.6 Phase B 3B.2, AGENTIC_COACH.md Topic 9).
     "get_weekly_training_insight": "get_weekly_training_insight",
+    # V1.6 Phase B 3B.2–3B.4 — canonical weekly-plan read with the
+    # §6 planned.* / actual.* namespace isolation and the §19.5
+    # future-week payload contract enforced structurally.
+    "get_weekly_plan": "get_weekly_plan",
     "get_marathon_projection": "get_marathon_projection",
     "save_coach_preference": "save_coach_preference",
     "update_plan_intake": "update_plan_intake",
@@ -1314,6 +1429,22 @@ def execute_tool(
             detail_raw = _parse_include_kpi_detail_arg(args.get("include_kpi_detail"))
             return tool_get_weekly_training_insight(
                 session, internal_user_id, include_kpi_detail=detail_raw
+            )
+
+        if handler_key == "get_weekly_plan":
+            # V1.6 Phase B 3B.2 — ``week_start_iso`` is optional; when
+            # omitted the tool returns the athlete's current week.
+            # Malformed values degrade to current-week inside the
+            # parser (not an error) so the LLM never gets stuck on a
+            # typoed date — it still gets a useful payload back.
+            week_start_raw = args.get("week_start_iso")
+            tz_raw = args.get("tz")
+            tz_val = tz_raw if isinstance(tz_raw, str) else None
+            return tool_get_weekly_plan(
+                session,
+                internal_user_id,
+                week_start_iso=week_start_raw,
+                tz=tz_val,
             )
 
         if handler_key == "get_marathon_projection":
