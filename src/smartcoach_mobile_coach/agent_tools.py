@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import warnings
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
@@ -443,7 +444,36 @@ def tool_get_training_kpis(
 
 # ---------------------------------------------------------------------------
 # Tool: get_weekly_training_insight
+#
+# DEPRECATED V1.6 (PHASE_3_IMPLEMENTATION_CHECKLIST 0.C):
+#   This tool will be superseded by the V1.7 plan-aware tool
+#   `get_weekly_plan` (AGENTIC_COACH.md Topic 9). The replacement will
+#   enforce the V1.6 §6 planned.* / actual.* namespace isolation and the
+#   future-week payload contract, neither of which this tool models.
+#
+#   During V1.6: existing consumers (LLM tool calls routed via
+#   `execute_tool` and the system-prompt snippets in `orchestrator.py`)
+#   are preserved to avoid breaking live coach conversations.
+#
+#   V1.6 policy: **NO NEW CONSUMERS.** New read paths for weekly plan or
+#   weekly actuals MUST target `get_weekly_plan` (Phase B) and its
+#   planned.* / actual.* namespaces. Any PR that adds a new caller of
+#   `tool_get_weekly_training_insight` (or references the string
+#   "get_weekly_training_insight" as a handler key outside the existing
+#   dispatch table) should be flagged in review. The runtime
+#   DeprecationWarning emitted below gives CI/logs a grep-friendly
+#   signal; see tests/test_get_weekly_training_insight_deprecation.py
+#   for the lock-in test.
 # ---------------------------------------------------------------------------
+
+
+_GWTI_DEPRECATION_MESSAGE = (
+    "tool_get_weekly_training_insight is deprecated (V1.6 Pre-Phase A 0.C). "
+    "Do not add new consumers. New plan-aware reads must use "
+    "get_weekly_plan (V1.7, AGENTIC_COACH.md Topic 9) to get strict "
+    "planned.* / actual.* namespace isolation and the future-week "
+    "payload contract."
+)
 
 
 def _parse_include_kpi_detail_arg(raw: Any) -> Optional[bool]:
@@ -468,10 +498,25 @@ def tool_get_weekly_training_insight(
     *,
     include_kpi_detail: Optional[bool] = None,
 ) -> Dict[str, Any]:
+    """Return the latest precomputed weekly insight row for the user.
+
+    .. deprecated:: V1.6 (Pre-Phase A 0.C)
+        Will be replaced by :func:`tool_get_weekly_plan` (V1.7, Topic 9).
+        The replacement enforces the V1.6 §6 ``planned.*`` / ``actual.*``
+        namespace isolation and the future-week payload contract, neither
+        of which this tool models. **Do not add new callers.** Existing
+        callers are preserved during V1.6 to avoid breaking live coach
+        conversations; rewrites happen in Phase C–F.
+
+    Default payload is orientation-only when
+    ``SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM`` is on (see
+    :mod:`src.smartcoach_mobile_coach.weekly_insights_service`).
     """
-    Coach tool: default payload is orientation-only when
-    SMARTCOACH_WEEKLY_INSIGHT_TOOL_SLIM is on (see weekly_insights_service).
-    """
+    warnings.warn(
+        _GWTI_DEPRECATION_MESSAGE,
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if include_kpi_detail is None:
         want_full = not weekly_insight_tool_slim_default_from_env()
     else:
@@ -1117,6 +1162,9 @@ _TOOL_HANDLERS = {
     "get_run_summary": "get_run_summary",
     "get_run_splits": "get_run_splits",
     "get_training_kpis": "get_training_kpis",
+    # DEPRECATED V1.6 (PHASE_3_IMPLEMENTATION_CHECKLIST 0.C): do not add
+    # new references to this handler key. Replacement: get_weekly_plan
+    # (V1.7, AGENTIC_COACH.md Topic 9).
     "get_weekly_training_insight": "get_weekly_training_insight",
     "get_marathon_projection": "get_marathon_projection",
     "save_coach_preference": "save_coach_preference",
