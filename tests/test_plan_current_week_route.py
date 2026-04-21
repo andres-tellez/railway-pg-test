@@ -93,6 +93,9 @@ def _seed_week_plan_and_activity(session, *, workout_date: date):
         planned_miles=5.0,
         actual_miles=5.0,
         completion_pct=100.0,
+        conv_distance=5.0,
+        moving_time=2700,
+        average_heartrate=138.4,
     )
     session.add(activity)
     session.commit()
@@ -129,6 +132,8 @@ def test_current_week_returns_days_and_execution(
     assert day["execution"] is not None
     assert day["execution"]["activity_id"] == 880011
     assert day["execution"]["run_score"] == "green"
+    assert day["execution"]["average_heartrate"] == 138
+    assert day["execution"]["avg_pace_per_mile"] == "9:00/mi"
 
 
 def test_current_week_empty_when_no_workouts_in_range(
