@@ -900,13 +900,35 @@ def tool_get_user_context(
 
     tz_value = tz if (isinstance(tz, str) and tz.strip()) else "UTC"
 
-    from src.services.user.user_context import build_user_context_payload
+    # Resolve "today" once via the same helper the service uses so the
+    # cache key and the payload can never drift across the tool/service
+    # boundary (e.g. if this call straddles a midnight rollover).
+    from src.services.user.user_context import (
+        build_user_context_payload,
+        get_today_date_in_timezone,
+    )
+    from src.smartcoach_mobile_coach import user_context_cache
 
-    return build_user_context_payload(
+    user_id_str = str(user_uuid)
+    resolved_today = get_today_date_in_timezone(tz_value)
+    today_iso = resolved_today.isoformat()
+
+    # 3B.12: per-request dedup — repeated calls within the same
+    # (user, tz, today) window reuse the first DB fan-out. Write paths
+    # that mutate a producer input (prefs / plan / athlete link) call
+    # ``invalidate_user_context`` after commit to keep reads fresh.
+    cached = user_context_cache.get_cached(user_id_str, tz_value, today_iso)
+    if cached is not None:
+        return cached
+
+    payload = build_user_context_payload(
         session,
         user_uuid,
         tz=tz_value,
+        today=resolved_today,
     )
+    user_context_cache.set_cached(user_id_str, tz_value, today_iso, payload)
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -995,6 +1017,13 @@ def tool_save_coach_preference(
         params,
     )
     session.commit()
+
+    # 3B.12: ``user_coach_preferences`` is an input of
+    # ``build_user_context_payload.coaching``; drop any cached context
+    # for this user so the next read rebuilds.
+    from src.smartcoach_mobile_coach import user_context_cache
+
+    user_context_cache.invalidate_user_context(str(internal_user_id))
 
     row = session.execute(
         text(
@@ -1494,6 +1523,15 @@ def tool_generate_training_plan(
         plan_request=plan_request,
     )
     session.commit()
+
+    # 3B.12: new plan replaces the prior plan + workouts — every
+    # plan-derived field in ``user_context`` (race_goal, current_phase,
+    # current_week_number, long_run_day, training_days, ...) is now
+    # stale. Drop the user's cached context so the next
+    # ``get_user_context`` read rebuilds from the saved plan.
+    from src.smartcoach_mobile_coach import user_context_cache
+
+    user_context_cache.invalidate_user_context(str(internal_user_id))
 
     from src.db.dao.plans_dao import get_plan_with_workouts
 
