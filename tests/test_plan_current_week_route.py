@@ -135,6 +135,24 @@ def test_current_week_returns_days_and_execution(
     assert day["execution"]["average_heartrate"] == 138
     assert day["execution"]["avg_pace_per_mile"] == "9:00/mi"
 
+    # V1.6 0.E: /current-week must emit the canonical §6 namespaced
+    # shape alongside the legacy flat fields. Mobile consumes from
+    # here as of 0.E.
+    assert "planned" in day["execution"]
+    assert "actual" in day["execution"]
+    assert day["execution"]["planned"]["type"] == day["execution"]["planned_type"]
+    assert day["execution"]["planned"]["miles"] == day["execution"]["planned_miles"]
+    assert day["execution"]["actual"]["type"] == day["execution"]["executed_type"]
+    assert day["execution"]["actual"]["miles"] == day["execution"]["actual_miles"]
+    assert (
+        day["execution"]["actual"]["average_heartrate"]
+        == day["execution"]["average_heartrate"]
+    )
+    assert (
+        day["execution"]["actual"]["avg_pace_per_mile"]
+        == day["execution"]["avg_pace_per_mile"]
+    )
+
 
 def test_current_week_uses_canonical_normalization_for_legacy_rows(
     client,
