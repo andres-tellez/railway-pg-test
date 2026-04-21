@@ -39,6 +39,7 @@ from src.smartcoach_mobile_coach.agent_tools import (
     execute_tool,
     tool_generate_training_plan,
 )
+from src.smartcoach_mobile_coach.metric_glossary import metric_glossary_section
 from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_intake
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
@@ -1662,6 +1663,11 @@ def run_mobile_agent_turn(
         )
         system_content = _join_nonempty_system_sections(
             base_block,
+            # 3B.14–3B.16: versioned metric glossary (spec §§3–9). Keeps the
+            # coach's concept definitions (zones, KPIs, deviation_direction,
+            # adherence bands) consistent with the spec and answerable from
+            # prompt memory — no tool call needed for "what is Z2?".
+            metric_glossary_section(),
             prefs_block,
             _device_anchor_system_section(anchor_local_date, client_timezone),
             _hr_calibration_system_section(session, internal_user_id),
