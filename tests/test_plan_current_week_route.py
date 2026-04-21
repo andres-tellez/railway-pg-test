@@ -153,6 +153,79 @@ def test_current_week_returns_days_and_execution(
         == day["execution"]["avg_pace_per_mile"]
     )
 
+    # V1.6 Phase A item 1: day-level plan_status.
+    # Matched activity on a past day (today = 2026-04-22, workout =
+    # 2026-04-21) → "executed".
+    assert day["plan_status"] == "executed"
+    # Deliberate design: plan_status is NOT duplicated in the execution
+    # block — the day level is authoritative for this route.
+    assert "plan_status" not in day["execution"]
+
+
+def test_current_week_day_level_plan_status_no_activity(
+    client,
+    auth_header,
+    plan_routes_db,
+    monkeypatch,
+):
+    """
+    plan_status covers all temporal cases for a planned-no-activity day:
+    past → missed, today → in_progress, future → planned_only.
+
+    The ``unplanned`` state is not reachable from /current-week because
+    the day list is driven by planned workouts only (see
+    ``plan_status.py`` module docstring) — that gap is tracked against
+    Phase B ``get_weekly_plan``.
+    """
+    workout_date = date(2026, 4, 21)
+    # Seed plan + workout but no activity.
+    plan_routes_db.add(UserAthleteLink(user_id=str(DEFAULT_USER_ID), athlete_id=99901))
+    plan = Plan(
+        user_id=DEFAULT_USER_ID,
+        plan_name="Week Test Plan",
+        race_date=workout_date,
+        race_distance="Half",
+        is_active=True,
+    )
+    plan_routes_db.add(plan)
+    plan_routes_db.flush()
+    plan_routes_db.add(
+        PlanWorkout(
+            plan_id=plan.id,
+            date=workout_date,
+            workout_type="Easy Run",
+            description="Easy miles",
+            miles=5.0,
+            intensity="E",
+            run_type_key="easy",
+        )
+    )
+    plan_routes_db.commit()
+
+    cases = [
+        (date(2026, 4, 22), "missed"),  # workout date in past
+        (date(2026, 4, 21), "in_progress"),  # workout date == today
+        (date(2026, 4, 20), "planned_only"),  # workout date in future
+    ]
+    for today, expected in cases:
+        monkeypatch.setattr(
+            "src.routes.plan_routes.get_today_date_in_timezone",
+            lambda _tz, _t=today: _t,
+        )
+        resp = client.get(
+            "/api/plan/current-week?tz=UTC",
+            headers=auth_header(),
+        )
+        assert resp.status_code == 200, f"today={today}: {resp.data!r}"
+        data = json.loads(resp.data)
+        assert len(data["days"]) == 1
+        day = data["days"][0]
+        assert day["execution"] is None, f"today={today}: no activity seeded"
+        assert day["plan_status"] == expected, (
+            f"today={today} planned_date={workout_date} → expected "
+            f"plan_status={expected!r}, got {day['plan_status']!r}"
+        )
+
 
 def test_current_week_uses_canonical_normalization_for_legacy_rows(
     client,
