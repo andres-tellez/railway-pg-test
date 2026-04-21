@@ -161,6 +161,13 @@ def test_current_week_returns_days_and_execution(
     # block — the day level is authoritative for this route.
     assert "plan_status" not in day["execution"]
 
+    # V1.6 Phase A item 2: day-level violated_rest_day. Every day in
+    # this route is planned-workout-driven, so by construction this is
+    # always False. Emitted explicitly so the LLM doesn't infer.
+    assert day["violated_rest_day"] is False
+    # Same non-duplication contract as plan_status.
+    assert "violated_rest_day" not in day["execution"]
+
 
 def test_current_week_day_level_plan_status_no_activity(
     client,
@@ -225,6 +232,9 @@ def test_current_week_day_level_plan_status_no_activity(
             f"today={today} planned_date={workout_date} → expected "
             f"plan_status={expected!r}, got {day['plan_status']!r}"
         )
+        # V1.6 Phase A item 2: planned-workout days are never a
+        # rest-day violation regardless of temporal state.
+        assert day["violated_rest_day"] is False
 
 
 def test_current_week_uses_canonical_normalization_for_legacy_rows(

@@ -63,12 +63,16 @@ def test_build_run_execution_block_namespaced_shape():
     assert set(block.keys()) == {
         "matched_plan_workout_id",
         "plan_status",
+        "violated_rest_day",
         "planned",
         "actual",
     }
     assert block["matched_plan_workout_id"] == 777
     # V1.6 §6 + Phase A item 1: linked activity → "executed".
     assert block["plan_status"] == "executed"
+    # V1.6 §6 + Phase A item 2: executed runs are never a rest-day
+    # violation (a day with a planned workout is not a rest day).
+    assert block["violated_rest_day"] is False
 
     assert block["planned"] == {"type": "easy", "miles": 5.0}
 
@@ -99,8 +103,63 @@ def test_build_run_execution_block_handles_unplanned_activity():
     block = build_run_execution_block(act)
     assert block["matched_plan_workout_id"] is None
     assert block["plan_status"] == "unplanned"
+    # No plan_training_days passed → safe default False
+    # (spec "false otherwise"; prevents coach escalation on
+    # ambiguous plan metadata).
+    assert block["violated_rest_day"] is False
     assert block["planned"] == {"type": None, "miles": None}
     assert block["actual"]["type"] == "easy"
+
+
+def test_build_run_execution_block_violated_rest_day_true_on_rest_day():
+    """
+    V1.6 §6 Phase A item 2: unplanned activity on a planned rest day
+    (weekday not in plan_training_days) → violated_rest_day=True.
+    Fake activity is on 2026-04-21 (a Tuesday); training days
+    exclude Tuesday → violation.
+    """
+    act = _FakeActivity(
+        matched_plan_workout_id=None,
+        planned_type=None,
+        planned_miles=None,
+    )
+    block = build_run_execution_block(
+        act, plan_training_days=["Mon", "Wed", "Thu", "Sat"]
+    )
+    assert block["plan_status"] == "unplanned"
+    assert block["violated_rest_day"] is True
+
+
+def test_build_run_execution_block_violated_rest_day_false_on_training_day():
+    """Unplanned run on a day that WAS a training day → not a rest-day
+    violation (it's a missed-workout + extra run scenario)."""
+    act = _FakeActivity(
+        matched_plan_workout_id=None,
+        planned_type=None,
+        planned_miles=None,
+    )
+    # 2026-04-21 is a Tuesday; include Tuesday in training days.
+    block = build_run_execution_block(
+        act, plan_training_days=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    )
+    assert block["plan_status"] == "unplanned"
+    assert block["violated_rest_day"] is False
+
+
+def test_build_run_execution_block_violated_rest_day_false_when_training_days_missing():
+    """No plan_training_days → safe default False per spec 'false
+    otherwise' — coach §19 must not escalate on ambiguous metadata."""
+    act = _FakeActivity(
+        matched_plan_workout_id=None,
+        planned_type=None,
+        planned_miles=None,
+    )
+    # Explicitly None.
+    block = build_run_execution_block(act, plan_training_days=None)
+    assert block["violated_rest_day"] is False
+    # Also for empty list (pathological plan row).
+    block = build_run_execution_block(act, plan_training_days=[])
+    assert block["violated_rest_day"] is False
 
 
 def test_weekly_plan_shape_dual_emit_legacy_parity_and_namespaced():
@@ -165,6 +224,10 @@ def test_weekly_plan_shape_dual_emit_legacy_parity_and_namespaced():
     # This prevents day-vs-execution duplication and keeps the day as
     # the authoritative plan-status source for the primary route.
     assert "plan_status" not in shape
+    # Same non-duplication rule for V1.6 Phase A item 2: the day-level
+    # entry carries violated_rest_day; the execution adapter must not
+    # mirror it.
+    assert "violated_rest_day" not in shape
 
 
 def test_weekly_plan_shape_avg_hr_none_when_missing():
@@ -213,6 +276,7 @@ def test_insight_summary_shape_parity_with_pre_0a_dict_literal():
     assert summary == {
         "matched_plan_workout_id": 777,
         "plan_status": "executed",
+        "violated_rest_day": False,
         "planned_type": "easy",
         "executed_type": "easy",
         "zone_compliance_pct": 82.5,
@@ -231,6 +295,19 @@ def test_insight_summary_shape_flips_plan_status_for_unplanned():
     summary = execution_block_to_insight_summary_shape(build_run_execution_block(act))
     assert summary["matched_plan_workout_id"] is None
     assert summary["plan_status"] == "unplanned"
+    # Without training_days context, safe default.
+    assert summary["violated_rest_day"] is False
+
+
+def test_insight_summary_shape_carries_violated_rest_day_true():
+    """LLM tool must see violated_rest_day=True when it applies (§19.7
+    stronger-tone requirement depends on this flag)."""
+    act = _FakeActivity(matched_plan_workout_id=None)  # Tue 2026-04-21
+    summary = execution_block_to_insight_summary_shape(
+        build_run_execution_block(act, plan_training_days=["Mon", "Wed", "Thu", "Sat"])
+    )
+    assert summary["plan_status"] == "unplanned"
+    assert summary["violated_rest_day"] is True
 
 
 def test_both_adapters_share_the_same_source_block():

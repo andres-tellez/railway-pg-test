@@ -306,7 +306,13 @@ def get_current_plan_week():
     with get_session() as session:
         # Avoid loading full Plan.user_id through PG UUID processors on SQLite test DB.
         plan_row = (
-            session.query(Plan.id, Plan.plan_name, Plan.race_date, Plan.race_distance)
+            session.query(
+                Plan.id,
+                Plan.plan_name,
+                Plan.race_date,
+                Plan.race_distance,
+                Plan.training_days,
+            )
             .filter(Plan.user_id == user_id, Plan.is_active.is_(True))
             .order_by(Plan.created_at.desc())
             .first()
@@ -314,7 +320,11 @@ def get_current_plan_week():
         if not plan_row:
             plan_row = (
                 session.query(
-                    Plan.id, Plan.plan_name, Plan.race_date, Plan.race_distance
+                    Plan.id,
+                    Plan.plan_name,
+                    Plan.race_date,
+                    Plan.race_distance,
+                    Plan.training_days,
                 )
                 .filter(Plan.user_id == user_id)
                 .order_by(Plan.created_at.desc())
@@ -328,6 +338,15 @@ def get_current_plan_week():
         plan_name = plan_row.plan_name
         plan_race_date = plan_row.race_date
         plan_race_distance = plan_row.race_distance
+        # V1.6 Phase A item 2: needed by ``derive_violated_rest_day``
+        # when an unmatched activity lands on an implicit rest day.
+        # For this route all emitted day entries are planned-workout-
+        # driven so violated_rest_day will always be False on them;
+        # we still thread training_days through so the execution
+        # block built from a matched Activity is correct by
+        # construction (and Phase B unplanned-day callers will read
+        # the true branch once they surface gap-day activities).
+        plan_training_days = plan_row.training_days
 
         today = get_today_date_in_timezone(tz)
         week_start, week_end = get_week_bounds_for_date(today)
@@ -385,7 +404,10 @@ def get_current_plan_week():
             act = execution_by_pw.get(w.id)
             execution = (
                 execution_block_to_weekly_plan_shape(
-                    build_run_execution_block(act), act
+                    build_run_execution_block(
+                        act, plan_training_days=plan_training_days
+                    ),
+                    act,
                 )
                 if act
                 else None
@@ -410,6 +432,12 @@ def get_current_plan_week():
                     "weekday": weekday_labels[w.date.weekday()],
                     "plan_workout_id": w.id,
                     "plan_status": day_plan_status.value if day_plan_status else None,
+                    # V1.6 Phase A item 2: every day entry in this
+                    # route has a planned workout → by definition NOT
+                    # a rest day → violated_rest_day is always False
+                    # here. Emitted explicitly (null-vs-absent
+                    # convention, §4) so the LLM never has to infer.
+                    "violated_rest_day": False,
                     "run_type_key": canonical,
                     "run_type": {
                         "key": rt_def.key,

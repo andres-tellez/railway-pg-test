@@ -72,7 +72,7 @@ from __future__ import annotations
 
 from datetime import date
 from enum import Enum
-from typing import Optional
+from typing import Optional, Sequence
 
 
 class PlanStatus(str, Enum):
@@ -145,3 +145,81 @@ def plan_status_for_day(
         # Phase B ``get_weekly_plan`` will surface these day entries.
         return PlanStatus.UNPLANNED
     return None
+
+
+def derive_violated_rest_day(
+    *,
+    plan_status_value: PlanStatus,
+    day_weekday: int,
+    plan_training_days: Optional[Sequence[str]] = None,
+) -> bool:
+    """
+    Canonical producer for V1.6 §6 ``violated_rest_day`` derived flag.
+
+    PHASE_3_IMPLEMENTATION_CHECKLIST §X.5 single-source-of-truth:
+    colocated with ``plan_status`` derivation as called for in the
+    checklist ("Same module as plan_status — colocated derivation").
+    The LLM (V1.6 §19) must NOT derive this from heuristics.
+
+    Spec (SMARTCOACH_SYSTEM_SPEC_V1.md §6)::
+
+        violated_rest_day = true  iff  plan_status == UNPLANNED
+                                       AND  the day was a planned
+                                            rest day
+        violated_rest_day = false  otherwise
+
+    Rest-day modeling in this codebase
+    ----------------------------------
+    A rest day is **implicit**: ``PlanWorkout`` rows are created only
+    for training days. The user's training days are stored as an array
+    of day-name strings (``["Mon", "Wed", "Thu", "Sat"]`` etc.) on
+    ``plans.training_days``. Any weekday not in that list is a planned
+    rest day.
+
+    Args:
+        plan_status_value: the already-derived ``PlanStatus`` for the
+            pairing. Required so we can short-circuit without touching
+            training_days for non-UNPLANNED cases.
+        day_weekday: ``date.weekday()`` for the day in question (0 =
+            Monday, 6 = Sunday). Callers should use the activity's
+            local-timezone date when possible; see TZ caveat below.
+        plan_training_days: ``plan.training_days`` value (nullable; the
+            column is ``Optional``). Accepts both full ("Monday") and
+            abbreviated ("Mon") day-name formats — normalized via
+            ``src.utils.date_helpers.DAY_TO_WEEKDAY``.
+
+    Returns:
+        ``True`` only when ``plan_status_value == UNPLANNED`` and the
+        day is not among the training days.
+
+        ``False`` when:
+        * ``plan_status_value`` is anything other than ``UNPLANNED``
+          (every such case has a planned workout by definition → not a
+          rest day).
+        * ``plan_training_days`` is ``None`` / empty. Per the spec the
+          flag is a boolean, and "false otherwise" covers the
+          can't-prove case. This is a safe default: coach §19 applies
+          *stronger* emphasis when the flag is true; defaulting to
+          false prevents erroneous escalation when the plan metadata
+          is incomplete.
+
+    TZ caveat (tracked for V1.7)
+    ----------------------------
+    ``day_weekday`` is computed by callers from ``activity.start_date``
+    (a UTC timestamp). For most users the UTC day matches the local
+    day, but activities that straddle midnight relative to the user's
+    local timezone may drift by one weekday. Proper resolution
+    requires a stored local date on activities; out of scope for V1.6.
+    """
+    if plan_status_value != PlanStatus.UNPLANNED:
+        return False
+    if not plan_training_days:
+        return False
+    # Imported lazily to avoid a module-level dependency on date_helpers
+    # just for the normalization table (which is the only thing we
+    # need, and only for the unplanned branch).
+    from src.utils.date_helpers import DAY_TO_WEEKDAY
+
+    training_weekdays = {DAY_TO_WEEKDAY.get(d) for d in plan_training_days}
+    training_weekdays.discard(None)
+    return day_weekday not in training_weekdays
