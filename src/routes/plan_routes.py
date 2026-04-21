@@ -31,6 +31,7 @@ from src.smartcoach_mobile_coach.run_insight import (
     build_run_execution_block,
     execution_block_to_weekly_plan_shape,
 )
+from src.services.plan.plan_status import plan_status_for_day
 from src.routes.plan_generation_v2 import (
     run_v2_plan_generation,
     build_standard_draft_payload,
@@ -390,11 +391,25 @@ def get_current_plan_week():
                 else None
             )
 
+            # V1.6 Phase A item 1: day-level plan_status.
+            # Every day entry in current-week is driven by a planned
+            # workout, so ``has_planned_workout=True``. ``unplanned``
+            # days (activity on a day with no planned workout) are a
+            # known gap for this route — Phase B ``get_weekly_plan``
+            # will cover them. See ``plan_status.py`` module docstring.
+            day_plan_status = plan_status_for_day(
+                has_planned_workout=True,
+                has_matching_activity=act is not None,
+                day_date=w.date,
+                today=today,
+            )
+
             days.append(
                 {
                     "date": w.date.isoformat(),
                     "weekday": weekday_labels[w.date.weekday()],
                     "plan_workout_id": w.id,
+                    "plan_status": day_plan_status.value if day_plan_status else None,
                     "run_type_key": canonical,
                     "run_type": {
                         "key": rt_def.key,

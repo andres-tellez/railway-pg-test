@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from src.db.dao.activity_dao import ActivityDAO
 from src.db.models.activities import Activity
+from src.services.plan.plan_status import PlanStatus, plan_status_for_activity
 from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_duration_seconds,
@@ -139,10 +140,16 @@ def build_run_execution_block(act: Any) -> Dict[str, Any]:
     execution_summary, future Phase B plan-aware tools) flow from this
     dict.
 
-    Returns a dict with three keys:
+    Returns a dict with four top-level keys:
 
     * ``matched_plan_workout_id`` — FK to ``plan_workouts.id`` (``None``
       when the activity is unplanned).
+    * ``plan_status`` — V1.6 §6 enum string (``"executed"`` when linked,
+      ``"unplanned"`` otherwise). Derived via
+      ``src.services.plan.plan_status.plan_status_for_activity`` —
+      the single source of truth for this field. Lives at top level
+      (neither ``planned.*`` nor ``actual.*``) because it describes
+      the pairing between the two sides, not a side of it.
     * ``planned`` — fields populated at plan-creation time.
     * ``actual`` — fields derived from the executed activity.
 
@@ -150,8 +157,10 @@ def build_run_execution_block(act: Any) -> Dict[str, Any]:
     value"; the per-key presence always holds (V1.6 §4 null-vs-absent
     convention). Shape adapters may drop keys to match legacy shapes.
     """
+    matched_pw_id = getattr(act, "matched_plan_workout_id", None)
     return {
-        "matched_plan_workout_id": getattr(act, "matched_plan_workout_id", None),
+        "matched_plan_workout_id": matched_pw_id,
+        "plan_status": plan_status_for_activity(matched_pw_id).value,
         "planned": {
             "type": getattr(act, "planned_type", None),
             "miles": getattr(act, "planned_miles", None),
@@ -241,17 +250,21 @@ def execution_block_to_insight_summary_shape(
     block: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Adapter → legacy ``facts.execution_summary`` shape consumed by the
-    LLM ``get_run_summary`` tool.
+    Adapter for the LLM ``get_run_summary`` tool's
+    ``facts.execution_summary``.
 
-    Byte-exact replacement for the inline dict literal previously in
-    ``build_get_run_insight_payload``. 0.E / Phase B will move the
-    LLM tool to consume ``block`` directly.
+    Surfaces all pre-0.A fields plus V1.6 Phase A additions
+    (``plan_status`` — Phase A item 1; further Phase A fields follow
+    in subsequent commits). Single source: every value comes from the
+    canonical ``block`` produced by ``build_run_execution_block``.
+    Phase B tools will read ``block`` directly and this adapter will
+    be deprecated.
     """
     planned = block.get("planned") or {}
     actual = block.get("actual") or {}
     return {
         "matched_plan_workout_id": block.get("matched_plan_workout_id"),
+        "plan_status": block.get("plan_status"),
         "planned_type": planned.get("type"),
         "executed_type": actual.get("type"),
         "zone_compliance_pct": actual.get("zone_compliance_pct"),

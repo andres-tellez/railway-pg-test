@@ -56,12 +56,19 @@ class _FakeActivity:
 def test_build_run_execution_block_namespaced_shape():
     """
     V1.6 §6 contract: planned.* and actual.* are strictly separated.
-    ``matched_plan_workout_id`` is metadata and lives outside the
-    namespaces.
+    ``matched_plan_workout_id`` and ``plan_status`` are pairing
+    metadata and live outside the namespaces.
     """
     block = build_run_execution_block(_FakeActivity())
-    assert set(block.keys()) == {"matched_plan_workout_id", "planned", "actual"}
+    assert set(block.keys()) == {
+        "matched_plan_workout_id",
+        "plan_status",
+        "planned",
+        "actual",
+    }
     assert block["matched_plan_workout_id"] == 777
+    # V1.6 §6 + Phase A item 1: linked activity → "executed".
+    assert block["plan_status"] == "executed"
 
     assert block["planned"] == {"type": "easy", "miles": 5.0}
 
@@ -82,6 +89,7 @@ def test_build_run_execution_block_handles_unplanned_activity():
     """
     Unplanned activity: ``matched_plan_workout_id`` and planned.* are
     ``None`` (checked, no value) per V1.6 §4 null-vs-absent convention.
+    ``plan_status`` deterministically flips to ``"unplanned"``.
     """
     act = _FakeActivity(
         matched_plan_workout_id=None,
@@ -90,6 +98,7 @@ def test_build_run_execution_block_handles_unplanned_activity():
     )
     block = build_run_execution_block(act)
     assert block["matched_plan_workout_id"] is None
+    assert block["plan_status"] == "unplanned"
     assert block["planned"] == {"type": None, "miles": None}
     assert block["actual"]["type"] == "easy"
 
@@ -150,6 +159,13 @@ def test_weekly_plan_shape_dual_emit_legacy_parity_and_namespaced():
     assert shape["average_heartrate"] == shape["actual"]["average_heartrate"]
     assert shape["avg_pace_per_mile"] == shape["actual"]["avg_pace_per_mile"]
 
+    # V1.6 Phase A item 1: plan_status is deliberately NOT surfaced in
+    # the weekly-plan execution adapter — the ``/api/plan/current-week``
+    # route carries it at the day level (see test_current_week_...).
+    # This prevents day-vs-execution duplication and keeps the day as
+    # the authoritative plan-status source for the primary route.
+    assert "plan_status" not in shape
+
 
 def test_weekly_plan_shape_avg_hr_none_when_missing():
     """Rounded-int HR passes through None safely."""
@@ -184,16 +200,19 @@ def test_weekly_plan_shape_start_date_none_when_missing():
 
 def test_insight_summary_shape_parity_with_pre_0a_dict_literal():
     """
-    Byte-exact parity: ``execution_block_to_insight_summary_shape`` must
-    produce the exact dict the pre-0.A ``facts.execution_summary`` dict
-    literal produced. If any field drifts, the LLM ``get_run_summary``
-    contract changes silently.
+    Shape contract for ``execution_block_to_insight_summary_shape``.
+
+    Pre-0.A fields are preserved byte-exact. V1.6 Phase A additions
+    (``plan_status`` — Phase A item 1) are surfaced so the LLM
+    ``get_run_summary`` tool has all deterministic fields available.
+    Further Phase A fields will be added here in subsequent items.
     """
     block = build_run_execution_block(_FakeActivity())
     summary = execution_block_to_insight_summary_shape(block)
 
     assert summary == {
         "matched_plan_workout_id": 777,
+        "plan_status": "executed",
         "planned_type": "easy",
         "executed_type": "easy",
         "zone_compliance_pct": 82.5,
@@ -204,6 +223,14 @@ def test_insight_summary_shape_parity_with_pre_0a_dict_literal():
         "actual_miles": 5.1,
         "completion_pct": 1.02,
     }
+
+
+def test_insight_summary_shape_flips_plan_status_for_unplanned():
+    """Activity with no matched_plan_workout_id → plan_status='unplanned'."""
+    act = _FakeActivity(matched_plan_workout_id=None)
+    summary = execution_block_to_insight_summary_shape(build_run_execution_block(act))
+    assert summary["matched_plan_workout_id"] is None
+    assert summary["plan_status"] == "unplanned"
 
 
 def test_both_adapters_share_the_same_source_block():
