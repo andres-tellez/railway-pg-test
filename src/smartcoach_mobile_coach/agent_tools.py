@@ -819,6 +819,97 @@ def tool_get_phase_analysis(
 
 
 # ---------------------------------------------------------------------------
+# Tool: get_user_context (V1.6 Phase B 3B.10)
+#
+# Light "who is this user" payload the coach reads at the start of a
+# conversation (nudged by the orchestrator when ``turn_type ==
+# "opening"`` — wired in 3B.13). Supersedes any ad-hoc "reach into a
+# few other tools and piece together race goal + phase + coaching
+# level" patterns the model was falling into.
+#
+# Surfaces:
+#
+# * ``race_goal`` — race name/date/distance, goal_time, primary_goal,
+#   weeks_until_race (from the active or most recent plan).
+# * ``plan`` — plan_id, plan_name, plan_start/end, total_weeks,
+#   current_week_number, is_active, and the **current phase** +
+#   canonical §8 ``phase_kpi_priority`` emphasis list so the coach can
+#   open with spec-correct emphasis in one read.
+# * ``baseline_status`` — canonical §12 three-band enum
+#   (``insufficient`` / ``thin`` / ``strong``) via
+#   ``compute_baseline_status_for_athlete``.
+# * ``coaching`` — ``coaching_level`` / ``verbosity`` + stored
+#   per-surface metric priorities from ``user_coach_preferences``
+#   (falls back to beginner defaults when no row saved yet).
+# * ``preferences`` — ``training_days``, derived ``long_run_day``,
+#   ``unit_system``, emitted ``timezone``.
+# * ``session_summary`` — explicit ``None`` placeholder for V1.7 (no
+#   session-summary table exists yet; shape key is stable so a later
+#   release can backfill without breakage).
+#
+# §X.5 single-source-of-truth: every field is a read through an
+# existing canonical producer (``compute_baseline_status_for_athlete``,
+# ``resolve_week_phase``, ``phase_kpi_priority_for_phase``). This tool
+# never re-derives a deterministic signal.
+#
+# Payload size budget (3B.11): < 2 KB for a fully populated user.
+# Stable keys — documented in the service docstring and locked by
+# contract tests.
+#
+# Implementation: thin wrapper over
+# :func:`src.services.user.user_context.build_user_context_payload`.
+# ---------------------------------------------------------------------------
+
+
+def tool_get_user_context(
+    session: Session,
+    internal_user_id: str,
+    *,
+    tz: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Return the V1.6 Phase B 3B.10 ``user_context`` payload.
+
+    Args:
+        session: Active SQLAlchemy session.
+        internal_user_id: Internal user UUID string (not Auth0 subject).
+        tz: Optional IANA timezone name. Defaults to UTC. Drives
+            resolution of "today" and is emitted in
+            ``preferences.timezone``.
+
+    Returns:
+        Either a tool-friendly error envelope
+        (``{"error": "invalid_user_id" | "no_user", ...}``) or the
+        payload produced by
+        :func:`src.services.user.user_context.build_user_context_payload`.
+
+    V1.6 contracts enforced by delegation to the service:
+        * §X.5 single-source-of-truth for every deterministic field.
+        * §19 PII posture (first-name only, no email / picture).
+        * §8 canonical ``phase_kpi_priority`` for the current phase.
+    """
+    import uuid
+
+    try:
+        user_uuid = uuid.UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        return {
+            "error": "invalid_user_id",
+            "message": "internal_user_id must be a UUID string.",
+        }
+
+    tz_value = tz if (isinstance(tz, str) and tz.strip()) else "UTC"
+
+    from src.services.user.user_context import build_user_context_payload
+
+    return build_user_context_payload(
+        session,
+        user_uuid,
+        tz=tz_value,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tool: get_marathon_projection
 # ---------------------------------------------------------------------------
 
@@ -1474,6 +1565,11 @@ _TOOL_HANDLERS = {
     # fields (zone compliance, completion_pct, deviation direction,
     # run score) per run_type_key from phase-to-date matched activities.
     "get_phase_analysis": "get_phase_analysis",
+    # V1.6 Phase B 3B.10 — light "who is this user" payload:
+    # race goal + current phase + baseline_status + coaching_level
+    # + preferences. Coach reads at the start of a conversation
+    # (orchestrator nudge wired in 3B.13).
+    "get_user_context": "get_user_context",
     "get_marathon_projection": "get_marathon_projection",
     "save_coach_preference": "save_coach_preference",
     "update_plan_intake": "update_plan_intake",
@@ -1666,6 +1762,19 @@ def execute_tool(
                 session,
                 internal_user_id,
                 phase_id=phase_val,
+                tz=tz_val,
+            )
+
+        if handler_key == "get_user_context":
+            # V1.6 Phase B 3B.10 — no required arguments. ``tz`` is
+            # optional and only affects "today" resolution + the
+            # emitted ``preferences.timezone`` field. Unknown / non-
+            # string tz falls back to UTC inside the service.
+            tz_raw = args.get("tz")
+            tz_val = tz_raw if isinstance(tz_raw, str) else None
+            return tool_get_user_context(
+                session,
+                internal_user_id,
                 tz=tz_val,
             )
 
