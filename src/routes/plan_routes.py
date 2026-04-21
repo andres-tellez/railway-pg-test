@@ -32,6 +32,10 @@ from src.smartcoach_mobile_coach.run_insight import (
     execution_block_to_weekly_plan_shape,
 )
 from src.services.plan.plan_status import plan_status_for_day
+from src.services.scoring.adherence import (
+    WeeklyAdherenceEntry,
+    compute_weekly_adherence,
+)
 from src.routes.plan_generation_v2 import (
     run_v2_plan_generation,
     build_standard_draft_payload,
@@ -388,6 +392,12 @@ def get_current_plan_week():
         # canonical recomputation when the row has no stored zone
         # (legacy rows). No zone revalidation, no text-matching inference.
         days = []
+        # V1.6 Phase A item 5: accumulate per-day adherence entries as
+        # we walk the planned workouts; the canonical weekly aggregate
+        # is computed once at the end via
+        # :func:`compute_weekly_adherence`. No inline ``completed /
+        # planned`` math here — single-source-of-truth (§X.5).
+        adherence_entries: list[WeeklyAdherenceEntry] = []
         for w in workouts:
             canonical = _resolve_run_type_key_for_workout(w)
             target_hr = w.target_hr
@@ -426,6 +436,33 @@ def get_current_plan_week():
                 today=today,
             )
 
+            # V1.6 Phase A item 5: feed the canonical weekly adherence
+            # aggregator. ``day_plan_status`` is ``None`` only for
+            # empty rest/gap days, which this loop never produces
+            # (every entry is driven by a PlanWorkout); the guard is
+            # defensive to keep the aggregator contract honest. We
+            # read ``completion_pct`` / ``actual_miles`` off the
+            # matched Activity — not the execution block's shape —
+            # so the signal is immune to any future display-side
+            # reshaping in the adapter.
+            if day_plan_status is not None:
+                adherence_entries.append(
+                    WeeklyAdherenceEntry(
+                        plan_status=day_plan_status,
+                        completion_pct=(
+                            getattr(act, "completion_pct", None)
+                            if act is not None
+                            else None
+                        ),
+                        planned_miles=w.miles,
+                        actual_miles=(
+                            getattr(act, "actual_miles", None)
+                            if act is not None
+                            else None
+                        ),
+                    )
+                )
+
             days.append(
                 {
                     "date": w.date.isoformat(),
@@ -456,6 +493,22 @@ def get_current_plan_week():
                 }
             )
 
+        # V1.6 Phase A item 5: week-level adherence block. Derived on
+        # read (§X.5 policy) from the entries accumulated above.
+        # Percents are 0-100 scale, unrounded (callers format per
+        # their own precision needs — coach LLM does not re-derive
+        # or override, see §19 LLM contract).
+        adherence_result = compute_weekly_adherence(adherence_entries)
+        adherence_payload = {
+            "adherence_runs_pct": adherence_result.adherence_runs_pct,
+            "completed_runs": adherence_result.completed_runs,
+            "planned_runs": adherence_result.planned_runs,
+            "band": adherence_result.band.value if adherence_result.band else None,
+            "completion_miles_pct": adherence_result.completion_miles_pct_weekly,
+            "planned_miles_total": adherence_result.planned_miles_total,
+            "actual_miles_matched_total": (adherence_result.actual_miles_matched_total),
+        }
+
         return (
             jsonify(
                 {
@@ -468,6 +521,7 @@ def get_current_plan_week():
                     "week_start": week_start.isoformat(),
                     "week_end": week_end.isoformat(),
                     "days": days,
+                    "adherence": adherence_payload,
                 }
             ),
             200,

@@ -184,6 +184,165 @@ def test_current_week_returns_days_and_execution(
     assert day["execution"]["actual"]["deviation_direction"] == "on_target"
     assert "deviation_direction" not in day  # day level never carries it
 
+    # V1.6 Phase A item 5: week-level adherence block. Single planned
+    # run, 100 % completion → adherence 100 %, band HIGH, miles 100 %.
+    # Values are 0-100 scale and unrounded (the route does NOT format;
+    # the coach/UI owns presentation per §X.5).
+    assert "adherence" in data
+    adherence = data["adherence"]
+    assert adherence["planned_runs"] == 1
+    assert adherence["completed_runs"] == 1
+    assert adherence["adherence_runs_pct"] == 100.0
+    assert adherence["band"] == "high"
+    assert adherence["completion_miles_pct"] == 100.0
+    assert adherence["planned_miles_total"] == 5.0
+    assert adherence["actual_miles_matched_total"] == 5.0
+
+
+def test_current_week_adherence_missed_long_run_medium_band(
+    client,
+    auth_header,
+    plan_routes_db,
+    monkeypatch,
+):
+    """
+    V1.6 Phase A item 5: a week with one run completed above the 50 %
+    threshold and one MISSED must surface as Medium band (50 / 50
+    → not quite) ... actually 1 of 2 completed = 50 % → Low band.
+    Also confirms weekly ``completion_miles_pct`` aggregates correctly
+    with the dropped long run in the denominator.
+    """
+    plan_routes_db.add(UserAthleteLink(user_id=str(DEFAULT_USER_ID), athlete_id=99907))
+    plan = Plan(
+        user_id=DEFAULT_USER_ID,
+        plan_name="Adherence partial week",
+        race_date=date(2026, 5, 31),
+        race_distance="Half",
+        is_active=True,
+    )
+    plan_routes_db.add(plan)
+    plan_routes_db.flush()
+    # Two planned runs in the same week.
+    plan_routes_db.add(
+        PlanWorkout(
+            plan_id=plan.id,
+            date=date(2026, 4, 20),
+            workout_type="Easy Run",
+            description="Easy",
+            miles=4.0,
+            intensity="E",
+            run_type_key="easy",
+        )
+    )
+    missed_long = PlanWorkout(
+        plan_id=plan.id,
+        date=date(2026, 4, 21),
+        workout_type="Long Run",
+        description="Long",
+        miles=12.0,
+        intensity="E",
+        run_type_key="long",
+    )
+    plan_routes_db.add(missed_long)
+    plan_routes_db.flush()
+    completed_easy_id = [
+        w.id
+        for w in plan_routes_db.query(PlanWorkout).filter(
+            PlanWorkout.date == date(2026, 4, 20)
+        )
+    ][0]
+    plan_routes_db.add(
+        Activity(
+            activity_id=881122,
+            athlete_id=99907,
+            user_id=DEFAULT_USER_ID,
+            name="Easy done",
+            type="Run",
+            start_date=datetime(2026, 4, 20, 12, 0, tzinfo=timezone.utc),
+            matched_plan_workout_id=completed_easy_id,
+            planned_type="easy",
+            executed_type="easy",
+            planned_miles=4.0,
+            actual_miles=4.0,
+            completion_pct=100.0,
+            conv_distance=4.0,
+            moving_time=2160,
+        )
+    )
+    plan_routes_db.commit()
+
+    monkeypatch.setattr(
+        "src.routes.plan_routes.get_today_date_in_timezone",
+        lambda _tz: date(2026, 4, 26),  # week closed, both days past
+    )
+
+    resp = client.get("/api/plan/current-week?tz=UTC", headers=auth_header())
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    # 1 completed out of 2 planned → 50 % → Low band per §7.
+    adherence = data["adherence"]
+    assert adherence["planned_runs"] == 2
+    assert adherence["completed_runs"] == 1
+    assert adherence["adherence_runs_pct"] == 50.0
+    assert adherence["band"] == "low"
+    # Weekly completion_miles_pct = 4 / 16 = 25 % (long run's 12 planned
+    # miles stays in the denominator even though it's MISSED — the
+    # missed long run is exactly the signal we want the coach to see).
+    assert adherence["completion_miles_pct"] == 25.0
+    assert adherence["planned_miles_total"] == 16.0
+    assert adherence["actual_miles_matched_total"] == 4.0
+
+
+def test_current_week_adherence_empty_week_returns_nulls(
+    client,
+    auth_header,
+    plan_routes_db,
+    monkeypatch,
+):
+    """
+    V1.6 Phase A item 5: a week with zero planned runs must surface
+    ``adherence_runs_pct = None`` and ``band = None`` — not 0 %. The
+    coach must not "reward" a rest/off week with a 0 % Low signal.
+    """
+    plan = Plan(
+        user_id=DEFAULT_USER_ID,
+        plan_name="Off week",
+        race_date=date(2026, 6, 1),
+        race_distance="10K",
+        is_active=True,
+    )
+    plan_routes_db.add(plan)
+    plan_routes_db.flush()
+    # Planned workout far outside the target week.
+    plan_routes_db.add(
+        PlanWorkout(
+            plan_id=plan.id,
+            date=date(2026, 5, 1),
+            workout_type="Easy",
+            description="Far away",
+            miles=3.0,
+            intensity="E",
+            run_type_key="easy",
+        )
+    )
+    plan_routes_db.commit()
+
+    monkeypatch.setattr(
+        "src.routes.plan_routes.get_today_date_in_timezone",
+        lambda _tz: date(2026, 4, 22),
+    )
+
+    resp = client.get("/api/plan/current-week?tz=UTC", headers=auth_header())
+    assert resp.status_code == 200
+    data = json.loads(resp.data)
+    assert data["days"] == []
+    adherence = data["adherence"]
+    assert adherence["planned_runs"] == 0
+    assert adherence["completed_runs"] == 0
+    assert adherence["adherence_runs_pct"] is None
+    assert adherence["band"] is None
+    assert adherence["completion_miles_pct"] is None
+
 
 def test_current_week_day_level_plan_status_no_activity(
     client,
