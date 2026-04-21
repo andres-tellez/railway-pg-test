@@ -12,6 +12,7 @@ from datetime import date
 
 from src.services.plan.plan_status import (
     PlanStatus,
+    derive_violated_rest_day,
     plan_status_for_activity,
     plan_status_for_day,
 )
@@ -141,6 +142,163 @@ class TestPlanStatusForDayFullMatrix:
                     )
                     is not None
                 )
+
+
+class TestDeriveViolatedRestDay:
+    """
+    V1.6 §6 derived flag (Phase A item 2).
+
+    Truth table:
+      plan_status != UNPLANNED → always False (every non-unplanned
+                                 status implies a planned workout → not
+                                 a rest day by definition).
+      plan_status == UNPLANNED + training_days is None/empty → False
+                                 (spec "false otherwise"; safe default
+                                 so coach doesn't escalate on ambiguous
+                                 plan metadata).
+      plan_status == UNPLANNED + weekday IN training_days → False
+                                 (day was a scheduled training day but
+                                 no PlanWorkout row existed — an
+                                 unplanned run on a training day is
+                                 a missed-workout-plus-extra, NOT a
+                                 rest-day violation).
+      plan_status == UNPLANNED + weekday NOT IN training_days → True.
+    """
+
+    def test_executed_status_is_never_a_violation(self):
+        """Planned + matched run cannot be a rest-day violation."""
+        # Even with empty training_days (pathological), a run with a
+        # planned workout cannot violate a rest day.
+        for td in (
+            None,
+            [],
+            ["Mon"],
+            ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        ):
+            assert (
+                derive_violated_rest_day(
+                    plan_status_value=PlanStatus.EXECUTED,
+                    day_weekday=0,
+                    plan_training_days=td,
+                )
+                is False
+            )
+
+    def test_planned_only_in_progress_missed_never_violations(self):
+        """Any status with a planned workout cannot be a rest-day violation."""
+        for status in (
+            PlanStatus.PLANNED_ONLY,
+            PlanStatus.IN_PROGRESS,
+            PlanStatus.MISSED,
+        ):
+            assert (
+                derive_violated_rest_day(
+                    plan_status_value=status,
+                    day_weekday=6,  # Sunday, often a rest day
+                    plan_training_days=["Mon", "Wed", "Thu", "Sat"],
+                )
+                is False
+            ), f"{status} must never surface violated_rest_day=True"
+
+    def test_unplanned_with_no_training_days_defaults_to_false(self):
+        """Safe default: can't prove rest-day intent → don't escalate."""
+        assert (
+            derive_violated_rest_day(
+                plan_status_value=PlanStatus.UNPLANNED,
+                day_weekday=6,
+                plan_training_days=None,
+            )
+            is False
+        )
+        # Empty list treated identically.
+        assert (
+            derive_violated_rest_day(
+                plan_status_value=PlanStatus.UNPLANNED,
+                day_weekday=6,
+                plan_training_days=[],
+            )
+            is False
+        )
+
+    def test_unplanned_on_training_day_is_not_a_violation(self):
+        """weekday IS in training_days → missed workout + extra run, not a rest-day violation."""
+        # User trains Mon, Wed, Thu, Sat → weekday 0.
+        assert (
+            derive_violated_rest_day(
+                plan_status_value=PlanStatus.UNPLANNED,
+                day_weekday=0,  # Mon
+                plan_training_days=["Mon", "Wed", "Thu", "Sat"],
+            )
+            is False
+        )
+
+    def test_unplanned_on_non_training_day_is_violation(self):
+        """Classic case: runner runs on a planned rest day."""
+        # User trains Mon/Wed/Thu/Sat → Sunday (6) is a rest day.
+        assert (
+            derive_violated_rest_day(
+                plan_status_value=PlanStatus.UNPLANNED,
+                day_weekday=6,
+                plan_training_days=["Mon", "Wed", "Thu", "Sat"],
+            )
+            is True
+        )
+
+    def test_training_days_accepts_full_and_abbreviated_names(self):
+        """``DAY_TO_WEEKDAY`` maps both "Monday" and "Mon"."""
+        # All-full names.
+        assert (
+            derive_violated_rest_day(
+                plan_status_value=PlanStatus.UNPLANNED,
+                day_weekday=6,  # Sunday
+                plan_training_days=["Monday", "Wednesday", "Thursday", "Saturday"],
+            )
+            is True
+        )
+        # Mixed formats (real legacy data sometimes mixes).
+        assert (
+            derive_violated_rest_day(
+                plan_status_value=PlanStatus.UNPLANNED,
+                day_weekday=5,  # Saturday
+                plan_training_days=["Mon", "Wednesday", "Thu", "Saturday"],
+            )
+            is False
+        ), "Saturday is a training day whether spelled 'Sat' or 'Saturday'"
+
+    def test_training_days_with_unrecognized_names_are_ignored(self):
+        """Unknown tokens must not crash or flip the boolean semantics."""
+        assert (
+            derive_violated_rest_day(
+                plan_status_value=PlanStatus.UNPLANNED,
+                day_weekday=6,
+                # Known Mon + unknown junk; weekday 6 still not a
+                # training day → violation.
+                plan_training_days=["Mon", "FunDay", None],  # type: ignore[list-item]
+            )
+            is True
+        )
+
+    def test_all_seven_weekdays_covered_exhaustively(self):
+        """Sweep every weekday against a fixed training_days list."""
+        training = ["Mon", "Wed", "Thu", "Sat"]
+        expected_violation = {
+            0: False,  # Mon
+            1: True,  # Tue
+            2: False,  # Wed
+            3: False,  # Thu
+            4: True,  # Fri
+            5: False,  # Sat
+            6: True,  # Sun
+        }
+        for weekday, expected in expected_violation.items():
+            assert (
+                derive_violated_rest_day(
+                    plan_status_value=PlanStatus.UNPLANNED,
+                    day_weekday=weekday,
+                    plan_training_days=training,
+                )
+                is expected
+            ), f"weekday={weekday} expected={expected}"
 
 
 class TestPlanStatusDocumentedGapAcknowledged:

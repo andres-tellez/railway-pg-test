@@ -7,7 +7,7 @@ from __future__ import annotations
 import copy
 import statistics
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy import Integer, bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from src.db.dao.activity_dao import ActivityDAO
 from src.db.models.activities import Activity
-from src.services.plan.plan_status import PlanStatus, plan_status_for_activity
+from src.services.plan.plan_status import (
+    PlanStatus,
+    derive_violated_rest_day,
+    plan_status_for_activity,
+)
 from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_duration_seconds,
@@ -130,7 +134,11 @@ def _avg_pace_per_mile_display_from_activity(act: Any) -> Optional[str]:
     return f"{m}:{s:02d}/mi"
 
 
-def build_run_execution_block(act: Any) -> Dict[str, Any]:
+def build_run_execution_block(
+    act: Any,
+    *,
+    plan_training_days: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
     """
     Canonical V1.6 planned.* / actual.* block for one activity.
 
@@ -140,7 +148,7 @@ def build_run_execution_block(act: Any) -> Dict[str, Any]:
     execution_summary, future Phase B plan-aware tools) flow from this
     dict.
 
-    Returns a dict with four top-level keys:
+    Returns a dict with five top-level keys:
 
     * ``matched_plan_workout_id`` — FK to ``plan_workouts.id`` (``None``
       when the activity is unplanned).
@@ -150,17 +158,54 @@ def build_run_execution_block(act: Any) -> Dict[str, Any]:
       the single source of truth for this field. Lives at top level
       (neither ``planned.*`` nor ``actual.*``) because it describes
       the pairing between the two sides, not a side of it.
+    * ``violated_rest_day`` — V1.6 §6 derived flag (Phase A item 2).
+      ``True`` iff ``plan_status == "unplanned"`` and the activity's
+      weekday is not among ``plan_training_days``. ``False`` otherwise,
+      including when ``plan_training_days`` is ``None`` (safe default
+      — coach §19 must not escalate on ambiguous plan metadata).
+      Derived via
+      ``src.services.plan.plan_status.derive_violated_rest_day``.
     * ``planned`` — fields populated at plan-creation time.
     * ``actual`` — fields derived from the executed activity.
+
+    Args:
+        act: ``Activity`` or duck-typed object with the attributes
+            read by the ``getattr`` calls below.
+        plan_training_days: ``plan.training_days`` (nullable array of
+            day-name strings, full or abbreviated). Keyword-only to
+            keep the positional contract backward-compatible. When
+            ``None`` the ``violated_rest_day`` flag degrades to
+            ``False`` per spec "false otherwise".
 
     Absent (unlinked) vs null: a ``None`` value means "checked, no
     value"; the per-key presence always holds (V1.6 §4 null-vs-absent
     convention). Shape adapters may drop keys to match legacy shapes.
     """
     matched_pw_id = getattr(act, "matched_plan_workout_id", None)
+    plan_status = plan_status_for_activity(matched_pw_id)
+    # violated_rest_day only requires weekday-lookup on the UNPLANNED
+    # branch. For EXECUTED the flag is unconditionally False (a day
+    # with a planned workout is by definition not a rest day), and
+    # we skip reading start_date so the function stays cheap and
+    # tolerant of duck-typed inputs without a start_date attribute.
+    if plan_status == PlanStatus.UNPLANNED:
+        start_date = getattr(act, "start_date", None)
+        day_weekday = start_date.weekday() if start_date is not None else None
+        violated = (
+            derive_violated_rest_day(
+                plan_status_value=plan_status,
+                day_weekday=day_weekday,
+                plan_training_days=plan_training_days,
+            )
+            if day_weekday is not None
+            else False
+        )
+    else:
+        violated = False
     return {
         "matched_plan_workout_id": matched_pw_id,
-        "plan_status": plan_status_for_activity(matched_pw_id).value,
+        "plan_status": plan_status.value,
+        "violated_rest_day": violated,
         "planned": {
             "type": getattr(act, "planned_type", None),
             "miles": getattr(act, "planned_miles", None),
@@ -265,6 +310,7 @@ def execution_block_to_insight_summary_shape(
     return {
         "matched_plan_workout_id": block.get("matched_plan_workout_id"),
         "plan_status": block.get("plan_status"),
+        "violated_rest_day": block.get("violated_rest_day"),
         "planned_type": planned.get("type"),
         "executed_type": actual.get("type"),
         "zone_compliance_pct": actual.get("zone_compliance_pct"),
