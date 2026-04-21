@@ -40,6 +40,9 @@ from src.smartcoach_mobile_coach.agent_tools import (
     tool_generate_training_plan,
 )
 from src.smartcoach_mobile_coach.metric_glossary import metric_glossary_section
+from src.smartcoach_mobile_coach.plan_guidance_contract import (
+    plan_guidance_contract_section,
+)
 from src.smartcoach_mobile_coach.plan_vs_actual_contract import (
     plan_vs_actual_contract_section,
 )
@@ -1908,6 +1911,14 @@ def run_mobile_agent_turn(
             # plan_creation_mode because there is no plan-vs-actual to
             # reason about during intake.
             plan_vs_actual_contract_section(),
+            # 3C.3 + 3C.4: phase emphasis + future-week contract (spec
+            # §§19.4–19.5). Phase-aware KPI emphasis reads
+            # `phase_kpi_priority` from the plan payloads; the future-week
+            # rules allow intent / progression talk but forbid outcome
+            # prediction, inferred difficulty, references to absent
+            # actual.* fields, and numbers not present in the payload.
+            # Also suppressed in plan_creation_mode.
+            plan_guidance_contract_section(),
             prefs_block,
             _device_anchor_system_section(anchor_local_date, client_timezone),
             _hr_calibration_system_section(session, internal_user_id),
