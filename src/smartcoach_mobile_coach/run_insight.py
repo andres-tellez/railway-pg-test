@@ -28,6 +28,7 @@ from src.smartcoach_mobile_coach.display_format import (
     format_duration_seconds,
     format_hr_bpm,
     format_pace_sec_per_mi,
+    format_percent,
     format_time_utc,
     table_row_date_label,
 )
@@ -277,6 +278,32 @@ def execution_block_to_weekly_plan_shape(
         "avg_pace_per_mile": pace_display,
     }
 
+    # V1.6 3B.7 — top-level ``display`` sibling (Topic 4): display-ready
+    # strings (pace ``M:SS/mi``, HR ``"N bpm"``, distance with ``mi``,
+    # percentages ``"NN %"``). Siblings keep the canonical ``planned`` /
+    # ``actual`` namespaces byte-exact with the source block so the
+    # single-source-of-truth contract (PHASE_3 §X.5) holds.
+    display_block = {
+        "planned": {
+            "miles": (
+                format_distance_mi(planned.get("miles"))
+                if planned.get("miles") is not None
+                else None
+            ),
+        },
+        "actual": {
+            "miles": (
+                format_distance_mi(actual.get("miles"))
+                if actual.get("miles") is not None
+                else None
+            ),
+            "avg_hr": format_hr_bpm(avg_hr),
+            "pace": pace_display,
+            "zone_compliance_pct": format_percent(actual.get("zone_compliance_pct")),
+            "completion_pct": format_percent(actual.get("completion_pct")),
+        },
+    }
+
     start_date = getattr(act, "start_date", None)
     start_date_iso = (
         start_date.isoformat()
@@ -291,6 +318,7 @@ def execution_block_to_weekly_plan_shape(
         # V1.6 §6 canonical namespaced shape — 0.E mobile reads from here.
         "planned": dict(planned),
         "actual": actual_namespaced,
+        "display": display_block,
         # Legacy flat fields — DEPRECATED post-Phase B. Sourced from
         # the same canonical block, so they cannot drift from the
         # namespaced shape above.
@@ -348,6 +376,32 @@ def execution_block_to_insight_summary_shape(
     """
     planned = block.get("planned") or {}
     actual = block.get("actual") or {}
+    # V1.6 3B.7 — top-level ``display`` sibling (NOT nested inside
+    # ``planned`` / ``actual``) preserves the 3B.1 byte-exact parity
+    # contract between the namespaced blocks and the canonical source
+    # block. Formatted strings use existing display_format helpers;
+    # numeric fields stay the single source of truth for any math.
+    display_block = {
+        "planned": {
+            "miles": (
+                format_distance_mi(planned.get("miles"))
+                if planned.get("miles") is not None
+                else None
+            ),
+        },
+        "actual": {
+            "miles": (
+                format_distance_mi(actual.get("miles"))
+                if actual.get("miles") is not None
+                else None
+            ),
+            "avg_hr": format_hr_bpm(actual.get("average_heartrate")),
+            "zone_compliance_pct": format_percent(actual.get("zone_compliance_pct")),
+            "completion_pct": format_percent(actual.get("completion_pct")),
+            "pct_above_zone": format_percent(actual.get("pct_above_zone")),
+            "pct_below_zone": format_percent(actual.get("pct_below_zone")),
+        },
+    }
     return {
         "matched_plan_workout_id": block.get("matched_plan_workout_id"),
         "plan_status": block.get("plan_status"),
@@ -359,6 +413,11 @@ def execution_block_to_insight_summary_shape(
         # ``execution_summary`` is cached by get_run_summary).
         "planned": dict(planned),
         "actual": dict(actual),
+        # V1.6 3B.7 Topic 4 display-ready strings — sibling of the
+        # namespaced blocks so the byte-exact parity contract above
+        # holds. The coach may cite ``display.actual.avg_hr`` as
+        # ``"142 bpm"`` directly rather than re-formatting on the fly.
+        "display": display_block,
         # Top-level convenience copy of ``actual.deviation_direction``.
         # 3B.1 requires this be discoverable at the §6 "pairing level"
         # alongside ``plan_status`` / ``violated_rest_day`` so the

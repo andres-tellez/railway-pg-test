@@ -625,14 +625,52 @@ def tool_get_weekly_plan(
     target_monday = _parse_week_start_iso(week_start_iso)
     tz_value = tz if (isinstance(tz, str) and tz.strip()) else "UTC"
 
-    from src.services.plan.weekly_plan import build_weekly_plan_payload
+    # V1.6 3B.8 Topic 5 — per-request dedup across repeat calls with
+    # the same (user, week, tz, today) window. Past-week payloads are
+    # stable; current-week bounded by TTL (new activity landing within
+    # the TTL window is acceptable staleness); future-week invalidated
+    # on plan regen via ``invalidate_user_plan_cache``.
+    #
+    # Import ``get_today_date_in_timezone`` from the service module so
+    # the cache's "what is today" resolve follows the same binding the
+    # service itself uses — tests that pin today on the service module
+    # also pin the cache key without a separate patch.
+    from src.services.plan.weekly_plan import (
+        build_weekly_plan_payload,
+        get_today_date_in_timezone,
+    )
+    from src.smartcoach_mobile_coach import plan_cache
 
-    return build_weekly_plan_payload(
+    user_id_str = str(user_uuid)
+    resolved_today = get_today_date_in_timezone(tz_value)
+    today_iso = resolved_today.isoformat()
+    extra_key = target_monday.isoformat() if target_monday is not None else "default"
+
+    cached = plan_cache.get_cached(
+        "weekly_plan",
+        user_id_str,
+        tz=tz_value,
+        today_iso=today_iso,
+        extra=extra_key,
+    )
+    if cached is not None:
+        return cached
+
+    payload = build_weekly_plan_payload(
         session,
         user_uuid,
         tz=tz_value,
         target_week_start=target_monday,
     )
+    plan_cache.set_cached(
+        "weekly_plan",
+        user_id_str,
+        payload,
+        tz=tz_value,
+        today_iso=today_iso,
+        extra=extra_key,
+    )
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -712,13 +750,43 @@ def tool_get_plan_overview(
 
     tz_value = tz if (isinstance(tz, str) and tz.strip()) else "UTC"
 
-    from src.services.plan.plan_overview import build_plan_overview_payload
+    # V1.6 3B.8 Topic 5 — plan_overview is planned-only (no activity
+    # read), so it is effectively immutable between plan regens.
+    # Cache keyed on (user, tz, today) with TTL and invalidation on
+    # ``tool_generate_training_plan``. Today is resolved through the
+    # service's own binding so tests that pin today on the service
+    # also pin the cache key.
+    from src.services.plan.plan_overview import (
+        build_plan_overview_payload,
+        get_today_date_in_timezone,
+    )
+    from src.smartcoach_mobile_coach import plan_cache
 
-    return build_plan_overview_payload(
+    user_id_str = str(user_uuid)
+    today_iso = get_today_date_in_timezone(tz_value).isoformat()
+
+    cached = plan_cache.get_cached(
+        "plan_overview",
+        user_id_str,
+        tz=tz_value,
+        today_iso=today_iso,
+    )
+    if cached is not None:
+        return cached
+
+    payload = build_plan_overview_payload(
         session,
         user_uuid,
         tz=tz_value,
     )
+    plan_cache.set_cached(
+        "plan_overview",
+        user_id_str,
+        payload,
+        tz=tz_value,
+        today_iso=today_iso,
+    )
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -808,14 +876,48 @@ def tool_get_phase_analysis(
 
     tz_value = tz if (isinstance(tz, str) and tz.strip()) else "UTC"
 
-    from src.services.plan.phase_analysis import build_phase_analysis_payload
+    # V1.6 3B.8 Topic 5 — phase_analysis rolls up per-run-type data
+    # through ``build_run_execution_block``. Cache keyed on (user,
+    # phase, tz, today) with TTL and invalidation on plan regen.
+    # Today is resolved through the service's own binding so tests
+    # that pin today on the service also pin the cache key.
+    from src.services.plan.phase_analysis import (
+        build_phase_analysis_payload,
+        get_today_date_in_timezone,
+    )
+    from src.smartcoach_mobile_coach import plan_cache
 
-    return build_phase_analysis_payload(
+    user_id_str = str(user_uuid)
+    today_iso = get_today_date_in_timezone(tz_value).isoformat()
+    # Normalize case so "Base" and "base" hit the same cache entry;
+    # the service already performs its own case-insensitive resolve.
+    phase_key = phase_id.strip().lower() if isinstance(phase_id, str) else str(phase_id)
+
+    cached = plan_cache.get_cached(
+        "phase_analysis",
+        user_id_str,
+        tz=tz_value,
+        today_iso=today_iso,
+        extra=phase_key,
+    )
+    if cached is not None:
+        return cached
+
+    payload = build_phase_analysis_payload(
         session,
         user_uuid,
         phase_id,
         tz=tz_value,
     )
+    plan_cache.set_cached(
+        "phase_analysis",
+        user_id_str,
+        payload,
+        tz=tz_value,
+        today_iso=today_iso,
+        extra=phase_key,
+    )
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -1532,6 +1634,14 @@ def tool_generate_training_plan(
     from src.smartcoach_mobile_coach import user_context_cache
 
     user_context_cache.invalidate_user_context(str(internal_user_id))
+
+    # 3B.8 Topic 5: every plan-tool cache entry for this user is now
+    # stale too — weekly_plan (new workouts per day), plan_overview
+    # (new phase blocks / volume curve), phase_analysis (new phase
+    # definitions / KPI emphasis). Drop them so the next read rebuilds.
+    from src.smartcoach_mobile_coach import plan_cache
+
+    plan_cache.invalidate_user_plan_cache(str(internal_user_id))
 
     from src.db.dao.plans_dao import get_plan_with_workouts
 
