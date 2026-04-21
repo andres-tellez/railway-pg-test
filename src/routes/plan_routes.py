@@ -5,7 +5,6 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy import desc
 import uuid
 import logging
-import re
 
 from src.db.db_session import get_session
 from src.db.models.plans import Plan
@@ -49,22 +48,30 @@ def inject_user_id():
             g.user_id = None
 
 
-def _infer_run_type_key_for_hr(w) -> str:
-    """Same inference as GET /current for PlanStorageService HR zones."""
-    run_type_key = w.run_type_key
-    if not run_type_key:
-        workout_type_lower = (w.workout_type or "").lower()
-        if "threshold" in workout_type_lower or "tempo" in workout_type_lower:
-            run_type_key = "threshold"
-        elif "steady" in workout_type_lower or "aerobic" in workout_type_lower:
-            run_type_key = "steady"
-        elif "long" in workout_type_lower or "endurance" in workout_type_lower:
-            run_type_key = "long"
-        elif "easy" in workout_type_lower or "recovery" in workout_type_lower:
-            run_type_key = "easy"
-        else:
-            run_type_key = "easy"
-    return run_type_key or "easy"
+def _resolve_run_type_key_for_workout(w) -> str:
+    """
+    Canonical run_type_key resolution for a PlanWorkout row.
+
+    V1.6 Pre-Phase A 0.D — replaces the previous GET-time text-matching
+    inference (``_infer_run_type_key_for_hr``). Resolution order:
+
+    1. Stored ``w.run_type_key`` normalized through ``LEGACY_TO_CANONICAL_RUN_TYPE``.
+       This is the single source of truth for canonical run types
+       (``src/utils/run_type_constants.py``).
+    2. Fallback: normalize ``w.workout_type`` (legacy rows that predate
+       ``run_type_key`` persistence). Still uses the canonical map — no
+       substring text-matching.
+    3. Final fallback: ``RUN_TYPE_EASY``.
+
+    This function MUST NOT mutate the row. HR zone correctness for stored
+    rows is the plan-storage + ``recalculate_hr_zones_service`` concern,
+    not the GET path.
+    """
+    return (
+        normalize_run_type_key(getattr(w, "run_type_key", None))
+        or normalize_run_type_key(getattr(w, "workout_type", None))
+        or RUN_TYPE_EASY
+    )
 
 
 def _internal_user_uuid(raw) -> uuid.UUID:
@@ -243,7 +250,13 @@ def get_current_plan():
                 logger.warning(f"Failed to parse segments: {e}")
                 return None
 
-        # Calculate HR zones on-the-fly if missing
+        # V1.6 Pre-Phase A 0.D:
+        # HR zones are the responsibility of plan storage
+        # (PlanStorageService._workout_to_row) and the dedicated
+        # recalculate_hr_zones_service. The GET path MUST NOT re-derive or
+        # mutate target_hr beyond a narrow legacy fallback for rows that
+        # predate target_hr persistence. No zone revalidation, no text-
+        # matching inference.
         from src.db.dao.user_profile_dao import get_user_profile
         from src.services.training_plan.plan_storage_service import PlanStorageService
 
@@ -251,50 +264,14 @@ def get_current_plan():
 
         workouts_data = []
         for w in workouts:
+            run_type_key = _resolve_run_type_key_for_workout(w)
             target_hr = w.target_hr
-            # Determine run_type_key for validation/recalculation
-            run_type_key = w.run_type_key
-            if not run_type_key:
-                # Try to infer from workout_type
-                workout_type_lower = (w.workout_type or "").lower()
-                if "threshold" in workout_type_lower or "tempo" in workout_type_lower:
-                    run_type_key = "threshold"
-                elif "steady" in workout_type_lower or "aerobic" in workout_type_lower:
-                    run_type_key = "steady"
-                elif "long" in workout_type_lower or "endurance" in workout_type_lower:
-                    run_type_key = "long"
-                elif "easy" in workout_type_lower or "recovery" in workout_type_lower:
-                    run_type_key = "easy"
-                else:
-                    run_type_key = "easy"  # default
-
-            # Calculate HR zone if missing OR if existing zone doesn't match workout type
+            # Legacy fallback ONLY when DB value is missing. Stored
+            # target_hr is authoritative and must not be overridden here.
             if not target_hr:
-                if run_type_key:
-                    target_hr = PlanStorageService._calculate_hr_zone(
-                        run_type_key, user_profile
-                    )
-            elif run_type_key:
-                # Validate existing target_hr matches expected zone for workout type
-                # Recalculate if zone is incorrect (e.g., Steady showing Z2 instead of Z3)
-                expected_hr = PlanStorageService._calculate_hr_zone(
+                target_hr = PlanStorageService._calculate_hr_zone(
                     run_type_key, user_profile
                 )
-                # Extract zone from stored and expected (e.g., "Z2" vs "Z3")
-                stored_zone_match = (
-                    re.search(r"Z[1-5]", target_hr) if target_hr else None
-                )
-                expected_zone_match = (
-                    re.search(r"Z[1-5]", expected_hr) if expected_hr else None
-                )
-                stored_zone = stored_zone_match.group(0) if stored_zone_match else None
-                expected_zone = (
-                    expected_zone_match.group(0) if expected_zone_match else None
-                )
-
-                # If zones don't match, use the correct one
-                if stored_zone != expected_zone:
-                    target_hr = expected_hr
 
             workouts_data.append(
                 {
@@ -407,37 +384,19 @@ def get_current_plan_week():
                 if mpw is not None and mpw not in execution_by_pw:
                     execution_by_pw[mpw] = a
 
+        # V1.6 Pre-Phase A 0.D:
+        # target_hr is authoritative as stored. Only fall back to a
+        # canonical recomputation when the row has no stored zone
+        # (legacy rows). No zone revalidation, no text-matching inference.
         days = []
         for w in workouts:
-            hr_key = _infer_run_type_key_for_hr(w)
+            canonical = _resolve_run_type_key_for_workout(w)
             target_hr = w.target_hr
             if not target_hr:
-                if hr_key:
-                    target_hr = PlanStorageService._calculate_hr_zone(
-                        hr_key, user_profile
-                    )
-            elif hr_key:
-                expected_hr = PlanStorageService._calculate_hr_zone(
-                    hr_key, user_profile
+                target_hr = PlanStorageService._calculate_hr_zone(
+                    canonical, user_profile
                 )
-                stored_zone_match = (
-                    re.search(r"Z[1-5]", target_hr) if target_hr else None
-                )
-                expected_zone_match = (
-                    re.search(r"Z[1-5]", expected_hr) if expected_hr else None
-                )
-                stored_zone = stored_zone_match.group(0) if stored_zone_match else None
-                expected_zone = (
-                    expected_zone_match.group(0) if expected_zone_match else None
-                )
-                if stored_zone != expected_zone:
-                    target_hr = expected_hr
 
-            canonical = (
-                normalize_run_type_key(hr_key)
-                or normalize_run_type_key(w.run_type_key)
-                or RUN_TYPE_EASY
-            )
             rt_def = (
                 RUN_TYPE_DEFINITIONS.get(canonical)
                 or RUN_TYPE_DEFINITIONS[RUN_TYPE_EASY]
