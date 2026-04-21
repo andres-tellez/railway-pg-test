@@ -19,6 +19,10 @@ from sqlalchemy import and_, text
 from sqlalchemy.orm import Session
 
 from src.db.models.activities import Activity
+from src.services.scoring.zone_compliance import (
+    zone_distribution_from_activity,
+    zone_metrics_for_type,
+)
 from src.utils.run_type_constants import (
     CANONICAL_RUN_TYPES,
     RUN_TYPE_DEFINITIONS,
@@ -38,35 +42,6 @@ class PlanMatch:
     workout_id: int
     planned_type: str | None
     planned_miles: float | None
-
-
-def _zone_distribution(activity: Activity) -> dict[int, float]:
-    zones = {
-        1: float(activity.hr_zone_1 or 0.0),
-        2: float(activity.hr_zone_2 or 0.0),
-        3: float(activity.hr_zone_3 or 0.0),
-        4: float(activity.hr_zone_4 or 0.0),
-        5: float(activity.hr_zone_5 or 0.0),
-    }
-    total = sum(zones.values())
-    if total <= 0:
-        return zones
-    return {zone_id: (value / total) * 100.0 for zone_id, value in zones.items()}
-
-
-def _zone_metrics_for_type(
-    distribution_pct: dict[int, float], run_type_key: str
-) -> tuple[float, float, float]:
-    definition = RUN_TYPE_DEFINITIONS[run_type_key]
-    in_target = sum(distribution_pct.get(z, 0.0) for z in definition.target_zone_ids)
-    pct_below = sum(
-        distribution_pct.get(z, 0.0) for z in range(1, definition.acceptable_zone_min)
-    )
-    pct_above = sum(
-        distribution_pct.get(z, 0.0)
-        for z in range(definition.acceptable_zone_max + 1, 6)
-    )
-    return (round(in_target, 2), round(pct_above, 2), round(pct_below, 2))
 
 
 def _score_candidate(
@@ -285,7 +260,7 @@ def analyze_activity_execution(
     if not activity or activity.type != "Run":
         return None
 
-    distribution_pct = _zone_distribution(activity)
+    distribution_pct = zone_distribution_from_activity(activity)
     if sum(distribution_pct.values()) <= 0:
         return None
 
@@ -297,7 +272,7 @@ def analyze_activity_execution(
     best_fitness = float("-inf")
 
     for candidate in CANONICAL_RUN_TYPES:
-        in_target, pct_above, pct_below = _zone_metrics_for_type(
+        in_target, pct_above, pct_below = zone_metrics_for_type(
             distribution_pct, candidate
         )
         fitness = _score_candidate(candidate, in_target, pct_above, pct_below)
