@@ -1157,6 +1157,111 @@ def tool_save_coach_preference(
     }
 
 
+# ---------------------------------------------------------------------------
+# Tool: save_phase_goal (V1.6 Phase D 3D.2)
+# ---------------------------------------------------------------------------
+
+
+def tool_save_phase_goal(
+    session: Session, internal_user_id: str, args: Dict[str, Any]
+) -> Dict[str, Any]:
+    """V1.6 Phase D 3D.2 — persist the athlete's current phase focus.
+
+    Soft-semantics writer: no hard consent gate. The coach calls this
+    whenever it has agreement (explicit or soft) from the user on a
+    behavior-and-outcome focus sentence for the current / next phase.
+    Supersede-then-insert keeps history without partial unique indexes.
+
+    Args (``args`` dict — LLM-provided):
+        phase: Required. One of Base / Build / Peak / Taper
+            (case-insensitive).
+        goal_text: Required. 1–280 chars behavior-and-outcome sentence
+            (NOT a KPI threshold; see spec §19.4).
+        source: Optional. One of ``auto_proposed`` / ``coach_refined``
+            / ``user_stated``. Defaults to ``auto_proposed`` so the
+            common path (coach proposes on phase entry) needs no arg.
+        confirmed: Optional bool. When ``True`` stamps
+            ``confirmed_at = now``; the coach uses this on turns where
+            the user has explicitly agreed ("yes keep that as my focus").
+
+    Returns:
+        On success::
+
+            {
+                "saved": True,
+                "goal": {id, plan_id, phase, goal_text, status,
+                         source, confirmed_at, created_at},
+                "superseded_goal_id": <int | None>,
+                "message": "Saved your <phase> focus.",
+            }
+
+        On error, a standard ``{"error": code, "message": ...}``
+        envelope where ``code`` is one of: ``invalid_user_id``,
+        ``invalid_phase``, ``invalid_goal_text``, ``invalid_source``,
+        ``no_active_plan``, ``tool_execution_failed``.
+    """
+    import uuid as _uuid
+
+    from src.services.plan.phase_goal import save_phase_goal as service_save_phase_goal
+
+    try:
+        user_uuid = _uuid.UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        return {
+            "error": "invalid_user_id",
+            "message": "internal_user_id must be a UUID string.",
+        }
+
+    phase_raw = args.get("phase")
+    goal_text_raw = args.get("goal_text")
+    source_raw = args.get("source")
+    confirmed_raw = args.get("confirmed", False)
+    # Explicit bool coercion — LLM can emit "true" / "false" strings.
+    if isinstance(confirmed_raw, str):
+        confirmed = confirmed_raw.strip().lower() == "true"
+    else:
+        confirmed = bool(confirmed_raw)
+
+    status, payload = service_save_phase_goal(
+        session,
+        user_uuid,
+        phase_raw,
+        goal_text_raw,
+        source_raw=source_raw,
+        confirmed=confirmed,
+    )
+
+    if status != "ok":
+        # Service already wrote rollback-safe state (no-op on failed
+        # validation paths because nothing was flushed). The tool layer
+        # commits on success only.
+        return payload
+
+    try:
+        session.commit()
+    except Exception:
+        logger.exception("[tool_save_phase_goal] commit failed")
+        try:
+            session.rollback()
+        except Exception:
+            logger.debug(
+                "[tool_save_phase_goal] rollback after commit failure also failed",
+                exc_info=True,
+            )
+        return {
+            "error": "tool_execution_failed",
+            "message": "Could not save phase goal. Please try again.",
+        }
+
+    phase_label = payload["goal"]["phase"]
+    return {
+        "saved": True,
+        "goal": payload["goal"],
+        "superseded_goal_id": payload["superseded_goal_id"],
+        "message": f"Saved your {phase_label} focus.",
+    }
+
+
 def tool_update_plan_intake(
     session: Session,
     internal_user_id: str,
@@ -1728,6 +1833,12 @@ _TOOL_HANDLERS = {
     "get_user_context": "get_user_context",
     "get_marathon_projection": "get_marathon_projection",
     "save_coach_preference": "save_coach_preference",
+    # V1.6 Phase D 3D.2 — persist the athlete's current phase focus
+    # (behavior/outcome sentence, NOT a KPI threshold). Supersede-
+    # then-insert preserves history; ``confirmed=True`` stamps explicit
+    # agreement. Soft-semantics writer: no hard consent gate, coach
+    # decides based on conversational intent.
+    "save_phase_goal": "save_phase_goal",
     "update_plan_intake": "update_plan_intake",
     "generate_training_plan": "generate_training_plan",
     # Legacy names → map to current handlers
@@ -1954,6 +2065,9 @@ def execute_tool(
 
         if handler_key == "save_coach_preference":
             return tool_save_coach_preference(session, internal_user_id, args)
+
+        if handler_key == "save_phase_goal":
+            return tool_save_phase_goal(session, internal_user_id, args)
 
         if handler_key == "update_plan_intake":
             return tool_update_plan_intake(

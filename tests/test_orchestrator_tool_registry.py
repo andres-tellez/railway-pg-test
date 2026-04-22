@@ -34,10 +34,12 @@ from src.smartcoach_mobile_coach.orchestrator import (
     _GET_PLAN_OVERVIEW_OPENAI_TOOL,
     _GET_USER_CONTEXT_OPENAI_TOOL,
     _GET_WEEKLY_PLAN_OPENAI_TOOL,
+    _SAVE_PHASE_GOAL_OPENAI_TOOL,
     _ensure_get_phase_analysis_tool,
     _ensure_get_plan_overview_tool,
     _ensure_get_user_context_tool,
     _ensure_get_weekly_plan_tool,
+    _ensure_save_phase_goal_tool,
     _openai_tool_names,
 )
 
@@ -63,6 +65,11 @@ _PLAN_TOOL_PAIRS = [
         "get_user_context",
         _GET_USER_CONTEXT_OPENAI_TOOL,
         _ensure_get_user_context_tool,
+    ),
+    (
+        "save_phase_goal",
+        _SAVE_PHASE_GOAL_OPENAI_TOOL,
+        _ensure_save_phase_goal_tool,
     ),
 ]
 
