@@ -1408,6 +1408,13 @@ def _load_coaching_preferences(session: Session, user_id: str) -> Dict[str, Any]
         logger.debug(
             "user_coach_preferences query failed; using defaults", exc_info=True
         )
+        try:
+            session.rollback()
+        except Exception:
+            logger.debug(
+                "user_coach_preferences rollback after query error failed",
+                exc_info=True,
+            )
         return dict(_DEFAULT_PREFS)
 
     if row:

@@ -123,6 +123,10 @@ def test_reader_returns_none_when_table_missing_or_query_raises() -> None:
     # bubble up a DB error that would break a turn.
     session = _mock_session_returning(RuntimeError("relation does not exist"))
     assert read_most_recent_session_summary(session, "user-1") is None
+    # Swallowed SQL errors must not leave Postgres in
+    # InFailedSqlTransaction — the shared request session needs a
+    # rollback before any later query (e.g. user_profile).
+    session.rollback.assert_called_once()
 
 
 def test_reader_returns_none_when_summary_text_is_empty_or_whitespace() -> None:

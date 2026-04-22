@@ -73,6 +73,14 @@ def _increment_tool_call_count(session: Session, tool_name: str) -> None:
         session.commit()
     except Exception:
         logger.debug("Could not increment call_count for %s", tool_name, exc_info=True)
+        try:
+            session.rollback()
+        except Exception:
+            logger.debug(
+                "Could not rollback after call_count failure for %s",
+                tool_name,
+                exc_info=True,
+            )
 
 
 def _parse_activity_id(args: Dict[str, Any]) -> Optional[int]:
