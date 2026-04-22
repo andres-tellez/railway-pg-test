@@ -534,15 +534,43 @@ Behavior was validated as working at the end of Phase C; real-world turn latency
 
 ---
 
-## Phase D — Phase goals
+## Phase D — Phase Goals + Progress UX
+
+**Scope re-aligned 2026-04-21** to the user's locked UX spec: Purpose → Focus → Weekly Progress → Action. Goals are behavior/outcome-based (NOT KPI thresholds); one active goal per (user, plan, phase); refinement = in-place supersede; weekly progress is a deterministic backend label (`on_track` / `close` / `off_track`) that the coach expresses in natural language; retrospective is merged with the next phase's goal proposal into a single turn at phase transition; phase-UX template applies only to phase/plan/progress-related turns.
 
 | ID | Requirement | Status | Spec ref |
 |----|----|----|----|
-| 3D.1 | Table `user_phase_goals` — `(user_id, plan_id, phase, goal_text, goal_kpi_refs JSONB, created_at, completed_at)` | **Not started** | Topic 9; §19.4 |
-| 3D.2 | Tool `save_phase_goal(phase, goal_text)` with explicit user-consent UI gate (see COACH_TOOLKIT_PROFILE_UPDATES_WITH_CONSENT pattern) | **Not started** | Topic 9 |
-| 3D.3 | `get_phase_analysis(phase_id)` includes saved goals in payload | **Not started** | Topic 9 |
-| 3D.4 | Coach language evaluates phase-to-date KPIs against saved goals (§19.4) | **Not started** | §19.4 |
+| 3D.1 | Table `user_phase_goals` (`id, user_id, plan_id, phase, goal_text, status, source, confirmed_at, created_at`) + SQLAlchemy model + Postgres DDL migration | **Done 2026-04-21** | Topic 9; §19.4 |
+| 3D.6 | Weekly phase-progress classifier (`on_track` / `close` / `off_track` / `None`) — pure producer + phase-priority-run-type mapping + adherence×execution matrix | **Done 2026-04-21** | §19.4; locked rule 2026-04-21 |
+| 3D.2 | Tool `save_phase_goal(phase, goal_text)` — soft semantics (no hard consent gate), in-place supersede-then-insert for replacement | **Not started** | Topic 9 |
+| 3D.3 + 3D.7 | `get_phase_analysis(phase_id)` extended: active goal, per-week `weekly_progress[]` history, and `phase_progress_summary` rollup | **Not started** | Topic 9; §19.4 |
+| 3D.8 | Phase UX prompt contract — Purpose → Focus → Progress → Action, scope-gated to phase/plan/progress turns, plain-language rule for progress labels | **Not started** | §19.4 |
+| 3D.4 | Coach reasoning hook — first-plan-turn auto-proposal + retrospective-at-phase-transition (merged with new goal proposal) | **Not started** | §19.4 |
+| 3D.9 | Golden-path coach turn tests (mid-phase update, transition merged retro+proposal, mid-turn scope gating) | **Not started** | §19.4 |
+| 3D.10 | Deprecate raw-threshold language in existing prompt blocks; finalize checklist; propagate dev → staging → prod | **Not started** | X.9 |
 | 3D.5 | Mobile UI to surface phase goals (optional V1.6; may defer to V1.7) | **Deferred** | — |
+
+### 3D.1 — `user_phase_goals` (landed 2026-04-21)
+- **Model.** `src/db/models/user_phase_goals.py` — `UserPhaseGoal` ORM class + module constants for `GOAL_STATUS_*` / `GOAL_SOURCE_*`. `status` lifecycle = `active` | `superseded` | `completed` | `dropped`; `source` provenance = `auto_proposed` | `coach_refined` | `user_stated`. Soft-history pattern (supersede-then-insert) avoids the need for a partial unique index so SQLite tests + Postgres prod agree.
+- **Postgres DDL.** `migrations/sql/20260421_create_user_phase_goals.sql` — `CREATE TABLE IF NOT EXISTS` + composite lookup index + CHECK constraints guarding the three enum columns (status, source, phase). Apply on Railway via `psql "$DATABASE_URL" -f <file>`; rollback block included at the bottom. Dev + test databases pick up the table automatically via `Base.metadata.create_all`.
+- **Test bootstrap.** `tests/conftest.py` imports `src.db.models.user_phase_goals` so `Base.metadata.create_all` creates the table on the in-memory SQLite engine.
+- **Tests.** `tests/test_user_phase_goals_model.py` (7 tests): enum-constants contract (status / source values stable + de-duplicated), `__tablename__` lock, required-vs-nullable columns + server defaults resolve (`status='active'`, `source='auto_proposed'`, `confirmed_at=None`), `confirmed_at` roundtrips when set, supersede-then-insert preserves history (exactly one `active` + one `superseded` per phase), and cross-phase non-collision (Base/Build/Peak/Taper can hold independent active goals on the same plan).
+
+### 3D.6 — weekly phase-progress classifier (landed 2026-04-21)
+- **Producer.** `src/services/phase/weekly_progress.py` — single-source-of-truth for `on_track` / `close` / `off_track` / `None`. Exposes: `classify_priority_kpi_execution(deviations)` (list → `mostly_on_target` / `mixed` / `mostly_off` / `None`), `aggregate_priority_kpi_for_phase(phase, entries)` (priority-run-type filter with fall-back to full set when no priority-type runs this week), `classify_weekly_phase_progress(band, aggregate)` (pure matrix), and `compute_weekly_phase_progress(phase, band, entries)` (full composer returning `WeeklyPhaseProgressResult`). Thresholds are exposed as named constants: `MOSTLY_ON_TARGET_MIN_FRACTION = 0.60`, `MOSTLY_OFF_MIN_FRACTION = 0.50`.
+- **Phase → priority run type map (V1.6).** `Base → Easy`, `Build → Tempo`, `Peak → Long`, `Taper → Long`. Covers all four V1.6 phases; later-phase additions only need a new entry.
+- **Rule (user-locked 2026-04-21).**
+
+  | Adherence | Priority-KPI execution | Status |
+  |---|---|---|
+  | High | mostly_on_target / mixed | `on_track` |
+  | High | mostly_off | `close` |
+  | Medium | mostly_on_target / mixed | `close` |
+  | Medium | mostly_off | `off_track` |
+  | Low | any | `off_track` |
+
+  Empty week / future week / no classifiable runs → `None` (soft, NOT `off_track`).
+- **Tests.** `tests/test_weekly_phase_progress.py` (32 tests): threshold constants lock (60 % / 50 %), phase→run-type map covers all four phases, all-on-target / exactly 60 % / just-below 60 % / exactly 50 % off / too_easy-counts-as-off / union of too_easy+too_hard / MIXED-gap / `None`-dropping / all-`None` / empty classifier paths, priority-type filtering + fall-back-to-full-set, `phase=None` short-circuit, full 9-cell adherence×execution matrix, band-or-aggregate-`None` → `None`, composer wiring (priority filter + band + matrix + counts), Low-adherence-is-always-off_track sanity, and JSON wire-value lock for both enums.
 
 ---
 
@@ -611,6 +639,9 @@ Every deterministic field listed in Appendix B of `SMARTCOACH_SYSTEM_SPEC_V1.md`
 | Per-run `planned.*` / `actual.*` block (extraction from `Activity`) | `src/smartcoach_mobile_coach/run_insight.py::build_run_execution_block(act)` (**landed 2026-04-21, 0.A**) | `GET /api/plan/current-week` (via `execution_block_to_weekly_plan_shape`), `get_run_summary` → `facts.execution_summary` (via `execution_block_to_insight_summary_shape`), future Phase B plan-aware tools (namespaced shape direct) |
 | Per-run `completion_pct` (formula) | `src/services/scoring/completion.py::compute_completion_pct(actual_miles, planned_miles)` (**landed 2026-04-21, 0.B**) | `run_execution_analysis_service.analyze_activity_execution` (stored on `activities.completion_pct`), `gyr_metrics_service` (weekly GYR aggregate), future Phase A `adherence_runs_pct` producer |
 | V1.6 §7 completed-run threshold (`>= 50% of plan`) | `src/services/scoring/completion.py::COMPLETION_THRESHOLD_RATIO` / `COMPLETION_THRESHOLD_PCT` + `is_run_completed(...)` (**landed 2026-04-21, 0.B**) | future Phase A `adherence_runs_pct` producer, any coach-facing "this run counted" predicate |
+| Phase → priority run type map (V1.6) | `src/services/phase/weekly_progress.py::priority_run_type_for_phase(phase)` + `PHASE_PRIORITY_RUN_TYPE` dict (**landed 2026-04-21, 3D.6**) | `compute_weekly_phase_progress` (self-consume), future Phase D `get_phase_analysis` extension (3D.3/3D.7) — phase-priority filter for the weekly-progress aggregator; coach prompt contract (3D.8) — "what is the phase emphasizing this week?" surface. |
+| Priority-KPI execution aggregate (`mostly_on_target` / `mixed` / `mostly_off` / `None`) | `src/services/phase/weekly_progress.py::classify_priority_kpi_execution(deviations)` + `aggregate_priority_kpi_for_phase(phase, entries)` + `MOSTLY_ON_TARGET_MIN_FRACTION` / `MOSTLY_OFF_MIN_FRACTION` constants + `PriorityKpiExecution` enum (**landed 2026-04-21, 3D.6**) | `compute_weekly_phase_progress` (self-consume), future 3D.3/3D.7 phase-analysis payload (per-week transparency field), coach prompt contract (3D.8) — read-only evidence for the natural-language progress sentence. |
+| Weekly phase-progress status (`on_track` / `close` / `off_track` / `None`) | `src/services/phase/weekly_progress.py::classify_weekly_phase_progress(band, aggregate)` + full composer `compute_weekly_phase_progress(phase, band, entries)` + `WeeklyPhaseProgress` enum + `WeeklyPhaseProgressResult` (**landed 2026-04-21, 3D.6**) | future 3D.3/3D.7 phase-analysis payload (per-week + phase rollup), 3D.8 phase UX prompt contract (read-only label — coach renders natural language, validator flags contradictions), 3D.9 golden-path tests. LLM MUST NOT flip the label. |
 
 ### 0.C — `get_weekly_training_insight` no-new-consumers enforcement (normative)
 

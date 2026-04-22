@@ -27,6 +27,8 @@ htmlcov/
 # SQL dumps and backups
 *.sql
 *.dump
+# ...except schema migrations checked into the repo (see migrations/sql/).
+!migrations/sql/*.sql
 
 # Test logs
 pytest_log.txt
