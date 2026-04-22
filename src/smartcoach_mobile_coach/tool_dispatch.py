@@ -60,6 +60,10 @@ STATEFUL_TOOLS: FrozenSet[str] = frozenset(
     {
         "update_plan_intake",
         "generate_training_plan",
+        # V1.6 Phase D 3D.2 — supersede-then-insert writer; batched
+        # reads that follow in the same round MUST see the new active
+        # goal, so force sequential ordering.
+        "save_phase_goal",
     }
 )
 

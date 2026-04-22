@@ -665,6 +665,74 @@ SEED_TOOLS = [
         "is_enabled": True,
         "sort_order": 32,
     },
+    {
+        # V1.6 Phase D 3D.2 — persist athlete's current phase focus.
+        "name": "save_phase_goal",
+        "display_name": "Save Phase Goal",
+        "category": "plan_goal",
+        "description": (
+            "V1.6 Phase D writer. Persist the athlete's behavior-and-outcome focus for a training "
+            "phase (Base / Build / Peak / Taper). One active goal per (user, plan, phase); if one "
+            "already exists this call supersedes it in place (no stacked history visible to the "
+            "user). Goals are SHORT sentences about behavior or outcome — NEVER KPI thresholds. "
+            "Soft-semantics writer: no hard consent UI gate; the coach calls this whenever the user "
+            "has agreed (explicitly or softly) in the conversation. Pass confirmed=true only when "
+            "the user has explicitly agreed (e.g. 'yes, keep that as my focus'); otherwise the goal "
+            "is saved as an unconfirmed auto-proposal and the coach can still reference it in "
+            "subsequent turns."
+        ),
+        "when_to_call": (
+            "Call at the start of a new phase to propose a focus, or whenever the user refines / "
+            "restates their intent for the current phase and has agreed. GOOD: 'Stay mostly in Zone "
+            "2 on long runs so you finish strong', 'Keep Tempo intervals feeling like controlled "
+            "effort'. BAD (do NOT save): 'Hit 85% Z2 compliance', 'Achieve 300 TSS per week'. If the "
+            "user has no active plan, the tool returns a no_active_plan error — ask them to "
+            "generate a plan first, do NOT retry with a made-up plan_id."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "phase": {
+                    "type": "string",
+                    "description": (
+                        "Required. One of Base / Build / Peak / Taper (case-insensitive)."
+                    ),
+                },
+                "goal_text": {
+                    "type": "string",
+                    "description": (
+                        "Required. 1–280 character behavior-and-outcome sentence. MUST NOT be a "
+                        "numeric KPI threshold."
+                    ),
+                },
+                "source": {
+                    "type": "string",
+                    "enum": ["auto_proposed", "coach_refined", "user_stated"],
+                    "description": (
+                        "Optional provenance. Defaults to auto_proposed. Use coach_refined when "
+                        "rewording your own prior proposal, user_stated when the user wrote the "
+                        "goal text themselves."
+                    ),
+                },
+                "confirmed": {
+                    "type": "boolean",
+                    "description": (
+                        "Optional. Defaults to false. Set true only when the user has explicitly "
+                        "agreed to this wording in the current turn."
+                    ),
+                },
+            },
+            "required": ["phase", "goal_text"],
+        },
+        "returns_description": (
+            "saved (true on success), goal{id, plan_id, phase, goal_text, status, source, "
+            "confirmed_at, created_at}, superseded_goal_id (id of the prior active row that was "
+            "superseded, or null), message."
+        ),
+        "data_source": "user_phase_goals (write) + plans (active-plan lookup)",
+        "is_enabled": True,
+        "sort_order": 40,
+    },
 ]
 
 

@@ -47,9 +47,13 @@ from src.smartcoach_mobile_coach.dialogue_manager import (
 # ---------------------------------------------------------------------------
 
 
-def test_contract_version_is_int_and_v1() -> None:
+def test_contract_version_is_int_and_v2() -> None:
+    # V1.6 Phase D 3D.10: bumped to v2 when the §19.8 block dropped
+    # raw-threshold language and re-keyed on the `adherence_band`
+    # field. Any future spec edit must bump again so the CI contract
+    # tests fail loudly on drift.
     assert isinstance(COACH_TONE_CONTRACT_VERSION, int)
-    assert COACH_TONE_CONTRACT_VERSION == 1
+    assert COACH_TONE_CONTRACT_VERSION == 2
 
 
 def test_version_tag_appears_in_block() -> None:
@@ -79,9 +83,15 @@ def test_contract_block_is_non_empty_string() -> None:
     assert COACH_TONE_CONTRACT_BLOCK.strip()
 
 
-def test_contract_block_fits_prompt_budget_under_2kb() -> None:
+def test_contract_block_fits_prompt_budget_under_3kb() -> None:
+    # V1.6 Phase D 3D.10: budget raised from 2 KB to 3 KB to fit the
+    # expanded §19.8 single-source-of-truth clause and the new
+    # `adherence_band = null` row. The block is still one of the
+    # highest-weight per-turn instructions, so it stays bounded — if a
+    # future edit grows it past 3 KB, trim (or split into its own
+    # contract module) rather than bumping the budget again.
     size = len(COACH_TONE_CONTRACT_BLOCK.encode("utf-8"))
-    assert size < 2048, f"contract grew to {size} bytes; trim before merging"
+    assert size < 3072, f"contract grew to {size} bytes; trim before merging"
 
 
 # ---------------------------------------------------------------------------
@@ -238,25 +248,64 @@ def test_do_not_moralize_anchor_present() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_adherence_runs_pct_field_anchor() -> None:
-    assert "`adherence_runs_pct`" in COACH_TONE_CONTRACT_BLOCK
+def test_adherence_band_field_is_the_source_of_truth() -> None:
+    # V1.6 Phase D 3D.10: the tone block now keys off the
+    # `adherence_band` field name (the canonical classifier output),
+    # NOT the raw `adherence_runs_pct` percentage. Ensures the prompt
+    # matches the single-source-of-truth rule (§X.5): one producer
+    # (`src.services.scoring.adherence`), one field name in the
+    # prompt, no re-derivation.
+    assert "`adherence_band`" in COACH_TONE_CONTRACT_BLOCK
+
+
+def test_tone_block_does_not_re_state_raw_thresholds() -> None:
+    # Hard deprecation lock for 3D.10: the tone block MUST NOT carry
+    # the raw `< 70 %` / `70 %–90 %` / `> 90 %` cut-offs. Those live in
+    # §7 only — duplicating them in the prompt is exactly the drift
+    # pattern the Phase D work set out to eliminate. Any re-
+    # introduction of the thresholds fails this test loudly.
+    for forbidden in ("< 70 %", "70 %–90 %", "> 90 %", "70 % – 90 %"):
+        assert forbidden not in COACH_TONE_CONTRACT_BLOCK, (
+            f"raw threshold '{forbidden}' re-introduced into coach tone "
+            "contract; Phase D 3D.10 deprecated these — read the "
+            "`adherence_band` field instead."
+        )
+
+
+def test_tone_block_has_explicit_no_re_derive_clause() -> None:
+    # Closes the loophole where the prompt still mentions the percent
+    # field and lets the LLM "re-derive" the band mentally. The
+    # 3D.10 clause explicitly forbids re-derivation and names the
+    # `adherence_band` field as the only prompt-side truth.
+    block_lower = COACH_TONE_CONTRACT_BLOCK.lower()
+    assert "do not re-derive" in block_lower
+    assert "canonical" in block_lower
 
 
 @pytest.mark.parametrize(
-    "band,threshold,tone",
+    "band,tone",
     [
-        ("low", "`< 70 %`", "supportive, non-judgmental"),
-        ("medium", "`70 %–90 %`", "steady reinforcement"),
-        ("high", "`> 90 %`", "progression-ready"),
+        ("low", "supportive, non-judgmental"),
+        ("medium", "steady reinforcement"),
+        ("high", "progression-ready"),
     ],
 )
-def test_adherence_band_row_is_complete(band: str, threshold: str, tone: str) -> None:
-    # Each of the three bands carries its name, numeric threshold, AND
-    # tone prescription — dropping any part would leave the coach
-    # guessing at runtime.
-    assert f"**{band}**" in COACH_TONE_CONTRACT_BLOCK
-    assert threshold in COACH_TONE_CONTRACT_BLOCK
+def test_adherence_band_row_has_name_and_tone(band: str, tone: str) -> None:
+    # V1.6 Phase D 3D.10: each row carries the field-scoped band name
+    # (e.g. ``adherence_band = low``) and its tone prescription.
+    # Dropping either half would leave the coach guessing at runtime,
+    # even under the new field-based phrasing.
+    assert f"`adherence_band = {band}`" in COACH_TONE_CONTRACT_BLOCK
     assert tone in COACH_TONE_CONTRACT_BLOCK
+
+
+def test_adherence_band_null_row_is_present() -> None:
+    # V1.6 Phase D 3D.10: the `null` band (insufficient evaluable
+    # runs) now has an explicit row. Without it the LLM either
+    # silences itself or invents a band — both violate §19.8.
+    assert "`adherence_band = null`" in COACH_TONE_CONTRACT_BLOCK
+    assert "neutral-supportive" in COACH_TONE_CONTRACT_BLOCK
+    assert "do NOT invent" in COACH_TONE_CONTRACT_BLOCK
 
 
 def test_low_adherence_band_proposes_volume_reduction_per_19_16() -> None:
