@@ -104,7 +104,19 @@ from src.services.phase.phase_priority import (
     phase_kpi_priority_for_phase,
     resolve_week_phase,
 )
+from src.services.phase.weekly_progress import (
+    PriorityKpiDeviation,
+    WeeklyPhaseProgress,
+    compute_weekly_phase_progress,
+)
+from src.services.plan.phase_goal import get_active_phase_goal
+from src.services.plan.plan_status import plan_status_for_day
 from src.services.plan.weekly_plan import resolve_plan_workout_run_type_key
+from src.services.scoring.adherence import (
+    WeeklyAdherenceEntry,
+    compute_weekly_adherence,
+)
+from src.services.scoring.deviation import DeviationDirection
 from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_percent,
@@ -434,6 +446,190 @@ def _classify_phase_temporality(
     return "current"
 
 
+# --------------------------------------------------------------------- #
+# V1.6 Phase D 3D.3 + 3D.7 — goal + weekly progress + rollup
+# --------------------------------------------------------------------- #
+
+
+def _serialize_active_goal(
+    session: Session,
+    user_id: UUID,
+    plan_id: int,
+    phase: Phase,
+) -> Optional[Dict[str, Any]]:
+    """Return a wire-safe ``goal`` sub-payload (or ``None``).
+
+    Reads via :func:`src.services.plan.phase_goal.get_active_phase_goal`
+    — the canonical reader — so there is exactly one query shape for
+    "the active goal for this phase" across the backend. Kept narrow on
+    purpose (no history, no superseded rows) so the LLM payload stays
+    small; history can be surfaced in a future iteration via
+    ``get_all_goals_for_plan`` when the UX needs it.
+    """
+    goal = get_active_phase_goal(session, user_id, plan_id, phase)
+    if goal is None:
+        return None
+    return {
+        "id": goal.id,
+        "goal_text": goal.goal_text,
+        "status": goal.status,
+        "source": goal.source,
+        "confirmed_at": goal.confirmed_at.isoformat() if goal.confirmed_at else None,
+        "created_at": goal.created_at.isoformat() if goal.created_at else None,
+    }
+
+
+def _compute_week_progress_entry(
+    *,
+    week_index: int,
+    week_start: date,
+    workouts: List[PlanWorkout],
+    matched_by_pw: Dict[int, Activity],
+    plan_training_days: Any,
+    today: date,
+    phase: Phase,
+) -> Dict[str, Any]:
+    """Compose the per-week entry for ``weekly_progress[]``.
+
+    Delegates every deterministic field to its canonical producer:
+
+    * Adherence band → :func:`compute_weekly_adherence` (§7).
+    * Priority-KPI aggregate + status →
+      :func:`compute_weekly_phase_progress` (§19.4, 3D.6).
+    * Per-run ``deviation_direction`` and canonical ``run_type_key`` →
+      :func:`build_run_execution_block` +
+      :func:`resolve_plan_workout_run_type_key`.
+
+    This helper recomputes inputs from the same rows the main function
+    already loaded — it does NOT re-query. The phase-analysis builder
+    feeds it ``matched_by_pw`` so we stay within one DB round-trip for
+    the entire phase window.
+    """
+    week_end = week_start + timedelta(days=6)
+
+    adherence_entries: List[WeeklyAdherenceEntry] = []
+    priority_entries: List[PriorityKpiDeviation] = []
+
+    for w in workouts:
+        act = matched_by_pw.get(w.id)
+        day_status = plan_status_for_day(
+            has_planned_workout=True,
+            has_matching_activity=act is not None,
+            day_date=w.date,
+            today=today,
+        )
+        if day_status is not None:
+            adherence_entries.append(
+                WeeklyAdherenceEntry(
+                    plan_status=day_status,
+                    completion_pct=(
+                        getattr(act, "completion_pct", None)
+                        if act is not None
+                        else None
+                    ),
+                    planned_miles=w.miles,
+                    actual_miles=(
+                        getattr(act, "actual_miles", None) if act is not None else None
+                    ),
+                )
+            )
+
+        if act is None:
+            continue
+
+        run_type_key = resolve_plan_workout_run_type_key(w)
+        block = build_run_execution_block(act, plan_training_days=plan_training_days)
+        actual = block.get("actual") or {}
+        deviation_raw = actual.get("deviation_direction")
+        deviation: Optional[DeviationDirection]
+        try:
+            deviation = (
+                DeviationDirection(deviation_raw) if deviation_raw is not None else None
+            )
+        except ValueError:
+            deviation = None
+        priority_entries.append(
+            PriorityKpiDeviation(run_type_key=run_type_key, deviation=deviation)
+        )
+
+    adherence_result = compute_weekly_adherence(adherence_entries)
+    progress = compute_weekly_phase_progress(
+        phase, adherence_result.band, priority_entries
+    )
+
+    return {
+        "week_index": week_index,
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+        "status": progress.status.value if progress.status is not None else None,
+        "adherence_band": (
+            adherence_result.band.value if adherence_result.band is not None else None
+        ),
+        "adherence_runs_pct": adherence_result.adherence_runs_pct,
+        "priority_kpi_execution": (
+            progress.aggregate.value if progress.aggregate is not None else None
+        ),
+        "priority_run_type": progress.priority_run_type,
+        "priority_run_count": progress.priority_run_count,
+        "total_run_count": progress.total_run_count,
+    }
+
+
+def _build_phase_progress_summary(
+    weekly_progress: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Roll up per-week statuses into a phase-to-date summary.
+
+    Counts every ``status`` bucket, exposes ``weeks_evaluated`` (total
+    entries surfaced — includes ``None`` status weeks so the coach can
+    see that a phase has partial coverage), and picks a
+    ``dominant_status`` via a simple plurality vote across classifiable
+    weeks. Ties resolve by the priority order ``off_track → close →
+    on_track`` so the summary is conservative (a 1-1-1 split never
+    tells the athlete they're "on track").
+
+    Returns a zero-shape when ``weekly_progress`` is empty — the coach
+    still gets a stable block and can narrate "no evaluable weeks yet".
+    """
+    counts = {
+        WeeklyPhaseProgress.ON_TRACK.value: 0,
+        WeeklyPhaseProgress.CLOSE.value: 0,
+        WeeklyPhaseProgress.OFF_TRACK.value: 0,
+        "null": 0,
+    }
+    for wk in weekly_progress:
+        status = wk.get("status")
+        if status in counts:
+            counts[status] += 1
+        else:
+            counts["null"] += 1
+
+    # Priority order biases ties toward the more-urgent status — a
+    # phase that is one-week-off, one-week-close, one-week-on MUST
+    # NOT narrate as "on_track".
+    priority_order = [
+        WeeklyPhaseProgress.OFF_TRACK.value,
+        WeeklyPhaseProgress.CLOSE.value,
+        WeeklyPhaseProgress.ON_TRACK.value,
+    ]
+    dominant_status: Optional[str] = None
+    best_count = 0
+    for status in priority_order:
+        c = counts[status]
+        if c > best_count:
+            best_count = c
+            dominant_status = status
+
+    return {
+        "weeks_evaluated": len(weekly_progress),
+        "on_track_count": counts[WeeklyPhaseProgress.ON_TRACK.value],
+        "close_count": counts[WeeklyPhaseProgress.CLOSE.value],
+        "off_track_count": counts[WeeklyPhaseProgress.OFF_TRACK.value],
+        "null_count": counts["null"],
+        "dominant_status": dominant_status,
+    }
+
+
 def build_phase_analysis_payload(
     session: Session,
     user_id: UUID,
@@ -507,6 +703,14 @@ def build_phase_analysis_payload(
 
     by_monday, first_monday, last_monday = _group_plan_weeks(workouts)
 
+    # V1.6 Phase D 3D.3 — active phase goal reads via the canonical
+    # writer/reader surface in :mod:`src.services.plan.phase_goal`.
+    # Emitted even in empty / future-only phases so the coach can
+    # narrate a user-stated intent before any runs land.
+    goal_payload = _serialize_active_goal(session, user_id, plan_row.id, phase)
+
+    empty_progress_summary = _build_phase_progress_summary([])
+
     if not workouts or first_monday is None or last_monday is None:
         return {
             "plan_id": plan_row.id,
@@ -531,6 +735,9 @@ def build_phase_analysis_payload(
                 "evaluated_through": None,
             },
             "by_run_type": {},
+            "goal": goal_payload,
+            "weekly_progress": [],
+            "phase_progress_summary": empty_progress_summary,
             "timezone": tz_norm,
             "today": resolved_today.isoformat(),
         }
@@ -561,6 +768,9 @@ def build_phase_analysis_payload(
                 "evaluated_through": None,
             },
             "by_run_type": {},
+            "goal": goal_payload,
+            "weekly_progress": [],
+            "phase_progress_summary": empty_progress_summary,
             "timezone": tz_norm,
             "today": resolved_today.isoformat(),
         }
@@ -647,6 +857,25 @@ def build_phase_analysis_payload(
                 "target_zone_ids": list(rt_def.target_zone_ids),
             }
 
+    # V1.6 Phase D 3D.3 + 3D.7 — per-week progress + rollup across the
+    # evaluable phase window. Future phase-weeks contribute no entry so
+    # the wire-shape never carries speculative statuses for weeks that
+    # haven't started yet (§19.5 extension).
+    weekly_progress: List[Dict[str, Any]] = []
+    for idx, ws_start, ws in evaluable_weeks:
+        weekly_progress.append(
+            _compute_week_progress_entry(
+                week_index=idx,
+                week_start=ws_start,
+                workouts=ws,
+                matched_by_pw=matched_by_pw,
+                plan_training_days=plan_training_days,
+                today=resolved_today,
+                phase=phase,
+            )
+        )
+    phase_progress_summary = _build_phase_progress_summary(weekly_progress)
+
     total = len(phase_weeks)
     completed = len(completed_weeks)
     in_progress = len(in_progress_weeks)
@@ -688,6 +917,9 @@ def build_phase_analysis_payload(
             ),
         },
         "by_run_type": by_run_type,
+        "goal": goal_payload,
+        "weekly_progress": weekly_progress,
+        "phase_progress_summary": phase_progress_summary,
         "timezone": tz_norm,
         "today": resolved_today.isoformat(),
     }

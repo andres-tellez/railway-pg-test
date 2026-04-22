@@ -654,3 +654,231 @@ def test_execute_tool_rejects_malformed_json(test_db_session, seeded_plan):
         "not-json",
     )
     assert out["error"] == "invalid_arguments"
+
+
+# ---------------------------------------------------------------------------
+# V1.6 Phase D 3D.3 + 3D.7 — goal + weekly_progress[] + phase_progress_summary
+# ---------------------------------------------------------------------------
+
+
+def test_goal_field_is_none_when_no_active_goal(test_db_session, seeded_plan):
+    """With no goal saved, the payload carries ``goal: None`` — the coach
+    treats that as the trigger to auto-propose a focus on the next
+    phase/progress turn (3D.4)."""
+    out = agent_tools.tool_get_phase_analysis(
+        test_db_session, DEFAULT_USER_ID_STR, phase_id="Base"
+    )
+    assert out["goal"] is None
+
+
+def test_goal_field_surfaces_active_goal(test_db_session, seeded_plan):
+    """After a Phase D 3D.2 save, the active goal flows through
+    :func:`_serialize_active_goal` into the phase-analysis payload
+    using the canonical reader. Confirms the single-source-of-truth
+    wiring (§X.5): phase_goal writes, phase_analysis reads."""
+    from src.services.plan.phase_goal import save_phase_goal
+
+    status, _ = save_phase_goal(
+        test_db_session,
+        DEFAULT_USER_ID,
+        "Base",
+        "Stay mostly in Zone 2 on long runs so you finish strong.",
+        source_raw="user_stated",
+        confirmed=True,
+    )
+    assert status == "ok"
+    test_db_session.flush()
+
+    out = agent_tools.tool_get_phase_analysis(
+        test_db_session, DEFAULT_USER_ID_STR, phase_id="Base"
+    )
+    goal = out["goal"]
+    assert goal is not None
+    assert goal["goal_text"] == (
+        "Stay mostly in Zone 2 on long runs so you finish strong."
+    )
+    assert goal["status"] == "active"
+    assert goal["source"] == "user_stated"
+    assert goal["confirmed_at"] is not None
+    # id + created_at wire-types match the canonical _serialize_goal.
+    assert isinstance(goal["id"], int)
+    assert goal["created_at"] is not None
+
+
+def test_goal_is_scoped_per_phase(test_db_session, seeded_plan):
+    """A Base-phase goal MUST NOT leak into the Build-phase payload.
+    Guards the (user, plan, phase) scoping of the active goal lookup."""
+    from src.services.plan.phase_goal import save_phase_goal
+
+    save_phase_goal(
+        test_db_session,
+        DEFAULT_USER_ID,
+        "Base",
+        "Easy aerobic consistency through Base.",
+    )
+    test_db_session.flush()
+
+    base_out = agent_tools.tool_get_phase_analysis(
+        test_db_session, DEFAULT_USER_ID_STR, phase_id="Base"
+    )
+    build_out = agent_tools.tool_get_phase_analysis(
+        test_db_session, DEFAULT_USER_ID_STR, phase_id="Build"
+    )
+    assert base_out["goal"] is not None
+    assert build_out["goal"] is None
+
+
+def test_weekly_progress_covers_evaluable_weeks_only_for_base(
+    test_db_session, seeded_plan
+):
+    """Base has two past weeks, both fully evaluated — exactly two
+    entries. Entries are chronologically ordered and reuse the plan's
+    week_index (1-based) so the coach can reference "week 1 of Base"
+    verbatim."""
+    out = agent_tools.tool_get_phase_analysis(
+        test_db_session, DEFAULT_USER_ID_STR, phase_id="Base"
+    )
+    wp = out["weekly_progress"]
+    assert isinstance(wp, list)
+    assert len(wp) == 2
+    assert [e["week_index"] for e in wp] == [1, 2]
+    assert [e["week_start"] for e in wp] == ["2026-04-06", "2026-04-13"]
+    assert [e["week_end"] for e in wp] == ["2026-04-12", "2026-04-19"]
+
+
+def test_weekly_progress_entry_exposes_canonical_fields(test_db_session, seeded_plan):
+    """Each entry carries the full contract: status, adherence band/pct,
+    priority-KPI aggregate, priority run type, and matched-run counts.
+    Fields may be ``None`` when no priority-type runs were evaluable
+    that week, but the keys MUST always be present so the coach's
+    prompt contract (3D.8) can read a stable shape."""
+    out = agent_tools.tool_get_phase_analysis(
+        test_db_session, DEFAULT_USER_ID_STR, phase_id="Base"
+    )
+    wk = out["weekly_progress"][0]
+    required_keys = {
+        "week_index",
+        "week_start",
+        "week_end",
+        "status",
+        "adherence_band",
+        "adherence_runs_pct",
+        "priority_kpi_execution",
+        "priority_run_type",
+        "priority_run_count",
+        "total_run_count",
+    }
+    assert required_keys.issubset(wk.keys())
+    # Status is one of the canonical WeeklyPhaseProgress values (or None).
+    assert wk["status"] in {"on_track", "close", "off_track", None}
+    # Base weeks have 2 planned runs and both matched in the fixture.
+    assert wk["total_run_count"] == 2
+
+
+def test_weekly_progress_omits_future_weeks_for_build(test_db_session, seeded_plan):
+    """Build covers the current + future week in the fixture. Only the
+    current week (wk3) may surface an entry; the future wk4 MUST be
+    omitted so the coach cannot narrate speculative statuses for weeks
+    that haven't started (§19.5 extension)."""
+    out = agent_tools.tool_get_phase_analysis(
+        test_db_session, DEFAULT_USER_ID_STR, phase_id="Build"
+    )
+    wp = out["weekly_progress"]
+    assert [e["week_index"] for e in wp] == [3]
+    assert wp[0]["week_start"] == "2026-04-20"
+
+
+def test_phase_progress_summary_shape_and_totals_for_base(test_db_session, seeded_plan):
+    """Counts across the four status buckets must sum to
+    ``weeks_evaluated``. ``dominant_status`` must be one of the
+    canonical values (or ``None`` if every week is null) — never an
+    arbitrary string."""
+    out = agent_tools.tool_get_phase_analysis(
+        test_db_session, DEFAULT_USER_ID_STR, phase_id="Base"
+    )
+    summary = out["phase_progress_summary"]
+    assert summary["weeks_evaluated"] == len(out["weekly_progress"]) == 2
+    bucket_total = (
+        summary["on_track_count"]
+        + summary["close_count"]
+        + summary["off_track_count"]
+        + summary["null_count"]
+    )
+    assert bucket_total == summary["weeks_evaluated"]
+    assert summary["dominant_status"] in {
+        "on_track",
+        "close",
+        "off_track",
+        None,
+    }
+
+
+def test_phase_progress_summary_is_zero_shape_for_empty_phase(
+    test_db_session, seeded_plan
+):
+    """Requesting a phase with zero plan-weeks still emits a stable
+    summary block (weeks_evaluated=0, all buckets 0, dominant_status
+    None) so the coach never has to branch on key presence."""
+    out = agent_tools.tool_get_phase_analysis(
+        test_db_session, DEFAULT_USER_ID_STR, phase_id="Peak"
+    )
+    summary = out["phase_progress_summary"]
+    assert summary["weeks_evaluated"] == 0
+    assert summary["on_track_count"] == 0
+    assert summary["close_count"] == 0
+    assert summary["off_track_count"] == 0
+    assert summary["null_count"] == 0
+    assert summary["dominant_status"] is None
+    assert out["weekly_progress"] == []
+    # Goal payload slot is still present so the prompt contract reads a
+    # consistent shape across empty / non-empty phases.
+    assert "goal" in out
+
+
+def test_phase_progress_summary_biases_ties_toward_off_track(
+    test_db_session, seeded_plan
+):
+    """Contract guard: when no status dominates, the summary must
+    resolve toward the more-urgent bucket. We can't easily force a
+    three-way tie with the current fixture, so we verify the
+    invariant by calling the builder directly — the coach must never
+    hear "on_track" when the real split includes even a single
+    off-track week that ties with on-track."""
+    from src.services.plan.phase_analysis import _build_phase_progress_summary
+
+    tied = _build_phase_progress_summary(
+        [
+            {"status": "on_track"},
+            {"status": "close"},
+            {"status": "off_track"},
+        ]
+    )
+    # 1-1-1 split must NOT narrate as "on_track".
+    assert tied["dominant_status"] == "off_track"
+
+    off_dominant = _build_phase_progress_summary(
+        [
+            {"status": "off_track"},
+            {"status": "off_track"},
+            {"status": "on_track"},
+        ]
+    )
+    assert off_dominant["dominant_status"] == "off_track"
+
+
+def test_weekly_progress_priority_run_type_matches_phase_emphasis(
+    test_db_session, seeded_plan
+):
+    """Weekly progress pivots around the phase's priority run type
+    (Base → Long / Easy, Build → Tempo, etc.). The entry surfaces
+    that run-type so the coach can explain "the week was off because
+    your long runs drifted" without re-deriving the priority table."""
+    out = agent_tools.tool_get_phase_analysis(
+        test_db_session, DEFAULT_USER_ID_STR, phase_id="Base"
+    )
+    for wk in out["weekly_progress"]:
+        # priority_run_type is either a canonical run_type_key string
+        # or None when the phase has no priority run type mapped.
+        assert wk["priority_run_type"] is None or isinstance(
+            wk["priority_run_type"], str
+        )
