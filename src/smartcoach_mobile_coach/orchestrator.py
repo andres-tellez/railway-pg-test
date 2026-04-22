@@ -57,6 +57,7 @@ from src.smartcoach_mobile_coach.session_summary_read import (
     read_most_recent_session_summary,
     session_summary_section,
 )
+from src.smartcoach_mobile_coach.tool_dispatch import dispatch_tool_batch
 from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_intake
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
@@ -1749,11 +1750,19 @@ def run_mobile_agent_turn(
     default_model = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
     model = eval_model_override or default_model
     temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
-    max_tokens_default = int(os.getenv("OPENAI_MAX_TOKENS", "2000"))
+    # V1.6 Phase 3D — default tightened from 2000 → 1000 tokens.
+    # Typical coach replies are 2–4 sentences (≤ 250 tokens); 1000
+    # keeps headroom for explicit "walk me through everything"
+    # expansions without making every turn pay the worst-case
+    # completion-time tail. Override with OPENAI_MAX_TOKENS.
+    max_tokens_default = int(os.getenv("OPENAI_MAX_TOKENS", "1000"))
     max_tokens = max_tokens_default
-    # Per completion (httpx/OpenAI). Default 180s — deploys that still use Gunicorn's 30s
-    # worker default need headroom on multi-step tool turns. Cap with OPENAI_MOBILE_AGENT_TIMEOUT.
-    timeout = float(os.getenv("OPENAI_MOBILE_AGENT_TIMEOUT", "180.0"))
+    # Per completion (httpx/OpenAI). V1.6 Phase 3D — default tightened
+    # 180 → 60s. A 3-minute pending request is never acceptable UX;
+    # multi-step tool turns still fit comfortably inside 60s with
+    # parallel tool dispatch and gpt-4o-mini. Bump back up with
+    # OPENAI_MOBILE_AGENT_TIMEOUT when running an eval sweep.
+    timeout = float(os.getenv("OPENAI_MOBILE_AGENT_TIMEOUT", "60.0"))
 
     t_agent0 = time.perf_counter()
     # V1.6 Phase B 3B.9 — the four plan-aware tool injectors
@@ -1922,19 +1931,39 @@ def run_mobile_agent_turn(
         )
 
     # --- Prompt experiment (optional): see MINIMAL_SYSTEM_PROMPT_BASE block above ---
-    use_min_base = _env_experiment_minimal_flag("SMARTCOACH_EXPERIMENT_MINIMAL_BASE")
-    use_min_prefs = _env_experiment_minimal_flag("SMARTCOACH_EXPERIMENT_MINIMAL_PREFS")
-    use_min_directive = _env_experiment_minimal_flag(
-        "SMARTCOACH_EXPERIMENT_MINIMAL_DIRECTIVE"
+    #
+    # V1.6 Phase 3D — `SMARTCOACH_FAST_MODE` is a one-flag umbrella
+    # that turns on all three minimal switches together. This is the
+    # recommended default for latency-sensitive deployments: it drops
+    # the system prompt from ~46.6 KB to ~0.75 KB while the V1.6
+    # contract sections (metric glossary, plan-vs-actual, plan
+    # guidance, coach tone) continue to supply behavioral grounding.
+    # Individual flags still win when set — FAST_MODE only promotes
+    # unset / falsy values, never overrides an explicit opt-out.
+    fast_mode = _env_experiment_minimal_flag("SMARTCOACH_FAST_MODE")
+    use_min_base = (
+        _env_experiment_minimal_flag("SMARTCOACH_EXPERIMENT_MINIMAL_BASE") or fast_mode
     )
-    if use_min_base or use_min_prefs or use_min_directive:
-        logger.info(
-            "[coach_prompt_experiment] user=%s… minimal_base=%s minimal_prefs=%s minimal_directive=%s",
-            str(internal_user_id)[:8],
-            use_min_base,
-            use_min_prefs,
-            use_min_directive,
-        )
+    use_min_prefs = (
+        _env_experiment_minimal_flag("SMARTCOACH_EXPERIMENT_MINIMAL_PREFS") or fast_mode
+    )
+    use_min_directive = (
+        _env_experiment_minimal_flag("SMARTCOACH_EXPERIMENT_MINIMAL_DIRECTIVE")
+        or fast_mode
+    )
+    # Always log which prompt profile is active so slow-turn
+    # investigations can immediately see "minimal vs full" without
+    # grepping env vars or reading outgoing request bodies.
+    logger.info(
+        "[coach_prompt_profile] user=%s… fast_mode=%s minimal_base=%s minimal_prefs=%s minimal_directive=%s model=%s max_tokens=%s",
+        str(internal_user_id)[:8],
+        fast_mode,
+        use_min_base,
+        use_min_prefs,
+        use_min_directive,
+        model,
+        max_tokens,
+    )
     use_full_prompt_for_plan = _env_experiment_minimal_flag(
         "SMARTCOACH_PLAN_CREATION_USE_FULL_PROMPT"
     )
@@ -2373,35 +2402,39 @@ def run_mobile_agent_turn(
                 )
             messages.append(assistant_msg)
 
-            for tc in _ordered_plan_tool_calls(result.tool_calls):
-                fn = tc["function"]
-                name = fn["name"]
-                arguments = fn["arguments"] or "{}"
-                sig = (name, arguments)
-                if sig in tool_result_cache:
-                    out = tool_result_cache[sig]
-                    loop_entry["tools"].append(
-                        {"name": name, "ms": 0.0, "cached": True}
-                    )
-                else:
-                    tt0 = time.perf_counter()
-                    out = execute_tool(
-                        session,
-                        internal_user_id,
-                        name,
-                        arguments,
-                        anchor_local_date=anchor_local_date,
-                        plan_intake_state=latest_plan_intake_state,
-                        source_user_message=(user_message or "").strip() or None,
-                    )
-                    tool_result_cache[sig] = out
-                    loop_entry["tools"].append(
-                        {
-                            "name": name,
-                            "ms": round((time.perf_counter() - tt0) * 1000, 2),
-                            "cached": False,
-                        }
-                    )
+            # V1.6 Phase 3D — parallel tool dispatch. The dispatcher
+            # runs independent read-only tools on a thread pool with
+            # fresh sessions per task, falls back to the legacy
+            # sequential path (shared caller session) whenever the
+            # batch contains stateful tools (`update_plan_intake`,
+            # `generate_training_plan`) or parallelism is disabled
+            # via `SMARTCOACH_TOOL_DISPATCH_PARALLEL=0`. It also
+            # preserves the per-turn `tool_result_cache` and the
+            # `loop_entry["tools"]` shape used by existing timing
+            # consumers.
+            ordered_calls = _ordered_plan_tool_calls(result.tool_calls)
+            dispatched = dispatch_tool_batch(
+                session,
+                internal_user_id,
+                ordered_calls,
+                anchor_local_date=anchor_local_date,
+                plan_intake_state=latest_plan_intake_state,
+                source_user_message=(user_message or "").strip() or None,
+                tool_result_cache=tool_result_cache,
+            )
+            for d in dispatched:
+                tc = d["tc"]
+                name = d["name"]
+                out = d["out"]
+                loop_entry["tools"].append(
+                    {
+                        "name": name,
+                        "ms": d["ms"],
+                        "cached": d["cached"],
+                        "parallel": d["parallel"],
+                        "json_serialize_ms": d["json_serialize_ms"],
+                    }
+                )
                 if name in ("get_run_summary", "get_run_insight"):
                     ok_payload = _valid_run_summary_tool_payload(out)
                     if ok_payload is not None:
@@ -2413,16 +2446,11 @@ def run_mobile_agent_turn(
                     pg = out.get("plan_generation")
                     if isinstance(pg, dict):
                         latest_plan_generation = pg
-                _tj0 = time.perf_counter()
-                tool_content = json.dumps(out)
-                loop_entry["tools"][-1]["json_serialize_ms"] = round(
-                    (time.perf_counter() - _tj0) * 1000, 2
-                )
                 messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tc["id"],
-                        "content": tool_content,
+                        "content": d["tool_content"],
                     }
                 )
             loop_details.append(loop_entry)
