@@ -116,6 +116,16 @@ def read_most_recent_session_summary(
             "[session_summary_read] skipped (no session_summaries or query error): %s",
             exc,
         )
+        # Postgres marks the transaction aborted on any failed statement;
+        # we must rollback before the shared request session runs further
+        # queries (e.g. user_profile) or callers see InFailedSqlTransaction.
+        try:
+            session.rollback()
+        except Exception:
+            logger.debug(
+                "[session_summary_read] rollback after read error failed",
+                exc_info=True,
+            )
         return None
 
     if row is None:
