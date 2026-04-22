@@ -834,6 +834,77 @@ def _ensure_get_user_context_tool(
     return list(tools) + [_GET_USER_CONTEXT_OPENAI_TOOL]
 
 
+# Kept in sync with scripts/setup_coach_tools.py `save_phase_goal`.
+# V1.6 Phase D 3D.2 — the writer for `user_phase_goals`. Soft-semantics
+# writer (no hard consent UI gate); the coach decides when to persist
+# based on conversational agreement. Supersede-then-insert keeps a
+# single active goal per (user, plan, phase).
+_SAVE_PHASE_GOAL_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "save_phase_goal",
+        "description": (
+            "V1.6 Phase D writer. Persist the athlete's behavior-and-outcome focus for a training "
+            "phase (Base / Build / Peak / Taper). One active goal per (user, plan, phase); if one "
+            "already exists this call supersedes it in place (no stacked history visible to the "
+            "user). Goals are SHORT sentences about behavior or outcome — NEVER KPI thresholds. "
+            "Soft-semantics writer: no hard consent UI gate; the coach calls this whenever the user "
+            "has agreed (explicitly or softly) in the conversation. Pass confirmed=true only when "
+            "the user has explicitly agreed (e.g. 'yes, keep that as my focus'); otherwise the goal "
+            "is saved as an unconfirmed auto-proposal and the coach can still reference it in "
+            "subsequent turns."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "phase": {
+                    "type": "string",
+                    "description": (
+                        "Required. One of Base / Build / Peak / Taper (case-insensitive)."
+                    ),
+                },
+                "goal_text": {
+                    "type": "string",
+                    "description": (
+                        "Required. 1–280 character behavior-and-outcome sentence. MUST NOT be a "
+                        "numeric KPI threshold."
+                    ),
+                },
+                "source": {
+                    "type": "string",
+                    "enum": ["auto_proposed", "coach_refined", "user_stated"],
+                    "description": (
+                        "Optional provenance. Defaults to auto_proposed. Use coach_refined when "
+                        "rewording your own prior proposal, user_stated when the user wrote the "
+                        "goal text themselves."
+                    ),
+                },
+                "confirmed": {
+                    "type": "boolean",
+                    "description": (
+                        "Optional. Defaults to false. Set true only when the user has explicitly "
+                        "agreed to this wording in the current turn."
+                    ),
+                },
+            },
+            "required": ["phase", "goal_text"],
+        },
+    },
+}
+
+
+def _ensure_save_phase_goal_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject save_phase_goal (V1.6 3D.2) if missing from coach_tools."""
+    if "save_phase_goal" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled save_phase_goal; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_SAVE_PHASE_GOAL_OPENAI_TOOL]
+
+
 def _load_tools_from_db(session: Session) -> List[Dict[str, Any]]:
     """
     Build the OpenAI tools array from coach_tools table.
@@ -1872,18 +1943,20 @@ def run_mobile_agent_turn(
     # chosen so the weekly-plan layer (the one the coach reaches for
     # most often) lands last / highest in the injected list, matching
     # the ordering intuition used by the existing chain.
-    openai_tools_all = _ensure_get_weekly_plan_tool(
-        _ensure_get_plan_overview_tool(
-            _ensure_get_phase_analysis_tool(
-                _ensure_get_user_context_tool(
-                    _ensure_generate_training_plan_tool(
-                        _ensure_update_plan_intake_tool(
-                            _ensure_get_run_splits_tool(
-                                _ensure_get_marathon_projection_tool(
-                                    _ensure_get_training_kpis_tool(
-                                        _ensure_aggregate_runs_in_range_tool(
-                                            _ensure_search_runs_tool(
-                                                _load_tools_from_db(session)
+    openai_tools_all = _ensure_save_phase_goal_tool(
+        _ensure_get_weekly_plan_tool(
+            _ensure_get_plan_overview_tool(
+                _ensure_get_phase_analysis_tool(
+                    _ensure_get_user_context_tool(
+                        _ensure_generate_training_plan_tool(
+                            _ensure_update_plan_intake_tool(
+                                _ensure_get_run_splits_tool(
+                                    _ensure_get_marathon_projection_tool(
+                                        _ensure_get_training_kpis_tool(
+                                            _ensure_aggregate_runs_in_range_tool(
+                                                _ensure_search_runs_tool(
+                                                    _load_tools_from_db(session)
+                                                )
                                             )
                                         )
                                     )
