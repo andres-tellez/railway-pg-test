@@ -109,6 +109,7 @@ from src.services.phase.weekly_progress import (
     WeeklyPhaseProgress,
     compute_weekly_phase_progress,
 )
+from src.services.plan.phase_coach_hints import resolve_coaching_hint
 from src.services.plan.phase_goal import get_active_phase_goal
 from src.services.plan.plan_status import plan_status_for_day
 from src.services.plan.weekly_plan import resolve_plan_workout_run_type_key
@@ -712,6 +713,14 @@ def build_phase_analysis_payload(
     empty_progress_summary = _build_phase_progress_summary([])
 
     if not workouts or first_monday is None or last_monday is None:
+        empty_phase_weeks = {
+            "total": 0,
+            "completed": 0,
+            "in_progress": 0,
+            "future": 0,
+            "completion_pct": None,
+            "phase_temporality": "empty",
+        }
         return {
             "plan_id": plan_row.id,
             "plan_name": plan_row.plan_name,
@@ -721,14 +730,7 @@ def build_phase_analysis_payload(
             "race_distance": plan_row.race_distance,
             "phase": phase.value,
             "phase_kpi_priority": phase_priority_payload,
-            "phase_weeks": {
-                "total": 0,
-                "completed": 0,
-                "in_progress": 0,
-                "future": 0,
-                "completion_pct": None,
-                "phase_temporality": "empty",
-            },
+            "phase_weeks": empty_phase_weeks,
             "phase_window": {
                 "start": None,
                 "end": None,
@@ -738,6 +740,7 @@ def build_phase_analysis_payload(
             "goal": goal_payload,
             "weekly_progress": [],
             "phase_progress_summary": empty_progress_summary,
+            "coaching_hint": resolve_coaching_hint(goal_payload, empty_phase_weeks),
             "timezone": tz_norm,
             "today": resolved_today.isoformat(),
         }
@@ -745,6 +748,14 @@ def build_phase_analysis_payload(
     phase_weeks = _select_phase_weeks(by_monday, first_monday, last_monday, phase)
 
     if not phase_weeks:
+        empty_phase_weeks = {
+            "total": 0,
+            "completed": 0,
+            "in_progress": 0,
+            "future": 0,
+            "completion_pct": None,
+            "phase_temporality": "empty",
+        }
         return {
             "plan_id": plan_row.id,
             "plan_name": plan_row.plan_name,
@@ -754,14 +765,7 @@ def build_phase_analysis_payload(
             "race_distance": plan_row.race_distance,
             "phase": phase.value,
             "phase_kpi_priority": phase_priority_payload,
-            "phase_weeks": {
-                "total": 0,
-                "completed": 0,
-                "in_progress": 0,
-                "future": 0,
-                "completion_pct": None,
-                "phase_temporality": "empty",
-            },
+            "phase_weeks": empty_phase_weeks,
             "phase_window": {
                 "start": None,
                 "end": None,
@@ -771,6 +775,7 @@ def build_phase_analysis_payload(
             "goal": goal_payload,
             "weekly_progress": [],
             "phase_progress_summary": empty_progress_summary,
+            "coaching_hint": resolve_coaching_hint(goal_payload, empty_phase_weeks),
             "timezone": tz_norm,
             "today": resolved_today.isoformat(),
         }
@@ -888,6 +893,19 @@ def build_phase_analysis_payload(
             resolved_today, evaluable_weeks[-1][1] + timedelta(days=6)
         )
 
+    phase_weeks_payload = {
+        "total": total,
+        "completed": completed,
+        "in_progress": in_progress,
+        "future": future,
+        "completion_pct": completion_pct,
+        "phase_temporality": phase_temporality,
+        # V1.6 3B.7 — display string for the phase progress percentage.
+        "display": {
+            "completion_pct": format_percent(completion_pct),
+        },
+    }
+
     return {
         "plan_id": plan_row.id,
         "plan_name": plan_row.plan_name,
@@ -895,18 +913,7 @@ def build_phase_analysis_payload(
         "race_distance": plan_row.race_distance,
         "phase": phase.value,
         "phase_kpi_priority": phase_priority_payload,
-        "phase_weeks": {
-            "total": total,
-            "completed": completed,
-            "in_progress": in_progress,
-            "future": future,
-            "completion_pct": completion_pct,
-            "phase_temporality": phase_temporality,
-            # V1.6 3B.7 — display string for the phase progress percentage.
-            "display": {
-                "completion_pct": format_percent(completion_pct),
-            },
-        },
+        "phase_weeks": phase_weeks_payload,
         "phase_window": {
             "start": phase_start.isoformat(),
             "end": (phase_end + timedelta(days=6)).isoformat(),
@@ -920,6 +927,7 @@ def build_phase_analysis_payload(
         "goal": goal_payload,
         "weekly_progress": weekly_progress,
         "phase_progress_summary": phase_progress_summary,
+        "coaching_hint": resolve_coaching_hint(goal_payload, phase_weeks_payload),
         "timezone": tz_norm,
         "today": resolved_today.isoformat(),
     }

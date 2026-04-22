@@ -40,7 +40,13 @@ from src.smartcoach_mobile_coach.dialogue_manager import (
     TURN_CLARIFICATION,
 )
 
-COACH_TONE_CONTRACT_VERSION = 1
+# V1.6 Phase D 3D.10 bump: removed raw-threshold language from the §19.8
+# tone block. The block now keys off the ``adherence_band`` field name
+# (``low`` / ``medium`` / ``high``) without re-stating the `< 70 %` /
+# `70 %–90 %` / `> 90 %` cut-offs, which live in the §7 producer and
+# must not be duplicated in the prompt. Spec ↔ prompt drift tests
+# exercise the new phrasing and its single-source-of-truth pointer.
+COACH_TONE_CONTRACT_VERSION = 2
 
 
 def _build_block() -> str:
@@ -95,14 +101,21 @@ def _build_block() -> str:
         "next quality session). **Coach the consequence — do not moralize.**\n"
         "\n"
         "### §19.8 Adherence-informed tone\n"
-        "Adapt tone to the `adherence_runs_pct` band (§7):\n"
+        "Read the **`adherence_band`** field directly — it is the "
+        "canonical `low` / `medium` / `high` classification produced by "
+        "the §7 adherence service. **Do not re-derive** the band from "
+        "`adherence_runs_pct`: the numeric cut-offs live in §7 and the "
+        "band field is the only prompt-side source of truth.\n"
         "\n"
-        "- **low** (`< 70 %`) — **supportive, non-judgmental**; consistency "
-        "over performance; propose volume reduction per §16.\n"
-        "- **medium** (`70 %–90 %`) — **steady reinforcement**; acknowledge "
-        "what's working; hold load.\n"
-        "- **high** (`> 90 %`) — **progression-ready**; may surface "
-        "next-level discussion within §16 caps.\n"
+        "- **`adherence_band = low`** — **supportive, non-judgmental**; "
+        "consistency over performance; propose volume reduction per §16.\n"
+        "- **`adherence_band = medium`** — **steady reinforcement**; "
+        "acknowledge what's working; hold load.\n"
+        "- **`adherence_band = high`** — **progression-ready**; may "
+        "surface next-level discussion within §16 caps.\n"
+        "- **`adherence_band = null`** — band not yet classifiable "
+        "(insufficient evaluable runs). Stay neutral-supportive; do NOT "
+        "invent a band.\n"
     )
 
 
