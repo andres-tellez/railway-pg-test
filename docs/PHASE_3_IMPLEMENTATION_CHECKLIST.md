@@ -487,6 +487,53 @@ The "real coach" quality of the experience depends heavily on cross-session memo
 
 ---
 
+## Phase C — Latency pass (post-C.14 follow-up)
+
+Behavior was validated as working at the end of Phase C; real-world turn latency was landing near a minute on multi-tool questions. This subsection tracks the dedicated latency pass that followed. All work here is strictly infrastructure — no §19 contract or coaching-behavior change.
+
+| ID | Requirement | Status | Notes |
+|----|----|----|----|
+| 3C.L1 | Parallel tool dispatcher — independent read-only tool calls in the same round run concurrently on a thread pool with fresh DB sessions per task; stateful tools (`update_plan_intake`, `generate_training_plan`) force the legacy sequential path | **Done 2026-04-21** | `src/smartcoach_mobile_coach/tool_dispatch.py` |
+| 3C.L2 | Tightened orchestrator defaults — `OPENAI_MAX_TOKENS` 2000 → 1000, `OPENAI_MOBILE_AGENT_TIMEOUT` 180 → 60 s | **Done 2026-04-21** | Overridable via env; tests lock the defaults |
+| 3C.L3 | `SMARTCOACH_FAST_MODE` umbrella env flag — one toggle flips `EXPERIMENT_MINIMAL_BASE` + `EXPERIMENT_MINIMAL_PREFS` + `EXPERIMENT_MINIMAL_DIRECTIVE` together | **Done 2026-04-21** | Per-switch env still wins; FAST_MODE only promotes unset / falsy values |
+| 3C.L4 | Per-turn `[coach_prompt_profile]` log line (active prompt profile + model + max_tokens) | **Done 2026-04-21** | Answers "which prompt am I actually sending?" without env spelunking |
+| 3C.L5 | Streaming (SSE) end-to-end | **Deferred** | Mobile client does not consume SSE today; largest single latency win once the client is ready |
+
+**Rationale for 3C.L1–3C.L4 (latency pass):**
+
+- **Problem.** Turn latency was landing at 30–60 s on common multi-tool questions ("how's my plan this week?", "am I improving?"), well above the 3–4 s target. Bottleneck breakdown based on the captured `timings_ms["agent_loop_rounds"]`:
+  - Each OpenAI round-trip ships the full system prompt (`SYSTEM_PROMPT_BASE` ~46.6 KB ≈ 11.5 K tokens) plus glossary + three contracts (~1.9 K tokens) plus 12 tool schemas (~3–4 K tokens) = **~16–18 K input tokens before tool results**.
+  - Tool calls executed **serially** inside each round — a round with 3 independent reads paid `tool₁ + tool₂ + tool₃` instead of `max(…)`.
+  - `OPENAI_MAX_TOKENS=2000` let completions run longer than any coach reply ever needs (typical answers are 2–4 sentences ≤ 250 tokens).
+  - `OPENAI_MOBILE_AGENT_TIMEOUT=180` meant pathological turns could hang the mobile chat UI for three full minutes.
+  - There was no direct log surfacing *which* prompt profile was active, so "am I still on the huge prompt?" required reading env vars or outgoing HTTP bodies.
+- **Implementation.**
+  - **3C.L1 — Parallel dispatcher** (`src/smartcoach_mobile_coach/tool_dispatch.py`):
+    - `STATEFUL_TOOLS = {"update_plan_intake", "generate_training_plan"}` — batches containing any of these fall back to the sequential path on the caller's shared `Session`.
+    - Parallel path: `ThreadPoolExecutor` with a fresh `SessionLocal()` per task (SQLAlchemy `Session` is not thread-safe — sharing one across threads corrupts state). `SMARTCOACH_TOOL_DISPATCH_MAX_WORKERS` (default 4, clamped 1–8) and `SMARTCOACH_TOOL_DISPATCH_PARALLEL=0` give operators a kill switch.
+    - Exception isolation — a raising tool yields a `{"error": "tool_execution_failed"}` envelope for that call only; siblings return real output.
+    - Per-call timing envelope extended with `parallel` boolean so slow-turn investigations can immediately see whether parallelism kicked in.
+    - Preserves the per-turn `tool_result_cache` — cache hits short-circuit synchronously, cache population order matches the legacy sequential path so downstream consumers (validator, tests) see identical keys.
+  - **3C.L2 — Tightened defaults** (`orchestrator.py`): `OPENAI_MAX_TOKENS` 2000 → 1000 (halves worst-case completion-time tail; `1000` still comfortably covers "walk me through everything" asks), `OPENAI_MOBILE_AGENT_TIMEOUT` 180 → 60 (3-minute pending requests are never good UX; multi-step tool turns still fit inside 60 s with parallel dispatch + `gpt-4o-mini`).
+  - **3C.L3 — `SMARTCOACH_FAST_MODE` umbrella flag**: single env toggle that OR-combines with `EXPERIMENT_MINIMAL_BASE` / `EXPERIMENT_MINIMAL_PREFS` / `EXPERIMENT_MINIMAL_DIRECTIVE`. An explicit per-switch env still wins; FAST_MODE only promotes unset/falsy values. Setting `SMARTCOACH_FAST_MODE=1` drops `SYSTEM_PROMPT_BASE` from 46.6 KB → 0.75 KB while the V1.6 contract sections (metric glossary, plan-vs-actual, plan guidance, coach tone) continue to supply behavioral grounding.
+  - **3C.L4 — Prompt-profile log line** (`[coach_prompt_profile]` at INFO): emitted every turn with `fast_mode`, `minimal_base`, `minimal_prefs`, `minimal_directive`, `model`, `max_tokens`. Grep-stable tag — answers "which prompt is live?" without reading env or outgoing request bodies.
+- **Expected impact.**
+  - Parallel dispatch alone: −200 ms–−1 s per round when 2+ independent tools fire (common opening-turn case).
+  - `SMARTCOACH_FAST_MODE=1`: **~11 K tokens removed from every request**. At gpt-4o rates, this alone typically cuts perceived latency 40–70 %.
+  - Combined with `OPENAI_CONVERSATION_MODEL=gpt-4o-mini` (env change, no code needed), "how was my run?" / "what's my plan this week?" should land in the 3–6 s range.
+- **Deliberate non-goals.**
+  - **No streaming (3C.L5 deferred).** Mobile chat composer does not consume SSE today; adding SSE to the backend alone would just buffer on the client with no perceived benefit. Tracked for the next client-side pass — this is the single largest remaining latency win.
+  - **No default model change.** `OPENAI_CONVERSATION_MODEL` stays at `gpt-4o` in code; env override is the recommended path for `gpt-4o-mini`. Keeps prod behavior explicit and reversible.
+  - **No `SMARTCOACH_FAST_MODE` default flip.** Flag defaults off; turning it on is an operator decision because `MINIMAL_SYSTEM_PROMPT_BASE` drops a lot of V1.5 behavioral detail, even though the V1.6 contract sections cover the essentials.
+- **Operator quick-reference — which prompt is active?**
+  - `[coach_prompt_profile] … fast_mode=False minimal_base=False …` → **full ~46.6 KB `SYSTEM_PROMPT_BASE`** (slow).
+  - `[coach_prompt_profile] … fast_mode=True  minimal_base=True  …` → **750-char `MINIMAL_SYSTEM_PROMPT_BASE`** + V1.6 contracts (fast).
+- **Tests.**
+  - `tests/test_tool_dispatch.py` — 16 contract tests: stateful-set parity, cache hit short-circuit, single-call sequential, stateful-batch sequential, parallel worker threads + fresh sessions, parallel wall-time beats sequential, env-flag kill switch, exception isolation, input-order preservation (parameterized), result envelope fields, cache key parity, empty-call no-op, `max_workers` env override + clamp, `_parallel_enabled` env toggle, orchestrator wiring (single call).
+  - `tests/test_fast_mode_and_defaults.py` — FAST_MODE OR-wiring for all three minimal toggles, tightened defaults (max_tokens / timeout) locked, `[coach_prompt_profile]` log tag + payload keys present.
+
+---
+
 ## Phase D — Phase goals
 
 | ID | Requirement | Status | Spec ref |
