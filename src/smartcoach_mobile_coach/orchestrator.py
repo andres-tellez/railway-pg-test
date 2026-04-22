@@ -47,6 +47,9 @@ from src.smartcoach_mobile_coach.coach_tone_contract import (
     coach_tone_contract_section,
 )
 from src.smartcoach_mobile_coach.metric_glossary import metric_glossary_section
+from src.smartcoach_mobile_coach.phase_ux_contract import (
+    phase_ux_contract_section,
+)
 from src.smartcoach_mobile_coach.plan_guidance_contract import (
     plan_guidance_contract_section,
 )
@@ -2189,6 +2192,17 @@ def run_mobile_agent_turn(
             # actual.* fields, and numbers not present in the payload.
             # Also suppressed in plan_creation_mode.
             plan_guidance_contract_section(),
+            # 3D.8: Phase UX contract — Purpose → Focus → Progress →
+            # Action, scope-gated to plan/phase/progress-related turns.
+            # Reads `get_phase_analysis.goal` (3D.2/3D.3) for the
+            # active Focus and `phase_progress_summary.dominant_status`
+            # + `weekly_progress[]` (3D.6/3D.7) for the Progress step,
+            # and locks the plain-language rule so the coach never
+            # echoes the `on_track`/`close`/`off_track` enum verbatim.
+            # Self-gating via its internal "Scope gate" clause — safe
+            # to include unconditionally; plan_creation_mode still
+            # skips it because that branch uses a separate base.
+            phase_ux_contract_section(),
             # 3C.5 + 3C.6 + 3C.7: coach tone contract (spec §§19.6–19.8).
             # Locks action-oriented response shape (next action OR
             # guiding question) with five exempt classifications sourced
