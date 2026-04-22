@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -93,13 +94,29 @@ from src.utils.hr_zone_constants import (
 logger = logging.getLogger("smartcoach_mobile_coach")
 
 _PLAN_CREATION_TOOL_NAMES: Set[str] = {"update_plan_intake", "generate_training_plan"}
-_PLAN_CREATION_INTENT_HINTS: Tuple[str, ...] = (
-    "create a plan",
-    "build a plan",
-    "training plan",
-    "plan for",
-    "help me train",
-    "make me a plan",
+# V1.6 hotfix — plan-creation hints are regex patterns that require a
+# **creation verb** adjacent to the plan noun. The previous substring
+# implementation matched on bare "training plan" / "plan for", which
+# tripped on ordinary analysis questions like "how was my run compared
+# to the training plan?" and forced the user into the intake flow
+# even when an active plan already existed.
+#
+# Each pattern must be anchored on a word boundary + creation verb +
+# ≤5 filler words + a plan-ish noun. Keeping the filler window tight
+# prevents false positives across long sentences.
+_PLAN_CREATION_INTENT_REGEX: Tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(create|build|make|generate|design|start|start\s+a|set\s+up|"
+        r"put\s+together|draft|need)\b"
+        r"(?:\s+\w+){0,5}\s+"
+        r"\b(plan|program|schedule|training)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bhelp\s+me\s+train\b", re.IGNORECASE),
+    re.compile(
+        r"\bi\s+want\s+(?:a|an|to)\s+(?:new\s+)?(?:training\s+)?plan\b", re.IGNORECASE
+    ),
+    re.compile(r"\b(?:train|prep(?:are)?)\s+for\s+(?:a|my|an|the)\s+", re.IGNORECASE),
 )
 
 
@@ -158,17 +175,93 @@ def _tool_function_name(t: Dict[str, Any]) -> str:
     return n if isinstance(n, str) else ""
 
 
+def _user_message_matches_plan_creation_regex(user_message: str) -> bool:
+    """True when the user message looks like a *creation* request.
+
+    Requires a creation verb (create / build / make / …) adjacent to a
+    plan-ish noun, or an explicit "train for …" / "help me train"
+    phrase. Bare mentions of "training plan" or "plan for" do NOT
+    match — those show up constantly in analysis questions.
+    """
+    msg = (user_message or "").strip()
+    if not msg:
+        return False
+    return any(pat.search(msg) for pat in _PLAN_CREATION_INTENT_REGEX)
+
+
+def _user_has_active_plan(session: Session, user_id: str) -> bool:
+    """Cheap existence check — is there a row in `plans` with is_active=TRUE?
+
+    Returns False on any DB error (and rolls back) so a transient
+    failure falls back to the previous keyword-only behavior rather
+    than incorrectly pushing a user into intake.
+    """
+    if not user_id:
+        return False
+    try:
+        row = session.execute(
+            text(
+                "SELECT 1 FROM plans "
+                "WHERE user_id = CAST(:uid AS uuid) AND is_active = TRUE "
+                "LIMIT 1"
+            ),
+            {"uid": user_id},
+        ).first()
+    except Exception:
+        logger.debug(
+            "[smartcoach_mobile_coach] _user_has_active_plan query failed; "
+            "treating as no-plan",
+            exc_info=True,
+        )
+        try:
+            session.rollback()
+        except Exception:
+            logger.debug(
+                "[smartcoach_mobile_coach] _user_has_active_plan rollback failed",
+                exc_info=True,
+            )
+        return False
+    return row is not None
+
+
 def _is_plan_creation_turn(
     intent: str,
     user_message: str,
     thread_ctx: DerivedThreadCoachContext,
+    *,
+    has_active_plan: bool,
 ) -> bool:
-    if intent == INTENT_PLAN_CREATION:
-        return True
+    """Decide whether the current turn should use the plan-creation prompt.
+
+    Priority (V1.6 hotfix):
+
+    1. **Mid-intake thread always wins.** If the thread already has a
+       ``latest_plan_intake_state`` (earlier turn emitted one), we
+       stay in intake so the flow can finish even if the user writes
+       a single-word answer that would not otherwise trip detection.
+    2. Otherwise, if the user already has an **active plan**, never
+       force intake. Let the normal coach handle "create another plan"
+       / "rebuild my plan" and ask for replacement confirmation.
+    3. Otherwise, trigger intake only when the message **looks like a
+       creation request** (regex-based, verb-anchored) or the
+       classifier explicitly returned ``INTENT_PLAN_CREATION``.
+
+    Dropping hint matches to active-plan users is the core fix — the
+    old substring matcher treated "how was my run compared to the
+    training plan?" as plan creation.
+    """
+    # Rule 1 — mid-intake thread always wins.
     if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict):
         return True
-    msg = (user_message or "").lower()
-    return any(h in msg for h in _PLAN_CREATION_INTENT_HINTS)
+
+    # Rule 2 — user with a live plan is never force-routed into intake.
+    if has_active_plan:
+        return False
+
+    # Rule 3 — creation signal (classifier OR verb-anchored regex).
+    if intent == INTENT_PLAN_CREATION:
+        return True
+    return _user_message_matches_plan_creation_regex(user_message)
 
 
 def _filter_tools_for_turn(
@@ -1909,8 +2002,16 @@ def run_mobile_agent_turn(
             out.get("error") or out.get("message") or "unknown",
         )
 
+    # V1.6 hotfix — look up the user's active-plan status once per turn
+    # and feed it to _is_plan_creation_turn so users with a live plan
+    # are never accidentally routed into intake by substring hints on
+    # phrases like "training plan".
+    has_active_plan = _user_has_active_plan(session, internal_user_id)
     plan_creation_mode = _is_plan_creation_turn(
-        response_directive.intent, user_message, thread_ctx
+        response_directive.intent,
+        user_message,
+        thread_ctx,
+        has_active_plan=has_active_plan,
     )
     openai_tools = _filter_tools_for_turn(
         openai_tools_all, plan_creation_mode=plan_creation_mode
