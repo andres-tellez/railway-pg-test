@@ -19,8 +19,7 @@ def test_planned_pace_display_string_band_from_pace_ranges():
         pace_ranges={"E": [480, 510]},
     )
     s = planned_pace_display_string(w)
-    assert s is not None
-    assert "\u2013" in s or "-" in s
+    assert s == "8:00-8:30/mi"
 
 
 def test_build_planned_weekly_wire_includes_target_pace_display_when_ranges():
@@ -64,3 +63,4 @@ def test_merge_planned_wire_overwrites_execution_planned_and_display():
     assert shape["planned"]["miles"] == 6.0
     assert shape["planned_miles"] == 6.0
     assert shape["display"]["planned"]["miles"] == "6.00 mi"
+    assert shape["display"]["planned"]["pace"] == "7:00-7:30/mi"
