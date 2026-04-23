@@ -17,7 +17,6 @@ from src.services.training_plan.v2.race_distance_factory_v2 import (
 from src.services.training_plan.v2.plan_generation_orchestrator_v2 import (
     PlanGenerationOrchestratorV2,
 )
-from src.utils.date_helpers import DEFAULT_TRAINING_DAYS
 from src.db.dao.user_profile_dao import get_user_profile
 
 logger = logging.getLogger(__name__)
@@ -36,9 +35,7 @@ def run_v2_plan_generation(
     Execute the v2 LR-first deterministic pipeline and return the validation payload.
     """
 
-    training_days = plan_request.get("training_days") or DEFAULT_TRAINING_DAYS
-    if not plan_request.get("training_days"):
-        plan_request["training_days"] = training_days
+    training_days = plan_request.get("training_days")
 
     plan_request.pop("coach_memory_hints", None)
     plan_request.pop("coach_memory_memories", None)
