@@ -98,6 +98,10 @@ from src.db.models.activities import Activity
 from src.db.models.plans import Plan
 from src.db.models.plan_workouts import PlanWorkout
 from src.services.phase.phase_priority import compute_phase_kpi_priority_for_week
+from src.services.plan.planned_workout_weekly_wire import (
+    build_planned_weekly_wire,
+    merge_planned_wire_into_execution_shape,
+)
 from src.services.plan.plan_status import plan_status_for_day
 from src.services.scoring.adherence import (
     WeeklyAdherenceEntry,
@@ -302,26 +306,21 @@ def _load_most_recent_run_per_local_date_in_week(
 def _execution_shape_for_planned_day_with_unlinked_run(
     w: PlanWorkout,
     act: Activity,
+    wire: Dict[str, Any],
     *,
-    canonical_run_type_key: str,
     plan_training_days: Optional[Any],
 ) -> Dict[str, Any]:
     """
     Weekly ``execution`` payload for a planned day with a same-calendar-date
     run that is not yet linked via ``matched_plan_workout_id``.
 
-    Planned side comes from the :class:`PlanWorkout`; actual distance/pace/HR
-    from the activity row (``conv_distance`` when ``actual_miles`` is absent).
+    Planned side comes from :func:`build_planned_weekly_wire`; actual
+    distance/pace/HR from the activity row (``conv_distance`` when
+    ``actual_miles`` is absent).
     """
     block = build_run_execution_block(act, plan_training_days=plan_training_days)
     shape = execution_block_to_weekly_plan_shape(block, act)
-
-    shape["planned"] = {
-        "type": canonical_run_type_key,
-        "miles": w.miles,
-    }
-    shape["planned_type"] = canonical_run_type_key
-    shape["planned_miles"] = w.miles
+    merge_planned_wire_into_execution_shape(shape, wire)
 
     raw_mi = getattr(act, "actual_miles", None)
     if raw_mi is None or (isinstance(raw_mi, (int, float)) and float(raw_mi) <= 0):
@@ -333,11 +332,6 @@ def _execution_shape_for_planned_day_with_unlinked_run(
 
     display = shape.get("display")
     if isinstance(display, dict):
-        planned_disp = display.get("planned")
-        if isinstance(planned_disp, dict):
-            planned_disp["miles"] = (
-                format_distance_mi(w.miles) if w.miles is not None else None
-            )
         actual_disp = display.get("actual")
         if isinstance(actual_disp, dict) and isinstance(actual_ns, dict):
             mi = actual_ns.get("miles")
@@ -364,6 +358,11 @@ def _build_future_week_day_entry(
         RUN_TYPE_DEFINITIONS.get(canonical_run_type_key)
         or RUN_TYPE_DEFINITIONS[RUN_TYPE_EASY]
     )
+    wire = build_planned_weekly_wire(
+        w,
+        canonical_run_type_key=canonical_run_type_key,
+        target_hr=target_hr,
+    )
     return {
         "date": w.date.isoformat(),
         "weekday": _WEEKDAY_LABELS[w.date.weekday()],
@@ -388,16 +387,9 @@ def _build_future_week_day_entry(
         "focus": w.focus,
         "phase": w.phase,
         # V1.6 3B.7 — Topic 4 display-ready strings for planned side.
-        # Future weeks have no ``actual``, so only ``planned`` keys
-        # appear here. ``target_hr`` is already a plan-generated
-        # human-readable string (e.g. "Z2 (120-150 bpm)") and is
-        # passed through unchanged.
-        "display": {
-            "planned": {
-                "miles": format_distance_mi(w.miles) if w.miles is not None else None,
-                "target_hr": target_hr,
-            },
-        },
+        # Single source: :func:`build_planned_weekly_wire` (plan row miles,
+        # HR string, optional pace from ``pace_ranges``).
+        "display": {"planned": dict(wire["display_planned"])},
         # 3B.3: future-week contract — ``execution`` is None.
         "execution": None,
     }
@@ -431,6 +423,11 @@ def _build_past_current_day_entry(
         RUN_TYPE_DEFINITIONS.get(canonical_run_type_key)
         or RUN_TYPE_DEFINITIONS[RUN_TYPE_EASY]
     )
+    wire = build_planned_weekly_wire(
+        w,
+        canonical_run_type_key=canonical_run_type_key,
+        target_hr=target_hr,
+    )
 
     if activity is None:
         execution = None
@@ -439,11 +436,12 @@ def _build_past_current_day_entry(
             build_run_execution_block(activity, plan_training_days=plan_training_days),
             activity,
         )
+        merge_planned_wire_into_execution_shape(execution, wire)
     else:
         execution = _execution_shape_for_planned_day_with_unlinked_run(
             w,
             activity,
-            canonical_run_type_key=canonical_run_type_key,
+            wire,
             plan_training_days=plan_training_days,
         )
 
@@ -496,18 +494,8 @@ def _build_past_current_day_entry(
         "target_hr": target_hr,
         "focus": w.focus,
         "phase": w.phase,
-        # V1.6 3B.7 — Topic 4 display-ready planned-side strings.
-        # Past / current weeks may also carry a ``display`` block
-        # inside ``execution`` (produced by
-        # ``execution_block_to_weekly_plan_shape``) for the actual
-        # side; this day-level ``display`` only carries the planned
-        # miles + target_hr for symmetry with future-week entries.
-        "display": {
-            "planned": {
-                "miles": format_distance_mi(w.miles) if w.miles is not None else None,
-                "target_hr": target_hr,
-            },
-        },
+        # V1.6 3B.7 — Topic 4 planned-side strings (same wire as ``execution``).
+        "display": {"planned": dict(wire["display_planned"])},
         "execution": execution,
     }
     return day, entry
