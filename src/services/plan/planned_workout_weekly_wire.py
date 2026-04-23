@@ -59,22 +59,41 @@ def _pace_band_seconds(w: PlanWorkout) -> Optional[tuple[int, int]]:
     return None
 
 
+def _pace_mmss_only(sec_per_mi: float) -> str:
+    """``M:SS`` segment only, same rounding rules as :func:`format_pace_sec_per_mi`."""
+    full = format_pace_sec_per_mi(sec_per_mi)
+    if full == "—":
+        return "—"
+    if full.endswith("/mi"):
+        return full.removesuffix("/mi")
+    return full
+
+
 def planned_pace_display_string(w: PlanWorkout) -> Optional[str]:
     """
     Human-readable planned pace or band from ``pace_ranges`` (sec/mi), or
     ``None`` when no ranges exist.
+
+    Single target: ``9:18/mi``. A band uses one trailing unit:
+    ``9:37-10:30/mi``.
     """
     band = _pace_band_seconds(w)
     if band is None:
         return None
     lo, hi = band
-    a = format_pace_sec_per_mi(float(lo))
-    b = format_pace_sec_per_mi(float(hi))
-    if a == "—" and b == "—":
+    a_full = format_pace_sec_per_mi(float(lo))
+    b_full = format_pace_sec_per_mi(float(hi))
+    if a_full == "—" and b_full == "—":
         return None
-    if lo == hi or a == b:
-        return a if a != "—" else b
-    return f"{a}\u2013{b}"
+    if lo == hi or a_full == b_full:
+        return a_full if a_full != "—" else b_full
+    a = _pace_mmss_only(float(lo))
+    b = _pace_mmss_only(float(hi))
+    if a == "—":
+        return b_full
+    if b == "—":
+        return a_full
+    return f"{a}-{b}/mi"
 
 
 def build_planned_weekly_wire(
