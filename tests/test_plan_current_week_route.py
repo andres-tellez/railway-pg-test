@@ -714,6 +714,87 @@ def test_current_week_fallback_computes_target_hr_when_missing(
     assert "Z" in day["target_hr"], "fallback must return a canonical Z[1-5] zone label"
 
 
+def test_current_week_date_aligned_run_without_match_still_emits_execution(
+    client,
+    auth_header,
+    plan_routes_db,
+    monkeypatch,
+):
+    """
+    When analysis has not persisted matched_plan_workout_id, a same-day Run
+    should still populate ``execution.actual`` for plan-vs-actual UI.
+    """
+    workout_date = date(2026, 4, 21)
+    session = plan_routes_db
+    session.add(
+        UserAthleteLink(
+            user_id=str(DEFAULT_USER_ID),
+            athlete_id=99902,
+        )
+    )
+    plan = Plan(
+        user_id=DEFAULT_USER_ID,
+        plan_name="Align Test Plan",
+        race_date=workout_date,
+        race_distance="Half",
+        is_active=True,
+    )
+    session.add(plan)
+    session.flush()
+    workout = PlanWorkout(
+        plan_id=plan.id,
+        date=workout_date,
+        workout_type="Easy Run",
+        description="Easy miles",
+        miles=5.0,
+        intensity="E",
+        run_type_key="easy",
+    )
+    session.add(workout)
+    session.flush()
+    session.add(
+        Activity(
+            activity_id=880012,
+            athlete_id=99902,
+            user_id=DEFAULT_USER_ID,
+            name="Unlinked easy",
+            type="Run",
+            start_date=datetime(
+                workout_date.year,
+                workout_date.month,
+                workout_date.day,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            matched_plan_workout_id=None,
+            conv_distance=5.2,
+            moving_time=2700,
+            average_heartrate=140.0,
+            hr_zone_1=0,
+            hr_zone_2=2700,
+            hr_zone_3=0,
+            hr_zone_4=0,
+            hr_zone_5=0,
+        )
+    )
+    session.commit()
+
+    monkeypatch.setattr(
+        "src.services.plan.weekly_plan.get_today_date_in_timezone",
+        lambda _tz: date(2026, 4, 22),
+    )
+
+    resp = client.get("/api/plan/current-week?tz=UTC", headers=auth_header())
+    assert resp.status_code == 200
+    day = json.loads(resp.data)["days"][0]
+    assert day["plan_status"] in ("missed", "in_progress")
+    assert day["execution"] is not None
+    assert day["execution"]["actual"]["miles"] == pytest.approx(5.2)
+    assert day["execution"]["planned"]["miles"] == pytest.approx(5.0)
+    assert day["execution"]["planned"]["type"] == "easy"
+
+
 def test_current_week_empty_when_no_workouts_in_range(
     client,
     auth_header,
