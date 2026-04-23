@@ -74,6 +74,7 @@ from src.services.metrics_helper_service import (
 )
 from src.services.training_plan.decision_trace import (
     DecisionReason,
+    resolve_training_days,
     resolve_long_run_day,
 )
 from src.utils.timezone_helpers import resolve_timezone
@@ -150,10 +151,10 @@ class PlanGenerationOrchestratorV2:
                 "draft": {},
             }
 
-        if not training_days:
-            from src.utils.date_helpers import DEFAULT_TRAINING_DAYS
-
-            training_days = DEFAULT_TRAINING_DAYS
+        training_days, training_days_reason = self._determine_training_days(
+            plan_request, training_days
+        )
+        plan_request["training_days"] = training_days
 
         runs_per_week = len(training_days)
 
@@ -446,7 +447,10 @@ class PlanGenerationOrchestratorV2:
         )
         validation["draft"] = plan_with_details
         validation["pass1_rationale"] = lr_output.get("rationale")
-        validation["decision_trace"] = [long_run_day_reason.to_dict()]
+        validation["decision_trace"] = [
+            training_days_reason.to_dict(),
+            long_run_day_reason.to_dict(),
+        ]
         # Include race date validation results if available
         if race_date_validation:
             validation["race_date_validation"] = race_date_validation
@@ -482,6 +486,19 @@ class PlanGenerationOrchestratorV2:
             return "extra_time"
         else:
             return "perfect_match"
+
+    def _determine_training_days(
+        self,
+        plan_request: Dict[str, Any],
+        requested_training_days: Optional[List[str]],
+    ) -> Tuple[List[str], DecisionReason]:
+        """Resolve training_days via shared decision trace helper."""
+        return resolve_training_days(
+            plan_request=plan_request,
+            hints=plan_request.get("coach_memory_hints") or [],
+            memories=plan_request.get("coach_memory_memories") or [],
+            requested_training_days=requested_training_days,
+        )
 
     def _determine_long_run_day(
         self,

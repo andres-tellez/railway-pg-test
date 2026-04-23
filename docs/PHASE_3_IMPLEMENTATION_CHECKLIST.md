@@ -4,7 +4,7 @@
 
 **Scope:** **Backend** (`railway-pg-test`) + **Expo app** (`smartcoach_mobile` → `smartcoach_app/`). Depends on **[Phase 1](./PHASE_1_IMPLEMENTATION_CHECKLIST.md)** and **[Phase 2](./PHASE_2_IMPLEMENTATION_CHECKLIST.md)**.
 
-**Status:** **Design approved (V1.6).** Implementation phased A → F.
+**Status:** **Design approved (V1.6).** Implementation phased A → G.
 
 **Verdict:** Not started — this is the V1.6 implementation roadmap.
 
@@ -20,7 +20,8 @@
 | **C** | In-chat plan rendering | §19 Coach Behavior Contract enforced in prompt + validator; session-summary injection at turn start | D |
 | **D** | Phase goals | `user_phase_goals` table + `save_phase_goal` tool + read-path integration | E |
 | **E** | Plan adjustments | LLM-proposed adjustments, system-validated inside §16 caps | F |
-| **F** | Plan-aware long-term memory | Topic 6 Layer B/C extensions for plan context | — |
+| **F** | Plan-aware long-term memory | Topic 6 Layer B/C extensions for plan context | G |
+| **G** | Plan generation decision tracing | Observable `decision_trace` for memory-influenced plan fields (`training_days`, `long_run_day`); integrity + `memory_mode` | — |
 
 ---
 
@@ -668,6 +669,30 @@ Behavior was validated as working at the end of Phase C; real-world turn latency
 | 3F.3 | User memory surfaced in `get_user_context` (backward-compatible extension of 3B.10) | **Done 2026-04-22** | `USER_CONTEXT_SCHEMA_VERSION = 2`; adds `plan_memories[]` + structured `session_summary` (null or `{excerpt, thread_tags, created_at}`) |
 | 3F.4 | Plan generator / weekly rebuild reads user memory for preference signals | **Done 2026-04-22** | `run_v2_plan_generation` injects `coach_memory_hints` + `long_run_day` inference when absent; weekly rebuild logs hint count |
 | 3F.5 | Privacy + retention policy covers plan-derived memory | **Done 2026-04-22** | Summarizer system prompt forbids PII; stores curated text + tags only (no raw `conversation_messages`); Postgres DDL `migrations/sql/20260422_phase_f_memory.sql`; operators set DB retention jobs externally (no automated purge in-app V1) |
+
+---
+
+## Phase G — Plan generation decision tracing (memory impact visibility)
+
+**Scope note:** Phase F lands durable plan memories and surfaces them into plan generation. Phase G makes the **deterministic plan fields** that can be influenced by memory **observable and testable** via a small `decision_trace[]` on the v2 plan-generation validation payload. No new DB tables in this slice; tracing is additive only.
+
+| ID | Requirement | Status | Doc ref |
+|----|----|----|----|
+| 3G.1 | **Decision trace payload** — v2 plan generation returns `validation["decision_trace"]` as an ordered list of `{field, value, source, memory_ids, rationale}` entries | **Done 2026-04-23** | `PlanGenerationOrchestratorV2.generate_longrun_first` attaches trace after validation assembly |
+| 3G.2 | **`training_days` tracing** — resolve `training_days` once, write canonical value back to `plan_request["training_days"]`, and emit a `training_days` trace entry (`user_input` / `memory` / `default_fallback`) | **Done 2026-04-23** | `src/services/training_plan/decision_trace.py::resolve_training_days` + orchestrator wiring |
+| 3G.3 | **`long_run_day` tracing** — resolve after final `training_days` so downstream logic cannot disagree; emit `long_run_day` trace entry | **Done 2026-04-23** | `src/services/training_plan/decision_trace.py::resolve_long_run_day` + orchestrator wiring |
+| 3G.4 | **Trace integrity guardrails** — `source == "memory"` requires non-empty `memory_ids`; other sources force `memory_ids == []`; contributing IDs are **deduped + sorted** | **Done 2026-04-23** | `_validated_reason` + memory-id collectors in `decision_trace.py` |
+| 3G.5 | **Conflict / safety rationales** — when memory cannot be applied safely, fall back with explicit short rationales (e.g. non-actionable `training_days` memory; long-run memory incompatible with resolved weekdays) | **Done 2026-04-23** | `resolve_training_days` / `resolve_long_run_day` fallback branches |
+| 3G.6 | **`memory_mode` switch** — `run_v2_plan_generation(..., memory_mode="on"|"off")` skips fetching/injecting coach memory inputs when `"off"` (for deterministic comparisons) | **Done 2026-04-23** | `src/routes/plan_generation_v2.py` |
+| 3G.7 | **Draft payload surfacing** — `build_standard_draft_payload` passes `decision_trace` through under `validation.decision_trace` | **Done 2026-04-23** | `src/routes/plan_generation_v2.py::build_standard_draft_payload` |
+| 3G.8 | **Structured logging** — one `logger.info` JSON line per traced decision (`field`, `value`, `source`, `memory_ids`) | **Done 2026-04-23** | `decision_trace.py::_log_decision` |
+| 3G.9 | **Tests** — resolver unit tests + memory on/off comparisons + cascade conflict coverage | **Done 2026-04-23** | `tests/test_plan_generation_decision_trace.py` |
+
+### 3G — minimal decision tracing (landed 2026-04-23)
+
+- **Single orchestration seam.** `PlanGenerationOrchestratorV2` resolves `training_days` first, persists the resolved list onto `plan_request`, then resolves `long_run_day` against that canonical weekday set. This prevents split-brain between “memory implied weekdays” vs “memory implied long run day.”
+- **Memory inputs are optional and explicit.** `run_v2_plan_generation` optionally attaches `coach_memory_hints` / `coach_memory_memories` (when `memory_mode="on"`) for deterministic parsing + attribution, without widening the public plan-create schema.
+- **No persistence of traces in V1.** Traces ride on the generation/validation payload only (operators can log externally).
 
 ---
 
