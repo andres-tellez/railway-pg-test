@@ -50,6 +50,9 @@ from src.smartcoach_mobile_coach.metric_glossary import metric_glossary_section
 from src.smartcoach_mobile_coach.phase_ux_contract import (
     phase_ux_contract_section,
 )
+from src.smartcoach_mobile_coach.plan_adjustment_contract import (
+    plan_adjustment_contract_section,
+)
 from src.smartcoach_mobile_coach.plan_guidance_contract import (
     plan_guidance_contract_section,
 )
@@ -835,6 +838,123 @@ def _ensure_get_user_context_tool(
         "coach_tools has no enabled get_user_context; injecting built-in OpenAI tool definition"
     )
     return list(tools) + [_GET_USER_CONTEXT_OPENAI_TOOL]
+
+
+# Kept in sync with scripts/setup_coach_tools.py `apply_plan_adjustments`.
+# V1.6 Phase E — minimal structured plan-adjustment writer. The LLM
+# emits a typed operations[] payload; the backend normalizes, validates,
+# caps, audits, and only then mutates the plan.
+_APPLY_PLAN_ADJUSTMENTS_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "apply_plan_adjustments",
+        "description": (
+            "V1.6 Phase E writer. Apply structured plan-adjustment operations to one plan week. "
+            "The LLM MUST send typed operations in `operations[]` — never free-text mutation "
+            "instructions. The backend normalizes every operation, validates all safety rules, "
+            "caps volume/intensity changes, rejects invalid structure changes, and writes an "
+            "audit-log entry for every requested operation before committing any plan mutation. "
+            "No direct plan mutation happens from raw LLM output."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "week_start_date": {
+                    "type": "string",
+                    "description": (
+                        "Required. Any date in the target week (YYYY-MM-DD). The backend "
+                        "normalizes it to that week's Monday."
+                    ),
+                },
+                "operations": {
+                    "type": "array",
+                    "description": (
+                        "Required. Array of structured operation objects. Each object MUST have "
+                        "`op`. Per-op fields: adjust_volume -> delta_pct; adjust_intensity -> "
+                        "quality_delta (+1 max, negative allowed) and optional reason_code; "
+                        "add_run -> day, run_type (easy|recovery|tempo|long), miles; remove_run "
+                        "-> day and optional reason_code."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "op": {
+                                "type": "string",
+                                "enum": [
+                                    "adjust_volume",
+                                    "adjust_intensity",
+                                    "add_run",
+                                    "remove_run",
+                                ],
+                            },
+                            "delta_pct": {
+                                "type": "number",
+                                "description": (
+                                    "For adjust_volume only. Requested percent change; backend caps "
+                                    "to ±10% vs prior-week mileage."
+                                ),
+                            },
+                            "quality_delta": {
+                                "type": "integer",
+                                "description": (
+                                    "For adjust_intensity only. Positive increases quality by at "
+                                    "most 1; negative decreases are unbounded for safety."
+                                ),
+                            },
+                            "day": {
+                                "type": "string",
+                                "description": (
+                                    "For add_run/remove_run. Day name in the target week "
+                                    "(Mon/Tue/... or Monday/Tuesday/...)."
+                                ),
+                            },
+                            "run_type": {
+                                "type": "string",
+                                "enum": ["easy", "recovery", "tempo", "long"],
+                                "description": "For add_run only.",
+                            },
+                            "miles": {
+                                "type": "number",
+                                "description": (
+                                    "For add_run only. Backend rounds to 0.5-mile granularity and "
+                                    "caps against remaining weekly volume headroom."
+                                ),
+                            },
+                            "reason_code": {
+                                "type": "string",
+                                "enum": [
+                                    "injury_signal",
+                                    "adherence_low",
+                                    "deload_week",
+                                    "user_preference",
+                                    "illness",
+                                ],
+                                "description": (
+                                    "Optional, but REQUIRED when a quality decrease or remove_run "
+                                    "would drop the week below the phase minimum quality count."
+                                ),
+                            },
+                        },
+                        "required": ["op"],
+                    },
+                },
+            },
+            "required": ["week_start_date", "operations"],
+        },
+    },
+}
+
+
+def _ensure_apply_plan_adjustments_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject apply_plan_adjustments (V1.6 Phase E) if missing."""
+    if "apply_plan_adjustments" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled apply_plan_adjustments; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_APPLY_PLAN_ADJUSTMENTS_OPENAI_TOOL]
 
 
 # Kept in sync with scripts/setup_coach_tools.py `save_phase_goal`.
@@ -1947,18 +2067,20 @@ def run_mobile_agent_turn(
     # most often) lands last / highest in the injected list, matching
     # the ordering intuition used by the existing chain.
     openai_tools_all = _ensure_save_phase_goal_tool(
-        _ensure_get_weekly_plan_tool(
-            _ensure_get_plan_overview_tool(
-                _ensure_get_phase_analysis_tool(
-                    _ensure_get_user_context_tool(
-                        _ensure_generate_training_plan_tool(
-                            _ensure_update_plan_intake_tool(
-                                _ensure_get_run_splits_tool(
-                                    _ensure_get_marathon_projection_tool(
-                                        _ensure_get_training_kpis_tool(
-                                            _ensure_aggregate_runs_in_range_tool(
-                                                _ensure_search_runs_tool(
-                                                    _load_tools_from_db(session)
+        _ensure_apply_plan_adjustments_tool(
+            _ensure_get_weekly_plan_tool(
+                _ensure_get_plan_overview_tool(
+                    _ensure_get_phase_analysis_tool(
+                        _ensure_get_user_context_tool(
+                            _ensure_generate_training_plan_tool(
+                                _ensure_update_plan_intake_tool(
+                                    _ensure_get_run_splits_tool(
+                                        _ensure_get_marathon_projection_tool(
+                                            _ensure_get_training_kpis_tool(
+                                                _ensure_aggregate_runs_in_range_tool(
+                                                    _ensure_search_runs_tool(
+                                                        _load_tools_from_db(session)
+                                                    )
                                                 )
                                             )
                                         )
@@ -2203,6 +2325,12 @@ def run_mobile_agent_turn(
             # to include unconditionally; plan_creation_mode still
             # skips it because that branch uses a separate base.
             phase_ux_contract_section(),
+            # 3E coach-side contract: when the user is trying to change
+            # the plan, the assistant MUST route through
+            # `apply_plan_adjustments` and explain the result only after
+            # the backend returns. Self-gating via its internal scope
+            # clause; safe to include on all non-plan-creation turns.
+            plan_adjustment_contract_section(),
             # 3C.5 + 3C.6 + 3C.7: coach tone contract (spec §§19.6–19.8).
             # Locks action-oriented response shape (next action OR
             # guiding question) with five exempt classifications sourced

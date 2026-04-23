@@ -30,11 +30,13 @@ import pytest
 
 from src.smartcoach_mobile_coach import agent_tools
 from src.smartcoach_mobile_coach.orchestrator import (
+    _APPLY_PLAN_ADJUSTMENTS_OPENAI_TOOL,
     _GET_PHASE_ANALYSIS_OPENAI_TOOL,
     _GET_PLAN_OVERVIEW_OPENAI_TOOL,
     _GET_USER_CONTEXT_OPENAI_TOOL,
     _GET_WEEKLY_PLAN_OPENAI_TOOL,
     _SAVE_PHASE_GOAL_OPENAI_TOOL,
+    _ensure_apply_plan_adjustments_tool,
     _ensure_get_phase_analysis_tool,
     _ensure_get_plan_overview_tool,
     _ensure_get_user_context_tool,
@@ -50,6 +52,11 @@ from src.smartcoach_mobile_coach.orchestrator import (
 
 
 _PLAN_TOOL_PAIRS = [
+    (
+        "apply_plan_adjustments",
+        _APPLY_PLAN_ADJUSTMENTS_OPENAI_TOOL,
+        _ensure_apply_plan_adjustments_tool,
+    ),
     ("get_weekly_plan", _GET_WEEKLY_PLAN_OPENAI_TOOL, _ensure_get_weekly_plan_tool),
     (
         "get_plan_overview",
