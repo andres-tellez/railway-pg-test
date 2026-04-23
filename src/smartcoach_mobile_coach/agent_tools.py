@@ -1262,6 +1262,61 @@ def tool_save_phase_goal(
     }
 
 
+def tool_apply_plan_adjustments(
+    session: Session, internal_user_id: str, args: Dict[str, Any]
+) -> Dict[str, Any]:
+    """V1.6 Phase E — structured plan-adjustment writer.
+
+    The LLM MUST supply a typed ``operations`` array — never free-text
+    mutation instructions. This wrapper only owns:
+
+    * UUID validation
+    * commit / rollback semantics
+    * stable error-envelope translation
+
+    All normalization, cap enforcement, audit logging, and plan writes
+    live in :mod:`src.services.plan.plan_adjustments`.
+    """
+    import uuid as _uuid
+
+    from src.services.plan.plan_adjustments import apply_plan_adjustments
+
+    try:
+        user_uuid = _uuid.UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        return {
+            "error": "invalid_user_id",
+            "message": "internal_user_id must be a UUID string.",
+        }
+
+    status, payload = apply_plan_adjustments(
+        session,
+        user_uuid,
+        week_start_date_raw=args.get("week_start_date"),
+        operations_raw=args.get("operations"),
+    )
+    if status != "ok":
+        return payload
+
+    try:
+        session.commit()
+    except Exception:
+        logger.exception("[tool_apply_plan_adjustments] commit failed")
+        try:
+            session.rollback()
+        except Exception:
+            logger.debug(
+                "[tool_apply_plan_adjustments] rollback after commit failure also failed",
+                exc_info=True,
+            )
+        return {
+            "error": "tool_execution_failed",
+            "message": "Could not apply plan adjustments. Please try again.",
+        }
+
+    return payload
+
+
 def tool_update_plan_intake(
     session: Session,
     internal_user_id: str,
@@ -1839,6 +1894,10 @@ _TOOL_HANDLERS = {
     # agreement. Soft-semantics writer: no hard consent gate, coach
     # decides based on conversational intent.
     "save_phase_goal": "save_phase_goal",
+    # V1.6 Phase E minimal structured writer — the LLM emits typed
+    # operations[] and the backend validates / caps / audits before any
+    # plan mutation happens.
+    "apply_plan_adjustments": "apply_plan_adjustments",
     "update_plan_intake": "update_plan_intake",
     "generate_training_plan": "generate_training_plan",
     # Legacy names → map to current handlers
@@ -2068,6 +2127,9 @@ def execute_tool(
 
         if handler_key == "save_phase_goal":
             return tool_save_phase_goal(session, internal_user_id, args)
+
+        if handler_key == "apply_plan_adjustments":
+            return tool_apply_plan_adjustments(session, internal_user_id, args)
 
         if handler_key == "update_plan_intake":
             return tool_update_plan_intake(
