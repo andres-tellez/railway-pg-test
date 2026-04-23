@@ -18,8 +18,11 @@ Spec references (SMARTCOACH_SYSTEM_SPEC_V1.md)
 -----------------------------------------------
 §6 "Plan vs Actual — Namespace Isolation"
     Per-day entries use canonical ``planned.*`` / ``actual.*`` namespaces.
-    ``actual.*`` may only appear when a matching activity exists. For
-    future weeks, ``actual.*`` is never emitted (see §19.5). The
+    For past/current weeks, ``execution`` may still carry ``actual.*``
+    from a same-calendar-date Run when formal ``matched_plan_workout_id``
+    pairing is absent (mobile plan-vs-actual). Weekly adherence continues
+    to use formal matches only. For future weeks, ``actual.*`` is never
+    emitted (see §19.5). The
     pairing-level controllers ``plan_status``, ``violated_rest_day``,
     and ``deviation_direction`` live at the top of each day entry.
 
@@ -88,7 +91,7 @@ from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
-from sqlalchemy import desc
+from sqlalchemy import desc, text
 from sqlalchemy.orm import Session
 
 from src.db.models.activities import Activity
@@ -100,11 +103,12 @@ from src.services.scoring.adherence import (
     WeeklyAdherenceEntry,
     compute_weekly_adherence,
 )
-from src.smartcoach_mobile_coach.display_format import format_distance_mi
+from src.smartcoach_mobile_coach.display_format import format_distance_mi, format_hr_bpm
 from src.smartcoach_mobile_coach.run_insight import (
     build_run_execution_block,
     execution_block_to_weekly_plan_shape,
 )
+from src.utils.activity_local_date_sql import ACTIVITY_LOCAL_DATE_SQL_FRAGMENT
 from src.utils.date_helpers import (
     WeekTemporality,
     classify_week_temporality,
@@ -226,6 +230,124 @@ def _load_matched_activities_by_pw_id(
     return by_pw
 
 
+def _load_most_recent_run_per_local_date_in_week(
+    session: Session,
+    user_id: UUID,
+    week_start: date,
+    week_end: date,
+) -> Dict[date, Activity]:
+    """
+    Latest Run (by ``start_date``) per local calendar day in the week window.
+
+    Used only when ``matched_plan_workout_id`` is missing so mobile can still
+    show plan-vs-actual from Strava distance/pace/HR. Formal pairing and
+    adherence still use :func:`_load_matched_activities_by_pw_id`.
+    """
+    bind = session.get_bind()
+    dialect_name = bind.dialect.name if bind is not None else ""
+
+    if dialect_name == "sqlite":
+        from src.services.run_execution_analysis_service import _derive_local_date
+
+        acts = (
+            session.query(Activity)
+            .filter(
+                Activity.user_id == user_id,
+                Activity.type == "Run",
+            )
+            .order_by(Activity.start_date.desc())
+            .all()
+        )
+        by_date: Dict[date, Activity] = {}
+        for a in acts:
+            ld = _derive_local_date(a)
+            if ld is None or ld < week_start or ld > week_end:
+                continue
+            if ld not in by_date:
+                by_date[ld] = a
+        return by_date
+
+    ld_expr = f"({ACTIVITY_LOCAL_DATE_SQL_FRAGMENT})::date"
+    q = text(
+        f"""
+        SELECT DISTINCT ON ({ld_expr})
+            a.activity_id AS activity_id,
+            {ld_expr} AS plan_local_date
+        FROM activities a
+        WHERE a.user_id::text = :uid
+          AND a.type = 'Run'
+          AND {ld_expr} BETWEEN :ws AND :we
+        ORDER BY {ld_expr}, a.start_date DESC
+        """
+    )
+    rows = session.execute(
+        q,
+        {"uid": str(user_id), "ws": week_start, "we": week_end},
+    ).fetchall()
+    if not rows:
+        return {}
+    ids = [int(r.activity_id) for r in rows]
+    acts = session.query(Activity).filter(Activity.activity_id.in_(ids)).all()
+    by_id = {int(a.activity_id): a for a in acts}
+    by_date: Dict[date, Activity] = {}
+    for r in rows:
+        aid = int(r.activity_id)
+        a = by_id.get(aid)
+        if a is None:
+            continue
+        by_date[r.plan_local_date] = a
+    return by_date
+
+
+def _execution_shape_for_planned_day_with_unlinked_run(
+    w: PlanWorkout,
+    act: Activity,
+    *,
+    canonical_run_type_key: str,
+    plan_training_days: Optional[Any],
+) -> Dict[str, Any]:
+    """
+    Weekly ``execution`` payload for a planned day with a same-calendar-date
+    run that is not yet linked via ``matched_plan_workout_id``.
+
+    Planned side comes from the :class:`PlanWorkout`; actual distance/pace/HR
+    from the activity row (``conv_distance`` when ``actual_miles`` is absent).
+    """
+    block = build_run_execution_block(act, plan_training_days=plan_training_days)
+    shape = execution_block_to_weekly_plan_shape(block, act)
+
+    shape["planned"] = {
+        "type": canonical_run_type_key,
+        "miles": w.miles,
+    }
+    shape["planned_type"] = canonical_run_type_key
+    shape["planned_miles"] = w.miles
+
+    raw_mi = getattr(act, "actual_miles", None)
+    if raw_mi is None or (isinstance(raw_mi, (int, float)) and float(raw_mi) <= 0):
+        raw_mi = getattr(act, "conv_distance", None)
+    actual_ns = shape.get("actual")
+    if isinstance(actual_ns, dict) and raw_mi is not None:
+        actual_ns["miles"] = float(raw_mi)
+        shape["actual_miles"] = float(raw_mi)
+
+    display = shape.get("display")
+    if isinstance(display, dict):
+        planned_disp = display.get("planned")
+        if isinstance(planned_disp, dict):
+            planned_disp["miles"] = (
+                format_distance_mi(w.miles) if w.miles is not None else None
+            )
+        actual_disp = display.get("actual")
+        if isinstance(actual_disp, dict) and isinstance(actual_ns, dict):
+            mi = actual_ns.get("miles")
+            actual_disp["miles"] = format_distance_mi(mi) if mi is not None else None
+            hr = actual_ns.get("average_heartrate")
+            actual_disp["avg_hr"] = format_hr_bpm(hr)
+
+    return shape
+
+
 def _build_future_week_day_entry(
     w: PlanWorkout,
     canonical_run_type_key: str,
@@ -288,9 +410,16 @@ def _build_past_current_day_entry(
     activity: Optional[Activity],
     plan_training_days: Optional[Any],
     today: date,
+    *,
+    has_matched_activity: bool,
 ) -> Tuple[Dict[str, Any], Optional[WeeklyAdherenceEntry]]:
     """
     Per-day entry for a PAST or CURRENT week plus its adherence entry.
+
+    ``activity`` may be the formally matched row **or** a same-calendar-date
+    fallback run for display-only execution. ``has_matched_activity`` must be
+    ``True`` only when ``activity.matched_plan_workout_id == w.id`` so
+    ``plan_status`` / adherence stay spec-accurate.
 
     Returns ``(day_dict, adherence_entry_or_None)``. The adherence
     entry is ``None`` only when ``plan_status_for_day`` returned
@@ -303,18 +432,24 @@ def _build_past_current_day_entry(
         or RUN_TYPE_DEFINITIONS[RUN_TYPE_EASY]
     )
 
-    execution = (
-        execution_block_to_weekly_plan_shape(
+    if activity is None:
+        execution = None
+    elif has_matched_activity:
+        execution = execution_block_to_weekly_plan_shape(
             build_run_execution_block(activity, plan_training_days=plan_training_days),
             activity,
         )
-        if activity is not None
-        else None
-    )
+    else:
+        execution = _execution_shape_for_planned_day_with_unlinked_run(
+            w,
+            activity,
+            canonical_run_type_key=canonical_run_type_key,
+            plan_training_days=plan_training_days,
+        )
 
     day_plan_status = plan_status_for_day(
         has_planned_workout=True,
-        has_matching_activity=activity is not None,
+        has_matching_activity=has_matched_activity,
         day_date=w.date,
         today=today,
     )
@@ -325,13 +460,13 @@ def _build_past_current_day_entry(
             plan_status=day_plan_status,
             completion_pct=(
                 getattr(activity, "completion_pct", None)
-                if activity is not None
+                if has_matched_activity and activity is not None
                 else None
             ),
             planned_miles=w.miles,
             actual_miles=(
                 getattr(activity, "actual_miles", None)
-                if activity is not None
+                if has_matched_activity and activity is not None
                 else None
             ),
         )
@@ -461,9 +596,13 @@ def build_weekly_plan_payload(
     # future-week contract). PAST / CURRENT: load matched activities.
     if temporality == WeekTemporality.FUTURE:
         execution_by_pw: Dict[int, Activity] = {}
+        runs_by_plan_date: Dict[date, Activity] = {}
     else:
         execution_by_pw = _load_matched_activities_by_pw_id(
             session, user_id, [w.id for w in workouts]
+        )
+        runs_by_plan_date = _load_most_recent_run_per_local_date_in_week(
+            session, user_id, week_start, week_end
         )
 
     # Legacy fallback for rows missing target_hr. Imported lazily to
@@ -495,14 +634,16 @@ def build_weekly_plan_payload(
             days.append(_build_future_week_day_entry(w, canonical, target_hr))
             continue
 
-        act = execution_by_pw.get(w.id)
+        act_matched = execution_by_pw.get(w.id)
+        act_display = act_matched or runs_by_plan_date.get(w.date)
         day, entry = _build_past_current_day_entry(
             w=w,
             canonical_run_type_key=canonical,
             target_hr=target_hr,
-            activity=act,
+            activity=act_display,
             plan_training_days=plan_training_days,
             today=resolved_today,
+            has_matched_activity=act_matched is not None,
         )
         days.append(day)
         if entry is not None:
