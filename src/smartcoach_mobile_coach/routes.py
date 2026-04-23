@@ -317,6 +317,43 @@ def agent_messages(conversation_id):
         session.commit()
         t_route6 = time.perf_counter()
 
+        # Phase F 3F.1 — Layer B session summary (separate session; failures never affect UX).
+        try:
+            from src.db.db_session import SessionLocal
+            from src.services.coach.session_summary_write import (
+                maybe_write_session_summary_after_turn,
+            )
+            from src.smartcoach_mobile_coach import user_context_cache
+
+            w_session = SessionLocal()
+            try:
+                maybe_write_session_summary_after_turn(
+                    w_session,
+                    internal_user_id=uid_str,
+                    conversation_id=uuid.UUID(str(conversation_id)),
+                    user_message=message.strip(),
+                    assistant_reply=gpt_response,
+                    meta=meta,
+                )
+                w_session.commit()
+                user_context_cache.invalidate_user_context(uid_str)
+            except Exception:
+                logger.warning(
+                    "[smartcoach_mobile_coach] session_summary_write failed",
+                    exc_info=True,
+                )
+                try:
+                    w_session.rollback()
+                except Exception:
+                    pass
+            finally:
+                w_session.close()
+        except Exception:
+            logger.debug(
+                "[smartcoach_mobile_coach] session_summary_write bootstrap skipped",
+                exc_info=True,
+            )
+
         elapsed = time.time() - start
         route_timings_ms = {
             "db_conversation_ms": round((t_route1 - t_route0) * 1000, 2),

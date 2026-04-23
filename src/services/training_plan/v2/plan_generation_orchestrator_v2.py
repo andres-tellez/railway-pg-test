@@ -72,6 +72,10 @@ PACE_GUIDANCE = {k: v["pace_guidance"] for k, v in WORKOUT_DEFINITIONS.items()}
 from src.services.metrics_helper_service import (
     get_weekly_fitness_from_materialized_view,
 )
+from src.services.training_plan.decision_trace import (
+    DecisionReason,
+    resolve_long_run_day,
+)
 from src.utils.timezone_helpers import resolve_timezone
 
 logger = logging.getLogger(__name__)
@@ -378,7 +382,9 @@ class PlanGenerationOrchestratorV2:
 
         # Step 6: Distribute workouts to training days
         # Determine long run day (user preference or auto-select)
-        long_run_day = self._determine_long_run_day(plan_request, training_days)
+        long_run_day, long_run_day_reason = self._determine_long_run_day(
+            plan_request, training_days
+        )
 
         pass3_plan = self.pass3.run(
             weeks_with_totals,
@@ -440,6 +446,7 @@ class PlanGenerationOrchestratorV2:
         )
         validation["draft"] = plan_with_details
         validation["pass1_rationale"] = lr_output.get("rationale")
+        validation["decision_trace"] = [long_run_day_reason.to_dict()]
         # Include race date validation results if available
         if race_date_validation:
             validation["race_date_validation"] = race_date_validation
@@ -480,40 +487,20 @@ class PlanGenerationOrchestratorV2:
         self,
         plan_request: Dict[str, Any],
         training_days: List[str],
-    ) -> str:
-        """Determine long run day from user preference or auto-select.
-
-        Priority:
-        1. User-specified long_run_day (if in training_days)
-        2. Auto-select (Sat > Sun > last training day)
-
-        Args:
-            plan_request: Plan request dictionary
-            training_days: List of selected training days
-
-        Returns:
-            Day abbreviation for long run (e.g., "Sat")
-        """
-        from src.utils.date_helpers import DAY_NAMES_ABBREV
-
-        # Check for user preference
+    ) -> Tuple[str, DecisionReason]:
+        """Resolve long_run_day via shared decision trace helper."""
         user_preference = plan_request.get("long_run_day")
-        if user_preference and user_preference in training_days:
-            logger.info(f"Using user-specified long run day: {user_preference}")
-            return user_preference
-        elif user_preference:
+        if user_preference and user_preference not in training_days:
             logger.warning(
                 f"User-specified long_run_day '{user_preference}' not in training_days "
                 f"{training_days}, falling back to auto-selection"
             )
-
-        # Auto-select (prefer Sat, then Sun, else last day)
-        if DAY_NAMES_ABBREV[5] in training_days:  # Saturday
-            return DAY_NAMES_ABBREV[5]
-        elif DAY_NAMES_ABBREV[6] in training_days:  # Sunday
-            return DAY_NAMES_ABBREV[6]
-        else:
-            return training_days[-1]  # Default to last day
+        return resolve_long_run_day(
+            plan_request=plan_request,
+            hints=plan_request.get("coach_memory_hints") or [],
+            memories=plan_request.get("coach_memory_memories") or [],
+            training_days=training_days,
+        )
 
     def _validate_spine_immutability(self, weeks: List[Dict[str, Any]]) -> None:
         """

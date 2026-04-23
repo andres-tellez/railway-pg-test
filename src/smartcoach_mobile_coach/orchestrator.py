@@ -678,7 +678,8 @@ _GET_USER_CONTEXT_OPENAI_TOOL: Dict[str, Any] = {
             "baseline_status (insufficient/thin/strong via the canonical §12 producer), "
             "coaching (coaching_level, verbosity, stored run/training summary priorities, "
             "has_saved_preferences flag), preferences (training_days, derived long_run_day, "
-            "unit_system, timezone), and session_summary (null placeholder for V1.7). Every "
+            "unit_system, timezone), plan_memories (Layer C list), session_summary (null or latest "
+            "Layer B excerpt). Every "
             "deterministic value comes from an existing canonical producer — this tool never "
             "re-derives a signal. PII-light: only the first name of user_identity.name is emitted. "
             "Payload is < 2 KB. Call at the START of a new conversation (opening turn) or when "
@@ -1014,6 +1015,47 @@ _SAVE_PHASE_GOAL_OPENAI_TOOL: Dict[str, Any] = {
         },
     },
 }
+
+
+_REMEMBER_PLAN_PREFERENCE_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "remember_plan_preference",
+        "description": (
+            "V1.6 Phase F Layer C writer. Persist a short, user-stated training preference the "
+            "coach should reuse later (e.g. 'Prefers Saturday long runs', 'No doubles after work'). "
+            "Call only when the user clearly stated the preference in this conversation — do not "
+            "invent preferences. Text is capped at 280 characters; duplicates are allowed to be "
+            "superseded manually by the user in a future UI slice."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "preference_text": {
+                    "type": "string",
+                    "description": (
+                        "Required. 1–280 characters. Plain language preference about scheduling, "
+                        "volume style, surface, or other durable training context — not medical "
+                        "diagnoses."
+                    ),
+                },
+            },
+            "required": ["preference_text"],
+        },
+    },
+}
+
+
+def _ensure_remember_plan_preference_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject remember_plan_preference (Phase F 3F.2) if missing from coach_tools."""
+    if "remember_plan_preference" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled remember_plan_preference; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_REMEMBER_PLAN_PREFERENCE_OPENAI_TOOL]
 
 
 def _ensure_save_phase_goal_tool(
@@ -2066,20 +2108,22 @@ def run_mobile_agent_turn(
     # chosen so the weekly-plan layer (the one the coach reaches for
     # most often) lands last / highest in the injected list, matching
     # the ordering intuition used by the existing chain.
-    openai_tools_all = _ensure_save_phase_goal_tool(
-        _ensure_apply_plan_adjustments_tool(
-            _ensure_get_weekly_plan_tool(
-                _ensure_get_plan_overview_tool(
-                    _ensure_get_phase_analysis_tool(
-                        _ensure_get_user_context_tool(
-                            _ensure_generate_training_plan_tool(
-                                _ensure_update_plan_intake_tool(
-                                    _ensure_get_run_splits_tool(
-                                        _ensure_get_marathon_projection_tool(
-                                            _ensure_get_training_kpis_tool(
-                                                _ensure_aggregate_runs_in_range_tool(
-                                                    _ensure_search_runs_tool(
-                                                        _load_tools_from_db(session)
+    openai_tools_all = _ensure_remember_plan_preference_tool(
+        _ensure_save_phase_goal_tool(
+            _ensure_apply_plan_adjustments_tool(
+                _ensure_get_weekly_plan_tool(
+                    _ensure_get_plan_overview_tool(
+                        _ensure_get_phase_analysis_tool(
+                            _ensure_get_user_context_tool(
+                                _ensure_generate_training_plan_tool(
+                                    _ensure_update_plan_intake_tool(
+                                        _ensure_get_run_splits_tool(
+                                            _ensure_get_marathon_projection_tool(
+                                                _ensure_get_training_kpis_tool(
+                                                    _ensure_aggregate_runs_in_range_tool(
+                                                        _ensure_search_runs_tool(
+                                                            _load_tools_from_db(session)
+                                                        )
                                                     )
                                                 )
                                             )

@@ -83,6 +83,28 @@ class WeeklyRebuildService:
         if not plan:
             raise ValueError(f"Plan {plan_id} not found")
 
+        # Phase F 3F.4 — log Layer C hints when present (preference signals for operators).
+        try:
+            from uuid import UUID as _UUID
+
+            from src.services.coach.user_plan_memory_service import (
+                coach_memory_hints_for_plan_generation,
+            )
+
+            _hints = coach_memory_hints_for_plan_generation(
+                session, _UUID(str(plan.user_id))
+            )
+            if _hints:
+                logger.info(
+                    "[WeeklyRebuild] coach_memory_hints count=%s plan_id=%s",
+                    len(_hints),
+                    plan_id,
+                )
+        except Exception:
+            logger.debug(
+                "[WeeklyRebuild] coach_memory_hints unavailable", exc_info=True
+            )
+
         if not plan.race_date:
             raise ValueError(f"Plan {plan_id} has no race date")
 

@@ -4,7 +4,9 @@ Shared helpers for invoking the refactored v2 plan generation pipeline.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import logging
+import uuid as uuid_mod
+from typing import Any, Dict, Literal, Optional
 
 from sqlalchemy.orm import Session
 
@@ -18,6 +20,8 @@ from src.services.training_plan.v2.plan_generation_orchestrator_v2 import (
 from src.utils.date_helpers import DEFAULT_TRAINING_DAYS
 from src.db.dao.user_profile_dao import get_user_profile
 
+logger = logging.getLogger(__name__)
+
 
 def run_v2_plan_generation(
     *,
@@ -26,6 +30,7 @@ def run_v2_plan_generation(
     plan_request: Dict[str, Any],
     activity_weeks: int = 12,
     mode: str = "prefill",  # Default to detailing every week
+    memory_mode: Literal["on", "off"] = "on",
 ) -> Dict[str, Any]:
     """
     Execute the v2 LR-first deterministic pipeline and return the validation payload.
@@ -34,6 +39,28 @@ def run_v2_plan_generation(
     training_days = plan_request.get("training_days") or DEFAULT_TRAINING_DAYS
     if not plan_request.get("training_days"):
         plan_request["training_days"] = training_days
+
+    plan_request.pop("coach_memory_hints", None)
+    plan_request.pop("coach_memory_memories", None)
+    if memory_mode == "on":
+        # Phase G — surface memory inputs, but resolve long_run_day in one shared place.
+        try:
+            uid_u = uuid_mod.UUID(str(user_id))
+            from src.services.coach.user_plan_memory_service import (
+                coach_memory_entries_for_plan_generation,
+                coach_memory_hints_for_plan_generation,
+            )
+
+            hints = coach_memory_hints_for_plan_generation(session, uid_u)
+            memories = coach_memory_entries_for_plan_generation(session, uid_u)
+            if hints:
+                plan_request["coach_memory_hints"] = hints
+            if memories:
+                plan_request["coach_memory_memories"] = memories
+        except Exception:
+            logger.debug(
+                "[run_v2_plan_generation] coach memory inputs skipped", exc_info=True
+            )
 
     race_label = normalize_race_distance(plan_request.get("race_distance", "Marathon"))
     plan_request["race_distance"] = race_label
@@ -86,6 +113,7 @@ def build_standard_draft_payload(
             "valid": bool(validation_result.get("valid")),
             "violations": validation_result.get("violations", []),
             "validated_plan": validation_result.get("validated_plan"),
+            "decision_trace": validation_result.get("decision_trace", []),
             "spine_quality": validation_result.get(
                 "spine_quality"
             ),  # Include spine quality validation (cutback spacing, progression, etc.)

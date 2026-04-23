@@ -101,6 +101,8 @@ class _RecordingExecutor:
 def test_stateful_tools_set_contains_expected_entries() -> None:
     assert "update_plan_intake" in STATEFUL_TOOLS
     assert "generate_training_plan" in STATEFUL_TOOLS
+    assert "save_phase_goal" in STATEFUL_TOOLS
+    assert "remember_plan_preference" in STATEFUL_TOOLS
     assert "apply_plan_adjustments" in STATEFUL_TOOLS
     # Defensive — tools we expect to be read-only must NOT be marked stateful.
     for read_only in (
