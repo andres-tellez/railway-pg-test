@@ -666,6 +666,124 @@ SEED_TOOLS = [
         "sort_order": 32,
     },
     {
+        "name": "apply_plan_adjustments",
+        "display_name": "Apply Plan Adjustments",
+        "category": "plan_adjustment",
+        "description": (
+            "V1.6 Phase E writer. Apply structured plan-adjustment operations to one plan week. "
+            "The LLM MUST send typed operations in `operations[]` — never free-text mutation "
+            "instructions. The backend normalizes every operation, validates all safety rules, "
+            "caps volume/intensity changes, rejects invalid structure changes, and writes an "
+            "audit-log entry for every requested operation before committing any plan mutation. "
+            "No direct plan mutation happens from raw LLM output."
+        ),
+        "when_to_call": (
+            "Call only when the user has asked to change a specific planned week and the desired "
+            "change can be expressed as structured operations. Minimal supported ops: "
+            "`adjust_volume`, `adjust_intensity`, `add_run`, `remove_run`. GOOD: raise next "
+            "week's mileage slightly, remove Thursday's planned run, turn one easy run into a "
+            "Tempo session. BAD: pass prose like 'make next week lighter somehow' or mutate a "
+            "phase directly. The backend enforces ±10% weekly volume caps, +1/week quality "
+            "increase cap, unbounded quality decreases (with reason_code when dropping below the "
+            "phase minimum), 0.5-mile rounding, run-count bounds, long-run anchor protection, "
+            "and the hard post-long-run recovery rule."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "week_start_date": {
+                    "type": "string",
+                    "description": (
+                        "Required. Any date in the target week (YYYY-MM-DD). The backend "
+                        "normalizes it to that week's Monday."
+                    ),
+                },
+                "operations": {
+                    "type": "array",
+                    "description": (
+                        "Required. Array of structured operation objects. Each object MUST have "
+                        "`op`. Per-op fields: adjust_volume -> delta_pct; adjust_intensity -> "
+                        "quality_delta (+1 max, negative allowed) and optional reason_code; "
+                        "add_run -> day, run_type (easy|recovery|tempo|long), miles; remove_run "
+                        "-> day and optional reason_code."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "op": {
+                                "type": "string",
+                                "enum": [
+                                    "adjust_volume",
+                                    "adjust_intensity",
+                                    "add_run",
+                                    "remove_run",
+                                ],
+                            },
+                            "delta_pct": {
+                                "type": "number",
+                                "description": (
+                                    "For adjust_volume only. Requested percent change; backend caps "
+                                    "to ±10% vs prior-week mileage."
+                                ),
+                            },
+                            "quality_delta": {
+                                "type": "integer",
+                                "description": (
+                                    "For adjust_intensity only. Positive increases quality by at "
+                                    "most 1; negative decreases are unbounded for safety."
+                                ),
+                            },
+                            "day": {
+                                "type": "string",
+                                "description": (
+                                    "For add_run/remove_run. Day name in the target week "
+                                    "(Mon/Tue/... or Monday/Tuesday/...)."
+                                ),
+                            },
+                            "run_type": {
+                                "type": "string",
+                                "enum": ["easy", "recovery", "tempo", "long"],
+                                "description": "For add_run only.",
+                            },
+                            "miles": {
+                                "type": "number",
+                                "description": (
+                                    "For add_run only. Backend rounds to 0.5-mile granularity and "
+                                    "caps against remaining weekly volume headroom."
+                                ),
+                            },
+                            "reason_code": {
+                                "type": "string",
+                                "enum": [
+                                    "injury_signal",
+                                    "adherence_low",
+                                    "deload_week",
+                                    "user_preference",
+                                    "illness",
+                                ],
+                                "description": (
+                                    "Optional, but REQUIRED when a quality decrease or remove_run "
+                                    "would drop the week below the phase minimum quality count."
+                                ),
+                            },
+                        },
+                        "required": ["op"],
+                    },
+                },
+            },
+            "required": ["week_start_date", "operations"],
+        },
+        "returns_description": (
+            "schema_version, saved, plan_id, week_start_date, week_end_date, baseline_total_miles, "
+            "week_total_miles_before, week_total_miles_after, applied_count, rejected_count, and "
+            "operations[] with per-operation status, normalized fields, caps_applied, audit_log_id, "
+            "affected_workouts, and week-total before/after snapshots."
+        ),
+        "data_source": "plans + plan_workouts (write) + weekly_decision_log (audit)",
+        "is_enabled": True,
+        "sort_order": 39,
+    },
+    {
         # V1.6 Phase D 3D.2 — persist athlete's current phase focus.
         "name": "save_phase_goal",
         "display_name": "Save Phase Goal",
