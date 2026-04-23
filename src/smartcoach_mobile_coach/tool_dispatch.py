@@ -64,6 +64,8 @@ STATEFUL_TOOLS: FrozenSet[str] = frozenset(
         # reads that follow in the same round MUST see the new active
         # goal, so force sequential ordering.
         "save_phase_goal",
+        # Phase F — plan memory writer; same-round reads must observe it.
+        "remember_plan_preference",
         # V1.6 Phase E — structured plan mutation writer. Later reads in
         # the same tool round must see the validated changes and audit
         # rows, so keep it on the sequential path.

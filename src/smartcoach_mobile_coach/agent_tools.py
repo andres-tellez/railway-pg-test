@@ -9,7 +9,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import func, text, update
 
 from src.db.dao.activity_dao import ActivityDAO
 from src.smartcoach_mobile_coach.config import INSIGHT_SCHEMA_VERSION
@@ -62,13 +62,15 @@ _MAX_KPI_WEEKS = 52
 def _increment_tool_call_count(session: Session, tool_name: str) -> None:
     """Best-effort counter bump; never blocks the tool response."""
     try:
+        from src.db.models.coach_tools import CoachTool
+
         session.execute(
-            text(
-                "UPDATE coach_tools "
-                "SET call_count = call_count + 1, last_called_at = now() "
-                "WHERE name = :name"
-            ),
-            {"name": tool_name},
+            update(CoachTool)
+            .where(CoachTool.name == tool_name)
+            .values(
+                call_count=CoachTool.call_count + 1,
+                last_called_at=func.now(),
+            )
         )
         session.commit()
     except Exception:
@@ -1262,6 +1264,97 @@ def tool_save_phase_goal(
     }
 
 
+def tool_remember_plan_preference(
+    session: Session, internal_user_id: str, args: Dict[str, Any]
+) -> Dict[str, Any]:
+    """V1.6 Phase F — persist a user-stated plan preference (Layer C)."""
+    import uuid as _uuid
+
+    from datetime import datetime, timezone
+
+    from src.services.coach.user_plan_memory_service import (
+        MEMORY_SOURCE_COACH_TOOL,
+        append_plan_memory,
+    )
+
+    try:
+        user_uuid = _uuid.UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        return {
+            "error": "invalid_user_id",
+            "message": "internal_user_id must be a UUID string.",
+        }
+
+    raw = args.get("preference_text")
+    if not isinstance(raw, str) or not raw.strip():
+        return {
+            "error": "invalid_preference_text",
+            "message": "preference_text is required (1–280 characters).",
+        }
+    text = raw.strip()
+    if len(text) > 280:
+        return {
+            "error": "invalid_preference_text",
+            "message": "preference_text must be at most 280 characters.",
+        }
+
+    row, deduplicated = append_plan_memory(
+        session, user_uuid, text, source=MEMORY_SOURCE_COACH_TOOL
+    )
+    if row is None:
+        return {
+            "error": "invalid_preference_text",
+            "message": "Could not normalize preference_text.",
+        }
+
+    try:
+        session.commit()
+    except Exception:
+        logger.exception("[tool_remember_plan_preference] commit failed")
+        try:
+            session.rollback()
+        except Exception:
+            logger.debug(
+                "[tool_remember_plan_preference] rollback after commit failure also failed",
+                exc_info=True,
+            )
+        return {
+            "error": "tool_execution_failed",
+            "message": "Could not save preference. Please try again.",
+        }
+
+    from src.smartcoach_mobile_coach import user_context_cache
+
+    user_context_cache.invalidate_user_context(str(user_uuid))
+
+    created = row.created_at
+    if isinstance(created, datetime):
+        c = created
+        if c.tzinfo is None:
+            c = c.replace(tzinfo=timezone.utc)
+        created_iso = c.replace(microsecond=0).isoformat()
+    else:
+        created_iso = None
+
+    out: Dict[str, Any] = {
+        "saved": True,
+        "memory": {
+            "id": str(row.id),
+            "text": row.memory_text,
+            "source": row.source,
+            "created_at": created_iso,
+        },
+        "message": "I'll remember that for your training plans and context.",
+    }
+    mt = getattr(row, "memory_type", None)
+    if mt:
+        out["memory"]["memory_type"] = mt
+    if deduplicated:
+        out["deduplicated"] = True
+        out["message"] = "I already had that noted — I'll keep using it."
+    return out
+
+
 def tool_apply_plan_adjustments(
     session: Session, internal_user_id: str, args: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -1894,6 +1987,7 @@ _TOOL_HANDLERS = {
     # agreement. Soft-semantics writer: no hard consent gate, coach
     # decides based on conversational intent.
     "save_phase_goal": "save_phase_goal",
+    "remember_plan_preference": "remember_plan_preference",
     # V1.6 Phase E minimal structured writer — the LLM emits typed
     # operations[] and the backend validates / caps / audits before any
     # plan mutation happens.
@@ -2127,6 +2221,9 @@ def execute_tool(
 
         if handler_key == "save_phase_goal":
             return tool_save_phase_goal(session, internal_user_id, args)
+
+        if handler_key == "remember_plan_preference":
+            return tool_remember_plan_preference(session, internal_user_id, args)
 
         if handler_key == "apply_plan_adjustments":
             return tool_apply_plan_adjustments(session, internal_user_id, args)

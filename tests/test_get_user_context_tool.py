@@ -455,21 +455,24 @@ def test_preferences_timezone_emitted_when_provided(test_db_session, seeded_full
 
 
 # ---------------------------------------------------------------------------
-# Session summary placeholder + top-level shape invariants
+# Session summary + plan memories (Phase F) + top-level shape invariants
 # ---------------------------------------------------------------------------
 
 
-def test_session_summary_is_explicit_null_placeholder(
-    test_db_session, seeded_full_user
-):
+def test_session_summary_is_null_when_no_layer_b_row(test_db_session, seeded_full_user):
     out = agent_tools.tool_get_user_context(test_db_session, DEFAULT_USER_ID_STR)
     assert "session_summary" in out
     assert out["session_summary"] is None
 
 
+def test_plan_memories_defaults_to_empty_list(test_db_session, seeded_full_user):
+    out = agent_tools.tool_get_user_context(test_db_session, DEFAULT_USER_ID_STR)
+    assert out["plan_memories"] == []
+
+
 def test_schema_version_is_emitted(test_db_session, seeded_full_user):
     out = agent_tools.tool_get_user_context(test_db_session, DEFAULT_USER_ID_STR)
-    assert out["schema_version"] == 1
+    assert out["schema_version"] == 2
 
 
 def test_today_and_generated_at_are_present(test_db_session, seeded_full_user):
@@ -509,7 +512,7 @@ def test_execute_tool_routes_get_user_context(test_db_session, seeded_full_user)
         json.dumps({}),
     )
     assert "error" not in out
-    assert out["schema_version"] == 1
+    assert out["schema_version"] == 2
     assert out["plan"]["plan_name"] == "Chicago Marathon Plan"
 
 
