@@ -534,8 +534,8 @@ SEED_TOOLS = [
             "list), baseline_status (insufficient/thin/strong via the canonical §12 producer), "
             "coaching (coaching_level, verbosity, stored run/training summary priorities from "
             "user_coach_preferences, has_saved_preferences flag), preferences (training_days, "
-            "derived long_run_day, unit_system, timezone), and session_summary (null placeholder for "
-            "V1.7). All deterministic values come from existing canonical producers — this tool "
+            "derived long_run_day, unit_system, timezone), plan_memories (Layer C snippets), "
+            "session_summary (null or {excerpt, thread_tags, created_at}). All deterministic values come from existing canonical producers — this tool "
             "never re-derives a signal. PII-light: only the first name of user_identity.name is "
             "emitted. Payload is < 2 KB."
         ),
@@ -565,8 +565,8 @@ SEED_TOOLS = [
             "(plan_id/plan_name/plan_start/plan_end/total_weeks/current_week_number/is_active/"
             "current_phase/phase_kpi_priority), coaching (coaching_level/verbosity/"
             "run_summary_priority/training_summary_priority/has_saved_preferences), preferences "
-            "(training_days/long_run_day/unit_system/timezone), session_summary (null in V1.6), "
-            "generated_at, today."
+            "(training_days/long_run_day/unit_system/timezone), plan_memories[], session_summary "
+            "(null or object), generated_at, today."
         ),
         "data_source": (
             "user_identity + user_profile + user_coach_preferences + user_athletes + plans + "
@@ -850,6 +850,42 @@ SEED_TOOLS = [
         "data_source": "user_phase_goals (write) + plans (active-plan lookup)",
         "is_enabled": True,
         "sort_order": 40,
+    },
+    {
+        "name": "remember_plan_preference",
+        "display_name": "Remember Plan Preference",
+        "category": "user_memory",
+        "description": (
+            "V1.6 Phase F Layer C writer. Persist a short, user-stated training preference for "
+            "future plan generation and get_user_context (e.g. 'Prefers Saturday long runs', "
+            "'Needs Monday as rest after long run'). Only call when the user clearly stated the "
+            "preference — never invent. Max 280 characters."
+        ),
+        "when_to_call": (
+            "After the user explicitly states a durable scheduling or style preference you should "
+            "honor on future plans. Do not use for transient workout questions."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {
+                "preference_text": {
+                    "type": "string",
+                    "description": (
+                        "Required. 1–280 characters. Plain language preference about scheduling, "
+                        "volume style, surface, or other durable training context — not medical "
+                        "diagnoses."
+                    ),
+                },
+            },
+            "required": ["preference_text"],
+        },
+        "returns_description": (
+            "saved (bool), memory{id, text, source, created_at}, message on success; "
+            "invalid_user_id / invalid_preference_text on validation failure."
+        ),
+        "data_source": "user_plan_memories (write)",
+        "is_enabled": True,
+        "sort_order": 41,
     },
 ]
 

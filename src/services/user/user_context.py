@@ -29,9 +29,10 @@ Spec references (SMARTCOACH_SYSTEM_SPEC_V1.md + AGENTIC_COACH.md Topic 9)
   ``tool_save_coach_preference``).
 * Stated preferences (training days, long-run day, unit system) —
   ``plans.training_days`` + derivation from ``plan_workouts``.
-* Session summary — ``None`` in V1.6 (no ``session_summaries`` table
-  yet; 3F adds it). The shape key is stable so a later release can
-  populate it without breaking consumers.
+* Session summary — Phase F populates the latest curated row as a small
+  object; ``None`` when none exists.
+* Plan memories — Phase F ``user_plan_memories`` rows (coach tool +
+  optional summarizer).
 
 Derivation policy — on-read, not persisted
 ------------------------------------------
@@ -70,8 +71,10 @@ from src.db.models.plan_workouts import PlanWorkout
 from src.db.models.plans import Plan
 from src.db.models.user_athletes import UserAthleteLink
 from src.db.models.user_coach_preferences import UserCoachPreferences
+from src.db.models.session_summaries import SessionSummary
 from src.db.models.user_identity import UserIdentity
 from src.db.models.user_profile import UserProfile
+from src.services.coach.user_plan_memory_service import memories_for_user_context
 from src.services.baseline.baseline_status import (
     BaselineStatus,
     compute_baseline_status_for_athlete,
@@ -91,7 +94,7 @@ _WEEKDAY_LABELS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 # Payload schema version. Bump on any breaking shape change so the
 # coach prompt / validator can refuse unknown versions rather than
 # silently mis-key the payload.
-USER_CONTEXT_SCHEMA_VERSION = 1
+USER_CONTEXT_SCHEMA_VERSION = 2
 
 # Default coaching-preference values mirror the column ``server_default``
 # on :class:`UserCoachPreferences`. Kept here so the payload has a
@@ -417,6 +420,49 @@ def _compute_coaching_block(
     }
 
 
+def _latest_session_summary_for_context(
+    session: Session, user_id: UUID
+) -> Optional[Dict[str, Any]]:
+    """Most recent Layer B summary as a compact object for ``get_user_context``."""
+    try:
+        row = (
+            session.query(SessionSummary)
+            .filter(SessionSummary.user_id == user_id)
+            .order_by(SessionSummary.created_at.desc())
+            .first()
+        )
+    except Exception:
+        logger.debug(
+            "session_summaries read failed in user_context; treating as absent",
+            exc_info=True,
+        )
+        return None
+    if row is None:
+        return None
+    text = (row.summary_text or "").strip()
+    if not text:
+        return None
+    excerpt = text if len(text) <= 500 else text[:497].rstrip() + "…"
+    raw_tags = row.thread_tags
+    tags: List[str] = []
+    if isinstance(raw_tags, list):
+        for t in raw_tags[:8]:
+            if isinstance(t, str) and t.strip():
+                tags.append(t.strip())
+    created = row.created_at
+    created_iso: Optional[str] = None
+    if isinstance(created, datetime):
+        c = created
+        if c.tzinfo is None:
+            c = c.replace(tzinfo=timezone.utc)
+        created_iso = c.replace(microsecond=0).isoformat()
+    return {
+        "excerpt": excerpt,
+        "thread_tags": tags,
+        "created_at": created_iso,
+    }
+
+
 def _compute_preferences_block(
     session: Session,
     plan: Optional[Plan],
@@ -476,7 +522,8 @@ def build_user_context_payload(
             "plan": {...} | None,
             "coaching": {...},
             "preferences": {...},
-            "session_summary": None,
+            "plan_memories": [{id, text, source, created_at, memory_type?}, ...],
+            "session_summary": null | {excerpt, thread_tags, created_at},
             "generated_at": "YYYY-MM-DDTHH:MM:SSZ",
             "today": "YYYY-MM-DD"
         }``
@@ -544,6 +591,9 @@ def build_user_context_payload(
         race_goal_block = _compute_race_goal(plan, resolved_today)
         plan_block = _compute_plan_block(session, plan, resolved_today)
 
+    plan_memories_block = memories_for_user_context(session, user_id)
+    session_summary_block = _latest_session_summary_for_context(session, user_id)
+
     payload: Dict[str, Any] = {
         "schema_version": USER_CONTEXT_SCHEMA_VERSION,
         "user_id": str(user_id),
@@ -553,10 +603,8 @@ def build_user_context_payload(
         "plan": plan_block,
         "coaching": _compute_coaching_block(prefs),
         "preferences": _compute_preferences_block(session, plan, profile, tz_norm),
-        # V1.7 deferred (3F.3): session summary excerpt from the
-        # conversation-summary table once it lands. Shape key is stable
-        # so consumers can rely on its presence.
-        "session_summary": None,
+        "plan_memories": plan_memories_block,
+        "session_summary": session_summary_block,
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "today": resolved_today.isoformat(),
     }

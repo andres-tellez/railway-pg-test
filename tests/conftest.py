@@ -43,6 +43,9 @@ def use_sqlite_for_tests():
     import src.db.models.plan_workouts  # Import plan_workouts model for tests
     import src.db.models.strava_ingestion_retry  # Retry queue for Strava ingestion
     import src.db.models.user_phase_goals  # Phase D 3D.1 — phase goal/focus rows
+    import src.db.models.session_summaries  # Phase F — session summaries
+    import src.db.models.user_plan_memories  # Phase F — plan memories
+    import src.db.models.coach_tools  # coach_tools table for execute_tool call_count updates
 
     test_engine = create_engine("sqlite:///:memory:", future=True)
 

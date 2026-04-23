@@ -70,6 +70,7 @@ EXPECTED_TOP_LEVEL_KEYS: frozenset[str] = frozenset(
         "plan",
         "coaching",
         "preferences",
+        "plan_memories",
         "session_summary",
         "generated_at",
         "today",
