@@ -325,8 +325,12 @@ def system_appendix_for_prefetch(
         json.dumps(compact, default=str),
         "```",
         "**Do not call any tools** — use only the JSON above for numbers.",
-        "Answer using the same coaching rules as when you had called those tools yourself "
-        "(Insight + Facts; interpretation-first opener for this kind of question).",
+        "**Layout (mobile):** The app shows the **RunSummaryCard** (from anchor `facts`) **above** your "
+        "Markdown. Your **`content` must not repeat** distance, duration, avg pace, avg/max HR, or any "
+        "other headline stat on that card — even paraphrased. Use **`content`** only for **learning**: "
+        "kudos, watch-out, or a non-obvious contrast **when** `comparison_sessions`, KPI fields in JSON, "
+        "or optional week-volume context justify it. If you ask a follow-up question, put it **after** "
+        "a blank line (paragraph break) following the learning block.",
         f"**User-facing dates:** In prose to the athlete, say **{day}** for the anchor run — **never** "
         "read out `anchor_local_date`, `calendar_local_date`, or `week_monday` as YYYY-MM-DD or "
         "numeric slash dates. Use `when_vs_anchor` for prior single-run days and `spoken_timeframe` "
@@ -335,13 +339,12 @@ def system_appendix_for_prefetch(
     if slim:
         lines.extend(
             [
-                "**This opener (slim pre-load):** The JSON has **session headline** fields under "
-                "`facts` only (distance, pace, moving time, HR averages when present). "
-                "**Do not** cite HR drift %, drift bands (green/yellow/orange/red), Z2 pace or "
-                "adherence, `is_easy_run`, or zone thresholds — they are **omitted** here on purpose. "
-                "Do **not** invent or guess those values. The next user turn uses the normal tool "
-                "loop if they ask for drift/KPIs. **Ignore** any global instruction to “prefer HR drift” "
-                "as a numeric anchor **for this reply** when those fields are absent from the JSON.",
+                "**This opener (slim pre-load):** Anchor `facts` in the JSON populate the **card only** — "
+                "your **`content` must not quote** distance, pace, moving time, or HR averages from `facts`. "
+                "**Do not** cite HR drift %, drift bands, Z2 pace or adherence, `is_easy_run`, or zone "
+                "thresholds — they are **omitted** here on purpose. Do **not** invent them. The next user "
+                "turn uses the normal tool loop if they ask for drift/KPIs. **Ignore** any global instruction "
+                "to “prefer HR drift” **for this reply** when those fields are absent from the JSON.",
             ]
         )
     if compact.get("week_volume_context"):
@@ -374,8 +377,9 @@ def system_appendix_for_prefetch(
     else:
         lines.append(
             "**Prior-run contrast:** The JSON has **no** `comparison_sessions` — do **not** describe "
-            f"another **specific day's** run from memory. Anchor metrics come from {poss} `facts` only; "
-            "week-to-week volume may use `week_volume_context` if present."
+            f"another **specific day's** run from memory. Do **not** restate anchor `facts` headline "
+            f"metrics in `content` (the card shows them). `week_volume_context`: only under the optional "
+            "non-obvious rule above."
         )
     return "\n".join(lines)
 
