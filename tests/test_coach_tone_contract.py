@@ -13,7 +13,7 @@ Scope:
 * §19.6 action-or-question rule verbatim, "analysis-only forbidden"
   anchor, and **all five exempt classifications** sourced from the
   live ``dialogue_manager`` enums,
-* §19.7 first-sentence acknowledgment + both example phrasings,
+* §19.7 first-sentence acknowledgment + explicit `plan_status` gate + one example,
   ``violated_rest_day`` stronger-emphasis rule, "coach the
   consequence — do not moralize" anchor,
 * §19.8 all three adherence bands with their thresholds and tone
@@ -47,13 +47,11 @@ from src.smartcoach_mobile_coach.dialogue_manager import (
 # ---------------------------------------------------------------------------
 
 
-def test_contract_version_is_int_and_v2() -> None:
-    # V1.6 Phase D 3D.10: bumped to v2 when the §19.8 block dropped
-    # raw-threshold language and re-keyed on the `adherence_band`
-    # field. Any future spec edit must bump again so the CI contract
-    # tests fail loudly on drift.
+def test_contract_version_is_int_and_v3() -> None:
+    # v2: §19.8 re-keyed on `adherence_band`. v3: §19.7 explicit gate +
+    # removed second example phrasing. Bump on future spec edits.
     assert isinstance(COACH_TONE_CONTRACT_VERSION, int)
-    assert COACH_TONE_CONTRACT_VERSION == 2
+    assert COACH_TONE_CONTRACT_VERSION == 3
 
 
 def test_version_tag_appears_in_block() -> None:
@@ -206,7 +204,8 @@ def test_non_exempt_classifications_still_carry_requirement() -> None:
 
 
 def test_unplanned_plan_status_anchor() -> None:
-    assert "`plan_status = unplanned`" in COACH_TONE_CONTRACT_BLOCK
+    assert "`unplanned`" in COACH_TONE_CONTRACT_BLOCK
+    assert "plan_status" in COACH_TONE_CONTRACT_BLOCK
 
 
 def test_first_sentence_acknowledgment_rule_anchored() -> None:
@@ -215,15 +214,19 @@ def test_first_sentence_acknowledgment_rule_anchored() -> None:
     assert "**first sentence**" in COACH_TONE_CONTRACT_BLOCK
 
 
-@pytest.mark.parametrize(
-    "phrasing",
-    [
-        "This run wasn't on today's plan",
-        "You added a run today that wasn't scheduled",
-    ],
-)
-def test_unplanned_example_phrasings_present(phrasing: str) -> None:
-    assert phrasing in COACH_TONE_CONTRACT_BLOCK
+def test_unplanned_example_phrasing_present() -> None:
+    assert "This run wasn't on today's plan" in COACH_TONE_CONTRACT_BLOCK
+
+
+def test_unplanned_removed_scheduled_example() -> None:
+    assert (
+        "You added a run today that wasn't scheduled" not in COACH_TONE_CONTRACT_BLOCK
+    )
+
+
+def test_unplanned_gate_requires_explicit_plan_status() -> None:
+    assert "anything else" in COACH_TONE_CONTRACT_BLOCK
+    assert "absent" in COACH_TONE_CONTRACT_BLOCK
 
 
 def test_violated_rest_day_anchor() -> None:

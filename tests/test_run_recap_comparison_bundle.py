@@ -110,6 +110,25 @@ def test_build_comparison_excludes_anchor_activity(monkeypatch):
     assert out == []
 
 
+def test_compact_surfaces_plan_status_from_execution_summary():
+    prefetch = {
+        "activity_id": 1,
+        "get_run_summary": {
+            "facts": {
+                "title": "Easy",
+                "execution_summary": {
+                    "plan_status": "executed",
+                    "violated_rest_day": False,
+                },
+            }
+        },
+        "comparison_for_llm": [],
+    }
+    compact = _compact_run_context_for_llm(prefetch, "2026-04-16")
+    assert compact["plan_status"] == "executed"
+    assert compact["violated_rest_day"] is False
+
+
 def test_compact_includes_comparison_sessions():
     prefetch = {
         "activity_id": 1,
