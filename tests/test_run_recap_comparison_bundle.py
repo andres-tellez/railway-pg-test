@@ -133,7 +133,7 @@ def test_comparison_bundle_env_off(monkeypatch):
     assert not run_recap_comparison_bundle_enabled()
 
 
-def test_appendix_requires_comparison_when_sessions_present():
+def test_appendix_allows_optional_comparison_when_sessions_present():
     prefetch = {
         "activity_id": 1,
         "get_run_summary": {"facts": {"title": "Today", "avg_pace_display": "9:00/mi"}},
@@ -147,8 +147,8 @@ def test_appendix_requires_comparison_when_sessions_present():
         ],
     }
     out = system_appendix_for_prefetch(prefetch, "2026-04-16")
-    assert "Required — `comparison_sessions`" in out
-    assert "You **must**" in out
+    assert "Optional — `comparison_sessions`" in out
+    assert "You **may**" in out
     assert "when_vs_anchor" in out
     assert "Optional context" not in out
 

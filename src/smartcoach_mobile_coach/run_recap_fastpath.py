@@ -349,25 +349,26 @@ def system_appendix_for_prefetch(
             [
                 "**Week volume (`week_volume_context`):** Compare **`this_week`** vs **`last_week`** "
                 "using **only** `run_count`, `total_mi_display`, and each row’s **`spoken_timeframe`** "
-                "(say “this week” / “last week” — **not** `week_monday` in the reply). You **should** "
-                f"weave **at most one** short clause into the reply (may merge with the {day} run recap) — "
-                "e.g. volume or run frequency. **Do not** invent other weekly stats, KPIs, or trends "
-                "not in this JSON.",
+                "(say “this week” / “last week” — **not** `week_monday` in the reply). **Optional:** "
+                f"add **at most one** short clause **only** if it surfaces something **non-obvious** "
+                f"(e.g. a sharp load swing the athlete might not already feel from the app). If the "
+                f"delta is routine, **omit** week volume entirely — do not recap totals for their own sake. "
+                "**Do not** invent other weekly stats, KPIs, or trends not in this JSON.",
             ]
         )
     if compact.get("comparison_sessions"):
         lines.extend(
             [
-                "**Required — `comparison_sessions`:** Each item is a **prior** calendar day (before "
-                "the anchor) with **exactly one** run — **headline facts only** (no KPIs). You **must** "
-                f"include **exactly one** short sentence that contrasts **{poss}** run with **one** of "
-                "those items, using **only** fields present in the JSON for anchor `facts` and that "
-                "item (pace, HR, distance, time, or title). When you name that prior day in prose, use "
-                "**`when_vs_anchor`** (e.g. “yesterday”, “last week on Thursday”) — **never** quote "
+                "**Optional — `comparison_sessions`:** Each item is a **prior** calendar day (before "
+                "the anchor) with **exactly one** run — **headline facts only** (no KPIs). You **may** "
+                f"add **at most one** short contrast sentence vs **{poss}** run **only** if it surfaces "
+                "something **non-obvious** (pace/HR/distance shift the athlete might not notice vs a "
+                "same-type easy day). If the contrast is trivial or repeats what they already see on "
+                "the card, **omit**. Use **only** fields present in the JSON for anchor `facts` and that "
+                "item. When you name that prior day in prose, use **`when_vs_anchor`** — **never** quote "
                 "`calendar_local_date` or ISO dates to the user. Avoid sweeping claims (“you’re clearly "
-                "improving”) unless the numbers in JSON plainly support it. Then add **one** practical "
-                "suggestion (consistency, recovery, or effort choice — not medical). **Do not** invent "
-                "runs, dates, or numbers outside this JSON.",
+                "improving”) unless the numbers plainly support it. **Do not** invent runs, dates, or "
+                "numbers outside this JSON.",
             ]
         )
     else:
