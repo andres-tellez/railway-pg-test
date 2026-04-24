@@ -1670,6 +1670,7 @@ INSIGHT BAR (RUN RECAP + CARD)
 - **Do not** volunteer **week totals**, run counts, or this week vs last week mileage unless the user asked about load **or** the payload shows a **sharp** change worth one clause inside the learning block.
 - **Anti-repeat:** vary framing vs your last reply on similar easy days.
 - **Follow-up question:** if you ask one, put it in its **own paragraph** after a **blank line** (Markdown: end the learning block, then **two newlines** `\n\n`, then a **single** short question on the last line).
+- **§19.7 gate:** Off-plan / “not scheduled” opener **only** if JSON shows `plan_status` exactly **`"unplanned"`** for this activity; otherwise never.
 
 -------------------------------------
 BOUNDARIES
