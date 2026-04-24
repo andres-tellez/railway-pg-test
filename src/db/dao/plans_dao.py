@@ -1,7 +1,27 @@
 # db/dao/plans_py
 
 from sqlalchemy.orm import Session
+
+from src.db.models.activities import Activity
+from src.db.models.plan_workouts import PlanWorkout
 from src.db.models.plans import Plan
+from src.db.models.user_phase_goals import UserPhaseGoal
+from src.db.models.weekly_decision_log import WeeklyDecisionLog
+from src.db.models.weekly_metrics import WeeklyMetrics
+
+_ACTIVITY_PLAN_SCORING_CLEAR = {
+    Activity.matched_plan_workout_id: None,
+    Activity.planned_type: None,
+    Activity.executed_type: None,
+    Activity.zone_compliance_pct: None,
+    Activity.pct_above_zone: None,
+    Activity.pct_below_zone: None,
+    Activity.run_score: None,
+    Activity.scoring_detail: None,
+    Activity.planned_miles: None,
+    Activity.actual_miles: None,
+    Activity.completion_pct: None,
+}
 
 
 def create_plan(session: Session, plan_data: dict) -> Plan:
@@ -87,10 +107,49 @@ def set_plan_active(session: Session, plan_id: int, user_id: str) -> bool:
 
 
 def delete_plan(session: Session, plan_id: int, user_id: str) -> bool:
-    """Delete a plan (only if it belongs to the user)."""
+    """
+    Delete a plan (only if it belongs to the user).
+
+    Also removes plan-scoped rows that are not FK-cascaded from ``plans``:
+
+    * ``weekly_metrics`` / ``weekly_decision_log`` (no DB FK to ``plans``)
+    * ``user_phase_goals`` for this plan (explicit delete for SQLite tests
+      where foreign keys are relaxed)
+    * Plan-vs-actual **scoring columns** on ``activities`` that still pointed
+      at this plan's ``plan_workouts`` (runs remain; link + scores cleared)
+
+    ``plan_workouts`` are removed via ORM cascade when the ``Plan`` row is
+    deleted. ``activities.matched_plan_workout_id`` would otherwise be cleared
+    by ``ON DELETE SET NULL`` after workouts disappear; we clear scoring first
+    so no row briefly references deleted workouts with stale denormalized data.
+    """
     plan = get_plan(session, plan_id)
     if not plan or str(plan.user_id) != user_id:
         return False
+
+    workout_ids = [
+        row[0]
+        for row in session.query(PlanWorkout.id)
+        .filter(PlanWorkout.plan_id == plan_id)
+        .all()
+    ]
+    if workout_ids:
+        session.query(Activity).filter(
+            Activity.matched_plan_workout_id.in_(workout_ids)
+        ).update(
+            _ACTIVITY_PLAN_SCORING_CLEAR,
+            synchronize_session=False,
+        )
+
+    session.query(WeeklyMetrics).filter(WeeklyMetrics.plan_id == plan_id).delete(
+        synchronize_session=False
+    )
+    session.query(WeeklyDecisionLog).filter(
+        WeeklyDecisionLog.plan_id == plan_id
+    ).delete(synchronize_session=False)
+    session.query(UserPhaseGoal).filter(UserPhaseGoal.plan_id == plan_id).delete(
+        synchronize_session=False
+    )
 
     session.delete(plan)
     session.commit()
