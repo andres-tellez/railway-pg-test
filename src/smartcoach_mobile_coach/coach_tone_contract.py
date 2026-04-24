@@ -46,7 +46,7 @@ from src.smartcoach_mobile_coach.dialogue_manager import (
 # `70 %–90 %` / `> 90 %` cut-offs, which live in the §7 producer and
 # must not be duplicated in the prompt. Spec ↔ prompt drift tests
 # exercise the new phrasing and its single-source-of-truth pointer.
-COACH_TONE_CONTRACT_VERSION = 2
+COACH_TONE_CONTRACT_VERSION = 3
 
 
 def _build_block() -> str:
@@ -88,13 +88,18 @@ def _build_block() -> str:
         "requirement.\n"
         "\n"
         "### §19.7 Unplanned run acknowledgment\n"
-        "When `plan_status = unplanned`, the **first sentence** must "
-        "explicitly acknowledge that the run was not in the plan. Example "
-        "phrasings:\n"
+        "Apply **only** when authoritative tool / preloaded JSON for **this** "
+        "activity shows `plan_status` is the string **`unplanned`** (see "
+        "`facts.execution_summary.plan_status` or compact `plan_status` when "
+        "present). Then the **first sentence** must briefly acknowledge the "
+        "run was not on the plan (one short clause).\n"
         "\n"
-        "- *\"This run wasn't on today's plan — here's how it looks.\"*\n"
-        "- *\"You added a run today that wasn't scheduled. Let's break it "
-        'down."*\n'
+        "If `plan_status` is **anything else** or **absent**, do **not** open "
+        'with off-plan framing — no "wasn\'t scheduled", "wasn\'t on the plan", '
+        '"added a run", or similar; that reads as a data error.\n'
+        "\n"
+        "Example (**unplanned only**): *\"This run wasn't on today's plan — "
+        "here's the read.\"*\n"
         "\n"
         "When `violated_rest_day = true`, apply **stronger emphasis** on "
         "rest-day intent: frame the trade-off (recovery debt, risk to the "

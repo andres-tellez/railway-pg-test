@@ -248,6 +248,13 @@ def _compact_run_context_for_llm(
         "activity_id": prefetch.get("activity_id"),
         "facts": facts,
     }
+    ex_sum = facts.get("execution_summary")
+    if isinstance(ex_sum, dict):
+        ps = ex_sum.get("plan_status")
+        if isinstance(ps, str) and ps.strip():
+            out["plan_status"] = ps.strip()
+        if ex_sum.get("violated_rest_day") is not None:
+            out["violated_rest_day"] = bool(ex_sum.get("violated_rest_day"))
     if not _run_recap_prefetch_slim_for_llm():
         kpis = summary.get("training_kpis")
         if kpis is not None and not isinstance(kpis, dict):
