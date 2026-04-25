@@ -9,24 +9,84 @@ when plan_creation_mode restricts tools to intake only.
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
 from src.services.training_plan.data_collection_service import DataCollectionService
 
-# Appended once when we prepend the user-facing activity overview so later turns
-# do not repeat it. Most markdown renderers hide HTML comments.
-PLAN_ACTIVITY_PREAMBLE_MARKER = "<!--sc-plan-preamble-->"
-
 
 def _lookback_weeks_from_env() -> int:
-    raw = (os.getenv("SMARTCOACH_PLAN_INTAKE_ACTIVITY_WEEKS") or "12").strip()
+    raw = (os.getenv("SMARTCOACH_PLAN_INTAKE_ACTIVITY_WEEKS") or "6").strip()
     try:
         w = int(raw)
     except ValueError:
-        w = 12
+        w = 6
     return max(4, min(w, 24))
+
+
+def _parse_activity_date(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            return datetime.strptime(raw[:10], "%Y-%m-%d")
+        except ValueError:
+            return None
+
+
+def _weekly_mileage_stats(
+    activities: List[Dict[str, Any]], lookback_weeks: int
+) -> Dict[str, Any]:
+    weekly = [0.0 for _ in range(max(lookback_weeks, 1))]
+    dated: List[tuple[datetime, float]] = []
+    for a in activities:
+        dt = _parse_activity_date(a.get("date"))
+        if dt is None:
+            continue
+        try:
+            miles = float(a.get("distance") or 0.0)
+        except (TypeError, ValueError):
+            miles = 0.0
+        dated.append((dt, miles))
+    if dated:
+        latest_dt = max(dt for dt, _ in dated)
+        for dt, miles in dated:
+            idx = min(max((latest_dt.date() - dt.date()).days // 7, 0), len(weekly) - 1)
+            weekly[idx] += miles
+    active_weeks = [m for m in weekly if m > 0]
+    return {
+        "weekly_miles": [round(m, 1) for m in weekly],
+        "active_weeks": len(active_weeks),
+        "weekly_miles_min_active": round(min(active_weeks), 1) if active_weeks else 0.0,
+        "weekly_miles_max_active": round(max(active_weeks), 1) if active_weeks else 0.0,
+    }
+
+
+def _effort_control_summary(activities: List[Dict[str, Any]]) -> Dict[str, Any]:
+    counts = {"too_hard": 0, "too_easy": 0, "on_target": 0}
+    for a in activities:
+        raw = a.get("deviation_direction")
+        if raw in counts:
+            counts[str(raw)] += 1
+    total = sum(counts.values())
+    dominant: Optional[str] = None
+    if total >= 4:
+        dominant_key = max(counts, key=lambda k: counts[k])
+        if counts[dominant_key] / float(total) >= 0.5:
+            dominant = dominant_key
+    return {
+        "effort_signal_runs": total,
+        "deviation_direction_distribution": counts,
+        "dominant_deviation_direction": dominant,
+        "has_effort_control_signal": dominant is not None,
+    }
 
 
 def compute_plan_intake_activity_summary(
@@ -70,6 +130,8 @@ def compute_plan_intake_activity_summary(
     if activities:
         d0 = activities[0].get("date")
         latest_date = str(d0) if d0 else None
+    weekly_stats = _weekly_mileage_stats(activities, w)
+    effort_stats = _effort_control_summary(activities)
     return {
         "lookback_weeks": w,
         "activities_found": n,
@@ -79,12 +141,15 @@ def compute_plan_intake_activity_summary(
         "longest_run_miles": round(longest_miles, 1) if longest_miles else 0.0,
         "longest_run_date": longest_date,
         "latest_run_date": latest_date,
+        "runs_per_week_approx": round(n / float(w), 1) if w else 0.0,
+        **weekly_stats,
+        **effort_stats,
     }
 
 
 def format_plan_intake_activity_context_block(summary: Dict[str, Any]) -> str:
     """Markdown system section: rules + numbers (no user-facing quiz)."""
-    w = int(summary.get("lookback_weeks") or 12)
+    w = int(summary.get("lookback_weeks") or 6)
     n = int(summary.get("activities_found") or 0)
     has = bool(summary.get("has_running_data"))
     total = summary.get("total_miles_window")
@@ -109,8 +174,10 @@ def format_plan_intake_activity_context_block(summary: Dict[str, Any]) -> str:
                 "### Coaching rules for plan intake",
                 "- **Do not** ask for self-reported weekly mileage, years running, or generic “experience level” — "
                 "baseline for the plan comes from this snapshot + generation-time tools.",
-                "- Ask only the structured plan fields: **race distance**, **race date**, optional **race name**, "
+                "- First make the runner feel understood in brief coach language, then ask natural questions that map "
+                "to the structured fields: **race distance**, **race date**, optional **race name**, "
                 "**primary goal** (Just Finish vs Target Time + **target time** when needed), **training days**.",
+                "- Mention effort control only when `has_effort_control_signal=true`; otherwise omit it or keep phrasing generic.",
             ]
         )
     else:
@@ -128,57 +195,86 @@ def format_plan_intake_activity_context_block(summary: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def thread_has_plan_activity_preamble(
-    conversation_history: Optional[List[Dict[str, str]]],
-) -> bool:
-    """True if a prior assistant message already included our one-time overview marker."""
-    if not conversation_history:
-        return False
-    for m in conversation_history:
-        if m.get("role") != "assistant":
-            continue
-        raw = m.get("content")
-        if raw is None:
-            continue
-        if PLAN_ACTIVITY_PREAMBLE_MARKER in str(raw):
-            return True
-    return False
+def _mileage_band_phrase(value: float) -> str:
+    n = int(round(value))
+    if n <= 0:
+        return "very light mileage"
+    if n < 10:
+        return "single-digit mileage"
+    if n < 15:
+        return "low-teens mileage"
+    if n < 20:
+        return "mid-to-high teens mileage"
+    if n < 25:
+        return "low-20s mileage"
+    if n < 30:
+        return "mid-to-high 20s mileage"
+    if n < 35:
+        return "low-30s mileage"
+    if n < 45:
+        return "solid 30s to low-40s mileage"
+    return "strong weekly mileage"
+
+
+def _volume_phrase(summary: Dict[str, Any], *, include_long_run_number: bool) -> str:
+    min_week = float(summary.get("weekly_miles_min_active") or 0.0)
+    max_week = float(summary.get("weekly_miles_max_active") or 0.0)
+    avg = float(summary.get("avg_miles_per_week_approx") or 0.0)
+    if (
+        not include_long_run_number
+        and min_week > 0
+        and max_week > 0
+        and (max_week - min_week) >= 6
+    ):
+        return f"around **{round(min_week / 5) * 5:.0f}–{round(max_week / 5) * 5:.0f} miles per week**"
+    if include_long_run_number and avg > 0:
+        return f"around **{round(avg / 5) * 5:.0f} miles per week**"
+    return _mileage_band_phrase(avg)
 
 
 def format_user_visible_activity_overview(summary: Dict[str, Any]) -> str:
     """
     Short, coach-voice markdown for the chat transcript: what synced runs show.
 
-    Returns empty string when there are no runs in the lookback window.
+    Returns a brief no-data transition when there are no runs in the lookback window.
     """
     if not summary.get("has_running_data"):
-        return ""
-    w = int(summary.get("lookback_weeks") or 12)
-    n = int(summary.get("activities_found") or 0)
-    total = summary.get("total_miles_window")
-    avg = summary.get("avg_miles_per_week_approx")
-    long_mi = summary.get("longest_run_miles")
-    long_dt = summary.get("longest_run_date")
-    latest = summary.get("latest_run_date")
-    bullets: List[str] = [
-        f"- **{n}** logged runs in the last **{w}** weeks, about **{total}** total miles",
-    ]
-    if avg is not None:
-        bullets.append(
-            f"- Roughly **{avg}** mi/week on average (spread over those weeks)"
+        return (
+            "I don’t have enough recent running data synced to judge your current base yet, "
+            "so I’ll guide this with a few quick questions."
         )
-    if long_mi:
-        ld = f" on **{long_dt}**" if long_dt else ""
-        bullets.append(f"- Longest run in that window: **{long_mi}** mi{ld}")
-    if latest:
-        bullets.append(f"- Most recent run: **{latest}**")
+    active_weeks = int(summary.get("active_weeks") or 0)
+    long_mi = summary.get("longest_run_miles")
+    include_long_run_number = bool(long_mi)
+    volume_phrase = _volume_phrase(
+        summary, include_long_run_number=include_long_run_number
+    )
+
     lines = [
-        "Here’s what I’m seeing from your **synced runs** — I’ll lean on this for volume "
-        "and progression, so you don’t need to re-hash weekly mileage unless something "
-        "important isn’t captured in what’s synced.",
-        "",
-        *bullets,
+        f"Here’s what I’m seeing from your recent training: you’ve been running {volume_phrase} with solid consistency.",
     ]
+    if long_mi:
+        lines.append(
+            f"Your long run is around **{float(long_mi):.0f} miles**, which gives us a useful base to build from."
+        )
+    elif active_weeks:
+        lines.append(
+            "You’ve got recent consistency, so we can shape the plan from your current rhythm."
+        )
+
+    dominant = summary.get("dominant_deviation_direction")
+    if summary.get("has_effort_control_signal") and dominant == "too_hard":
+        lines.append(
+            "The main opportunity is effort control, so the easy days stay easy enough to support the bigger work."
+        )
+    elif summary.get("has_effort_control_signal") and dominant == "on_target":
+        lines.append(
+            "The opportunity is turning that control into a clearer progression toward the race."
+        )
+    else:
+        lines.append(
+            "The opportunity is adding structure so that consistency turns into race-specific progress."
+        )
     return "\n".join(lines)
 
 
@@ -187,25 +283,20 @@ def apply_plan_activity_preamble_to_assistant_markdown(
     *,
     plan_creation_mode: bool,
     activity_summary: Optional[Dict[str, Any]],
-    conversation_history: Optional[List[Dict[str, str]]],
+    runner_understanding_already_shown: bool,
 ) -> str:
     """
     Prepend the one-time activity overview in plan-creation turns when we have run data.
-
-    Appends ``PLAN_ACTIVITY_PREAMBLE_MARKER`` so the same thread does not get the block twice.
     """
     if not plan_creation_mode or not activity_summary:
         return content
-    if not activity_summary.get("has_running_data"):
-        return content
-    if thread_has_plan_activity_preamble(conversation_history):
+    if runner_understanding_already_shown:
         return content
     overview = format_user_visible_activity_overview(activity_summary).strip()
     if not overview:
         return content
     base = (content or "").strip()
-    combined = f"{overview}\n\n{base}" if base else overview
-    return f"{combined.rstrip()}\n\n{PLAN_ACTIVITY_PREAMBLE_MARKER}"
+    return f"{overview}\n\n{base}" if base else overview
 
 
 def build_plan_intake_activity_context_block(

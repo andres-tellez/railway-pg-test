@@ -71,7 +71,11 @@ from src.smartcoach_mobile_coach.plan_intake_activity_context import (
     compute_plan_intake_activity_summary,
     format_plan_intake_activity_context_block,
 )
-from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_intake
+from src.smartcoach_mobile_coach.plan_intake_flow import (
+    mark_plan_runner_understanding_shown,
+    plan_runner_understanding_shown,
+    user_confirms_plan_intake,
+)
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
     INTENT_RACE_PROJECTION,
@@ -106,29 +110,77 @@ from src.utils.hr_zone_constants import (
 logger = logging.getLogger("smartcoach_mobile_coach")
 
 _PLAN_CREATION_TOOL_NAMES: Set[str] = {"update_plan_intake", "generate_training_plan"}
-# V1.6 hotfix — plan-creation hints are regex patterns that require a
-# **creation verb** adjacent to the plan noun. The previous substring
-# implementation matched on bare "training plan" / "plan for", which
-# tripped on ordinary analysis questions like "how was my run compared
-# to the training plan?" and forced the user into the intake flow
-# even when an active plan already existed.
-#
-# Each pattern must be anchored on a word boundary + creation verb +
-# ≤5 filler words + a plan-ish noun. Keeping the filler window tight
-# prevents false positives across long sentences.
+# Plan-creation detection intentionally favors recall for users without
+# an active plan. The active-plan guard in `_is_plan_creation_turn`
+# prevents ordinary plan-analysis questions from hijacking established
+# users into intake, so this message-level detector can recognize broader
+# training intent: plan requests, race/date/goal shorthand, and "get
+# better" style structured-training goals.
 _PLAN_CREATION_INTENT_REGEX: Tuple[re.Pattern[str], ...] = (
     re.compile(
-        r"\b(create|build|make|generate|design|start|start\s+a|set\s+up|"
-        r"put\s+together|draft|need)\b"
+        r"\b(create|build|make|generate|design|start|set\s+up|"
+        r"put\s+together|draft|need|want|looking\s+for)\b"
         r"(?:\s+\w+){0,5}\s+"
-        r"\b(plan|program|schedule|training)\b",
+        r"\b(plan|program|schedule|training\s+plan)\b",
         re.IGNORECASE,
     ),
     re.compile(r"\bhelp\s+me\s+train\b", re.IGNORECASE),
     re.compile(
-        r"\bi\s+want\s+(?:a|an|to)\s+(?:new\s+)?(?:training\s+)?plan\b", re.IGNORECASE
+        r"\bi\s+(?:want|need|would\s+like|am\s+looking\s+for)\s+"
+        r"(?:a|an|to\s+start|to\s+build)?\s*(?:new\s+)?"
+        r"(?:training\s+)?(?:half\s+marathon|marathon|race)?\s*plan\b",
+        re.IGNORECASE,
     ),
-    re.compile(r"\b(?:train|prep(?:are)?)\s+for\s+(?:a|my|an|the)\s+", re.IGNORECASE),
+    re.compile(
+        r"\b(?:i(?:'m| am)?\s+)?(?:train(?:ing)?|prep(?:ping|are|aring)?|"
+        r"getting\s+ready)\s+for\s+(?:a|my|an|the)?\s*",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:half\s+marathon|marathon|race)\b.*\b(?:plan|training|goal)\b"
+        r"|\b(?:plan|training|goal)\b.*\b(?:half\s+marathon|marathon|race)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:i\s+)?(?:want|need|would\s+like|trying|try)\s+to\s+"
+        r"(?:get\s+better|improve|get\s+faster|run\s+faster|"
+        r"build\s+(?:fitness|base|consistency)|train\s+for)\b",
+        re.IGNORECASE,
+    ),
+)
+
+_PLAN_ANALYSIS_QUESTION_REGEX: Tuple[re.Pattern[str], ...] = (
+    re.compile(
+        r"\b(?:how|what|when|where|why|did|do|does|is|are|was|were|show|tell|explain)\b"
+        r".*\b(?:my\s+)?(?:training\s+)?plan\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:compared|compare)\s+to\s+(?:my\s+)?(?:training\s+)?plan\b", re.IGNORECASE
+    ),
+)
+
+_RACE_SIGNAL_REGEX = re.compile(
+    r"\b(?:half\s+marathon|marathon|26\.2|13\.1|race|chicago|boston|berlin|"
+    r"new\s+york|nyc|london|tokyo|marine\s+corps)\b",
+    re.IGNORECASE,
+)
+_DATE_SIGNAL_REGEX = re.compile(
+    r"\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+    r"jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|"
+    r"dec(?:ember)?|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})\b",
+    re.IGNORECASE,
+)
+_GOAL_SIGNAL_REGEX = re.compile(
+    r"\b(?:goal|target|time|sub[-\s]?\d|pr|pb|bq|qualify|finish|finish\s+strong|"
+    r"\d{1,2}:\d{2}(?::\d{2})?)\b",
+    re.IGNORECASE,
+)
+_SCHEDULE_SIGNAL_REGEX = re.compile(
+    r"\b(?:\d+\s+days?(?:\s+per\s+week)?|weekdays?|weekends?|"
+    r"mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:rs(?:day)?)?|"
+    r"fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b",
+    re.IGNORECASE,
 )
 
 
@@ -188,17 +240,27 @@ def _tool_function_name(t: Dict[str, Any]) -> str:
 
 
 def _user_message_matches_plan_creation_regex(user_message: str) -> bool:
-    """True when the user message looks like a *creation* request.
-
-    Requires a creation verb (create / build / make / …) adjacent to a
-    plan-ish noun, or an explicit "train for …" / "help me train"
-    phrase. Bare mentions of "training plan" or "plan for" do NOT
-    match — those show up constantly in analysis questions.
-    """
+    """True when the user message implies structured training / plan creation."""
     msg = (user_message or "").strip()
     if not msg:
         return False
-    return any(pat.search(msg) for pat in _PLAN_CREATION_INTENT_REGEX)
+    if any(pat.search(msg) for pat in _PLAN_ANALYSIS_QUESTION_REGEX):
+        return False
+    if any(pat.search(msg) for pat in _PLAN_CREATION_INTENT_REGEX):
+        return True
+
+    # Race + date/goal/schedule shorthand: "Chicago Oct 11, 3:30 goal, 5 days".
+    signals = sum(
+        1
+        for pat in (
+            _RACE_SIGNAL_REGEX,
+            _DATE_SIGNAL_REGEX,
+            _GOAL_SIGNAL_REGEX,
+            _SCHEDULE_SIGNAL_REGEX,
+        )
+        if pat.search(msg)
+    )
+    return signals >= 2
 
 
 def _user_has_active_plan(session: Session, user_id: str) -> bool:
@@ -270,7 +332,12 @@ def _is_plan_creation_turn(
     if has_active_plan:
         return False
 
-    # Rule 3 — creation signal (classifier OR verb-anchored regex).
+    # Rule 3 — explicit plan-analysis questions are not intake, even if the
+    # lightweight classifier overfires on "training plan" wording.
+    if any(pat.search(user_message or "") for pat in _PLAN_ANALYSIS_QUESTION_REGEX):
+        return False
+
+    # Rule 4 — creation signal (classifier OR message-level intent inference).
     if intent == INTENT_PLAN_CREATION:
         return True
     return _user_message_matches_plan_creation_regex(user_message)
@@ -1708,20 +1775,33 @@ These override default behavior when specified.
 
 PLAN_CREATION_SYSTEM_PROMPT_BASE = """
 You are SmartCoach helping one runner create a training plan through deterministic server tools.
-Primary objective: collect the **server-required** plan fields, then confirm and generate.
+Primary objective: make plan setup feel like a real coaching conversation while preserving deterministic server intake and generation.
 
 Required fields (exact keys for `update_plan_intake` `updates`): `race_distance`, `race_date`,
 `primary_goal`, `training_days`, and `target_time` only when `primary_goal` is **Target Time**.
 Optional enrichments any time before generate: `race_name`, `race_location`, `long_run_day`, `notes`, `plan_name`.
 
+Experience stages:
+- `understand_runner`: the server may prepend a short deterministic runner understanding summary. Do not repeat it.
+- `goal_alignment`: ask naturally what they are training for; map the answer into race distance/name/date when possible.
+- `details`: collect remaining details in natural language.
+- `confirm`: summarize simply and ask whether it looks right.
+- `fast_track`: if the user gave enough details upfront, skip redundant questions and move to confirmation.
+- `generated`: after plan creation, explain what was created and point them to the Plan tab.
+
 Intake behavior:
 - **Always** call `update_plan_intake` on the latest user message (merge partial answers in `updates`).
 - **While `missing_required` is non-empty, never end the turn with prose alone** — call `update_plan_intake` first so the server can merge fields (short prompts depend on tools for truth).
 - Use the **latest tool result** `missing_required` as the source of truth for what is still missing.
-- Ask **one** clear question per turn, aimed at the **first** entry in `missing_required` (or at `target_time`
-  when goal is Target Time and that key is listed). Do **not** dump a multi-question form in one message.
+- Ask **at most one or two** clear questions per turn. Prefer one. Do **not** dump a multi-question form in one message.
+- Never expose the words `missing_required`, `ready_to_generate`, field keys, or tool/status names to the user.
+- Ask in coach language, not form language: “What are you training for?”, “Do you have a race date?”, “Are you trying to finish strong or hit a specific time?”, “How many days per week do you want to run?”
 - If the user volunteers several answers at once, pass them all in one `updates` object and then ask only
   for what remains in `missing_required`.
+- If the user gives only a numeric running frequency (for example, “5 days per week”), pass that as
+  `training_days` so the server can store the count, but **do not** invent weekdays. If `training_days`
+  remains missing and `ux.training_days_count` is present, ask exactly one question: “Which days of the week work best for you?”
+- If the latest tool result is `ready_to_generate=true`, do **not** ask another intake question. Move to confirmation.
 - **Do not** ask for self-reported “experience level” or “beginner/intermediate/advanced” for this flow;
   baseline comes from their activity data, not chat labels.
 - **Do not** ask how many **weeks** (or months) the plan should run or how long they want to train; the server sets length from **race date** and baseline. **Never** ask that even right after they gave a race date—ask the next `missing_required` field only.
@@ -1745,6 +1825,7 @@ Confirmation and generate:
 - Only call `generate_training_plan` after explicit user confirmation with `confirm=true`.
 - Keep user-facing wording short and conversational (usually 1-3 sentences during intake; up to a short
   multi-line walkthrough right after successful generation).
+- Confirmation should be simple: race, goal, schedule. Then ask “Does that look right?” or equivalent.
 - Tool payload is the source of truth; never invent field values not returned by tools.
 - The server accepts common **spoken dates**, **spoken training-day ranges** (e.g. “Monday through Saturday”,
   “weekdays plus Saturday”), and **goal-time phrases** in tool updates; still pass what the user said in `updates`.
@@ -1806,15 +1887,17 @@ def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
     return (
         "## Response directive (plan creation mode)\n"
         f"- Turn type: **{directive.turn_type}** | Intent: **{directive.intent}**\n"
-        "- Keep the response concise and practical.\n"
-        "- If details are missing, ask for **one** missing item only; follow `missing_required` from "
-        "`update_plan_intake` (race_distance → race_date → primary_goal → training_days; "
-        "target_time when goal is Target Time). Infer Marathon from named full marathons when unambiguous; "
-        "do not re-ask half vs full in that case.\n"
+        "- Keep the response concise and coach-like; this should feel like guidance, not a form.\n"
+        "- Use `update_plan_intake` silently, then ask natural follow-up questions based on what is still missing. "
+        "Do not expose field names or tool state to the user.\n"
+        "- Ask at most one or two questions per turn. Prefer one. If enough details are present, skip redundant questions and confirm.\n"
+        "- If they gave a count like “5 days per week” but not actual weekdays, ask only: “Which days of the week work best for you?” "
+        "Do not invent weekdays.\n"
+        "- Infer Marathon from named full marathons when unambiguous; do not re-ask half vs full in that case.\n"
         "- Do not ask experience level, plan length in weeks/months, or how long they want to train—length is from **race date** only. "
         "After they give a race date, never ask about duration; ask the next `missing_required` field only. "
         "Unsupported race distances: only Half / Marathon.\n"
-        "- If all required details exist, show confirmation summary and ask explicit yes/no.\n"
+        "- If all required details exist, show a simple confirmation summary (race, goal, schedule) and ask explicit yes/no.\n"
         "- Do not discuss unrelated run-analysis topics in this mode.\n"
     )
 
@@ -1842,6 +1925,32 @@ def _plan_generation_fastpath_reply(tool_out: Dict[str, Any]) -> str:
         f"{intro} View your Plan: click Plan in the app to review the full week-by-week schedule, "
         "and tell me if you want any tweaks."
     )
+
+
+def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
+    """User-facing fallback when the model/tool loop returns plan state but no prose."""
+    if intake_state.get("ready_to_generate"):
+        summ = (intake_state.get("confirmation_summary") or "").strip()
+        if summ:
+            return f"Here’s what I have: {summ} Does that look right?"
+        return "I have enough to build the plan. Does that look right?"
+
+    missing = intake_state.get("missing_required") or []
+    first = missing[0] if missing and isinstance(missing[0], str) else ""
+    if first == "race_distance":
+        return "What are you training for — a half marathon or a marathon?"
+    if first == "race_date":
+        return "Do you already have a race date in mind?"
+    if first == "primary_goal":
+        return "Is the goal to finish strong, or are you targeting a specific time?"
+    if first == "target_time":
+        return "What finish time are you aiming for?"
+    if first == "training_days":
+        ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+        if ux.get("training_days_count"):
+            return "Which days of the week work best for you?"
+        return "How many days per week do you want to run, and which days usually work best?"
+    return "Tell me a bit more about the race you want to train for."
 
 
 _DEFAULT_PREFS = {
@@ -2157,8 +2266,8 @@ def _plan_creation_system_section(
             )
     lines.extend(
         [
-            "- Ask only one missing required field at a time, in server order: race_distance, race_date, "
-            "primary_goal (Just Finish | Target Time only), training_days, then target_time when goal is Target Time.",
+            "- Ask at most one or two natural questions per turn (prefer one). Use server order internally: race_distance, "
+            "race_date, primary_goal (Just Finish | Target Time only), training_days, then target_time when goal is Target Time.",
             "- If the user names a full marathon (e.g. Chicago Marathon) or clearly means 26.2, pass `race_distance` "
             "(Marathon) and `race_name` in `update_plan_intake` the same turn—do not ask half vs full again.",
             "- Do not ask experience level, how many weeks/months the plan should run, or how long they want to train; "
@@ -2166,9 +2275,9 @@ def _plan_creation_system_section(
             "If `race_date` is already in intake, the next question must be the next `missing_required` field only (not duration). "
             "Non-supported race distances: plan generation supports Half Marathon and Marathon only.",
             "- Do not claim details are saved unless `update_plan_intake` confirms them.",
-            "- When `ready_to_generate=true`, present the confirmation summary and ask for explicit yes/no.",
+            "- When `ready_to_generate=true`, present a simple confirmation summary and ask for explicit yes/no.",
             "- Call `generate_training_plan` only after explicit confirmation, with `confirm=true`.",
-            "- Keep user-facing wording natural; the tool payload is the source of truth for intake state.",
+            "- Keep user-facing wording natural; never show tool names, field keys, `missing_required`, or `ready_to_generate` to the user.",
         ],
     )
     if isinstance(intake_state, dict):
@@ -3111,32 +3220,24 @@ def run_mobile_agent_turn(
             if pis_merged is not None or latest_plan_generation is not None:
                 out_text = text
                 if not out_text and pis_merged is not None:
-                    summ = (pis_merged.get("confirmation_summary") or "").strip()
-                    miss_lbls = pis_merged.get("missing_required_labels") or []
-                    if pis_merged.get("ready_to_generate"):
-                        out_text = (
-                            f"{summ} Say **yes** when you want me to generate this plan, "
-                            "or tell me what to change."
-                        ).strip()
-                    elif miss_lbls:
-                        first = (
-                            miss_lbls[0]
-                            if isinstance(miss_lbls[0], str)
-                            else "next detail"
-                        )
-                        out_text = f"What is your **{first}**?"
-                    else:
-                        out_text = "Tell me a bit more about your race so I can set up your plan."
+                    out_text = _natural_plan_intake_fallback_question(pis_merged)
                 if not out_text and latest_plan_generation is not None:
                     out_text = "Your training plan is saved. Open the **Plan** tab for workouts and dates."
                 if not out_text:
                     out_text = "Thanks — I noted that for your plan setup."
-                out_text = apply_plan_activity_preamble_to_assistant_markdown(
-                    out_text,
-                    plan_creation_mode=plan_creation_mode,
-                    activity_summary=activity_summary_for_turn,
-                    conversation_history=conversation_history,
+                runner_understanding_shown = plan_runner_understanding_shown(pis_merged)
+                out_text_with_preamble = (
+                    apply_plan_activity_preamble_to_assistant_markdown(
+                        out_text,
+                        plan_creation_mode=plan_creation_mode,
+                        activity_summary=activity_summary_for_turn,
+                        runner_understanding_already_shown=runner_understanding_shown,
+                    )
                 )
+                if out_text_with_preamble != out_text and pis_merged is not None:
+                    pis_merged = mark_plan_runner_understanding_shown(pis_merged)
+                    latest_plan_intake_state = pis_merged
+                out_text = out_text_with_preamble
                 structured_text = {
                     "type": "text",
                     "content": out_text,

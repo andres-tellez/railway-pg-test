@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+import re
 from unittest.mock import MagicMock, patch
 
 from src.smartcoach_mobile_coach.plan_intake_activity_context import (
-    PLAN_ACTIVITY_PREAMBLE_MARKER,
     apply_plan_activity_preamble_to_assistant_markdown,
     build_plan_intake_activity_context_block,
     compute_plan_intake_activity_summary,
     format_plan_intake_activity_context_block,
     format_user_visible_activity_overview,
-    thread_has_plan_activity_preamble,
 )
 
 
@@ -63,16 +62,16 @@ def test_compute_plan_intake_activity_summary(mock_fetch):
     assert out["has_running_data"] is True
     assert out["total_miles_window"] == 16.0
     assert out["longest_run_miles"] == 10.0
+    assert out["runs_per_week_approx"] == 0.2
     mock_fetch.assert_called_once()
 
 
-def test_format_user_visible_activity_overview_empty_without_runs():
-    assert (
-        format_user_visible_activity_overview(
-            {"has_running_data": False, "activities_found": 0}
-        )
-        == ""
+def test_format_user_visible_activity_overview_no_data_is_coach_like():
+    s = format_user_visible_activity_overview(
+        {"has_running_data": False, "activities_found": 0}
     )
+    assert "don’t have enough recent running data" in s
+    assert "Strava" not in s
 
 
 def test_format_user_visible_activity_overview_with_runs():
@@ -83,23 +82,59 @@ def test_format_user_visible_activity_overview_with_runs():
             "has_running_data": True,
             "total_miles_window": 40.0,
             "avg_miles_per_week_approx": 3.3,
+            "runs_per_week_approx": 1.3,
+            "active_weeks": 4,
+            "weekly_miles_min_active": 8.0,
+            "weekly_miles_max_active": 12.0,
             "longest_run_miles": 12.5,
             "longest_run_date": "2026-03-01",
             "latest_run_date": "2026-04-01",
         }
     )
-    assert "synced runs" in s.lower()
-    assert "**8**" in s
-    assert "40" in s
+    assert "recent training" in s.lower()
+    assert "logged runs" not in s
+    assert s.count("\n") <= 2
+    assert "solid consistency" in s
+    assert "opportunity" in s
+    assert "**12 miles**" in s
+    assert len(re.findall(r"\b\d+(?:\.\d+)?(?:[–-]\d+(?:\.\d+)?)?\b", s)) <= 2
 
 
-def test_apply_plan_activity_preamble_prepends_once():
+def test_format_user_visible_activity_overview_uses_banded_volume_language():
+    s = format_user_visible_activity_overview(
+        {
+            "lookback_weeks": 6,
+            "activities_found": 24,
+            "has_running_data": True,
+            "total_miles_window": 159.0,
+            "avg_miles_per_week_approx": 26.5,
+            "runs_per_week_approx": 4.0,
+            "active_weeks": 6,
+            "weekly_miles_min_active": 24.0,
+            "weekly_miles_max_active": 33.0,
+            "longest_run_miles": 10.0,
+            "longest_run_date": "2026-03-01",
+            "latest_run_date": "2026-04-01",
+        }
+    )
+    assert "around **25 miles per week**" in s
+    assert "**10 miles**" in s
+    assert "2026-" not in s
+    assert "24–33" not in s
+    assert len(re.findall(r"\b\d+(?:\.\d+)?(?:[–-]\d+(?:\.\d+)?)?\b", s)) <= 2
+
+
+def test_apply_plan_activity_preamble_prepends_without_marker():
     summary = {
         "lookback_weeks": 12,
         "activities_found": 2,
         "has_running_data": True,
         "total_miles_window": 10.0,
         "avg_miles_per_week_approx": 0.8,
+        "runs_per_week_approx": 0.2,
+        "active_weeks": 2,
+        "weekly_miles_min_active": 4.0,
+        "weekly_miles_max_active": 6.0,
         "longest_run_miles": 6.0,
         "longest_run_date": "2026-01-01",
         "latest_run_date": "2026-01-02",
@@ -108,11 +143,11 @@ def test_apply_plan_activity_preamble_prepends_once():
         "What is your **race date**?",
         plan_creation_mode=True,
         activity_summary=summary,
-        conversation_history=[],
+        runner_understanding_already_shown=False,
     )
     assert "race date" in out
-    assert PLAN_ACTIVITY_PREAMBLE_MARKER in out
-    assert thread_has_plan_activity_preamble([{"role": "assistant", "content": out}])
+    assert "<!--" not in out
+    assert "recent training" in out.lower()
 
 
 def test_apply_plan_activity_preamble_skips_if_already_shown():
@@ -122,16 +157,19 @@ def test_apply_plan_activity_preamble_skips_if_already_shown():
         "has_running_data": True,
         "total_miles_window": 10.0,
         "avg_miles_per_week_approx": 0.8,
+        "runs_per_week_approx": 0.2,
+        "active_weeks": 2,
+        "weekly_miles_min_active": 4.0,
+        "weekly_miles_max_active": 6.0,
         "longest_run_miles": 6.0,
         "longest_run_date": "2026-01-01",
         "latest_run_date": "2026-01-02",
     }
-    prior = f"Old reply\n\n{PLAN_ACTIVITY_PREAMBLE_MARKER}"
     out = apply_plan_activity_preamble_to_assistant_markdown(
         "Next question?",
         plan_creation_mode=True,
         activity_summary=summary,
-        conversation_history=[{"role": "assistant", "content": prior}],
+        runner_understanding_already_shown=True,
     )
     assert out == "Next question?"
 
