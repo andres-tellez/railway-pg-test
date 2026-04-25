@@ -800,6 +800,16 @@ def update_plan_intake_state(
     _fill_race_distance_from_named_event(draft)
     _fill_race_name_from_user_text(draft, source_user_message)
 
+    # When the model omits `race_distance` but the user answered in plain language
+    # (e.g. "A marathon", "the full marathon"), infer from the latest message.
+    # Named-event fill above only sees race_name/location/plan_name; bare phrases
+    # like "a marathon" do not populate race_name (event-title regex needs a longer prefix).
+    rd_cur = draft.get("race_distance")
+    if not (isinstance(rd_cur, str) and rd_cur.strip()):
+        msg_rd = _try_infer_race_distance((source_user_message or "").strip())
+        if msg_rd:
+            draft["race_distance"] = msg_rd
+
     if "training_days" not in draft and "training_days_count" not in ux:
         day_count = _extract_training_days_count(source_user_message)
         if day_count is not None:
