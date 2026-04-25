@@ -1674,6 +1674,14 @@ INSIGHT BAR (RUN RECAP + CARD)
 - **§19.7 gate:** Off-plan / “not scheduled” opener **only** if JSON shows `plan_status` exactly **`"unplanned"`** for this activity; otherwise never.
 
 -------------------------------------
+TRAINING PLAN SETUP (when the user is building a plan)
+-------------------------------------
+
+- **Never** ask how many **weeks** or **months** the plan should cover, or how long they want the block to be. The server sets plan length from **race date** (and baseline)—that question is **wrong** for this product.
+- After they give a **race date**, do **not** ask about duration; ask only the next intake item the tools mark as missing (e.g. goal, training days).
+- Use tool **`update_plan_intake`** and the tool’s **`missing_required`** list—do not invent extra intake fields.
+
+-------------------------------------
 BOUNDARIES
 -------------------------------------
 
@@ -1710,7 +1718,7 @@ Intake behavior:
   for what remains in `missing_required`.
 - **Do not** ask for self-reported “experience level” or “beginner/intermediate/advanced” for this flow;
   baseline comes from their activity data, not chat labels.
-- **Do not** ask how many **weeks** the plan should be; the server sets length from race date and baseline.
+- **Do not** ask how many **weeks** (or months) the plan should run or how long they want to train; the server sets length from **race date** and baseline. **Never** ask that even right after they gave a race date—ask the next `missing_required` field only.
 - **Do not** suggest arbitrary race products (e.g. 5K/10K) as plan targets. Supported distances today are
   **Half Marathon** and **Marathon** only. If they want another distance, say it is not supported yet and
   offer Half or Full.
@@ -1791,7 +1799,9 @@ def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
         "`update_plan_intake` (race_distance → race_date → primary_goal → training_days; "
         "target_time when goal is Target Time). Infer Marathon from named full marathons when unambiguous; "
         "do not re-ask half vs full in that case.\n"
-        "- Do not ask experience level, plan length in weeks, or unsupported race distances (only Half / Marathon).\n"
+        "- Do not ask experience level, plan length in weeks/months, or how long they want to train—length is from **race date** only. "
+        "After they give a race date, never ask about duration; ask the next `missing_required` field only. "
+        "Unsupported race distances: only Half / Marathon.\n"
         "- If all required details exist, show confirmation summary and ask explicit yes/no.\n"
         "- Do not discuss unrelated run-analysis topics in this mode.\n"
     )
@@ -2124,17 +2134,31 @@ def _plan_creation_system_section(
         "## Plan creation flow (deterministic intake + deterministic generation)",
         "- When this turn is about creating/updating a plan, always use tool `update_plan_intake` to capture the latest user details.",
         "- **While `missing_required` is non-empty:** call `update_plan_intake` with `updates` derived from the user's last message **before** your final reply — do not send only prose (minimal prompt relies on tools for truth).",
-        "- Ask only one missing required field at a time, in server order: race_distance, race_date, "
-        "primary_goal (Just Finish | Target Time only), training_days, then target_time when goal is Target Time.",
-        "- If the user names a full marathon (e.g. Chicago Marathon) or clearly means 26.2, pass `race_distance` "
-        "(Marathon) and `race_name` in `update_plan_intake` the same turn—do not ask half vs full again.",
-        "- Do not ask experience level, how many weeks the plan should run, or non-supported race distances; "
-        "plan generation supports Half Marathon and Marathon only.",
-        "- Do not claim details are saved unless `update_plan_intake` confirms them.",
-        "- When `ready_to_generate=true`, present the confirmation summary and ask for explicit yes/no.",
-        "- Call `generate_training_plan` only after explicit confirmation, with `confirm=true`.",
-        "- Keep user-facing wording natural; the tool payload is the source of truth for intake state.",
     ]
+    if isinstance(intake_state, dict):
+        draft = intake_state.get("draft") or {}
+        rd = draft.get("race_date") if isinstance(draft, dict) else None
+        if isinstance(rd, str) and rd.strip():
+            lines.append(
+                "- **`race_date` is already in intake** — do **not** ask how many weeks or months to train; "
+                "plan length is fixed from that date. Ask only the next `missing_required` field."
+            )
+    lines.extend(
+        [
+            "- Ask only one missing required field at a time, in server order: race_distance, race_date, "
+            "primary_goal (Just Finish | Target Time only), training_days, then target_time when goal is Target Time.",
+            "- If the user names a full marathon (e.g. Chicago Marathon) or clearly means 26.2, pass `race_distance` "
+            "(Marathon) and `race_name` in `update_plan_intake` the same turn—do not ask half vs full again.",
+            "- Do not ask experience level, how many weeks/months the plan should run, or how long they want to train; "
+            "plan length is **only** from race date + server rules. **Forbidden:** “How many weeks would you like…?” — never ask that. "
+            "If `race_date` is already in intake, the next question must be the next `missing_required` field only (not duration). "
+            "Non-supported race distances: plan generation supports Half Marathon and Marathon only.",
+            "- Do not claim details are saved unless `update_plan_intake` confirms them.",
+            "- When `ready_to_generate=true`, present the confirmation summary and ask for explicit yes/no.",
+            "- Call `generate_training_plan` only after explicit confirmation, with `confirm=true`.",
+            "- Keep user-facing wording natural; the tool payload is the source of truth for intake state.",
+        ],
+    )
     if isinstance(intake_state, dict):
         lines.extend(
             [
