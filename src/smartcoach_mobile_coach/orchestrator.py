@@ -39,6 +39,7 @@ from src.services.security.external_apis.openai_service import get_openai_servic
 from src.smartcoach_mobile_coach.agent_tools import (
     execute_tool,
     tool_generate_training_plan,
+    tool_update_plan_intake,
 )
 from src.smartcoach_mobile_coach.coach_response_validator import (
     validate_coach_response,
@@ -65,6 +66,11 @@ from src.smartcoach_mobile_coach.session_summary_read import (
     session_summary_section,
 )
 from src.smartcoach_mobile_coach.tool_dispatch import dispatch_tool_batch
+from src.smartcoach_mobile_coach.plan_intake_activity_context import (
+    apply_plan_activity_preamble_to_assistant_markdown,
+    compute_plan_intake_activity_summary,
+    format_plan_intake_activity_context_block,
+)
 from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_intake
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
@@ -1673,6 +1679,15 @@ INSIGHT BAR (RUN RECAP + CARD)
 - **§19.7 gate:** Off-plan / “not scheduled” opener **only** if JSON shows `plan_status` exactly **`"unplanned"`** for this activity; otherwise never.
 
 -------------------------------------
+TRAINING PLAN SETUP (when the user is building a plan)
+-------------------------------------
+
+- **Never** ask how many **weeks** or **months** the plan should cover, or how long they want the block to be. The server sets plan length from **race date** (and baseline)—that question is **wrong** for this product.
+- After they give a **race date**, do **not** ask about duration; ask only the next intake item the tools mark as missing (e.g. goal, training days).
+- Use tool **`update_plan_intake`** and the tool’s **`missing_required`** list—do not invent extra intake fields.
+- When the system message includes **“Athlete activity snapshot”** with run counts / miles, treat that as authoritative for volume in this turn—do not ask the user to re-report the same facts.
+
+-------------------------------------
 BOUNDARIES
 -------------------------------------
 
@@ -1701,6 +1716,7 @@ Optional enrichments any time before generate: `race_name`, `race_location`, `lo
 
 Intake behavior:
 - **Always** call `update_plan_intake` on the latest user message (merge partial answers in `updates`).
+- **While `missing_required` is non-empty, never end the turn with prose alone** — call `update_plan_intake` first so the server can merge fields (short prompts depend on tools for truth).
 - Use the **latest tool result** `missing_required` as the source of truth for what is still missing.
 - Ask **one** clear question per turn, aimed at the **first** entry in `missing_required` (or at `target_time`
   when goal is Target Time and that key is listed). Do **not** dump a multi-question form in one message.
@@ -1708,7 +1724,7 @@ Intake behavior:
   for what remains in `missing_required`.
 - **Do not** ask for self-reported “experience level” or “beginner/intermediate/advanced” for this flow;
   baseline comes from their activity data, not chat labels.
-- **Do not** ask how many **weeks** the plan should be; the server sets length from race date and baseline.
+- **Do not** ask how many **weeks** (or months) the plan should run or how long they want to train; the server sets length from **race date** and baseline. **Never** ask that even right after they gave a race date—ask the next `missing_required` field only.
 - **Do not** suggest arbitrary race products (e.g. 5K/10K) as plan targets. Supported distances today are
   **Half Marathon** and **Marathon** only. If they want another distance, say it is not supported yet and
   offer Half or Full.
@@ -1754,6 +1770,18 @@ def _plan_confirm_fastpath_enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def _plan_intake_forced_merge_enabled() -> bool:
+    """When the model skips ``update_plan_intake`` on a plan-creation turn, merge NL once server-side."""
+    raw = (os.getenv("SMARTCOACH_PLAN_INTAKE_FORCED_MERGE") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def _plan_intake_activity_context_enabled() -> bool:
+    """Inject Strava-window snapshot into plan-intake system prompts (default on)."""
+    raw = (os.getenv("SMARTCOACH_PLAN_INTAKE_ACTIVITY_CONTEXT") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
 def _experiment_response_directive_stub(directive: ResponseDirective) -> str:
     """
     Tiny stand-in for response_directive_section() when
@@ -1783,7 +1811,9 @@ def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
         "`update_plan_intake` (race_distance → race_date → primary_goal → training_days; "
         "target_time when goal is Target Time). Infer Marathon from named full marathons when unambiguous; "
         "do not re-ask half vs full in that case.\n"
-        "- Do not ask experience level, plan length in weeks, or unsupported race distances (only Half / Marathon).\n"
+        "- Do not ask experience level, plan length in weeks/months, or how long they want to train—length is from **race date** only. "
+        "After they give a race date, never ask about duration; ask the next `missing_required` field only. "
+        "Unsupported race distances: only Half / Marathon.\n"
         "- If all required details exist, show confirmation summary and ask explicit yes/no.\n"
         "- Do not discuss unrelated run-analysis topics in this mode.\n"
     )
@@ -2115,17 +2145,32 @@ def _plan_creation_system_section(
     lines = [
         "## Plan creation flow (deterministic intake + deterministic generation)",
         "- When this turn is about creating/updating a plan, always use tool `update_plan_intake` to capture the latest user details.",
-        "- Ask only one missing required field at a time, in server order: race_distance, race_date, "
-        "primary_goal (Just Finish | Target Time only), training_days, then target_time when goal is Target Time.",
-        "- If the user names a full marathon (e.g. Chicago Marathon) or clearly means 26.2, pass `race_distance` "
-        "(Marathon) and `race_name` in `update_plan_intake` the same turn—do not ask half vs full again.",
-        "- Do not ask experience level, how many weeks the plan should run, or non-supported race distances; "
-        "plan generation supports Half Marathon and Marathon only.",
-        "- Do not claim details are saved unless `update_plan_intake` confirms them.",
-        "- When `ready_to_generate=true`, present the confirmation summary and ask for explicit yes/no.",
-        "- Call `generate_training_plan` only after explicit confirmation, with `confirm=true`.",
-        "- Keep user-facing wording natural; the tool payload is the source of truth for intake state.",
+        "- **While `missing_required` is non-empty:** call `update_plan_intake` with `updates` derived from the user's last message **before** your final reply — do not send only prose (minimal prompt relies on tools for truth).",
     ]
+    if isinstance(intake_state, dict):
+        draft = intake_state.get("draft") or {}
+        rd = draft.get("race_date") if isinstance(draft, dict) else None
+        if isinstance(rd, str) and rd.strip():
+            lines.append(
+                "- **`race_date` is already in intake** — do **not** ask how many weeks or months to train; "
+                "plan length is fixed from that date. Ask only the next `missing_required` field."
+            )
+    lines.extend(
+        [
+            "- Ask only one missing required field at a time, in server order: race_distance, race_date, "
+            "primary_goal (Just Finish | Target Time only), training_days, then target_time when goal is Target Time.",
+            "- If the user names a full marathon (e.g. Chicago Marathon) or clearly means 26.2, pass `race_distance` "
+            "(Marathon) and `race_name` in `update_plan_intake` the same turn—do not ask half vs full again.",
+            "- Do not ask experience level, how many weeks/months the plan should run, or how long they want to train; "
+            "plan length is **only** from race date + server rules. **Forbidden:** “How many weeks would you like…?” — never ask that. "
+            "If `race_date` is already in intake, the next question must be the next `missing_required` field only (not duration). "
+            "Non-supported race distances: plan generation supports Half Marathon and Marathon only.",
+            "- Do not claim details are saved unless `update_plan_intake` confirms them.",
+            "- When `ready_to_generate=true`, present the confirmation summary and ask for explicit yes/no.",
+            "- Call `generate_training_plan` only after explicit confirmation, with `confirm=true`.",
+            "- Keep user-facing wording natural; the tool payload is the source of truth for intake state.",
+        ],
+    )
     if isinstance(intake_state, dict):
         lines.extend(
             [
@@ -2381,6 +2426,28 @@ def run_mobile_agent_turn(
             history_window,
         )
 
+    activity_ctx_block = ""
+    activity_summary_for_turn: Optional[Dict[str, Any]] = None
+    _inject_act = _plan_intake_activity_context_enabled() and (
+        plan_creation_mode
+        or isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict)
+    )
+    if _inject_act:
+        try:
+            activity_summary_for_turn = compute_plan_intake_activity_summary(
+                session, str(internal_user_id)
+            )
+            activity_ctx_block = format_plan_intake_activity_context_block(
+                activity_summary_for_turn
+            )
+        except Exception:
+            logger.warning(
+                "[smartcoach_mobile_coach] plan_intake_activity_context_failed",
+                exc_info=True,
+            )
+            activity_ctx_block = ""
+            activity_summary_for_turn = None
+
     # --- Prompt experiment (optional): see MINIMAL_SYSTEM_PROMPT_BASE block above ---
     #
     # V1.6 Phase 3D — `SMARTCOACH_FAST_MODE` is a one-flag umbrella
@@ -2422,6 +2489,7 @@ def run_mobile_agent_turn(
         system_content = _join_nonempty_system_sections(
             PLAN_CREATION_SYSTEM_PROMPT_BASE,
             _device_anchor_system_section(anchor_local_date, client_timezone),
+            activity_ctx_block,
             _plan_creation_directive_stub(response_directive),
             _plan_creation_system_section(
                 user_message,
@@ -2511,6 +2579,7 @@ def run_mobile_agent_turn(
             _user_context_opening_nudge_section(
                 response_directive, plan_creation_mode=plan_creation_mode
             ),
+            activity_ctx_block,
             _plan_creation_system_section(
                 user_message,
                 response_directive.intent,
@@ -2828,6 +2897,7 @@ def run_mobile_agent_turn(
                 "[coach_fastpath] split_detail empty model text; using full agent loop"
             )
 
+    turn_had_plan_intake_update = False
     for _ in range(max_loops):
         loops += 1
         t_openai0 = time.perf_counter()
@@ -2911,6 +2981,8 @@ def run_mobile_agent_turn(
                     pis = out.get("plan_intake_state")
                     if isinstance(pis, dict):
                         latest_plan_intake_state = pis
+                    if name == "update_plan_intake":
+                        turn_had_plan_intake_update = True
                     pg = out.get("plan_generation")
                     if isinstance(pg, dict):
                         latest_plan_generation = pg
@@ -2963,28 +3035,29 @@ def run_mobile_agent_turn(
             if os.environ.get(
                 "SMARTCOACH_RESPONSE_VALIDATOR_DISABLED", ""
             ).strip() not in ("1", "true", "True", "TRUE"):
-                try:
-                    validator_report = validate_coach_response(
-                        text, list(tool_result_cache.values())
-                    )
-                    meta["validator"] = validator_report
-                    if validator_report["total_findings"] > 0:
-                        logger.warning(
-                            "[smartcoach_mobile_coach] response_validator "
-                            "findings=%s readonly=%s ungrounded=%s",
-                            validator_report["total_findings"],
-                            len(validator_report["readonly_violations"]),
-                            len(validator_report["ungrounded_numbers"]),
+                if text:
+                    try:
+                        validator_report = validate_coach_response(
+                            text, list(tool_result_cache.values())
                         )
-                except Exception as exc:
-                    # Defensive: validator failure must never break a
-                    # turn. Log and continue with no validator block
-                    # attached to meta.
-                    logger.warning(
-                        "[smartcoach_mobile_coach] response_validator_error: %s",
-                        exc,
-                    )
-            if latest_run_summary is not None:
+                        meta["validator"] = validator_report
+                        if validator_report["total_findings"] > 0:
+                            logger.warning(
+                                "[smartcoach_mobile_coach] response_validator "
+                                "findings=%s readonly=%s ungrounded=%s",
+                                validator_report["total_findings"],
+                                len(validator_report["readonly_violations"]),
+                                len(validator_report["ungrounded_numbers"]),
+                            )
+                    except Exception as exc:
+                        # Defensive: validator failure must never break a
+                        # turn. Log and continue with no validator block
+                        # attached to meta.
+                        logger.warning(
+                            "[smartcoach_mobile_coach] response_validator_error: %s",
+                            exc,
+                        )
+            if latest_run_summary is not None and text:
                 structured = {
                     "type": "run_summary",
                     "content": text,
@@ -2996,25 +3069,92 @@ def run_mobile_agent_turn(
                     len(text),
                 )
                 return structured, meta
+
+            pis_merged: Optional[Dict[str, Any]] = (
+                latest_plan_intake_state
+                if isinstance(latest_plan_intake_state, dict)
+                else None
+            )
+            if (
+                plan_creation_mode
+                and _plan_intake_forced_merge_enabled()
+                and (user_message or "").strip()
+                and not user_confirms_plan_intake(user_message)
+                and not turn_had_plan_intake_update
+            ):
+                try:
+                    forced = tool_update_plan_intake(
+                        session,
+                        str(internal_user_id),
+                        {"updates": {}},
+                        current_state=pis_merged,
+                        source_user_message=(user_message or "").strip(),
+                    )
+                    fpis = forced.get("plan_intake_state")
+                    if isinstance(fpis, dict):
+                        pis_merged = fpis
+                        latest_plan_intake_state = fpis
+                        turn_had_plan_intake_update = True
+                        logger.info(
+                            "[smartcoach_mobile_coach] plan_intake_forced_merge user=%s… "
+                            "missing_required=%s ready=%s",
+                            str(internal_user_id)[:8],
+                            fpis.get("missing_required"),
+                            fpis.get("ready_to_generate"),
+                        )
+                except Exception:
+                    logger.warning(
+                        "[smartcoach_mobile_coach] plan_intake_forced_merge_failed",
+                        exc_info=True,
+                    )
+
+            if pis_merged is not None or latest_plan_generation is not None:
+                out_text = text
+                if not out_text and pis_merged is not None:
+                    summ = (pis_merged.get("confirmation_summary") or "").strip()
+                    miss_lbls = pis_merged.get("missing_required_labels") or []
+                    if pis_merged.get("ready_to_generate"):
+                        out_text = (
+                            f"{summ} Say **yes** when you want me to generate this plan, "
+                            "or tell me what to change."
+                        ).strip()
+                    elif miss_lbls:
+                        first = (
+                            miss_lbls[0]
+                            if isinstance(miss_lbls[0], str)
+                            else "next detail"
+                        )
+                        out_text = f"What is your **{first}**?"
+                    else:
+                        out_text = "Tell me a bit more about your race so I can set up your plan."
+                if not out_text and latest_plan_generation is not None:
+                    out_text = "Your training plan is saved. Open the **Plan** tab for workouts and dates."
+                if not out_text:
+                    out_text = "Thanks — I noted that for your plan setup."
+                out_text = apply_plan_activity_preamble_to_assistant_markdown(
+                    out_text,
+                    plan_creation_mode=plan_creation_mode,
+                    activity_summary=activity_summary_for_turn,
+                    conversation_history=conversation_history,
+                )
+                structured_text = {
+                    "type": "text",
+                    "content": out_text,
+                    "data": {},
+                }
+                if pis_merged is not None:
+                    structured_text["data"]["plan_intake_state"] = pis_merged
+                if latest_plan_generation is not None:
+                    structured_text["data"]["plan_generation"] = latest_plan_generation
+                logger.info(
+                    "[smartcoach_mobile_coach] response_shape=text_plan_data loops=%s "
+                    "content_len=%s",
+                    loops,
+                    len(out_text),
+                )
+                return structured_text, meta
+
             if text:
-                if (
-                    latest_plan_intake_state is not None
-                    or latest_plan_generation is not None
-                ):
-                    structured_text: Dict[str, Any] = {
-                        "type": "text",
-                        "content": text,
-                        "data": {},
-                    }
-                    if latest_plan_intake_state is not None:
-                        structured_text["data"][
-                            "plan_intake_state"
-                        ] = latest_plan_intake_state
-                    if latest_plan_generation is not None:
-                        structured_text["data"][
-                            "plan_generation"
-                        ] = latest_plan_generation
-                    return structured_text, meta
                 return text, meta
 
     fallback = (
@@ -3025,7 +3165,7 @@ def run_mobile_agent_turn(
     timings_ms["agent_orchestrator_total_ms"] = round(
         (time.perf_counter() - t_agent0) * 1000, 2
     )
-    return fallback, {
+    meta_trunc: Dict[str, Any] = {
         "usage": total_usage,
         "cost": total_cost,
         "loops": loops,
@@ -3048,3 +3188,29 @@ def run_mobile_agent_turn(
             "thread_derived": thread_ctx.as_dict(),
         },
     }
+    pis_trunc = (
+        latest_plan_intake_state if isinstance(latest_plan_intake_state, dict) else None
+    )
+    if pis_trunc is not None or latest_plan_generation is not None:
+        if plan_creation_mode and pis_trunc is not None:
+            body = (
+                "I hit the step limit before finishing. Your plan details so far are preserved — "
+                "reply with **one** missing answer, or tap **Help me build a plan** again."
+            )
+        else:
+            body = fallback
+        structured_trunc: Dict[str, Any] = {
+            "type": "text",
+            "content": body,
+            "data": {},
+        }
+        if pis_trunc is not None:
+            structured_trunc["data"]["plan_intake_state"] = pis_trunc
+        if isinstance(latest_plan_generation, dict):
+            structured_trunc["data"]["plan_generation"] = latest_plan_generation
+        logger.warning(
+            "[smartcoach_mobile_coach] response_shape=text_plan_data_truncated loops=%s",
+            loops,
+        )
+        return structured_trunc, meta_trunc
+    return fallback, meta_trunc
