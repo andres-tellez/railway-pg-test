@@ -26,6 +26,7 @@ from src.smartcoach_mobile_coach.marathon_projection_service import (
     get_marathon_projection,
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import (
+    PLAN_UX_STAGE_GENERATED,
     build_plan_request_from_state,
     summarize_this_week_from_plan_rows,
     update_plan_intake_state,
@@ -1931,6 +1932,9 @@ def tool_generate_training_plan(
     next_state = dict(current_state)
     next_state["status"] = "generated"
     next_state["last_generated_plan_id"] = int(plan_id)
+    next_ux = dict(next_state.get("ux") or {})
+    next_ux["stage"] = PLAN_UX_STAGE_GENERATED
+    next_state["ux"] = next_ux
     return {
         "ok": True,
         "plan_id": int(plan_id),
