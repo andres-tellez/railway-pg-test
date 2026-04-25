@@ -66,6 +66,9 @@ from src.smartcoach_mobile_coach.session_summary_read import (
     session_summary_section,
 )
 from src.smartcoach_mobile_coach.tool_dispatch import dispatch_tool_batch
+from src.smartcoach_mobile_coach.plan_intake_activity_context import (
+    build_plan_intake_activity_context_block,
+)
 from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_intake
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
@@ -1680,6 +1683,7 @@ TRAINING PLAN SETUP (when the user is building a plan)
 - **Never** ask how many **weeks** or **months** the plan should cover, or how long they want the block to be. The server sets plan length from **race date** (and baseline)—that question is **wrong** for this product.
 - After they give a **race date**, do **not** ask about duration; ask only the next intake item the tools mark as missing (e.g. goal, training days).
 - Use tool **`update_plan_intake`** and the tool’s **`missing_required`** list—do not invent extra intake fields.
+- When the system message includes **“Athlete activity snapshot”** with run counts / miles, treat that as authoritative for volume in this turn—do not ask the user to re-report the same facts.
 
 -------------------------------------
 BOUNDARIES
@@ -1767,6 +1771,12 @@ def _plan_confirm_fastpath_enabled() -> bool:
 def _plan_intake_forced_merge_enabled() -> bool:
     """When the model skips ``update_plan_intake`` on a plan-creation turn, merge NL once server-side."""
     raw = (os.getenv("SMARTCOACH_PLAN_INTAKE_FORCED_MERGE") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def _plan_intake_activity_context_enabled() -> bool:
+    """Inject Strava-window snapshot into plan-intake system prompts (default on)."""
+    raw = (os.getenv("SMARTCOACH_PLAN_INTAKE_ACTIVITY_CONTEXT") or "1").strip().lower()
     return raw not in ("0", "false", "no", "off")
 
 
@@ -2414,6 +2424,23 @@ def run_mobile_agent_turn(
             history_window,
         )
 
+    activity_ctx_block = ""
+    _inject_act = _plan_intake_activity_context_enabled() and (
+        plan_creation_mode
+        or isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict)
+    )
+    if _inject_act:
+        try:
+            activity_ctx_block = build_plan_intake_activity_context_block(
+                session, str(internal_user_id)
+            )
+        except Exception:
+            logger.warning(
+                "[smartcoach_mobile_coach] plan_intake_activity_context_failed",
+                exc_info=True,
+            )
+            activity_ctx_block = ""
+
     # --- Prompt experiment (optional): see MINIMAL_SYSTEM_PROMPT_BASE block above ---
     #
     # V1.6 Phase 3D — `SMARTCOACH_FAST_MODE` is a one-flag umbrella
@@ -2455,6 +2482,7 @@ def run_mobile_agent_turn(
         system_content = _join_nonempty_system_sections(
             PLAN_CREATION_SYSTEM_PROMPT_BASE,
             _device_anchor_system_section(anchor_local_date, client_timezone),
+            activity_ctx_block,
             _plan_creation_directive_stub(response_directive),
             _plan_creation_system_section(
                 user_message,
@@ -2544,6 +2572,7 @@ def run_mobile_agent_turn(
             _user_context_opening_nudge_section(
                 response_directive, plan_creation_mode=plan_creation_mode
             ),
+            activity_ctx_block,
             _plan_creation_system_section(
                 user_message,
                 response_directive.intent,
