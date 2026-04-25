@@ -73,6 +73,7 @@ from src.smartcoach_mobile_coach.plan_intake_activity_context import (
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     mark_plan_runner_understanding_shown,
+    plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
     user_confirms_plan_intake,
 )
@@ -1803,6 +1804,9 @@ Intake behavior:
 - If the user gives only a numeric running frequency (for example, “5 days per week”), pass that as
   `training_days` so the server can store the count, but **do not** invent weekdays. If `training_days`
   remains missing and `ux.training_days_count` is present, ask exactly one question: “Which days of the week work best for you?”
+- **Never** ask for final “generate the plan?” yes/no until the latest `update_plan_intake` shows
+  `ready_to_generate=true`. A days-per-week **count** alone is not a complete schedule—collect actual weekdays
+  before any full-plan confirmation.
 - If the latest tool result is `ready_to_generate=true`, do **not** ask another intake question. Move to confirmation.
 - **Do not** ask for self-reported “experience level” or “beginner/intermediate/advanced” for this flow;
   baseline comes from their activity data, not chat labels.
@@ -1898,6 +1902,8 @@ def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
         "- Keep intake replies to 4 sentences max. If enough details are present, skip redundant questions and confirm.\n"
         "- If they gave a count like “5 days per week” but not actual weekdays, ask only: “Which days of the week work best for you?” "
         "Do not invent weekdays.\n"
+        "- Do not ask final yes/no to generate until `ready_to_generate=true` from `update_plan_intake` "
+        "(a frequency count is not enough—weekdays must be set first).\n"
         "- Infer Marathon from named full marathons when unambiguous; do not re-ask half vs full in that case.\n"
         "- Do not ask experience level, plan length in weeks/months, or how long they want to train—length is from **race date** only. "
         "After they give a race date, never ask about duration; ask the next `missing_required` field only. "
@@ -2341,6 +2347,8 @@ def _plan_creation_system_section(
             "If `race_date` is already in intake, the next question must be the next `missing_required` field only (not duration). "
             "Non-supported race distances: plan generation supports Half Marathon and Marathon only.",
             "- Do not claim details are saved unless `update_plan_intake` confirms them.",
+            "- Do not ask final yes/no to generate until `ready_to_generate=true` (a days-per-week count is not enough—"
+            "concrete weekdays must be in intake first).",
             "- When `ready_to_generate=true`, present a simple confirmation summary and ask for explicit yes/no.",
             "- Call `generate_training_plan` only after explicit confirmation, with `confirm=true`.",
             "- Keep user-facing wording natural; never show tool names, field keys, `missing_required`, or `ready_to_generate` to the user.",
@@ -2564,6 +2572,62 @@ def run_mobile_agent_turn(
             "[smartcoach_mobile_coach] plan_confirm_fastpath skipped: %s",
             out.get("error") or out.get("message") or "unknown",
         )
+
+    # Model sometimes asks for final yes/no while ``ready_to_generate`` is still false
+    # (e.g. only a days-per-week count). User "Yes" then hits failing generate + apology loop.
+    if (
+        prior_plan_state
+        and not prior_plan_state.get("ready_to_generate")
+        and user_confirms_plan_intake(user_message)
+        and not eval_model_override
+    ):
+        body_pc = plan_intake_premature_confirmation_reply(prior_plan_state)
+        timings_pc = {
+            "plan_intake_premature_confirm_ms": round(
+                (time.perf_counter() - t_agent0) * 1000, 2
+            ),
+            "agent_orchestrator_total_ms": round(
+                (time.perf_counter() - t_agent0) * 1000, 2
+            ),
+        }
+        meta_pc: Dict[str, Any] = {
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+            },
+            "cost": 0.0,
+            "loops": 0,
+            "max_loops": _max_agent_loops(),
+            "model": model,
+            "plan_intake_premature_confirm": True,
+            "timings_ms": timings_pc,
+            "dialogue": {
+                "turn_type": response_directive.turn_type,
+                "intent": response_directive.intent,
+                "turn_count": conversation_state.turn_count,
+                "last_topic": conversation_state.last_topic,
+                "target_length": response_directive.target_length,
+                "narration_mode": response_directive.narration_mode,
+                "tool_strategy": response_directive.tool_strategy,
+                "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                "allow_full_recap": response_directive.allow_full_recap,
+                "investigate_first": response_directive.investigate_first,
+                "interaction_mode": response_directive.interaction_mode,
+                "thread_derived": thread_ctx.as_dict(),
+            },
+        }
+        structured_pc: Dict[str, Any] = {
+            "type": "text",
+            "content": body_pc,
+            "data": {"plan_intake_state": prior_plan_state},
+        }
+        logger.info(
+            "[smartcoach_mobile_coach] response_shape=text plan_intake_premature_confirm=1 "
+            "missing_required=%s",
+            prior_plan_state.get("missing_required"),
+        )
+        return structured_pc, meta_pc
 
     # V1.6 hotfix — look up the user's active-plan status once per turn
     # and feed it to _is_plan_creation_turn so users with a live plan

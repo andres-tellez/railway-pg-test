@@ -5,6 +5,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     PLAN_UX_STAGE_FAST_TRACK,
     PLAN_UX_STAGE_GOAL_ALIGNMENT,
     mark_plan_runner_understanding_shown,
+    plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
     build_plan_request_from_state,
     update_plan_intake_state,
@@ -354,6 +355,26 @@ def test_plan_intake_does_not_overwrite_explicit_race_name_when_user_message_dif
         source_user_message="I was also thinking about Chicago Marathon someday",
     )
     assert state["draft"]["race_name"] == "Berlin Marathon"
+
+
+def test_plan_intake_premature_confirmation_reply_with_days_per_week_count_only():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_name": "Chicago Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "target_time": "3:40",
+            "training_days": "6 days a week",
+        },
+    )
+    assert state["ready_to_generate"] is False
+    assert "training_days" in state["missing_required"]
+    assert state["ux"].get("training_days_count") == 6
+    text = plan_intake_premature_confirmation_reply(state)
+    assert "6" in text
+    assert "week" in text.lower()
 
 
 def test_user_confirms_plan_intake_short_affirmations():
