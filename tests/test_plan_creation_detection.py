@@ -21,12 +21,14 @@ The rewritten detector:
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from src.smartcoach_mobile_coach.orchestrator import (
+    _enforce_plan_creation_response_guardrails,
     _is_plan_creation_turn,
     _user_has_active_plan,
     _user_message_matches_plan_creation_regex,
@@ -276,3 +278,25 @@ def test_empty_and_whitespace_messages_do_not_route_to_intake() -> None:
             )
             is False
         )
+
+
+def test_plan_creation_response_guardrail_strips_filler_and_extra_question() -> None:
+    text = (
+        "Here’s what I’m seeing from your recent training: you’ve been running around **35 miles per week** with solid consistency. "
+        "Your long run is around **13 miles**, which gives us a useful base to build from. "
+        "The opportunity is adding structure so that consistency turns into race-specific progress. "
+        "Great! I’m here to help you with that. What are you training for? Do you have a specific race in mind?"
+    )
+    out = _enforce_plan_creation_response_guardrails(text)
+    assert "Great" not in out
+    assert "here to help" not in out
+    assert out.count("?") == 1
+    assert "Do you have a specific race in mind" not in out
+    assert len([s for s in re.split(r"(?<=[.!?])\s+", out) if s.strip()]) <= 4
+
+
+def test_plan_creation_response_guardrail_keeps_first_question_only() -> None:
+    out = _enforce_plan_creation_response_guardrails(
+        "I can help with that. What are you training for? Do you have a race date?"
+    )
+    assert out == "What are you training for?"

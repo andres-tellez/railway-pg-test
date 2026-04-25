@@ -1793,9 +1793,11 @@ Intake behavior:
 - **Always** call `update_plan_intake` on the latest user message (merge partial answers in `updates`).
 - **While `missing_required` is non-empty, never end the turn with prose alone** — call `update_plan_intake` first so the server can merge fields (short prompts depend on tools for truth).
 - Use the **latest tool result** `missing_required` as the source of truth for what is still missing.
-- Ask **at most one or two** clear questions per turn. Prefer one. Do **not** dump a multi-question form in one message.
+- Ask **exactly one** clear question per turn when a question is needed. Do **not** ask overlapping questions.
 - Never expose the words `missing_required`, `ready_to_generate`, field keys, or tool/status names to the user.
-- Ask in coach language, not form language: “What are you training for?”, “Do you have a race date?”, “Are you trying to finish strong or hit a specific time?”, “How many days per week do you want to run?”
+- Preferred first question: “What are you training for?” or “What are you training for right now?”
+- Ask in coach language, not form language: “What are you training for?”, “Are you trying to finish strong or hit a specific time?”, “Which days of the week work best for you?”
+- Do not use filler openers like “Great!”, “I’m here to help”, “I can help with that”, or “Let’s get started.”
 - If the user volunteers several answers at once, pass them all in one `updates` object and then ask only
   for what remains in `missing_required`.
 - If the user gives only a numeric running frequency (for example, “5 days per week”), pass that as
@@ -1823,8 +1825,8 @@ Intake behavior:
 
 Confirmation and generate:
 - Only call `generate_training_plan` after explicit user confirmation with `confirm=true`.
-- Keep user-facing wording short and conversational (usually 1-3 sentences during intake; up to a short
-  multi-line walkthrough right after successful generation).
+- Keep user-facing wording short and conversational: maximum **4 sentences** during intake (up to **3**
+  runner-understanding sentences + **1** question); up to a short multi-line walkthrough right after successful generation.
 - Confirmation should be simple: race, goal, schedule. Then ask “Does that look right?” or equivalent.
 - Tool payload is the source of truth; never invent field values not returned by tools.
 - The server accepts common **spoken dates**, **spoken training-day ranges** (e.g. “Monday through Saturday”,
@@ -1890,7 +1892,10 @@ def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
         "- Keep the response concise and coach-like; this should feel like guidance, not a form.\n"
         "- Use `update_plan_intake` silently, then ask natural follow-up questions based on what is still missing. "
         "Do not expose field names or tool state to the user.\n"
-        "- Ask at most one or two questions per turn. Prefer one. If enough details are present, skip redundant questions and confirm.\n"
+        "- Ask exactly one question per turn when a question is needed. Preferred first question: "
+        "“What are you training for?” Do not pair it with “Do you have a specific race in mind?”\n"
+        "- Strip filler from your own wording: no “Great!”, “I’m here to help”, “I can help with that”, or “Let’s get started.”\n"
+        "- Keep intake replies to 4 sentences max. If enough details are present, skip redundant questions and confirm.\n"
         "- If they gave a count like “5 days per week” but not actual weekdays, ask only: “Which days of the week work best for you?” "
         "Do not invent weekdays.\n"
         "- Infer Marathon from named full marathons when unambiguous; do not re-ask half vs full in that case.\n"
@@ -1951,6 +1956,67 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
             return "Which days of the week work best for you?"
         return "How many days per week do you want to run, and which days usually work best?"
     return "Tell me a bit more about the race you want to train for."
+
+
+_PLAN_CREATION_FILLER_PATTERNS: Tuple[re.Pattern[str], ...] = (
+    re.compile(r"^\s*great[!.]?\s*", re.IGNORECASE),
+    re.compile(
+        r"^\s*i(?:'|’|\?)m here to help(?: you)?(?: with that)?[!.]?\s*",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^\s*i can help(?: you)?(?: with that)?[!.]?\s*", re.IGNORECASE),
+    re.compile(r"^\s*happy to help[!.]?\s*", re.IGNORECASE),
+    re.compile(
+        r"^\s*let(?:'|’|\?)s get started(?: on your training plan)?[!.]?\s*",
+        re.IGNORECASE,
+    ),
+)
+
+
+def _split_plan_creation_sentences(text: str) -> List[str]:
+    normalized = re.sub(r"\s+", " ", (text or "").strip())
+    if not normalized:
+        return []
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", normalized) if s.strip()]
+
+
+def _strip_plan_creation_filler_sentence(sentence: str) -> str:
+    out = sentence.strip()
+    changed = True
+    while changed:
+        changed = False
+        for pat in _PLAN_CREATION_FILLER_PATTERNS:
+            new_out = pat.sub("", out).strip()
+            if new_out != out:
+                out = new_out
+                changed = True
+    return out
+
+
+def _enforce_plan_creation_response_guardrails(text: str) -> str:
+    """
+    Lightweight UX guardrail for intake replies: no filler, <=4 sentences, one question.
+
+    This intentionally runs after deterministic preamble insertion, so the response
+    can be shaped as 3 runner-understanding sentences + 1 natural question.
+    """
+    if not (text or "").strip():
+        return text
+
+    kept: List[str] = []
+    question_seen = False
+    for raw_sentence in _split_plan_creation_sentences(text):
+        sentence = _strip_plan_creation_filler_sentence(raw_sentence)
+        if not sentence:
+            continue
+        if sentence.rstrip().endswith("?"):
+            if question_seen:
+                continue
+            question_seen = True
+        kept.append(sentence)
+        if len(kept) >= 4:
+            break
+    return "\n".join(kept).strip() or (text or "").strip()
 
 
 _DEFAULT_PREFS = {
@@ -2266,7 +2332,7 @@ def _plan_creation_system_section(
             )
     lines.extend(
         [
-            "- Ask at most one or two natural questions per turn (prefer one). Use server order internally: race_distance, "
+            "- Ask exactly one question per turn when a question is needed. Use server order internally: race_distance, "
             "race_date, primary_goal (Just Finish | Target Time only), training_days, then target_time when goal is Target Time.",
             "- If the user names a full marathon (e.g. Chicago Marathon) or clearly means 26.2, pass `race_distance` "
             "(Marathon) and `race_name` in `update_plan_intake` the same turn—do not ask half vs full again.",
@@ -3238,6 +3304,8 @@ def run_mobile_agent_turn(
                     pis_merged = mark_plan_runner_understanding_shown(pis_merged)
                     latest_plan_intake_state = pis_merged
                 out_text = out_text_with_preamble
+                if plan_creation_mode and latest_plan_generation is None:
+                    out_text = _enforce_plan_creation_response_guardrails(out_text)
                 structured_text = {
                     "type": "text",
                     "content": out_text,
