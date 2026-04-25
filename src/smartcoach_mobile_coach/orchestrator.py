@@ -1817,6 +1817,9 @@ Intake behavior:
 - For `primary_goal`, the only valid values are **Just Finish** and **Target Time** (exactly those phrases
   in `updates`). Frame the question as finishing the race vs hitting a goal time; if Target Time, ask for their
   goal finish time (clock or spoken duration); pass it as `target_time`.
+- If the user gives a **clock time only** (e.g. “3:40”, “3:45:00”) without saying “target time”, still pass
+  `primary_goal` **Target Time** and `target_time` in `updates` — the server can also infer this from the
+  latest user message when the model omits it.
 - For `race_distance`, when the user names a **full marathon** event (e.g. “Chicago Marathon”, “Boston”, “a fall
   marathon”) or clearly means 26.2, set `race_distance` to **Marathon** in the same `update_plan_intake` call and
   **do not** ask half vs full again. Only ask half vs full when the goal distance is ambiguous (no named marathon,
