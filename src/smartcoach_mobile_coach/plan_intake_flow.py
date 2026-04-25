@@ -33,10 +33,61 @@ def _normalize_goal(value: Any) -> Optional[str]:
     t = value.strip().lower()
     if not t:
         return None
-    if t in ("just finish", "finish", "complete", "complete race"):
+    just_finish = (
+        "just finish",
+        "finish",
+        "complete",
+        "complete race",
+        "just want to finish",
+        "cross the finish line",
+        "finish the race",
+        "finish healthy",
+        "no time goal",
+        "no specific time",
+        "survive",
+        "participate",
+    )
+    if t in just_finish:
         return PrimaryGoal.JUST_FINISH.value
-    if t in ("target time", "goal time", "time goal", "pr", "pb"):
+    target_time = (
+        "target time",
+        "goal time",
+        "time goal",
+        "pr",
+        "pb",
+        "personal record",
+        "beat my pr",
+        "new pr",
+        "get a pr",
+        "set a time",
+        "time-based",
+        "clock goal",
+        "qualify",
+        "bq",
+        "boston qualifier",
+    )
+    if t in target_time:
         return PrimaryGoal.TARGET_TIME.value
+    # Light substring cues (whole-string already handled above).
+    if any(
+        phrase in t
+        for phrase in (
+            "personal record",
+            "goal time",
+            "target time",
+            "qualifying time",
+        )
+    ):
+        return PrimaryGoal.TARGET_TIME.value
+    if any(
+        phrase in t
+        for phrase in (
+            "just finish",
+            "just want to finish",
+            "only want to finish",
+        )
+    ):
+        return PrimaryGoal.JUST_FINISH.value
     return None
 
 

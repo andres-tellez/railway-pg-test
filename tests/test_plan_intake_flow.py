@@ -58,6 +58,22 @@ def test_plan_intake_target_time_required_for_target_goal():
     assert state["ready_to_generate"] is False
 
 
+def test_plan_intake_normalizes_goal_phrases():
+    """Broader primary_goal strings map to schema enum values."""
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-12",
+            "race_distance": "Marathon",
+            "primary_goal": "going for a personal record",
+            "training_days": ["Tue", "Thu", "Sat"],
+            "target_time": "3:40:00",
+        },
+    )
+    assert state["draft"]["primary_goal"] == "Target Time"
+    assert state["ready_to_generate"] is True
+
+
 def test_build_plan_request_from_state_validates_schema():
     state = update_plan_intake_state(
         None,
