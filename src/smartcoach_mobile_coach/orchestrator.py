@@ -67,7 +67,9 @@ from src.smartcoach_mobile_coach.session_summary_read import (
 )
 from src.smartcoach_mobile_coach.tool_dispatch import dispatch_tool_batch
 from src.smartcoach_mobile_coach.plan_intake_activity_context import (
-    build_plan_intake_activity_context_block,
+    apply_plan_activity_preamble_to_assistant_markdown,
+    compute_plan_intake_activity_summary,
+    format_plan_intake_activity_context_block,
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import user_confirms_plan_intake
 from src.smartcoach_mobile_coach.dialogue_manager import (
@@ -2425,14 +2427,18 @@ def run_mobile_agent_turn(
         )
 
     activity_ctx_block = ""
+    activity_summary_for_turn: Optional[Dict[str, Any]] = None
     _inject_act = _plan_intake_activity_context_enabled() and (
         plan_creation_mode
         or isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict)
     )
     if _inject_act:
         try:
-            activity_ctx_block = build_plan_intake_activity_context_block(
+            activity_summary_for_turn = compute_plan_intake_activity_summary(
                 session, str(internal_user_id)
+            )
+            activity_ctx_block = format_plan_intake_activity_context_block(
+                activity_summary_for_turn
             )
         except Exception:
             logger.warning(
@@ -2440,6 +2446,7 @@ def run_mobile_agent_turn(
                 exc_info=True,
             )
             activity_ctx_block = ""
+            activity_summary_for_turn = None
 
     # --- Prompt experiment (optional): see MINIMAL_SYSTEM_PROMPT_BASE block above ---
     #
@@ -3124,6 +3131,12 @@ def run_mobile_agent_turn(
                     out_text = "Your training plan is saved. Open the **Plan** tab for workouts and dates."
                 if not out_text:
                     out_text = "Thanks — I noted that for your plan setup."
+                out_text = apply_plan_activity_preamble_to_assistant_markdown(
+                    out_text,
+                    plan_creation_mode=plan_creation_mode,
+                    activity_summary=activity_summary_for_turn,
+                    conversation_history=conversation_history,
+                )
                 structured_text = {
                     "type": "text",
                     "content": out_text,

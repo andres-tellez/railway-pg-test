@@ -15,6 +15,10 @@ from sqlalchemy.orm import Session
 
 from src.services.training_plan.data_collection_service import DataCollectionService
 
+# Appended once when we prepend the user-facing activity overview so later turns
+# do not repeat it. Most markdown renderers hide HTML comments.
+PLAN_ACTIVITY_PREAMBLE_MARKER = "<!--sc-plan-preamble-->"
+
 
 def _lookback_weeks_from_env() -> int:
     raw = (os.getenv("SMARTCOACH_PLAN_INTAKE_ACTIVITY_WEEKS") or "12").strip()
@@ -122,6 +126,86 @@ def format_plan_intake_activity_context_block(summary: Dict[str, Any]) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def thread_has_plan_activity_preamble(
+    conversation_history: Optional[List[Dict[str, str]]],
+) -> bool:
+    """True if a prior assistant message already included our one-time overview marker."""
+    if not conversation_history:
+        return False
+    for m in conversation_history:
+        if m.get("role") != "assistant":
+            continue
+        raw = m.get("content")
+        if raw is None:
+            continue
+        if PLAN_ACTIVITY_PREAMBLE_MARKER in str(raw):
+            return True
+    return False
+
+
+def format_user_visible_activity_overview(summary: Dict[str, Any]) -> str:
+    """
+    Short, coach-voice markdown for the chat transcript: what synced runs show.
+
+    Returns empty string when there are no runs in the lookback window.
+    """
+    if not summary.get("has_running_data"):
+        return ""
+    w = int(summary.get("lookback_weeks") or 12)
+    n = int(summary.get("activities_found") or 0)
+    total = summary.get("total_miles_window")
+    avg = summary.get("avg_miles_per_week_approx")
+    long_mi = summary.get("longest_run_miles")
+    long_dt = summary.get("longest_run_date")
+    latest = summary.get("latest_run_date")
+    bullets: List[str] = [
+        f"- **{n}** logged runs in the last **{w}** weeks, about **{total}** total miles",
+    ]
+    if avg is not None:
+        bullets.append(
+            f"- Roughly **{avg}** mi/week on average (spread over those weeks)"
+        )
+    if long_mi:
+        ld = f" on **{long_dt}**" if long_dt else ""
+        bullets.append(f"- Longest run in that window: **{long_mi}** mi{ld}")
+    if latest:
+        bullets.append(f"- Most recent run: **{latest}**")
+    lines = [
+        "Here’s what I’m seeing from your **synced runs** — I’ll lean on this for volume "
+        "and progression, so you don’t need to re-hash weekly mileage unless something "
+        "important isn’t captured in what’s synced.",
+        "",
+        *bullets,
+    ]
+    return "\n".join(lines)
+
+
+def apply_plan_activity_preamble_to_assistant_markdown(
+    content: str,
+    *,
+    plan_creation_mode: bool,
+    activity_summary: Optional[Dict[str, Any]],
+    conversation_history: Optional[List[Dict[str, str]]],
+) -> str:
+    """
+    Prepend the one-time activity overview in plan-creation turns when we have run data.
+
+    Appends ``PLAN_ACTIVITY_PREAMBLE_MARKER`` so the same thread does not get the block twice.
+    """
+    if not plan_creation_mode or not activity_summary:
+        return content
+    if not activity_summary.get("has_running_data"):
+        return content
+    if thread_has_plan_activity_preamble(conversation_history):
+        return content
+    overview = format_user_visible_activity_overview(activity_summary).strip()
+    if not overview:
+        return content
+    base = (content or "").strip()
+    combined = f"{overview}\n\n{base}" if base else overview
+    return f"{combined.rstrip()}\n\n{PLAN_ACTIVITY_PREAMBLE_MARKER}"
 
 
 def build_plan_intake_activity_context_block(
