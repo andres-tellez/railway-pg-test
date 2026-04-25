@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from src.smartcoach_mobile_coach.plan_intake_flow import (
+    PLAN_UX_STAGE_CONFIRM,
+    PLAN_UX_STAGE_FAST_TRACK,
+    PLAN_UX_STAGE_GOAL_ALIGNMENT,
+    mark_plan_runner_understanding_shown,
+    plan_runner_understanding_shown,
     build_plan_request_from_state,
     update_plan_intake_state,
     user_confirms_plan_intake,
@@ -15,6 +20,7 @@ def test_plan_intake_missing_required_order_for_empty_draft():
         "primary_goal",
         "training_days",
     ]
+    assert state["ux"]["stage"] == "understand_runner"
 
 
 def test_plan_intake_updates_to_ready_state():
@@ -31,6 +37,7 @@ def test_plan_intake_updates_to_ready_state():
     assert state["status"] == "ready_to_confirm"
     assert state["draft"]["long_run_day"] == "Sat"
     assert state["missing_required"] == []
+    assert state["ux"]["stage"] == PLAN_UX_STAGE_FAST_TRACK
 
 
 def test_plan_intake_rejects_bad_training_days():
@@ -56,6 +63,44 @@ def test_plan_intake_target_time_required_for_target_goal():
     )
     assert "target_time" in state["missing_required"]
     assert state["ready_to_generate"] is False
+    assert state["ux"]["stage"] == "details"
+
+
+def test_plan_intake_ux_stage_goal_alignment_after_distance_only():
+    state = update_plan_intake_state(None, updates={"race_distance": "Marathon"})
+    assert state["ux"]["stage"] == PLAN_UX_STAGE_GOAL_ALIGNMENT
+
+
+def test_plan_intake_ux_state_preserves_runner_understanding_flag():
+    state = update_plan_intake_state(None, updates={"race_distance": "Marathon"})
+    state = mark_plan_runner_understanding_shown(state)
+    assert plan_runner_understanding_shown(state) is True
+
+    state = update_plan_intake_state(state, updates={"race_date": "2026-10-12"})
+    assert plan_runner_understanding_shown(state) is True
+
+
+def test_plan_intake_mark_runner_understanding_advances_empty_stage():
+    state = update_plan_intake_state(None)
+    assert state["ux"]["stage"] == "understand_runner"
+
+    state = mark_plan_runner_understanding_shown(state)
+    assert state["ux"]["runner_understanding_shown"] is True
+    assert state["ux"]["stage"] == PLAN_UX_STAGE_GOAL_ALIGNMENT
+
+
+def test_plan_intake_ready_after_prior_draft_moves_to_confirm_stage():
+    state = update_plan_intake_state(None, updates={"race_distance": "Marathon"})
+    state = update_plan_intake_state(
+        state,
+        updates={
+            "race_date": "2026-10-12",
+            "primary_goal": "Just Finish",
+            "training_days": ["Tue", "Thu", "Sat"],
+        },
+    )
+    assert state["ready_to_generate"] is True
+    assert state["ux"]["stage"] == PLAN_UX_STAGE_CONFIRM
 
 
 def test_plan_intake_normalizes_goal_phrases():
@@ -160,6 +205,67 @@ def test_plan_intake_training_days_weekdays_plus_saturday():
         "Fri",
         "Sat",
     ]
+
+
+def test_plan_intake_training_days_count_is_valid_partial_input():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-12",
+            "race_distance": "Marathon",
+            "primary_goal": "Target Time",
+            "target_time": "3:30:00",
+            "training_days": "5 days per week",
+        },
+    )
+    assert state["ready_to_generate"] is False
+    assert state["errors"] == []
+    assert state["missing_required"] == ["training_days"]
+    assert state["ux"]["training_days_count"] == 5
+    assert state["ux"]["stage"] == "details"
+    assert "training_days" not in state["draft"]
+    assert state["draft"]["race_distance"] == "Marathon"
+    assert state["draft"]["target_time"] == "3:30:00"
+
+
+def test_plan_intake_training_days_count_from_source_message_preserves_fast_track_inputs():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_name": "Chicago Marathon",
+            "race_date": "Oct 11 2026",
+            "primary_goal": "Target Time",
+            "target_time": "3:30",
+        },
+        source_user_message="Chicago Oct 11, 3:30 goal, 5 days per week",
+    )
+    assert state["ready_to_generate"] is False
+    assert state["errors"] == []
+    assert state["missing_required"] == ["training_days"]
+    assert state["ux"]["training_days_count"] == 5
+    assert state["ux"]["stage"] == "details"
+    assert state["draft"]["race_distance"] == "Marathon"
+    assert state["draft"]["race_name"] == "Chicago Marathon"
+
+
+def test_plan_intake_training_days_actual_weekdays_clear_count_partial():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-12",
+            "race_distance": "Marathon",
+            "primary_goal": "Just Finish",
+            "training_days": "5 days per week",
+        },
+    )
+    state = update_plan_intake_state(
+        state,
+        updates={"training_days": "Monday, Tuesday, Thursday, Friday, Saturday"},
+    )
+    assert state["ready_to_generate"] is True
+    assert state["ux"]["stage"] == PLAN_UX_STAGE_CONFIRM
+    assert "training_days_count" not in state["ux"]
+    assert state["draft"]["training_days"] == ["Mon", "Tue", "Thu", "Fri", "Sat"]
 
 
 def test_plan_intake_training_days_wraparound_range():

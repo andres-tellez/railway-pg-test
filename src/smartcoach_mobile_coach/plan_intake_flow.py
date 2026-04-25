@@ -26,6 +26,13 @@ REQUIRED_FIELDS: tuple[str, ...] = (
     "training_days",
 )
 
+PLAN_UX_STAGE_UNDERSTAND_RUNNER = "understand_runner"
+PLAN_UX_STAGE_GOAL_ALIGNMENT = "goal_alignment"
+PLAN_UX_STAGE_DETAILS = "details"
+PLAN_UX_STAGE_CONFIRM = "confirm"
+PLAN_UX_STAGE_FAST_TRACK = "fast_track"
+PLAN_UX_STAGE_GENERATED = "generated"
+
 
 def _normalize_goal(value: Any) -> Optional[str]:
     if not isinstance(value, str):
@@ -433,6 +440,50 @@ def _normalize_training_days(value: Any) -> Optional[List[str]]:
     return merged or None
 
 
+_TRAINING_DAY_COUNT_WORDS: Dict[str, int] = {
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+}
+
+
+def _extract_training_days_count(value: Any) -> Optional[int]:
+    """
+    Recognize frequency-only schedule input (e.g. "5 days per week").
+
+    This is intentionally *not* converted into weekdays. The deterministic
+    generator still requires explicit days, so we store the count as UX context
+    and keep `training_days` missing.
+    """
+    pieces: List[str] = []
+    if isinstance(value, str):
+        pieces = [value]
+    elif isinstance(value, list):
+        pieces = [p for p in value if isinstance(p, str)]
+    else:
+        return None
+
+    text = " ".join(pieces).strip().lower()
+    if not text:
+        return None
+    word_alt = "|".join(_TRAINING_DAY_COUNT_WORDS)
+    m = re.search(
+        rf"\b([3-7]|{word_alt})\s*(?:x|times?|days?)\s*(?:/|per|a)?\s*(?:week|wk)?\b",
+        text,
+        flags=re.I,
+    )
+    if not m:
+        return None
+    raw = m.group(1).lower()
+    try:
+        n = int(raw)
+    except ValueError:
+        n = _TRAINING_DAY_COUNT_WORDS.get(raw)
+    return n if n in range(3, 8) else None
+
+
 def _normalize_date_yyyy_mm_dd(value: Any) -> Optional[str]:
     if not isinstance(value, str):
         return None
@@ -548,6 +599,48 @@ def _coerce_state(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     out = dict(raw)
     if not isinstance(out.get("draft"), dict):
         out["draft"] = {}
+    if not isinstance(out.get("ux"), dict):
+        out["ux"] = {}
+    return out
+
+
+def _plan_ux_stage_for_state(
+    draft: Dict[str, Any],
+    missing: List[str],
+    *,
+    ready_to_generate: bool,
+    had_prior_draft: bool,
+    prior_ready_to_generate: bool,
+) -> str:
+    if ready_to_generate:
+        if not had_prior_draft and not prior_ready_to_generate:
+            return PLAN_UX_STAGE_FAST_TRACK
+        return PLAN_UX_STAGE_CONFIRM
+    if not draft:
+        return PLAN_UX_STAGE_UNDERSTAND_RUNNER
+    if "race_distance" in missing or "race_date" in missing:
+        return PLAN_UX_STAGE_GOAL_ALIGNMENT
+    return PLAN_UX_STAGE_DETAILS
+
+
+def plan_runner_understanding_shown(state: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(state, dict):
+        return False
+    ux = state.get("ux")
+    return isinstance(ux, dict) and bool(ux.get("runner_understanding_shown"))
+
+
+def mark_plan_runner_understanding_shown(
+    state: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(state, dict):
+        return state
+    out = dict(state)
+    ux = dict(out.get("ux") or {})
+    ux["runner_understanding_shown"] = True
+    if not ux.get("stage") or ux.get("stage") == PLAN_UX_STAGE_UNDERSTAND_RUNNER:
+        ux["stage"] = PLAN_UX_STAGE_GOAL_ALIGNMENT
+    out["ux"] = ux
     return out
 
 
@@ -616,6 +709,9 @@ def update_plan_intake_state(
 ) -> Dict[str, Any]:
     state = _coerce_state(None if reset else current_state)
     draft: Dict[str, Any] = dict(state.get("draft") or {})
+    ux: Dict[str, Any] = dict(state.get("ux") or {})
+    had_prior_draft = bool(draft)
+    prior_ready_to_generate = bool(state.get("ready_to_generate"))
     errors: List[str] = []
 
     if clear_fields:
@@ -672,12 +768,18 @@ def update_plan_intake_state(
         elif key == "training_days":
             ndays = _normalize_training_days(raw)
             if ndays is None:
-                errors.append(
-                    "training_days must be weekdays or ranges (e.g. Monday through Saturday, "
-                    "weekdays), abbreviations, or comma-separated lists."
-                )
+                day_count = _extract_training_days_count(raw)
+                if day_count is not None:
+                    ux["training_days_count"] = day_count
+                    draft.pop("training_days", None)
+                else:
+                    errors.append(
+                        "training_days must be weekdays or ranges (e.g. Monday through Saturday, "
+                        "weekdays), abbreviations, or comma-separated lists."
+                    )
             else:
                 draft["training_days"] = ndays
+                ux.pop("training_days_count", None)
         elif key == "long_run_day":
             if raw is None or (isinstance(raw, str) and not raw.strip()):
                 draft.pop("long_run_day", None)
@@ -698,6 +800,11 @@ def update_plan_intake_state(
     _fill_race_distance_from_named_event(draft)
     _fill_race_name_from_user_text(draft, source_user_message)
 
+    if "training_days" not in draft and "training_days_count" not in ux:
+        day_count = _extract_training_days_count(source_user_message)
+        if day_count is not None:
+            ux["training_days_count"] = day_count
+
     if "training_days" in draft and draft.get("long_run_day"):
         tdays = draft.get("training_days") or []
         if draft["long_run_day"] not in tdays:
@@ -706,14 +813,23 @@ def update_plan_intake_state(
     _auto_fill_long_run_day(draft)
 
     missing = _missing_required_fields(draft)
+    ready_to_generate = len(missing) == 0 and len(errors) == 0
     status = "ready_to_confirm" if not missing else "collecting"
+    ux["stage"] = _plan_ux_stage_for_state(
+        draft,
+        missing,
+        ready_to_generate=ready_to_generate,
+        had_prior_draft=had_prior_draft,
+        prior_ready_to_generate=prior_ready_to_generate,
+    )
     state = {
         "version": 1,
         "status": status,
         "draft": draft,
+        "ux": ux,
         "missing_required": missing,
         "missing_required_labels": [_human_missing_label(m) for m in missing],
-        "ready_to_generate": len(missing) == 0 and len(errors) == 0,
+        "ready_to_generate": ready_to_generate,
         "errors": errors,
         "confirmation_summary": _confirmation_summary(draft),
     }

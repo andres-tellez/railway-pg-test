@@ -10,9 +10,9 @@ existed.
 
 The rewritten detector:
 
-* matches only verb-anchored creation phrases (create / build / make /
-  generate / design / start / set up / draft / help me train /
-  train for …),
+* matches broad structured-training intent (explicit plan requests,
+  train-for-race statements, race/date/goal shorthand, and "get better"
+  training intent),
 * short-circuits to False whenever the user already has an active
   plan (unless the thread is *mid-intake* via ``latest_plan_intake_state``),
 * keeps honoring ``INTENT_PLAN_CREATION`` from the classifier, but only
@@ -79,12 +79,23 @@ def test_regex_detector_does_not_flag_analysis_questions(msg: str) -> None:
         "Help me train for a 10k",
         "I want a new training plan",
         "I want a plan",
+        "I want a marathon plan",
+        "I want a half marathon plan",
         "I want to train for a marathon",
+        "I'm training for Chicago Marathon",
+        "I'm training for the Boston Marathon",
         "Train for my race in October",
         "Prep for my marathon",
         "Prepare for the Chicago marathon",
         "Draft a plan for me",
         "I need a plan",
+        "Chicago Oct 11, 3:30 goal, 5 days per week",
+        "Boston Marathon April 20 target 3:30 weekdays",
+        "I want to get better",
+        "I want to improve",
+        "I want to get faster",
+        "I want to build consistency",
+        "I want to train for Chicago",
     ],
 )
 def test_regex_detector_matches_explicit_creation_requests(msg: str) -> None:
@@ -164,7 +175,26 @@ def test_analysis_question_without_active_plan_also_not_intake() -> None:
 def test_creation_request_with_no_active_plan_routes_to_intake() -> None:
     result = _is_plan_creation_turn(
         intent="plan_analysis",
-        user_message="Build me a training plan for the half",
+        user_message="I want a marathon plan",
+        thread_ctx=_ctx(),
+        has_active_plan=False,
+    )
+    assert result is True
+
+
+@pytest.mark.parametrize(
+    "msg",
+    [
+        "I want a marathon plan",
+        "I'm training for X race",
+        "Chicago Oct 11, 3:30 goal, 5 days per week",
+        "I run sometimes and want to get better",
+    ],
+)
+def test_realistic_plan_creation_inputs_route_to_intake(msg: str) -> None:
+    result = _is_plan_creation_turn(
+        intent="general_chat",
+        user_message=msg,
         thread_ctx=_ctx(),
         has_active_plan=False,
     )
@@ -195,6 +225,18 @@ def test_classifier_intent_plan_creation_honored_for_no_plan_user() -> None:
         has_active_plan=False,
     )
     assert result is True
+
+
+def test_analysis_question_vetoes_overeager_classifier_intent() -> None:
+    from src.smartcoach_mobile_coach.dialogue_manager import INTENT_PLAN_CREATION
+
+    result = _is_plan_creation_turn(
+        intent=INTENT_PLAN_CREATION,
+        user_message="How was today's run compared to the training plan?",
+        thread_ctx=_ctx(),
+        has_active_plan=False,
+    )
+    assert result is False
 
 
 def test_classifier_intent_plan_creation_ignored_for_user_with_active_plan() -> None:
