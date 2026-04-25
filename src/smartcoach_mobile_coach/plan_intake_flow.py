@@ -107,21 +107,28 @@ def _normalize_day(value: Any) -> Optional[str]:
     aliases = {
         "mon": "Mon",
         "monday": "Mon",
+        "mondays": "Mon",
         "tue": "Tue",
         "tues": "Tue",
         "tuesday": "Tue",
+        "tuesdays": "Tue",
         "wed": "Wed",
         "wednesday": "Wed",
+        "wednesdays": "Wed",
         "thu": "Thu",
         "thur": "Thu",
         "thurs": "Thu",
         "thursday": "Thu",
+        "thursdays": "Thu",
         "fri": "Fri",
         "friday": "Fri",
+        "fridays": "Fri",
         "sat": "Sat",
         "saturday": "Sat",
+        "saturdays": "Sat",
         "sun": "Sun",
         "sunday": "Sun",
+        "sundays": "Sun",
     }
     return aliases.get(t)
 
@@ -405,6 +412,14 @@ def _expand_training_days_segment(segment: str) -> Optional[List[str]]:
     presets = _training_day_phrase_sets()
     if pl in presets:
         return list(presets[pl])
+    # Compact hyphen/en-dash range without spaces: "Mon-Sat", "Mon–Sat"
+    m_compact = re.match(r"(?is)^(\w{2,12})\s*[-–—]\s*(\w{2,12})$", p)
+    if (
+        m_compact
+        and _normalize_day(m_compact.group(1))
+        and _normalize_day(m_compact.group(2))
+    ):
+        return _expand_day_range(m_compact.group(1), m_compact.group(2))
     m = re.match(
         r"(?is)^(.+?)\s+(?:through|thru|to|-|–|—)\s+(.+)$",
         p,
@@ -519,6 +534,64 @@ def _parse_race_date_natural_language(raw: Any) -> Optional[str]:
     return dt.date().isoformat()
 
 
+def _infer_target_time_from_message(text: str) -> Optional[str]:
+    """
+    Pick a marathon-style clock time from free text (e.g. "3:40", "about 3:40:00").
+
+    Ignores times with hour > 12 (reduces false positives vs odd numeric blobs).
+    """
+    if not isinstance(text, str):
+        return None
+    ts = text.strip()
+    if not ts:
+        return None
+    if re.fullmatch(r"\d{1,2}:\d{2}(:\d{2})?", ts):
+        return _normalize_target_time_phrase(ts)
+    best: Optional[str] = None
+    for m in re.finditer(r"\b(\d{1,2}:\d{2}(:\d{2})?)\b", ts):
+        token = m.group(1)
+        parts = token.split(":")
+        try:
+            h = int(parts[0])
+            mi = int(parts[1])
+        except (ValueError, IndexError):
+            continue
+        if not (0 <= h <= 12 and 0 <= mi <= 59):
+            continue
+        if h == 0 and mi == 0:
+            continue
+        cand = _normalize_target_time_phrase(token)
+        if cand:
+            best = cand
+    return best
+
+
+def _fill_goal_time_from_user_message(
+    draft: Dict[str, Any], text: Optional[str]
+) -> None:
+    """When goal/time missing, infer Target Time + target_time from a clock phrase."""
+    msg = (text or "").strip()
+    if not msg:
+        return
+    norm_time = _infer_target_time_from_message(msg)
+    if not norm_time:
+        return
+    pg = draft.get("primary_goal")
+    tt = draft.get("target_time")
+    has_pg = isinstance(pg, str) and pg.strip()
+    has_tt = isinstance(tt, str) and tt.strip()
+    if not has_pg:
+        draft["primary_goal"] = PrimaryGoal.TARGET_TIME.value
+        draft["target_time"] = norm_time
+        return
+    if pg == PrimaryGoal.TARGET_TIME.value and not has_tt:
+        draft["target_time"] = norm_time
+        return
+    if pg == PrimaryGoal.JUST_FINISH.value:
+        draft["primary_goal"] = PrimaryGoal.TARGET_TIME.value
+        draft["target_time"] = norm_time
+
+
 def _normalize_target_time_phrase(raw: Any) -> Optional[str]:
     """
     Map common spoken goal times into a short clock string (max 20 chars for schema).
@@ -596,6 +669,10 @@ def user_confirms_plan_intake(user_message: str) -> bool:
     True when the user is clearly confirming a ready-to-generate plan summary.
 
     Short messages only; negation / correction cues disable the fast path.
+
+    Must be a **whole-message** affirmation (trailing punctuation OK). Compound
+    replies like "Yes. Saturdays" are **not** confirmations — they answer the
+    prior coach question and must not trip yes→generate or premature-confirm paths.
     """
     raw = (user_message or "").strip()
     if not raw or len(raw) > 96:
@@ -626,12 +703,15 @@ def user_confirms_plan_intake(user_message: str) -> bool:
         "✓",
     ):
         return True
-    if re.match(
-        r"^(yes|yeah|yep|yup|correct|right|confirm|confirmed|absolutely|definitely|"
+    affirm_full = re.compile(
+        r"(?is)^(?:"
+        r"y|ye|yes|yep|yup|ok|okay|k|sure|"
+        r"correct|right|confirm|confirmed|absolutely|definitely|"
         r"looks good|look good|sounds good|sound good|go ahead|please do|"
-        r"that'?s right|that is right|all good|perfect)(\b|[\s.!?]|$)",
-        core,
-    ):
+        r"that'?s right|that is right|all good|perfect"
+        r")(?:\s*[.!?…,;:])*$"
+    )
+    if affirm_full.match(core):
         return True
     return False
 
@@ -852,6 +932,8 @@ def update_plan_intake_state(
         msg_rd = _try_infer_race_distance((source_user_message or "").strip())
         if msg_rd:
             draft["race_distance"] = msg_rd
+
+    _fill_goal_time_from_user_message(draft, source_user_message)
 
     if "training_days" not in draft and "training_days_count" not in ux:
         day_count = _extract_training_days_count(source_user_message)

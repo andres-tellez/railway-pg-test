@@ -384,3 +384,40 @@ def test_user_confirms_plan_intake_short_affirmations():
     assert user_confirms_plan_intake("Looks good!") is True
     assert user_confirms_plan_intake("yes but change the date") is False
     assert user_confirms_plan_intake("no thanks") is False
+
+
+def test_user_confirms_plan_intake_rejects_compound_yes_answers():
+    """'Yes. Saturdays' answers long-run day — must not count as generate confirm."""
+    assert user_confirms_plan_intake("Yes. Saturdays") is False
+    assert user_confirms_plan_intake("Yes, Monday through Friday") is False
+    assert user_confirms_plan_intake("Yes please use Saturday") is False
+
+
+def test_plan_intake_parses_hyphen_weekday_range_mon_sat():
+    state = update_plan_intake_state(
+        None,
+        updates={"training_days": "Mon-Sat"},
+    )
+    assert state["draft"]["training_days"] == [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat",
+    ]
+
+
+def test_plan_intake_infers_target_time_from_message_when_goal_missing():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "training_days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+        },
+        source_user_message="3:40",
+    )
+    assert state["draft"]["primary_goal"] == "Target Time"
+    assert state["draft"]["target_time"] == "3:40"
+    assert state["ready_to_generate"] is True
