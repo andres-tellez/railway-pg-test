@@ -304,6 +304,26 @@ def test_plan_intake_normalizes_race_distance_synonyms():
     assert state["draft"]["race_distance"] == "Marathon"
 
 
+def test_plan_intake_infers_race_distance_from_source_user_message_bare_marathon():
+    """User says 'a marathon' (no event title); model may omit race_distance in updates."""
+    state = update_plan_intake_state(
+        None,
+        updates={},
+        source_user_message="A marathon",
+    )
+    assert state["draft"]["race_distance"] == "Marathon"
+    assert "race_distance" not in state["missing_required"]
+
+
+def test_plan_intake_infers_half_from_source_user_message():
+    state = update_plan_intake_state(
+        None,
+        updates={},
+        source_user_message="A half marathon in the spring",
+    )
+    assert state["draft"]["race_distance"] == "Half Marathon"
+
+
 def test_plan_intake_fills_race_name_from_source_user_message():
     state = update_plan_intake_state(
         None,
