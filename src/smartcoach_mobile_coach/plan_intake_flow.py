@@ -548,6 +548,49 @@ def _normalize_target_time_phrase(raw: Any) -> Optional[str]:
     return t[:20]
 
 
+def plan_intake_premature_confirmation_reply(state: Dict[str, Any]) -> str:
+    """
+    User said yes to a summary, but deterministic intake is still incomplete.
+
+    The model sometimes asks for final confirmation while ``ready_to_generate`` is
+    still false (for example after a frequency count without concrete weekdays).
+    Without this, ``generate_training_plan`` rejects the draft and the model may
+    apologize and re-ask in a confusing loop.
+    """
+    missing = [m for m in (state.get("missing_required") or []) if isinstance(m, str)]
+    ux_raw = state.get("ux")
+    ux = ux_raw if isinstance(ux_raw, dict) else {}
+
+    sentences: List[str] = []
+
+    if "training_days" in missing:
+        n = ux.get("training_days_count")
+        if isinstance(n, int) and 3 <= n <= 7:
+            sentences.append(
+                f"I still need the **specific weekdays** you will run — you want **{n}** "
+                "days per week, but I cannot infer the calendar pattern from the count alone. "
+                "Which days should those be (for example: Monday through Saturday, or Tue / Thu / Sat)?"
+            )
+        else:
+            sentences.append(
+                "I still need **which days of the week** you plan to train "
+                "(for example: Tue, Thu, Sat)."
+            )
+
+    other = [m for m in missing if m != "training_days"]
+    if other:
+        labels = ", ".join(_human_missing_label(m) for m in other)
+        sentences.append(f"I also still need: **{labels}**.")
+
+    if not sentences:
+        sentences.append(
+            "A few required plan details are still missing before I can generate — "
+            "answer the last open item when you are ready."
+        )
+
+    return " ".join(sentences).strip()
+
+
 def user_confirms_plan_intake(user_message: str) -> bool:
     """
     True when the user is clearly confirming a ready-to-generate plan summary.
