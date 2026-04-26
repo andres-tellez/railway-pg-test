@@ -12,6 +12,7 @@ from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
 )
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
 from src.services.training_plan.v2.shared_v2.long_run_signals import (
+    build_week1_long_run_explanation,
     calculate_recovery_week_long_run,
     compute_stable_week1_long_run_start,
     detect_consecutive_long_runs_from_materialized_view,
@@ -356,6 +357,7 @@ class Pass1LongRunFirstV2:
         if desired_total_weeks:
             recommended_weeks = max(recommended_weeks, desired_total_weeks)
 
+        w0_lr = float(weeks[0]["long_run_miles"]) if weeks else 0.0
         rationale = {
             "base_mpw": base_mpw,
             "longest_recent": longest_recent,
@@ -364,6 +366,12 @@ class Pass1LongRunFirstV2:
             "stable_week1_meta": start_meta,
             "start_rule": start_rule,
             "start_lr": weeks[0]["long_run_miles"] if weeks else None,
+            "week1_long_run_explanation": build_week1_long_run_explanation(
+                weekly_series=effective_weekly_series,
+                start_lr_miles=w0_lr,
+                start_meta=start_meta if isinstance(start_meta, dict) else {},
+                start_rule=start_rule,
+            ),
             "peak_cap": target_peak_miles,
             "cfg": cfg,
             "consecutive_runs_detected": consecutive_analysis["has_consecutive_runs"],

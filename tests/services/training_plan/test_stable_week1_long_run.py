@@ -3,6 +3,7 @@
 import pytest
 
 from src.services.training_plan.v2.shared_v2.long_run_signals import (
+    build_week1_long_run_explanation,
     compute_stable_week1_long_run_start,
 )
 
@@ -63,3 +64,39 @@ def test_outlier_when_most_recent_below_median_candidate_is_median():
 def test_empty_series_raises():
     with pytest.raises(ValueError):
         compute_stable_week1_long_run_start([])
+
+
+def test_distant_high_weeks_suppressed_by_recent_three_week_cap():
+    miles, meta = compute_stable_week1_long_run_start(
+        [12.0, 11.0, 10.0, 18.0, 17.0, 16.0],
+        long_run_increment=1.0,
+        min_long_run_mi=5.0,
+    )
+    assert meta["recent_weighting_applied"] is True
+    assert meta["explanation_reason_key"] == "recent_median_cap"
+    assert miles == 12.0
+
+
+def test_build_week1_long_run_explanation_coach_copy():
+    series = [13.0, 12.0, 11.0, 10.0, 12.0, 10.0]
+    miles, meta = compute_stable_week1_long_run_start(series)
+    text = build_week1_long_run_explanation(
+        weekly_series=series,
+        start_lr_miles=miles,
+        start_meta=meta,
+        start_rule="median_single_peak_week_anchor",
+    )
+    assert "10-13" in text or "10–13" in text
+    assert "Week 1 long run:" in text
+    assert str(int(miles)) in text or str(miles) in text
+
+
+def test_build_week1_long_run_explanation_recovery_branch():
+    text = build_week1_long_run_explanation(
+        weekly_series=[16.0, 15.0, 14.0],
+        start_lr_miles=11.0,
+        start_meta={"longest_recent": 16.0},
+        start_rule="recovery_week_after_consecutive_runs",
+    )
+    assert "recovery" in text.lower()
+    assert "11.0" in text
