@@ -406,6 +406,7 @@ class PlanGenerationOrchestratorV2:
             cutback_every=gen_config.cutback_every,
             taper_weeks=gen_config.taper_weeks,
             taper_ratios=gen_config.taper_ratios,
+            race_config=gen_config,
         )
 
         # Self-correction: Try to fix validation issues automatically
@@ -626,65 +627,27 @@ class PlanGenerationOrchestratorV2:
 
         Returns a structured violation dict if invalid; otherwise None.
         """
-        if not weeks:
-            return {
-                "rule": "spine_empty",
-                "severity": "error",
-                "location": "plan_generation",
-                "failure_code": "spine_empty",
-                "failure_reason": "The training plan spine has no weeks.",
-                "details": {},
-            }
+        from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
+            orchestrator_issue_to_violation_dict,
+            validate_long_run_curve,
+        )
 
-        for i, week in enumerate(weeks):
-            if "long_run_miles" not in week:
-                return {
-                    "rule": "spine_structure",
-                    "severity": "error",
-                    "location": "plan_generation",
-                    "failure_code": "spine_missing_long_run",
-                    "failure_reason": f"Week {i + 1} is missing long run distance data.",
-                    "details": {"week_index": i + 1},
-                }
-            if "phase" not in week:
-                return {
-                    "rule": "spine_structure",
-                    "severity": "error",
-                    "location": "plan_generation",
-                    "failure_code": "spine_missing_phase",
-                    "failure_reason": f"Week {i + 1} is missing training phase data.",
-                    "details": {"week_index": i + 1},
-                }
-            lr = float(week.get("long_run_miles", 0) or 0)
-            if lr <= 0:
-                return {
-                    "rule": "spine_structure",
-                    "severity": "error",
-                    "location": "plan_generation",
-                    "failure_code": "spine_invalid_long_run",
-                    "failure_reason": f"Week {i + 1} has an invalid long run distance.",
-                    "details": {"week_index": i + 1, "long_run_miles": lr},
-                }
+        curve = [float(w.get("long_run_miles", 0) or 0) for w in weeks]
+        issues = validate_long_run_curve(
+            curve,
+            self.config,
+            spine_rows=weeks,
+            peak_target_miles=float(peak_target),
+            include_structure_checks=True,
+            include_peak_max_check=True,
+            include_pass1_progression=False,
+            include_phase_quality=False,
+        )
+        for issue in issues:
+            if issue["severity"] == "error":
+                return orchestrator_issue_to_violation_dict(issue)
 
         max_lr = max(float(w.get("long_run_miles", 0) or 0) for w in weeks)
-        min_required = peak_target - 1.0
-        if max_lr < min_required:
-            return {
-                "rule": "spine_peak_not_reached",
-                "severity": "error",
-                "location": "plan_generation",
-                "failure_code": "spine_peak_not_reached",
-                "failure_reason": (
-                    "The long-run progression did not reach the adaptive peak "
-                    "expected for this runner and schedule."
-                ),
-                "details": {
-                    "max_long_run_miles": max_lr,
-                    "adaptive_peak_miles": peak_target,
-                    "min_required_max_long_run_miles": min_required,
-                },
-            }
-
         logger.debug(
             "Spine validation passed: %s weeks, peak %.1f miles (target %.1f)",
             len(weeks),
@@ -913,6 +876,7 @@ class PlanGenerationOrchestratorV2:
                     cutback_every=cfg.cutback_every,
                     taper_weeks=cfg.taper_weeks,
                     taper_ratios=cfg.taper_ratios,
+                    race_config=cfg,
                 )
 
                 if is_valid:

@@ -7,7 +7,11 @@ import logging
 
 # Removed imports: DataCollectionServiceV2, InsightsCalculationServiceV2
 # This class no longer collects data - it receives raw_data and insights from Step 1
+from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
+    validate_long_run_curve,
+)
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
+    build_target_long_run_curve,
     compute_long_run_peak_week_metadata,
     generate_long_run_spine,
 )
@@ -75,58 +79,30 @@ def build_spine(
 
 
 def validate_spine(
-    weeks: List[Dict[str, Any]], *, expected_start: float, peak: float, cfg: LRConfig
+    weeks: List[Dict[str, Any]],
+    *,
+    expected_start: float,
+    peak: float,
+    cfg: LRConfig,
+    race_config: RaceDistanceConfig,
 ) -> None:
-    if not weeks:
-        raise ValueError("LR spine empty")
-
-    if abs(weeks[0].get("long_run_miles", 0) - expected_start) > 1e-6:
-        raise ValueError(
-            f"Week 1 mismatch: got {weeks[0].get('long_run_miles', 0):.1f}, expected {expected_start:.1f} (stable week-1 rule)"
-        )
-
-    taper_w = int(cfg["taperWeeks"])
-    pre_n = max(1, len(weeks) - taper_w)
-    peaked = False
-
-    for i in range(1, len(weeks)):
-        lr_prev = float(weeks[i - 1].get("long_run_miles", 0))
-        lr = float(weeks[i].get("long_run_miles", 0))
-        lr_two_back = (
-            float(weeks[i - 2].get("long_run_miles", 0)) if i - 2 >= 0 else lr_prev
-        )
-        wn = int(weeks[i].get("week_number") or (i + 1))
-
-        if i < pre_n:
-            cap = peak if not peaked else max(0.0, peak - 1.0)
-            is_cb = bool(weeks[i].get("is_cutback"))
-            prev_cb = bool(weeks[i - 1].get("is_cutback"))
-            if is_cb:
-                if not (lr < lr_prev - 0.25):
-                    raise ValueError(
-                        f"Week {wn}: cutback flag set but long run not below prior "
-                        f"({lr_prev:.1f} → {lr:.1f})"
-                    )
-            elif prev_cb:
-                lo = round_to_half_mile(lr_prev + cfg["inc"])
-                hi = round_to_half_mile(min(cap, lr_prev + 3.0))
-                if lr < lo - 1e-6 or lr > hi + 1e-6:
-                    raise ValueError(
-                        f"Week {wn} invalid resume: got {lr:.1f}, expected between "
-                        f"{lo:.1f} and {hi:.1f} (after cutback {lr_prev:.1f})"
-                    )
-            else:
-                expected = round_to_half_mile(min(cap, lr_prev + cfg["inc"]))
-                if abs(lr - expected) > 1e-6:
-                    raise ValueError(
-                        f"Week {wn} invalid: got {lr:.1f}, expected {expected:.1f} "
-                        f"(prev {lr_prev:.1f}, two_back {lr_two_back:.1f}, cap {cap:.1f})"
-                    )
-            if not peaked and lr >= peak - 1e-6:
-                peaked = True
-        else:
-            if lr > peak + 1e-6:
-                raise ValueError(f"Taper week {wn} exceeds peak: {lr:.1f} > {peak:.1f}")
+    """Validate LR spine week-to-week rules (delegates to central curve validation)."""
+    curve = [float(w.get("long_run_miles", 0) or 0) for w in weeks]
+    issues = validate_long_run_curve(
+        curve,
+        race_config,
+        spine_rows=weeks,
+        expected_start_miles=float(expected_start),
+        peak_target_miles=float(peak),
+        taper_weeks_override=int(cfg["taperWeeks"]),
+        include_structure_checks=False,
+        include_peak_max_check=False,
+        include_pass1_progression=True,
+        include_phase_quality=False,
+    )
+    err = next((i for i in issues if i["severity"] == "error"), None)
+    if err:
+        raise ValueError(err["message"])
 
 
 class Pass1LongRunFirstV2:
@@ -330,6 +306,13 @@ class Pass1LongRunFirstV2:
 
         # Use readiness-based recommended weeks if provided, otherwise use dynamic length mode
         # recommended_weeks comes from Pass1WeeksSelector based on user's weekly mileage
+        curve_total_weeks = (
+            int(recommended_weeks)
+            if (recommended_weeks and recommended_weeks > 0)
+            else 0
+        )
+        peak_offset_before_taper = 2 if curve_total_weeks >= 15 else 1
+
         if recommended_weeks and recommended_weeks > 0:
             logger.info(
                 f"📏 Building FIXED-LENGTH plan: {recommended_weeks} weeks "
@@ -365,6 +348,30 @@ class Pass1LongRunFirstV2:
             )
         desired_total_weeks = len(weeks)
 
+        # Stage A: shadow target curve (same inputs as build_spine); spine path unchanged.
+        target_long_run_curve_miles = build_target_long_run_curve(
+            start_rule_miles,
+            curve_total_weeks,
+            target_peak_miles,
+            race_date=plan_request.get("race_date"),
+            taper_weeks=cfg["taperWeeks"],
+            non_regressive_slack=0.0,
+            inc_miles=cfg["inc"],
+            cutback_every=cfg["cutEvery"],
+            cutback_factor=cfg["cutFactor"],
+            peak_offset_before_taper=peak_offset_before_taper,
+            config=self.config,
+            unit_system=unit_system,
+        )
+        spine_long_run_miles = [float(w.get("long_run_miles") or 0.0) for w in weeks]
+        if target_long_run_curve_miles != spine_long_run_miles:
+            logger.error(
+                "LR curve Stage A parity mismatch: build_target_long_run_curve != build_spine "
+                "(curve_len=%s spine_len=%s)",
+                len(target_long_run_curve_miles),
+                len(spine_long_run_miles),
+            )
+
         # Validate (no mutation) – but don't block LR-only drafts
         # Note: Validation expects exact match, but recovery weeks may differ from standard rule
         try:
@@ -373,6 +380,7 @@ class Pass1LongRunFirstV2:
                 expected_start=round_to_half_mile(trusted_start),
                 peak=target_peak_miles,
                 cfg=cfg,
+                race_config=self.config,
             )
         except ValueError as e:
             # If recovery week was applied, validation mismatch is expected and OK
@@ -415,6 +423,10 @@ class Pass1LongRunFirstV2:
             "week1_consecutive_branch_flags": week1_branch_flags,
             "recommended_weeks": recommended_weeks,  # Log the readiness-based recommendation used
             "mode": "fixed_length" if fixed_length_requested else "dynamic_length",
+            "target_long_run_curve_miles": target_long_run_curve_miles,
+            "target_long_run_curve_stage_a_parity_ok": (
+                target_long_run_curve_miles == spine_long_run_miles
+            ),
             **peak_week_meta,
         }
 
