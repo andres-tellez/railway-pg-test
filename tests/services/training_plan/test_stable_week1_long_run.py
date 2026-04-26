@@ -11,17 +11,18 @@ from src.services.training_plan.v2.shared_v2.long_run_signals import (
 def test_outlier_single_global_max_uses_median_not_max_plus_one():
     # One week at 13, otherwise lower — should not jump to 15 (13+2 style outlier)
     miles, meta = compute_stable_week1_long_run_start(
-        [13.0, 12.0, 11.0, 10.0, 12.0, 10.0],
+        [13.0, 12.0, 12.0, 10.0, 12.0, 10.0],
         long_run_increment=1.0,
         min_long_run_mi=5.0,
     )
     assert meta["ties_at_global_max"] == 1
-    assert meta["median_long_run"] == pytest.approx(11.5)
+    assert meta["median_long_run"] == pytest.approx(12.0)
     assert meta["most_recent_long_run"] == 13.0
     assert meta["raw_candidate"] == pytest.approx(13.0)  # max(median, most recent)
     assert miles <= meta["cap_ceiling_miles"] + 0.01
-    # Capped at 1.1× median (12.65), half-mile round → 12.5
-    assert miles == 12.5
+    assert meta["consistent_recent_lr"] is True
+    # Stable last two weeks near 13 → anchor from most recent; half-mile round → 13.0
+    assert miles == 13.0
 
 
 def test_repeated_global_max_allows_increment_then_median_cap():
@@ -73,12 +74,37 @@ def test_distant_high_weeks_suppressed_by_recent_three_week_cap():
         min_long_run_mi=5.0,
     )
     assert meta["recent_weighting_applied"] is True
-    assert meta["explanation_reason_key"] == "recent_median_cap"
-    assert miles == 12.0
+    assert meta["consistent_recent_lr"] is False
+    # Full-window median is 14; week-1 floor is max(recent, median) → 14 mi
+    assert meta["week1_floor_baseline"] == pytest.approx(14.0)
+    assert miles == 14.0
+
+
+def test_two_stable_weeks_near_peak_start_at_most_recent_not_median_cap():
+    miles, meta = compute_stable_week1_long_run_start(
+        [13.0, 12.5, 12.0, 10.0, 10.0, 10.0],
+        long_run_increment=1.0,
+        min_long_run_mi=5.0,
+    )
+    assert meta["consistent_recent_lr"] is True
+    assert miles == 13.0
+
+
+def test_clear_downward_trend_skips_floor_vs_most_recent():
+    miles, meta = compute_stable_week1_long_run_start(
+        [9.0, 11.0, 10.0, 10.0, 10.0],
+        long_run_increment=1.0,
+        min_long_run_mi=5.0,
+    )
+    assert meta["clear_downward_trend"] is True
+    assert meta["most_recent_long_run"] == 9.0
+    assert meta["week1_floor_baseline"] == pytest.approx(10.0)
+    # Downward trend disables the "never start below most recent" floor (see meta flags).
+    assert miles == pytest.approx(10.0)
 
 
 def test_build_week1_long_run_explanation_coach_copy():
-    series = [13.0, 12.0, 11.0, 10.0, 12.0, 10.0]
+    series = [13.0, 12.0, 12.0, 10.0, 12.0, 10.0]
     miles, meta = compute_stable_week1_long_run_start(series)
     text = build_week1_long_run_explanation(
         weekly_series=series,
