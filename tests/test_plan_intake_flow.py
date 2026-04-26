@@ -325,6 +325,44 @@ def test_plan_intake_infers_half_from_source_user_message():
     assert state["draft"]["race_distance"] == "Half Marathon"
 
 
+def test_plan_intake_infers_race_date_october_11_from_user_message():
+    state = update_plan_intake_state(
+        None,
+        updates={"race_distance": "Marathon"},
+        source_user_message="October 11",
+    )
+    rd = state["draft"].get("race_date")
+    assert isinstance(rd, str) and rd.strip()
+    assert "-10-11" in rd
+    assert "race_date" not in state["missing_required"]
+
+
+def test_plan_intake_race_date_persists_when_later_message_adds_goal_time_only():
+    s1 = update_plan_intake_state(
+        None,
+        updates={"race_distance": "Marathon"},
+        source_user_message="October 11",
+    )
+    assert s1["draft"].get("race_date")
+    s2 = update_plan_intake_state(
+        s1,
+        updates={},
+        source_user_message="Time.... 3:40",
+    )
+    assert s2["draft"].get("race_date") == s1["draft"].get("race_date")
+    assert s2["draft"].get("primary_goal") == "Target Time"
+    assert s2["draft"].get("target_time")
+
+
+def test_plan_intake_infers_just_finish_from_user_message():
+    state = update_plan_intake_state(
+        None,
+        updates={"race_distance": "Marathon", "race_date": "2026-10-11"},
+        source_user_message="Just finish",
+    )
+    assert state["draft"]["primary_goal"] == "Just Finish"
+
+
 def test_plan_intake_fills_race_name_from_source_user_message():
     state = update_plan_intake_state(
         None,

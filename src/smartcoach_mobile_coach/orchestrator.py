@@ -1827,6 +1827,8 @@ Intake behavior:
   **do not** ask half vs full again. Only ask half vs full when the goal distance is ambiguous (no named marathon,
   no “half” / “13.1” / “marathon” / “26.2” signal). Same turn: set `race_name` to the event string they used.
 - For `race_date`, ask when the race is; accept natural language and pass it as `race_date`.
+- The server also parses common **date-only** replies (e.g. “October 11”) from the user’s last message into
+  `race_date` when the model forgets to pass `updates`—check the tool intake draft before asking for the date again.
 - Whenever the user names a specific race, pass **`race_name`** in `updates` (exactly as they said is fine) so it
   appears on the saved plan; do not wait for a separate prompt if they already named it.
 - After required fields are satisfied (`ready_to_generate` true) **and before** you ask for final yes/no to generate,
