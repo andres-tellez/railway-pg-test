@@ -21,6 +21,19 @@ from ..shared_v2.rounding_utils import round_to_whole_mile
 logger = logging.getLogger(__name__)
 
 
+def _phase_is_peak(phase: Optional[str]) -> bool:
+    if not phase:
+        return False
+    return str(phase).lower().strip() == "peak"
+
+
+def _phase_is_taper(phase: Optional[str]) -> bool:
+    if not phase:
+        return False
+    p = str(phase).lower().strip()
+    return p in ("taper", "taper week")
+
+
 def clamp(n: float, lo: float, hi: float) -> float:
     """Clamp n between lo and hi."""
     return max(lo, min(hi, n))
@@ -36,6 +49,7 @@ def recommend_weekly_total(
     peak_caps: Optional[Dict[int, int]] = None,
     starting_mileage_adjustment: float = 1.0,
     phase: Optional[str] = None,
+    prev_phase: Optional[str] = None,
     unit_system: str = "imperial",  # Deprecated: kept for backward compatibility, no longer affects rounding
 ) -> int:
     """Compute a safe weekly total given the long run and frequency.
@@ -50,6 +64,7 @@ def recommend_weekly_total(
         peak_caps: Custom peak caps (defaults to config.peak_caps)
         starting_mileage_adjustment: Adjustment factor for Week 1 (default 1.0 = no adjustment)
         phase: Training phase label for the week (e.g., Base, Build, Peak, Taper)
+        prev_phase: Prior week's phase; used with ``phase`` for Peak→Taper boundary capping
         unit_system: Deprecated - kept for backward compatibility. Weekly totals are always
                      rounded to whole miles internally. Frontend handles unit conversion for display.
 
@@ -127,6 +142,32 @@ def recommend_weekly_total(
                 )
             total = capped_total
 
+    # Peak → Taper: first taper week must not retain peak-level weekly load (boundary only).
+    if (
+        _phase_is_taper(phase)
+        and _phase_is_peak(prev_phase)
+        and prev_week_total is not None
+        and prev_week_total > 0
+    ):
+        max_ratio = float(
+            getattr(
+                config,
+                "peak_to_taper_first_week_max_ratio",
+                0.90,
+            )
+        )
+        ceiling = prev_week_total * max_ratio
+        if total > ceiling + 1e-6:
+            logger.debug(
+                "Peak→Taper boundary: capped weekly total from %.1f to %.1f "
+                "(≤%.0f%% of final peak week %.1f)",
+                total,
+                ceiling,
+                max_ratio * 100,
+                prev_week_total,
+            )
+        total = min(total, ceiling)
+
     # CRITICAL: Always round to whole miles for internal consistency
     # Frontend will convert to km for display using toDisplayDistance()
     # This prevents metric plans from diverging due to rounding differences
@@ -156,6 +197,7 @@ def calculate_weekly_totals_from_long_runs(
     result = []
     prev_total: Optional[float] = None
     prev_prev_total: Optional[float] = None
+    prev_phase: Optional[str] = None
     rebuild_next_week = False
     starting_mileage_adjustment = (
         scenario_adjustments.get("starting_mileage_adjustment", 1.0)
@@ -181,6 +223,7 @@ def calculate_weekly_totals_from_long_runs(
                     starting_mileage_adjustment if week_num == 1 else 1.0
                 ),
                 phase=phase,
+                prev_phase=prev_phase,
                 unit_system=unit_system,
             )
             prev_prev_total = prev_total
@@ -189,6 +232,8 @@ def calculate_weekly_totals_from_long_runs(
             total = 0
             prev_prev_total = prev_total
             prev_total = None
+
+        prev_phase = week.get("phase")
 
         # Keep rebuild cadence aligned with the long-run spine.
         # Prefer explicit spine metadata over inferred mileage drops.
