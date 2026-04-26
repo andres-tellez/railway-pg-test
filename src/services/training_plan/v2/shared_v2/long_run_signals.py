@@ -21,6 +21,45 @@ def _median_of(values: List[float]) -> float:
     return (s[m - 1] + s[m]) / 2.0
 
 
+def _last_three_weekly_long_runs(series: List[float]) -> List[float]:
+    return [float(x) for x in series[: min(3, len(series))]]
+
+
+def _consistent_recent_long_runs(
+    most_recent: float, last_three: List[float], *, spread_mi: float = 1.0
+) -> bool:
+    """Most-recent and prior week are long-run–stable; third week cannot cliff from week-2.
+
+    This week and last week are within ``spread_mi`` of each other and of
+    ``most_recent``.     If a third week exists, it must not sit far below this week (``w2 < w0 - 1.15``),
+    which flags a low week behind an otherwise stable pair (e.g. …, 16–18 vs 10–12).
+    """
+    if len(last_three) < 2:
+        return False
+    tol = spread_mi + 1e-6
+    w0, w1 = float(last_three[0]), float(last_three[1])
+    if abs(w0 - w1) > tol:
+        return False
+    if abs(w0 - most_recent) > tol or abs(w1 - most_recent) > tol:
+        return False
+    if len(last_three) >= 3:
+        w2 = float(last_three[2])
+        if w2 + 1e-6 < w0 - 1.15:
+            return False
+    return True
+
+
+def _clear_downward_long_run_trend(series: List[float]) -> bool:
+    """Most recent week materially below the lowest of the prior 1–2 long-run weeks."""
+    if len(series) < 2:
+        return False
+    prior = [float(x) for x in series[1 : min(3, len(series))]]
+    if not prior:
+        return False
+    tail_min = min(prior)
+    return float(series[0]) + 0.25 < tail_min
+
+
 def recent_longest_3w(activities: List[Dict[str, Any]], *, days: int = 21) -> float:
     """Return the longest single run within the last `days` days."""
     if not activities:
@@ -246,13 +285,16 @@ def compute_stable_week1_long_run_start(
     min_long_run_mi: float = 5.0,
     max_increase_vs_median_pct: float = 0.10,
 ) -> Tuple[float, Dict[str, Any]]:
-    """Derive Week 1 long run from weekly longest-run anchors (consistency + recent emphasis).
+    """Derive Week 1 long run from weekly longest-run anchors.
 
-    Uses up to **6** weeks (most-recent-first). Computes **full_anchor** (median of all)
-    and **recent_anchor** (median of the last up to **3** weeks). Candidate logic matches
-    sustained vs outlier peaks as before, then caps vs **full_anchor +10%**. Unless the
-    last three weeks clearly include the global peak, an additional cap vs
-    **recent_anchor +10%** keeps week 1 close to what you have held very recently.
+    Rules:
+    - If the last two weekly long runs are within ~1 mi of each other and of the most
+      recent week, soft caps use **most recent** as the anchor (not the full-window median).
+    - Baseline floor ``max(most_recent, full_window_median)`` unless a clear downward
+      trend allows starting below most recent, or the most recent week is a lone spike
+      above ``median × (1 + cap_pct)`` (then legacy outlier dampening still applies).
+    - Otherwise preserves sustained-peak (+increment) vs single-peak behavior and the
+      recent-window ceiling when older weeks are much higher than recent.
 
     Returns:
         ``(rounded_start_miles, metadata_dict)``
@@ -270,6 +312,14 @@ def compute_stable_week1_long_run_start(
     recent_window = series[: min(3, n)]
     full_anchor = _median_of(series)
     recent_anchor = _median_of(recent_window)
+    last_three = _last_three_weekly_long_runs(series)
+    consistent_recent_lr = _consistent_recent_long_runs(
+        most_recent_long_run, last_three
+    )
+    clear_downward_trend = _clear_downward_long_run_trend(series)
+    week1_floor_baseline = max(most_recent_long_run, float(full_anchor))
+    soft_median_cap = float(full_anchor) * (1.0 + max_increase_vs_median_pct)
+    lone_high_spike = most_recent_long_run > soft_median_cap + 1e-6
 
     max_lr = max(series)
     ties_at_global_max = sum(1 for x in series if abs(x - max_lr) <= 1e-3)
@@ -277,17 +327,25 @@ def compute_stable_week1_long_run_start(
 
     # Single-week hit at the global max → treat as outlier; sustained max weeks → allow max + inc.
     if ties_at_global_max <= 1:
-        candidate = max(float(full_anchor), most_recent_long_run)
+        candidate = float(week1_floor_baseline)
         rule = "median_single_peak_week_anchor"
+        anchor_for_soft_cap = (
+            most_recent_long_run if consistent_recent_lr else float(full_anchor)
+        )
+        full_ceiling = anchor_for_soft_cap * (1.0 + max_increase_vs_median_pct)
+        capped = min(candidate, full_ceiling)
     else:
         inc = min(float(long_run_increment), 1.0)
         candidate = max_lr + inc
         rule = "max_plus_increment_repeated_peak_anchor"
+        anchor_for_soft_cap = float(full_anchor)
+        full_ceiling = anchor_for_soft_cap * (1.0 + max_increase_vs_median_pct)
+        capped = min(candidate, full_ceiling)
 
-    full_ceiling = full_anchor * (1.0 + max_increase_vs_median_pct)
-    capped = min(candidate, full_ceiling)
-
-    recent_ceiling = recent_anchor * (1.0 + max_increase_vs_median_pct)
+    recent_ceiling_base = (
+        most_recent_long_run if consistent_recent_lr else float(recent_anchor)
+    )
+    recent_ceiling = recent_ceiling_base * (1.0 + max_increase_vs_median_pct)
     recent_max = max(recent_window)
     recent_supports_higher = (ties_at_global_max >= 2) or (
         abs(recent_max - max_lr) <= 1e-3
@@ -304,10 +362,29 @@ def compute_stable_week1_long_run_start(
         explanation_reason_key = "recent_peak_supported"
     elif recent_weighting_applied:
         explanation_reason_key = "recent_median_cap"
+    elif consistent_recent_lr:
+        explanation_reason_key = "consistent_recent_baseline"
     else:
         explanation_reason_key = "consistency_anchor"
 
-    capped = max(float(min_long_run_mi), capped)
+    if not clear_downward_trend:
+        if lone_high_spike and not consistent_recent_lr:
+            capped = max(float(min_long_run_mi), capped)
+        elif ties_at_global_max >= 2:
+            if not clear_downward_trend:
+                capped = max(float(min_long_run_mi), capped, most_recent_long_run)
+            else:
+                capped = max(float(min_long_run_mi), capped)
+        else:
+            capped = max(
+                float(min_long_run_mi),
+                capped,
+                week1_floor_baseline,
+                most_recent_long_run,
+            )
+    else:
+        capped = max(float(min_long_run_mi), capped)
+
     final = round_to_half_mile(capped)
     meta: Dict[str, Any] = {
         "median_long_run": float(full_anchor),
@@ -317,6 +394,11 @@ def compute_stable_week1_long_run_start(
         "max_long_run": max_lr,
         "ties_at_global_max": ties_at_global_max,
         "count_within_1mi_of_max": count_within_1mi_of_max,
+        "consistent_recent_lr": consistent_recent_lr,
+        "clear_downward_trend": clear_downward_trend,
+        "week1_floor_baseline": float(week1_floor_baseline),
+        "lone_high_spike": lone_high_spike,
+        "anchor_for_soft_cap": float(anchor_for_soft_cap),
         "rule": rule,
         "raw_candidate": candidate,
         "cap_ceiling_vs_median_pct": max_increase_vs_median_pct,
@@ -375,6 +457,10 @@ def build_week1_long_run_explanation(
         "recent_median_cap": (
             "we weighted the last three weeks so week 1 stays close to what you have "
             "actually held lately, not older higher weeks alone"
+        ),
+        "consistent_recent_baseline": (
+            "your last two long-run weeks match your current level, so week 1 starts from "
+            "that recent baseline rather than an older median"
         ),
         "consistency_anchor": (
             "week 1 follows a stable blend of your recent weekly longest runs without "
