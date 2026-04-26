@@ -569,6 +569,7 @@ class PlanGenerationOrchestratorV2:
             "phase": template.get("phase", "Race Week"),
             "weekly_mileage": template.get("weekly_mileage", 0),
             "long_run_miles": template.get("long_run_miles", 0),
+            "is_peak_week": False,
             "is_cutback": False,  # Race week is NOT a cutback
             "workouts": [
                 self._build_race_week_workout(workout_spec, unit_system=unit_system)

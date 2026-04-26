@@ -32,9 +32,10 @@ def test_plan_overview_extracts_phases_and_peaks():
                 },
                 {
                     "week_number": 4,
-                    "phase": "Peak",
+                    "phase": "Specific",
                     "weekly_mileage": 40,
                     "long_run_miles": 18,
+                    "is_peak_week": True,
                 },
             ],
         }
@@ -53,7 +54,9 @@ def test_plan_overview_extracts_phases_and_peaks():
 
     assert out["plan_start_date"] == "2026-06-08"
     assert out["total_weeks"] == 4
-    assert out["phase_sequence"] == ["Base", "Build", "Peak"]
+    assert out["phase_sequence"] == ["Base", "Build", "Specific"]
+    assert out["peak_week_number"] == 4
+    assert "Specific" in (out.get("phase_intent_note") or "")
     assert out["phase_blocks"] == [
         {
             "phase": "Base",
@@ -68,7 +71,7 @@ def test_plan_overview_extracts_phases_and_peaks():
             "peak_weekly_miles": 35.2,
         },
         {
-            "phase": "Peak",
+            "phase": "Specific",
             "start_week": 4,
             "end_week": 4,
             "peak_weekly_miles": 40.0,
@@ -104,7 +107,7 @@ def test_plan_generation_brief_includes_preview_and_plan_tab_handoff():
         "overview": {
             "plan_start_date": "2026-06-08",
             "total_weeks": 18,
-            "phase_sequence": ["Base", "Build", "Peak", "Taper"],
+            "phase_sequence": ["Base", "Build", "Specific", "Taper"],
             "phase_blocks": [
                 {
                     "phase": "Base",
@@ -120,6 +123,8 @@ def test_plan_generation_brief_includes_preview_and_plan_tab_handoff():
                 },
             ],
             "peak_long_run_miles": 20.0,
+            "peak_week_number": 15,
+            "phase_intent_note": "Specific weeks are near-peak load.",
         },
         "baseline": {
             "lookback_weeks_requested": 12,
@@ -145,6 +150,8 @@ def test_plan_generation_brief_includes_preview_and_plan_tab_handoff():
     assert "| Base | 6 |" in out
     assert "| Build | 7 |" in out
     assert "- **Peak long run (plan):** 20.0 mi" in out
+    assert "- **Peak long run week:** week 15" in out
+    assert "Specific weeks are near-peak load." in out
     assert "| Day | Run Type | Miles |" in out
     assert "| Mon | Easy | 4.0 |" in out
     assert "| Wed | Tempo | 6.0 |" in out

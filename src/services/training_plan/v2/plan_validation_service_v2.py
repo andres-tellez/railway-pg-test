@@ -669,7 +669,10 @@ class PlanValidationServiceV2:
                 ]
                 hi_limit = hi
                 if phase and phase_share_caps:
-                    phase_cap = phase_share_caps.get(phase.lower())
+                    phase_key = str(phase).lower().strip()
+                    if phase_key == "specific":
+                        phase_key = "peak"
+                    phase_cap = phase_share_caps.get(phase_key)
                     if phase_cap is not None:
                         hi_limit = phase_cap
                 if share > hi_limit:

@@ -244,8 +244,12 @@ def resolve_week_phase(phases: Iterable[Optional[str]]) -> Optional[Phase]:
     for raw in phases:
         if raw is None:
             continue
+        key = str(raw).strip()
+        if not key:
+            continue
+        canon = "Peak" if key == "Specific" else key
         try:
-            phase = Phase(raw)
+            phase = Phase(canon)
         except ValueError:
             # Bad phase string — skip rather than crash. The LLM-
             # facing contract is "we emit what we can prove"; a
@@ -297,11 +301,15 @@ def compute_phase_kpi_priority_for_week(
     for raw in materialized:
         if raw is None:
             continue
+        key = str(raw).strip()
+        if not key:
+            continue
+        canon = "Peak" if key == "Specific" else key
         try:
-            Phase(raw)
+            Phase(canon)
         except ValueError:
             continue
-        day_counts[raw] = day_counts.get(raw, 0) + 1
+        day_counts[key] = day_counts.get(key, 0) + 1
 
     return PhaseKpiPriorityResult(
         phase=phase,

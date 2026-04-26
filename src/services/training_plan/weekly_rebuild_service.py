@@ -448,7 +448,7 @@ class WeeklyRebuildService:
 
         pass4_start = time.time()
         pass4 = Pass4WorkoutDetails()
-        allow_quality = (phase in ("Build", "Peak")) and not disable_quality
+        allow_quality = (phase in ("Build", "Peak", "Specific")) and not disable_quality
 
         week_with_details = pass4.add_details_to_week(
             week=week_plan,
@@ -831,13 +831,13 @@ def _determine_phase(week_num: int, total_weeks: int) -> str:
     """
     Determine training phase based on week number.
 
-    Simplified: assume Base → Build → Peak → Taper
+    Simplified: assume Base → Build → Specific → Taper
     """
     if week_num <= total_weeks * 0.4:
         return "Base"
     elif week_num <= total_weeks * 0.7:
         return "Build"
     elif week_num <= total_weeks * 0.9:
-        return "Peak"
+        return "Specific"
     else:
         return "Taper"

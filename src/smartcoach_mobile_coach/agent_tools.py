@@ -1621,12 +1621,23 @@ def _plan_overview_from_validation(
             if dates:
                 start_date = dates[0]
 
+    peak_week_number: Optional[int] = None
+    for w in weeks:
+        if isinstance(w, dict) and w.get("is_peak_week") is True:
+            peak_week_number = _safe_int(w.get("week_number"))
+            break
+
     return {
         "plan_start_date": start_date,
         "race_date": saved_plan.get("race_date"),
         "race_distance": saved_plan.get("race_distance"),
         "total_weeks": len(weeks) if weeks else None,
         "phase_sequence": phase_sequence,
+        "peak_week_number": peak_week_number,
+        "phase_intent_note": (
+            "Phases reflect training intent: **Specific** = at/near your highest long-run "
+            "load before taper (plateau and race-prep), not extra base-building."
+        ),
         "phase_blocks": [
             {
                 "phase": str(block.get("phase") or "").strip(),
@@ -1768,6 +1779,14 @@ def _build_plan_generation_brief(
             lines.append(
                 f"- **Peak long run (plan):** {float(peak_lr):.1f} mi",
             )
+        pwn = overview.get("peak_week_number")
+        if isinstance(pwn, int) and pwn > 0:
+            lines.append(
+                f"- **Peak long run week:** week {pwn} (highest planned long run before taper)."
+            )
+        pin = overview.get("phase_intent_note")
+        if isinstance(pin, str) and pin.strip():
+            lines.extend(["", pin.strip()])
 
     if isinstance(this_week, dict):
         workouts = this_week.get("workouts")

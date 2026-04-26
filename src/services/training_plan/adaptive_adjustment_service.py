@@ -138,7 +138,7 @@ class AdaptiveAdjustmentService:
             decision = AdaptiveAdjustmentService._apply_build_phase_rules(
                 analysis, trends, phase_rules, fatigue_detected
             )
-        elif phase == "Peak":
+        elif phase in ("Peak", "Specific"):
             decision = AdaptiveAdjustmentService._apply_peak_phase_rules(
                 analysis, trends, phase_rules, fatigue_detected
             )
