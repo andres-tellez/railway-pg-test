@@ -383,6 +383,81 @@ def validate_phase_quality(
     return is_valid, issues
 
 
+# Long-run share at/above this fraction of the pre-taper max → Specific phase (plateau / race prep).
+SPECIFIC_LR_THRESHOLD_RATIO = 0.9
+_LR_FLOAT_TOL = 1e-5
+
+
+def assign_training_intent_phases(
+    weeks: List[Dict[str, float]],
+    taper_weeks: int,
+    *,
+    specific_lr_ratio: float = SPECIFIC_LR_THRESHOLD_RATIO,
+) -> None:
+    """Assign user-facing ``Base`` / ``Build`` / ``Specific`` / ``Taper`` and ``is_peak_week``.
+
+    Mutates each week dict in place. Once a week qualifies for Specific (long run at or above
+    the threshold of the pre-taper maximum), all later pre-taper weeks stay Specific — no
+    oscillation back to Build.
+
+    ``is_peak_week`` is True for exactly one week: the first pre-taper week (by list order)
+    whose long run equals the pre-taper maximum (ties broken by earliest index).
+    """
+    if not weeks:
+        return
+    taper_count = max(0, min(len(weeks), int(taper_weeks)))
+    n = len(weeks)
+    pre_count = n - taper_count
+    if pre_count <= 0:
+        for w in weeks:
+            w["phase"] = "Taper"
+            w["is_peak_week"] = False
+        return
+
+    pre_taper = weeks[:pre_count]
+    peak_lr = max(float(w.get("long_run_miles") or 0.0) for w in pre_taper)
+    thr = peak_lr * float(specific_lr_ratio) - _LR_FLOAT_TOL
+
+    first_specific_idx = None
+    for idx, w in enumerate(pre_taper):
+        lr = float(w.get("long_run_miles") or 0.0)
+        if lr >= thr:
+            first_specific_idx = idx
+            break
+    if first_specific_idx is None:
+        first_specific_idx = pre_count - 1
+
+    first_peak_idx = None
+    for idx, w in enumerate(pre_taper):
+        lr = float(w.get("long_run_miles") or 0.0)
+        if abs(lr - peak_lr) <= _LR_FLOAT_TOL:
+            first_peak_idx = idx
+            break
+
+    count_pre_specific = first_specific_idx  # indices [0, first_specific_idx)
+    if count_pre_specific <= 0:
+        base_count = 0
+    else:
+        base_count = max(1, int(round(count_pre_specific * 0.35)))
+
+    for idx, w in enumerate(weeks):
+        if idx >= pre_count:
+            w["phase"] = "Taper"
+            w["is_peak_week"] = False
+            continue
+        if idx >= first_specific_idx:
+            w["phase"] = "Specific"
+            w["is_peak_week"] = bool(
+                first_peak_idx is not None and idx == first_peak_idx
+            )
+            continue
+        if base_count > 0 and idx < base_count:
+            w["phase"] = "Base"
+        else:
+            w["phase"] = "Build"
+        w["is_peak_week"] = False
+
+
 def generate_long_run_spine(
     starting_long_run_miles: float,
     total_weeks_in_plan: Optional[int],
@@ -616,18 +691,7 @@ def generate_long_run_spine(
             )
             week_num += 1
 
-        # Re-label phases more accurately
-        total = len(weeks)
-        for i, w in enumerate(weeks):
-            wn = int(w["week_number"])
-            if i < total // 4:
-                w["phase"] = "Base"
-            elif i < total // 2:
-                w["phase"] = "Build"
-            elif i < total - taper_weeks_actual:
-                w["phase"] = "Peak"
-            else:
-                w["phase"] = "Taper"
+        assign_training_intent_phases(weeks, taper_weeks_actual)
 
         # Self-check: Validate phase quality
         # Get taper_ratios from config or use defaults
@@ -935,11 +999,11 @@ def generate_long_run_spine(
             # 2. Any weeks during the build phase (before peak) - this prevents false cutbacks
             # Only cap maintenance weeks AFTER the peak
             is_build_phase = i < peak_idx_for_cap
-            is_peak_week = i == peak_idx_for_cap
+            at_global_long_run_peak = i == peak_idx_for_cap
 
             if (
                 not is_build_phase
-                and not is_peak_week
+                and not at_global_long_run_peak
                 and weeks[i]["long_run_miles"] > cap_miles
             ):
                 weeks[i]["long_run_miles"] = round_to_half_mile(cap_miles)
@@ -985,46 +1049,6 @@ def generate_long_run_spine(
                 )
                 wk += 1
 
-    # Label phases using data-driven approach: find actual peak, then label accordingly
-    # This ensures the peak week is labeled "Peak", not "Taper"
-    if declared_peak_week_num and declared_peak_week_num > 0:
-        peak_week_num = int(declared_peak_week_num)
-    else:
-        try:
-            peak_idx_label = max(
-                range(len(weeks)), key=lambda i: weeks[i]["long_run_miles"]
-            )
-            peak_week_num = weeks[peak_idx_label]["week_number"]
-        except Exception:
-            peak_week_num = 0
-
-    pre_taper_last_week = max(1, len(weeks) - taper_weeks)
-    peak_phase_start = max(1, peak_week_num - 1)
-    peak_phase_end = max(peak_phase_start, min(pre_taper_last_week, peak_week_num))
-
-    for w in weeks:
-        i = int(w["week_number"])
-
-        # Data-driven phase labeling:
-        # - Weeks before peak: Base/Build
-        # - Peak week itself: Peak
-        # - Weeks after peak but before taper: Peak (maintenance)
-        # - Last taper_weeks: Taper
-
-        if i < peak_phase_start:
-            # Before peak: use a larger Base slice (~35% of pre-peak weeks)
-            # so long plans don't spend excessive time in heavy Build.
-            pre_peak_weeks = max(1, peak_phase_start - 1)
-            base_cutoff = max(1, int(round(pre_peak_weeks * 0.35)))
-            w["phase"] = "Base" if i <= base_cutoff else "Build"
-        elif peak_phase_start <= i <= peak_phase_end:
-            # Keep a short, explicit peak block (typically 1-2 weeks) before taper.
-            w["phase"] = "Peak"
-        elif i <= pre_taper_last_week:
-            # Pre-taper weeks outside the explicit peak block remain Build.
-            w["phase"] = "Build"
-        else:
-            # Last taper_weeks: Taper
-            w["phase"] = "Taper"
+    assign_training_intent_phases(weeks, taper_weeks)
 
     return weeks

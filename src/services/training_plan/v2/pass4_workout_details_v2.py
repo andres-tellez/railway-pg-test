@@ -64,6 +64,7 @@ from src.services.training_plan.v2.shared_v2.workout_detail_rules import (
     DEFAULT_UNITS,
     THRESHOLD_INTERVALS,
     TEMPO_BLOCKS,
+    is_peak_like_phase,
 )
 from src.services.training_plan.v2.shared_v2.workout_utils import pace_range_to_str
 
@@ -321,7 +322,7 @@ def _detail_tempo(
         max_tempo_mi = 2.0  # ~16 min max
     elif phase == "Build":
         max_tempo_mi = 3.5  # ~28 min max
-    elif phase == "Peak":
+    elif is_peak_like_phase(phase):
         max_tempo_mi = 4.5  # ~36 min max
     elif phase == "Taper":
         max_tempo_mi = 1.5  # ~12 min max - maintain sharpness only
@@ -378,7 +379,7 @@ def _detail_tempo(
             f"Tempo run: {tempo_mi:.1f} mi at comfortably hard pace. "
             "You should be able to speak in short phrases but not hold a conversation."
         )
-        if phase == "Peak":
+        if is_peak_like_phase(phase):
             cues.append(
                 "This is race-specific work. Focus on maintaining consistent effort."
             )
@@ -491,7 +492,7 @@ def _detail_intervals(
     )
     cues.append("Run intervals at a controlled hard effort - fast but sustainable.")
 
-    if phase == "Peak":
+    if is_peak_like_phase(phase):
         cues.append("These are race-sharpening intervals. Stay relaxed and powerful.")
 
     # Validate and adjust segment totals
@@ -583,8 +584,8 @@ def _detail_hills(
             reps = 8
         else:
             reps = 10
-    elif phase == "Peak":
-        # Reduced hills in Peak - maintain, don't build
+    elif is_peak_like_phase(phase):
+        # Reduced hills in Peak / Specific - maintain, don't build
         if distance_mi < 5.0:
             reps = 4
         elif distance_mi < 7.0:
@@ -633,7 +634,7 @@ def _detail_hills(
             f"Hill workout: {reps} × ~60-90 second hill repeats. "
             "Focus on building strength - don't go all-out."
         )
-    elif phase == "Peak":
+    elif is_peak_like_phase(phase):
         cues.append(
             f"Maintenance hills: {reps} × ~60-90 second repeats. "
             "Keep intensity moderate - we're maintaining, not building."
@@ -890,7 +891,7 @@ def _detail_run(
         ]
         cues.append("Medium-long run; builds fatigue tolerance.")
 
-        if allow_quality and phase == PHASE["PEAK"] and main_mi >= 6.0:
+        if allow_quality and is_peak_like_phase(phase) and main_mi >= 6.0:
             cues.append("If feeling good: last 2–3 mi at marathon pace.")
 
     elif archetype == ARCHETYPE_LONG or run_type == LONG:
