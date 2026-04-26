@@ -18,6 +18,7 @@ from src.services.training_plan.v2.shared_v2.long_run_signals import (
     compute_stable_week1_long_run_start,
     detect_consecutive_long_runs_from_materialized_view,
     fetch_recent_weekly_long_run_distances,
+    pass1_use_recovery_week_after_consecutive,
     recent_longest_3w_from_materialized_view,
 )
 from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
@@ -211,37 +212,20 @@ class Pass1LongRunFirstV2:
 
         start_meta: Dict[str, Any] = {}
         week1_source = "stable_logic"
+        week1_branch_flags: Optional[Dict[str, Any]] = None
 
         # Determine Week 1 long run based on consecutive run detection
         if consecutive_analysis["has_consecutive_runs"]:
-            # Check if user has already self-regulated (recent reduction from peak)
-            # Pattern detection: if most recent week is significantly lower than peak,
-            # user may have already done a recovery - don't force double recovery
+            use_recovery, branch_flags = pass1_use_recovery_week_after_consecutive(
+                effective_weekly_series, consecutive_analysis
+            )
+            week1_branch_flags = branch_flags
+            most_recent_long_run = consecutive_analysis.get("most_recent_long_run", 0.0)
             has_recent_reduction = consecutive_analysis.get(
                 "has_recent_reduction", False
             )
-            most_recent_long_run = consecutive_analysis.get("most_recent_long_run", 0.0)
 
-            if has_recent_reduction and most_recent_long_run > 0:
-                trusted_start, start_meta = compute_stable_week1_long_run_start(
-                    effective_weekly_series,
-                    long_run_increment=self.config.long_run_increment,
-                    min_long_run_mi=self.config.min_long_run_miles,
-                )
-                start_rule = f"{start_meta.get('rule', 'stable')}_after_self_regulation"
-                logger.info(
-                    "LR-first: Detected %d consecutive weeks with long runs, "
-                    "self-regulated (recent: %.2f, peak: %.2f). "
-                    "Stable week-1 meta=%s → Week 1: %.2f mi",
-                    consecutive_analysis["consecutive_count"],
-                    most_recent_long_run,
-                    consecutive_analysis["longest_recent"],
-                    start_meta,
-                    trusted_start,
-                )
-            else:
-                # User has consecutive runs but no recent reduction - schedule recovery week
-                # This is a build pattern (increasing) or flat at peak - recovery needed
+            if use_recovery:
                 recovery_lr = calculate_recovery_week_long_run(
                     consecutive_analysis["longest_recent"],
                     config=self.config,
@@ -254,14 +238,47 @@ class Pass1LongRunFirstV2:
                     "rule": start_rule,
                     "recovery_lr": recovery_lr,
                     "longest_recent": consecutive_analysis["longest_recent"],
+                    "branch_flags": branch_flags,
                 }
                 logger.info(
-                    "LR-first: Detected %d consecutive weeks with long runs (longest=%.2f). "
-                    "Setting Week 1 as recovery week: %.2f miles",
-                    consecutive_analysis["consecutive_count"],
-                    consecutive_analysis["longest_recent"],
+                    "LR-first: Consecutive long-run block; sustained downward trend "
+                    "(flags=%s). Recovery week-1: %.2f mi (longest_recent=%.2f, count=%d)",
+                    branch_flags,
                     recovery_lr,
+                    consecutive_analysis["longest_recent"],
+                    consecutive_analysis["consecutive_count"],
                 )
+            else:
+                trusted_start, start_meta = compute_stable_week1_long_run_start(
+                    effective_weekly_series,
+                    long_run_increment=self.config.long_run_increment,
+                    min_long_run_mi=self.config.min_long_run_miles,
+                )
+                start_meta = dict(start_meta)
+                start_meta["branch_flags"] = branch_flags
+                if has_recent_reduction and most_recent_long_run > 0:
+                    start_rule = (
+                        f"{start_meta.get('rule', 'stable')}_after_self_regulation"
+                    )
+                    logger.info(
+                        "LR-first: Consecutive long-run block; stable week-1 "
+                        "(self-regulated, flags=%s). recent=%.2f peak=%.2f meta=%s → %.2f mi",
+                        branch_flags,
+                        most_recent_long_run,
+                        consecutive_analysis["longest_recent"],
+                        start_meta,
+                        trusted_start,
+                    )
+                else:
+                    start_rule = str(start_meta.get("rule", "stable_week1"))
+                    logger.info(
+                        "LR-first: Consecutive long-run block; stable week-1 "
+                        "(no recovery: flags=%s). series=%s meta=%s → %.2f mi",
+                        branch_flags,
+                        effective_weekly_series,
+                        start_meta,
+                        trusted_start,
+                    )
         else:
             trusted_start, start_meta = compute_stable_week1_long_run_start(
                 effective_weekly_series,
@@ -395,6 +412,7 @@ class Pass1LongRunFirstV2:
             "consecutive_runs_detected": consecutive_analysis["has_consecutive_runs"],
             "consecutive_count": consecutive_analysis["consecutive_count"],
             "weekly_long_runs": consecutive_analysis["weekly_long_runs"],
+            "week1_consecutive_branch_flags": week1_branch_flags,
             "recommended_weeks": recommended_weeks,  # Log the readiness-based recommendation used
             "mode": "fixed_length" if fixed_length_requested else "dynamic_length",
             **peak_week_meta,
