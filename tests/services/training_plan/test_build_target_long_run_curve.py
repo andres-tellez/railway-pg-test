@@ -1,4 +1,4 @@
-"""Golden tests for build_target_long_run_curve (Stage A facade over generate_long_run_spine)."""
+"""Golden tests for build_target_long_run_curve vs build_long_run_spine_weeks mile lists."""
 
 from datetime import date
 
@@ -6,8 +6,8 @@ import pytest
 
 from src.services.training_plan.v2.race_configs.marathon_config import MarathonConfig
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
+    build_long_run_spine_weeks,
     build_target_long_run_curve,
-    generate_long_run_spine,
 )
 
 
@@ -60,7 +60,7 @@ def test_build_target_long_run_curve_matches_spine_fixed_length_golden(
     )
     assert curve == expected
 
-    spine = generate_long_run_spine(
+    spine = build_long_run_spine_weeks(
         start,
         total_weeks,
         peak,
@@ -127,7 +127,7 @@ def test_build_target_long_run_curve_matches_spine_dynamic_length_golden(
     assert curve == expected
     assert len(curve) == 28
 
-    spine = generate_long_run_spine(
+    spine = build_long_run_spine_weeks(
         12.0,
         0,
         20.0,

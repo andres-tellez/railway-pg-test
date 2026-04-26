@@ -3,6 +3,11 @@ Plan Generation Orchestrator V2
 
 Wires together the race-distance-aware services to produce a deterministic draft plan.
 
+Deprecated spine validation wrappers (still in use; remove in Phase 3 Stage D only
+after migration): see ``long_run_curve_validation`` module docstring,
+*DEPRECATED COMPONENTS* registry — notably ``_validate_spine_immutability`` and
+call sites using ``validate_phase_quality``.
+
 Pipeline Steps:
   Step 1: Assess Physical Level (fitness data from materialized view)
   Step 2: Calculate training weeks needed (fitness-based)
@@ -400,6 +405,7 @@ class PlanGenerationOrchestratorV2:
             }
 
         # GUARDRAIL: Validate spine quality - check cutback spacing, progression, etc.
+        # DEPRECATED: validate_phase_quality facade (TODO Stage D → validate_long_run_curve).
         is_valid, quality_issues = validate_phase_quality(
             weeks_long,
             peak=gen_config.target_peak_miles,
@@ -625,6 +631,10 @@ class PlanGenerationOrchestratorV2:
         """
         GUARDRAIL: Validate that spine hasn't been modified after generation.
 
+        DEPRECATED — replaced by ``validate_long_run_curve`` (call directly with
+        structure + peak-max flags). TODO Phase 3 Stage D: delete this method after
+        inlining. See ``long_run_curve_validation`` DEPRECATED COMPONENTS registry.
+
         Returns a structured violation dict if invalid; otherwise None.
         """
         from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
@@ -637,7 +647,11 @@ class PlanGenerationOrchestratorV2:
             curve,
             self.config,
             spine_rows=weeks,
+            expected_start_miles=None,
             peak_target_miles=float(peak_target),
+            taper_ratios_override=list(self.config.taper_ratios),
+            cutback_every_override=int(self.config.cutback_every),
+            taper_weeks_override=int(self.config.taper_weeks),
             include_structure_checks=True,
             include_peak_max_check=True,
             include_pass1_progression=False,
@@ -869,7 +883,7 @@ class PlanGenerationOrchestratorV2:
                     logger.warning("Regeneration produced empty spine, stopping")
                     break
 
-                # Re-validate
+                # Re-validate (DEPRECATED: validate_phase_quality — TODO Stage D).
                 is_valid, new_issues = validate_phase_quality(
                     new_weeks,
                     peak=cfg.target_peak_miles,

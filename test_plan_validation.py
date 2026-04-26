@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from datetime import date
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
-    generate_long_run_spine,
+    build_long_run_spine_weeks,
     validate_phase_quality,
 )
 from src.services.training_plan.v2.race_configs.marathon_config import MarathonConfig
@@ -97,7 +97,7 @@ def test_plan_validation():
 
     try:
         # Generate spine
-        weeks = generate_long_run_spine(
+        weeks = build_long_run_spine_weeks(
             starting_long_run_miles=starting_long_run,
             total_weeks_in_plan=total_weeks,
             peak_long_run_target=config.target_peak_miles,
@@ -141,7 +141,7 @@ def test_plan_validation():
         # Validate cutback spacing
         cutback_ok = validate_cutback_spacing(weeks, config.cutback_every)
 
-        # Run existing validation
+        # Run existing validation (DEPRECATED wrapper — TODO Stage D: validate_long_run_curve)
         is_valid, issues = validate_phase_quality(
             weeks,
             peak=config.target_peak_miles,
