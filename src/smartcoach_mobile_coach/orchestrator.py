@@ -28,6 +28,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import replace
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from sqlalchemy.orm import Session
@@ -72,6 +73,7 @@ from src.smartcoach_mobile_coach.plan_intake_activity_context import (
     format_plan_intake_activity_context_block,
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import (
+    _human_missing_label,
     mark_plan_runner_understanding_shown,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
@@ -1907,6 +1909,7 @@ def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
         "Do not invent weekdays.\n"
         "- Do not ask final yes/no to generate until `ready_to_generate=true` from `update_plan_intake` "
         "(a frequency count is not enough—weekdays must be set first).\n"
+        "- Follow **## Plan intake phase — …** in the system prompt: COLLECTING vs READY_TO_CONFIRM — never mix them.\n"
         "- Infer Marathon from named full marathons when unambiguous; do not re-ask half vs full in that case.\n"
         "- Do not ask experience level, plan length in weeks/months, or how long they want to train—length is from **race date** only. "
         "After they give a race date, never ask about duration; ask the next `missing_required` field only. "
@@ -1941,6 +1944,73 @@ def _plan_generation_fastpath_reply(tool_out: Dict[str, Any]) -> str:
     )
 
 
+def _eager_merge_plan_intake_user_turn(
+    session: Session,
+    internal_user_id: str,
+    *,
+    thread_ctx: DerivedThreadCoachContext,
+    user_message: str,
+) -> DerivedThreadCoachContext:
+    """Merge the current user line into deterministic intake before prompts and tools.
+
+    Thread-derived context only reflects **prior** assistant JSON, so without this
+    the model can see stale ``missing_required`` and repeat questions the user
+    already answered in the **current** message.
+    """
+    prior = getattr(thread_ctx, "latest_plan_intake_state", None)
+    if not isinstance(prior, dict) or not (user_message or "").strip():
+        return thread_ctx
+    try:
+        out = tool_update_plan_intake(
+            session,
+            str(internal_user_id),
+            {"updates": {}},
+            current_state=prior,
+            source_user_message=(user_message or "").strip(),
+        )
+        merged = out.get("plan_intake_state")
+        if isinstance(merged, dict):
+            return replace(thread_ctx, latest_plan_intake_state=merged)
+    except Exception:
+        logger.warning(
+            "[smartcoach_mobile_coach] plan_intake_eager_merge_failed",
+            exc_info=True,
+        )
+    return thread_ctx
+
+
+def _plan_intake_phase_system_section(
+    intake_state: Optional[Dict[str, Any]],
+) -> str:
+    """
+    Hard gate: collecting (missing fields) vs ready-to-confirm (generate yes/no).
+
+    Prevents the model from asking for final confirmation or re-asking captured fields
+    while ``ready_to_generate`` is still false.
+    """
+    if not isinstance(intake_state, dict):
+        return ""
+    if intake_state.get("ready_to_generate"):
+        return (
+            "## Plan intake phase — READY_TO_CONFIRM\n"
+            "- **All required fields are present** (see tool intake payload). Give a **short** recap "
+            "(race, goal, schedule) and **one** yes/no asking whether to generate the plan.\n"
+            "- Do **not** re-ask for fields already present in the draft / tool state.\n"
+        )
+    missing_raw = intake_state.get("missing_required") or []
+    missing = [m for m in missing_raw if isinstance(m, str)]
+    labels = ", ".join(_human_missing_label(m) for m in missing) or "see tool payload"
+    return (
+        "## Plan intake phase — COLLECTING\n"
+        f"- **Still missing (server order):** {labels}.\n"
+        "- Ask **one** natural question for the **next** missing item only (do not bundle unrelated asks).\n"
+        "- **Forbidden in this phase:** acting as if the plan is complete, full-plan “does everything look right?” "
+        "style summaries, yes/no to **generate** the plan, or “ready to create your plan?” — those are only allowed "
+        "after the tool shows `ready_to_generate=true`.\n"
+        "- Do **not** ask for anything already in the draft / tool intake state below.\n"
+    )
+
+
 def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
     """User-facing fallback when the model/tool loop returns plan state but no prose."""
     if intake_state.get("ready_to_generate"):
@@ -1965,6 +2035,22 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
             return "Which days of the week work best for you?"
         return "How many days per week do you want to run, and which days usually work best?"
     return "Tell me a bit more about the race you want to train for."
+
+
+# Premature “wrap up / confirm / generate” language while still in COLLECTING.
+_PLAN_INTAKE_PREMATURE_CONFIRM_RE = re.compile(
+    r"(?is)"
+    r"(does\s+that\s+(all\s+)?look\s+right|"
+    r"do\s+those\s+details\s+look|"
+    r"sound(s)?\s+good\s+to\s+(you|go)|"
+    r"ready\s+to\s+(generate|create)|"
+    r"go\s+ahead\s+and\s+(create|generate)|"
+    r"shall\s+i\s+(create|generate)|"
+    r"does\s+everything\s+look|"
+    r"look\s+right\s+to\s+you|"
+    r"create\s+(your|this)\s+plan\s+now|"
+    r"generate\s+(your|this)\s+plan)"
+)
 
 
 _PLAN_CREATION_FILLER_PATTERNS: Tuple[re.Pattern[str], ...] = (
@@ -2002,12 +2088,19 @@ def _strip_plan_creation_filler_sentence(sentence: str) -> str:
     return out
 
 
-def _enforce_plan_creation_response_guardrails(text: str) -> str:
+def _enforce_plan_creation_response_guardrails(
+    text: str,
+    *,
+    plan_intake_state: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     Lightweight UX guardrail for intake replies: no filler, <=4 sentences, one question.
 
     This intentionally runs after deterministic preamble insertion, so the response
     can be shaped as 3 runner-understanding sentences + 1 natural question.
+
+    When still collecting (``ready_to_generate`` false), strip premature full-plan
+    confirmation / generate language and fall back to the next deterministic question.
     """
     if not (text or "").strip():
         return text
@@ -2025,7 +2118,13 @@ def _enforce_plan_creation_response_guardrails(text: str) -> str:
         kept.append(sentence)
         if len(kept) >= 4:
             break
-    return "\n".join(kept).strip() or (text or "").strip()
+    out = "\n".join(kept).strip() or (text or "").strip()
+    if isinstance(plan_intake_state, dict) and not plan_intake_state.get(
+        "ready_to_generate"
+    ):
+        if _PLAN_INTAKE_PREMATURE_CONFIRM_RE.search(out):
+            return _natural_plan_intake_fallback_question(plan_intake_state)
+    return out
 
 
 _DEFAULT_PREFS = {
@@ -2479,6 +2578,12 @@ def run_mobile_agent_turn(
         if thread_derived_context is not None
         else derive_thread_coach_context(conversation_history)
     )
+    thread_ctx = _eager_merge_plan_intake_user_turn(
+        session,
+        str(internal_user_id),
+        thread_ctx=thread_ctx,
+        user_message=user_message,
+    )
     turn_type = classify_turn(user_message, conversation_history)
     conversation_state = extract_conversation_state(conversation_history)
     response_directive = plan_response(
@@ -2727,9 +2832,15 @@ def run_mobile_agent_turn(
     use_full_prompt_for_plan = _env_experiment_minimal_flag(
         "SMARTCOACH_PLAN_CREATION_USE_FULL_PROMPT"
     )
+    plan_intake_ctx: Optional[Dict[str, Any]] = (
+        thread_ctx.latest_plan_intake_state
+        if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict)
+        else None
+    )
     if plan_creation_mode and not use_full_prompt_for_plan:
         system_content = _join_nonempty_system_sections(
             PLAN_CREATION_SYSTEM_PROMPT_BASE,
+            _plan_intake_phase_system_section(plan_intake_ctx),
             _device_anchor_system_section(anchor_local_date, client_timezone),
             activity_ctx_block,
             _plan_creation_directive_stub(response_directive),
@@ -2822,6 +2933,9 @@ def run_mobile_agent_turn(
                 response_directive, plan_creation_mode=plan_creation_mode
             ),
             activity_ctx_block,
+            _plan_intake_phase_system_section(
+                plan_intake_ctx if plan_creation_mode else None
+            ),
             _plan_creation_system_section(
                 user_message,
                 response_directive.intent,
@@ -3372,7 +3486,12 @@ def run_mobile_agent_turn(
                     latest_plan_intake_state = pis_merged
                 out_text = out_text_with_preamble
                 if plan_creation_mode and latest_plan_generation is None:
-                    out_text = _enforce_plan_creation_response_guardrails(out_text)
+                    out_text = _enforce_plan_creation_response_guardrails(
+                        out_text,
+                        plan_intake_state=(
+                            pis_merged if isinstance(pis_merged, dict) else None
+                        ),
+                    )
                 structured_text = {
                     "type": "text",
                     "content": out_text,
