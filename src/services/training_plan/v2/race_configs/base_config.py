@@ -124,6 +124,14 @@ class RaceDistanceConfig(ABC):
         pass
 
     @property
+    def peak_weekly_cap_lookahead_weeks_before_taper(self) -> int:
+        """Weeks before first Taper week when finisher peak weekly cap may apply (with Peak).
+
+        Build weeks never use this cap. Default 4.
+        """
+        return 4
+
+    @property
     @abstractmethod
     def weekly_increase_cap(self) -> float:
         """Maximum weekly mileage increase percentage (e.g., 0.08 for 8%)."""

@@ -35,15 +35,60 @@ def _phase_is_taper(phase: Optional[str]) -> bool:
     return p in ("taper", "taper week")
 
 
+def _phase_is_build(phase: Optional[str]) -> bool:
+    if not phase:
+        return False
+    return str(phase).lower().strip() == "build"
+
+
+def _first_taper_week_number(weeks: List[Dict[str, Any]]) -> Optional[int]:
+    """Smallest ``week_number`` among weeks labeled Taper (calendar first taper week)."""
+    best: Optional[int] = None
+    for w in weeks:
+        if not _phase_is_taper(w.get("phase")):
+            continue
+        try:
+            n = int(w.get("week_number", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if n <= 0:
+            continue
+        if best is None or n < best:
+            best = n
+    return best
+
+
+def _should_apply_finisher_peak_weekly_cap(
+    phase: Optional[str],
+    weeks_before_first_taper: Optional[int],
+    lookahead_weeks: int,
+) -> bool:
+    """Peak weekly cap applies in Peak and final pre-taper weeks, not Build or Taper."""
+    if _phase_is_taper(phase):
+        return False
+    if _phase_is_build(phase):
+        return False
+    if _phase_is_peak(phase):
+        return True
+    if (
+        weeks_before_first_taper is not None
+        and 0 <= weeks_before_first_taper <= lookahead_weeks
+    ):
+        return True
+    if phase is None or not str(phase).strip():
+        return True
+    return False
+
+
 def clamp(n: float, lo: float, hi: float) -> float:
     """Clamp n between lo and hi."""
     return max(lo, min(hi, n))
 
 
 def _weekly_total_largest_step(
-    chain: List[Tuple[str, float]]
+    chain: List[Tuple[str, float]],
 ) -> Tuple[Optional[str], float]:
-    """Return (edge_name, abs_delta) for the single largest |Δ| between consecutive chain values."""
+    """Largest |delta| between consecutive (name, value) chain points."""
     if len(chain) < 2:
         return (None, 0.0)
     prev_name, prev_val = chain[0]
@@ -70,10 +115,12 @@ def recommend_weekly_total(
     starting_mileage_adjustment: float = 1.0,
     phase: Optional[str] = None,
     prev_phase: Optional[str] = None,
-    unit_system: str = "imperial",  # Deprecated: kept for backward compatibility, no longer affects rounding
+    # Deprecated: backward compatibility only; does not affect rounding.
+    unit_system: str = "imperial",
     week_number: Optional[int] = None,
     prev_long_run: Optional[float] = None,
     is_cutback: Optional[bool] = None,
+    weeks_before_first_taper: Optional[int] = None,
 ) -> int:
     """Compute a safe weekly total given the long run and frequency.
 
@@ -88,11 +135,12 @@ def recommend_weekly_total(
         starting_mileage_adjustment: Adjustment factor for Week 1 (default 1.0 = no adjustment)
         phase: Training phase label for the week (e.g., Base, Build, Peak, Taper)
         prev_phase: Prior week's phase; used with ``phase`` for Peak→Taper boundary capping
-        unit_system: Deprecated - kept for backward compatibility. Weekly totals are always
-                     rounded to whole miles internally. Frontend handles unit conversion for display.
+        unit_system: Deprecated. Weekly totals are whole miles internally.
         week_number: Optional week index for DEBUG tracing only.
-        prev_long_run: Prior week's long run (miles); used in DEBUG trace (LR cutback vs weekly bump).
+        prev_long_run: Prior week's long run (miles); DEBUG trace context.
         is_cutback: Optional spine flag for DEBUG tracing only.
+        weeks_before_first_taper: ``first_taper_week_number - week_number`` until taper.
+            Gates finisher peak weekly cap with Peak phase; Build never uses this cap.
 
     Returns:
         Safe weekly total in whole miles (always rounded to whole miles, regardless of unit_system)
@@ -143,9 +191,14 @@ def recommend_weekly_total(
     total = max(total, min_total_viable)
     after_min_viable = total
 
-    # Apply finisher peak cap
+    # Apply finisher peak cap (Peak / final pre-taper window only — not Build or Taper)
     caps = peak_caps or config.peak_caps
-    total = min(total, caps[runs_per_week])
+    lookahead = int(config.peak_weekly_cap_lookahead_weeks_before_taper)
+    apply_peak_weekly_cap = _should_apply_finisher_peak_weekly_cap(
+        phase, weeks_before_first_taper, lookahead
+    )
+    if apply_peak_weekly_cap:
+        total = min(total, caps[runs_per_week])
     after_peak_cap = total
 
     # Apply starting mileage adjustment (only for Week 1, when prev_week_total is None)
@@ -247,6 +300,9 @@ def recommend_weekly_total(
             "week_number": week_number,
             "phase": phase,
             "prev_phase": prev_phase,
+            "weeks_before_first_taper": weeks_before_first_taper,
+            "peak_weekly_cap_lookahead": lookahead,
+            "peak_weekly_cap_applied": apply_peak_weekly_cap,
             "is_cutback": is_cutback,
             "rebuild_after_cutback": rebuild_after_cutback,
             "volume_cap_kind": volume_cap_kind,
@@ -313,10 +369,21 @@ def calculate_weekly_totals_from_long_runs(
         else 1.0
     )
 
+    first_taper_week = _first_taper_week_number(weeks)
+
     for week in weeks:
         week_num = week.get("week_number", 0)
         long_run = float(week.get("long_run_miles", 0) or 0)
         phase = week.get("phase")
+
+        weeks_before_taper: Optional[int] = None
+        if (
+            first_taper_week is not None
+            and week_num > 0
+            and phase is not None
+            and not _phase_is_taper(phase)
+        ):
+            weeks_before_taper = int(first_taper_week) - int(week_num)
 
         if long_run > 0:
             cutback_flag: Optional[bool]
@@ -341,6 +408,7 @@ def calculate_weekly_totals_from_long_runs(
                 week_number=week_num,
                 prev_long_run=prev_long_run,
                 is_cutback=cutback_flag,
+                weeks_before_first_taper=weeks_before_taper,
             )
             prev_prev_total = prev_total
             prev_total = float(total)
