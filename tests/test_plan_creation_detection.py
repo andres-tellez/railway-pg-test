@@ -300,3 +300,32 @@ def test_plan_creation_response_guardrail_keeps_first_question_only() -> None:
         "I can help with that. What are you training for? Do you have a race date?"
     )
     assert out == "What are you training for?"
+
+
+def test_plan_creation_guardrail_replaces_premature_generate_confirm_while_collecting() -> (
+    None
+):
+    """COLLECTING: model must not ask full-plan yes / generate — replace with next question."""
+    intake = {
+        "ready_to_generate": False,
+        "missing_required": ["training_days"],
+        "ux": {"training_days_count": 6},
+        "draft": {},
+    }
+    text = "You’re in a solid groove. Does that all look right so we can generate your plan?"
+    out = _enforce_plan_creation_response_guardrails(text, plan_intake_state=intake)
+    assert "generate" not in out.lower()
+    assert "look right" not in out.lower()
+    assert "week" in out.lower()
+
+
+def test_plan_creation_guardrail_does_not_replace_when_ready_to_confirm() -> None:
+    intake = {
+        "ready_to_generate": True,
+        "missing_required": [],
+        "confirmation_summary": "Marathon on 2026-10-11",
+        "draft": {},
+    }
+    text = "Here’s the recap. Does that look right?"
+    out = _enforce_plan_creation_response_guardrails(text, plan_intake_state=intake)
+    assert "look right" in out.lower() or "recap" in out.lower()
