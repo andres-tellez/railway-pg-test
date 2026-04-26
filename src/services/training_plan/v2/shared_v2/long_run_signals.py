@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any, Dict, List, Optional, Tuple
-from datetime import date, datetime, timedelta
+
+from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from src.services.training_plan.calculations.week_utils import get_complete_weeks
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
 from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
+
+logger = logging.getLogger(__name__)
 
 
 def _median_of(values: List[float]) -> float:
@@ -19,6 +24,146 @@ def _median_of(values: List[float]) -> float:
     if n % 2 == 1:
         return float(s[m])
     return (s[m - 1] + s[m]) / 2.0
+
+
+def _weekly_lr_trace_enabled() -> bool:
+    return os.environ.get("WEEKLY_LR_TRACE", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _monday_of_calendar_week(containing: date) -> date:
+    """ISO calendar Monday for the week that contains ``containing`` (Python weekday: Mon=0)."""
+    return containing - timedelta(days=containing.weekday())
+
+
+def _parse_week_start_value(value: Any) -> Optional[date]:
+    """Normalize ``week_start`` from ``mv_longest_runs.weekly_runs`` JSON to a date."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if "T" in text:
+            try:
+                return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+            except ValueError:
+                return None
+        try:
+            return datetime.strptime(text[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    return None
+
+
+def _week_row_is_current_calendar_week(
+    row: Dict[str, Any], reference_date: date
+) -> bool:
+    """True if this row's ``week_start`` is the same ISO week as ``reference_date``."""
+    ws = _parse_week_start_value(row.get("week_start"))
+    if ws is None:
+        return False
+    return ws == _monday_of_calendar_week(reference_date)
+
+
+def _drop_anomalous_low_weekly_maxes(
+    rows: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Remove weeks whose longest run is far below the window median (bad partial / sync weeks).
+
+    Requires at least three positive distances and a median of at least 7 mi so we do not
+    strip novice blocks. A week is dropped when both:
+      distance < 0.55 * median, and
+      distance + 2.0 < median
+    """
+    distances = [
+        float(r.get("distance", 0) or 0)
+        for r in rows
+        if float(r.get("distance", 0) or 0) > 0
+    ]
+    if len(distances) < 3:
+        return rows
+    med = _median_of(distances)
+    if med < 7.0:
+        return rows
+    low_ratio = 0.55
+    margin_mi = 2.0
+    kept: List[Dict[str, Any]] = []
+    for r in rows:
+        d = float(r.get("distance", 0) or 0)
+        if d <= 0:
+            continue
+        if d < low_ratio * med and d + margin_mi < med:
+            continue
+        kept.append(r)
+    return kept if kept else rows
+
+
+def filter_mv_weekly_runs_for_planning(
+    rows: List[Dict[str, Any]],
+    *,
+    reference_date: Optional[date] = None,
+    trace_label: str = "",
+) -> List[Dict[str, Any]]:
+    """Filter ``mv_longest_runs.weekly_runs`` rows before Pass1 / consecutive detection.
+
+    1. Drops the **current calendar week** row (partial week — long run may not have happened yet).
+       Uses ISO Monday alignment, same convention as ``DATE_TRUNC('week', ...)`` in PostgreSQL
+       when the session week starts on Monday (typical). ``reference_date`` defaults to today's
+       date in UTC for stability across workers.
+
+    2. Drops **anomalously low** weekly maxes vs the median of remaining weeks (guards bogus
+       5 mi “max” weeks when neighboring weeks are ~12–13 mi).
+
+    If filtering would remove every row, returns the original ``rows`` unchanged.
+    """
+    if not rows:
+        return rows
+
+    ref = reference_date or datetime.now(timezone.utc).date()
+    after_partial: List[Dict[str, Any]] = [
+        r for r in rows if not _week_row_is_current_calendar_week(r, ref)
+    ]
+    if not after_partial:
+        after_partial = list(rows)
+
+    after_anomaly = _drop_anomalous_low_weekly_maxes(after_partial)
+    if not after_anomaly:
+        after_anomaly = list(after_partial)
+
+    if _weekly_lr_trace_enabled():
+
+        def _row_summary(r: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "week_start": r.get("week_start"),
+                "date": r.get("date"),
+                "activity_id": r.get("activity_id"),
+                "distance": r.get("distance"),
+                "name": r.get("name"),
+            }
+
+        logger.info(
+            "WEEKLY_LR_TRACE label=%s ref_date=%s raw_count=%d raw=%s "
+            "after_partial_count=%d after_partial=%s final_count=%d final=%s",
+            trace_label or "weekly_lr",
+            ref.isoformat(),
+            len(rows),
+            [_row_summary(r) for r in rows],
+            len(after_partial),
+            [_row_summary(r) for r in after_partial],
+            len(after_anomaly),
+            [_row_summary(r) for r in after_anomaly],
+        )
+
+    return after_anomaly
 
 
 def _last_three_weekly_long_runs(series: List[float]) -> List[float]:
@@ -267,11 +412,21 @@ def fetch_recent_weekly_long_run_distances(
 ) -> List[float]:
     """Longest run distance per week for the last ``max_weeks`` weeks (most recent first).
 
+    Source: ``mv_longest_runs.weekly_runs`` (see ``_mv_weekly_runs_rows``). Rows are passed
+    through ``filter_mv_weekly_runs_for_planning`` so partial current weeks and anomalously
+    low weekly maxes (vs the window median) do not distort Pass1.
+
     Only weeks with a positive ``distance`` are included (same convention as
     consecutive-long-run detection).
+
+    Set env ``WEEKLY_LR_TRACE=1`` for INFO logs of raw vs filtered weekly rows.
     """
+    raw = _mv_weekly_runs_rows(session, user_id)
+    rows = filter_mv_weekly_runs_for_planning(
+        raw, trace_label="fetch_recent_weekly_long_run_distances"
+    )
     out: List[float] = []
-    for run in _mv_weekly_runs_rows(session, user_id)[:max_weeks]:
+    for run in rows[:max_weeks]:
         distance = float(run.get("distance", 0) or 0)
         if distance > 0:
             out.append(round(distance, 2))
@@ -497,8 +652,10 @@ def recent_longest_3w_from_materialized_view(
         if not result or not result.weekly_runs:
             return 0.0
 
-        # Get weekly runs from materialized view
-        weekly_runs = result.weekly_runs
+        weekly_runs = filter_mv_weekly_runs_for_planning(
+            list(result.weekly_runs),
+            trace_label="recent_longest_3w_from_materialized_view",
+        )
 
         # Filter to last 21 days (approximately 3 weeks)
         now = datetime.utcnow()
@@ -552,7 +709,10 @@ def detect_consecutive_long_runs_from_materialized_view(
     Returns same structure as detect_consecutive_long_runs() for compatibility.
     """
     try:
-        weekly_runs = _mv_weekly_runs_rows(session, user_id)
+        raw = _mv_weekly_runs_rows(session, user_id)
+        weekly_runs = filter_mv_weekly_runs_for_planning(
+            raw, trace_label="detect_consecutive_long_runs_from_materialized_view"
+        )
         if not weekly_runs:
             return {
                 "has_consecutive_runs": False,
