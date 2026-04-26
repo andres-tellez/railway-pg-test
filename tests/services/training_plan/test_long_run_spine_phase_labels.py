@@ -6,8 +6,15 @@ from src.services.training_plan.v2.race_configs.marathon_config import MarathonC
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
     assign_training_intent_phases,
     capped_peak_training_weeks,
+    compute_cutback_long_run_miles,
     generate_long_run_spine,
 )
+
+
+def test_compute_cutback_caps_large_regressions():
+    # Harsh factor would yield 10.5 from 14; floors keep deload to a 2 mi / 20% band.
+    assert compute_cutback_long_run_miles(14.0, 0.75, 5.0) == 12.0
+    assert compute_cutback_long_run_miles(16.0, 0.75, 5.0) == 14.0
 
 
 def test_capped_peak_training_weeks_table():
