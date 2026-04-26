@@ -210,6 +210,7 @@ class Pass1LongRunFirstV2:
                 )
 
         start_meta: Dict[str, Any] = {}
+        week1_source = "stable_logic"
 
         # Determine Week 1 long run based on consecutive run detection
         if consecutive_analysis["has_consecutive_runs"]:
@@ -247,6 +248,7 @@ class Pass1LongRunFirstV2:
                     unit_system=unit_system,
                 )
                 trusted_start = recovery_lr
+                week1_source = "recovery_path"
                 start_rule = "recovery_week_after_consecutive_runs"
                 start_meta = {
                     "rule": start_rule,
@@ -291,6 +293,7 @@ class Pass1LongRunFirstV2:
             )
             original_start = trusted_start
             trusted_start = round_to_half_mile(capped_start)
+            week1_source = "capped_start"
             start_rule = f"{start_rule} (capped from {original_start:.1f} to {trusted_start:.1f} for race peak {target_peak_miles:.1f}mi)"
             logger.info(
                 f"🔄 Capping starting long run: User's fitness ({original_start:.1f}mi) exceeds "
@@ -299,6 +302,11 @@ class Pass1LongRunFirstV2:
             )
 
         start_rule_miles = trusted_start
+        logger.info(
+            "WEEK1_SOURCE = %s, value = %.2f",
+            week1_source,
+            float(trusted_start),
+        )
 
         # Keep caller intent before `recommended_weeks` is overwritten with output length.
         fixed_length_requested = bool(recommended_weeks and recommended_weeks > 0)
