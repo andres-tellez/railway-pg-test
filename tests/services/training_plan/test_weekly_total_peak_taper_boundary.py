@@ -99,6 +99,59 @@ def test_calculate_weekly_totals_first_taper_respects_peak_ceiling():
     assert taper_total <= peak_total * 0.90 + 0.51  # whole-mile rounding slack
 
 
+def test_build_phase_skips_finisher_peak_weekly_cap():
+    """Build follows LR-derived total; finisher peak cap (46 for 4 runs) must not flatten."""
+    cfg = MarathonWithoutTaperPhaseDelta()
+    total = recommend_weekly_total(
+        long_run=20.0,
+        runs_per_week=4,
+        config=cfg,
+        phase="Build",
+        weeks_before_first_taper=8,
+        prev_week_total=None,
+    )
+    assert total > 46
+
+
+def test_peak_phase_applies_finisher_peak_weekly_cap():
+    cfg = MarathonWithoutTaperPhaseDelta()
+    total = recommend_weekly_total(
+        long_run=20.0,
+        runs_per_week=4,
+        config=cfg,
+        phase="Peak",
+        weeks_before_first_taper=2,
+        prev_week_total=None,
+    )
+    assert total <= 46
+
+
+def test_base_within_lookahead_applies_finisher_peak_weekly_cap():
+    cfg = MarathonWithoutTaperPhaseDelta()
+    total = recommend_weekly_total(
+        long_run=20.0,
+        runs_per_week=4,
+        config=cfg,
+        phase="Base",
+        weeks_before_first_taper=3,
+        prev_week_total=None,
+    )
+    assert total <= 46
+
+
+def test_base_outside_lookahead_skips_finisher_peak_weekly_cap():
+    cfg = MarathonWithoutTaperPhaseDelta()
+    total = recommend_weekly_total(
+        long_run=20.0,
+        runs_per_week=4,
+        config=cfg,
+        phase="Base",
+        weeks_before_first_taper=10,
+        prev_week_total=None,
+    )
+    assert total > 46
+
+
 def test_calculate_weekly_totals_taper_week_label_alias():
     weeks: List[Dict[str, Any]] = [
         {
