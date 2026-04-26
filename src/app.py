@@ -81,11 +81,17 @@ from src.routes.pace_zones_routes import pace_zones_bp
 from src.routes.heart_rate_routes import heart_rate_bp
 from src.routes.training_insights_routes import training_insights_bp
 from src.routes.internal_cron_routes import internal_cron_bp
+from src.utils.logging_bootstrap import configure_smartcoach_logging
 
 
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config["SQLALCHEMY_ECHO"] = False
+
+    configure_smartcoach_logging(
+        flask_debug=bool(app.debug),
+        testing=bool(test_config and test_config.get("TESTING")),
+    )
 
     from src.db.db_session import db
 
