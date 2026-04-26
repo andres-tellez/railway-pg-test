@@ -383,22 +383,26 @@ def validate_phase_quality(
     return is_valid, issues
 
 
-# Long-run share at/above this fraction of the pre-taper max → Specific phase (plateau / race prep).
-SPECIFIC_LR_THRESHOLD_RATIO = 0.9
+# Miles below pre-taper max long run to count as "near peak" (absolute, not percentage).
+SPECIFIC_LR_MILES_BELOW_PEAK = 2.0
+# Optional plateau: small week-to-week change while already close to peak (miles below max).
+SPECIFIC_PLATEAU_MAX_DELTA_MI = 1.0
+SPECIFIC_PLATEAU_MAX_MILES_BELOW_PEAK = 3.0
 _LR_FLOAT_TOL = 1e-5
 
 
 def assign_training_intent_phases(
     weeks: List[Dict[str, float]],
     taper_weeks: int,
-    *,
-    specific_lr_ratio: float = SPECIFIC_LR_THRESHOLD_RATIO,
 ) -> None:
     """Assign user-facing ``Base`` / ``Build`` / ``Specific`` / ``Taper`` and ``is_peak_week``.
 
-    Mutates each week dict in place. Once a week qualifies for Specific (long run at or above
-    the threshold of the pre-taper maximum), all later pre-taper weeks stay Specific — no
-    oscillation back to Build.
+    Mutates each week dict in place. **Specific** starts at the earliest pre-taper index where
+    either (1) long run is within ``SPECIFIC_LR_MILES_BELOW_PEAK`` of the pre-taper max, or
+    (2) **two consecutive** pre-taper weeks both have long run at least ``peak_lr -
+    SPECIFIC_PLATEAU_MAX_MILES_BELOW_PEAK`` and their week-over-week change is at most
+    ``SPECIFIC_PLATEAU_MAX_DELTA_MI`` (sustained plateau near peak). In case (2), Specific begins
+    at the **first** week of that pair. All later pre-taper weeks stay Specific (monotonic).
 
     ``is_peak_week`` is True for exactly one week: the first pre-taper week (by list order)
     whose long run equals the pre-taper maximum (ties broken by earliest index).
@@ -416,16 +420,36 @@ def assign_training_intent_phases(
 
     pre_taper = weeks[:pre_count]
     peak_lr = max(float(w.get("long_run_miles") or 0.0) for w in pre_taper)
-    thr = peak_lr * float(specific_lr_ratio) - _LR_FLOAT_TOL
+    near_peak_floor = peak_lr - float(SPECIFIC_LR_MILES_BELOW_PEAK)
+    plateau_near_floor = peak_lr - float(SPECIFIC_PLATEAU_MAX_MILES_BELOW_PEAK)
 
-    first_specific_idx = None
+    first_near_peak_idx: Optional[int] = None
     for idx, w in enumerate(pre_taper):
         lr = float(w.get("long_run_miles") or 0.0)
-        if lr >= thr:
-            first_specific_idx = idx
+        if lr + _LR_FLOAT_TOL >= near_peak_floor:
+            first_near_peak_idx = idx
             break
-    if first_specific_idx is None:
+
+    first_plateau_start_idx: Optional[int] = None
+    max_delta = float(SPECIFIC_PLATEAU_MAX_DELTA_MI) + _LR_FLOAT_TOL
+    for idx in range(0, len(pre_taper) - 1):
+        lr0 = float(pre_taper[idx].get("long_run_miles") or 0.0)
+        lr1 = float(pre_taper[idx + 1].get("long_run_miles") or 0.0)
+        if (
+            lr0 + _LR_FLOAT_TOL >= plateau_near_floor
+            and lr1 + _LR_FLOAT_TOL >= plateau_near_floor
+            and abs(lr1 - lr0) <= max_delta
+        ):
+            first_plateau_start_idx = idx
+            break
+
+    candidates = [
+        i for i in (first_near_peak_idx, first_plateau_start_idx) if i is not None
+    ]
+    if not candidates:
         first_specific_idx = pre_count - 1
+    else:
+        first_specific_idx = min(candidates)
 
     first_peak_idx = None
     for idx, w in enumerate(pre_taper):
