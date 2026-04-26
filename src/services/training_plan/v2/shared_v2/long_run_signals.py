@@ -75,7 +75,7 @@ def _week_row_is_current_calendar_week(
 
 
 def _drop_anomalous_low_weekly_maxes(
-    rows: List[Dict[str, Any]]
+    rows: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """Remove weeks whose longest run is far below the window median (bad partial / sync weeks).
 
@@ -236,6 +236,106 @@ def recent_longest_3w(activities: List[Dict[str, Any]], *, days: int = 21) -> fl
     return round(longest, 2)
 
 
+def analyze_consecutive_long_runs_from_weekly_distances(
+    weekly_long_runs: List[float],
+    *,
+    min_consecutive_weeks: int = 3,
+) -> Dict[str, Any]:
+    """Compute consecutive-long-run flags from weekly longest distances (most recent first).
+
+    Shared by ``detect_consecutive_long_runs`` (activities → weeks) and
+    ``detect_consecutive_long_runs_from_materialized_view`` (MV rows) so coach and Pass1
+    stay aligned.
+    """
+    if len(weekly_long_runs) < min_consecutive_weeks:
+        most_recent = weekly_long_runs[0] if weekly_long_runs else 0.0
+        return {
+            "has_consecutive_runs": False,
+            "consecutive_count": len(weekly_long_runs),
+            "weekly_long_runs": list(weekly_long_runs),
+            "longest_recent": max(weekly_long_runs) if weekly_long_runs else 0.0,
+            "has_recent_reduction": False,
+            "most_recent_long_run": most_recent,
+        }
+
+    consecutive_count = 0
+    for lr in weekly_long_runs:
+        if lr >= 8.0:
+            consecutive_count += 1
+        else:
+            break
+
+    has_consecutive = consecutive_count >= min_consecutive_weeks
+    longest_recent = (
+        max(weekly_long_runs[:consecutive_count]) if consecutive_count > 0 else 0.0
+    )
+
+    most_recent_long_run = weekly_long_runs[0] if weekly_long_runs else 0.0
+    has_recent_reduction = False
+
+    if len(weekly_long_runs) >= 2 and most_recent_long_run > 0 and longest_recent > 0:
+        reduction_threshold = 0.05
+        reduction_pct = (longest_recent - most_recent_long_run) / longest_recent
+
+        if reduction_pct >= reduction_threshold:
+            if (
+                len(weekly_long_runs) >= 2
+                and most_recent_long_run < weekly_long_runs[1]
+            ):
+                has_recent_reduction = True
+            elif reduction_pct >= 0.15:
+                has_recent_reduction = True
+
+    return {
+        "has_consecutive_runs": has_consecutive,
+        "consecutive_count": consecutive_count,
+        "weekly_long_runs": list(weekly_long_runs),
+        "longest_recent": longest_recent,
+        "has_recent_reduction": has_recent_reduction,
+        "most_recent_long_run": most_recent_long_run,
+    }
+
+
+def pass1_use_recovery_week_after_consecutive(
+    effective_weekly_series: List[float],
+    consecutive_analysis: Dict[str, Any],
+) -> Tuple[bool, Dict[str, Any]]:
+    """Decide whether Pass1 should apply ``recovery_path`` after a consecutive-long-run block.
+
+    Recovery is used only when the weekly series shows a **sustained downward** pattern
+    (``_clear_downward_long_run_trend``). Stable runners (``_consistent_recent_long_runs``)
+    or athletes who already eased off (``has_recent_reduction`` from consecutive analysis)
+    use stable week-1 logic instead.
+    """
+    series = [
+        float(x) for x in effective_weekly_series if x is not None and float(x) > 0.0
+    ][:6]
+    flags: Dict[str, Any] = {
+        "consistent_recent_lr": False,
+        "clear_downward_trend": False,
+        "has_recent_reduction": bool(
+            consecutive_analysis.get("has_recent_reduction", False)
+        ),
+    }
+    if not series:
+        return False, flags
+
+    most_recent = float(series[0])
+    last_three = _last_three_weekly_long_runs(series)
+    consistent = _consistent_recent_long_runs(most_recent, last_three)
+    clear_down = _clear_downward_long_run_trend(series)
+    flags["consistent_recent_lr"] = consistent
+    flags["clear_downward_trend"] = clear_down
+
+    if consistent:
+        return False, flags
+    if flags["has_recent_reduction"] and most_recent > 0:
+        return False, flags
+    if clear_down:
+        return True, flags
+    return False, flags
+
+
 def detect_consecutive_long_runs(
     activities: List[Dict[str, Any]], *, min_consecutive_weeks: int = 3
 ) -> Dict[str, Any]:
@@ -282,64 +382,9 @@ def detect_consecutive_long_runs(
         if has_any_runs or longest_in_week > 0:
             weekly_long_runs.append(round(longest_in_week, 2))
 
-    if len(weekly_long_runs) < min_consecutive_weeks:
-        most_recent = weekly_long_runs[0] if weekly_long_runs else 0.0
-        return {
-            "has_consecutive_runs": False,
-            "consecutive_count": len(weekly_long_runs),
-            "weekly_long_runs": weekly_long_runs,
-            "longest_recent": max(weekly_long_runs) if weekly_long_runs else 0.0,
-            "has_recent_reduction": False,
-            "most_recent_long_run": most_recent,
-        }
-
-    consecutive_count = 0
-    for lr in weekly_long_runs:
-        if lr >= 8.0:
-            consecutive_count += 1
-        else:
-            break
-
-    has_consecutive = consecutive_count >= min_consecutive_weeks
-    longest_recent = (
-        max(weekly_long_runs[:consecutive_count]) if consecutive_count > 0 else 0.0
+    return analyze_consecutive_long_runs_from_weekly_distances(
+        weekly_long_runs, min_consecutive_weeks=min_consecutive_weeks
     )
-
-    # Detect if user has already self-regulated (recent reduction from peak)
-    # Pattern: [most_recent, ...previous weeks]
-    # If most_recent < peak, user may have already reduced
-    most_recent_long_run = weekly_long_runs[0] if weekly_long_runs else 0.0
-    has_recent_reduction = False
-
-    if len(weekly_long_runs) >= 2 and most_recent_long_run > 0 and longest_recent > 0:
-        # Check if most recent week is lower than peak
-        # Any reduction suggests user may have intentionally self-regulated
-        # This avoids forcing double recovery when user already pulled back
-
-        # If most recent is at least 5% lower than peak, it's likely intentional
-        reduction_threshold = 0.05  # 5% reduction suggests intentional adjustment
-        reduction_pct = (longest_recent - most_recent_long_run) / longest_recent
-
-        if reduction_pct >= reduction_threshold:
-            # Check if it's part of a downward trend (most recent < previous)
-            # Pattern [14, 15, 15, 14] means most recent (14) < previous week (15)
-            if (
-                len(weekly_long_runs) >= 2
-                and most_recent_long_run < weekly_long_runs[1]
-            ):
-                has_recent_reduction = True
-            # Or if reduction is substantial (15%+), definitely intentional
-            elif reduction_pct >= 0.15:
-                has_recent_reduction = True
-
-    return {
-        "has_consecutive_runs": has_consecutive,
-        "consecutive_count": consecutive_count,
-        "weekly_long_runs": weekly_long_runs,
-        "longest_recent": longest_recent,
-        "has_recent_reduction": has_recent_reduction,
-        "most_recent_long_run": most_recent_long_run,
-    }
 
 
 def calculate_recovery_week_long_run(
@@ -730,62 +775,9 @@ def detect_consecutive_long_runs_from_materialized_view(
             if distance > 0:
                 weekly_long_runs.append(round(distance, 2))
 
-        if len(weekly_long_runs) < min_consecutive_weeks:
-            most_recent = weekly_long_runs[0] if weekly_long_runs else 0.0
-            return {
-                "has_consecutive_runs": False,
-                "consecutive_count": len(weekly_long_runs),
-                "weekly_long_runs": weekly_long_runs,
-                "longest_recent": max(weekly_long_runs) if weekly_long_runs else 0.0,
-                "has_recent_reduction": False,
-                "most_recent_long_run": most_recent,
-            }
-
-        # Check for consecutive weeks with long runs >= 8.0 miles
-        consecutive_count = 0
-        for lr in weekly_long_runs:
-            if lr >= 8.0:
-                consecutive_count += 1
-            else:
-                break
-
-        has_consecutive = consecutive_count >= min_consecutive_weeks
-        longest_recent = (
-            max(weekly_long_runs[:consecutive_count]) if consecutive_count > 0 else 0.0
+        return analyze_consecutive_long_runs_from_weekly_distances(
+            weekly_long_runs, min_consecutive_weeks=min_consecutive_weeks
         )
-
-        # Detect if user has already self-regulated (recent reduction from peak)
-        most_recent_long_run = weekly_long_runs[0] if weekly_long_runs else 0.0
-        has_recent_reduction = False
-
-        if (
-            len(weekly_long_runs) >= 2
-            and most_recent_long_run > 0
-            and longest_recent > 0
-        ):
-            # Check if most recent week is lower than peak
-            reduction_threshold = 0.05  # 5% reduction suggests intentional adjustment
-            reduction_pct = (longest_recent - most_recent_long_run) / longest_recent
-
-            if reduction_pct >= reduction_threshold:
-                # Check if it's part of a downward trend (most recent < previous)
-                if (
-                    len(weekly_long_runs) >= 2
-                    and most_recent_long_run < weekly_long_runs[1]
-                ):
-                    has_recent_reduction = True
-                # Or if reduction is substantial (15%+), definitely intentional
-                elif reduction_pct >= 0.15:
-                    has_recent_reduction = True
-
-        return {
-            "has_consecutive_runs": has_consecutive,
-            "consecutive_count": consecutive_count,
-            "weekly_long_runs": weekly_long_runs,
-            "longest_recent": longest_recent,
-            "has_recent_reduction": has_recent_reduction,
-            "most_recent_long_run": most_recent_long_run,
-        }
     except Exception:
         return {
             "has_consecutive_runs": False,
