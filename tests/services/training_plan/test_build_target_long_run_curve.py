@@ -147,7 +147,7 @@ def test_build_target_long_run_curve_matches_spine_dynamic_length_golden(
 def test_stage_c_use_global_curve_matches_legacy_golden(
     marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """USE_GLOBAL_CURVE: pure reassembly matches legacy spine (fixed-length golden)."""
+    """USE_GLOBAL_CURVE: full pure curve matches legacy golden (Stage C2)."""
     monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
     start, total_weeks, peak = 10.0, 20, 18.0
     race_date = date(2026, 10, 10)
@@ -201,3 +201,105 @@ def test_stage_c_use_global_curve_matches_legacy_golden(
         unit_system="imperial",
     )
     assert [float(w["long_run_miles"]) for w in spine] == expected
+
+
+def test_stage_c2_pure_matches_legacy_fixed_golden(
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """USE_GLOBAL_CURVE pure path matches legacy spine for fixed-length golden."""
+    start, total_weeks, peak = 10.0, 20, 18.0
+    race_date = date(2026, 10, 10)
+    kw = dict(
+        race_date=race_date,
+        taper_weeks=3,
+        inc_miles=1.0,
+        cutback_every=4,
+        cutback_factor=0.85,
+        peak_offset_before_taper=2,
+        config=marathon_cfg,
+        unit_system="imperial",
+    )
+    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", False)
+    legacy = build_target_long_run_curve(start, total_weeks, peak, **kw)
+    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
+    pure = build_target_long_run_curve(start, total_weeks, peak, **kw)
+    assert pure == legacy
+
+
+def test_stage_c2_pure_matches_legacy_dynamic_golden(
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """USE_GLOBAL_CURVE pure path matches legacy for dynamic-length golden."""
+    kw = dict(
+        race_date=None,
+        taper_weeks=3,
+        inc_miles=1.0,
+        cutback_every=4,
+        cutback_factor=0.85,
+        peak_offset_before_taper=1,
+        config=marathon_cfg,
+        unit_system="imperial",
+    )
+    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", False)
+    legacy = build_target_long_run_curve(12.0, 0, 20.0, **kw)
+    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
+    pure = build_target_long_run_curve(12.0, 0, 20.0, **kw)
+    assert pure == legacy
+    assert len(pure) == 28
+
+
+def test_stage_c2_fixed_curve_invariants(
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pure fixed curve: length, peak in build, cutback cadence, taper shape."""
+    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
+    taper_w = 3
+    peak_target = 18.0
+    curve = build_target_long_run_curve(
+        10.0,
+        20,
+        peak_target,
+        race_date=date(2026, 10, 10),
+        taper_weeks=taper_w,
+        inc_miles=1.0,
+        cutback_every=4,
+        cutback_factor=0.85,
+        peak_offset_before_taper=2,
+        config=marathon_cfg,
+        unit_system="imperial",
+    )
+    assert len(curve) == 20
+    pre = curve[:-taper_w]
+    assert max(pre) >= peak_target - 0.05
+    cb = lr_spine._curve_cutback_week_indices(curve, taper_weeks=taper_w)
+    assert cb, "expected at least one cutback in build"
+    assert cb[0] == 4  # week 5 first deload in golden
+    for a, b in zip(cb, cb[1:]):
+        assert b - a >= marathon_cfg.cutback_every
+    tail = curve[-taper_w:]
+    assert all(tail[i] >= tail[i + 1] for i in range(len(tail) - 1))
+
+
+def test_stage_c2_executor_matches_pure_miles(
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """build_long_run_spine_weeks under USE_GLOBAL_CURVE matches build_target miles."""
+    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
+    args = (
+        10.0,
+        20,
+        18.0,
+    )
+    kw = dict(
+        race_date=date(2026, 10, 10),
+        taper_weeks=3,
+        inc_miles=1.0,
+        cutback_every=4,
+        cutback_factor=0.85,
+        peak_offset_before_taper=2,
+        config=marathon_cfg,
+        unit_system="imperial",
+    )
+    curve = build_target_long_run_curve(*args, **kw)
+    weeks = build_long_run_spine_weeks(*args, **kw)
+    assert [float(w["long_run_miles"]) for w in weeks] == curve

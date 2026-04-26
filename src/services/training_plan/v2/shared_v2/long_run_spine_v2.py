@@ -368,11 +368,316 @@ def _append_taper_miles_pure(
     return tail
 
 
+def _pure_start_long_run_lr(
+    starting_long_run_miles: float,
+    peak_long_run_target: float,
+    *,
+    non_regressive_slack: float,
+    round_to_half: bool,
+) -> Tuple[float, float]:
+    """Starting long-run miles and peak (mirrors ``_generate_long_run_spine`` header)."""
+    peak = float(max(0.0, peak_long_run_target))
+    current_longest = float(max(0.0, starting_long_run_miles))
+    if round_to_half:
+        current_longest = round_to_half_mile(current_longest)
+    start_floor = round_to_half_mile(max(0.0, current_longest - non_regressive_slack))
+    start_lr = max(start_floor, current_longest)
+    if round_to_half:
+        start_lr = round_to_half_mile(start_lr)
+    return start_lr, peak
+
+
+def _pure_dynamic_long_run_curve(
+    starting_long_run_miles: float,
+    peak_long_run_target: float,
+    *,
+    taper_weeks: int,
+    inc_miles: float,
+    cutback_every: int,
+    cutback_factor: float,
+    taper_factor: float,
+    round_to_half: bool,
+    non_regressive_slack: float,
+    config: Optional[RaceDistanceConfig],
+    unit_system: str,
+) -> List[float]:
+    """Full dynamic-length long-run mile curve (pure; Stage C2)."""
+    start_lr, peak = _pure_start_long_run_lr(
+        starting_long_run_miles,
+        peak_long_run_target,
+        non_regressive_slack=non_regressive_slack,
+        round_to_half=round_to_half,
+    )
+    curve: List[float] = []
+    lr = start_lr
+    if round_to_half:
+        lr = round_to_half_mile(lr)
+    curve.append(float(lr))
+    peaked = lr >= peak - 1e-6
+    week_num = 2
+    pre_cutback_lr: Optional[float] = None
+    last_was_cutback = False
+    weeks_since_last_cutback = 0
+    min_lr_dynamic = config.min_long_run_miles if config else 5.0
+
+    while lr < peak - 1e-6:
+        if last_was_cutback:
+            dynamic_resume = calculate_dynamic_resume(
+                lr=lr,
+                pre_cutback_lr=pre_cutback_lr,
+                peak=peak,
+                current_week=week_num,
+                max_weeks_to_build=30,
+                cutback_every=cutback_every,
+                inc_miles=inc_miles,
+                base_resume_inc=inc_miles,
+                config=config,
+                unit_system=unit_system,
+            )
+            lr = min(peak, dynamic_resume)
+            last_was_cutback = False
+            weeks_since_last_cutback = 1
+        else:
+            weeks_since_last_cutback += 1
+            should_cutback = weeks_since_last_cutback >= cutback_every and lr < peak
+            if should_cutback:
+                pre_cutback_lr = lr
+                new_lr = compute_cutback_long_run_miles(
+                    lr, cutback_factor, min_lr_dynamic
+                )
+                if new_lr >= lr:
+                    new_lr = round_to_half_mile(max(min_lr_dynamic, lr - 1.0))
+                lr = new_lr
+                last_was_cutback = True
+                weeks_since_last_cutback = 0
+            else:
+                lr = min(peak, lr + inc_miles)
+
+        if round_to_half:
+            lr = round_to_half_mile(lr)
+        curve.append(float(lr))
+        if not peaked and lr >= peak - 1e-6:
+            peaked = True
+        week_num += 1
+        if week_num > 31:
+            break
+
+    min_lr = config.min_long_run_miles if config else 5.0
+    final_pre = round_to_half_mile(max(min_lr, peak - 1.0))
+    curve.append(float(final_pre))
+
+    taper_weeks_actual = (
+        min(taper_weeks, len(config.taper_ratios))
+        if config
+        else max(2, min(3, taper_weeks))
+    )
+    if config and len(config.taper_ratios) >= taper_weeks_actual:
+        ratios = list(config.taper_ratios[:taper_weeks_actual])
+    else:
+        if taper_weeks_actual == 3:
+            ratios = [0.70, 0.50, 0.25]
+        else:
+            ratios = [taper_factor, 0.40]
+    curve.extend(
+        _append_taper_miles_pure(
+            curve,
+            ratios=ratios,
+            min_lr=min_lr,
+            peak=peak,
+            round_to_half=round_to_half,
+        )
+    )
+    return curve
+
+
+def _pure_fixed_long_run_curve(
+    starting_long_run_miles: float,
+    total_weeks_in_plan: int,
+    peak_long_run_target: float,
+    *,
+    taper_weeks: int,
+    inc_miles: float,
+    cutback_every: int,
+    cutback_factor: float,
+    taper_factor: float,
+    round_to_half: bool,
+    non_regressive_slack: float,
+    single_peak: bool,
+    peak_offset_before_taper: int,
+    config: Optional[RaceDistanceConfig],
+    unit_system: str,
+) -> List[float]:
+    """Full fixed-length long-run mile curve including maintenance + taper (pure; Stage C2)."""
+    start_lr, peak = _pure_start_long_run_lr(
+        starting_long_run_miles,
+        peak_long_run_target,
+        non_regressive_slack=non_regressive_slack,
+        round_to_half=round_to_half,
+    )
+    curve: List[float] = []
+    lr = start_lr
+    if round_to_half:
+        lr = round_to_half_mile(lr)
+    curve.append(float(lr))
+    peaked = lr >= peak - 1e-6
+    declared_peak_week_num: Optional[int] = None
+
+    weeks_since_last_cutback = 0
+    max_weeks_to_build = int(total_weeks_in_plan) - int(taper_weeks)
+    min_lr = config.min_long_run_miles if config else 5.0
+    resume_inc = config.resume_week_increment if config else 2.0
+    pre_cutback_lr: Optional[float] = None
+    last_was_cutback = False
+    i = 2
+
+    while i <= max_weeks_to_build and not peaked:
+        if last_was_cutback:
+            cap_val = peak if not (single_peak and peaked) else max(0.0, peak - 1.0)
+            dynamic_resume = calculate_dynamic_resume(
+                lr=lr,
+                pre_cutback_lr=pre_cutback_lr,
+                peak=peak,
+                current_week=i,
+                max_weeks_to_build=max_weeks_to_build,
+                cutback_every=cutback_every,
+                inc_miles=inc_miles,
+                base_resume_inc=resume_inc,
+                config=config,
+                unit_system=unit_system,
+            )
+            if dynamic_resume <= lr:
+                dynamic_resume = lr + resume_inc
+            lr = min(cap_val, dynamic_resume)
+            last_was_cutback = False
+            weeks_since_last_cutback = 1
+        else:
+            weeks_since_last_cutback += 1
+            should_cutback = weeks_since_last_cutback >= cutback_every and lr < peak
+            if should_cutback:
+                pre_cutback_lr = lr
+                new_lr = compute_cutback_long_run_miles(lr, cutback_factor, min_lr)
+                if new_lr >= lr:
+                    new_lr = round_to_half_mile(max(min_lr, lr - 1.0))
+                lr = new_lr
+                last_was_cutback = True
+                weeks_since_last_cutback = 0
+            else:
+                cap = peak if not (single_peak and peaked) else max(0.0, peak - 1.0)
+                lr = min(cap, lr + inc_miles)
+
+        if round_to_half:
+            lr = round_to_half_mile(lr)
+        curve.append(float(lr))
+        if not peaked and lr >= peak - 1e-6:
+            peaked = True
+            declared_peak_week_num = i
+        i += 1
+
+    if not curve or curve[-1] < peak:
+        prev_lr = curve[-1] if curve else 0.0
+        safe_candidate = _cap_forced_peak_jump(prev_lr, peak, unit_system)
+        cand = (
+            round_to_half_mile(safe_candidate)
+            if round_to_half
+            else float(safe_candidate)
+        )
+        curve.append(float(cand))
+        peaked = cand >= peak - 1e-6
+        declared_peak_week_num = len(curve)
+
+    actual_weeks_so_far = len(curve)
+    min_required_weeks = actual_weeks_so_far + taper_weeks
+    actual_total_weeks = max(min_required_weeks, int(total_weeks_in_plan))
+    rem = actual_total_weeks - len(curve)
+
+    if rem > 0:
+        taper_slots = taper_weeks
+        maintenance_reduction = config.maintenance_reduction if config else 2.0
+        recovery_ratio = config.post_peak_recovery_ratio if config else 0.75
+        maintenance_target = round_to_half_mile(max(0.0, peak - maintenance_reduction))
+
+        if rem > 0 and (actual_total_weeks - len(curve)) > taper_slots:
+            recovery = round_to_half_mile(max(min_lr, peak * recovery_ratio))
+            curve.append(float(recovery))
+
+        if (actual_total_weeks - len(curve)) > taper_slots:
+            curve.append(float(maintenance_target))
+
+        while (actual_total_weeks - len(curve)) > taper_slots:
+            curve.append(float(maintenance_target))
+
+        rem_after_fill = actual_total_weeks - len(curve)
+        cap_weeks = int(config.pre_taper_cap_weeks if config else 5)
+        cap_miles = float(config.pre_taper_cap_miles if config else 16.0)
+        curve = _finalize_pre_taper_curve_pure(
+            curve,
+            declared_peak_week_num=declared_peak_week_num,
+            cap_weeks=cap_weeks,
+            cap_miles=cap_miles,
+            round_to_half=round_to_half,
+        )
+
+        taper_weeks_to_create = min(rem_after_fill, taper_weeks)
+        if rem_after_fill < taper_weeks:
+            actual_total_weeks = len(curve) + taper_weeks
+            taper_weeks_to_create = taper_weeks
+
+        if taper_weeks_to_create > 0:
+            if config and len(config.taper_ratios) >= taper_weeks_to_create:
+                ratios = list(config.taper_ratios[:taper_weeks_to_create])
+            else:
+                if taper_weeks == 3:
+                    ratios = [0.70, 0.50, 0.25][:taper_weeks_to_create]
+                else:
+                    ratios = [taper_factor, 0.40][:taper_weeks_to_create]
+            curve.extend(
+                _append_taper_miles_pure(
+                    curve,
+                    ratios=ratios,
+                    min_lr=min_lr,
+                    peak=peak,
+                    round_to_half=round_to_half,
+                )
+            )
+
+    return curve
+
+
+def _curve_cutback_week_indices(
+    curve: List[float],
+    *,
+    taper_weeks: int,
+    drop_mi: float = 0.5,
+) -> List[int]:
+    """0-based indices in the pre-taper prefix where long run drops by more than ``drop_mi``."""
+    if not curve:
+        return []
+    pre_n = max(0, len(curve) - int(taper_weeks))
+    if pre_n < 2:
+        return []
+    out: List[int] = []
+    for i in range(1, pre_n):
+        if float(curve[i - 1]) - float(curve[i]) > drop_mi:
+            out.append(i)
+    return out
+
+
+def _curve_peak_week_index(curve: List[float], *, taper_weeks: int) -> int:
+    """0-based index of max long run in the pre-taper segment."""
+    if not curve:
+        return -1
+    pre = curve[: max(0, len(curve) - int(taper_weeks))]
+    if not pre:
+        return -1
+    return max(range(len(pre)), key=lambda j: float(pre[j]))
+
+
 def _log_long_run_curve_diff(
     legacy: List[float],
     new_curve: List[float],
     *,
     context: str,
+    taper_weeks: int = 0,
 ) -> None:
     """Log per-week differences when Stage C global curve disagrees with legacy spine."""
     n = max(len(legacy), len(new_curve))
@@ -389,12 +694,25 @@ def _log_long_run_curve_diff(
             len(legacy),
         )
         return
+    tw = int(taper_weeks) if taper_weeks else 0
+    leg_cb = _curve_cutback_week_indices(legacy, taper_weeks=tw)
+    new_cb = _curve_cutback_week_indices(new_curve, taper_weeks=tw)
+    leg_pk = _curve_peak_week_index(legacy, taper_weeks=tw)
+    new_pk = _curve_peak_week_index(new_curve, taper_weeks=tw)
     logger.warning(
         "%s: global curve differs from legacy spine in %s / %s weeks. First diffs: %s",
         context,
         len(diffs),
         n,
         "; ".join(diffs[:12]) + ("; ..." if len(diffs) > 12 else ""),
+    )
+    logger.warning(
+        "%s: progression — legacy cutback_weeks=%s global=%s | legacy_peak_idx=%s global=%s",
+        context,
+        [i + 1 for i in leg_cb],
+        [i + 1 for i in new_cb],
+        leg_pk + 1 if leg_pk >= 0 else None,
+        new_pk + 1 if new_pk >= 0 else None,
     )
 
 
@@ -584,17 +902,56 @@ def build_target_long_run_curve(
     config: Optional[RaceDistanceConfig] = None,
     unit_system: str = "imperial",
 ) -> List[float]:
-    """Return only the per-week target long-run distances (Stage A / Stage C).
+    """Return only the per-week target long-run distances (Stage A / Stage C / C2).
 
-    Default: delegates to :func:`_generate_long_run_spine` and extracts miles
-    (legacy spine is source of truth).
+    When ``USE_GLOBAL_CURVE`` is False, delegates to :func:`_generate_long_run_spine`
+    and extracts miles (legacy spine).
 
-    When ``USE_GLOBAL_CURVE`` is True (Stage C), recomposes the fixed-length
-    post-fill + taper tail from trace data using pure helpers, compares to the
-    legacy spine miles, logs any differences, and returns the recomposed curve
-    (should match legacy when the pure path is correct).
+    When ``USE_GLOBAL_CURVE`` is True (Stage C2), builds the **full** progression as
+    ``List[float]`` using pure helpers only — no call to :func:`_generate_long_run_spine`.
     """
-    trace: Optional[Dict[str, Any]] = {} if USE_GLOBAL_CURVE else None
+    derive_length = total_weeks_in_plan is None or total_weeks_in_plan == 0
+    tw: Optional[int] = (
+        None if total_weeks_in_plan is None else int(total_weeks_in_plan)
+    )
+    if not derive_length and tw is None:
+        wu = weeks_until(race_date)
+        tw = wu if wu is not None else 16
+        tw = max(12, min(24, int(tw)))
+
+    if USE_GLOBAL_CURVE:
+        if derive_length:
+            return _pure_dynamic_long_run_curve(
+                starting_long_run_miles,
+                peak_long_run_target,
+                taper_weeks=taper_weeks,
+                inc_miles=inc_miles,
+                cutback_every=cutback_every,
+                cutback_factor=cutback_factor,
+                taper_factor=taper_factor,
+                round_to_half=round_to_half,
+                non_regressive_slack=non_regressive_slack,
+                config=config,
+                unit_system=unit_system,
+            )
+        assert tw is not None and tw > 0
+        return _pure_fixed_long_run_curve(
+            starting_long_run_miles,
+            tw,
+            peak_long_run_target,
+            taper_weeks=taper_weeks,
+            inc_miles=inc_miles,
+            cutback_every=cutback_every,
+            cutback_factor=cutback_factor,
+            taper_factor=taper_factor,
+            round_to_half=round_to_half,
+            non_regressive_slack=non_regressive_slack,
+            single_peak=single_peak,
+            peak_offset_before_taper=peak_offset_before_taper,
+            config=config,
+            unit_system=unit_system,
+        )
+
     weeks = _generate_long_run_spine(
         starting_long_run_miles,
         total_weeks_in_plan,
@@ -611,47 +968,9 @@ def build_target_long_run_curve(
         peak_offset_before_taper=peak_offset_before_taper,
         config=config,
         unit_system=unit_system,
-        return_trace=trace,
+        return_trace=None,
     )
-    legacy_curve = [float(w.get("long_run_miles") or 0.0) for w in weeks]
-
-    if USE_GLOBAL_CURVE and trace:
-        pre = trace.get("pre_taper_curve")
-        if pre is not None:
-            pure_mid = _finalize_pre_taper_curve_pure(
-                list(pre),
-                declared_peak_week_num=trace.get("declared_peak_week_num"),
-                cap_weeks=int(trace.get("cap_weeks", 5)),
-                cap_miles=float(trace.get("cap_miles", 16.0)),
-                round_to_half=round_to_half,
-            )
-            ratios = list(trace.get("taper_ratios_used") or [])
-            min_anchor = float(trace.get("min_lr_for_taper_anchor", 5.0))
-            pk = float(trace.get("peak", peak_long_run_target))
-            pure_tail = _append_taper_miles_pure(
-                pure_mid,
-                ratios=ratios,
-                min_lr=min_anchor,
-                peak=pk,
-                round_to_half=round_to_half,
-            )
-            authoritative = pure_mid + pure_tail
-            _log_long_run_curve_diff(
-                legacy_curve,
-                authoritative,
-                context="build_target_long_run_curve(Stage C)",
-            )
-            if len(authoritative) != len(legacy_curve):
-                logger.error(
-                    "build_target_long_run_curve: global curve length %s != legacy %s; "
-                    "using legacy miles.",
-                    len(authoritative),
-                    len(legacy_curve),
-                )
-                return legacy_curve
-            return authoritative
-
-    return legacy_curve
+    return [float(w.get("long_run_miles") or 0.0) for w in weeks]
 
 
 def _generate_long_run_spine(
