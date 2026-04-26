@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import date, datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -198,6 +198,104 @@ def get_athlete_id_for_user(session: Session, user_id: str) -> Optional[int]:
     return result.athlete_id if result else None
 
 
+def _mv_weekly_runs_rows(session: Session, user_id: str) -> List[Dict[str, Any]]:
+    """Return ``weekly_runs`` JSON rows from ``mv_longest_runs`` (most recent week first)."""
+    athlete_id = get_athlete_id_for_user(session, user_id)
+    if not athlete_id:
+        return []
+    result = session.execute(
+        text("SELECT * FROM mv_longest_runs WHERE athlete_id = :athlete_id"),
+        {"athlete_id": athlete_id},
+    ).first()
+    if not result or not result.weekly_runs:
+        return []
+    return list(result.weekly_runs)
+
+
+def fetch_recent_weekly_long_run_distances(
+    session: Session, user_id: str, *, max_weeks: int = 6
+) -> List[float]:
+    """Longest run distance per week for the last ``max_weeks`` weeks (most recent first).
+
+    Only weeks with a positive ``distance`` are included (same convention as
+    consecutive-long-run detection).
+    """
+    out: List[float] = []
+    for run in _mv_weekly_runs_rows(session, user_id)[:max_weeks]:
+        distance = float(run.get("distance", 0) or 0)
+        if distance > 0:
+            out.append(round(distance, 2))
+    return out
+
+
+def compute_stable_week1_long_run_start(
+    weekly_longest_miles: List[float],
+    *,
+    long_run_increment: float = 1.0,
+    min_long_run_mi: float = 5.0,
+    max_increase_vs_median_pct: float = 0.10,
+) -> Tuple[float, Dict[str, Any]]:
+    """Derive Week 1 long run from recent weekly longest-run anchors (consistency-first).
+
+    Uses up to the last **6** positive weekly longest-run distances (caller supplies
+    most-recent-first order). Computes **median** and **global max**. Branching uses
+    **ties_at_global_max** (weeks whose distance equals the max within float tolerance):
+    a single hit at the max is treated as an outlier (**start ≈ median**); two or more
+    weeks at the max allow **max + increment** (capped by ``long_run_increment``).
+    The result is then capped to **median × (1 + max_increase_vs_median_pct)** (default
+    +10% over median). Metadata also includes **count_within_1mi_of_max** for auditing.
+
+    Returns:
+        ``(rounded_start_miles, metadata_dict)``
+    """
+    series = [
+        float(x) for x in weekly_longest_miles if x is not None and float(x) > 0.0
+    ][:6]
+    if not series:
+        raise ValueError(
+            "weekly_longest_miles must contain at least one positive distance"
+        )
+
+    sorted_s = sorted(series)
+    n = len(sorted_s)
+    mid = n // 2
+    if n % 2 == 1:
+        median = float(sorted_s[mid])
+    else:
+        median = (sorted_s[mid - 1] + sorted_s[mid]) / 2.0
+
+    max_lr = max(series)
+    ties_at_global_max = sum(1 for x in series if abs(x - max_lr) <= 1e-3)
+    count_within_1mi_of_max = sum(1 for x in series if x >= max_lr - 1.0 - 1e-6)
+
+    # Single-week hit at the global max → treat as outlier; sustained max weeks → allow max + inc.
+    if ties_at_global_max <= 1:
+        candidate = float(median)
+        rule = "median_single_peak_week_anchor"
+    else:
+        inc = min(float(long_run_increment), 1.0)
+        candidate = max_lr + inc
+        rule = "max_plus_increment_repeated_peak_anchor"
+
+    stable = float(median)
+    ceiling = stable * (1.0 + max_increase_vs_median_pct)
+    capped = min(candidate, ceiling)
+    capped = max(float(min_long_run_mi), capped)
+    final = round_to_half_mile(capped)
+    meta: Dict[str, Any] = {
+        "median_long_run": stable,
+        "max_long_run": max_lr,
+        "ties_at_global_max": ties_at_global_max,
+        "count_within_1mi_of_max": count_within_1mi_of_max,
+        "rule": rule,
+        "raw_candidate": candidate,
+        "cap_ceiling_vs_median_pct": max_increase_vs_median_pct,
+        "cap_ceiling_miles": ceiling,
+        "after_median_cap_miles": capped,
+    }
+    return final, meta
+
+
 def recent_longest_3w_from_materialized_view(
     session: Session, user_id: str, *, days: int = 21
 ) -> float:
@@ -274,8 +372,8 @@ def detect_consecutive_long_runs_from_materialized_view(
     Returns same structure as detect_consecutive_long_runs() for compatibility.
     """
     try:
-        athlete_id = get_athlete_id_for_user(session, user_id)
-        if not athlete_id:
+        weekly_runs = _mv_weekly_runs_rows(session, user_id)
+        if not weekly_runs:
             return {
                 "has_consecutive_runs": False,
                 "consecutive_count": 0,
@@ -285,28 +383,9 @@ def detect_consecutive_long_runs_from_materialized_view(
                 "most_recent_long_run": 0.0,
             }
 
-        # Query materialized view
-        result = session.execute(
-            text("SELECT * FROM mv_longest_runs WHERE athlete_id = :athlete_id"),
-            {"athlete_id": athlete_id},
-        ).first()
-
-        if not result or not result.weekly_runs:
-            return {
-                "has_consecutive_runs": False,
-                "consecutive_count": 0,
-                "weekly_long_runs": [],
-                "longest_recent": 0.0,
-                "has_recent_reduction": False,
-                "most_recent_long_run": 0.0,
-            }
-
-        # Get weekly runs (already grouped by week, longest run per week)
-        weekly_runs = result.weekly_runs
-
-        # Extract distances for last 4 weeks (most recent first)
+        # Extract distances for last 6 weeks (most recent first)
         weekly_long_runs: List[float] = []
-        for run in weekly_runs[:4]:  # Only need last 4 weeks
+        for run in weekly_runs[:6]:
             distance = float(run.get("distance", 0) or 0)
             if distance > 0:
                 weekly_long_runs.append(round(distance, 2))

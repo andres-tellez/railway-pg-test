@@ -13,7 +13,9 @@ from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
 from src.services.training_plan.v2.shared_v2.long_run_signals import (
     calculate_recovery_week_long_run,
+    compute_stable_week1_long_run_start,
     detect_consecutive_long_runs_from_materialized_view,
+    fetch_recent_weekly_long_run_distances,
     recent_longest_3w_from_materialized_view,
 )
 from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
@@ -77,7 +79,7 @@ def validate_spine(
 
     if abs(weeks[0].get("long_run_miles", 0) - expected_start) > 1e-6:
         raise ValueError(
-            f"Week 1 mismatch: got {weeks[0].get('long_run_miles', 0):.1f}, expected {expected_start:.1f} (recent_3w+1)"
+            f"Week 1 mismatch: got {weeks[0].get('long_run_miles', 0):.1f}, expected {expected_start:.1f} (stable week-1 rule)"
         )
 
     total_weeks = weeks[-1]["week_number"]
@@ -179,14 +181,27 @@ class Pass1LongRunFirstV2:
             session=session, user_id=user_id, min_consecutive_weeks=3
         )
 
-        # Compute recent-3w longest for baseline (using materialized view)
+        # Last 4–6 weekly longest-run anchors (most recent first); 21d max as fallback
+        weekly_series = fetch_recent_weekly_long_run_distances(
+            session=session, user_id=user_id, max_weeks=6
+        )
         recent3w = recent_longest_3w_from_materialized_view(
             session=session, user_id=user_id, days=21
         )
-        if not recent3w or recent3w <= 0:
-            raise ValueError(
-                "Insufficient recent data: need at least one long run in last 21 days to set Week 1."
-            )
+
+        effective_weekly_series = list(weekly_series)
+        if not effective_weekly_series:
+            if recent3w and recent3w > 0:
+                effective_weekly_series = [recent3w]
+            elif longest_recent and longest_recent > 0:
+                effective_weekly_series = [float(longest_recent)]
+            else:
+                raise ValueError(
+                    "Insufficient recent data: need weekly long-run history or a recent "
+                    "longest-run value to set Week 1."
+                )
+
+        start_meta: Dict[str, Any] = {}
 
         # Determine Week 1 long run based on consecutive run detection
         if consecutive_analysis["has_consecutive_runs"]:
@@ -199,21 +214,20 @@ class Pass1LongRunFirstV2:
             most_recent_long_run = consecutive_analysis.get("most_recent_long_run", 0.0)
 
             if has_recent_reduction and most_recent_long_run > 0:
-                # User already self-regulated - apply normal progression from baseline
-                # Don't force another recovery that would set them back further
-                # Baseline = most recent level (user's current baseline) or recent3w (whichever is higher)
-                # Then apply standard +1.0 progression rule (same as normal progression)
-                baseline = max(most_recent_long_run, recent3w)
-                trusted_start = baseline + 1.0  # Apply standard progression rule
-                start_rule = "continue_at_current_level_after_self_regulation"
+                trusted_start, start_meta = compute_stable_week1_long_run_start(
+                    effective_weekly_series,
+                    long_run_increment=self.config.long_run_increment,
+                    min_long_run_mi=self.config.min_long_run_miles,
+                )
+                start_rule = f"{start_meta.get('rule', 'stable')}_after_self_regulation"
                 logger.info(
                     "LR-first: Detected %d consecutive weeks with long runs, "
-                    "but user has already self-regulated (recent: %.2f, peak: %.2f). "
-                    "Baseline: %.2f miles, Week 1: %.2f miles (+1.0 progression, avoiding double recovery)",
+                    "self-regulated (recent: %.2f, peak: %.2f). "
+                    "Stable week-1 meta=%s → Week 1: %.2f mi",
                     consecutive_analysis["consecutive_count"],
                     most_recent_long_run,
                     consecutive_analysis["longest_recent"],
-                    baseline,
+                    start_meta,
                     trusted_start,
                 )
             else:
@@ -226,6 +240,11 @@ class Pass1LongRunFirstV2:
                 )
                 trusted_start = recovery_lr
                 start_rule = "recovery_week_after_consecutive_runs"
+                start_meta = {
+                    "rule": start_rule,
+                    "recovery_lr": recovery_lr,
+                    "longest_recent": consecutive_analysis["longest_recent"],
+                }
                 logger.info(
                     "LR-first: Detected %d consecutive weeks with long runs (longest=%.2f). "
                     "Setting Week 1 as recovery week: %.2f miles",
@@ -234,12 +253,17 @@ class Pass1LongRunFirstV2:
                     recovery_lr,
                 )
         else:
-            # Normal progression: longest + 1.0
-            trusted_start = recent3w + 1.0
-            start_rule = "recent_3w_longest + 1.0"
+            trusted_start, start_meta = compute_stable_week1_long_run_start(
+                effective_weekly_series,
+                long_run_increment=self.config.long_run_increment,
+                min_long_run_mi=self.config.min_long_run_miles,
+            )
+            start_rule = str(start_meta.get("rule", "stable_week1"))
             logger.info(
-                "LR-first signals: recent_3w_longest=%.2f, trusted_start=%.2f",
-                recent3w,
+                "LR-first stable week-1: series=%s recent_3w_single_run=%.2f meta=%s → start=%.2f",
+                effective_weekly_series,
+                float(recent3w or 0.0),
+                start_meta,
                 trusted_start,
             )
 
@@ -336,6 +360,8 @@ class Pass1LongRunFirstV2:
             "base_mpw": base_mpw,
             "longest_recent": longest_recent,
             "recent_longest_3w": recent3w,
+            "weekly_long_run_series_for_week1": effective_weekly_series,
+            "stable_week1_meta": start_meta,
             "start_rule": start_rule,
             "start_lr": weeks[0]["long_run_miles"] if weeks else None,
             "peak_cap": target_peak_miles,
@@ -378,7 +404,7 @@ class Pass1LongRunFirstV2:
 
         if abs(weeks[0].get("long_run_miles", 0) - expected_start) > 1e-6:
             raise ValueError(
-                f"Week 1 mismatch: got {weeks[0].get('long_run_miles', 0):.1f}, expected {expected_start:.1f} (recent_3w+1)"
+                f"Week 1 mismatch: got {weeks[0].get('long_run_miles', 0):.1f}, expected {expected_start:.1f} (stable week-1 rule)"
             )
 
         total_weeks = weeks[-1]["week_number"]
