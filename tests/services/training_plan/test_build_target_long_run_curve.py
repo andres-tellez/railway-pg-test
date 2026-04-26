@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 
 from src.services.training_plan.v2.race_configs.marathon_config import MarathonConfig
+from src.services.training_plan.v2.shared_v2 import long_run_spine_v2 as lr_spine
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
     build_long_run_spine_weeks,
     build_target_long_run_curve,
@@ -137,6 +138,65 @@ def test_build_target_long_run_curve_matches_spine_dynamic_length_golden(
         cutback_every=4,
         cutback_factor=0.85,
         peak_offset_before_taper=1,
+        config=marathon_cfg,
+        unit_system="imperial",
+    )
+    assert [float(w["long_run_miles"]) for w in spine] == expected
+
+
+def test_stage_c_use_global_curve_matches_legacy_golden(
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """USE_GLOBAL_CURVE: pure reassembly matches legacy spine (fixed-length golden)."""
+    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
+    start, total_weeks, peak = 10.0, 20, 18.0
+    race_date = date(2026, 10, 10)
+    expected = [
+        10.0,
+        11.0,
+        12.0,
+        13.0,
+        11.0,
+        12.0,
+        13.0,
+        14.0,
+        12.0,
+        13.0,
+        14.0,
+        15.0,
+        13.0,
+        16.0,
+        17.0,
+        18.0,
+        13.5,
+        12.5,
+        9.0,
+        5.0,
+    ]
+    curve = build_target_long_run_curve(
+        start,
+        total_weeks,
+        peak,
+        race_date=race_date,
+        taper_weeks=3,
+        inc_miles=1.0,
+        cutback_every=4,
+        cutback_factor=0.85,
+        peak_offset_before_taper=2,
+        config=marathon_cfg,
+        unit_system="imperial",
+    )
+    assert curve == expected
+    spine = build_long_run_spine_weeks(
+        start,
+        total_weeks,
+        peak,
+        race_date=race_date,
+        taper_weeks=3,
+        inc_miles=1.0,
+        cutback_every=4,
+        cutback_factor=0.85,
+        peak_offset_before_taper=2,
         config=marathon_cfg,
         unit_system="imperial",
     )

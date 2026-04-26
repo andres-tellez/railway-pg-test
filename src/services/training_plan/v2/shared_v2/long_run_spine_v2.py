@@ -13,6 +13,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Stage C: when True, Pass1 / ``build_long_run_spine_weeks`` use ``build_target_long_run_curve``
+# as the mile source of truth and assemble week dicts without re-running spine math.
+USE_GLOBAL_CURVE = False
+
 # Import config type for optional parameter
 try:
     from src.services.training_plan.v2.race_configs.base_config import (
@@ -290,6 +294,110 @@ def _cap_forced_peak_jump(previous: float, target: float, unit_system: str) -> f
     return min(target, previous + max_jump)
 
 
+def _finalize_pre_taper_curve_pure(
+    curve: List[float],
+    *,
+    declared_peak_week_num: Optional[int],
+    cap_weeks: int,
+    cap_miles: float,
+    round_to_half: bool,
+) -> List[float]:
+    """Pure equivalent of fixed-length post-fill monotonic + pre-taper cap (Stage C).
+
+    Operates on a copy of ``curve`` (pre-taper segment only, before taper weeks).
+    """
+    out = list(curve)
+    n = len(out)
+    if n == 0:
+        return out
+
+    if declared_peak_week_num and declared_peak_week_num > 0:
+        peak_idx_local = min(n - 1, int(declared_peak_week_num) - 1)
+    else:
+        try:
+            peak_idx_local = max(range(n), key=lambda i: out[i])
+        except Exception:
+            peak_idx_local = 0
+
+    for i in range(peak_idx_local + 1, n):
+        prev = out[i - 1]
+        if out[i] > prev:
+            out[i] = prev
+
+    pre_taper_len = n
+    start_cap = max(0, pre_taper_len - int(cap_weeks))
+
+    if declared_peak_week_num and declared_peak_week_num > 0:
+        peak_idx_for_cap = min(n - 1, int(declared_peak_week_num) - 1)
+    else:
+        try:
+            peak_idx_for_cap = max(range(n), key=lambda i: out[i])
+        except Exception:
+            peak_idx_for_cap = -1
+
+    for i in range(start_cap, pre_taper_len):
+        is_build_phase = i < peak_idx_for_cap
+        at_global_long_run_peak = i == peak_idx_for_cap
+        if not is_build_phase and not at_global_long_run_peak and out[i] > cap_miles:
+            out[i] = (
+                round_to_half_mile(cap_miles) if round_to_half else float(cap_miles)
+            )
+
+    return out
+
+
+def _append_taper_miles_pure(
+    pre_taper_curve: List[float],
+    *,
+    ratios: List[float],
+    min_lr: float,
+    peak: float,
+    round_to_half: bool,
+) -> List[float]:
+    """Pure taper tail (same anchor rule as legacy spine)."""
+    taper_anchor = max(
+        min_lr,
+        max(pre_taper_curve) if pre_taper_curve else float(peak),
+    )
+    tail: List[float] = []
+    for r in ratios:
+        t = max(min_lr, taper_anchor * float(r))
+        if round_to_half:
+            t = round_to_half_mile(t)
+        tail.append(float(t))
+    return tail
+
+
+def _log_long_run_curve_diff(
+    legacy: List[float],
+    new_curve: List[float],
+    *,
+    context: str,
+) -> None:
+    """Log per-week differences when Stage C global curve disagrees with legacy spine."""
+    n = max(len(legacy), len(new_curve))
+    diffs: List[str] = []
+    for i in range(n):
+        a = legacy[i] if i < len(legacy) else None
+        b = new_curve[i] if i < len(new_curve) else None
+        if a is None or b is None or abs(float(a) - float(b)) > 1e-6:
+            diffs.append(f"week_idx={i + 1} legacy={a} global={b}")
+    if not diffs:
+        logger.info(
+            "%s: global curve matches legacy spine (%s weeks).",
+            context,
+            len(legacy),
+        )
+        return
+    logger.warning(
+        "%s: global curve differs from legacy spine in %s / %s weeks. First diffs: %s",
+        context,
+        len(diffs),
+        n,
+        "; ".join(diffs[:12]) + ("; ..." if len(diffs) > 12 else ""),
+    )
+
+
 def validate_phase_quality(
     weeks: List[Dict[str, float]],
     *,
@@ -476,17 +584,17 @@ def build_target_long_run_curve(
     config: Optional[RaceDistanceConfig] = None,
     unit_system: str = "imperial",
 ) -> List[float]:
-    """Return only the per-week target long-run distances (Stage A facade).
+    """Return only the per-week target long-run distances (Stage A / Stage C).
 
-    This is the **public entry point** for the per-week target long-run mile list.
-    It forwards to :func:`_generate_long_run_spine` and extracts ``long_run_miles``
-    from each week dict. It does not change spine behavior.
+    Default: delegates to :func:`_generate_long_run_spine` and extracts miles
+    (legacy spine is source of truth).
 
-    For **deterministic** outputs in tests or analytics, pass an explicit
-    ``total_weeks_in_plan`` (use ``0`` for dynamic-length mode). Avoid relying on
-    ``race_date``-only length derivation, which may consult the current UTC date
-    inside the spine when ``total_weeks_in_plan`` is unset in fixed-length mode.
+    When ``USE_GLOBAL_CURVE`` is True (Stage C), recomposes the fixed-length
+    post-fill + taper tail from trace data using pure helpers, compares to the
+    legacy spine miles, logs any differences, and returns the recomposed curve
+    (should match legacy when the pure path is correct).
     """
+    trace: Optional[Dict[str, Any]] = {} if USE_GLOBAL_CURVE else None
     weeks = _generate_long_run_spine(
         starting_long_run_miles,
         total_weeks_in_plan,
@@ -503,8 +611,47 @@ def build_target_long_run_curve(
         peak_offset_before_taper=peak_offset_before_taper,
         config=config,
         unit_system=unit_system,
+        return_trace=trace,
     )
-    return [float(w.get("long_run_miles") or 0.0) for w in weeks]
+    legacy_curve = [float(w.get("long_run_miles") or 0.0) for w in weeks]
+
+    if USE_GLOBAL_CURVE and trace:
+        pre = trace.get("pre_taper_curve")
+        if pre is not None:
+            pure_mid = _finalize_pre_taper_curve_pure(
+                list(pre),
+                declared_peak_week_num=trace.get("declared_peak_week_num"),
+                cap_weeks=int(trace.get("cap_weeks", 5)),
+                cap_miles=float(trace.get("cap_miles", 16.0)),
+                round_to_half=round_to_half,
+            )
+            ratios = list(trace.get("taper_ratios_used") or [])
+            min_anchor = float(trace.get("min_lr_for_taper_anchor", 5.0))
+            pk = float(trace.get("peak", peak_long_run_target))
+            pure_tail = _append_taper_miles_pure(
+                pure_mid,
+                ratios=ratios,
+                min_lr=min_anchor,
+                peak=pk,
+                round_to_half=round_to_half,
+            )
+            authoritative = pure_mid + pure_tail
+            _log_long_run_curve_diff(
+                legacy_curve,
+                authoritative,
+                context="build_target_long_run_curve(Stage C)",
+            )
+            if len(authoritative) != len(legacy_curve):
+                logger.error(
+                    "build_target_long_run_curve: global curve length %s != legacy %s; "
+                    "using legacy miles.",
+                    len(authoritative),
+                    len(legacy_curve),
+                )
+                return legacy_curve
+            return authoritative
+
+    return legacy_curve
 
 
 def _generate_long_run_spine(
@@ -524,6 +671,7 @@ def _generate_long_run_spine(
     peak_offset_before_taper: int = 1,
     config: Optional[RaceDistanceConfig] = None,
     unit_system: str = "imperial",
+    return_trace: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, float]]:
     """Generate a safe long-run progression (spine) for marathon training.
 
@@ -781,6 +929,13 @@ def _generate_long_run_spine(
         if not is_valid:
             logger.warning(f"Spine quality check failed: {'; '.join(quality_issues)}")
 
+        if return_trace is not None:
+            return_trace["pre_taper_curve"] = None
+            return_trace["full_curve_legacy"] = [
+                float(w.get("long_run_miles") or 0.0) for w in weeks
+            ]
+            return_trace["peak"] = float(peak)
+
         return weeks
 
     # Fixed length mode: RESPECT the constraint (treat as MAXIMUM, not minimum)
@@ -1006,56 +1161,35 @@ def _generate_long_run_spine(
 
         rem_after_fill = actual_total_weeks - len(weeks)
 
-        # DEPRECATED — in-place mile repairs (TODO Stage D: encode in generator).
-        # Enforce post-peak monotonic decrease through pre-taper segment
-        # Find peak index in current weeks (should exist by construction)
-        if declared_peak_week_num and declared_peak_week_num > 0:
-            peak_idx_local = min(len(weeks) - 1, declared_peak_week_num - 1)
-        else:
-            try:
-                peak_idx_local = max(
-                    range(len(weeks)), key=lambda i: weeks[i]["long_run_miles"]
-                )  # noqa: E731
-            except Exception:
-                peak_idx_local = 0
-        for i in range(peak_idx_local + 1, len(weeks)):
-            prev = weeks[i - 1]["long_run_miles"]
-            if weeks[i]["long_run_miles"] > prev:
-                weeks[i]["long_run_miles"] = prev
+        # Stage C: post-fill monotonic + cap via pure curve helper, then write back
+        # (legacy behavior preserved; no separate duplicate math path).
+        pre_adj = [float(w["long_run_miles"]) for w in weeks]
+        if return_trace is not None:
+            return_trace["pre_taper_curve"] = list(pre_adj)
+            return_trace["declared_peak_week_num"] = declared_peak_week_num
+            return_trace["peak"] = float(peak)
+            return_trace["min_lr_for_taper_anchor"] = float(min_lr)
 
-        # CRITICAL FIX: Cap any long runs within pre-taper cap weeks to config value
-        # BUT: Never cap the actual peak week OR any weeks during the build phase
-        # The cap should ONLY apply to maintenance weeks AFTER the peak, not during build
-        pre_taper_len = max(0, len(weeks))
-        cap_weeks = config.pre_taper_cap_weeks if config else 5
-        cap_miles = config.pre_taper_cap_miles if config else 16.0
-        start_cap = max(0, pre_taper_len - cap_weeks)
+        cap_weeks = int(config.pre_taper_cap_weeks if config else 5)
+        cap_miles = float(config.pre_taper_cap_miles if config else 16.0)
+        if return_trace is not None:
+            return_trace["cap_weeks"] = cap_weeks
+            return_trace["cap_miles"] = cap_miles
 
-        # Find peak index to exclude it and all build weeks from capping
-        if declared_peak_week_num and declared_peak_week_num > 0:
-            peak_idx_for_cap = min(len(weeks) - 1, declared_peak_week_num - 1)
-        else:
-            try:
-                peak_idx_for_cap = max(
-                    range(len(weeks)), key=lambda i: weeks[i]["long_run_miles"]
-                )
-            except Exception:
-                peak_idx_for_cap = -1  # No peak found, safe to cap all
+        finalized_pre = _finalize_pre_taper_curve_pure(
+            pre_adj,
+            declared_peak_week_num=declared_peak_week_num,
+            cap_weeks=cap_weeks,
+            cap_miles=cap_miles,
+            round_to_half=round_to_half,
+        )
+        for i, v in enumerate(finalized_pre):
+            weeks[i]["long_run_miles"] = v
 
-        for i in range(start_cap, pre_taper_len):
-            # Don't cap:
-            # 1. The peak week itself (preserve 20-mile peak)
-            # 2. Any weeks during the build phase (before peak) - this prevents false cutbacks
-            # Only cap maintenance weeks AFTER the peak
-            is_build_phase = i < peak_idx_for_cap
-            at_global_long_run_peak = i == peak_idx_for_cap
-
-            if (
-                not is_build_phase
-                and not at_global_long_run_peak
-                and weeks[i]["long_run_miles"] > cap_miles
-            ):
-                weeks[i]["long_run_miles"] = round_to_half_mile(cap_miles)
+        if return_trace is not None:
+            return_trace["post_finalize_pre_taper"] = [
+                float(w["long_run_miles"]) for w in weeks
+            ]
 
         # CRITICAL FIX: Ensure exactly taper_weeks are created, not just rem_after_fill
         # If rem_after_fill < taper_weeks, we need to extend the plan or reduce pre-taper weeks
@@ -1082,6 +1216,8 @@ def _generate_long_run_spine(
                     ratios = [0.70, 0.50, 0.25][:taper_weeks_to_create]
                 else:
                     ratios = [taper_factor, 0.40][:taper_weeks_to_create]
+            if return_trace is not None:
+                return_trace["taper_ratios_used"] = list(ratios)
             taper_anchor = max(
                 min_lr,
                 max((float(w.get("long_run_miles", 0.0)) for w in weeks), default=peak),
@@ -1106,6 +1242,40 @@ def _generate_long_run_spine(
         w["global_peak_week_number"] = _meta["global_peak_week_number"]
         w["peak_block_peak_week_number"] = _meta["peak_block_peak_week_number"]
 
+    if return_trace is not None:
+        return_trace["full_curve_legacy"] = [
+            float(w.get("long_run_miles") or 0.0) for w in weeks
+        ]
+        if return_trace.get("peak") is None:
+            return_trace["peak"] = float(peak)
+
+    return weeks
+
+
+def _week_dicts_from_long_run_curve(
+    curve: List[float],
+    *,
+    taper_weeks: int,
+) -> List[Dict[str, Any]]:
+    """Executor: build spine week dicts from a precomputed mile curve (Stage C)."""
+    drop_tol = 0.25
+    weeks: List[Dict[str, Any]] = []
+    for i, lr in enumerate(curve):
+        prev = float(curve[i - 1]) if i > 0 else lr
+        is_cb = i > 0 and float(lr) < prev - drop_tol
+        weeks.append(
+            {
+                "week_number": i + 1,
+                "long_run_miles": float(lr),
+                "phase": "",
+                "is_cutback": bool(is_cb),
+            }
+        )
+    assign_training_intent_phases(weeks, taper_weeks)
+    _meta = compute_long_run_peak_week_metadata(weeks, taper_weeks=taper_weeks)
+    for w in weeks:
+        w["global_peak_week_number"] = _meta["global_peak_week_number"]
+        w["peak_block_peak_week_number"] = _meta["peak_block_peak_week_number"]
     return weeks
 
 
@@ -1131,8 +1301,32 @@ def build_long_run_spine_weeks(
 
     Callers that need ``long_run_miles`` plus ``is_cutback`` / ``phase`` / etc. should
     use this entry point. Callers that only need the mile sequence should use
-    :func:`build_target_long_run_curve`; both delegate to :func:`_generate_long_run_spine`.
+    :func:`build_target_long_run_curve`.
+
+    When ``USE_GLOBAL_CURVE`` is False, delegates to :func:`_generate_long_run_spine``.
+    When True (Stage C), uses :func:`build_target_long_run_curve` as the mile source of
+    truth and only assembles week dicts (executor path).
     """
+    if USE_GLOBAL_CURVE:
+        curve = build_target_long_run_curve(
+            starting_long_run_miles,
+            total_weeks_in_plan,
+            peak_long_run_target,
+            race_date=race_date,
+            taper_weeks=taper_weeks,
+            inc_miles=inc_miles,
+            cutback_every=cutback_every,
+            cutback_factor=cutback_factor,
+            taper_factor=taper_factor,
+            round_to_half=round_to_half,
+            non_regressive_slack=non_regressive_slack,
+            single_peak=single_peak,
+            peak_offset_before_taper=peak_offset_before_taper,
+            config=config,
+            unit_system=unit_system,
+        )
+        return _week_dicts_from_long_run_curve(curve, taper_weeks=taper_weeks)
+
     return _generate_long_run_spine(
         starting_long_run_miles,
         total_weeks_in_plan,
@@ -1149,6 +1343,7 @@ def build_long_run_spine_weeks(
         peak_offset_before_taper=peak_offset_before_taper,
         config=config,
         unit_system=unit_system,
+        return_trace=None,
     )
 
 
