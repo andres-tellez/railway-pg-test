@@ -1882,17 +1882,26 @@ def tool_generate_training_plan(
         logger.exception("Plan generation failed user=%s", internal_user_id)
         return {
             "error": "plan_generation_failed",
-            "message": str(e),
+            "message": "Plan generation could not be completed.",
+            "failure": {
+                "failure_code": "unexpected_error",
+                "failure_reason": "An unexpected error occurred while building the plan.",
+                "details": {"exception_type": type(e).__name__},
+            },
             "plan_intake_state": current_state,
         }
 
     if not result.get("valid") or not result.get("validated_plan"):
-        return {
+        out = {
             "error": "plan_validation_failed",
-            "message": "Generated plan failed validation.",
+            "message": "The training plan could not be validated for this schedule and fitness profile.",
             "violations": result.get("violations", []),
             "plan_intake_state": current_state,
         }
+        gf = result.get("generation_failure")
+        if gf:
+            out["failure"] = gf
+        return out
 
     validation_payload = {
         "valid": True,

@@ -25,6 +25,10 @@ from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
 )
 
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
+from src.services.training_plan.v2.marathon.adaptive_marathon_peak import (
+    RaceConfigPeakOverride,
+    resolve_marathon_adaptive_target_peak_miles,
+)
 
 # DataCollectionService and InsightsCalculationService no longer needed
 # All data now comes from materialized view (same as metrics page)
@@ -232,7 +236,23 @@ class PlanGenerationOrchestratorV2:
         )
 
         if not plan_length_weeks:
-            raise ValueError("Plan length weeks must be provided")
+            gf = {
+                "failure_code": "plan_length_missing",
+                "failure_reason": "Plan length in weeks could not be determined.",
+                "details": {},
+            }
+            v = {
+                "rule": "plan_length_missing",
+                "severity": "error",
+                "location": "plan_generation",
+                **gf,
+            }
+            return {
+                "valid": False,
+                "violations": [v],
+                "generation_failure": gf,
+                "draft": {},
+            }
 
         logger.info(
             f"✅ Step 4: Plan length determined - {plan_length_weeks} weeks "
@@ -254,6 +274,20 @@ class PlanGenerationOrchestratorV2:
             f"starting_mileage_adjustment={scenario_adjustments['starting_mileage_adjustment']:.2f}"
         )
 
+        gen_config = self._generation_race_config(
+            weekly_mileage=weekly_mileage,
+            plan_request=plan_request,
+            plan_length_weeks=int(plan_length_weeks),
+        )
+        if self.race_type == "marathon":
+            logger.info(
+                "Marathon adaptive peak target: %.1f mi (mpw=%.1f, primary_goal=%s, weeks=%s)",
+                gen_config.target_peak_miles,
+                weekly_mileage,
+                plan_request.get("primary_goal"),
+                plan_length_weeks,
+            )
+
         # Step 5: Build long run progression (scenario-aware)
 
         # Validate time constraints ONLY for time-constrained scenario
@@ -263,7 +297,11 @@ class PlanGenerationOrchestratorV2:
             # Use actual calculated values from Steps 2-4 for accuracy
             # Use start_date from plan_request or min_start_date as fallback
             plan_start_date = start_date or min_start_date
-            race_date_validation = self.race_date_validator.validate(
+            race_date_validator = RaceDateValidationService(
+                config=gen_config,
+                constraints_service=self.constraints_service,
+            )
+            race_date_validation = race_date_validator.validate(
                 race_date=race_date,
                 plan_start_date=plan_start_date,
                 current_weekly_mileage=weekly_mileage,
@@ -288,6 +326,18 @@ class PlanGenerationOrchestratorV2:
                     f"Required: {race_date_validation.get('required_weeks')} weeks"
                 )
                 # Return early with validation result (no plan generated)
+                gf = {
+                    "failure_code": "insufficient_time",
+                    "failure_reason": race_date_validation.get(
+                        "message",
+                        "Insufficient time to safely prepare for the race on this schedule.",
+                    ),
+                    "details": {
+                        "available_weeks": race_date_validation.get("available_weeks"),
+                        "required_weeks": race_date_validation.get("required_weeks"),
+                        "recommendation": race_date_validation.get("recommendation"),
+                    },
+                }
                 return {
                     "valid": False,
                     "violations": [
@@ -295,22 +345,23 @@ class PlanGenerationOrchestratorV2:
                             "rule": "insufficient_time",
                             "severity": "error",
                             "location": "plan_generation",
-                            "details": race_date_validation.get(
-                                "message",
-                                "Insufficient time to safely prepare for race",
-                            ),
+                            "failure_code": gf["failure_code"],
+                            "failure_reason": gf["failure_reason"],
+                            "details": gf["details"],
                             "suggestion": race_date_validation.get(
                                 "recommendation",
                                 "Adjust race date or build base fitness first",
                             ),
                         }
                     ],
+                    "generation_failure": gf,
                     "validated_plan": None,
                     "race_date_validation": race_date_validation,
                 }
 
         # Build spine (scenario-specific configuration will be added later)
-        lr_output = self.pass1.build(
+        pass1_gen = Pass1LongRunFirstV2(config=gen_config)
+        lr_output = pass1_gen.build(
             session=session,
             user_id=str(user_id),
             weekly_mileage=weekly_mileage,
@@ -328,16 +379,33 @@ class PlanGenerationOrchestratorV2:
                 len(weeks_long),
             )
 
-        # GUARDRAIL: Validate spine immutability - no modifications after generation
-        self._validate_spine_immutability(weeks_long)
+        spine_err = self._validate_spine_immutability(
+            weeks_long, gen_config.target_peak_miles
+        )
+        if spine_err:
+            gf = {
+                "failure_code": spine_err.get(
+                    "failure_code", "spine_validation_failed"
+                ),
+                "failure_reason": spine_err.get(
+                    "failure_reason", "Long-run spine validation failed."
+                ),
+                "details": spine_err.get("details", {}),
+            }
+            return {
+                "valid": False,
+                "violations": [spine_err],
+                "generation_failure": gf,
+                "draft": {},
+            }
 
         # GUARDRAIL: Validate spine quality - check cutback spacing, progression, etc.
         is_valid, quality_issues = validate_phase_quality(
             weeks_long,
-            peak=self.config.target_peak_miles,
-            cutback_every=self.config.cutback_every,
-            taper_weeks=self.config.taper_weeks,
-            taper_ratios=self.config.taper_ratios,
+            peak=gen_config.target_peak_miles,
+            cutback_every=gen_config.cutback_every,
+            taper_weeks=gen_config.taper_weeks,
+            taper_ratios=gen_config.taper_ratios,
         )
 
         # Self-correction: Try to fix validation issues automatically
@@ -358,6 +426,7 @@ class PlanGenerationOrchestratorV2:
                 scenario_adjustments=scenario_adjustments,
                 max_attempts=2,
                 unit_system=unit_system,
+                race_config=gen_config,
             )
             weeks_long = corrected_weeks
             quality_issues = remaining_issues
@@ -376,7 +445,7 @@ class PlanGenerationOrchestratorV2:
         weeks_with_totals = calculate_weekly_totals_from_long_runs(
             weeks=weeks_long,
             runs_per_week=runs_per_week,
-            config=self.config,
+            config=gen_config,
             scenario_adjustments=scenario_adjustments,
             unit_system=unit_system,
         )
@@ -387,7 +456,12 @@ class PlanGenerationOrchestratorV2:
             plan_request, training_days
         )
 
-        pass3_plan = self.pass3.run(
+        pass3_gen = Pass3WorkoutDistribution(
+            config=gen_config,
+            race_type=self.race_type,
+            scenario=self.scenario,
+        )
+        pass3_plan = pass3_gen.run(
             weeks_with_totals,
             training_days,
             total_weeks=plan_length_weeks,
@@ -442,7 +516,10 @@ class PlanGenerationOrchestratorV2:
         )
 
         # Step 8: Final validation
-        validation = self.validator.validate_plan(
+        validator_gen = PlanValidationServiceV2(
+            config=gen_config, unit_system=unit_system
+        )
+        validation = validator_gen.validate_plan(
             plan_with_details, unit_system=unit_system
         )
         validation["draft"] = plan_with_details
@@ -454,6 +531,9 @@ class PlanGenerationOrchestratorV2:
         # Include race date validation results if available
         if race_date_validation:
             validation["race_date_validation"] = race_date_validation
+
+        if self.race_type == "marathon":
+            validation["peak_target_long_run_miles"] = gen_config.target_peak_miles
 
         # Include spine quality validation results
         # This checks cutback spacing, progression safety, peak achievement, etc.
@@ -519,43 +599,99 @@ class PlanGenerationOrchestratorV2:
             training_days=training_days,
         )
 
-    def _validate_spine_immutability(self, weeks: List[Dict[str, Any]]) -> None:
+    def _generation_race_config(
+        self,
+        *,
+        weekly_mileage: float,
+        plan_request: Dict[str, Any],
+        plan_length_weeks: int,
+    ) -> RaceDistanceConfig:
+        """Race config for this generation (marathon uses adaptive peak long run)."""
+        if self.race_type != "marathon":
+            return self.config
+        peak = resolve_marathon_adaptive_target_peak_miles(
+            weekly_mileage=weekly_mileage,
+            primary_goal=plan_request.get("primary_goal"),
+            plan_length_weeks=plan_length_weeks,
+        )
+        if abs(peak - self.config.target_peak_miles) < 0.01:
+            return self.config
+        return RaceConfigPeakOverride(self.config, peak)
+
+    def _validate_spine_immutability(
+        self, weeks: List[Dict[str, Any]], peak_target: float
+    ) -> Optional[Dict[str, Any]]:
         """
         GUARDRAIL: Validate that spine hasn't been modified after generation.
 
-        This ensures single source of truth - spine is calculated once and never modified.
-        If modifications are needed, regenerate with different parameters.
-
-        Contract:
-            - Input: weeks from spine generator
-            - Validates: structure, progression, peak reached
-            - Side Effects: NONE (read-only validation)
-            - Raises: AssertionError if validation fails
+        Returns a structured violation dict if invalid; otherwise None.
         """
         if not weeks:
-            raise AssertionError("Spine must have at least one week")
+            return {
+                "rule": "spine_empty",
+                "severity": "error",
+                "location": "plan_generation",
+                "failure_code": "spine_empty",
+                "failure_reason": "The training plan spine has no weeks.",
+                "details": {},
+            }
 
-        # Validate structure
         for i, week in enumerate(weeks):
             if "long_run_miles" not in week:
-                raise AssertionError(f"Week {i+1} missing long_run_miles")
+                return {
+                    "rule": "spine_structure",
+                    "severity": "error",
+                    "location": "plan_generation",
+                    "failure_code": "spine_missing_long_run",
+                    "failure_reason": f"Week {i + 1} is missing long run distance data.",
+                    "details": {"week_index": i + 1},
+                }
             if "phase" not in week:
-                raise AssertionError(f"Week {i+1} missing phase")
+                return {
+                    "rule": "spine_structure",
+                    "severity": "error",
+                    "location": "plan_generation",
+                    "failure_code": "spine_missing_phase",
+                    "failure_reason": f"Week {i + 1} is missing training phase data.",
+                    "details": {"week_index": i + 1},
+                }
             lr = float(week.get("long_run_miles", 0) or 0)
             if lr <= 0:
-                raise AssertionError(f"Week {i+1} has invalid long_run_miles: {lr}")
+                return {
+                    "rule": "spine_structure",
+                    "severity": "error",
+                    "location": "plan_generation",
+                    "failure_code": "spine_invalid_long_run",
+                    "failure_reason": f"Week {i + 1} has an invalid long run distance.",
+                    "details": {"week_index": i + 1, "long_run_miles": lr},
+                }
 
-        # Validate peak is reached (within tolerance)
         max_lr = max(float(w.get("long_run_miles", 0) or 0) for w in weeks)
-        peak_target = self.config.target_peak_miles
-        if max_lr < peak_target - 1.0:  # Allow 1 mile tolerance
-            raise AssertionError(
-                f"Spine must reach peak ({peak_target} miles), got max {max_lr:.1f} miles"
-            )
+        min_required = peak_target - 1.0
+        if max_lr < min_required:
+            return {
+                "rule": "spine_peak_not_reached",
+                "severity": "error",
+                "location": "plan_generation",
+                "failure_code": "spine_peak_not_reached",
+                "failure_reason": (
+                    "The long-run progression did not reach the adaptive peak "
+                    "expected for this runner and schedule."
+                ),
+                "details": {
+                    "max_long_run_miles": max_lr,
+                    "adaptive_peak_miles": peak_target,
+                    "min_required_max_long_run_miles": min_required,
+                },
+            }
 
         logger.debug(
-            f"✅ Spine validation passed: {len(weeks)} weeks, peak {max_lr:.1f} miles"
+            "Spine validation passed: %s weeks, peak %.1f miles (target %.1f)",
+            len(weeks),
+            max_lr,
+            peak_target,
         )
+        return None
 
     def _append_race_week(
         self, weeks: List[Dict[str, Any]], unit_system: str = "imperial"
@@ -717,6 +853,7 @@ class PlanGenerationOrchestratorV2:
         scenario_adjustments: Optional[Dict[str, Any]] = None,
         max_attempts: int = 2,
         unit_system: str = "imperial",
+        race_config: Optional[RaceDistanceConfig] = None,
     ) -> Tuple[List[Dict[str, Any]], List[str]]:
         """
         Attempt to fix validation issues by adjusting parameters and regenerating.
@@ -730,6 +867,8 @@ class PlanGenerationOrchestratorV2:
         current_weeks = weeks_long
         current_issues = quality_issues
         adjusted_recommended_weeks = recommended_weeks
+        cfg = race_config or self.config
+        pass1_local = Pass1LongRunFirstV2(config=cfg)
 
         while attempts < max_attempts and current_issues:
             # Analyze issues and determine fixes
@@ -752,7 +891,7 @@ class PlanGenerationOrchestratorV2:
 
             # Regenerate spine with adjusted parameters
             try:
-                lr_output = self.pass1.build(
+                lr_output = pass1_local.build(
                     session=session,
                     user_id=user_id,
                     weekly_mileage=weekly_mileage,
@@ -770,10 +909,10 @@ class PlanGenerationOrchestratorV2:
                 # Re-validate
                 is_valid, new_issues = validate_phase_quality(
                     new_weeks,
-                    peak=self.config.target_peak_miles,
-                    cutback_every=self.config.cutback_every,
-                    taper_weeks=self.config.taper_weeks,
-                    taper_ratios=self.config.taper_ratios,
+                    peak=cfg.target_peak_miles,
+                    cutback_every=cfg.cutback_every,
+                    taper_weeks=cfg.taper_weeks,
+                    taper_ratios=cfg.taper_ratios,
                 )
 
                 if is_valid:

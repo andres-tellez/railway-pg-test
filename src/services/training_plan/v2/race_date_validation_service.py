@@ -80,7 +80,9 @@ class RaceDateValidationService:
             return self._error_result("Invalid race date provided")
 
         # Calculate required weeks first (needed for start_date calculation)
-        calculated_required_weeks = self._estimate_weeks_to_peak(current_long_run)
+        calculated_required_weeks = self._estimate_weeks_to_peak(
+            current_long_run, self.config.target_peak_miles
+        )
 
         # Calculate start_date: align with race_date by working backwards
         # This matches the orchestrator's logic for consistency
@@ -233,10 +235,10 @@ class RaceDateValidationService:
         return max(0, round(weeks))
 
     def _estimate_weeks_to_peak(
-        self, current_long_run: float, target_peak: float = 20.0
+        self, current_long_run: float, target_peak: Optional[float] = None
     ) -> int:
         """
-        Estimate weeks needed to reach peak long run (20 miles).
+        Estimate weeks needed to reach peak long run (from race config).
 
         Based on safe progression:
         - +1 mile/week progression
@@ -257,14 +259,19 @@ class RaceDateValidationService:
 
         Conservative estimate accounting for cutbacks:
         - Effective progression: ~0.75 miles per week (accounting for cutbacks)
-        - Distance to cover: 20 - (current_long_run + 1)
+        - Distance to cover: peak - (current_long_run + 1)
         """
-        if current_long_run >= 19.0:
+        peak = (
+            float(target_peak)
+            if target_peak is not None
+            else float(self.config.target_peak_miles)
+        )
+        if current_long_run >= peak - 1.0:
             # Already close to peak, just need taper
             return 2
 
         start_lr = current_long_run + 1.0  # Week 1 long run
-        distance_to_cover = target_peak - start_lr
+        distance_to_cover = peak - start_lr
 
         if distance_to_cover <= 0:
             # Already at or above target
