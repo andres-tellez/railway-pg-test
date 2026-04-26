@@ -240,7 +240,8 @@ def compute_stable_week1_long_run_start(
     Uses up to the last **6** positive weekly longest-run distances (caller supplies
     most-recent-first order). Computes **median** and **global max**. Branching uses
     **ties_at_global_max** (weeks whose distance equals the max within float tolerance):
-    a single hit at the max is treated as an outlier (**start ≈ median**); two or more
+    a single hit at the max is treated as an outlier (**start = max(median, most recent
+    weekly longest)** so the plan does not regress below the latest week); two or more
     weeks at the max allow **max + increment** (capped by ``long_run_increment``).
     The result is then capped to **median × (1 + max_increase_vs_median_pct)** (default
     +10% over median). Metadata also includes **count_within_1mi_of_max** for auditing.
@@ -256,6 +257,8 @@ def compute_stable_week1_long_run_start(
             "weekly_longest_miles must contain at least one positive distance"
         )
 
+    most_recent_long_run = float(series[0])
+
     sorted_s = sorted(series)
     n = len(sorted_s)
     mid = n // 2
@@ -270,7 +273,7 @@ def compute_stable_week1_long_run_start(
 
     # Single-week hit at the global max → treat as outlier; sustained max weeks → allow max + inc.
     if ties_at_global_max <= 1:
-        candidate = float(median)
+        candidate = max(float(median), most_recent_long_run)
         rule = "median_single_peak_week_anchor"
     else:
         inc = min(float(long_run_increment), 1.0)
@@ -284,6 +287,7 @@ def compute_stable_week1_long_run_start(
     final = round_to_half_mile(capped)
     meta: Dict[str, Any] = {
         "median_long_run": stable,
+        "most_recent_long_run": most_recent_long_run,
         "max_long_run": max_lr,
         "ties_at_global_max": ties_at_global_max,
         "count_within_1mi_of_max": count_within_1mi_of_max,

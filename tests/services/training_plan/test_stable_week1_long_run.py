@@ -16,8 +16,11 @@ def test_outlier_single_global_max_uses_median_not_max_plus_one():
     )
     assert meta["ties_at_global_max"] == 1
     assert meta["median_long_run"] == pytest.approx(11.5)
+    assert meta["most_recent_long_run"] == 13.0
+    assert meta["raw_candidate"] == pytest.approx(13.0)  # max(median, most recent)
     assert miles <= meta["cap_ceiling_miles"] + 0.01
-    assert miles == 11.5  # median of [10,10,11,12,12,13]
+    # Capped at 1.1× median (12.65), half-mile round → 12.5
+    assert miles == 12.5
 
 
 def test_repeated_global_max_allows_increment_then_median_cap():
@@ -43,6 +46,18 @@ def test_ten_percent_cap_limits_boost_when_median_low():
     assert meta["median_long_run"] == pytest.approx(10.0)
     assert meta["cap_ceiling_miles"] == pytest.approx(11.0)
     assert miles <= 11.0
+
+
+def test_outlier_when_most_recent_below_median_candidate_is_median():
+    miles, meta = compute_stable_week1_long_run_start(
+        [10.0, 12.0, 12.0, 13.0],
+        long_run_increment=1.0,
+        min_long_run_mi=5.0,
+    )
+    assert meta["most_recent_long_run"] == 10.0
+    assert meta["median_long_run"] == pytest.approx(12.0)
+    assert meta["raw_candidate"] == pytest.approx(12.0)
+    assert miles == 12.0
 
 
 def test_empty_series_raises():
