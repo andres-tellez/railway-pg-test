@@ -8,6 +8,7 @@ import logging
 # Removed imports: DataCollectionServiceV2, InsightsCalculationServiceV2
 # This class no longer collects data - it receives raw_data and insights from Step 1
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
+    compute_long_run_peak_week_metadata,
     generate_long_run_spine,
 )
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
@@ -83,42 +84,48 @@ def validate_spine(
             f"Week 1 mismatch: got {weeks[0].get('long_run_miles', 0):.1f}, expected {expected_start:.1f} (stable week-1 rule)"
         )
 
-    total_weeks = weeks[-1]["week_number"]
-    build_last = max(1, total_weeks - cfg["taperWeeks"] - 1)
+    taper_w = int(cfg["taperWeeks"])
+    pre_n = max(1, len(weeks) - taper_w)
     peaked = False
-    last_was_cutback = False
 
-    for i in range(1, total_weeks):
+    for i in range(1, len(weeks)):
         lr_prev = float(weeks[i - 1].get("long_run_miles", 0))
         lr = float(weeks[i].get("long_run_miles", 0))
         lr_two_back = (
             float(weeks[i - 2].get("long_run_miles", 0)) if i - 2 >= 0 else lr_prev
         )
+        wn = int(weeks[i].get("week_number") or (i + 1))
 
-        if i + 1 <= build_last:
+        if i < pre_n:
             cap = peak if not peaked else max(0.0, peak - 1.0)
-            # Cutback rule: every 4th week and prior week below PEAK
-            if ((i + 1) % cfg["cutEvery"]) == 0 and lr_prev < peak:
-                if not (lr < lr_prev):
-                    raise ValueError(f"Cutback expected at week {i+1}")
-                last_was_cutback = True
+            is_cb = bool(weeks[i].get("is_cutback"))
+            prev_cb = bool(weeks[i - 1].get("is_cutback"))
+            if is_cb:
+                if not (lr < lr_prev - 0.25):
+                    raise ValueError(
+                        f"Week {wn}: cutback flag set but long run not below prior "
+                        f"({lr_prev:.1f} → {lr:.1f})"
+                    )
+            elif prev_cb:
+                lo = round_to_half_mile(lr_prev + cfg["inc"])
+                hi = round_to_half_mile(min(cap, lr_prev + 3.0))
+                if lr < lo - 1e-6 or lr > hi + 1e-6:
+                    raise ValueError(
+                        f"Week {wn} invalid resume: got {lr:.1f}, expected between "
+                        f"{lo:.1f} and {hi:.1f} (after cutback {lr_prev:.1f})"
+                    )
             else:
-                if last_was_cutback:
-                    expected = round_to_half_mile(min(cap, lr_two_back + cfg["inc"]))
-                    last_was_cutback = False
-                else:
-                    expected = round_to_half_mile(min(cap, lr_prev + cfg["inc"]))
+                expected = round_to_half_mile(min(cap, lr_prev + cfg["inc"]))
                 if abs(lr - expected) > 1e-6:
                     raise ValueError(
-                        f"Week {i+1} invalid: got {lr:.1f}, expected {expected:.1f} (prev {lr_prev:.1f}, two_back {lr_two_back:.1f}, cap {cap:.1f})"
+                        f"Week {wn} invalid: got {lr:.1f}, expected {expected:.1f} "
+                        f"(prev {lr_prev:.1f}, two_back {lr_two_back:.1f}, cap {cap:.1f})"
                     )
             if not peaked and lr >= peak - 1e-6:
                 peaked = True
         else:
             if lr > peak + 1e-6:
-                raise ValueError(
-                    f"Taper week {i+1} exceeds peak: {lr:.1f} > {peak:.1f}"
-                )
+                raise ValueError(f"Taper week {wn} exceeds peak: {lr:.1f} > {peak:.1f}")
 
 
 class Pass1LongRunFirstV2:
@@ -358,6 +365,9 @@ class Pass1LongRunFirstV2:
             recommended_weeks = max(recommended_weeks, desired_total_weeks)
 
         w0_lr = float(weeks[0]["long_run_miles"]) if weeks else 0.0
+        peak_week_meta = compute_long_run_peak_week_metadata(
+            weeks, taper_weeks=int(self.config.taper_weeks)
+        )
         rationale = {
             "base_mpw": base_mpw,
             "longest_recent": longest_recent,
@@ -379,6 +389,7 @@ class Pass1LongRunFirstV2:
             "weekly_long_runs": consecutive_analysis["weekly_long_runs"],
             "recommended_weeks": recommended_weeks,  # Log the readiness-based recommendation used
             "mode": "fixed_length" if fixed_length_requested else "dynamic_length",
+            **peak_week_meta,
         }
 
         return {
@@ -398,13 +409,14 @@ class Pass1LongRunFirstV2:
         expected_start: float,
         peak: float,
         taper_weeks: int,
+        cutback_every: int = 4,
     ) -> List[Dict[str, Any]]:
         """Validate LR spine invariants; raise on violations, do not mutate.
 
         Invariants:
           - Week 1 equals expected_start (rounded to 0.5)
           - Build weeks grow by +1.0 per week, with single-peak cap at 20 and post-peak cap at 19
-          - Every 4th build week is a cutback (< prior week)
+          - Periodic cutback weeks (< prior week), cadence from ``cutback_every``
           - Taper weeks ≤ peak
         """
         if not weeks:
@@ -429,19 +441,15 @@ class Pass1LongRunFirstV2:
 
             if i + 1 <= build_last:
                 cap = peak if not peaked else max(0.0, peak - 1.0)
-                # Cutback follows the spine rule: every 4th week and prior week below PEAK
-                if ((i + 1) % 4) == 0 and lr_prev < peak:
-                    # This week must be a cutback (< previous)
+                if i % cutback_every == 0 and i >= cutback_every and lr_prev < peak:
                     if not (lr < lr_prev):
                         raise ValueError(f"Cutback expected at week {i+1}")
                     last_was_cutback = True
                 else:
                     if last_was_cutback:
-                        # Resume: pre-cutback + 1.0
                         expected = round_to_half_mile(min(cap, lr_two_back + 1.0))
                         last_was_cutback = False
                     else:
-                        # Normal build: prior week + 1.0
                         expected = round_to_half_mile(min(cap, lr_prev + 1.0))
                     if abs(lr - expected) > 1e-6:
                         raise ValueError(
