@@ -147,6 +147,8 @@ def test_plan_validation():
             peak=config.target_peak_miles,
             cutback_every=config.cutback_every,
             taper_weeks=config.taper_weeks,
+            taper_ratios=config.taper_ratios,
+            race_config=config,
         )
 
         print(f"\n{'='*80}")

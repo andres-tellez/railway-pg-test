@@ -289,161 +289,44 @@ def validate_phase_quality(
     peak: float,
     cutback_every: int,
     taper_weeks: int,
-    taper_ratios: List[float],
+    taper_ratios: Optional[List[float]] = None,
+    race_config: Optional[RaceDistanceConfig] = None,
 ) -> Tuple[bool, List[str]]:
     """Validate the quality of each phase in the generated spine.
 
     Returns:
         (is_valid, issues) where issues is a list of quality concerns.
+
+    Stage B: delegates to :func:`validate_long_run_curve` (phase-quality subset only).
+    ``taper_ratios`` may be omitted when ``race_config`` is provided (uses config).
     """
+    from src.services.training_plan.v2.race_configs.marathon_config import (
+        MarathonConfig,
+    )
+    from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
+        validate_long_run_curve,
+    )
+
     if not weeks:
         return False, ["Empty spine"]
 
-    issues: List[str] = []
-    lr_values = [float(w.get("long_run_miles", 0)) for w in weeks]
+    cfg = race_config or MarathonConfig()
+    curve = [float(w.get("long_run_miles", 0)) for w in weeks]
+    tr = taper_ratios if taper_ratios is not None else list(cfg.taper_ratios)
 
-    # Find phase boundaries
-    peak_idx = lr_values.index(max(lr_values))
-    build_phase = lr_values[: peak_idx + 1]
-    post_peak_phase = (
-        lr_values[peak_idx + 1 : -taper_weeks]
-        if taper_weeks > 0
-        else lr_values[peak_idx + 1 :]
+    structured = validate_long_run_curve(
+        curve,
+        cfg,
+        peak_target_miles=peak,
+        taper_ratios_override=tr,
+        cutback_every_override=cutback_every,
+        taper_weeks_override=taper_weeks,
+        include_structure_checks=False,
+        include_peak_max_check=False,
+        include_pass1_progression=False,
+        include_phase_quality=True,
     )
-    # FIX: Taper phase should start AFTER peak, not include it
-    # Calculate taper from the end, but ensure it doesn't include the peak week
-    if taper_weeks > 0:
-        # Taper is the last taper_weeks weeks AFTER the peak
-        # If peak is in the last taper_weeks, start taper right after peak
-        taper_start_idx = max(peak_idx + 1, len(lr_values) - taper_weeks)
-        taper_phase = lr_values[taper_start_idx:]
-    else:
-        taper_phase = []
-
-    # Phase 1: Build to Peak Quality Checks
-    if build_phase:
-        # Check 1: Cutback spacing - verify cutbacks happen every cutback_every build weeks
-        cutback_weeks = []
-        build_week_numbers = []  # Track which build week each cutback occurs at
-
-        # Find all cutbacks in build phase
-        build_counter = 0  # Count build weeks (excluding start week)
-        for i in range(1, len(build_phase)):
-            build_counter += 1
-            if (
-                build_phase[i] < build_phase[i - 1] - 0.5
-            ):  # Significant decrease (cutback)
-                cutback_weeks.append(i + 1)  # Week number (1-indexed)
-                build_week_numbers.append(build_counter)
-
-        # Check for consecutive cutbacks (should never happen)
-        for i in range(1, len(build_phase)):
-            if build_phase[i] < build_phase[i - 1] - 0.5:  # Cutback
-                if (
-                    i > 1 and build_phase[i - 1] < build_phase[i - 2] - 0.5
-                ):  # Previous was also cutback
-                    issues.append(
-                        f"Phase 1 (Build): CONSECUTIVE CUTBACKS detected at weeks {i} and {i+1} "
-                        f"({build_phase[i-2]:.1f} → {build_phase[i-1]:.1f} → {build_phase[i]:.1f})"
-                    )
-
-        # Verify cutback spacing
-        if len(build_week_numbers) > 1:
-            for j in range(len(build_week_numbers) - 1):
-                spacing = build_week_numbers[j + 1] - build_week_numbers[j]
-                if spacing != cutback_every:
-                    issues.append(
-                        f"Phase 1 (Build): Cutback spacing violation - "
-                        f"Cutback at build week {build_week_numbers[j]} (Week {cutback_weeks[j]}) "
-                        f"followed by cutback at build week {build_week_numbers[j + 1]} (Week {cutback_weeks[j+1]}) "
-                        f"(spacing: {spacing} weeks, expected: {cutback_every} weeks)"
-                    )
-
-        # First cutback after ``cutback_every`` completed build weeks (see spine generator).
-        if len(build_week_numbers) > 0:
-            first_cutback_week = build_week_numbers[0]
-            expected_first_cutback = cutback_every
-            if first_cutback_week != expected_first_cutback:
-                issues.append(
-                    f"Phase 1 (Build): First cutback at build week {first_cutback_week} (Week {cutback_weeks[0]}), "
-                    f"expected at build week {expected_first_cutback}"
-                )
-
-        # Check 2: Has adequate cutbacks (every cutback_every weeks)
-        cutback_count = len(cutback_weeks)
-        build_weeks = len(build_phase) - 1
-        min_cutbacks = 1 if build_weeks > cutback_every else 0
-        expected_cutbacks = max(min_cutbacks, build_weeks // cutback_every)
-
-        if cutback_count < (expected_cutbacks - 1):
-            issues.append(
-                f"Phase 1 (Build): Only {cutback_count} cutbacks found, expected ~{expected_cutbacks} "
-                f"(every {cutback_every} build weeks)"
-            )
-
-        # Check 3: Progression is gradual (no jumps >3 miles except after cutback)
-        for i in range(1, len(build_phase)):
-            if build_phase[i] > build_phase[i - 1]:
-                jump = build_phase[i] - build_phase[i - 1]
-                # Allow larger jumps after cutbacks (handled separately)
-                if i > 1 and build_phase[i - 2] <= build_phase[i - 1]:
-                    # Not immediately after cutback
-                    if (
-                        jump > 3.0
-                    ):  # Increased from 2.0 to 3.0 to allow safe resume (14→17)
-                        issues.append(
-                            f"Phase 1 (Build): Week {i+1} aggressive jump of {jump:.1f} miles (limit: 3.0)"
-                        )
-
-        # Check 4: Actually reaches peak
-        if build_phase[-1] < peak - 1.0:
-            issues.append(
-                f"Phase 1 (Build): Never reached peak (max: {build_phase[-1]:.1f}, target: {peak:.1f})"
-            )
-
-    # Phase 2: Post-Peak Quality Checks
-    if post_peak_phase:
-        # Check 1: Non-increasing after peak
-        for i in range(1, len(post_peak_phase)):
-            if post_peak_phase[i] > post_peak_phase[i - 1]:
-                week_num = peak_idx + 1 + i + 1
-                issues.append(
-                    f"Phase 2 (Post-Peak): Week {week_num} increases after peak ({post_peak_phase[i-1]:.1f} → {post_peak_phase[i]:.1f})"
-                )
-
-        # Check 2: Not too high (should be at or below peak-1)
-        for i, lr in enumerate(post_peak_phase):
-            if lr > peak:
-                week_num = peak_idx + 1 + i + 1
-                issues.append(
-                    f"Phase 2 (Post-Peak): Week {week_num} exceeds peak ({lr:.1f} > {peak:.1f})"
-                )
-
-    # Phase 3: Taper Quality Checks
-    # NOTE: Taper validation is now handled by PlanValidationServiceV2 with phase-aware
-    # and distance-specific rules. The checks here focus only on safety-critical issues.
-    if taper_phase:
-        # Check 1: Taper length is appropriate (safety-critical)
-        if len(taper_phase) < 2:
-            issues.append(
-                f"Phase 3 (Taper): Too short ({len(taper_phase)} weeks, minimum: 2)"
-            )
-
-        # Check 2: Taper is generally decreasing (safety-critical)
-        # Allow small fluctuations but flag major increases
-        for i in range(1, len(taper_phase)):
-            if taper_phase[i] > taper_phase[i - 1] + 1.0:  # Allow 1-mile tolerance
-                week_num = len(weeks) - len(taper_phase) + i + 1
-                issues.append(
-                    f"Phase 3 (Taper): Week {week_num} increases significantly "
-                    f"({taper_phase[i-1]:.1f} → {taper_phase[i]:.1f})"
-                )
-
-        # REMOVED: Static taper ratio checks (lines 330-338, 348-367)
-        # These used peak * taper_ratios which produced unrealistic expectations
-        # (e.g., 5 mi final taper for marathon). Now handled by dynamic ratio
-        # validation in PlanValidationServiceV2 using final_taper_long_run_range config.
-
+    issues = [i["message"] for i in structured]
     is_valid = len(issues) == 0
     if not is_valid:
         logger.warning("Spine quality checks failed: %s", "; ".join(issues))
@@ -549,6 +432,55 @@ def assign_training_intent_phases(
         else:
             w["phase"] = "Build"
         w["is_peak_week"] = False
+
+
+def build_target_long_run_curve(
+    starting_long_run_miles: float,
+    total_weeks_in_plan: Optional[int],
+    peak_long_run_target: float,
+    *,
+    race_date: Optional[Union[str, date, datetime]] = None,
+    taper_weeks: int = 2,
+    inc_miles: float = 1.0,
+    cutback_every: int = 4,
+    cutback_factor: float = 0.70,
+    taper_factor: float = 0.60,
+    round_to_half: bool = True,
+    non_regressive_slack: float = 1.0,
+    single_peak: bool = True,
+    peak_offset_before_taper: int = 1,
+    config: Optional[RaceDistanceConfig] = None,
+    unit_system: str = "imperial",
+) -> List[float]:
+    """Return only the per-week target long-run distances (Stage A facade).
+
+    This is a **pure** wrapper around :func:`generate_long_run_spine`: it forwards
+    the same arguments and extracts ``long_run_miles`` from each week dict. It does
+    not change spine behavior.
+
+    For **deterministic** outputs in tests or analytics, pass an explicit
+    ``total_weeks_in_plan`` (use ``0`` for dynamic-length mode). Avoid relying on
+    ``race_date``-only length derivation, which may consult the current UTC date
+    inside the spine when ``total_weeks_in_plan`` is unset in fixed-length mode.
+    """
+    weeks = generate_long_run_spine(
+        starting_long_run_miles,
+        total_weeks_in_plan,
+        peak_long_run_target,
+        race_date=race_date,
+        taper_weeks=taper_weeks,
+        inc_miles=inc_miles,
+        cutback_every=cutback_every,
+        cutback_factor=cutback_factor,
+        taper_factor=taper_factor,
+        round_to_half=round_to_half,
+        non_regressive_slack=non_regressive_slack,
+        single_peak=single_peak,
+        peak_offset_before_taper=peak_offset_before_taper,
+        config=config,
+        unit_system=unit_system,
+    )
+    return [float(w.get("long_run_miles") or 0.0) for w in weeks]
 
 
 def generate_long_run_spine(
@@ -808,6 +740,7 @@ def generate_long_run_spine(
             cutback_every=cutback_every,
             taper_weeks=taper_weeks_actual,
             taper_ratios=validation_taper_ratios,
+            race_config=config,
         )
         if not is_valid:
             logger.warning(f"Spine quality check failed: {'; '.join(quality_issues)}")
