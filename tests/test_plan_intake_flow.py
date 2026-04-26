@@ -446,6 +446,53 @@ def test_plan_intake_parses_hyphen_weekday_range_mon_sat():
     ]
 
 
+def test_plan_intake_infers_training_days_mon_thu_from_source_message_only():
+    """Model omits training_days in updates; user says Mon-Thu (eager merge path)."""
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "target_time": "3:40",
+        },
+        source_user_message="Mon-Thu",
+    )
+    assert state["draft"]["training_days"] == ["Mon", "Tue", "Wed", "Thu"]
+    assert "training_days" not in state["missing_required"]
+    assert state["ready_to_generate"] is True
+
+
+def test_plan_intake_infers_training_days_from_message_after_prose_prefix():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "target_time": "3:40",
+        },
+        source_user_message="Sounds good, Mon-Thu",
+    )
+    assert state["draft"]["training_days"] == ["Mon", "Tue", "Wed", "Thu"]
+    assert state["ready_to_generate"] is True
+
+
+def test_plan_intake_infers_training_days_monday_through_thursday_from_message():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "target_time": "3:40",
+        },
+        source_user_message="Monday through Thursday",
+    )
+    assert state["draft"]["training_days"] == ["Mon", "Tue", "Wed", "Thu"]
+    assert state["ready_to_generate"] is True
+
+
 def test_plan_intake_infers_target_time_from_message_when_goal_missing():
     state = update_plan_intake_state(
         None,

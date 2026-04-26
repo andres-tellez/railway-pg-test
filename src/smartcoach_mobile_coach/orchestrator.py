@@ -1829,6 +1829,8 @@ Intake behavior:
 - For `race_date`, ask when the race is; accept natural language and pass it as `race_date`.
 - The server also parses common **date-only** replies (e.g. “October 11”) from the user’s last message into
   `race_date` when the model forgets to pass `updates`—check the tool intake draft before asking for the date again.
+- The server also infers **weekday lists** (e.g. “Mon–Thu”, “Monday through Thursday”) from the user’s last message into
+  `training_days` when the model forgets to pass them in `updates`—check the tool intake draft before asking for weekdays again.
 - Whenever the user names a specific race, pass **`race_name`** in `updates` (exactly as they said is fine) so it
   appears on the saved plan; do not wait for a separate prompt if they already named it.
 - After required fields are satisfied (`ready_to_generate` true) **and before** you ask for final yes/no to generate,
