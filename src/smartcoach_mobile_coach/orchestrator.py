@@ -678,7 +678,7 @@ _GET_PLAN_OVERVIEW_OPENAI_TOOL: Dict[str, Any] = {
             "V1.6 end-to-end planned-only overview of the athlete's active (or most recent) plan. "
             "Use for plan-arc questions: 'what does my whole plan look like', 'what phase am I in "
             "vs what comes next', 'how does weekly mileage progress over the plan', 'what's my "
-            "long-run build'. Returns phase_blocks (Base/Build/Specific/Taper with week span, workout "
+            "long-run build'. Returns phase_blocks (Base/Build/Peak/Taper with week span, workout "
             "count, planned miles, and canonical phase_kpi_priority), volume_curve (one row per "
             "plan week with planned_runs + planned_miles_total + week_temporality), and "
             "long_run_progression (one row per week with the longest planned run date, miles, "

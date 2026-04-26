@@ -18,24 +18,22 @@ PHASE = {
     "BASE": "Base",
     "BUILD": "Build",
     "PEAK": "Peak",
-    "SPECIFIC": "Specific",
     "TAPER": "Taper",
 }
 
 PHASES_LIST = [
     PHASE["BASE"],
     PHASE["BUILD"],
-    PHASE["SPECIFIC"],
     PHASE["PEAK"],
     PHASE["TAPER"],
 ]
 
-QUALITY_ENABLED_PHASES = {PHASE["BUILD"], PHASE["PEAK"], PHASE["SPECIFIC"]}
+QUALITY_ENABLED_PHASES = {PHASE["BUILD"], PHASE["PEAK"]}
 
 
 def is_peak_like_phase(phase: str) -> bool:
-    """True when ``phase`` should use Peak-equivalent workout / intensity rules."""
-    return phase in (PHASE["PEAK"], PHASE["SPECIFIC"])
+    """True when ``phase`` should use Peak workout / intensity rules."""
+    return phase == PHASE["PEAK"]
 
 
 # ============================================================================
@@ -52,7 +50,7 @@ WU_CD_MI = {
 # STRIDES CONFIGURATION
 # ============================================================================
 STRIDES = {
-    "enabled_phases": {PHASE["BUILD"], PHASE["PEAK"], PHASE["SPECIFIC"]},
+    "enabled_phases": {PHASE["BUILD"], PHASE["PEAK"]},
     "min_run_mi": 4.0,  # Minimum run distance to suggest strides
     "reps": 4,
     "on_sec": 20,
@@ -63,7 +61,7 @@ STRIDES = {
 # MARATHON FINISH CONFIGURATION
 # ============================================================================
 MARATHON_FINISH = {
-    "enabled_phases": {PHASE["PEAK"], PHASE["SPECIFIC"]},
+    "enabled_phases": {PHASE["PEAK"]},
     "min_lr_mi": 16.0,  # Minimum long run distance to trigger M-finish
     "finish_fraction": 0.25,  # Fraction of total distance for M-finish
     "min_finish_mi": 2.0,  # Minimum miles for M-finish segment
@@ -101,7 +99,7 @@ SEGMENT_SUM_TOLERANCE = (
 # ============================================================================
 # Threshold intervals for STEADY workouts in Build/Peak phases
 THRESHOLD_INTERVALS = {
-    "enabled_phases": {PHASE["BUILD"], PHASE["PEAK"], PHASE["SPECIFIC"]},
+    "enabled_phases": {PHASE["BUILD"], PHASE["PEAK"]},
     "min_run_mi": 5.0,  # Minimum total distance to use intervals
     "interval_types": {
         "short": {  # For 5-7 mi total runs
@@ -124,7 +122,7 @@ THRESHOLD_INTERVALS = {
 
 # Tempo blocks for STEADY workouts (alternative to intervals)
 TEMPO_BLOCKS = {
-    "enabled_phases": {PHASE["BUILD"], PHASE["PEAK"], PHASE["SPECIFIC"]},
+    "enabled_phases": {PHASE["BUILD"], PHASE["PEAK"]},
     "min_run_mi": 6.0,
     "block_mi": 2.0,  # 2-mile tempo blocks
     "recovery_mi": 0.5,  # 0.5-mile recovery between blocks

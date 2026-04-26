@@ -585,7 +585,7 @@ def _detail_hills(
         else:
             reps = 10
     elif is_peak_like_phase(phase):
-        # Reduced hills in Peak / Specific - maintain, don't build
+        # Reduced hills in Peak - maintain, don't build
         if distance_mi < 5.0:
             reps = 4
         elif distance_mi < 7.0:
