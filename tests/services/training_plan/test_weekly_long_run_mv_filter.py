@@ -12,7 +12,8 @@ from src.services.training_plan.v2.shared_v2.long_run_signals import (
 
 
 def test_filter_drops_anomalous_low_week_vs_median():
-    # Mirrors bad MV input [13, 10, 5.01] when real training was ~12–13 mi weeks.
+    # Anomaly removal runs only with ≥4 positive weeks; include a fourth normal week.
+    # ref is not in these ISO weeks so partial-week drop does not apply.
     rows = [
         {
             "week_start": "2025-03-10",
@@ -32,11 +33,17 @@ def test_filter_drops_anomalous_low_week_vs_median():
             "activity_id": 103,
             "distance": 5.01,
         },
+        {
+            "week_start": "2025-02-17",
+            "date": "2025-02-19",
+            "activity_id": 104,
+            "distance": 12.0,
+        },
     ]
     out = filter_mv_weekly_runs_for_planning(
         rows, reference_date=date(2025, 3, 20), trace_label="test"
     )
-    assert [float(r["distance"]) for r in out] == [13.0, 10.0]
+    assert [float(r["distance"]) for r in out] == [13.0, 10.0, 12.0]
 
 
 def test_filter_drops_current_week_row():
@@ -68,6 +75,31 @@ def test_filter_noop_when_too_few_weeks_for_anomaly():
     ]
     out = filter_mv_weekly_runs_for_planning(rows, reference_date=date(2025, 3, 20))
     assert len(out) == 2
+
+
+def test_filter_preserves_four_week_series_for_consecutive_signals():
+    """Realistic block ~[12, 13, 10, 12] must not collapse to two weeks after filtering."""
+    rows = [
+        {"week_start": "2025-03-10", "distance": 12.0, "activity_id": 1},
+        {"week_start": "2025-03-03", "distance": 13.0, "activity_id": 2},
+        {"week_start": "2025-02-24", "distance": 10.0, "activity_id": 3},
+        {"week_start": "2025-02-17", "distance": 12.0, "activity_id": 4},
+    ]
+    out = filter_mv_weekly_runs_for_planning(rows, reference_date=date(2025, 3, 20))
+    assert [float(r["distance"]) for r in out] == [12.0, 13.0, 10.0, 12.0]
+
+
+def test_filter_fallback_when_anomaly_would_leave_too_few_weeks():
+    """If the anomaly rule would drop to <3 rows, keep pre-anomaly weeks (Pass1 floor)."""
+    rows = [
+        {"week_start": "2025-03-10", "distance": 14.0, "activity_id": 1},
+        {"week_start": "2025-03-03", "distance": 14.0, "activity_id": 2},
+        {"week_start": "2025-02-24", "distance": 5.0, "activity_id": 3},
+        {"week_start": "2025-02-17", "distance": 5.01, "activity_id": 4},
+    ]
+    out = filter_mv_weekly_runs_for_planning(rows, reference_date=date(2025, 3, 20))
+    assert len(out) == 4
+    assert {float(r["distance"]) for r in out} == {14.0, 14.0, 5.0, 5.01}
 
 
 def test_analyze_consecutive_flat_top_with_older_peak_in_prefix():

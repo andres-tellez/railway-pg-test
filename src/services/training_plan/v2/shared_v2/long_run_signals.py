@@ -74,22 +74,28 @@ def _week_row_is_current_calendar_week(
     return ws == _monday_of_calendar_week(reference_date)
 
 
+_MIN_VIABLE_WEEKLY_LR_WEEKS = 3
+
+
 def _drop_anomalous_low_weekly_maxes(
     rows: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """Remove weeks whose longest run is far below the window median (bad partial / sync weeks).
 
-    Requires at least three positive distances and a median of at least 7 mi so we do not
-    strip novice blocks. A week is dropped when both:
+    Requires **at least four** positive distances so small samples are not over-stripped, and a
+    median of at least 7 mi so we do not strip novice blocks. A week is dropped when both:
       distance < 0.55 * median, and
       distance + 2.0 < median
+
+    If that would leave fewer than ``_MIN_VIABLE_WEEKLY_LR_WEEKS`` rows, returns ``rows``
+    unchanged so Pass1 still sees enough history for consecutive / stability signals.
     """
     distances = [
         float(r.get("distance", 0) or 0)
         for r in rows
         if float(r.get("distance", 0) or 0) > 0
     ]
-    if len(distances) < 3:
+    if len(distances) < _MIN_VIABLE_WEEKLY_LR_WEEKS + 1:
         return rows
     med = _median_of(distances)
     if med < 7.0:
@@ -104,6 +110,8 @@ def _drop_anomalous_low_weekly_maxes(
         if d < low_ratio * med and d + margin_mi < med:
             continue
         kept.append(r)
+    if len(kept) < _MIN_VIABLE_WEEKLY_LR_WEEKS:
+        return rows
     return kept if kept else rows
 
 
@@ -121,7 +129,9 @@ def filter_mv_weekly_runs_for_planning(
        date in UTC for stability across workers.
 
     2. Drops **anomalously low** weekly maxes vs the median of remaining weeks (guards bogus
-       5 mi “max” weeks when neighboring weeks are ~12–13 mi).
+       5 mi “max” weeks when neighboring weeks are ~12–13 mi). Only when there are at least four
+       positive-distance weeks; never reduces the series below three weeks (falls back to
+       pre-anomaly or raw rows).
 
     If filtering would remove every row, returns the original ``rows`` unchanged.
     """
@@ -138,6 +148,12 @@ def filter_mv_weekly_runs_for_planning(
     after_anomaly = _drop_anomalous_low_weekly_maxes(after_partial)
     if not after_anomaly:
         after_anomaly = list(after_partial)
+
+    if len(after_anomaly) < _MIN_VIABLE_WEEKLY_LR_WEEKS:
+        if len(after_partial) >= _MIN_VIABLE_WEEKLY_LR_WEEKS:
+            after_anomaly = list(after_partial)
+        elif len(rows) >= _MIN_VIABLE_WEEKLY_LR_WEEKS:
+            after_anomaly = list(rows)
 
     if _weekly_lr_trace_enabled():
 
