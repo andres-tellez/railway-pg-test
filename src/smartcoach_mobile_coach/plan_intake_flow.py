@@ -455,6 +455,61 @@ def _normalize_training_days(value: Any) -> Optional[List[str]]:
     return merged or None
 
 
+def _training_day_message_candidates(text: str) -> List[str]:
+    """
+    Build short strings to try with _normalize_training_days when the user
+    mixes prose with a day range (e.g. "Thanks, Mon-Thu").
+    """
+    msg = (text or "").strip()
+    if not msg:
+        return []
+    out: List[str] = []
+    seen: set[str] = set()
+
+    def _add(s: str) -> None:
+        t = s.strip()
+        if not t:
+            return
+        k = t.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(t)
+
+    _add(msg)
+    for part in re.split(r"[,;]", msg):
+        _add(part)
+    # Hyphen / en-dash weekday span within a longer line
+    for m in re.finditer(
+        r"(?is)\b([a-z]{3,12})\s*[-–—]\s*([a-z]{3,12})\b",
+        msg,
+    ):
+        _add(f"{m.group(1)}-{m.group(2)}")
+    # "Monday through Thursday" style
+    for m in re.finditer(
+        r"(?is)\b([a-z]+)\s+(?:through|thru|to)\s+([a-z]+)\b",
+        msg,
+    ):
+        _add(f"{m.group(1)} through {m.group(2)}")
+    return out
+
+
+def _fill_training_days_from_user_message(
+    draft: Dict[str, Any],
+    ux: Dict[str, Any],
+    text: Optional[str],
+) -> None:
+    """When ``training_days`` is still empty, parse weekday phrases from the user line."""
+    td = draft.get("training_days")
+    if isinstance(td, list) and len(td) > 0:
+        return
+    for cand in _training_day_message_candidates((text or "").strip()):
+        ndays = _normalize_training_days(cand)
+        if ndays:
+            draft["training_days"] = ndays
+            ux.pop("training_days_count", None)
+            return
+
+
 _TRAINING_DAY_COUNT_WORDS: Dict[str, int] = {
     "three": 3,
     "four": 4,
@@ -1013,6 +1068,8 @@ def update_plan_intake_state(
     _fill_primary_goal_from_user_message(draft, source_user_message)
 
     _fill_goal_time_from_user_message(draft, source_user_message)
+
+    _fill_training_days_from_user_message(draft, ux, source_user_message)
 
     if "training_days" not in draft and "training_days_count" not in ux:
         day_count = _extract_training_days_count(source_user_message)
