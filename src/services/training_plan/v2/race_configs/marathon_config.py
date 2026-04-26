@@ -24,8 +24,8 @@ class MarathonConfig(RaceDistanceConfig):
 
     @property
     def cutback_factor(self) -> float:
-        """Reduce volume ~25% on cutback weeks."""
-        return 0.75
+        """Retain this fraction of prior long run on deload weeks (~12–18% reduction)."""
+        return 0.85
 
     @property
     def target_peak_miles(self) -> float:
@@ -77,8 +77,8 @@ class MarathonConfig(RaceDistanceConfig):
 
     @property
     def resume_week_increment(self) -> float:
-        """Add 2 miles after cutback during resume week."""
-        return 2.0
+        """Default bump after cutback when time is tight (normal build uses +1 mi/week)."""
+        return 1.0
 
     # Weekly Totals
     @property

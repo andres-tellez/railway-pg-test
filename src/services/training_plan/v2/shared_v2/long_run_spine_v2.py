@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Dict, Optional, Union, Tuple
+from typing import Any, List, Dict, Optional, Union, Tuple
 from datetime import datetime, date
 import logging
 
@@ -15,6 +15,79 @@ except ImportError:
     RaceDistanceConfig = None  # type: ignore
 
 from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
+
+
+def compute_long_run_peak_week_metadata(
+    weeks: List[Dict[str, Any]],
+    *,
+    taper_weeks: int,
+) -> Dict[str, Optional[int]]:
+    """
+    Week numbers for diagnostics: global max long run in pre-taper vs max inside Peak block.
+
+    ``global_peak_week_number`` can occur early (e.g. before a deload); ``peak_block_peak_week_number``
+    reflects the highest long run inside the assigned Peak phase window.
+    """
+    out: Dict[str, Optional[int]] = {
+        "global_peak_week_number": None,
+        "peak_block_peak_week_number": None,
+    }
+    if not weeks:
+        return out
+    n = len(weeks)
+    tw = max(0, min(n, int(taper_weeks)))
+    pre = weeks[: n - tw]
+    if not pre:
+        return out
+
+    def _lr(w: Dict[str, Any]) -> float:
+        return float(w.get("long_run_miles") or 0.0)
+
+    g_max = max(_lr(w) for w in pre)
+    g_week: Optional[int] = None
+    for w in pre:
+        if abs(_lr(w) - g_max) <= 0.05:
+            g_week = int(w.get("week_number") or 0) or None
+            break
+    out["global_peak_week_number"] = g_week
+
+    peak_weeks = [w for w in pre if w.get("phase") == "Peak"]
+    if not peak_weeks:
+        return out
+    pb_max = max(_lr(w) for w in peak_weeks)
+    for w in peak_weeks:
+        if abs(_lr(w) - pb_max) <= 0.05:
+            out["peak_block_peak_week_number"] = int(w.get("week_number") or 0) or None
+            break
+    return out
+
+
+def compute_cutback_long_run_miles(
+    lr: float,
+    cutback_factor: float,
+    min_lr: float,
+    *,
+    max_drop_miles: float = 2.0,
+    max_reduction_fraction: float = 0.20,
+) -> float:
+    """
+    Deload long-run target: honor ``cutback_factor`` but cap regression.
+
+    - At most ``max_drop_miles`` below the prior week's long run.
+    - At most ``max_reduction_fraction`` reduction (e.g. 0.20 → keep >= 80%).
+    Picks the *mildest* of the factor-based target and those floors (highest miles).
+    """
+    if lr <= 0:
+        return round_to_half_mile(max(min_lr, lr))
+    soft = lr * cutback_factor
+    drop_floor = lr - max_drop_miles
+    pct_floor = lr * (1.0 - max_reduction_fraction)
+    new_lr = max(min_lr, soft, drop_floor, pct_floor)
+    if new_lr >= lr - 0.25:
+        new_lr = max(min_lr, lr - 1.0)
+    new_lr = min(new_lr, lr - 0.25)
+    new_lr = max(min_lr, new_lr)
+    return round_to_half_mile(new_lr)
 
 
 def calculate_dynamic_resume(
@@ -76,22 +149,20 @@ def calculate_dynamic_resume(
         Calculated resume long run distance
     """
     if pre_cutback_lr is None:
-        # First cutback, no pre-cutback reference - use base increment
-        return lr + base_resume_inc
+        # First cutback, no pre-cutback reference - prefer +1 mi/week stair
+        return lr + max(inc_miles, min(base_resume_inc, inc_miles * 2))
 
     weeks_remaining = max_weeks_to_build - current_week + 1
     miles_to_peak = peak - lr
 
     if miles_to_peak <= 0:
-        # Already at or past peak
-        return min(peak, lr + base_resume_inc)
+        return min(peak, lr + max(inc_miles, min(base_resume_inc, inc_miles * 2)))
 
     if weeks_remaining <= 0:
-        # No weeks remaining - use base increment
-        return lr + base_resume_inc
+        return lr + max(inc_miles, min(base_resume_inc, inc_miles * 2))
 
-    # Calculate if gradual progression works
-    gradual_resume = lr + base_resume_inc  # e.g., 14 + 2 = 16
+    # Prefer gradual +1 mi/week after cutback unless time pressure forces larger steps
+    gradual_resume = lr + inc_miles
     miles_after_gradual = peak - gradual_resume
 
     if miles_after_gradual <= 0:
@@ -133,11 +204,13 @@ def calculate_dynamic_resume(
         )
     max_resume = lr + max_resume_increment
 
-    # Option 1: Resume to pre-cutback + 1 (if close to peak), but cap at max_resume
+    # Option 1: Nudge toward pre-cutback, but never exceed a single-week jump cap
     if pre_cutback_lr + 1.0 <= peak:
         aggressive_resume_1 = min(
-            max_resume, pre_cutback_lr + 1.0
-        )  # e.g., min(18, 20) = 18
+            max_resume,
+            pre_cutback_lr + 1.0,
+            lr + max_resume_increment,
+        )
         miles_after_aggressive_1 = peak - aggressive_resume_1
         weeks_needed_1 = max(0, miles_after_aggressive_1 / inc_miles)
 
@@ -177,11 +250,10 @@ def calculate_dynamic_resume(
     max_resume = lr + max_resume_increment
 
     if pre_cutback_lr is not None and pre_cutback_lr > lr:
-        # Cap at max_resume to prevent dangerous jumps (e.g., 14 → 20 is too aggressive)
-        return min(peak, min(max_resume, pre_cutback_lr))
-    else:
-        # Fallback: ensure we always progress from cutback
-        return lr + base_resume_inc
+        # Do not snap back to full pre-cutback load in one week (avoids 14→10→14 oscillation)
+        return min(peak, max_resume)
+    # Fallback: ensure we always progress from cutback
+    return lr + max(inc_miles, min(base_resume_inc, inc_miles * 2))
 
 
 def weeks_until(race: Optional[Union[str, date, datetime]]) -> Optional[int]:
@@ -287,14 +359,10 @@ def validate_phase_quality(
                         f"(spacing: {spacing} weeks, expected: {cutback_every} weeks)"
                     )
 
-        # Check if first cutback happens at correct interval
-        # First cutback should happen at build week 3 (absolute Week 4) for proper spacing
-        # Subsequent cutbacks happen every 4th build week (4, 8, 12...)
+        # First cutback after ``cutback_every`` completed build weeks (see spine generator).
         if len(build_week_numbers) > 0:
             first_cutback_week = build_week_numbers[0]
-            expected_first_cutback = (
-                cutback_every - 1
-            )  # Build week 3 for cutback_every=4
+            expected_first_cutback = cutback_every
             if first_cutback_week != expected_first_cutback:
                 issues.append(
                     f"Phase 1 (Build): First cutback at build week {first_cutback_week} (Week {cutback_weeks[0]}), "
@@ -412,8 +480,10 @@ def assign_training_intent_phases(
     fraction of plan length. **Base** / **Build** use the same rule as before: ~35% of weeks
     before Peak are Base, the remainder of that prefix are Build.
 
-    ``is_peak_week`` is True for exactly one week: the first pre-taper week (by list order)
-    whose long run equals the pre-taper maximum (ties broken by earliest index).
+    ``is_peak_week`` is True for exactly one week: prefer the first week inside the Peak
+    block whose long run equals the overall pre-taper maximum; if the max only occurs
+    earlier, fall back to that index; if the Peak block never reaches the global max, use
+    the first week inside the Peak block at the block's local maximum.
     """
     if not weeks:
         return
@@ -432,12 +502,30 @@ def assign_training_intent_phases(
     k_peak = min(capped_peak_training_weeks(n), pre_count)
     peak_start_idx = max(0, pre_count - k_peak)
 
+    # Prefer the first week inside the Peak block that hits the pre-taper max, so
+    # ``is_peak_week`` stays meaningful when the curve had an earlier local maximum.
     first_peak_idx = None
-    for idx, w in enumerate(pre_taper):
-        lr = float(w.get("long_run_miles") or 0.0)
+    for idx in range(peak_start_idx, len(pre_taper)):
+        lr = float(pre_taper[idx].get("long_run_miles") or 0.0)
         if abs(lr - peak_lr) <= _LR_FLOAT_TOL:
             first_peak_idx = idx
             break
+    if first_peak_idx is None:
+        for idx, w in enumerate(pre_taper):
+            lr = float(w.get("long_run_miles") or 0.0)
+            if abs(lr - peak_lr) <= _LR_FLOAT_TOL:
+                first_peak_idx = idx
+                break
+
+    if first_peak_idx is None or first_peak_idx < peak_start_idx:
+        window = pre_taper[peak_start_idx:]
+        if window:
+            local_max = max(float(w.get("long_run_miles") or 0.0) for w in window)
+            for j, w in enumerate(window):
+                lr_w = float(w.get("long_run_miles") or 0.0)
+                if abs(lr_w - local_max) <= _LR_FLOAT_TOL:
+                    first_peak_idx = peak_start_idx + j
+                    break
 
     count_pre_peak = peak_start_idx
     if count_pre_peak <= 0:
@@ -547,7 +635,7 @@ def generate_long_run_spine(
     if derive_length:
         # Build from start to peak with +1/week and periodic cutbacks
         week_num = 1
-        build_counter = 0
+        weeks_since_last_cutback = 0
 
         # Append starting week
         if round_to_half:
@@ -588,46 +676,45 @@ def generate_long_run_spine(
 
                 # GUARDRAIL: Log resume for debugging
                 logger.debug(
-                    f"Week {week_num}: RESUME after cutback (dynamic) - lr {lr:.1f} → {dynamic_resume:.1f} "
-                    f"(pre_cutback={pre_cutback_lr}, build_counter reset to 1)"
+                    "Week %s: RESUME after cutback (dynamic) - lr %.1f → %.1f "
+                    "(pre_cutback=%s, weeks_since_last_cutback=1)",
+                    week_num,
+                    lr,
+                    dynamic_resume,
+                    pre_cutback_lr,
                 )
 
                 last_was_cutback = False
-                build_counter = 0
+                weeks_since_last_cutback = 1
             else:
-                # Keep cutback cadence aligned with fixed-length mode:
-                # first cutback at build week (cutback_every - 1), then every cutback_every build weeks.
-                build_counter += 1
-                is_first_cutback = build_counter == cutback_every - 1
-                is_subsequent_cutback = (
-                    build_counter >= cutback_every
-                    and (build_counter % cutback_every) == 0
-                )
-                if (is_first_cutback or is_subsequent_cutback) and not last_was_cutback:
+                # Deload cadence: ``cutback_every`` weeks since the last cutback (calendar-based).
+                weeks_since_last_cutback += 1
+                should_cutback = weeks_since_last_cutback >= cutback_every and lr < peak
+                if should_cutback:
                     pre_cutback_lr = lr
-                    new_lr = round_to_half_mile(
-                        max(min_lr_dynamic, lr * cutback_factor)
+                    new_lr = compute_cutback_long_run_miles(
+                        lr, cutback_factor, min_lr_dynamic
                     )
-
-                    # GUARDRAIL: Ensure cutback actually reduces long run
                     if new_lr >= lr:
                         logger.warning(
-                            f"Week {week_num}: Cutback calculation error (dynamic) - new_lr {new_lr:.1f} >= lr {lr:.1f}, "
-                            f"forcing reduction to {lr * 0.7:.1f}"
+                            "Week %s: Cutback (dynamic) still not below lr %.1f → %.1f; forcing -1.0",
+                            week_num,
+                            lr,
+                            new_lr,
                         )
-                        new_lr = round_to_half_mile(
-                            max(min_lr_dynamic, lr * 0.7)
-                        )  # Force 30% reduction as fallback
-
-                    # GUARDRAIL: Log cutback for debugging
+                        new_lr = round_to_half_mile(max(min_lr_dynamic, lr - 1.0))
                     logger.debug(
-                        f"Week {week_num}: CUTBACK (dynamic) - lr {lr:.1f} → {new_lr:.1f} "
-                        f"(build_counter={build_counter}, factor={cutback_factor:.2f})"
+                        "Week %s: CUTBACK (dynamic) - lr %.1f → %.1f "
+                        "(weeks_since_last_cutback=%s, factor=%.2f)",
+                        week_num,
+                        lr,
+                        new_lr,
+                        weeks_since_last_cutback,
+                        cutback_factor,
                     )
-
                     lr = new_lr
                     last_was_cutback = True
-                    build_counter = 0
+                    weeks_since_last_cutback = 0
                 else:
                     lr = min(peak, lr + inc_miles)
 
@@ -698,6 +785,13 @@ def generate_long_run_spine(
 
         assign_training_intent_phases(weeks, taper_weeks_actual)
 
+        _meta = compute_long_run_peak_week_metadata(
+            weeks, taper_weeks=taper_weeks_actual
+        )
+        for w in weeks:
+            w["global_peak_week_number"] = _meta["global_peak_week_number"]
+            w["peak_block_peak_week_number"] = _meta["peak_block_peak_week_number"]
+
         # Self-check: Validate phase quality
         # Get taper_ratios from config or use defaults
         if config and hasattr(config, "taper_ratios"):
@@ -736,10 +830,9 @@ def generate_long_run_spine(
     if lr >= peak - 1e-6:
         peaked = True
 
-    # Count build weeks (not absolute week numbers) for proper cutback timing
-    # Week 1 is the starting week, so build_counter starts at 0 for Week 2
-    # This ensures first cutback happens at Week 4 (build_counter = 3, then increments to 4)
-    build_counter = 0
+    # Weeks since last deload (reset on cutback; resume sets to 1). First cutback after
+    # ``cutback_every`` counted weeks (week 1 establishes baseline; week 2 starts counter).
+    weeks_since_last_cutback = 0
 
     # Grow from Week 2 onward until we reach peak
     # RESPECT CONSTRAINT: Build until peak is reached, but STAY within total_weeks_in_plan
@@ -788,74 +881,55 @@ def generate_long_run_spine(
 
             # GUARDRAIL: Log resume for debugging
             logger.debug(
-                f"Week {i}: RESUME after cutback - lr {lr:.1f} → {dynamic_resume:.1f} "
-                f"(pre_cutback={pre_cutback_lr}, build_counter reset to 1)"
+                "Week %s: RESUME after cutback - lr %.1f → %.1f "
+                "(pre_cutback=%s, weeks_since_last_cutback=1)",
+                i,
+                lr,
+                dynamic_resume,
+                pre_cutback_lr,
             )
 
             last_was_cutback = False
             current_is_cutback = False
-            # GUARDRAIL: Resume week does NOT count toward cutback cycle
-            # We need at least cutback_every build weeks AFTER resume before next cutback
-            # Start at 0 so we need 4 build weeks (total 4) before next cutback
-            build_counter = 0
+            weeks_since_last_cutback = 1
         else:
-            # Increment build counter first, then check for cutback
-            # This ensures first cutback happens at Week 4 (after 3 build weeks: Week 2, 3, 4)
-            build_counter += 1
+            weeks_since_last_cutback += 1
+            should_cutback = weeks_since_last_cutback >= cutback_every and lr < peak
 
-            # Check if cutback time: every cutback_every build weeks (not absolute week numbers)
-            # First cutback at build week 3 (absolute Week 4), then every 4th build week after that
-            # Logic: First cutback when build_counter == 3 (after 3 build weeks)
-            #        Subsequent cutbacks when build_counter is a multiple of 4 (4, 8, 12...)
-            #        But we need to account for the offset: after first cutback, counter resets to 0
-            #        So next cutback should be when counter reaches 4 again (which is 4 build weeks after reset)
-            # ADDITIONAL SAFETY: Never allow cutback if we just had a cutback (defensive check)
-            is_first_cutback = (
-                build_counter == cutback_every - 1
-            )  # Week 4: build_counter = 3
-            # For subsequent cutbacks: after reset, we need 4 more build weeks (counter = 4, 8, 12...)
-            is_subsequent_cutback = (
-                build_counter >= cutback_every and (build_counter % cutback_every) == 0
-            )
-
-            if (
-                (is_first_cutback or is_subsequent_cutback)
-                and lr < peak
-                and not last_was_cutback
-            ):
+            if should_cutback:
                 pre_cutback_lr = lr
-                new_lr = round_to_half_mile(max(min_lr, lr * cutback_factor))
-
-                # GUARDRAIL: Ensure cutback actually reduces long run
+                new_lr = compute_cutback_long_run_miles(lr, cutback_factor, min_lr)
                 if new_lr >= lr:
                     logger.warning(
-                        f"Week {i}: Cutback calculation error - new_lr {new_lr:.1f} >= lr {lr:.1f}, "
-                        f"forcing reduction to {lr * 0.7:.1f}"
+                        "Week %s: Cutback still not below lr %.1f → %.1f; forcing -1.0",
+                        i,
+                        lr,
+                        new_lr,
                     )
-                    new_lr = round_to_half_mile(
-                        max(min_lr, lr * 0.7)
-                    )  # Force 30% reduction as fallback
-
-                # GUARDRAIL: Log cutback for debugging
+                    new_lr = round_to_half_mile(max(min_lr, lr - 1.0))
                 logger.debug(
-                    f"Week {i}: CUTBACK - lr {lr:.1f} → {new_lr:.1f} "
-                    f"(build_counter={build_counter}, factor={cutback_factor:.2f})"
+                    "Week %s: CUTBACK - lr %.1f → %.1f (weeks_since_last_cutback=%s, factor=%.2f)",
+                    i,
+                    lr,
+                    new_lr,
+                    weeks_since_last_cutback,
+                    cutback_factor,
                 )
-
                 lr = new_lr
                 last_was_cutback = True
-                build_counter = 0  # Reset counter after cutback
-                # Mark this week as cutback for downstream (Step 6, Step 7)
+                weeks_since_last_cutback = 0
                 current_is_cutback = True
             else:
                 cap = peak if not (single_peak and peaked) else max(0.0, peak - 1.0)
                 new_lr = min(cap, lr + inc_miles)
 
-                # GUARDRAIL: Log normal build for debugging (only if significant change)
                 if abs(new_lr - lr) > 0.1:
                     logger.debug(
-                        f"Week {i}: BUILD - lr {lr:.1f} → {new_lr:.1f} "
-                        f"(build_counter={build_counter})"
+                        "Week %s: BUILD - lr %.1f → %.1f (weeks_since_last_cutback=%s)",
+                        i,
+                        lr,
+                        new_lr,
+                        weeks_since_last_cutback,
                     )
 
                 lr = new_lr
@@ -1055,5 +1129,10 @@ def generate_long_run_spine(
                 wk += 1
 
     assign_training_intent_phases(weeks, taper_weeks)
+
+    _meta = compute_long_run_peak_week_metadata(weeks, taper_weeks=taper_weeks)
+    for w in weeks:
+        w["global_peak_week_number"] = _meta["global_peak_week_number"]
+        w["peak_block_peak_week_number"] = _meta["peak_block_peak_week_number"]
 
     return weeks

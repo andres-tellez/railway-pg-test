@@ -19,13 +19,13 @@ class HalfMarathonConfig(RaceDistanceConfig):
 
     @property
     def cutback_every(self) -> int:
-        """Run a cutback every 3 build weeks (more frequent than marathon)."""
-        return 3
+        """Deload cadence aligned with marathon (every 4th build week)."""
+        return 4
 
     @property
     def cutback_factor(self) -> float:
-        """Reduce volume ~25% on cutback weeks."""
-        return 0.75
+        """Retain this fraction on deload weeks (gentle ~12–18% reduction)."""
+        return 0.85
 
     @property
     def target_peak_miles(self) -> float:
@@ -80,8 +80,8 @@ class HalfMarathonConfig(RaceDistanceConfig):
 
     @property
     def resume_week_increment(self) -> float:
-        """Add 1.5 miles after cutback during resume week."""
-        return 1.5
+        """Bump after cutback when time is tight (build weeks use +1 mi/week)."""
+        return 1.0
 
     # Weekly Totals
     @property
