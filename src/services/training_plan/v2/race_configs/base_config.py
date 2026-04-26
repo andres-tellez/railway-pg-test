@@ -290,6 +290,14 @@ class RaceDistanceConfig(ABC):
         """
         pass
 
+    @property
+    def peak_to_taper_first_week_max_ratio(self) -> float:
+        """Max fraction of the final Peak week's weekly total for the first Taper week (e.g. 0.90).
+
+        Enforces a clear load drop at the Peak→Taper boundary without changing the long-run spine.
+        """
+        return 0.90
+
     @abstractmethod
     def race_week_template(self) -> Dict[str, Any]:
         """Return canonical race-week structure used by the orchestrator."""

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import date, datetime, timedelta
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -8,6 +8,17 @@ from sqlalchemy.orm import Session
 from src.services.training_plan.calculations.week_utils import get_complete_weeks
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
 from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
+
+
+def _median_of(values: List[float]) -> float:
+    if not values:
+        raise ValueError("_median_of requires a non-empty list")
+    s = sorted(float(x) for x in values)
+    n = len(s)
+    m = n // 2
+    if n % 2 == 1:
+        return float(s[m])
+    return (s[m - 1] + s[m]) / 2.0
 
 
 def recent_longest_3w(activities: List[Dict[str, Any]], *, days: int = 21) -> float:
@@ -198,6 +209,187 @@ def get_athlete_id_for_user(session: Session, user_id: str) -> Optional[int]:
     return result.athlete_id if result else None
 
 
+def _mv_weekly_runs_rows(session: Session, user_id: str) -> List[Dict[str, Any]]:
+    """Return ``weekly_runs`` JSON rows from ``mv_longest_runs`` (most recent week first)."""
+    athlete_id = get_athlete_id_for_user(session, user_id)
+    if not athlete_id:
+        return []
+    result = session.execute(
+        text("SELECT * FROM mv_longest_runs WHERE athlete_id = :athlete_id"),
+        {"athlete_id": athlete_id},
+    ).first()
+    if not result or not result.weekly_runs:
+        return []
+    return list(result.weekly_runs)
+
+
+def fetch_recent_weekly_long_run_distances(
+    session: Session, user_id: str, *, max_weeks: int = 6
+) -> List[float]:
+    """Longest run distance per week for the last ``max_weeks`` weeks (most recent first).
+
+    Only weeks with a positive ``distance`` are included (same convention as
+    consecutive-long-run detection).
+    """
+    out: List[float] = []
+    for run in _mv_weekly_runs_rows(session, user_id)[:max_weeks]:
+        distance = float(run.get("distance", 0) or 0)
+        if distance > 0:
+            out.append(round(distance, 2))
+    return out
+
+
+def compute_stable_week1_long_run_start(
+    weekly_longest_miles: List[float],
+    *,
+    long_run_increment: float = 1.0,
+    min_long_run_mi: float = 5.0,
+    max_increase_vs_median_pct: float = 0.10,
+) -> Tuple[float, Dict[str, Any]]:
+    """Derive Week 1 long run from weekly longest-run anchors (consistency + recent emphasis).
+
+    Uses up to **6** weeks (most-recent-first). Computes **full_anchor** (median of all)
+    and **recent_anchor** (median of the last up to **3** weeks). Candidate logic matches
+    sustained vs outlier peaks as before, then caps vs **full_anchor +10%**. Unless the
+    last three weeks clearly include the global peak, an additional cap vs
+    **recent_anchor +10%** keeps week 1 close to what you have held very recently.
+
+    Returns:
+        ``(rounded_start_miles, metadata_dict)``
+    """
+    series = [
+        float(x) for x in weekly_longest_miles if x is not None and float(x) > 0.0
+    ][:6]
+    if not series:
+        raise ValueError(
+            "weekly_longest_miles must contain at least one positive distance"
+        )
+
+    most_recent_long_run = float(series[0])
+    n = len(series)
+    recent_window = series[: min(3, n)]
+    full_anchor = _median_of(series)
+    recent_anchor = _median_of(recent_window)
+
+    max_lr = max(series)
+    ties_at_global_max = sum(1 for x in series if abs(x - max_lr) <= 1e-3)
+    count_within_1mi_of_max = sum(1 for x in series if x >= max_lr - 1.0 - 1e-6)
+
+    # Single-week hit at the global max → treat as outlier; sustained max weeks → allow max + inc.
+    if ties_at_global_max <= 1:
+        candidate = max(float(full_anchor), most_recent_long_run)
+        rule = "median_single_peak_week_anchor"
+    else:
+        inc = min(float(long_run_increment), 1.0)
+        candidate = max_lr + inc
+        rule = "max_plus_increment_repeated_peak_anchor"
+
+    full_ceiling = full_anchor * (1.0 + max_increase_vs_median_pct)
+    capped = min(candidate, full_ceiling)
+
+    recent_ceiling = recent_anchor * (1.0 + max_increase_vs_median_pct)
+    recent_max = max(recent_window)
+    recent_supports_higher = (ties_at_global_max >= 2) or (
+        abs(recent_max - max_lr) <= 1e-3
+    )
+    recent_weighting_applied = False
+    if not recent_supports_higher:
+        before_recent = capped
+        capped = min(capped, recent_ceiling)
+        recent_weighting_applied = capped + 1e-9 < before_recent
+
+    if ties_at_global_max >= 2:
+        explanation_reason_key = "sustained_peak"
+    elif recent_supports_higher:
+        explanation_reason_key = "recent_peak_supported"
+    elif recent_weighting_applied:
+        explanation_reason_key = "recent_median_cap"
+    else:
+        explanation_reason_key = "consistency_anchor"
+
+    capped = max(float(min_long_run_mi), capped)
+    final = round_to_half_mile(capped)
+    meta: Dict[str, Any] = {
+        "median_long_run": float(full_anchor),
+        "full_anchor_median": float(full_anchor),
+        "recent_anchor_median": float(recent_anchor),
+        "most_recent_long_run": most_recent_long_run,
+        "max_long_run": max_lr,
+        "ties_at_global_max": ties_at_global_max,
+        "count_within_1mi_of_max": count_within_1mi_of_max,
+        "rule": rule,
+        "raw_candidate": candidate,
+        "cap_ceiling_vs_median_pct": max_increase_vs_median_pct,
+        "cap_ceiling_miles": full_ceiling,
+        "recent_ceiling_miles": recent_ceiling,
+        "recent_supports_higher": recent_supports_higher,
+        "recent_weighting_applied": recent_weighting_applied,
+        "after_median_cap_miles": capped,
+        "explanation_reason_key": explanation_reason_key,
+    }
+    return final, meta
+
+
+def build_week1_long_run_explanation(
+    *,
+    weekly_series: List[float],
+    start_lr_miles: float,
+    start_meta: Dict[str, Any],
+    start_rule: str,
+) -> str:
+    """Short coach-style copy for ``pass1_rationale`` (Week 1 long-run decision)."""
+    sr = (start_rule or "").lower()
+    if "recovery_week_after_consecutive" in sr:
+        peak = start_meta.get("longest_recent")
+        peak_txt = f"{float(peak):.1f}" if isinstance(peak, (int, float)) else str(peak)
+        return (
+            f"Week 1 long run {start_lr_miles:.1f} mi — recovery week after several long-run "
+            f"weeks in a row (recent block peaked near {peak_txt} mi). Starting easier so "
+            "volume can absorb before building again."
+        )
+
+    if not weekly_series:
+        return (
+            f"Week 1 long run {start_lr_miles:.1f} mi — anchored from your recent longest-run "
+            "baseline (limited weekly history in view)."
+        )
+
+    lo = min(weekly_series)
+    hi = max(weekly_series)
+    nw = len(weekly_series)
+    fa = float(
+        start_meta.get("full_anchor_median") or start_meta.get("median_long_run") or 0.0
+    )
+    ra = float(start_meta.get("recent_anchor_median") or fa)
+    rk = str(start_meta.get("explanation_reason_key") or "consistency_anchor")
+
+    reason_clauses = {
+        "sustained_peak": (
+            "your last several weeks repeatedly hit similar long-run peaks, "
+            "so a modest step from that level is appropriate"
+        ),
+        "recent_peak_supported": (
+            "your most recent weeks include that peak long run, so the usual full-window "
+            "consistency cap applies without pulling the start down to only the short window"
+        ),
+        "recent_median_cap": (
+            "we weighted the last three weeks so week 1 stays close to what you have "
+            "actually held lately, not older higher weeks alone"
+        ),
+        "consistency_anchor": (
+            "week 1 follows a stable blend of your recent weekly longest runs without "
+            "chasing a single older outlier"
+        ),
+    }
+    tail = reason_clauses.get(rk, reason_clauses["consistency_anchor"])
+
+    return (
+        f"Longest-run weeks in view span {lo:.0f}-{hi:.0f} mi ({nw} week(s)). "
+        f"Recent 3-week median ~{ra:.1f} mi; full {nw}-week lookback median ~{fa:.1f} mi. "
+        f"Week 1 long run: {start_lr_miles:.1f} mi — {tail}."
+    )
+
+
 def recent_longest_3w_from_materialized_view(
     session: Session, user_id: str, *, days: int = 21
 ) -> float:
@@ -274,8 +466,8 @@ def detect_consecutive_long_runs_from_materialized_view(
     Returns same structure as detect_consecutive_long_runs() for compatibility.
     """
     try:
-        athlete_id = get_athlete_id_for_user(session, user_id)
-        if not athlete_id:
+        weekly_runs = _mv_weekly_runs_rows(session, user_id)
+        if not weekly_runs:
             return {
                 "has_consecutive_runs": False,
                 "consecutive_count": 0,
@@ -285,28 +477,9 @@ def detect_consecutive_long_runs_from_materialized_view(
                 "most_recent_long_run": 0.0,
             }
 
-        # Query materialized view
-        result = session.execute(
-            text("SELECT * FROM mv_longest_runs WHERE athlete_id = :athlete_id"),
-            {"athlete_id": athlete_id},
-        ).first()
-
-        if not result or not result.weekly_runs:
-            return {
-                "has_consecutive_runs": False,
-                "consecutive_count": 0,
-                "weekly_long_runs": [],
-                "longest_recent": 0.0,
-                "has_recent_reduction": False,
-                "most_recent_long_run": 0.0,
-            }
-
-        # Get weekly runs (already grouped by week, longest run per week)
-        weekly_runs = result.weekly_runs
-
-        # Extract distances for last 4 weeks (most recent first)
+        # Extract distances for last 6 weeks (most recent first)
         weekly_long_runs: List[float] = []
-        for run in weekly_runs[:4]:  # Only need last 4 weeks
+        for run in weekly_runs[:6]:
             distance = float(run.get("distance", 0) or 0)
             if distance > 0:
                 weekly_long_runs.append(round(distance, 2))
