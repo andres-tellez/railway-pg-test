@@ -173,7 +173,13 @@ class TestRunnerStateBuilder:
             runner_state = result["runner_state"]
 
             # Verify phase and week
-            assert runner_state["phase"] in ["Base", "Build", "Peak", "Taper"]
+            assert runner_state["phase"] in [
+                "Base",
+                "Build",
+                "Peak",
+                "Specific",
+                "Taper",
+            ]
             assert runner_state["week_of_block"] >= 1
             assert runner_state["plan_type"] == "Marathon_4hr"
 
@@ -428,5 +434,11 @@ class TestRunnerStateBuilder:
             runner_state = result["runner_state"]
 
             # Should be in Build phase (12 weeks out of 16 = 75% = Build phase boundary)
-            assert runner_state["phase"] in ["Base", "Build", "Peak", "Taper"]
+            assert runner_state["phase"] in [
+                "Base",
+                "Build",
+                "Peak",
+                "Specific",
+                "Taper",
+            ]
             assert runner_state["week_of_block"] >= 1

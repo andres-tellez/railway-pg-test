@@ -301,32 +301,34 @@ def get_template(
     Args:
         race_type: Race distance ("marathon", "half", "10k", "5k")
         frequency: Training days per week (3, 4, 5, or 6)
-        phase: Training phase ("Base", "Build", "Peak", "Taper")
+        phase: Training phase ("Base", "Build", "Specific", "Peak", "Taper")
         scenario: Optional scenario override ("injury_safe", etc.)
 
     Returns:
         List of workout types for the week, ending with "long_run"
     """
+    lookup_phase = "Peak" if phase == "Specific" else phase
+
     # 1. Check scenario override first
     if scenario and scenario in SCENARIO_OVERRIDES:
         scenario_templates = SCENARIO_OVERRIDES[scenario]
         race_overrides = scenario_templates.get(race_type, {})
         freq_overrides = race_overrides.get(frequency, {})
-        if phase in freq_overrides:
-            return freq_overrides[phase].copy()
+        if lookup_phase in freq_overrides:
+            return freq_overrides[lookup_phase].copy()
 
     # 2. Try race-specific template
     race_templates = WEEKLY_TEMPLATES.get(race_type, {})
     freq_templates = race_templates.get(frequency, {})
-    if phase in freq_templates:
-        return freq_templates[phase].copy()
+    if lookup_phase in freq_templates:
+        return freq_templates[lookup_phase].copy()
 
     # 3. Fall back to marathon template (most complete)
     if race_type != "marathon":
         marathon_templates = WEEKLY_TEMPLATES.get("marathon", {})
         marathon_freq = marathon_templates.get(frequency, {})
-        if phase in marathon_freq:
-            return marathon_freq[phase].copy()
+        if lookup_phase in marathon_freq:
+            return marathon_freq[lookup_phase].copy()
 
     # 4. Ultimate fallback: all easy + long_run
     return ["easy"] * (frequency - 1) + ["long_run"]

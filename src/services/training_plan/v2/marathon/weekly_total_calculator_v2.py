@@ -108,6 +108,8 @@ def recommend_weekly_total(
     phase_caps = getattr(config, "phase_delta_caps", None)
     if phase_caps and phase and prev_week_total is not None and prev_week_total > 0:
         normalized_phase = phase.lower()
+        if normalized_phase == "specific":
+            normalized_phase = "peak"
         delta_cap = None
         for key, value in phase_caps.items():
             if key.lower() == normalized_phase:
