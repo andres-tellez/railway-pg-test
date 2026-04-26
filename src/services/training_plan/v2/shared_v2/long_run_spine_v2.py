@@ -1,3 +1,10 @@
+"""Long-run spine generation (build curves + week metadata).
+
+Deprecated validation and in-spine mutation paths are listed in the module
+docstring of ``long_run_curve_validation`` (DEPRECATED COMPONENTS registry,
+Phase 3 Stage D removal).
+"""
+
 from __future__ import annotations
 
 from typing import Any, List, Dict, Optional, Union, Tuple
@@ -294,6 +301,11 @@ def validate_phase_quality(
 ) -> Tuple[bool, List[str]]:
     """Validate the quality of each phase in the generated spine.
 
+    DEPRECATED — replaced by :func:`validate_long_run_curve` (call that API
+    directly with ``include_phase_quality=True`` and explicit kwargs).
+    TODO Phase 3 Stage D: remove this facade after migrating orchestrator,
+    spine self-check, and ``test_plan_validation`` scripts.
+
     Returns:
         (is_valid, issues) where issues is a list of quality concerns.
 
@@ -310,6 +322,12 @@ def validate_phase_quality(
     if not weeks:
         return False, ["Empty spine"]
 
+    if race_config is None:
+        logger.warning(
+            "validate_phase_quality: race_config is None; using MarathonConfig() "
+            "for curve validation (explicit race_config recommended)."
+        )
+
     cfg = race_config or MarathonConfig()
     curve = [float(w.get("long_run_miles", 0)) for w in weeks]
     tr = taper_ratios if taper_ratios is not None else list(cfg.taper_ratios)
@@ -317,10 +335,12 @@ def validate_phase_quality(
     structured = validate_long_run_curve(
         curve,
         cfg,
-        peak_target_miles=peak,
-        taper_ratios_override=tr,
-        cutback_every_override=cutback_every,
-        taper_weeks_override=taper_weeks,
+        spine_rows=weeks,
+        expected_start_miles=None,
+        peak_target_miles=float(peak),
+        taper_ratios_override=list(tr),
+        cutback_every_override=int(cutback_every),
+        taper_weeks_override=int(taper_weeks),
         include_structure_checks=False,
         include_peak_max_check=False,
         include_pass1_progression=False,
@@ -357,6 +377,10 @@ def assign_training_intent_phases(
     taper_weeks: int,
 ) -> None:
     """Assign user-facing ``Base`` / ``Build`` / ``Peak`` / ``Taper`` and ``is_peak_week``.
+
+    DEPRECATED — in-place mutation of week dicts (``phase``, ``is_peak_week``).
+    TODO Phase 3 Stage D: emit labels from a pure pass or fold into immutable
+    spine construction; see ``long_run_curve_validation`` DEPRECATED COMPONENTS registry.
 
     **Peak** is the last ``K`` pre-taper weeks, where ``K = capped_peak_training_weeks(len(weeks))``
     (capped so it never exceeds ``pre_count``). This is a fixed physiological window, not a
@@ -454,16 +478,16 @@ def build_target_long_run_curve(
 ) -> List[float]:
     """Return only the per-week target long-run distances (Stage A facade).
 
-    This is a **pure** wrapper around :func:`generate_long_run_spine`: it forwards
-    the same arguments and extracts ``long_run_miles`` from each week dict. It does
-    not change spine behavior.
+    This is the **public entry point** for the per-week target long-run mile list.
+    It forwards to :func:`_generate_long_run_spine` and extracts ``long_run_miles``
+    from each week dict. It does not change spine behavior.
 
     For **deterministic** outputs in tests or analytics, pass an explicit
     ``total_weeks_in_plan`` (use ``0`` for dynamic-length mode). Avoid relying on
     ``race_date``-only length derivation, which may consult the current UTC date
     inside the spine when ``total_weeks_in_plan`` is unset in fixed-length mode.
     """
-    weeks = generate_long_run_spine(
+    weeks = _generate_long_run_spine(
         starting_long_run_miles,
         total_weeks_in_plan,
         peak_long_run_target,
@@ -483,7 +507,7 @@ def build_target_long_run_curve(
     return [float(w.get("long_run_miles") or 0.0) for w in weeks]
 
 
-def generate_long_run_spine(
+def _generate_long_run_spine(
     starting_long_run_miles: float,
     total_weeks_in_plan: Optional[int],
     peak_long_run_target: float = 20.0,
@@ -514,20 +538,29 @@ def generate_long_run_spine(
             * Has cutbacks every config.cutback_every weeks (or cutback_every param)
             * Respects total_weeks_in_plan as MAXIMUM (not minimum)
             * If extra weeks available, extends build phase with gradual progression
-        - Side Effects: NONE (pure function)
+        - Side Effects: input parameters are never reassigned; see DEPRECATED note
+          below for in-place week dict mutations in legacy branches.
         - Dependencies: config (RaceDistanceConfig) for all training parameters
 
     GUARDRAILS:
-        - Never modifies input parameters
-        - Never has side effects
+        - Never modifies input parameters (only the constructed ``weeks`` list)
         - All values come from config (no hardcoded values)
-        - Returns immutable data structure (caller should not modify)
+        - Callers should treat returned week dicts as owned output (legacy paths
+          mutate that list before return; see DEPRECATED note).
         - If extra weeks available, naturally extends build phase (no post-processing needed)
 
     ARCHITECTURAL PRINCIPLE:
-        This is the SINGLE SOURCE OF TRUTH for long run progression.
+        Internal implementation for long-run progression (shared by
+        :func:`build_target_long_run_curve` and :func:`build_long_run_spine_weeks`).
         No other component should modify the spine after generation.
         If adjustments are needed, regenerate with different parameters.
+
+    DEPRECATED — legacy in-spine mutation (TODO Phase 3 Stage D):
+        After the main append loop, this function may **mutate**
+        ``weeks[i]["long_run_miles"]`` (post-peak monotonicity and pre-taper caps),
+        call :func:`assign_training_intent_phases` (mutates ``phase`` / flags), and
+        attach peak metadata keys on each week dict. Prefer a single immutable
+        build in Stage D; see ``long_run_curve_validation`` DEPRECATED COMPONENTS registry.
 
     Returns a list of {week_number, long_run_miles, phase}.
 
@@ -715,6 +748,7 @@ def generate_long_run_spine(
             )
             week_num += 1
 
+        # DEPRECATED — in-place labeling / metadata (TODO Stage D: separate pass).
         assign_training_intent_phases(weeks, taper_weeks_actual)
 
         _meta = compute_long_run_peak_week_metadata(
@@ -724,6 +758,8 @@ def generate_long_run_spine(
             w["global_peak_week_number"] = _meta["global_peak_week_number"]
             w["peak_block_peak_week_number"] = _meta["peak_block_peak_week_number"]
 
+        # DEPRECATED — spine self-check via validate_phase_quality (TODO Stage D:
+        # validate_long_run_curve only). Non-blocking.
         # Self-check: Validate phase quality
         # Get taper_ratios from config or use defaults
         if config and hasattr(config, "taper_ratios"):
@@ -970,6 +1006,7 @@ def generate_long_run_spine(
 
         rem_after_fill = actual_total_weeks - len(weeks)
 
+        # DEPRECATED — in-place mile repairs (TODO Stage D: encode in generator).
         # Enforce post-peak monotonic decrease through pre-taper segment
         # Find peak index in current weeks (should exist by construction)
         if declared_peak_week_num and declared_peak_week_num > 0:
@@ -1061,6 +1098,7 @@ def generate_long_run_spine(
                 )
                 wk += 1
 
+    # DEPRECATED — in-place labeling / metadata (TODO Stage D: separate pass).
     assign_training_intent_phases(weeks, taper_weeks)
 
     _meta = compute_long_run_peak_week_metadata(weeks, taper_weeks=taper_weeks)
@@ -1069,3 +1107,84 @@ def generate_long_run_spine(
         w["peak_block_peak_week_number"] = _meta["peak_block_peak_week_number"]
 
     return weeks
+
+
+def build_long_run_spine_weeks(
+    starting_long_run_miles: float,
+    total_weeks_in_plan: Optional[int],
+    peak_long_run_target: float = 20.0,
+    *,
+    race_date: Optional[Union[str, date, datetime]] = None,
+    taper_weeks: int = 2,
+    inc_miles: float = 1.0,
+    cutback_every: int = 4,
+    cutback_factor: float = 0.70,
+    taper_factor: float = 0.60,
+    round_to_half: bool = True,
+    non_regressive_slack: float = 1.0,
+    single_peak: bool = True,
+    peak_offset_before_taper: int = 1,
+    config: Optional[RaceDistanceConfig] = None,
+    unit_system: str = "imperial",
+) -> List[Dict[str, float]]:
+    """Return full long-run spine week dicts (public executor for week metadata).
+
+    Callers that need ``long_run_miles`` plus ``is_cutback`` / ``phase`` / etc. should
+    use this entry point. Callers that only need the mile sequence should use
+    :func:`build_target_long_run_curve`; both delegate to :func:`_generate_long_run_spine`.
+    """
+    return _generate_long_run_spine(
+        starting_long_run_miles,
+        total_weeks_in_plan,
+        peak_long_run_target,
+        race_date=race_date,
+        taper_weeks=taper_weeks,
+        inc_miles=inc_miles,
+        cutback_every=cutback_every,
+        cutback_factor=cutback_factor,
+        taper_factor=taper_factor,
+        round_to_half=round_to_half,
+        non_regressive_slack=non_regressive_slack,
+        single_peak=single_peak,
+        peak_offset_before_taper=peak_offset_before_taper,
+        config=config,
+        unit_system=unit_system,
+    )
+
+
+def generate_long_run_spine(
+    starting_long_run_miles: float,
+    total_weeks_in_plan: Optional[int],
+    peak_long_run_target: float = 20.0,
+    *,
+    race_date: Optional[Union[str, date, datetime]] = None,
+    taper_weeks: int = 2,
+    inc_miles: float = 1.0,
+    cutback_every: int = 4,
+    cutback_factor: float = 0.70,
+    taper_factor: float = 0.60,
+    round_to_half: bool = True,
+    non_regressive_slack: float = 1.0,
+    single_peak: bool = True,
+    peak_offset_before_taper: int = 1,
+    config: Optional[RaceDistanceConfig] = None,
+    unit_system: str = "imperial",
+) -> List[Dict[str, float]]:
+    """Backward-compatible alias for :func:`build_long_run_spine_weeks`."""
+    return build_long_run_spine_weeks(
+        starting_long_run_miles,
+        total_weeks_in_plan,
+        peak_long_run_target,
+        race_date=race_date,
+        taper_weeks=taper_weeks,
+        inc_miles=inc_miles,
+        cutback_every=cutback_every,
+        cutback_factor=cutback_factor,
+        taper_factor=taper_factor,
+        round_to_half=round_to_half,
+        non_regressive_slack=non_regressive_slack,
+        single_peak=single_peak,
+        peak_offset_before_taper=peak_offset_before_taper,
+        config=config,
+        unit_system=unit_system,
+    )

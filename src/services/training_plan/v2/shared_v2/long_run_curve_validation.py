@@ -3,14 +3,48 @@
 All checks return structured issues; callers decide whether to raise, log, or
 self-correct. Thresholds default to legacy spine / Pass1 constants and can be
 overridden via optional attributes on ``RaceDistanceConfig`` (``getattr``).
+
+-------------------------------------------------------------------------------
+DEPRECATED COMPONENTS (legacy wrappers / paths — still required at runtime)
+
+Canonical replacement: :func:`validate_long_run_curve` with explicit selector
+flags and overrides. **Do not delete** until Phase 3 Stage D without migrating
+every call site below.
+
+Registry (remove in Stage D after migration):
+
+- ``src.services.training_plan.v2.marathon.pass1_longrun_first_v2.validate_spine``
+  — thin Pass1 helper; callers should invoke ``validate_long_run_curve`` directly
+  with ``include_pass1_progression=True`` (and explicit kwargs).
+
+- ``src.services.training_plan.v2.shared_v2.long_run_spine_v2.validate_phase_quality``
+  — (bool, str list) facade over ``validate_long_run_curve`` phase-quality only;
+  replace with structured issues + single API.
+
+- ``plan_generation_orchestrator_v2.PlanGenerationOrchestratorV2._validate_spine_immutability``
+  — orchestrator-only guardrail wrapper; fold into direct
+  ``validate_long_run_curve`` orchestration entry.
+
+- ``src.services.training_plan.v2.shared_v2.long_run_spine_v2`` **in-spine
+  mutation** inside ``_generate_long_run_spine`` (e.g. fixed-length tail):
+  post-build edits to ``long_run_miles``, :func:`assign_training_intent_phases`
+  in-place phase labels, and attaching ``global_peak_week_number`` /
+  ``peak_block_peak_week_number`` on week dicts. TODO Stage D: immutable spine
+  construction + separate labeling/metadata pass.
+
+See module docstring in ``long_run_spine_v2`` for a pointer to this registry.
+-------------------------------------------------------------------------------
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
 from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
+
+logger = logging.getLogger(__name__)
 
 
 class LongRunCurveIssue(TypedDict):
@@ -490,12 +524,49 @@ def validate_long_run_curve(
 ) -> List[LongRunCurveIssue]:
     """Validate a long-run mile curve (and optional week metadata).
 
+    This is the **supported** long-term validation API (not deprecated). Legacy
+    wrappers listed under *DEPRECATED COMPONENTS* in this module's docstring
+    delegate here.
+
     Read-only: does not mutate ``curve``, ``config``, or ``spine_rows``.
 
-    Selectors mirror legacy call sites:
-    orchestrator immutability (structure + peak max), Pass1 ``validate_spine``,
-    and ``validate_phase_quality``.
+    **Internal contract (production call sites):** pass ``curve``, ``config``,
+    ``spine_rows`` when week dicts exist, and explicit ``*_override`` / selector
+    flags so behavior does not depend on this function's defaults. When
+    ``include_structure_checks`` is true, ``spine_rows`` must be present and
+    aligned with ``curve``. When ``include_pass1_progression`` is true,
+    ``spine_rows`` and ``expected_start_miles`` must be set and aligned with
+    ``curve``. Missing inputs are logged (checks that need them are skipped as
+    before).
+
+    Selectors mirror legacy call sites (those entry points are deprecated for
+    Stage D removal): orchestrator immutability (structure + peak max), Pass1
+    ``validate_spine``, and ``validate_phase_quality``.
     """
+    if include_structure_checks and spine_rows is None:
+        logger.warning(
+            "validate_long_run_curve: include_structure_checks=True but spine_rows "
+            "is None; structure checks are skipped (contract: pass spine_rows)."
+        )
+    if include_pass1_progression and (
+        expected_start_miles is None or spine_rows is None
+    ):
+        logger.warning(
+            "validate_long_run_curve: include_pass1_progression=True but "
+            "expected_start_miles or spine_rows is None; Pass1 progression checks "
+            "are skipped (contract: pass both, same length as curve)."
+        )
+    elif (
+        include_pass1_progression
+        and spine_rows is not None
+        and len(spine_rows) != len(curve)
+    ):
+        logger.warning(
+            "validate_long_run_curve: include_pass1_progression=True but "
+            "len(spine_rows) != len(curve); progression checks are skipped until "
+            "lengths match."
+        )
+
     thr = _thresholds(config)
     peak_t = (
         float(peak_target_miles)

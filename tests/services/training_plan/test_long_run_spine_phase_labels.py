@@ -5,9 +5,9 @@ from __future__ import annotations
 from src.services.training_plan.v2.race_configs.marathon_config import MarathonConfig
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
     assign_training_intent_phases,
+    build_long_run_spine_weeks,
     capped_peak_training_weeks,
     compute_cutback_long_run_miles,
-    generate_long_run_spine,
 )
 
 
@@ -53,7 +53,7 @@ def test_assign_training_intent_phases_trailing_peak_and_peak_flag():
 
 def test_generate_long_run_spine_peak_block_length_25_weeks():
     config = MarathonConfig()
-    weeks = generate_long_run_spine(
+    weeks = build_long_run_spine_weeks(
         starting_long_run_miles=13.0,
         total_weeks_in_plan=25,
         peak_long_run_target=19.0,
@@ -76,7 +76,7 @@ def test_generate_long_run_spine_peak_block_length_25_weeks():
 
 def test_generate_long_run_spine_dynamic_mode_labels():
     config = MarathonConfig()
-    weeks = generate_long_run_spine(
+    weeks = build_long_run_spine_weeks(
         starting_long_run_miles=8.0,
         total_weeks_in_plan=0,
         peak_long_run_target=18.0,
