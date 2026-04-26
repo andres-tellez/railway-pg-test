@@ -46,9 +46,9 @@ class TestWeeklyRebuildService:
         assert _determine_phase(7, total_weeks) == "Build"
         assert _determine_phase(11, total_weeks) == "Build"
 
-        # Specific phase (70-90%)
-        assert _determine_phase(12, total_weeks) == "Specific"
-        assert _determine_phase(14, total_weeks) == "Specific"
+        # Peak phase (70-90%)
+        assert _determine_phase(12, total_weeks) == "Peak"
+        assert _determine_phase(14, total_weeks) == "Peak"
 
         # Taper phase (last 10%)
         assert _determine_phase(15, total_weeks) == "Taper"

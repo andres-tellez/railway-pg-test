@@ -247,9 +247,8 @@ def resolve_week_phase(phases: Iterable[Optional[str]]) -> Optional[Phase]:
         key = str(raw).strip()
         if not key:
             continue
-        canon = "Peak" if key == "Specific" else key
         try:
-            phase = Phase(canon)
+            phase = Phase(key)
         except ValueError:
             # Bad phase string — skip rather than crash. The LLM-
             # facing contract is "we emit what we can prove"; a
@@ -304,9 +303,8 @@ def compute_phase_kpi_priority_for_week(
         key = str(raw).strip()
         if not key:
             continue
-        canon = "Peak" if key == "Specific" else key
         try:
-            Phase(canon)
+            Phase(key)
         except ValueError:
             continue
         day_counts[key] = day_counts.get(key, 0) + 1

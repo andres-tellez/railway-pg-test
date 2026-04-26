@@ -72,8 +72,8 @@ _MIN_RUNS_PER_WEEK = 3
 _MAX_RUNS_PER_WEEK = 6
 
 # V1.6 §16 phase quality floor / ceiling for the minimal Phase E writer.
-_PHASE_MIN_QUALITY = {"Base": 0, "Build": 1, "Peak": 1, "Specific": 1, "Taper": 0}
-_PHASE_MAX_QUALITY = {"Base": 0, "Build": 2, "Peak": 2, "Specific": 2, "Taper": 1}
+_PHASE_MIN_QUALITY = {"Base": 0, "Build": 1, "Peak": 1, "Taper": 0}
+_PHASE_MAX_QUALITY = {"Base": 0, "Build": 2, "Peak": 2, "Taper": 1}
 
 _QUALITY_WORKOUT_TOKENS = ("tempo", "threshold", "interval", "hill", "fartlek")
 _QUALITY_INTENSITY_TOKENS = {"T", "S", "M"}
