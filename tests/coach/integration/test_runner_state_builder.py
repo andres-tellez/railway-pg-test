@@ -177,7 +177,6 @@ class TestRunnerStateBuilder:
                 "Base",
                 "Build",
                 "Peak",
-                "Specific",
                 "Taper",
             ]
             assert runner_state["week_of_block"] >= 1
@@ -438,7 +437,6 @@ class TestRunnerStateBuilder:
                 "Base",
                 "Build",
                 "Peak",
-                "Specific",
                 "Taper",
             ]
             assert runner_state["week_of_block"] >= 1

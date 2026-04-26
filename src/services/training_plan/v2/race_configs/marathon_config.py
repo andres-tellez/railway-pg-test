@@ -129,7 +129,6 @@ class MarathonConfig(RaceDistanceConfig):
             "Base": 0.10,
             "Build": 0.10,
             "Peak": 0.05,
-            "Specific": 0.05,
             "Taper": -0.10,
         }
 
@@ -140,7 +139,6 @@ class MarathonConfig(RaceDistanceConfig):
             "Base": 0.40,
             "Build": 0.40,
             "Peak": 0.40,
-            "Specific": 0.40,
             "Taper": 0.55,
         }
 

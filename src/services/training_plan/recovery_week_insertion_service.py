@@ -46,7 +46,7 @@ def find_insertion_points(weeks: List[Dict[str, Any]], extra_weeks: int) -> List
     build_peak_indices = []
     for i, week in enumerate(weeks):
         phase = week.get("phase", "").lower()
-        if phase in ("build", "peak", "specific"):
+        if phase in ("build", "peak"):
             build_peak_indices.append(i)
 
     if not build_peak_indices:

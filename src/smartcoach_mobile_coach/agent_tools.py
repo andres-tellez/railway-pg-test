@@ -1635,8 +1635,8 @@ def _plan_overview_from_validation(
         "phase_sequence": phase_sequence,
         "peak_week_number": peak_week_number,
         "phase_intent_note": (
-            "Phases reflect training intent: **Specific** = at/near your highest long-run "
-            "load before taper (plateau and race-prep), not extra base-building."
+            "Phases reflect training intent: **Peak** is the last few pre-taper weeks at your "
+            "highest long-run load (fixed block by plan length), not extra base-building."
         ),
         "phase_blocks": [
             {

@@ -210,7 +210,7 @@ class RunnerStateBuilder:
         elif week_num <= total_weeks * 0.7:
             return "Build"
         elif week_num <= total_weeks * 0.9:
-            return "Specific"
+            return "Peak"
         else:
             return "Taper"
 
