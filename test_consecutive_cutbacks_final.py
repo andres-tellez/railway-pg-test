@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from datetime import date
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
-    generate_long_run_spine,
+    build_long_run_spine_weeks,
 )
 from src.services.training_plan.v2.race_configs.marathon_config import MarathonConfig
 
@@ -35,7 +35,7 @@ def test_with_race_date_2_15_26():
 
     try:
         # Generate spine
-        weeks = generate_long_run_spine(
+        weeks = build_long_run_spine_weeks(
             starting_long_run_miles=starting_long_run,
             total_weeks_in_plan=total_weeks,
             peak_long_run_target=config.target_peak_miles,

@@ -11,9 +11,9 @@ from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
     validate_long_run_curve,
 )
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
+    build_long_run_spine_weeks,
     build_target_long_run_curve,
     compute_long_run_peak_week_metadata,
-    generate_long_run_spine,
 )
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
 from src.services.training_plan.v2.shared_v2.long_run_signals import (
@@ -61,7 +61,7 @@ def build_spine(
     config: Optional[Any] = None,  # RaceDistanceConfig
     unit_system: str = "imperial",
 ) -> List[Dict[str, Any]]:
-    return generate_long_run_spine(
+    return build_long_run_spine_weeks(
         starting_long_run_miles=start,
         total_weeks_in_plan=total_weeks,
         peak_long_run_target=peak,
@@ -86,7 +86,12 @@ def validate_spine(
     cfg: LRConfig,
     race_config: RaceDistanceConfig,
 ) -> None:
-    """Validate LR spine week-to-week rules (delegates to central curve validation)."""
+    """Validate LR spine week-to-week rules (delegates to central curve validation).
+
+    DEPRECATED — replaced by ``validate_long_run_curve`` (Pass1 should call it
+    directly with explicit flags). TODO Phase 3 Stage D: inline and delete this helper.
+    See ``long_run_curve_validation`` module docstring (DEPRECATED COMPONENTS registry).
+    """
     curve = [float(w.get("long_run_miles", 0) or 0) for w in weeks]
     issues = validate_long_run_curve(
         curve,
@@ -94,6 +99,8 @@ def validate_spine(
         spine_rows=weeks,
         expected_start_miles=float(expected_start),
         peak_target_miles=float(peak),
+        taper_ratios_override=list(race_config.taper_ratios),
+        cutback_every_override=int(race_config.cutback_every),
         taper_weeks_override=int(cfg["taperWeeks"]),
         include_structure_checks=False,
         include_peak_max_check=False,
@@ -374,6 +381,7 @@ class Pass1LongRunFirstV2:
 
         # Validate (no mutation) – but don't block LR-only drafts
         # Note: Validation expects exact match, but recovery weeks may differ from standard rule
+        # DEPRECATED path: validate_spine → validate_long_run_curve (TODO Stage D).
         try:
             validate_spine(
                 weeks,
