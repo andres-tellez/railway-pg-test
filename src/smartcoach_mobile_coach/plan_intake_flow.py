@@ -534,6 +534,81 @@ def _parse_race_date_natural_language(raw: Any) -> Optional[str]:
     return dt.date().isoformat()
 
 
+# Month name or abbreviation + day (optional ordinal / year). Used when the
+# model omits ``race_date`` in ``updates`` but the user answered with a date phrase.
+_RACE_DATE_PHRASE_RE = re.compile(
+    r"(?is)\b("
+    r"(?:january|february|march|april|may|june|july|august|september|october|november|december|"
+    r"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\.?)"
+    r"\s+"
+    r"(\d{1,2})(?:st|nd|rd|th)?"
+    r"(?:\s*,?\s*(\d{4}))?"
+    r"\b"
+)
+
+
+def _extract_race_date_phrases_from_message(text: str) -> List[str]:
+    """
+    Build parse candidates: full message only when it plausibly names a calendar day
+    (avoids dateutil on unrelated lines like “Time… 3:40”), then month+day substrings.
+    """
+    out: List[str] = []
+    t = (text or "").strip()
+    if not t:
+        return out
+    has_month_day = _RACE_DATE_PHRASE_RE.search(t) is not None
+    has_numeric_date = re.search(
+        r"(?is)\b\d{4}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{1,2}\b"
+        r"|\b\d{1,2}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{2,4}\b",
+        t,
+    )
+    if len(t) <= 72 and (has_month_day or has_numeric_date):
+        out.append(t)
+    found: List[tuple[int, int, str]] = []
+    for m in _RACE_DATE_PHRASE_RE.finditer(t):
+        month = m.group(1)
+        day = m.group(2)
+        year = m.group(3)
+        chunk = f"{month.strip()} {day}".strip()
+        if year:
+            chunk = f"{chunk}, {year}"
+        found.append((m.start(), len(m.group(0)), chunk))
+    found.sort(key=lambda x: (-x[1], x[0]))
+    for _, _, chunk in found:
+        if chunk not in out:
+            out.append(chunk)
+    return out
+
+
+def _fill_race_date_from_user_message(
+    draft: Dict[str, Any], text: Optional[str]
+) -> None:
+    """When ``race_date`` is still empty, parse spoken dates from the latest user line."""
+    rd = draft.get("race_date")
+    if isinstance(rd, str) and rd.strip():
+        return
+    for candidate in _extract_race_date_phrases_from_message((text or "").strip()):
+        nd = _parse_race_date_natural_language(candidate)
+        if nd:
+            draft["race_date"] = nd
+            return
+
+
+def _fill_primary_goal_from_user_message(
+    draft: Dict[str, Any], text: Optional[str]
+) -> None:
+    """When ``primary_goal`` is empty, map short natural answers (e.g. just finish / time goal)."""
+    pg = draft.get("primary_goal")
+    if isinstance(pg, str) and pg.strip():
+        return
+    msg = (text or "").strip()
+    if not msg:
+        return
+    ng = _normalize_goal(msg)
+    if ng:
+        draft["primary_goal"] = ng
+
+
 def _infer_target_time_from_message(text: str) -> Optional[str]:
     """
     Pick a marathon-style clock time from free text (e.g. "3:40", "about 3:40:00").
@@ -932,6 +1007,10 @@ def update_plan_intake_state(
         msg_rd = _try_infer_race_distance((source_user_message or "").strip())
         if msg_rd:
             draft["race_distance"] = msg_rd
+
+    _fill_race_date_from_user_message(draft, source_user_message)
+
+    _fill_primary_goal_from_user_message(draft, source_user_message)
 
     _fill_goal_time_from_user_message(draft, source_user_message)
 
