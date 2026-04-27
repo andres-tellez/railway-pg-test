@@ -5,7 +5,7 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 ## Findings (short)
 
 - **V2** (`PlanGenerationOrchestratorV2`, `plan_generation_v2` routes) is the live path; Step 1 fitness uses the **materialized view**.
-- **InsightsCalculationService (L2)** — **LEGACY REMOVED**. `calculations/recommendations_generator.py` and `calculations/fitness_calculator.py` remain but are **currently unused** (candidates for a later delete).
+- **InsightsCalculationService (L2)** — **LEGACY REMOVED**, including **`RecommendationsGenerator`** and **`fitness_calculator`** modules under `calculations/`.
 - **`Pass1WeeksSelectorV2`**: orchestrator uses **`_map_weeks`** only; calendar length is Steps 3–4 in the orchestrator.
 - **Plan validation:** production uses **`PlanValidationServiceV2`** only; v1 module removed.
 - **Old 6-layer orchestrator:** `training_plan_orchestrator_service.py` is not in the repo; historical notes remain in some docs.
@@ -32,8 +32,8 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 | Pass1 `_validate_weeks` (removed) | `v2/marathon/pass1_longrun_first_v2.py` | SHADOW | Removed | YES | DONE |
 | Pass1WeeksSelector (v1) | `pass1_weeks_selector.py` (removed) | LEGACY | Removed | YES | DONE |
 | InsightsCalculationService | `insights_calculation_service.py` (removed) | LEGACY | **LEGACY REMOVED** | YES | DONE |
-| RecommendationsGenerator | `calculations/recommendations_generator.py` | LEGACY | Unused after L2 removal; delete later | REVIEW | TODO |
-| fitness_calculator | `calculations/fitness_calculator.py` | LEGACY | Unused after L2 removal; delete later | REVIEW | TODO |
+| RecommendationsGenerator | `calculations/recommendations_generator.py` (removed) | LEGACY | **LEGACY REMOVED** | YES | DONE |
+| fitness_calculator | `calculations/fitness_calculator.py` (removed) | LEGACY | **LEGACY REMOVED** | YES | DONE |
 | PlanValidationService (v1) | `plan_validation_service.py` (removed) | LEGACY | Removed | YES | DONE |
 | TrainingPlanOrchestratorService tests + doc refs | `tests/.../test_training_plan_orchestrator_service.py` (removed), docs | LEGACY | Removed tests; docs marked LEGACY | NO | DONE |
 | DataCollectionService | `data_collection_service.py` | ACTIVE | Keep (non–V2-gen callers) | NO | TODO |
