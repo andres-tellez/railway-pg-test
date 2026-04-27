@@ -211,7 +211,7 @@ class Pass1Adapter:
 
         context.spine_weeks = weeks_long
         setattr(context, "_spine_quality_is_valid", is_valid)
-        setattr(context, "_spine_quality_issues", quality_issues)
+        context.spine_quality_issues = quality_issues
         return context
 
 
@@ -380,7 +380,7 @@ class ValidationAdapter:
 
         race_date_validation = getattr(context, "_race_date_validation", None)
         is_valid = getattr(context, "_spine_quality_is_valid")
-        quality_issues = getattr(context, "_spine_quality_issues")
+        quality_issues = context.spine_quality_issues or []
         scenario = context.scenario_adjustments["scenario"]
         available_weeks = getattr(context, "available_weeks", None)
         fitness_recommended_weeks = context.fitness["fitness_recommended_weeks"]
