@@ -31,9 +31,9 @@ This document describes the **current working plan generation process** that run
      - Recent activity patterns
    - **Output:** Insights dictionary
 
-3. **Pass1WeeksSelector** (optional weeks recommendation)
-   - Uses L1 + L2 data to recommend plan duration (12/16/20/24 weeks)
-   - Based on `weekly_mileage` + `marathon_experience`
+3. **Pass1WeeksSelectorV2** (optional weeks recommendation)
+   - Fitness-based mapping for plan duration (12/16/20/24 weeks); orchestrator applies calendar constraints
+   - Based on `weekly_mileage` (materialized view in V2)
    - **Output:** Recommended weeks count
 
 ---
@@ -199,7 +199,7 @@ This document describes the **current working plan generation process** that run
 
 - `src/services/training_plan/data_collection_service.py` (Layer 1)
 - `src/services/training_plan/insights_calculation_service.py` (Layer 2)
-- `src/services/training_plan/pass1_weeks_selector.py` (weeks recommendation)
+- `src/services/training_plan/v2/shared_v2/pass1_weeks_selector_v2.py` (weeks recommendation)
 - `src/services/training_plan/v2/marathon/v2/marathon/pass1_longrun_first_v2.py` (Pass 1: Long runs)
 - `src/services/training_plan/v2/shared_v2/shared_v2/long_run_spine_v2.py` (LR progression logic)
 - `src/services/training_plan/v2/marathon/weekly_total_calculator_v2.py` (Pass 2: Weekly totals)
