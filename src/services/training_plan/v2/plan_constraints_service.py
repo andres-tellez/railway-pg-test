@@ -185,7 +185,7 @@ class PlanConstraintsService:
         """
         Calculate plan constraints for validation and date alignment.
 
-        NOTE: The selector (Pass1WeeksSelector) now handles the time-aware decision.
+        NOTE: Plan length is chosen upstream by the orchestrator (calendar + fitness).
         This method primarily validates and stores values for date alignment.
 
         Args:

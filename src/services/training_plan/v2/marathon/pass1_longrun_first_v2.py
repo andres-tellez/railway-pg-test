@@ -118,7 +118,7 @@ class Pass1LongRunFirstV2:
             weekly_mileage: Average weekly mileage (from materialized view)
             longest_run: Longest run distance (from materialized view)
             plan_request: Plan request dictionary
-            recommended_weeks: Readiness-based recommended plan length (from Pass1WeeksSelector).
+            recommended_weeks: Plan length in weeks from the orchestrator (Pass1WeeksSelectorV2 mapping + calendar).
                               If provided, plan will be built to fit within this timeframe.
                               If None, uses dynamic length mode (builds organically to peak).
 
@@ -277,7 +277,7 @@ class Pass1LongRunFirstV2:
         fixed_length_requested = bool(recommended_weeks and recommended_weeks > 0)
 
         # Use readiness-based recommended weeks if provided, otherwise use dynamic length mode
-        # recommended_weeks comes from Pass1WeeksSelector based on user's weekly mileage
+        # recommended_weeks comes from the orchestrator (fitness + calendar), not from Pass1 alone
         curve_total_weeks = (
             int(recommended_weeks)
             if (recommended_weeks and recommended_weeks > 0)
