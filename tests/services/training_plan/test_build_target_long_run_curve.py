@@ -7,8 +7,10 @@ import pytest
 from src.services.training_plan.v2.race_configs.marathon_config import MarathonConfig
 from src.services.training_plan.v2.shared_v2 import long_run_spine_v2 as lr_spine
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
+    LR_CURVE_SOURCE_ENV,
     build_long_run_spine_weeks,
     build_target_long_run_curve,
+    lr_curve_source_name,
 )
 
 
@@ -18,9 +20,10 @@ def marathon_cfg() -> MarathonConfig:
 
 
 def test_build_target_long_run_curve_matches_spine_fixed_length_golden(
-    marathon_cfg: MarathonConfig,
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Deterministic fixed-length plan: explicit weeks + race_date (no utcnow path)."""
+    monkeypatch.delenv(LR_CURVE_SOURCE_ENV, raising=False)
     start, total_weeks, peak = 10.0, 20, 18.0
     race_date = date(2026, 10, 10)
     expected = [
@@ -78,9 +81,10 @@ def test_build_target_long_run_curve_matches_spine_fixed_length_golden(
 
 
 def test_build_target_long_run_curve_matches_spine_dynamic_length_golden(
-    marathon_cfg: MarathonConfig,
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Dynamic mode (total_weeks=0): length derived only from spine policy + config (no race_date)."""
+    monkeypatch.delenv(LR_CURVE_SOURCE_ENV, raising=False)
     expected = [
         12.0,
         13.0,
@@ -144,11 +148,60 @@ def test_build_target_long_run_curve_matches_spine_dynamic_length_golden(
     assert [float(w["long_run_miles"]) for w in spine] == expected
 
 
+def test_stage_d_default_env_uses_curve_source(
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv(LR_CURVE_SOURCE_ENV, raising=False)
+    assert lr_curve_source_name(marathon_cfg) == "curve"
+    assert lr_curve_source_name(None) == "curve"
+
+
+def test_stage_d_legacy_env_override(
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(LR_CURVE_SOURCE_ENV, "legacy")
+    assert lr_curve_source_name(marathon_cfg) == "legacy"
+
+
+def test_stage_d_config_lr_curve_source_overrides_env(
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(LR_CURVE_SOURCE_ENV, "curve")
+    marathon_cfg.lr_curve_source = "legacy"
+    assert lr_curve_source_name(marathon_cfg) == "legacy"
+
+
+def test_stage_d_golden_parity_curve_vs_legacy_executor(
+    marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Primary curve path and legacy spine path produce identical mile lists (golden)."""
+    monkeypatch.delenv(LR_CURVE_SOURCE_ENV, raising=False)
+    start, total_weeks, peak = 10.0, 20, 18.0
+    race_date = date(2026, 10, 10)
+    kw = dict(
+        race_date=race_date,
+        taper_weeks=3,
+        inc_miles=1.0,
+        cutback_every=4,
+        cutback_factor=0.85,
+        peak_offset_before_taper=2,
+        config=marathon_cfg,
+        unit_system="imperial",
+    )
+    curve_miles = build_long_run_spine_weeks(start, total_weeks, peak, **kw)
+    curve_list = [float(w["long_run_miles"]) for w in curve_miles]
+
+    monkeypatch.setenv(LR_CURVE_SOURCE_ENV, "legacy")
+    legacy_miles = build_long_run_spine_weeks(start, total_weeks, peak, **kw)
+    legacy_list = [float(w["long_run_miles"]) for w in legacy_miles]
+    assert legacy_list == curve_list
+
+
 def test_stage_c_use_global_curve_matches_legacy_golden(
     marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """USE_GLOBAL_CURVE: full pure curve matches legacy golden (Stage C2)."""
-    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
+    """Default curve path matches legacy golden (Stage C2 / D)."""
+    monkeypatch.delenv(LR_CURVE_SOURCE_ENV, raising=False)
     start, total_weeks, peak = 10.0, 20, 18.0
     race_date = date(2026, 10, 10)
     expected = [
@@ -206,7 +259,7 @@ def test_stage_c_use_global_curve_matches_legacy_golden(
 def test_stage_c2_pure_matches_legacy_fixed_golden(
     marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """USE_GLOBAL_CURVE pure path matches legacy spine for fixed-length golden."""
+    """Pure curve path matches legacy spine for fixed-length golden."""
     start, total_weeks, peak = 10.0, 20, 18.0
     race_date = date(2026, 10, 10)
     kw = dict(
@@ -219,9 +272,9 @@ def test_stage_c2_pure_matches_legacy_fixed_golden(
         config=marathon_cfg,
         unit_system="imperial",
     )
-    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", False)
+    monkeypatch.setenv(LR_CURVE_SOURCE_ENV, "legacy")
     legacy = build_target_long_run_curve(start, total_weeks, peak, **kw)
-    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
+    monkeypatch.delenv(LR_CURVE_SOURCE_ENV, raising=False)
     pure = build_target_long_run_curve(start, total_weeks, peak, **kw)
     assert pure == legacy
 
@@ -229,7 +282,7 @@ def test_stage_c2_pure_matches_legacy_fixed_golden(
 def test_stage_c2_pure_matches_legacy_dynamic_golden(
     marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """USE_GLOBAL_CURVE pure path matches legacy for dynamic-length golden."""
+    """Pure curve path matches legacy for dynamic-length golden."""
     kw = dict(
         race_date=None,
         taper_weeks=3,
@@ -240,9 +293,9 @@ def test_stage_c2_pure_matches_legacy_dynamic_golden(
         config=marathon_cfg,
         unit_system="imperial",
     )
-    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", False)
+    monkeypatch.setenv(LR_CURVE_SOURCE_ENV, "legacy")
     legacy = build_target_long_run_curve(12.0, 0, 20.0, **kw)
-    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
+    monkeypatch.delenv(LR_CURVE_SOURCE_ENV, raising=False)
     pure = build_target_long_run_curve(12.0, 0, 20.0, **kw)
     assert pure == legacy
     assert len(pure) == 28
@@ -252,7 +305,7 @@ def test_stage_c2_fixed_curve_invariants(
     marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Pure fixed curve: length, peak in build, cutback cadence, taper shape."""
-    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
+    monkeypatch.delenv(LR_CURVE_SOURCE_ENV, raising=False)
     taper_w = 3
     peak_target = 18.0
     curve = build_target_long_run_curve(
@@ -283,8 +336,8 @@ def test_stage_c2_fixed_curve_invariants(
 def test_stage_c2_executor_matches_pure_miles(
     marathon_cfg: MarathonConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """build_long_run_spine_weeks under USE_GLOBAL_CURVE matches build_target miles."""
-    monkeypatch.setattr(lr_spine, "USE_GLOBAL_CURVE", True)
+    """build_long_run_spine_weeks (curve path) matches build_target miles."""
+    monkeypatch.delenv(LR_CURVE_SOURCE_ENV, raising=False)
     args = (
         10.0,
         20,
