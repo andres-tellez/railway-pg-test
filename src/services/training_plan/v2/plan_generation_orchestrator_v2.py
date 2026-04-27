@@ -401,11 +401,15 @@ class PlanGenerationOrchestratorV2:
         )
 
         ctx = pipeline.run(ctx)
+        metadata = {
+            **(ctx.metadata or {}),
+            "source": "create",
+        }
         context_snapshot = {
             "validation": ctx.validation,
             "spine_quality_issues": ctx.spine_quality_issues,
             "decision_trace": (ctx.validation or {}).get("decision_trace"),
-            "metadata": ctx.metadata,
+            "metadata": metadata,
         }
         ctx.context_snapshot = context_snapshot
         print("SNAPSHOT CREATED:", ctx.context_snapshot is not None)
