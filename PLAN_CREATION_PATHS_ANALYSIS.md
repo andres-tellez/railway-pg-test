@@ -7,7 +7,7 @@
 
 **Flow:**
 
-1. L1 (DataCollection) + L2 (Insights) → raw data + insights
+1. ~~L1 + L2 insights~~ **LEGACY** — V2 draft uses **materialized view** fitness + deterministic passes (L2 **LEGACY REMOVED**)
 2. **Pass1LongRunFirst** (deterministic long-run progression)
 3. **WeeklyTotalCalculator** (deterministic weekly totals)
 4. **Pass3WorkoutDistribution** (deterministic workout distribution)
@@ -52,7 +52,7 @@
 
 1. `TrainingPlanOrchestratorService.create_default()`
 2. **Layer 1:** DataCollectionService
-3. **Layer 2:** InsightsCalculationService
+3. ~~**Layer 2:** InsightsCalculationService~~ **LEGACY REMOVED** (V2 uses MV for fitness)
 4. **Layer 3:** PromptBuilderService → builds GPT prompt
 5. **Layer 4:** GptCoachService → **CALLS LLM** (gpt-4o)
 6. **Layer 5:** ~~`PlanValidationService` (v1)~~ **(removed)** — current product uses `PlanValidationServiceV2` in the v2 pipeline

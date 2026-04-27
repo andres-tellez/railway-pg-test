@@ -9,7 +9,7 @@
 - `Pass1LongRunFirst` from `v2/marathon/v2/marathon/pass1_longrun_first_v2_v2.py`
 - `calculate_weekly_totals_from_long_runs` from `v2/marathon/weekly_total_calculator_v2.py`
 - `Pass3WorkoutDistribution` from `v2/v2/pass3_workout_distribution_v2_v2.py`
-- `DataCollectionService`, `InsightsCalculationService` (L1/L2)
+- `DataCollectionService` (shared); ~~`InsightsCalculationService`~~ **LEGACY REMOVED**
 
 **Does NOT use:**
 
@@ -80,8 +80,7 @@
 
 **Dependencies on good path:** ❌ **NONE**
 
-- However, it DOES use the same L1/L2 services (`DataCollectionService`, `InsightsCalculationService`)
-- But those are shared, so deleting Path 2 won't break them
+- Historically used L1 + L2; **L2 (`InsightsCalculationService`) is LEGACY REMOVED**. `DataCollectionService` remains for other callers.
 
 ---
 
