@@ -210,7 +210,7 @@ This document describes the **current working plan generation process** that run
 
 - `src/services/training_plan/gpt_coach_pass1_weekly.py` (old LLM-based Pass 1)
 - `src/services/training_plan/gpt_coach_pass2_longrun.py` (old LLM-based Pass 2)
-- `src/services/training_plan/training_plan_orchestrator_service.py` (old 6-layer orchestrator)
+- ~~`src/services/training_plan/training_plan_orchestrator_service.py`~~ **(LEGACY removed — old 6-layer orchestrator)**
 - `src/services/training_plan/v2/plan_generation_orchestrator_v2.py` (old 3-pass orchestrator - not used in draft route)
 
 ---

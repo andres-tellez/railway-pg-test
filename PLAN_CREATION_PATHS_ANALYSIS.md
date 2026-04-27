@@ -41,12 +41,14 @@
 
 ---
 
-### **Path 2: Old 6-Layer Orchestrator with LLM**
+### **Path 2: Old 6-Layer Orchestrator with LLM** _(LEGACY / historical)_
 
-**Route:** `POST /api/plan/create`
+**Route:** `POST /api/plan/create` (when flags routed here historically)
 **Condition:** `TRAINING_PLAN_ORCHESTRATOR_ENABLED=true` AND `TRAINING_PLAN_GENERATION_MODE=one_pass` (or unset)
 
-**Flow:**
+**Implementation:** `training_plan_orchestrator_service.py` and **`TrainingPlanOrchestratorService`** are **not present** in this repository anymore. The flow below documents the old design only.
+
+**Flow (historical):**
 
 1. `TrainingPlanOrchestratorService.create_default()`
 2. **Layer 1:** DataCollectionService
@@ -56,13 +58,13 @@
 6. **Layer 5:** PlanValidationService
 7. **Layer 6:** PlanStorageService → saves to DB
 
-**Files:**
+**Files (historical):**
 
-- `src/services/training_plan/training_plan_orchestrator_service.py`
-- `src/services/training_plan/prompt_builder_service.py`
+- ~~`src/services/training_plan/training_plan_orchestrator_service.py`~~ **(removed)**
+- `src/services/training_plan/prompt_builder_service.py` (may still exist; not used by V2 draft/LR-first path)
 - `src/services/training_plan/gpt_coach_service.py`
 
-**Status:** ❌ **LEGACY - Uses LLM at Layer 4 for full plan generation**
+**Status:** ❌ **LEGACY — not runnable as documented; use V2 LR-first paths**
 
 ---
 
@@ -144,7 +146,7 @@
 ### **Paths to Consider Removing/Deprecating:**
 
 1. ❌ **Path 1:** Legacy `create_training_plan()` - Old LLM-based single pass
-2. ❌ **Path 2:** `TrainingPlanOrchestratorService` with LLM - Old 6-layer with LLM
+2. ❌ **Path 2:** Old 6-layer orchestrator (module removed; historical only)
 3. ⚠️ **Path 3:** `ThreePassOrchestrator.generate()` (weekly-first) - Different ordering, might cause confusion
 
 ### **Questions to Consider:**
