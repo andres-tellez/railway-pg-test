@@ -154,6 +154,9 @@ class PlanStorageService:
             session.flush()  # Get plan.id
             plan_id = plan.id
 
+            if context_snapshot is not None:
+                plan.context_snapshot = context_snapshot
+
             logger.debug(f"Created plan record {plan_id}")
 
             # Fetch user profile for HR zone calculation
