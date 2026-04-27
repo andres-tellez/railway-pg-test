@@ -74,7 +74,7 @@
 **Flow:**
 
 1. `ThreePassOrchestrator.generate()` (NOT `generate_longrun_first()`)
-2. Pass1WeeksSelector → recommends weeks
+2. Pass1WeeksSelectorV2 (when used) → recommends weeks
 3. **Pass 1:** `GptCoachPass1Weekly` → **DETERMINISTIC NOW** (generates weekly mileage skeleton)
 4. **Pass 2:** `GptCoachPass2LongRun` → **DETERMINISTIC NOW** (adds long run miles)
 5. **Pass 3:** `Pass3WorkoutDistribution` → deterministic workout distribution
