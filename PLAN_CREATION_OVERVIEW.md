@@ -15,21 +15,15 @@ This document describes the **current working plan generation process** that run
 
 ## Process Flow (Step-by-Step)
 
-### **Phase 1: Data Collection & Insights**
+### **Phase 1: Fitness & plan length**
 
-1. **Layer 1: DataCollectionService**
+1. **Layer 1: DataCollectionService** _(still used elsewhere; not the V2 draft fitness source)_
 
    - Collects user profile data
    - Fetches Strava activities (last 12 weeks)
    - **Output:** Raw data dictionary
 
-2. **Layer 2: InsightsCalculationService**
-
-   - Calculates current fitness metrics:
-     - `weekly_mileage`
-     - `longest_run`
-     - Recent activity patterns
-   - **Output:** Insights dictionary
+2. ~~**Layer 2: InsightsCalculationService**~~ **LEGACY REMOVED** — V2 uses **materialized view** fitness (`weekly_mileage`, `longest_run`) for plan generation.
 
 3. **Pass1WeeksSelectorV2** (optional weeks recommendation)
    - Fitness-based mapping for plan duration (12/16/20/24 weeks); orchestrator applies calendar constraints
@@ -198,7 +192,7 @@ This document describes the **current working plan generation process** that run
 ### **Core Services:**
 
 - `src/services/training_plan/data_collection_service.py` (Layer 1)
-- `src/services/training_plan/insights_calculation_service.py` (Layer 2)
+- ~~`src/services/training_plan/insights_calculation_service.py`~~ **(LEGACY REMOVED — L2)**
 - `src/services/training_plan/v2/shared_v2/pass1_weeks_selector_v2.py` (weeks recommendation)
 - `src/services/training_plan/v2/marathon/v2/marathon/pass1_longrun_first_v2.py` (Pass 1: Long runs)
 - `src/services/training_plan/v2/shared_v2/shared_v2/long_run_spine_v2.py` (LR progression logic)
@@ -219,7 +213,7 @@ This document describes the **current working plan generation process** that run
 
 **The working process:**
 
-1. **Collect** user data (L1) → **Calculate** insights (L2)
+1. **Read** fitness from **materialized view** (V2 Step 1); L1/L2 insights stack **LEGACY REMOVED**
 2. **Generate** long run progression deterministically (Pass 1 LR-first)
 3. **Calculate** weekly totals from long runs (Pass 2)
 4. **Distribute** workouts across days with recovery-aware ordering (Pass 3)

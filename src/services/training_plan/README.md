@@ -18,11 +18,9 @@ This directory contains shared services and the **V2 deterministic** training pl
 
 **Design Note:** This layer leverages existing DAOs where possible to avoid code duplication. Activity fetching uses custom logic because it requires specific filtering (by user_id + date range) that the existing `ActivityDAO` doesn't provide.
 
-### Layer 2: Insights Calculation (`insights_calculation_service.py`)
+### Layer 2: Insights ~~(`insights_calculation_service.py`)~~ **LEGACY REMOVED**
 
-**Purpose:** Calculate training insights from raw data
-
-- TODO: To be implemented
+The old **InsightsCalculationService** (L2 activity-list insights) has been removed. V2 plan generation uses the **materialized view** for Step 1 fitness (`get_weekly_fitness_from_materialized_view`), not L2.
 
 ### Layer 3 & 4: Removed (LLM-based)
 
