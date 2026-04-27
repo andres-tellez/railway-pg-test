@@ -152,6 +152,7 @@ def recommend_weekly_total(
     lo_pct, hi_pct = config.long_run_percentage_ranges[runs_per_week]
     # Calculate target as midpoint
     target_pct = (lo_pct + hi_pct) / 2.0
+    weekly_increase_cap = config.weekly_increase_cap
 
     # Base target from long-run percentage
     base_total = long_run / target_pct
@@ -163,12 +164,41 @@ def recommend_weekly_total(
     after_lr_clamp = clamp(base_total, min_total, max_total)
     total = after_lr_clamp
 
+    # F2 Step 1: week-over-week smoothing vs previous total (LR anchor only; before other caps).
+    smoothing_max_up: Optional[float] = None
+    smoothing_max_down: Optional[float] = None
+    total_before_weekly_smoothing = total
+    after_lr_smoothing = total
+    smoothing_applied = False
+    if prev_week_total is not None and prev_week_total > 0:
+        smoothing_max_up = prev_week_total * (1 + weekly_increase_cap)
+        smoothing_max_down = prev_week_total * (1 - 0.12)
+        t_sm = total
+        total = min(total, smoothing_max_up)
+        total = max(total, smoothing_max_down)
+        after_lr_smoothing = total
+        smoothing_applied = abs(t_sm - total) > 1e-9
+        log_msg = (
+            "weekly_total_smoothing week=%s before=%.2f after=%.2f max_up=%.2f max_down=%.2f applied=%s"
+            % (
+                week_number,
+                t_sm,
+                total,
+                smoothing_max_up,
+                smoothing_max_down,
+                str(smoothing_applied).lower(),
+            )
+        )
+        if smoothing_applied:
+            logger.info(log_msg)
+        else:
+            logger.debug(log_msg)
+
     # Apply previous-week ramp cap if provided, BUT ensure LR % requirement is met
-    after_volume_cap = after_lr_clamp
+    after_volume_cap = after_lr_smoothing
     volume_cap_kind = "none"
     if rebuild_after_cutback and prev_prev_week_total and prev_prev_week_total > 0:
         baseline = prev_prev_week_total
-        weekly_increase_cap = config.weekly_increase_cap
         rebound_cap = min(
             baseline + 4.0,  # add at most ~4 miles
             baseline * (1 + weekly_increase_cap * 2),  # roughly 15-16%
@@ -177,7 +207,6 @@ def recommend_weekly_total(
         after_volume_cap = total
         volume_cap_kind = "rebuild_rebound"
     elif prev_week_total is not None and prev_week_total > 0:
-        weekly_increase_cap = config.weekly_increase_cap
         capped_total = prev_week_total * (1 + weekly_increase_cap)
         total = min(total, capped_total)
         after_volume_cap = total
@@ -275,6 +304,7 @@ def recommend_weekly_total(
     if logger.isEnabledFor(logging.DEBUG):
         chain: List[Tuple[str, float]] = [
             ("after_lr_clamp", after_lr_clamp),
+            ("after_lr_smoothing", after_lr_smoothing),
             ("after_volume_cap", after_volume_cap),
             ("after_min_viable", after_min_viable),
             ("after_peak_cap", after_peak_cap),
@@ -317,6 +347,12 @@ def recommend_weekly_total(
             "min_total": min_total,
             "max_total": max_total,
             "after_lr_clamp": after_lr_clamp,
+            "smoothing_applied": smoothing_applied,
+            "smoothing_max_up": smoothing_max_up,
+            "smoothing_max_down": smoothing_max_down,
+            "total_before_weekly_smoothing": total_before_weekly_smoothing,
+            "total_after_weekly_smoothing": after_lr_smoothing,
+            "after_lr_smoothing": after_lr_smoothing,
             "after_volume_cap": after_volume_cap,
             "after_min_viable": after_min_viable,
             "after_peak_cap": after_peak_cap,
