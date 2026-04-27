@@ -8,9 +8,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from datetime import date
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
     build_long_run_spine_weeks,
-    validate_phase_quality,
 )
 from src.services.training_plan.v2.race_configs.marathon_config import MarathonConfig
+from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
+    validate_long_run_curve,
+)
 
 
 def validate_cutback_spacing(weeks, cutback_every=4):
@@ -141,15 +143,23 @@ def test_plan_validation():
         # Validate cutback spacing
         cutback_ok = validate_cutback_spacing(weeks, config.cutback_every)
 
-        # Run existing validation (DEPRECATED wrapper — TODO Stage D: validate_long_run_curve)
-        is_valid, issues = validate_phase_quality(
-            weeks,
-            peak=config.target_peak_miles,
-            cutback_every=config.cutback_every,
-            taper_weeks=config.taper_weeks,
-            taper_ratios=config.taper_ratios,
-            race_config=config,
+        curve = [float(w.get("long_run_miles", 0) or 0) for w in weeks]
+        structured = validate_long_run_curve(
+            curve,
+            config,
+            spine_rows=weeks,
+            expected_start_miles=None,
+            peak_target_miles=float(config.target_peak_miles),
+            taper_ratios_override=list(config.taper_ratios),
+            cutback_every_override=int(config.cutback_every),
+            taper_weeks_override=int(config.taper_weeks),
+            include_structure_checks=False,
+            include_peak_max_check=False,
+            include_pass1_progression=False,
+            include_phase_quality=True,
         )
+        issues = [i["message"] for i in structured]
+        is_valid = len(issues) == 0
 
         print(f"\n{'='*80}")
         print("VALIDATION RESULTS")
