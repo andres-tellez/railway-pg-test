@@ -6,7 +6,7 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 
 - **V2** (`PlanGenerationOrchestratorV2`, `plan_generation_v2` routes) is the live path; Step 1 fitness uses the **materialized view**, not `InsightsCalculationService`.
 - **InsightsCalculationService** + **RecommendationsGenerator** + **fitness_calculator** remain for tests and ad-hoc scripts; they are **not** wired into the V2 orchestrator.
-- **`Pass1WeeksSelectorV2.select_weeks`** is never called; orchestrator uses **`_map_weeks`** only and reimplements calendar length in Steps 3–4 — dead or duplicate API surface.
+- **`Pass1WeeksSelectorV2`**: orchestrator uses **`_map_weeks`** only; calendar length is Steps 3–4 in the orchestrator.
 - **`Pass1LongRunFirstV2._validate_weeks`** has no callers.
 - **`PlanValidationService` (v1)** is still tested; production V2 generation uses **`PlanValidationServiceV2`**.
 - **`training_plan_orchestrator_service.py`** is referenced by tests/docs but the module path is missing — tests are stale or file was removed.
@@ -24,7 +24,7 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 | Long-run signals | `v2/shared_v2/long_run_signals.py` | ACTIVE | Keep | NO | TODO |
 | Pass1 rationale / `pass1_rationale` | `pass1_longrun_first_v2.py` → orchestrator → API + coach | ACTIVE | Keep | NO | TODO |
 | Pass1 weeks `_map_weeks` | `v2/shared_v2/pass1_weeks_selector_v2.py` | ACTIVE | Keep | NO | TODO |
-| Pass1WeeksSelectorV2 `select_weeks` | `v2/shared_v2/pass1_weeks_selector_v2.py` | SHADOW | Delete or merge with orchestrator | YES | TODO |
+| Pass1WeeksSelectorV2 `select_weeks` (removed) | `v2/shared_v2/pass1_weeks_selector_v2.py` | SHADOW | Removed | YES | DONE |
 | Constraints, race-date validation, scenario adjustments | `v2/plan_constraints_service.py`, `v2/race_date_validation_service.py`, `v2/scenario_adjustments_service.py` | ACTIVE | Keep | NO | TODO |
 | PlanValidationServiceV2 | `v2/plan_validation_service_v2.py` | ACTIVE | Keep | NO | TODO |
 | `calculate_weekly_mileage_from_workouts` | `workout_utils.py` | ACTIVE | Keep | NO | TODO |
