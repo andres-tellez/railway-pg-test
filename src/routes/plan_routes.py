@@ -27,6 +27,9 @@ from src.routes.plan_generation_v2 import (
     run_v2_plan_generation,
     build_standard_draft_payload,
 )
+from src.services.training_plan.v2.snapshot_builder import (
+    build_snapshot_from_approval,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +542,7 @@ def create_plan_route():
         activity_weeks = int(data.get("activity_weeks", 12) or 12)
 
         with get_session() as session:
-            result = run_v2_plan_generation(
+            result, gen_context_snapshot = run_v2_plan_generation(
                 session=session,
                 user_id=str(user_id),
                 plan_request=plan_dict,
@@ -574,11 +577,13 @@ def create_plan_route():
                 "validated_plan": result["validated_plan"],
                 "violations": result.get("violations", []),
             }
+            print("FINAL SNAPSHOT AT ROUTE:", gen_context_snapshot is not None)
             plan_id = plan_storage.save_validated_plan(
                 session=session,
                 user_id=str(user_id),
                 validated_plan=validation_payload,
                 plan_request=plan_dict,
+                context_snapshot=gen_context_snapshot,
             )
 
         logger.info(f"Successfully created plan {plan_id}")
@@ -636,7 +641,7 @@ def create_plan_draft_route():
         activity_weeks = int(data.get("activity_weeks", 12) or 12)
 
         with get_session() as session:
-            result = run_v2_plan_generation(
+            result, draft_context_snapshot = run_v2_plan_generation(
                 session=session,
                 user_id=str(user_id),
                 plan_request=plan_request,
@@ -644,7 +649,9 @@ def create_plan_draft_route():
                 mode="rolling",  # Only Week 1 gets details; weeks 2+ are basic workout types
             )
             draft_payload = build_standard_draft_payload(
-                validation_result=result, timezone=user_timezone
+                validation_result=result,
+                timezone=user_timezone,
+                context_snapshot=draft_context_snapshot,
             )
             draft_payload["plan_request"] = plan_request
 
@@ -688,14 +695,24 @@ def approve_plan_route():
 
         from src.services.training_plan.plan_storage_service import PlanStorageService
 
+        plan_name = plan_request.get("plan_name")
+        race_date = plan_request.get("race_date")
+        context_snapshot = build_snapshot_from_approval(
+            validation=validation,
+            plan_metadata={
+                "plan_name": plan_name,
+                "race_date": race_date,
+            },
+        )
+
         with get_session() as session:
-            # Use Layer 6 to save the validated plan
             plan_storage = PlanStorageService()
             plan_id = plan_storage.save_validated_plan(
                 session=session,
                 user_id=str(user_id),
                 validated_plan=validated_plan,
                 plan_request=plan_request,
+                context_snapshot=context_snapshot,
             )
 
         return (

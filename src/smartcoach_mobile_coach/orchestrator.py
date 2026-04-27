@@ -701,6 +701,30 @@ _GET_PLAN_OVERVIEW_OPENAI_TOOL: Dict[str, Any] = {
 }
 
 
+# Kept in sync with scripts/setup_coach_tools.py `explain_current_plan`.
+_EXPLAIN_CURRENT_PLAN_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "explain_current_plan",
+        "description": (
+            "V1.6 — Produce a **grounded narrative explanation** of the athlete's current saved "
+            "training plan (deterministic plan facts + internal plan-coach translator: long-run "
+            "progression, weekly load, validation/spine notes when available). "
+            "Call when the user wants **why** the plan looks the way it does — e.g. "
+            "'why is my plan like this?', 'explain my plan', 'why is my long run X miles?', "
+            "'what's the logic behind this schedule?'. "
+            "Prefer this over improvising from `get_plan_overview` / `get_weekly_plan` alone for "
+            "open-ended **why** questions. Still use `get_weekly_plan` for a specific week's "
+            "day-by-day schedule or plan-vs-actual. **No parameters** — the account is implicit."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+}
+
+
 # Kept in sync with scripts/setup_coach_tools.py `get_phase_analysis`.
 _GET_PHASE_ANALYSIS_OPENAI_TOOL: Dict[str, Any] = {
     "type": "function",
@@ -891,6 +915,18 @@ def _ensure_get_plan_overview_tool(
         "coach_tools has no enabled get_plan_overview; injecting built-in OpenAI tool definition"
     )
     return list(tools) + [_GET_PLAN_OVERVIEW_OPENAI_TOOL]
+
+
+def _ensure_explain_current_plan_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject explain_current_plan (plan_insights + plan_coach) if missing."""
+    if "explain_current_plan" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled explain_current_plan; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_EXPLAIN_CURRENT_PLAN_OPENAI_TOOL]
 
 
 def _ensure_get_phase_analysis_tool(
@@ -2536,8 +2572,8 @@ def run_mobile_agent_turn(
     timeout = float(os.getenv("OPENAI_MOBILE_AGENT_TIMEOUT", "60.0"))
 
     t_agent0 = time.perf_counter()
-    # V1.6 Phase B 3B.9 — the four plan-aware tool injectors
-    # (get_user_context → get_phase_analysis → get_plan_overview →
+    # V1.6 Phase B 3B.9 — plan-aware tool injectors (get_user_context →
+    # get_phase_analysis → get_plan_overview → explain_current_plan →
     # get_weekly_plan) sit on top of the existing chain so a DB that has
     # not been re-seeded still advertises them to OpenAI. Order is
     # chosen so the weekly-plan layer (the one the coach reaches for
@@ -2547,17 +2583,21 @@ def run_mobile_agent_turn(
         _ensure_save_phase_goal_tool(
             _ensure_apply_plan_adjustments_tool(
                 _ensure_get_weekly_plan_tool(
-                    _ensure_get_plan_overview_tool(
-                        _ensure_get_phase_analysis_tool(
-                            _ensure_get_user_context_tool(
-                                _ensure_generate_training_plan_tool(
-                                    _ensure_update_plan_intake_tool(
-                                        _ensure_get_run_splits_tool(
-                                            _ensure_get_marathon_projection_tool(
-                                                _ensure_get_training_kpis_tool(
-                                                    _ensure_aggregate_runs_in_range_tool(
-                                                        _ensure_search_runs_tool(
-                                                            _load_tools_from_db(session)
+                    _ensure_explain_current_plan_tool(
+                        _ensure_get_plan_overview_tool(
+                            _ensure_get_phase_analysis_tool(
+                                _ensure_get_user_context_tool(
+                                    _ensure_generate_training_plan_tool(
+                                        _ensure_update_plan_intake_tool(
+                                            _ensure_get_run_splits_tool(
+                                                _ensure_get_marathon_projection_tool(
+                                                    _ensure_get_training_kpis_tool(
+                                                        _ensure_aggregate_runs_in_range_tool(
+                                                            _ensure_search_runs_tool(
+                                                                _load_tools_from_db(
+                                                                    session
+                                                                )
+                                                            )
                                                         )
                                                     )
                                                 )

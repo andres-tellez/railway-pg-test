@@ -469,6 +469,38 @@ SEED_TOOLS = [
         "sort_order": 37,
     },
     {
+        "name": "explain_current_plan",
+        "display_name": "Explain Current Plan",
+        "category": "plan_analysis",
+        "description": (
+            "V1.6 — Produce a **grounded narrative explanation** of the athlete's current saved "
+            "training plan (deterministic plan facts + internal plan-coach translator: long-run "
+            "progression, weekly load, validation/spine notes when available). "
+            "Call when the user wants **why** the plan looks the way it does — e.g. "
+            "'why is my plan like this?', 'explain my plan', 'why is my long run X miles?', "
+            "'what's the logic behind this schedule?'. "
+            "Prefer this over improvising from `get_plan_overview` / `get_weekly_plan` alone for "
+            "open-ended **why** questions. Still use `get_weekly_plan` for a specific week's "
+            "day-by-day schedule or plan-vs-actual. **No parameters** — the account is implicit."
+        ),
+        "when_to_call": (
+            "User asks why the plan is structured as it is, wants a coach-style walkthrough of "
+            "the progression, or questions a specific long-run / volume choice in principle "
+            "(not just 'what is on Tuesday')."
+        ),
+        "parameters_schema": {
+            "type": "object",
+            "properties": {},
+        },
+        "returns_description": (
+            "explanation (Markdown/plain coach copy), plan_id, plan_name, race_date, race_distance, "
+            "message (grounding hint for the outer assistant)."
+        ),
+        "data_source": "plans + plan_workouts → plan_insights + plan_coach (OpenAI)",
+        "is_enabled": True,
+        "sort_order": 33,
+    },
+    {
         "name": "get_phase_analysis",
         "display_name": "Get Phase Analysis",
         "category": "plan_analysis",
