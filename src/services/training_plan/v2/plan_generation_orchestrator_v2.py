@@ -3,10 +3,7 @@ Plan Generation Orchestrator V2
 
 Wires together the race-distance-aware services to produce a deterministic draft plan.
 
-Deprecated spine validation wrappers (still in use; remove in Phase 3 Stage D only
-after migration): see ``long_run_curve_validation`` module docstring,
-*DEPRECATED COMPONENTS* registry — notably ``_validate_spine_immutability`` and
-call sites using ``validate_phase_quality``.
+Long-run spine validation uses :func:`validate_long_run_curve` directly (Stage E).
 
 Pipeline Steps:
   Step 1: Assess Physical Level (fitness data from materialized view)
@@ -24,10 +21,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import logging
 from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
-
-from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
-    validate_phase_quality,
-)
 
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
 from src.services.training_plan.v2.marathon.adaptive_marathon_peak import (
@@ -49,6 +42,10 @@ from src.services.training_plan.v2.pass3_workout_distribution_v2 import (
 from src.services.training_plan.v2.pass4_workout_details_v2 import Pass4WorkoutDetails
 from src.services.training_plan.v2.plan_validation_service_v2 import (
     PlanValidationServiceV2,
+)
+from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
+    orchestrator_issue_to_violation_dict,
+    validate_long_run_curve,
 )
 
 # Recovery week insertion removed - spine generator now handles all progression naturally
@@ -384,9 +381,26 @@ class PlanGenerationOrchestratorV2:
                 len(weeks_long),
             )
 
-        spine_err = self._validate_spine_immutability(
-            weeks_long, gen_config.target_peak_miles
+        curve_lr = [float(w.get("long_run_miles", 0) or 0) for w in weeks_long]
+        imm_issues = validate_long_run_curve(
+            curve_lr,
+            gen_config,
+            spine_rows=weeks_long,
+            expected_start_miles=None,
+            peak_target_miles=float(gen_config.target_peak_miles),
+            taper_ratios_override=list(gen_config.taper_ratios),
+            cutback_every_override=int(gen_config.cutback_every),
+            taper_weeks_override=int(gen_config.taper_weeks),
+            include_structure_checks=True,
+            include_peak_max_check=True,
+            include_pass1_progression=False,
+            include_phase_quality=False,
         )
+        spine_err = None
+        for issue in imm_issues:
+            if issue["severity"] == "error":
+                spine_err = orchestrator_issue_to_violation_dict(issue)
+                break
         if spine_err:
             gf = {
                 "failure_code": spine_err.get(
@@ -404,16 +418,22 @@ class PlanGenerationOrchestratorV2:
                 "draft": {},
             }
 
-        # GUARDRAIL: Validate spine quality - check cutback spacing, progression, etc.
-        # DEPRECATED: validate_phase_quality facade (TODO Stage D → validate_long_run_curve).
-        is_valid, quality_issues = validate_phase_quality(
-            weeks_long,
-            peak=gen_config.target_peak_miles,
-            cutback_every=gen_config.cutback_every,
-            taper_weeks=gen_config.taper_weeks,
-            taper_ratios=gen_config.taper_ratios,
-            race_config=gen_config,
+        phase_issues = validate_long_run_curve(
+            curve_lr,
+            gen_config,
+            spine_rows=weeks_long,
+            expected_start_miles=None,
+            peak_target_miles=float(gen_config.target_peak_miles),
+            taper_ratios_override=list(gen_config.taper_ratios),
+            cutback_every_override=int(gen_config.cutback_every),
+            taper_weeks_override=int(gen_config.taper_weeks),
+            include_structure_checks=False,
+            include_peak_max_check=False,
+            include_pass1_progression=False,
+            include_phase_quality=True,
         )
+        quality_issues = [i["message"] for i in phase_issues]
+        is_valid = len(quality_issues) == 0
 
         # Self-correction: Try to fix validation issues automatically
         if not is_valid:
@@ -624,51 +644,6 @@ class PlanGenerationOrchestratorV2:
         if abs(peak - self.config.target_peak_miles) < 0.01:
             return self.config
         return RaceConfigPeakOverride(self.config, peak)
-
-    def _validate_spine_immutability(
-        self, weeks: List[Dict[str, Any]], peak_target: float
-    ) -> Optional[Dict[str, Any]]:
-        """
-        GUARDRAIL: Validate that spine hasn't been modified after generation.
-
-        DEPRECATED — replaced by ``validate_long_run_curve`` (call directly with
-        structure + peak-max flags). TODO Phase 3 Stage D: delete this method after
-        inlining. See ``long_run_curve_validation`` DEPRECATED COMPONENTS registry.
-
-        Returns a structured violation dict if invalid; otherwise None.
-        """
-        from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
-            orchestrator_issue_to_violation_dict,
-            validate_long_run_curve,
-        )
-
-        curve = [float(w.get("long_run_miles", 0) or 0) for w in weeks]
-        issues = validate_long_run_curve(
-            curve,
-            self.config,
-            spine_rows=weeks,
-            expected_start_miles=None,
-            peak_target_miles=float(peak_target),
-            taper_ratios_override=list(self.config.taper_ratios),
-            cutback_every_override=int(self.config.cutback_every),
-            taper_weeks_override=int(self.config.taper_weeks),
-            include_structure_checks=True,
-            include_peak_max_check=True,
-            include_pass1_progression=False,
-            include_phase_quality=False,
-        )
-        for issue in issues:
-            if issue["severity"] == "error":
-                return orchestrator_issue_to_violation_dict(issue)
-
-        max_lr = max(float(w.get("long_run_miles", 0) or 0) for w in weeks)
-        logger.debug(
-            "Spine validation passed: %s weeks, peak %.1f miles (target %.1f)",
-            len(weeks),
-            max_lr,
-            peak_target,
-        )
-        return None
 
     def _append_race_week(
         self, weeks: List[Dict[str, Any]], unit_system: str = "imperial"
@@ -883,15 +858,23 @@ class PlanGenerationOrchestratorV2:
                     logger.warning("Regeneration produced empty spine, stopping")
                     break
 
-                # Re-validate (DEPRECATED: validate_phase_quality — TODO Stage D).
-                is_valid, new_issues = validate_phase_quality(
-                    new_weeks,
-                    peak=cfg.target_peak_miles,
-                    cutback_every=cfg.cutback_every,
-                    taper_weeks=cfg.taper_weeks,
-                    taper_ratios=cfg.taper_ratios,
-                    race_config=cfg,
+                curve2 = [float(w.get("long_run_miles", 0) or 0) for w in new_weeks]
+                phase2 = validate_long_run_curve(
+                    curve2,
+                    cfg,
+                    spine_rows=new_weeks,
+                    expected_start_miles=None,
+                    peak_target_miles=float(cfg.target_peak_miles),
+                    taper_ratios_override=list(cfg.taper_ratios),
+                    cutback_every_override=int(cfg.cutback_every),
+                    taper_weeks_override=int(cfg.taper_weeks),
+                    include_structure_checks=False,
+                    include_peak_max_check=False,
+                    include_pass1_progression=False,
+                    include_phase_quality=True,
                 )
+                new_issues = [i["message"] for i in phase2]
+                is_valid = len(new_issues) == 0
 
                 if is_valid:
                     logger.info("✅ Self-correction successful - plan is now valid")
