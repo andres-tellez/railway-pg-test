@@ -136,6 +136,10 @@ class PlanGenerationOrchestratorV2:
         """
         Execute the LR-first pipeline and return validation results.
 
+        The returned dict is exactly ``ctx.validation`` after a successful run — it
+        does **not** include a top-level ``context_snapshot`` key. The snapshot is
+        kept on ``ctx.context_snapshot`` and stashed on ``runner_ctx`` for DB save.
+
         Args:
             runner_ctx: Dict with session, user_id, plan_request, training_days, etc.
             mode: "prefill" (default) or "rolling".
@@ -397,12 +401,25 @@ class PlanGenerationOrchestratorV2:
         )
 
         ctx = pipeline.run(ctx)
+        context_snapshot = {
+            "validation": ctx.validation,
+            "spine_quality_issues": ctx.spine_quality_issues,
+            "decision_trace": (ctx.validation or {}).get("decision_trace"),
+            "metadata": ctx.metadata,
+        }
+        ctx.context_snapshot = context_snapshot
+        print("SNAPSHOT CREATED:", ctx.context_snapshot is not None)
         abort_ret = getattr(ctx, "_abort_return", None)
         if abort_ret is not None:
             return abort_ret
 
+        # Return the validation dict only (historical API / regression baselines).
+        # Do not merge context_snapshot here; ctx.context_snapshot is set above and
+        # copied to runner_ctx for PlanStorageService via run_v2_plan_generation.
         validation = ctx.validation
-
+        snap = getattr(ctx, "context_snapshot", None)
+        if snap is not None and isinstance(ctx.runner_ctx, dict):
+            ctx.runner_ctx["_context_snapshot_for_persist"] = snap
         return validation
 
     # NOTE: Date parsing and start date calculation moved to PlanConstraintsService

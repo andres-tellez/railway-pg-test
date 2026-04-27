@@ -314,13 +314,13 @@ def test_run_v2_plan_generation_memory_mode_changes_long_run_day(
         "training_days": ["Tue", "Thu", "Sat", "Sun"],
     }
 
-    with_memory = run_v2_plan_generation(
+    with_memory, _ = run_v2_plan_generation(
         session=test_db_session,
         user_id=str(user_id),
         plan_request=copy.deepcopy(base_request),
         memory_mode="on",
     )
-    without_memory = run_v2_plan_generation(
+    without_memory, _ = run_v2_plan_generation(
         session=test_db_session,
         user_id=str(user_id),
         plan_request=copy.deepcopy(base_request),
@@ -409,13 +409,13 @@ def test_run_v2_plan_generation_memory_mode_changes_training_days(
         "primary_goal": "Just Finish",
     }
 
-    with_memory = run_v2_plan_generation(
+    with_memory, _ = run_v2_plan_generation(
         session=test_db_session,
         user_id=str(user_id),
         plan_request=copy.deepcopy(base_request),
         memory_mode="on",
     )
-    without_memory = run_v2_plan_generation(
+    without_memory, _ = run_v2_plan_generation(
         session=test_db_session,
         user_id=str(user_id),
         plan_request=copy.deepcopy(base_request),

@@ -25,9 +25,18 @@ _ACTIVITY_PLAN_SCORING_CLEAR = {
 
 
 def create_plan(session: Session, plan_data: dict) -> Plan:
+    print("PLAN DICT KEYS:", plan_data.keys())
+    print("SNAPSHOT IN PLAN_DICT:", "context_snapshot" in plan_data)
     plan = Plan(**plan_data)
+    print("PLAN OBJECT:", plan.__dict__)
+    # Note: this is the ORM's default SELECT for Plan, not the INSERT executed on flush.
+    print(str(session.query(Plan).statement))
     session.add(plan)
-    session.flush()  # Ensures plan.id is populated
+    try:
+        session.flush()  # Ensures plan.id is populated (INSERT runs here, not at commit)
+    except Exception as e:
+        print("DB COMMIT ERROR:", repr(e))
+        raise
     return plan
 
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import uuid as uuid_mod
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -85,13 +85,17 @@ def run_v2_plan_generation(
         "activity_weeks": activity_weeks,
         "unit_system": unit_system,  # Pass unit system for unit-aware rounding
     }
-    return orchestrator.generate_longrun_first(runner_ctx, mode=mode)
+    validation = orchestrator.generate_longrun_first(runner_ctx, mode=mode)
+    snapshot = runner_ctx.pop("_context_snapshot_for_persist", None)
+    print("SNAPSHOT AFTER POP:", snapshot is not None)
+    return validation, snapshot
 
 
 def build_standard_draft_payload(
     *,
     validation_result: Dict[str, Any],
     timezone: Optional[str] = None,
+    context_snapshot: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Convert the orchestrator's validation payload into the frontend-friendly draft format.
@@ -104,17 +108,21 @@ def build_standard_draft_payload(
         # Avoid mutating original object
         generated_plan = {**generated_plan, "timezone": timezone}
 
+    validation_block: Dict[str, Any] = {
+        "valid": bool(validation_result.get("valid")),
+        "violations": validation_result.get("violations", []),
+        "validated_plan": validation_result.get("validated_plan"),
+        "decision_trace": validation_result.get("decision_trace", []),
+        "spine_quality": validation_result.get(
+            "spine_quality"
+        ),  # Include spine quality validation (cutback spacing, progression, etc.)
+    }
+    if context_snapshot is not None:
+        validation_block["context_snapshot"] = context_snapshot
+
     draft_payload: Dict[str, Any] = {
         "generated_plan": generated_plan or {},
-        "validation": {
-            "valid": bool(validation_result.get("valid")),
-            "violations": validation_result.get("violations", []),
-            "validated_plan": validation_result.get("validated_plan"),
-            "decision_trace": validation_result.get("decision_trace", []),
-            "spine_quality": validation_result.get(
-                "spine_quality"
-            ),  # Include spine quality validation (cutback spacing, progression, etc.)
-        },
+        "validation": validation_block,
         "recovery_metadata": validation_result.get("recovery_metadata"),
         "pass1_rationale": validation_result.get("pass1_rationale"),
         "race_date_validation": validation_result.get("race_date_validation"),

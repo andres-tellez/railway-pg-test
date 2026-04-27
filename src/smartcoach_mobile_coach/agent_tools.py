@@ -46,7 +46,14 @@ from src.smartcoach_mobile_coach.weekly_insights_service import (
     weekly_insight_tool_slim_default_from_env,
 )
 from src.routes.plan_generation_v2 import run_v2_plan_generation
+from src.services.llm.openai_coach_adapter import OpenAICoachAdapter
+from src.services.security.external_apis.openai_service import get_openai_service
 from src.services.training_plan.plan_storage_service import PlanStorageService
+from src.services.training_plan.v2.plan_coach import generate_plan_explanation
+from src.services.training_plan.v2.plan_context_from_storage import (
+    build_plan_context_from_active_plan,
+)
+from src.services.training_plan.v2.plan_insights import build_plan_insights
 from src.utils.config import config
 from src.utils.hr_zone_constants import (
     ALLOWED_METRICS,
@@ -682,6 +689,70 @@ def tool_get_weekly_plan(
         extra=extra_key,
     )
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Tool: explain_current_plan (plan_insights + plan_coach, agent-integrated)
+# ---------------------------------------------------------------------------
+
+
+def tool_explain_current_plan(
+    session: Session,
+    internal_user_id: str,
+) -> Dict[str, Any]:
+    """
+    Load the active plan, build :class:`~src.services.training_plan.v2.plan_context.PlanContext`,
+    run :func:`~src.services.training_plan.v2.plan_insights.build_plan_insights`, and return
+    natural-language copy from :func:`~src.services.training_plan.v2.plan_coach.generate_plan_explanation`.
+
+    The authenticated user's id is always taken from the agent session — never from tool arguments.
+    """
+    import uuid as _uuid
+
+    try:
+        user_uuid = _uuid.UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        return {
+            "error": "invalid_user_id",
+            "message": "internal_user_id must be a UUID string.",
+        }
+
+    context = build_plan_context_from_active_plan(session, user_uuid)
+    if context is None:
+        return {
+            "error": "no_plan",
+            "message": "No training plan found for this account.",
+        }
+
+    insights = build_plan_insights(context)
+    adapter = OpenAICoachAdapter(
+        get_openai_service(),
+        user_id=str(internal_user_id),
+    )
+    try:
+        explanation = generate_plan_explanation(context, insights, adapter)
+    except Exception:
+        logger.exception(
+            "explain_current_plan: plan_coach LLM failed user=%s",
+            internal_user_id,
+        )
+        return {
+            "error": "explanation_failed",
+            "message": "Could not generate a plan explanation. Please try again.",
+        }
+
+    meta = context.metadata if isinstance(context.metadata, dict) else {}
+    return {
+        "explanation": explanation,
+        "plan_id": meta.get("plan_id"),
+        "plan_name": meta.get("plan_name"),
+        "race_date": meta.get("race_date"),
+        "race_distance": meta.get("race_distance"),
+        "message": (
+            "Use the `explanation` field as the grounded plan narrative. "
+            "Do not invent long-run or weekly mileage figures beyond what it states."
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1871,7 +1942,7 @@ def tool_generate_training_plan(
         }
 
     try:
-        result = run_v2_plan_generation(
+        result, gen_context_snapshot = run_v2_plan_generation(
             session=session,
             user_id=str(internal_user_id),
             plan_request=plan_request,
@@ -1913,6 +1984,7 @@ def tool_generate_training_plan(
         user_id=str(internal_user_id),
         validated_plan=validation_payload,
         plan_request=plan_request,
+        context_snapshot=gen_context_snapshot,
     )
     session.commit()
 
@@ -2001,6 +2073,8 @@ _TOOL_HANDLERS = {
     # No activity query ever runs, so §19.5 future-week "no actuals"
     # is structurally extended to every week in the overview.
     "get_plan_overview": "get_plan_overview",
+    # Deterministic plan_insights + plan_coach LLM — narrative "why is my plan like this".
+    "explain_current_plan": "explain_current_plan",
     # V1.6 Phase B 3B.6 — per-run-type KPI trend for phase-to-date
     # (Base / Build / Peak / Taper). Surfaces canonical actual.*
     # fields (zone compliance, completion_pct, deviation direction,
@@ -2200,6 +2274,9 @@ def execute_tool(
                 internal_user_id,
                 tz=tz_val,
             )
+
+        if handler_key == "explain_current_plan":
+            return tool_explain_current_plan(session, internal_user_id)
 
         if handler_key == "get_phase_analysis":
             # V1.6 Phase B 3B.6 — ``phase_id`` is required. Accepts
