@@ -55,7 +55,7 @@
 3. **Layer 2:** InsightsCalculationService
 4. **Layer 3:** PromptBuilderService → builds GPT prompt
 5. **Layer 4:** GptCoachService → **CALLS LLM** (gpt-4o)
-6. **Layer 5:** PlanValidationService
+6. **Layer 5:** ~~`PlanValidationService` (v1)~~ **(removed)** — current product uses `PlanValidationServiceV2` in the v2 pipeline
 7. **Layer 6:** PlanStorageService → saves to DB
 
 **Files (historical):**

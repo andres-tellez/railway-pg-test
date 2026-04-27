@@ -7,7 +7,7 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 - **V2** (`PlanGenerationOrchestratorV2`, `plan_generation_v2` routes) is the live path; Step 1 fitness uses the **materialized view**, not `InsightsCalculationService`.
 - **InsightsCalculationService** + **RecommendationsGenerator** + **fitness_calculator** remain for tests and ad-hoc scripts; they are **not** wired into the V2 orchestrator.
 - **`Pass1WeeksSelectorV2`**: orchestrator uses **`_map_weeks`** only; calendar length is Steps 3–4 in the orchestrator.
-- **`PlanValidationService` (v1)** is still tested; production V2 generation uses **`PlanValidationServiceV2`**.
+- **Plan validation:** production uses **`PlanValidationServiceV2`** only; v1 module removed.
 - **Old 6-layer orchestrator:** `training_plan_orchestrator_service.py` is not in the repo; historical notes remain in some docs.
 - **`pass1_rationale`** is active: orchestrator attaches it to validation; API draft payload and coach (`agent_tools`) read it for baseline copy.
 - **Peak week** appears twice in spirit: spine assigns phases / `is_peak_week`; `compute_long_run_peak_week_metadata` runs in spine and again for Pass1 rationale (redundant work, not a user-facing conflict).
@@ -34,7 +34,7 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 | InsightsCalculationService | `insights_calculation_service.py` | LEGACY | Investigate | NO | TODO |
 | RecommendationsGenerator | `calculations/recommendations_generator.py` | LEGACY | Investigate | NO | TODO |
 | fitness_calculator | `calculations/fitness_calculator.py` | LEGACY | Investigate | NO | TODO |
-| PlanValidationService (v1) | `plan_validation_service.py` | LEGACY | Delete after tests migrated or dropped | NO | TODO |
+| PlanValidationService (v1) | `plan_validation_service.py` (removed) | LEGACY | Removed | YES | DONE |
 | TrainingPlanOrchestratorService tests + doc refs | `tests/.../test_training_plan_orchestrator_service.py` (removed), docs | LEGACY | Removed tests; docs marked LEGACY | NO | DONE |
 | DataCollectionService | `data_collection_service.py` | ACTIVE | Keep (non–V2-gen callers) | NO | TODO |
 | PlanStorageService | `plan_storage_service.py` | ACTIVE | Keep | NO | TODO |

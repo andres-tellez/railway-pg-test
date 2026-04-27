@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory contains the 6-layer architecture for GPT-based marathon training plan generation.
+This directory contains shared services and the **V2 deterministic** training plan pipeline under `v2/`.
 
 ## Architecture Layers
 
@@ -28,11 +28,13 @@ This directory contains the 6-layer architecture for GPT-based marathon training
 
 This project now uses a fully deterministic pipeline (no LLM in generation).
 
-### Layer 5: Plan Validation (`plan_validation_service.py`)
+### Layer 5: Plan Validation (V2)
 
-**Purpose:** Validate GPT output for safety
+**Purpose:** Validate generated plans for safety before persistence.
 
-- TODO: To be implemented
+**Implementation:** `v2/plan_validation_service_v2.py` — class **`PlanValidationServiceV2`**, used by **`PlanGenerationOrchestratorV2`**.
+
+~~**LEGACY:** `plan_validation_service.py` (v1 `PlanValidationService`) — **removed**.~~
 
 ### Layer 6: Plan Storage (`plan_storage_service.py`)
 

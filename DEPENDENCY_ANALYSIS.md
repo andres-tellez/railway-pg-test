@@ -31,7 +31,7 @@
   - `Pass1LongRunFirst` (same as draft path)
   - `calculate_weekly_totals_from_long_runs` (same as draft path)
   - `Pass3WorkoutDistribution` (same as draft path)
-  - `PlanValidationService`
+  - `PlanValidationServiceV2`
 
 **Does NOT use:**
 
