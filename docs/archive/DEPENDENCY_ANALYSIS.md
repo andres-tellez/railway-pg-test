@@ -1,3 +1,5 @@
+ARCHIVED: This document reflects pre-V2 plan generation and is no longer accurate.
+
 # Dependency Analysis: Can We Delete Legacy Paths?
 
 ## ✅ **SAFE TO DELETE**
