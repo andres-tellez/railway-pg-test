@@ -1,3 +1,5 @@
+ARCHIVED: This document reflects pre-V2 plan generation and is no longer accurate.
+
 # Plan Creation Paths Analysis
 
 ## ✅ **Path We Want to Keep: All-Code Deterministic Draft**
