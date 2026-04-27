@@ -19,7 +19,6 @@ Pipeline Steps:
 
 from typing import Any, Dict, List, Optional, Tuple
 import logging
-from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
@@ -33,19 +32,22 @@ from src.services.training_plan.v2.marathon.adaptive_marathon_peak import (
 from src.services.training_plan.v2.marathon.pass1_longrun_first_v2 import (
     Pass1LongRunFirstV2,
 )
-from src.services.training_plan.v2.marathon.weekly_total_calculator_v2 import (
-    calculate_weekly_totals_from_long_runs,
-)
 from src.services.training_plan.v2.pass3_workout_distribution_v2 import (
     Pass3WorkoutDistribution,
 )
 from src.services.training_plan.v2.pass4_workout_details_v2 import Pass4WorkoutDetails
 from src.services.training_plan.v2.plan_context import PlanContext
+from src.services.training_plan.v2.pipeline_adapters import (
+    Pass1Adapter,
+    Pass3Adapter,
+    Pass4Adapter,
+    ValidationAdapter,
+    WeeklyTotalsAdapter,
+)
 from src.services.training_plan.v2.plan_validation_service_v2 import (
     PlanValidationServiceV2,
 )
 from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
-    orchestrator_issue_to_violation_dict,
     validate_long_run_curve,
 )
 
@@ -68,7 +70,6 @@ from src.services.training_plan.v2.scenario_adjustments_service import (
 )
 from src.services.training_plan.v2.workout_taxonomy.workout_definitions import (
     WORKOUT_DEFINITIONS,
-    get_workout_definition,
 )
 
 # Workout type constants (for backward compatibility)
@@ -139,6 +140,11 @@ class PlanGenerationOrchestratorV2:
             mode: "prefill" (default) or "rolling".
             week_logs: optional logs for Pass4 adjustments (rolling mode).
         """
+        # Plan generation runs via adapters in order:
+        #   Pass1Adapter → WeeklyTotalsAdapter → Pass3Adapter → Pass4Adapter → ValidationAdapter
+        # The orchestrator prepares PlanContext, invokes that pipeline, and returns the validation
+        # payload. Do not reintroduce duplicated stage logic here; keep behavior in adapters and
+        # shared helpers they call.
         ctx = PlanContext()
         session = runner_ctx.get("session")
         user_id = runner_ctx.get("user_id")
@@ -367,227 +373,46 @@ class PlanGenerationOrchestratorV2:
                 }
 
         # Build spine (scenario-specific configuration will be added later)
-        pass1_gen = Pass1LongRunFirstV2(config=gen_config)
-        lr_output = pass1_gen.build(
-            session=session,
-            user_id=str(user_id),
-            weekly_mileage=weekly_mileage,
-            longest_run=longest_run,
-            plan_request=plan_request,
-            recommended_weeks=plan_length_weeks,
-            unit_system=unit_system,
-        )
-        ctx.pass1_output = lr_output
-        weeks_long = lr_output.get("weeks", [])
+        ctx.runner_ctx = runner_ctx
+        ctx.available_weeks = available_weeks
+        setattr(ctx, "_race_date_validation", race_date_validation)
+        setattr(ctx, "gen_config", gen_config)
 
-        if len(weeks_long) != plan_length_weeks:
-            logger.warning(
-                "Spine length mismatch: requested %s weeks, generated %s weeks",
-                plan_length_weeks,
-                len(weeks_long),
-            )
+        ctx = Pass1Adapter(self).execute(ctx)
+        abort_ret = getattr(ctx, "_abort_return", None)
+        if abort_ret is not None:
+            return abort_ret
 
-        curve_lr = [float(w.get("long_run_miles", 0) or 0) for w in weeks_long]
-        imm_issues = validate_long_run_curve(
-            curve_lr,
-            gen_config,
-            spine_rows=weeks_long,
-            expected_start_miles=None,
-            peak_target_miles=float(gen_config.target_peak_miles),
-            taper_ratios_override=list(gen_config.taper_ratios),
-            cutback_every_override=int(gen_config.cutback_every),
-            taper_weeks_override=int(gen_config.taper_weeks),
-            include_structure_checks=True,
-            include_peak_max_check=True,
-            include_pass1_progression=False,
-            include_phase_quality=False,
-        )
-        spine_err = None
-        for issue in imm_issues:
-            if issue["severity"] == "error":
-                spine_err = orchestrator_issue_to_violation_dict(issue)
-                break
-        if spine_err:
-            gf = {
-                "failure_code": spine_err.get(
-                    "failure_code", "spine_validation_failed"
-                ),
-                "failure_reason": spine_err.get(
-                    "failure_reason", "Long-run spine validation failed."
-                ),
-                "details": spine_err.get("details", {}),
-            }
-            return {
-                "valid": False,
-                "violations": [spine_err],
-                "generation_failure": gf,
-                "draft": {},
-            }
-
-        phase_issues = validate_long_run_curve(
-            curve_lr,
-            gen_config,
-            spine_rows=weeks_long,
-            expected_start_miles=None,
-            peak_target_miles=float(gen_config.target_peak_miles),
-            taper_ratios_override=list(gen_config.taper_ratios),
-            cutback_every_override=int(gen_config.cutback_every),
-            taper_weeks_override=int(gen_config.taper_weeks),
-            include_structure_checks=False,
-            include_peak_max_check=False,
-            include_pass1_progression=False,
-            include_phase_quality=True,
-        )
-        quality_issues = [i["message"] for i in phase_issues]
-        is_valid = len(quality_issues) == 0
-
-        # Self-correction: Try to fix validation issues automatically
-        if not is_valid:
-            logger.warning(
-                f"Spine quality validation failed: {'; '.join(quality_issues)}. "
-                f"Attempting self-correction..."
-            )
-            corrected_weeks, remaining_issues = self._self_correct_spine(
-                session=session,
-                user_id=str(user_id),
-                weekly_mileage=weekly_mileage,
-                longest_run=longest_run,
-                weeks_long=weeks_long,
-                quality_issues=quality_issues,
-                plan_request=plan_request,
-                recommended_weeks=plan_length_weeks,  # Use actual plan length for self-correction
-                scenario_adjustments=scenario_adjustments,
-                max_attempts=2,
-                unit_system=unit_system,
-                race_config=gen_config,
-            )
-            weeks_long = corrected_weeks
-            quality_issues = remaining_issues
-
-            if remaining_issues:
-                logger.error(
-                    f"Self-correction completed but {len(remaining_issues)} issues remain: "
-                    f"{'; '.join(remaining_issues)}"
-                )
-                for issue in remaining_issues:
-                    logger.error(f"  - {issue}")
-            else:
-                logger.info("✅ Self-correction successful - all issues resolved")
-
-        ctx.spine_weeks = weeks_long
+        lr_output = ctx.pass1_output
+        weeks_long = ctx.spine_weeks
+        is_valid = getattr(ctx, "_spine_quality_is_valid")
+        quality_issues = getattr(ctx, "_spine_quality_issues")
 
         # Weekly totals from long runs (with scenario adjustments)
-        weeks_with_totals = calculate_weekly_totals_from_long_runs(
-            weeks=weeks_long,
-            runs_per_week=runs_per_week,
-            config=gen_config,
-            scenario_adjustments=scenario_adjustments,
-            unit_system=unit_system,
-        )
-        ctx.weekly_totals = weeks_with_totals
+        ctx.spine_weeks = weeks_long
+        ctx = WeeklyTotalsAdapter(self).execute(ctx)
+        weeks_with_totals = ctx.weekly_totals
 
         # Step 6: Distribute workouts to training days
-        # Determine long run day (user preference or auto-select)
-        long_run_day, long_run_day_reason = self._determine_long_run_day(
-            plan_request, training_days
-        )
-
-        pass3_gen = Pass3WorkoutDistribution(
-            config=gen_config,
-            race_type=self.race_type,
-            scenario=self.scenario,
-        )
-        pass3_plan = pass3_gen.run(
-            weeks_with_totals,
-            training_days,
-            total_weeks=plan_length_weeks,
-            long_run_day=long_run_day,
-            unit_system=unit_system,
-        )
-
-        weeks_out = pass3_plan.get("weeks", [])
-
-        # GUARDRAIL: No post-processing of spine - progression is calculated once in spine generator
-        # If plan needs adjustment, regenerate with different parameters, don't modify
-
-        weeks_out = self._append_race_week(weeks_out, unit_system=unit_system)
-        logger.info("After race week append: %s total weeks", len(weeks_out))
-
-        weeks_out, aligned_start_date = self.constraints_service.align_weeks_with_dates(
-            weeks=weeks_out,
-            race_date=race_date,
-            min_start_date=min_start_date,
-            fallback_start=start_date,
-        )
-        if aligned_start_date:
-            logger.info(
-                "Aligned plan dates: start=%s end=%s length=%s",
-                aligned_start_date,
-                weeks_out[-1].get("week_start_date") if weeks_out else None,
-                len(weeks_out),
-            )
-
-        if aligned_start_date:
-            plan_request["start_date"] = aligned_start_date.isoformat()
-
-        # Post-race cleanse: Remove any workout scheduled for the day after race
-        weeks_out = self._remove_post_race_workouts(weeks_out, race_date)
-
-        # Pace seed (performance-based calculation from recent run data)
-        pace_seed = self._derive_pace_seed(
-            lr_output, plan_request, weeks_out, user_id=str(user_id), session=session
-        )
+        ctx.weekly_totals = weeks_with_totals
+        ctx = Pass3Adapter(self).execute(ctx)
+        plan_with_details = ctx.workout_distribution
+        long_run_day_reason = getattr(ctx, "_long_run_day_reason")
+        pace_seed = getattr(ctx, "_pace_seed")
 
         # Step 7: Add workout details (paces, intervals, notes)
-        plan_with_details = {
-            "weeks": weeks_out,
-            "start_date": plan_request.get("start_date"),
-            "race_date": race_date,
-        }
         ctx.workout_distribution = plan_with_details
-        plan_with_details = self.pass4.add_details_to_plan(
-            plan=plan_with_details,
-            seed=pace_seed,
-            mode=mode,
-            week_logs=week_logs or {},
-        )
-        ctx.detailed_plan = plan_with_details
+        setattr(ctx, "_pace_seed", pace_seed)
+        ctx.adapter_mode = mode
+        ctx.adapter_week_logs = week_logs
+        ctx = Pass4Adapter(self).execute(ctx)
+        plan_with_details = ctx.detailed_plan
 
         # Step 8: Final validation
-        validator_gen = PlanValidationServiceV2(
-            config=gen_config, unit_system=unit_system
-        )
-        validation = validator_gen.validate_plan(
-            plan_with_details, unit_system=unit_system
-        )
-        validation["draft"] = plan_with_details
-        validation["pass1_rationale"] = lr_output.get("rationale")
-        validation["decision_trace"] = [
-            training_days_reason.to_dict(),
-            long_run_day_reason.to_dict(),
-        ]
-        # Include race date validation results if available
-        if race_date_validation:
-            validation["race_date_validation"] = race_date_validation
-
-        if self.race_type == "marathon":
-            validation["peak_target_long_run_miles"] = gen_config.target_peak_miles
-
-        # Include spine quality validation results
-        # This checks cutback spacing, progression safety, peak achievement, etc.
-        validation["spine_quality"] = {
-            "is_valid": is_valid,
-            "issues": quality_issues,
-        }
-
-        ctx.validation = validation
-        ctx.metadata = {
-            "scenario": scenario,
-            "available_weeks": available_weeks,
-            "fitness_recommended_weeks": fitness_recommended_weeks,
-            "race_date_validation": race_date_validation,
-        }
-        ctx.decision_trace = validation["decision_trace"]
+        ctx.detailed_plan = plan_with_details
+        setattr(ctx, "_training_days_reason", training_days_reason)
+        ctx = ValidationAdapter(self).execute(ctx)
+        validation = ctx.validation
 
         return validation
 
