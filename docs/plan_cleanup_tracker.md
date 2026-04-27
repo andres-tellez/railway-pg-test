@@ -7,7 +7,6 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 - **V2** (`PlanGenerationOrchestratorV2`, `plan_generation_v2` routes) is the live path; Step 1 fitness uses the **materialized view**, not `InsightsCalculationService`.
 - **InsightsCalculationService** + **RecommendationsGenerator** + **fitness_calculator** remain for tests and ad-hoc scripts; they are **not** wired into the V2 orchestrator.
 - **`Pass1WeeksSelectorV2`**: orchestrator uses **`_map_weeks`** only; calendar length is Steps 3–4 in the orchestrator.
-- **`Pass1LongRunFirstV2._validate_weeks`** has no callers.
 - **`PlanValidationService` (v1)** is still tested; production V2 generation uses **`PlanValidationServiceV2`**.
 - **`training_plan_orchestrator_service.py`** is referenced by tests/docs but the module path is missing — tests are stale or file was removed.
 - **`pass1_rationale`** is active: orchestrator attaches it to validation; API draft payload and coach (`agent_tools`) read it for baseline copy.
@@ -30,7 +29,7 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 | `calculate_weekly_mileage_from_workouts` | `workout_utils.py` | ACTIVE | Keep | NO | TODO |
 | `get_initial_pace_seed` | `pace/calculator.py` | ACTIVE | Keep | NO | TODO |
 | Decision trace (weekday / LR day strings) | `decision_trace.py` | ACTIVE | Keep | NO | TODO |
-| Pass1 `_validate_weeks` | `v2/marathon/pass1_longrun_first_v2.py` | SHADOW | Delete | YES | TODO |
+| Pass1 `_validate_weeks` (removed) | `v2/marathon/pass1_longrun_first_v2.py` | SHADOW | Removed | YES | DONE |
 | Pass1WeeksSelector (v1) | `pass1_weeks_selector.py` (removed) | LEGACY | Removed | YES | DONE |
 | InsightsCalculationService | `insights_calculation_service.py` | LEGACY | Investigate | NO | TODO |
 | RecommendationsGenerator | `calculations/recommendations_generator.py` | LEGACY | Investigate | NO | TODO |
