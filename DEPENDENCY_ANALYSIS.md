@@ -14,7 +14,7 @@
 **Does NOT use:**
 
 - ❌ `create_training_plan` (Path 1)
-- ❌ `TrainingPlanOrchestratorService` (Path 2)
+- ❌ `TrainingPlanOrchestratorService` (Path 2 — **module removed**)
 - ❌ `ThreePassOrchestrator.generate()` (Path 3)
 - ❌ `ThreePassOrchestrator` at all (it's created but never used in draft path)
 
@@ -36,7 +36,7 @@
 **Does NOT use:**
 
 - ❌ `create_training_plan` (Path 1)
-- ❌ `TrainingPlanOrchestratorService` (Path 2)
+- ❌ `TrainingPlanOrchestratorService` (Path 2 — **module removed**)
 - ❌ `ThreePassOrchestrator.generate()` (Path 3) - Different method, no dependency
 
 **Impact of deleting Paths 1, 2, 3:** ✅ **NONE** - Path 4 doesn't use them
@@ -67,20 +67,16 @@
 
 ---
 
-### **Path 2: Old 6-Layer Orchestrator with LLM**
+### **Path 2: Old 6-Layer Orchestrator with LLM** _(LEGACY — implementation removed)_
 
-**File:** `src/services/training_plan/training_plan_orchestrator_service.py`
+**File:** ~~`src/services/training_plan/training_plan_orchestrator_service.py`~~ **(not in repo)**
 
-- `TrainingPlanOrchestratorService` class
-- Uses L1-L6 with LLM at Layer 4
+- `TrainingPlanOrchestratorService` class (historical; **removed**)
+- Used L1-L6 with LLM at Layer 4 when it existed
 
-**Used by:** `src/routes/plan_routes.py` lines 498, 1015, 1061 (only when `use_orchestrator = True` AND `generation_mode != "three_pass"`)
+**Used by:** *(historical)* Earlier `plan_routes` wiring when flags selected the 6-layer path. **Current** `src/routes/plan_routes.py` uses **`run_v2_plan_generation`** only for create/draft flows covered here.
 
-**Impact of deletion:** ✅ **SAFE**
-
-- Not used by draft path
-- Not used by Path 4
-- Only used when feature flag is set to old mode
+**Impact:** ✅ **N/A for current code** — module absent; draft and create paths use V2.
 
 **Dependencies on good path:** ❌ **NONE**
 
@@ -134,11 +130,10 @@
    - Remove entire file or just the functions
    - Remove import and usage from `plan_routes.py` line 20, 505
 
-2. **Path 2:** `src/services/training_plan/training_plan_orchestrator_service.py`
+2. **Path 2:** `training_plan_orchestrator_service.py`
 
-   - Remove entire file or just the class
-   - Remove import and usage from `plan_routes.py` lines 21, 498, 1015, 1061
-   - Remove from `src/services/training_plan/__init__.py`
+   - **Done:** orchestrator file and `tests/services/training_plan/test_training_plan_orchestrator_service.py` removed from this repo.
+   - If any environment still references Path 2 flags, confirm `plan_routes` no longer imports the missing module (already absent under `src/`).
 
 3. **Path 3:** `ThreePassOrchestrator.generate()` method
    - Keep the class, just remove the `generate()` method (lines 40-79)
