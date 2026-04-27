@@ -274,7 +274,7 @@ class Pass3Adapter:
         long_run_day, long_run_day_reason = self._orch._determine_long_run_day(
             plan_request, training_days
         )
-        setattr(context, "_long_run_day_reason", long_run_day_reason)
+        context.long_run_day_reason = long_run_day_reason
 
         pass3_gen = Pass3WorkoutDistribution(
             config=gen_config,
@@ -323,7 +323,7 @@ class Pass3Adapter:
         pace_seed = self._orch._derive_pace_seed(
             lr_output, plan_request, weeks_out, user_id=str(user_id), session=session
         )
-        setattr(context, "_pace_seed", pace_seed)
+        context.pace_seed = pace_seed
 
         # Step 7: Add workout details (paces, intervals, notes)
         plan_with_details = {
@@ -343,7 +343,7 @@ class Pass4Adapter:
 
     def execute(self, context: PlanContext) -> PlanContext:
         plan_with_details = context.workout_distribution
-        pace_seed = getattr(context, "_pace_seed")
+        pace_seed = context.pace_seed
         mode = getattr(context, "adapter_mode", "prefill")
         week_logs: Dict[int, List] = getattr(context, "adapter_week_logs", None) or {}
 
@@ -371,12 +371,12 @@ class ValidationAdapter:
         plan_with_details = context.detailed_plan
         lr_output = context.pass1_output
 
-        training_days_reason = getattr(context, "_training_days_reason", None)
+        training_days_reason = context.training_days_reason
         if training_days_reason is None:
             _, training_days_reason = self._orch._determine_training_days(
                 plan_request, runner_ctx.get("training_days")
             )
-        long_run_day_reason = getattr(context, "_long_run_day_reason")
+        long_run_day_reason = context.long_run_day_reason
 
         race_date_validation = getattr(context, "_race_date_validation", None)
         is_valid = getattr(context, "_spine_quality_is_valid")
