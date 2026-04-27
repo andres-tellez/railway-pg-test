@@ -369,9 +369,9 @@ def get_available_phases(race_type: str, frequency: int) -> List[str]:
 
 def _validate_templates() -> None:
     """Validate all templates have correct structure."""
-    from .workout_definitions import WORKOUT_DEFINITIONS
+    from src.domain.running.terminology import WORKOUT_TYPES
 
-    valid_workout_types = set(WORKOUT_DEFINITIONS.keys())
+    valid_workout_types = WORKOUT_TYPES
 
     def validate_template(template: List[str], context: str) -> None:
         """Validate a single template."""

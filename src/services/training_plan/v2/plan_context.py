@@ -6,7 +6,7 @@ Holds references to intermediate results only; no generation logic.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
@@ -32,3 +32,5 @@ class PlanContext:
     pace_seed: Optional[PaceSeed] = None
     training_days_reason: Optional[DecisionReason] = None
     long_run_day_reason: Optional[DecisionReason] = None
+    enable_debug_trace: bool = False
+    stage_trace: List[Dict[str, Any]] = field(default_factory=list)
