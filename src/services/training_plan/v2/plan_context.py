@@ -22,6 +22,7 @@ class PlanContext:
     plan_length_weeks: Optional[int] = None
     scenario_adjustments: Optional[Dict[str, Any]] = None
     pass1_output: Optional[Dict[str, Any]] = None
+    spine_quality_issues: Optional[List[dict]] = None
     spine_weeks: Optional[List[Dict[str, Any]]] = None
     weekly_totals: Optional[List[Dict[str, Any]]] = None
     workout_distribution: Optional[Dict[str, Any]] = None

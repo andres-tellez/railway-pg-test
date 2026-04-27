@@ -29,6 +29,13 @@ This module is **additive only**: it does not patch or replace existing imports.
 - The two sets are **intentionally different** and must not be mixed; a single
   day may map from roles to taxonomy types via plan logic, not by assuming the
   same string sets.
+
+**Role → taxonomy default map**
+
+- ``ROLE_TO_TAXONOMY_MAP`` maps each **placement role** to a representative
+  **taxonomy** key. It is for **interpretation** (insights, coach copy, analytics),
+  **not** for enforcement of plan structure. Plan generation may still apply
+  templates, phase rules, and other constraints beyond this table.
 """
 
 from __future__ import annotations
@@ -99,6 +106,20 @@ PLACEMENT_ROLE_TYPES: FrozenSet[str] = frozenset(
 )
 
 # -----------------------------------------------------------------------------
+# ROLE_TO_TAXONOMY_MAP — scheduling role → workout taxonomy (interpretation only)
+# -----------------------------------------------------------------------------
+# Maps placement roles used in scheduling to default taxonomy keys. Use for
+# interpretation (insights, coach); plan generation logic may still apply
+# additional rules. This does not replace Pass3–Pass7 behavior.
+
+ROLE_TO_TAXONOMY_MAP: Dict[str, str] = {
+    "long": "long_run",
+    "endurance": "easy",
+    "steady": "steady",
+    "easy": "easy",
+}
+
+# -----------------------------------------------------------------------------
 # Basic constraints (aligned with documented V2 definition invariants)
 # -----------------------------------------------------------------------------
 
@@ -143,3 +164,8 @@ ZONE_DEFINITIONS: Dict[str, Dict[str, str]] = {
         "notes": "Placeholder; align with future HR or pace calibration.",
     },
 }
+
+
+def get_taxonomy_for_role(role: str) -> str | None:
+    """Return the default taxonomy key for ``role``, or ``None`` if unmapped."""
+    return ROLE_TO_TAXONOMY_MAP.get(role)
