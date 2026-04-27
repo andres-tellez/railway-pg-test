@@ -77,40 +77,6 @@ def build_spine(
     )
 
 
-def validate_spine(
-    weeks: List[Dict[str, Any]],
-    *,
-    expected_start: float,
-    peak: float,
-    cfg: LRConfig,
-    race_config: RaceDistanceConfig,
-) -> None:
-    """Validate LR spine week-to-week rules (delegates to central curve validation).
-
-    DEPRECATED — replaced by ``validate_long_run_curve`` (Pass1 should call it
-    directly with explicit flags). TODO Phase 3 Stage D: inline and delete this helper.
-    See ``long_run_curve_validation`` module docstring (DEPRECATED COMPONENTS registry).
-    """
-    curve = [float(w.get("long_run_miles", 0) or 0) for w in weeks]
-    issues = validate_long_run_curve(
-        curve,
-        race_config,
-        spine_rows=weeks,
-        expected_start_miles=float(expected_start),
-        peak_target_miles=float(peak),
-        taper_ratios_override=list(race_config.taper_ratios),
-        cutback_every_override=int(race_config.cutback_every),
-        taper_weeks_override=int(cfg["taperWeeks"]),
-        include_structure_checks=False,
-        include_peak_max_check=False,
-        include_pass1_progression=True,
-        include_phase_quality=False,
-    )
-    err = next((i for i in issues if i["severity"] == "error"), None)
-    if err:
-        raise ValueError(err["message"])
-
-
 class Pass1LongRunFirstV2:
     """Derive plan duration and long-run progression first, then weekly totals.
 
@@ -354,23 +320,32 @@ class Pass1LongRunFirstV2:
             )
         desired_total_weeks = len(weeks)
 
-        # Stage D: single spine build (curve or legacy via LR_CURVE_SOURCE); mirror miles
-        # from week dicts — no second build_target_long_run_curve call per request.
+        # Stage E: single spine build; mirror miles from week dicts.
         target_long_run_curve_miles = [
             float(w.get("long_run_miles") or 0.0) for w in weeks
         ]
 
         # Validate (no mutation) – but don't block LR-only drafts
         # Note: Validation expects exact match, but recovery weeks may differ from standard rule
-        # DEPRECATED path: validate_spine → validate_long_run_curve (TODO Stage D).
         try:
-            validate_spine(
-                weeks,
-                expected_start=round_to_half_mile(trusted_start),
-                peak=target_peak_miles,
-                cfg=cfg,
-                race_config=self.config,
+            curve = [float(w.get("long_run_miles", 0) or 0) for w in weeks]
+            issues = validate_long_run_curve(
+                curve,
+                self.config,
+                spine_rows=weeks,
+                expected_start_miles=float(round_to_half_mile(trusted_start)),
+                peak_target_miles=float(target_peak_miles),
+                taper_ratios_override=list(self.config.taper_ratios),
+                cutback_every_override=int(self.config.cutback_every),
+                taper_weeks_override=int(cfg["taperWeeks"]),
+                include_structure_checks=False,
+                include_peak_max_check=False,
+                include_pass1_progression=True,
+                include_phase_quality=False,
             )
+            err = next((i for i in issues if i["severity"] == "error"), None)
+            if err:
+                raise ValueError(err["message"])
         except ValueError as e:
             # If recovery week was applied, validation mismatch is expected and OK
             if consecutive_analysis["has_consecutive_runs"]:
