@@ -44,6 +44,7 @@ from src.services.training_plan.v2.pipeline_adapters import (
     ValidationAdapter,
     WeeklyTotalsAdapter,
 )
+from src.services.training_plan.v2.pipeline_runner import PipelineRunner
 from src.services.training_plan.v2.plan_validation_service_v2 import (
     PlanValidationServiceV2,
 )
@@ -378,40 +379,28 @@ class PlanGenerationOrchestratorV2:
         setattr(ctx, "_race_date_validation", race_date_validation)
         setattr(ctx, "gen_config", gen_config)
 
-        ctx = Pass1Adapter(self).execute(ctx)
+        ctx.adapter_mode = mode
+        ctx.adapter_week_logs = week_logs
+        ctx.training_days_reason = training_days_reason
+
+        # NOTE: This pipeline mirrors the historical manual adapter execution order
+        # (Pass1 → WeeklyTotals → Pass3 → Pass4 → Validation). PipelineRunner stops
+        # after a step if ``_abort_return`` is set (Pass1 spine validation failure).
+        pipeline = PipelineRunner(
+            [
+                Pass1Adapter(self),
+                WeeklyTotalsAdapter(self),
+                Pass3Adapter(self),
+                Pass4Adapter(self),
+                ValidationAdapter(self),
+            ]
+        )
+
+        ctx = pipeline.run(ctx)
         abort_ret = getattr(ctx, "_abort_return", None)
         if abort_ret is not None:
             return abort_ret
 
-        lr_output = ctx.pass1_output
-        weeks_long = ctx.spine_weeks
-        is_valid = getattr(ctx, "_spine_quality_is_valid")
-        quality_issues = getattr(ctx, "_spine_quality_issues")
-
-        # Weekly totals from long runs (with scenario adjustments)
-        ctx.spine_weeks = weeks_long
-        ctx = WeeklyTotalsAdapter(self).execute(ctx)
-        weeks_with_totals = ctx.weekly_totals
-
-        # Step 6: Distribute workouts to training days
-        ctx.weekly_totals = weeks_with_totals
-        ctx = Pass3Adapter(self).execute(ctx)
-        plan_with_details = ctx.workout_distribution
-        long_run_day_reason = getattr(ctx, "_long_run_day_reason")
-        pace_seed = getattr(ctx, "_pace_seed")
-
-        # Step 7: Add workout details (paces, intervals, notes)
-        ctx.workout_distribution = plan_with_details
-        setattr(ctx, "_pace_seed", pace_seed)
-        ctx.adapter_mode = mode
-        ctx.adapter_week_logs = week_logs
-        ctx = Pass4Adapter(self).execute(ctx)
-        plan_with_details = ctx.detailed_plan
-
-        # Step 8: Final validation
-        ctx.detailed_plan = plan_with_details
-        setattr(ctx, "_training_days_reason", training_days_reason)
-        ctx = ValidationAdapter(self).execute(ctx)
         validation = ctx.validation
 
         return validation
