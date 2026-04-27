@@ -1,21 +1,45 @@
 """Long-run spine generation (build curves + week metadata).
 
+Stage D rollout: default primary path is the global pure mile curve
+(``LR_CURVE_SOURCE=curve`` or unset) → :func:`_build_global_pure_curve_miles` then
+:func:`_week_dicts_from_long_run_curve`. Set ``LR_CURVE_SOURCE=legacy`` or
+``race_config.lr_curve_source='legacy'`` to use :func:`_generate_long_run_spine`.
+
 Deprecated validation and in-spine mutation paths are listed in the module
-docstring of ``long_run_curve_validation`` (DEPRECATED COMPONENTS registry,
-Phase 3 Stage D removal).
+docstring of ``long_run_curve_validation`` (DEPRECATED COMPONENTS registry).
 """
 
 from __future__ import annotations
 
+import os
 from typing import Any, List, Dict, Optional, Union, Tuple
 from datetime import datetime, date
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Stage C: when True, Pass1 / ``build_long_run_spine_weeks`` use ``build_target_long_run_curve``
-# as the mile source of truth and assemble week dicts without re-running spine math.
-USE_GLOBAL_CURVE = False
+# Stage D: ``LR_CURVE_SOURCE=curve`` (default) uses pure global curve + week dict executor;
+# ``LR_CURVE_SOURCE=legacy`` uses ``_generate_long_run_spine``. Optional config override:
+# ``getattr(race_config, "lr_curve_source", None)`` → ``"curve"`` or ``"legacy"``.
+LR_CURVE_SOURCE_ENV = "LR_CURVE_SOURCE"
+
+
+def lr_curve_source_name(config: Optional[Any] = None) -> str:
+    """Return ``curve`` or ``legacy`` (effective source after config then env)."""
+    if config is not None:
+        ov = getattr(config, "lr_curve_source", None)
+        if ov is not None and str(ov).strip() != "":
+            s = str(ov).strip().lower()
+            return "legacy" if s in ("legacy", "old", "spine") else "curve"
+    raw = os.environ.get(LR_CURVE_SOURCE_ENV, "curve") or "curve"
+    s = str(raw).strip().lower()
+    return "legacy" if s in ("legacy", "old", "spine") else "curve"
+
+
+def use_global_long_run_curve(config: Optional[Any] = None) -> bool:
+    """True when the global pure curve path is primary (default rollout)."""
+    return lr_curve_source_name(config) == "curve"
+
 
 # Import config type for optional parameter
 try:
@@ -884,6 +908,67 @@ def assign_training_intent_phases(
         w["is_peak_week"] = False
 
 
+def _build_global_pure_curve_miles(
+    starting_long_run_miles: float,
+    total_weeks_in_plan: Optional[int],
+    peak_long_run_target: float,
+    *,
+    race_date: Optional[Union[str, date, datetime]] = None,
+    taper_weeks: int = 2,
+    inc_miles: float = 1.0,
+    cutback_every: int = 4,
+    cutback_factor: float = 0.70,
+    taper_factor: float = 0.60,
+    round_to_half: bool = True,
+    non_regressive_slack: float = 1.0,
+    single_peak: bool = True,
+    peak_offset_before_taper: int = 1,
+    config: Optional[RaceDistanceConfig] = None,
+    unit_system: str = "imperial",
+) -> List[float]:
+    """Pure global mile curve (Stage C2 / D); shared by curve API and executor."""
+    derive_length = total_weeks_in_plan is None or total_weeks_in_plan == 0
+    tw: Optional[int] = (
+        None if total_weeks_in_plan is None else int(total_weeks_in_plan)
+    )
+    if not derive_length and tw is None:
+        wu = weeks_until(race_date)
+        tw = wu if wu is not None else 16
+        tw = max(12, min(24, int(tw)))
+
+    if derive_length:
+        return _pure_dynamic_long_run_curve(
+            starting_long_run_miles,
+            peak_long_run_target,
+            taper_weeks=taper_weeks,
+            inc_miles=inc_miles,
+            cutback_every=cutback_every,
+            cutback_factor=cutback_factor,
+            taper_factor=taper_factor,
+            round_to_half=round_to_half,
+            non_regressive_slack=non_regressive_slack,
+            config=config,
+            unit_system=unit_system,
+        )
+    assert tw is not None and tw > 0
+    return _pure_fixed_long_run_curve(
+        starting_long_run_miles,
+        tw,
+        peak_long_run_target,
+        taper_weeks=taper_weeks,
+        inc_miles=inc_miles,
+        cutback_every=cutback_every,
+        cutback_factor=cutback_factor,
+        taper_factor=taper_factor,
+        round_to_half=round_to_half,
+        non_regressive_slack=non_regressive_slack,
+        single_peak=single_peak,
+        peak_offset_before_taper=peak_offset_before_taper,
+        config=config,
+        unit_system=unit_system,
+    )
+
+
 def build_target_long_run_curve(
     starting_long_run_miles: float,
     total_weeks_in_plan: Optional[int],
@@ -902,43 +987,20 @@ def build_target_long_run_curve(
     config: Optional[RaceDistanceConfig] = None,
     unit_system: str = "imperial",
 ) -> List[float]:
-    """Return only the per-week target long-run distances (Stage A / Stage C / C2).
+    """Return only the per-week target long-run distances (Stage A / Stage D).
 
-    When ``USE_GLOBAL_CURVE`` is False, delegates to :func:`_generate_long_run_spine`
-    and extracts miles (legacy spine).
+    Primary path (default): ``LR_CURVE_SOURCE=curve`` or unset — pure global curve
+    via :func:`_build_global_pure_curve_miles` (no :func:`_generate_long_run_spine`).
 
-    When ``USE_GLOBAL_CURVE`` is True (Stage C2), builds the **full** progression as
-    ``List[float]`` using pure helpers only — no call to :func:`_generate_long_run_spine`.
+    Legacy path: ``LR_CURVE_SOURCE=legacy`` or ``config.lr_curve_source='legacy'`` —
+    delegates to :func:`_generate_long_run_spine` and extracts miles.
     """
-    derive_length = total_weeks_in_plan is None or total_weeks_in_plan == 0
-    tw: Optional[int] = (
-        None if total_weeks_in_plan is None else int(total_weeks_in_plan)
-    )
-    if not derive_length and tw is None:
-        wu = weeks_until(race_date)
-        tw = wu if wu is not None else 16
-        tw = max(12, min(24, int(tw)))
-
-    if USE_GLOBAL_CURVE:
-        if derive_length:
-            return _pure_dynamic_long_run_curve(
-                starting_long_run_miles,
-                peak_long_run_target,
-                taper_weeks=taper_weeks,
-                inc_miles=inc_miles,
-                cutback_every=cutback_every,
-                cutback_factor=cutback_factor,
-                taper_factor=taper_factor,
-                round_to_half=round_to_half,
-                non_regressive_slack=non_regressive_slack,
-                config=config,
-                unit_system=unit_system,
-            )
-        assert tw is not None and tw > 0
-        return _pure_fixed_long_run_curve(
+    if use_global_long_run_curve(config):
+        return _build_global_pure_curve_miles(
             starting_long_run_miles,
-            tw,
+            total_weeks_in_plan,
             peak_long_run_target,
+            race_date=race_date,
             taper_weeks=taper_weeks,
             inc_miles=inc_miles,
             cutback_every=cutback_every,
@@ -1619,37 +1681,32 @@ def build_long_run_spine_weeks(
     """Return full long-run spine week dicts (public executor for week metadata).
 
     Callers that need ``long_run_miles`` plus ``is_cutback`` / ``phase`` / etc. should
-    use this entry point. Callers that only need the mile sequence should use
+    use this entry point.     Callers that only need the mile sequence should use
     :func:`build_target_long_run_curve`.
 
-    When ``USE_GLOBAL_CURVE`` is False, delegates to :func:`_generate_long_run_spine``.
-    When True (Stage C), uses :func:`build_target_long_run_curve` as the mile source of
-    truth and only assembles week dicts (executor path).
+    Stage D: primary path uses :func:`_build_global_pure_curve_miles` then
+    :func:`_week_dicts_from_long_run_curve` (one pure curve build per call).
+    Legacy path delegates to :func:`_generate_long_run_spine` (gated by
+    ``LR_CURVE_SOURCE`` / ``config.lr_curve_source``).
     """
-    if USE_GLOBAL_CURVE:
-        curve = build_target_long_run_curve(
-            starting_long_run_miles,
-            total_weeks_in_plan,
-            peak_long_run_target,
-            race_date=race_date,
-            taper_weeks=taper_weeks,
-            inc_miles=inc_miles,
-            cutback_every=cutback_every,
-            cutback_factor=cutback_factor,
-            taper_factor=taper_factor,
-            round_to_half=round_to_half,
-            non_regressive_slack=non_regressive_slack,
-            single_peak=single_peak,
-            peak_offset_before_taper=peak_offset_before_taper,
-            config=config,
-            unit_system=unit_system,
-        )
-        return _week_dicts_from_long_run_curve(curve, taper_weeks=taper_weeks)
+    source = lr_curve_source_name(config)
+    env_raw = os.environ.get(LR_CURVE_SOURCE_ENV, "curve")
+    cfg_ov = getattr(config, "lr_curve_source", None) if config is not None else None
+    use_global = use_global_long_run_curve(config)
+    logger.info(
+        "Long-run spine: lr_curve_source=%s env.%s=%r config.lr_curve_source=%r executor=%s",
+        source,
+        LR_CURVE_SOURCE_ENV,
+        env_raw,
+        cfg_ov,
+        (
+            "curve+_week_dicts_from_long_run_curve"
+            if use_global
+            else "legacy_generate_long_run_spine"
+        ),
+    )
 
-    return _generate_long_run_spine(
-        starting_long_run_miles,
-        total_weeks_in_plan,
-        peak_long_run_target,
+    spine_kw = dict(
         race_date=race_date,
         taper_weeks=taper_weeks,
         inc_miles=inc_miles,
@@ -1662,8 +1719,76 @@ def build_long_run_spine_weeks(
         peak_offset_before_taper=peak_offset_before_taper,
         config=config,
         unit_system=unit_system,
+    )
+
+    if use_global:
+        curve = _build_global_pure_curve_miles(
+            starting_long_run_miles,
+            total_weeks_in_plan,
+            peak_long_run_target,
+            **spine_kw,
+        )
+        try:
+            from src.services.training_plan.v2.race_configs.marathon_config import (
+                MarathonConfig,
+            )
+            from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
+                validate_long_run_curve,
+            )
+
+            vcfg = config if config is not None else MarathonConfig()
+            issues = validate_long_run_curve(
+                curve,
+                vcfg,
+                spine_rows=None,
+                expected_start_miles=None,
+                peak_target_miles=float(peak_long_run_target),
+                taper_ratios_override=list(vcfg.taper_ratios),
+                cutback_every_override=int(cutback_every),
+                taper_weeks_override=int(taper_weeks),
+                include_structure_checks=False,
+                include_peak_max_check=True,
+                include_pass1_progression=False,
+                include_phase_quality=True,
+            )
+            for issue in issues:
+                msg = "Long-run curve validation (%s): %s" % (
+                    issue["code"],
+                    issue["message"],
+                )
+                if issue["severity"] == "error":
+                    logger.warning(msg)
+                else:
+                    logger.info(msg)
+        except Exception as ex:
+            logger.warning("Long-run curve validation skipped: %s", ex)
+
+        return _week_dicts_from_long_run_curve(curve, taper_weeks=taper_weeks)
+
+    weeks = _generate_long_run_spine(
+        starting_long_run_miles,
+        total_weeks_in_plan,
+        peak_long_run_target,
+        **spine_kw,
         return_trace=None,
     )
+    legacy_miles = [float(w.get("long_run_miles") or 0.0) for w in weeks]
+    try:
+        shadow = _build_global_pure_curve_miles(
+            starting_long_run_miles,
+            total_weeks_in_plan,
+            peak_long_run_target,
+            **spine_kw,
+        )
+        _log_long_run_curve_diff(
+            legacy_miles,
+            shadow,
+            context="legacy_primary_vs_global_pure(shadow)",
+            taper_weeks=taper_weeks,
+        )
+    except Exception as ex:
+        logger.debug("Legacy vs global shadow diff skipped: %s", ex)
+    return weeks
 
 
 def generate_long_run_spine(

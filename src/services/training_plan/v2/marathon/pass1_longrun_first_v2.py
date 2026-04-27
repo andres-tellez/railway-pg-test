@@ -11,9 +11,7 @@ from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
     validate_long_run_curve,
 )
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
-    USE_GLOBAL_CURVE,
     build_long_run_spine_weeks,
-    build_target_long_run_curve,
     compute_long_run_peak_week_metadata,
 )
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
@@ -356,36 +354,11 @@ class Pass1LongRunFirstV2:
             )
         desired_total_weeks = len(weeks)
 
-        # Stage A: shadow target curve (same inputs as build_spine).
-        # Stage C: when USE_GLOBAL_CURVE, spine miles already come from build_target_long_run_curve
-        # via build_long_run_spine_weeks — avoid a second generation pass.
-        if USE_GLOBAL_CURVE:
-            target_long_run_curve_miles = [
-                float(w.get("long_run_miles") or 0.0) for w in weeks
-            ]
-        else:
-            target_long_run_curve_miles = build_target_long_run_curve(
-                start_rule_miles,
-                curve_total_weeks,
-                target_peak_miles,
-                race_date=plan_request.get("race_date"),
-                taper_weeks=cfg["taperWeeks"],
-                non_regressive_slack=0.0,
-                inc_miles=cfg["inc"],
-                cutback_every=cfg["cutEvery"],
-                cutback_factor=cfg["cutFactor"],
-                peak_offset_before_taper=peak_offset_before_taper,
-                config=self.config,
-                unit_system=unit_system,
-            )
-        spine_long_run_miles = [float(w.get("long_run_miles") or 0.0) for w in weeks]
-        if target_long_run_curve_miles != spine_long_run_miles:
-            logger.error(
-                "LR curve Stage A parity mismatch: build_target_long_run_curve != build_spine "
-                "(curve_len=%s spine_len=%s)",
-                len(target_long_run_curve_miles),
-                len(spine_long_run_miles),
-            )
+        # Stage D: single spine build (curve or legacy via LR_CURVE_SOURCE); mirror miles
+        # from week dicts — no second build_target_long_run_curve call per request.
+        target_long_run_curve_miles = [
+            float(w.get("long_run_miles") or 0.0) for w in weeks
+        ]
 
         # Validate (no mutation) – but don't block LR-only drafts
         # Note: Validation expects exact match, but recovery weeks may differ from standard rule
@@ -440,9 +413,7 @@ class Pass1LongRunFirstV2:
             "recommended_weeks": recommended_weeks,  # Log the readiness-based recommendation used
             "mode": "fixed_length" if fixed_length_requested else "dynamic_length",
             "target_long_run_curve_miles": target_long_run_curve_miles,
-            "target_long_run_curve_stage_a_parity_ok": (
-                target_long_run_curve_miles == spine_long_run_miles
-            ),
+            "target_long_run_curve_stage_a_parity_ok": True,
             **peak_week_meta,
         }
 
