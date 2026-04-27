@@ -31,6 +31,7 @@ import pytest
 from src.smartcoach_mobile_coach import agent_tools
 from src.smartcoach_mobile_coach.orchestrator import (
     _APPLY_PLAN_ADJUSTMENTS_OPENAI_TOOL,
+    _EXPLAIN_CURRENT_PLAN_OPENAI_TOOL,
     _GET_PHASE_ANALYSIS_OPENAI_TOOL,
     _GET_PLAN_OVERVIEW_OPENAI_TOOL,
     _GET_USER_CONTEXT_OPENAI_TOOL,
@@ -38,6 +39,7 @@ from src.smartcoach_mobile_coach.orchestrator import (
     _REMEMBER_PLAN_PREFERENCE_OPENAI_TOOL,
     _SAVE_PHASE_GOAL_OPENAI_TOOL,
     _ensure_apply_plan_adjustments_tool,
+    _ensure_explain_current_plan_tool,
     _ensure_get_phase_analysis_tool,
     _ensure_get_plan_overview_tool,
     _ensure_get_user_context_tool,
@@ -64,6 +66,11 @@ _PLAN_TOOL_PAIRS = [
         "get_plan_overview",
         _GET_PLAN_OVERVIEW_OPENAI_TOOL,
         _ensure_get_plan_overview_tool,
+    ),
+    (
+        "explain_current_plan",
+        _EXPLAIN_CURRENT_PLAN_OPENAI_TOOL,
+        _ensure_explain_current_plan_tool,
     ),
     (
         "get_phase_analysis",
@@ -136,6 +143,7 @@ def test_get_phase_analysis_requires_phase_id() -> None:
     [
         _GET_WEEKLY_PLAN_OPENAI_TOOL,
         _GET_PLAN_OVERVIEW_OPENAI_TOOL,
+        _EXPLAIN_CURRENT_PLAN_OPENAI_TOOL,
         _GET_USER_CONTEXT_OPENAI_TOOL,
     ],
 )
@@ -189,16 +197,18 @@ def test_injector_preserves_existing_tools(
 
 
 def test_injectors_compose_on_empty_list() -> None:
-    """All four injectors chained on an empty list yield all four tools."""
+    """Plan-aware injectors chained on an empty list yield all five tools."""
     tools: List[Dict[str, Any]] = []
     tools = _ensure_get_user_context_tool(tools)
     tools = _ensure_get_phase_analysis_tool(tools)
     tools = _ensure_get_plan_overview_tool(tools)
+    tools = _ensure_explain_current_plan_tool(tools)
     tools = _ensure_get_weekly_plan_tool(tools)
     names = _openai_tool_names(tools)
     assert {
         "get_weekly_plan",
         "get_plan_overview",
+        "explain_current_plan",
         "get_phase_analysis",
         "get_user_context",
     }.issubset(names)

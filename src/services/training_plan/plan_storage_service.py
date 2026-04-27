@@ -60,6 +60,7 @@ class PlanStorageService:
         user_id: str,
         validated_plan: Dict[str, Any],
         plan_request: Dict[str, Any],
+        context_snapshot: Any = None,
     ) -> int:
         """
         Save validated training plan to database.
@@ -69,6 +70,8 @@ class PlanStorageService:
             user_id: UUID string of the user
             validated_plan: Validated plan from Layer 5 (must have "validated_plan" key)
             plan_request: Original plan request with race details
+            context_snapshot: Optional JSON-serializable reasoning snapshot; when ``None``,
+                ``plans.context_snapshot`` is left unset (NULL).
 
         Returns:
             plan_id: ID of created plan
@@ -77,6 +80,7 @@ class PlanStorageService:
             ValueError: If plan is invalid or data is missing
             Exception: Database errors (transaction will be rolled back)
         """
+        print("SNAPSHOT IN STORAGE:", context_snapshot is not None)
         logger.info(f"Saving validated plan for user {user_id}")
 
         try:
@@ -134,6 +138,11 @@ class PlanStorageService:
                 "notes": plan_request.get("notes"),
                 "is_active": True,
             }
+            if context_snapshot is not None:
+                from src.services.training_plan.v2.json_utils import make_json_safe
+
+                context_snapshot = make_json_safe(context_snapshot)
+                plan_dict["context_snapshot"] = context_snapshot
 
             # Deactivate existing active plans
             session.query(Plan).filter_by(user_id=user_uuid, is_active=True).update(
@@ -162,8 +171,12 @@ class PlanStorageService:
                     f"Saved {len(workouts_to_insert)} workouts for plan {plan_id}"
                 )
 
-            # Commit transaction
-            session.commit()
+            # Commit transaction (plans_dao.create_plan only flushes; commit happens here)
+            try:
+                session.commit()
+            except Exception as e:
+                print("DB COMMIT ERROR:", repr(e))
+                raise
             logger.info(f"Successfully saved plan {plan_id} for user {user_id}")
 
             return plan_id
