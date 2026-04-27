@@ -40,6 +40,7 @@ from src.services.training_plan.v2.pass3_workout_distribution_v2 import (
     Pass3WorkoutDistribution,
 )
 from src.services.training_plan.v2.pass4_workout_details_v2 import Pass4WorkoutDetails
+from src.services.training_plan.v2.plan_context import PlanContext
 from src.services.training_plan.v2.plan_validation_service_v2 import (
     PlanValidationServiceV2,
 )
@@ -138,6 +139,7 @@ class PlanGenerationOrchestratorV2:
             mode: "prefill" (default) or "rolling".
             week_logs: optional logs for Pass4 adjustments (rolling mode).
         """
+        ctx = PlanContext()
         session = runner_ctx.get("session")
         user_id = runner_ctx.get("user_id")
         plan_request = runner_ctx.get("plan_request", {})
@@ -200,6 +202,7 @@ class PlanGenerationOrchestratorV2:
 
         # Store fitness recommendation for later steps
         fitness_data["fitness_recommended_weeks"] = fitness_recommended_weeks
+        ctx.fitness = fitness_data
 
         # Step 3: Calculate available time
         # Calculate available weeks between earliest start date and race date
@@ -236,6 +239,7 @@ class PlanGenerationOrchestratorV2:
             if available_weeks is not None
             else fitness_recommended_weeks
         )
+        ctx.plan_length_weeks = plan_length_weeks
 
         if not plan_length_weeks:
             gf = {
@@ -270,6 +274,7 @@ class PlanGenerationOrchestratorV2:
             plan_length_weeks=plan_length_weeks,
         )
         scenario = scenario_adjustments["scenario"]
+        ctx.scenario_adjustments = scenario_adjustments
 
         logger.info(
             f"📊 Step 4.5: Scenario adjustments determined - {scenario}, "
@@ -372,6 +377,7 @@ class PlanGenerationOrchestratorV2:
             recommended_weeks=plan_length_weeks,
             unit_system=unit_system,
         )
+        ctx.pass1_output = lr_output
         weeks_long = lr_output.get("weeks", [])
 
         if len(weeks_long) != plan_length_weeks:
@@ -468,6 +474,8 @@ class PlanGenerationOrchestratorV2:
             else:
                 logger.info("✅ Self-correction successful - all issues resolved")
 
+        ctx.spine_weeks = weeks_long
+
         # Weekly totals from long runs (with scenario adjustments)
         weeks_with_totals = calculate_weekly_totals_from_long_runs(
             weeks=weeks_long,
@@ -476,6 +484,7 @@ class PlanGenerationOrchestratorV2:
             scenario_adjustments=scenario_adjustments,
             unit_system=unit_system,
         )
+        ctx.weekly_totals = weeks_with_totals
 
         # Step 6: Distribute workouts to training days
         # Determine long run day (user preference or auto-select)
@@ -535,12 +544,14 @@ class PlanGenerationOrchestratorV2:
             "start_date": plan_request.get("start_date"),
             "race_date": race_date,
         }
+        ctx.workout_distribution = plan_with_details
         plan_with_details = self.pass4.add_details_to_plan(
             plan=plan_with_details,
             seed=pace_seed,
             mode=mode,
             week_logs=week_logs or {},
         )
+        ctx.detailed_plan = plan_with_details
 
         # Step 8: Final validation
         validator_gen = PlanValidationServiceV2(
@@ -568,6 +579,15 @@ class PlanGenerationOrchestratorV2:
             "is_valid": is_valid,
             "issues": quality_issues,
         }
+
+        ctx.validation = validation
+        ctx.metadata = {
+            "scenario": scenario,
+            "available_weeks": available_weeks,
+            "fitness_recommended_weeks": fitness_recommended_weeks,
+            "race_date_validation": race_date_validation,
+        }
+        ctx.decision_trace = validation["decision_trace"]
 
         return validation
 
