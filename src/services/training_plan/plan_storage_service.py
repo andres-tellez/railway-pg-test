@@ -12,7 +12,7 @@ Responsibilities:
     - Handle database transactions and rollback
 
 Dependencies:
-    - Validated plan from Layer 5 (PlanValidationService)
+    - Validated plan from ``PlanValidationServiceV2`` (orchestrator / v2 pipeline)
     - Database models (Plan, PlanWorkout)
     - SQLAlchemy session
 

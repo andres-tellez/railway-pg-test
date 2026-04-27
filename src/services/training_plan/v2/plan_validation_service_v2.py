@@ -18,7 +18,7 @@ Dependencies:
     - Training safety rules and thresholds
 
 Testing:
-    See tests/services/training_plan/test_plan_validation_service.py
+    Exercised via plan generation / draft flows (orchestrator + route tests).
 
 Author: SmartCoach Development Team
 Last Updated: October 29, 2025
