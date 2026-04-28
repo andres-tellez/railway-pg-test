@@ -91,6 +91,88 @@ from src.utils.timezone_helpers import resolve_timezone
 logger = logging.getLogger(__name__)
 
 
+def _weeks_for_peak_observability(ctx: PlanContext) -> List[Dict[str, Any]]:
+    """Best-effort training weeks for pre-taper G (observability only)."""
+    val = ctx.validation
+    if isinstance(val, dict):
+        draft = val.get("draft")
+        if isinstance(draft, dict):
+            w = draft.get("weeks")
+            if isinstance(w, list) and w:
+                return w
+    dp = ctx.detailed_plan
+    if isinstance(dp, dict):
+        w = dp.get("weeks")
+        if isinstance(w, list) and w:
+            return w
+    sw = ctx.spine_weeks
+    if isinstance(sw, list) and sw:
+        return sw
+    po = ctx.pass1_output
+    if isinstance(po, dict):
+        w = po.get("weeks")
+        if isinstance(w, list) and w:
+            return w
+    return []
+
+
+def _pre_taper_long_run_max_g(weeks: List[Dict[str, Any]]) -> Optional[float]:
+    """Max long_run_miles over pre-taper weeks (first ``phase == \"Taper\"`` boundary)."""
+    if not weeks:
+        return None
+    taper_start = next(
+        (
+            i
+            for i, w in enumerate(weeks)
+            if str(w.get("phase") or "").strip() == "Taper"
+        ),
+        len(weeks),
+    )
+    pre = weeks[:taper_start]
+    vals: List[float] = []
+    for w in pre:
+        lr = w.get("long_run_miles")
+        if lr is None:
+            continue
+        try:
+            vals.append(float(lr))
+        except (TypeError, ValueError):
+            continue
+    return float(max(vals)) if vals else None
+
+
+def build_peak_miles_observability(
+    *,
+    recommended_peak_miles: Optional[float],
+    weeks: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    JSON-safe peak observability: recommended target vs realized pre-taper max (G).
+
+    Soft warning when effective < recommended * 0.95 (does not affect generation).
+    """
+    eff = _pre_taper_long_run_max_g(weeks)
+    if recommended_peak_miles is None:
+        return {
+            "recommended_peak_miles": None,
+            "effective_peak_miles": eff,
+            "effective_below_recommended_95pct": False,
+            "warnings": [],
+        }
+    rec = float(recommended_peak_miles)
+    below = False
+    warnings: List[str] = []
+    if rec > 0.0 and eff is not None and eff < rec * 0.95:
+        below = True
+        warnings.append("effective_peak_miles is below 95% of recommended_peak_miles")
+    return {
+        "recommended_peak_miles": rec,
+        "effective_peak_miles": eff,
+        "effective_below_recommended_95pct": below,
+        "warnings": warnings,
+    }
+
+
 class PlanGenerationOrchestratorV2:
     """
     Race-distance-aware orchestrator for the long-run-first deterministic pipeline.
@@ -405,11 +487,20 @@ class PlanGenerationOrchestratorV2:
             **(ctx.metadata or {}),
             "source": "create",
         }
+        gen_config = getattr(ctx, "gen_config", None)
+        rec_peak: Optional[float] = (
+            float(gen_config.target_peak_miles) if gen_config is not None else None
+        )
+        peak_miles_observability = build_peak_miles_observability(
+            recommended_peak_miles=rec_peak,
+            weeks=_weeks_for_peak_observability(ctx),
+        )
         context_snapshot = {
             "validation": ctx.validation,
             "spine_quality_issues": ctx.spine_quality_issues,
             "decision_trace": (ctx.validation or {}).get("decision_trace"),
             "metadata": metadata,
+            "peak_miles_observability": peak_miles_observability,
         }
         ctx.context_snapshot = context_snapshot
         print("SNAPSHOT CREATED:", ctx.context_snapshot is not None)
