@@ -491,6 +491,7 @@ class PlanGenerationOrchestratorV2:
             weekly_mileage=weekly_mileage,
             plan_request=plan_request,
             plan_length_weeks=int(plan_length_weeks),
+            runs_per_week=runs_per_week,
         )
         if self.race_type == "marathon":
             logger.info(
@@ -697,6 +698,7 @@ class PlanGenerationOrchestratorV2:
         weekly_mileage: float,
         plan_request: Dict[str, Any],
         plan_length_weeks: int,
+        runs_per_week: int,
     ) -> RaceDistanceConfig:
         """Race config for this generation (marathon uses adaptive peak long run)."""
         if self.race_type != "marathon":
@@ -705,6 +707,9 @@ class PlanGenerationOrchestratorV2:
             weekly_mileage=weekly_mileage,
             primary_goal=plan_request.get("primary_goal"),
             plan_length_weeks=plan_length_weeks,
+            runs_per_week=runs_per_week,
+            peak_caps=self.config.peak_caps,
+            target_time=plan_request.get("target_time"),
         )
         if abs(peak - self.config.target_peak_miles) < 0.01:
             return self.config

@@ -77,6 +77,7 @@ class Pass1Adapter:
         longest_run = context.fitness["longest_run"]
         plan_length_weeks = context.plan_length_weeks
         scenario_adjustments = context.scenario_adjustments
+        runs_per_week = len(plan_request["training_days"])
 
         gen_config = getattr(context, "gen_config", None)
         if gen_config is None:
@@ -84,6 +85,7 @@ class Pass1Adapter:
                 weekly_mileage=weekly_mileage,
                 plan_request=plan_request,
                 plan_length_weeks=int(plan_length_weeks),
+                runs_per_week=runs_per_week,
             )
             setattr(context, "gen_config", gen_config)
 
