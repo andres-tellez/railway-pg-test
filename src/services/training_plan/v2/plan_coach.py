@@ -36,12 +36,22 @@ def build_coach_prompt(
     validation = insights.get("validation", {})
     spine_quality = insights.get("spine_quality", {})
 
+    validation_ctx = context.validation or {}
+    violations = validation_ctx.get("violations") or []
+    spine_quality_issues = list(context.spine_quality_issues or [])
+    decision_trace = context.decision_trace
+    if decision_trace is None:
+        decision_trace = validation_ctx.get("decision_trace") or []
+    decision_trace = list(decision_trace)
+
     from src.domain.running.terminology import WORKOUT_DEFINITIONS
 
     return {
         "system_instructions": (
             "You are a running coach. "
             "Explain plans using only the provided data. "
+            "When explaining the plan, prefer using decision_trace and validation "
+            "signals below. Do not rely on generic explanations. "
             "Do NOT compute new metrics. "
             "Do NOT invent facts. "
             "If something is not in the data, say you don't know."
@@ -54,12 +64,21 @@ def build_coach_prompt(
             },
             "validation": validation,
             "spine_quality": spine_quality,
+            "reasoning_signals": {
+                "validation": {
+                    "violations": violations,
+                },
+                "spine_quality_issues": spine_quality_issues,
+                "decision_trace": decision_trace,
+            },
             "terminology": dict(WORKOUT_DEFINITIONS),
         },
         "tasks": [
             "Provide a concise summary of the plan.",
             "Explain why the long run progresses as it does.",
-            "Call out any notable validation or spine quality signals.",
+            "If decision_trace is non-empty, reference specific entries (field, source, rationale, values) when you explain why the plan is shaped this way.",
+            "If spine_quality_issues is non-empty, mention those issues and their impact on the schedule or risk.",
+            "If validation.violations is non-empty, explain the runner-facing impact of notable violations; if empty, do not invent problems.",
             "Give one actionable recommendation for the runner.",
         ],
     }
