@@ -43,7 +43,7 @@ def test_validate_long_run_curve_valid_golden_marathon_curve(
         expected_start_miles=None,
         peak_target_miles=18.0,
         taper_ratios_override=list(marathon_cfg.taper_ratios),
-        cutback_every_override=int(marathon_cfg.cutback_every),
+        cutback_every_override=4,
         taper_weeks_override=int(marathon_cfg.taper_weeks),
         include_structure_checks=False,
         include_peak_max_check=True,
