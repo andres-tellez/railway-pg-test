@@ -24,7 +24,7 @@ except ImportError:
 
 from src.domain.running.invariants import (
     PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED,
-    PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX,
+    PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX,
 )
 from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
 
@@ -892,10 +892,10 @@ def build_target_long_run_curve(
 ) -> List[float]:
     """Return only the per-week target long-run distances (Stage E).
 
-    Always :func:`_build_global_pure_curve_miles` then
-    :func:`_validate_pure_curve_at_boundary`.
+    Same sequence as :func:`build_long_run_spine_weeks` (pure global curve plus
+    calendar Peak band adjustments), so the mile list matches executor week dicts.
     """
-    curve = _build_global_pure_curve_miles(
+    weeks = build_long_run_spine_weeks(
         starting_long_run_miles,
         total_weeks_in_plan,
         peak_long_run_target,
@@ -912,14 +912,7 @@ def build_target_long_run_curve(
         config=config,
         unit_system=unit_system,
     )
-    _validate_pure_curve_at_boundary(
-        curve,
-        peak_long_run_target=peak_long_run_target,
-        cutback_every=cutback_every,
-        taper_weeks=taper_weeks,
-        config=config,
-    )
-    return curve
+    return [float(w["long_run_miles"]) for w in weeks]
 
 
 def _week_dicts_from_long_run_curve(
@@ -1015,53 +1008,80 @@ def build_long_run_spine_weeks(
         i for i in range(taper_start_idx) if weeks[i].get("phase") == "Peak"
     ]
     if peak_indices:
-        orig = [float(weeks[i].get("long_run_miles") or 0.0) for i in peak_indices]
-        peak_block_max = max(orig)
-        floor_lr = peak_block_max * PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX
-        for j, i in enumerate(peak_indices):
-            lr = max(floor_lr, orig[j])
-            if round_to_half:
-                lr = round_to_half_mile(lr, unit_system=unit_system)
-            weeks[i]["long_run_miles"] = float(lr)
+        pre_taper = weeks[:taper_start_idx]
+        G = max(float(w.get("long_run_miles") or 0.0) for w in pre_taper)
+        if G > 0:
+            lo_raw = float(PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX) * G
+            lo = (
+                round_to_half_mile(lo_raw, unit_system=unit_system)
+                if round_to_half
+                else float(lo_raw)
+            )
+            hi = (
+                round_to_half_mile(G, unit_system=unit_system)
+                if round_to_half
+                else float(G)
+            )
+            if lo > hi:
+                lo = float(hi)
 
-        if len(peak_indices) >= 2:
-            cur = [float(weeks[i]["long_run_miles"]) for i in peak_indices]
-            if len({round(x, 4) for x in cur}) == 1:
-                hi = cur[0]
-                lo = math.ceil(floor_lr * 2 - 1e-9) / 2.0
-                if lo > hi:
-                    lo = hi
-                n_peak = len(peak_indices)
-                span = hi - lo
+            n_peak = len(peak_indices)
+            clamped: List[float] = []
+            for i in peak_indices:
+                v = float(weeks[i].get("long_run_miles") or 0.0)
+                v = max(lo, min(hi, v))
+                if round_to_half:
+                    v = round_to_half_mile(v, unit_system=unit_system)
+                v = max(lo, min(hi, float(v)))
+                clamped.append(v)
+
+            if n_peak == 1:
+                weeks[peak_indices[0]]["long_run_miles"] = clamped[0]
+            else:
                 adjusted: List[float] = []
                 for j in range(n_peak):
                     t = j / (n_peak - 1)
-                    lr = hi - span * t
+                    span = hi - lo
+                    descent = hi - span * (0.3 * t)
+                    osc = 0.0
+                    if span >= 1.0:
+                        osc = 0.5 * math.sin(math.pi * t)
+                    elif span >= 0.5:
+                        osc = 0.25 * math.sin(math.pi * t)
+                    cand = descent + osc
+                    cand = max(lo, min(hi, cand))
                     if round_to_half:
-                        lr = round_to_half_mile(lr, unit_system=unit_system)
-                    adjusted.append(float(lr))
-                for j in range(1, len(adjusted)):
-                    if adjusted[j] > adjusted[j - 1]:
-                        adjusted[j] = adjusted[j - 1]
-                for j in range(len(adjusted)):
-                    adjusted[j] = max(lo, adjusted[j])
-                for j in range(1, len(adjusted)):
-                    if adjusted[j] > adjusted[j - 1]:
-                        adjusted[j] = adjusted[j - 1]
-                for i, lr in zip(peak_indices, adjusted):
-                    weeks[i]["long_run_miles"] = float(lr)
+                        cand = round_to_half_mile(cand, unit_system=unit_system)
+                    cand = max(lo, min(hi, float(cand)))
+                    blended = max(lo, min(hi, 0.65 * cand + 0.35 * clamped[j]))
+                    if round_to_half:
+                        blended = round_to_half_mile(blended, unit_system=unit_system)
+                    blended = max(lo, min(hi, float(blended)))
+                    adjusted.append(blended)
 
-        if PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED:
-            peak_weeks_before_taper = [weeks[i] for i in peak_indices]
-            peak_lr = max(float(w["long_run_miles"]) for w in peak_weeks_before_taper)
-            floor = peak_lr * PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX
-            assert all(
-                float(w["long_run_miles"]) >= floor for w in peak_weeks_before_taper
-            ), (
-                "Peak long-run floor (debug): "
-                f"peak_lr={peak_lr}, floor={floor}, "
-                f"miles={[float(w['long_run_miles']) for w in peak_weeks_before_taper]}"
-            )
+                if len({round(x, 2) for x in adjusted}) == 1 and (hi - lo) >= 0.5:
+                    for j in range(n_peak):
+                        bump = (j - (n_peak - 1) / 2.0) * 0.5
+                        adjusted[j] = max(lo, min(hi, adjusted[j] + bump))
+                        if round_to_half:
+                            adjusted[j] = round_to_half_mile(
+                                adjusted[j], unit_system=unit_system
+                            )
+                        adjusted[j] = max(lo, min(hi, float(adjusted[j])))
+
+                for idx, lr in zip(peak_indices, adjusted):
+                    weeks[idx]["long_run_miles"] = float(lr)
+
+            if PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED:
+                peak_weeks_before_taper = [weeks[i] for i in peak_indices]
+                assert all(
+                    lo - 1e-6 <= float(w["long_run_miles"]) <= hi + 1e-6
+                    for w in peak_weeks_before_taper
+                ), (
+                    "Peak long-run band (debug): "
+                    f"G={G}, lo={lo}, hi={hi}, "
+                    f"miles={[float(w['long_run_miles']) for w in peak_weeks_before_taper]}"
+                )
 
     return weeks
 

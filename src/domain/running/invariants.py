@@ -2,16 +2,17 @@
 Centralized **training invariants** — named policy constants for phase-scoped rules.
 
 These values make implicit spine / validation rules **explicit**.
-``PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX`` is used by
-``build_long_run_spine_weeks``; set ``SMARTCOACH_DEBUG_PEAK_LONG_RUN_FLOOR=1`` to
-enable an optional ``assert`` there (see ``PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED``).
-Other symbols remain documentation / future hooks unless noted elsewhere.
+``build_long_run_spine_weeks`` uses ``PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX``
+for calendar Peak weeks (band vs **G** = global pre-taper max long run).
+``PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX`` is a deprecated alias of that
+constant (backward compatibility only). Set ``SMARTCOACH_DEBUG_PEAK_LONG_RUN_FLOOR=1`` to enable
+an optional ``assert`` in the spine (see ``PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED``).
 
 **Convention**
 
-- **Peak** long-run constraints must be expressed **relative to the Peak phase
-  block** (e.g. max long run *within labeled Peak weeks*), not relative to a
-  **global** pre-taper maximum that may occur in Base or Build.
+- **Peak** (calendar last **K** weeks before taper): long runs are held in
+  ``[PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX * G, G]`` where **G** is the
+  max long run over all pre-taper weeks.
 - **Taper** intentionally allows large drops; Peak-style floors must not apply.
 - **Build** (and **Base**) may include cutbacks and non-monotonic long-run weeks;
   those are normal progression mechanics, not errors by default.
@@ -37,16 +38,21 @@ PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED: bool = _env_truthy(
     "SMARTCOACH_DEBUG_PEAK_LONG_RUN_FLOOR"
 )
 
-# When wired: minimum long run as a fraction of the **Peak block's own** maximum
-# long run (computed only from weeks labeled Peak), never from global pre-taper max.
-PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX: float = 0.85
+# Minimum long run in calendar Peak weeks as a fraction of **G** (max long run
+# over all pre-taper weeks). Used by ``build_long_run_spine_weeks``.
+PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX: float = 0.85
 
-# Explicit policy flag for implementers: Peak floors must use block-local stats.
-PEAK_LONG_RUN_FLOOR_RELATIVE_TO_PEAK_BLOCK_ONLY: bool = True
+# DEPRECATED: Use PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX instead.
+# This alias exists for backward compatibility and will be removed in a future release.
+PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX: float = (
+    PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX
+)
 
-# Explicit anti-pattern guard (documentation + future asserts): do not key Peak
-# floor off global pre-taper max long run.
-PEAK_LONG_RUN_FORBID_GLOBAL_PRE_TAPER_MAX_FOR_FLOOR: bool = True
+# Explicit policy flag (historical): Peak band in production uses global G.
+PEAK_LONG_RUN_FLOOR_RELATIVE_TO_PEAK_BLOCK_ONLY: bool = False
+
+# Peak long-run floor may reference global pre-taper max (G) for calendar Peak weeks.
+PEAK_LONG_RUN_FORBID_GLOBAL_PRE_TAPER_MAX_FOR_FLOOR: bool = False
 
 # ---------------------------------------------------------------------------
 # Taper phase
@@ -71,6 +77,7 @@ BUILD_AND_BASE_EXEMPT_FROM_PEAK_LONG_RUN_FLOOR: bool = True
 
 __all__ = [
     "PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED",
+    "PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX",
     "PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX",
     "PEAK_LONG_RUN_FLOOR_RELATIVE_TO_PEAK_BLOCK_ONLY",
     "PEAK_LONG_RUN_FORBID_GLOBAL_PRE_TAPER_MAX_FOR_FLOOR",

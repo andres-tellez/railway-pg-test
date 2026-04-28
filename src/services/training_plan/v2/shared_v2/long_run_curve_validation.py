@@ -23,6 +23,23 @@ from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half
 logger = logging.getLogger(__name__)
 
 
+def _calendar_peak_indices_0based(n_weeks: int, taper_weeks: int) -> set[int]:
+    """0-based indices of calendar Peak weeks (last K pre-taper), matching spine policy."""
+    tw = max(0, int(n_weeks))
+    if tw <= 16:
+        k_peak = 3
+    elif tw <= 24:
+        k_peak = 4 if tw >= 22 else 3
+    else:
+        k_peak = 4
+    pre_n = max(0, n_weeks - int(taper_weeks))
+    if pre_n <= 0:
+        return set()
+    k_eff = min(k_peak, pre_n)
+    peak_start = max(0, pre_n - k_eff)
+    return set(range(peak_start, pre_n))
+
+
 class LongRunCurveIssue(TypedDict):
     """Single validation finding (read-only; no mutation of inputs)."""
 
@@ -420,8 +437,14 @@ def _phase_quality_issues(
             )
 
     if post_peak_phase:
+        peak_cal = _calendar_peak_indices_0based(len(lr_values), taper_weeks)
         for i in range(1, len(post_peak_phase)):
             if post_peak_phase[i] > post_peak_phase[i - 1]:
+                idx_b = peak_idx + i + 1
+                # Calendar Peak is an endurance band: allow step-up into Peak and
+                # small non-monotonic variation while idx_b lies in that window.
+                if idx_b in peak_cal:
+                    continue
                 week_num = peak_idx + 1 + i + 1
                 issues.append(
                     _issue(
@@ -436,6 +459,9 @@ def _phase_quality_issues(
                 )
         for i, lr in enumerate(post_peak_phase):
             if lr > peak:
+                week_idx = peak_idx + 1 + i
+                if week_idx in peak_cal:
+                    continue
                 week_num = peak_idx + 1 + i + 1
                 issues.append(
                     _issue(

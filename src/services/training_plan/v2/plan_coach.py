@@ -88,7 +88,7 @@ def build_coach_prompt(
             tasks.append(
                 "MANDATORY: Include at least one bullet that references "
                 "training_invariants.when_discussing_peak_phase and names "
-                "PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX for Peak-phase long runs. "
+                "PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX for Peak-phase long runs. "
                 "That bullet MUST use peak_phase_evidence.max_long_run and "
                 "peak_phase_evidence.min_long_run exactly as given (do not recompute "
                 "from long_run.progression, week lists, or other context). Do not skip "
@@ -99,9 +99,9 @@ def build_coach_prompt(
             tasks.append(
                 "MANDATORY: Include at least one bullet that references "
                 "training_invariants.when_discussing_peak_phase and names "
-                "PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX when describing Peak-phase "
+                "PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX when describing Peak-phase "
                 "long runs. peak_phase_evidence is absent—do not require or invent "
-                "numeric Peak-block max/min miles; explain the invariant in words only "
+                "numeric overall pre-taper-peak max/min miles; explain the invariant in words only "
                 "(no derived mile evidence). Do not skip this bullet. Do not compute "
                 "mile thresholds from the invariant constant itself."
             )
@@ -135,12 +135,12 @@ def build_coach_prompt(
                     "If you discuss the Peak phase (or this plan includes Peak—see "
                     "plan_structure_hints.phases_present), mention that Peak-week long "
                     "runs are kept at or above "
-                    "PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX of the **maximum "
-                    "long run within the Peak block** (before taper)—i.e. the floor is "
-                    "defined inside the Peak block, not from global Build/Base highs. "
+                    "PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX of the **maximum "
+                    "long run over all pre-taper weeks** (the overall pre-taper peak "
+                    "long run—not a Peak-block-local maximum). "
                     "Use peak_phase_evidence.max_long_run and peak_phase_evidence."
-                    "min_long_run (from plan_insights) as the provided Peak-block miles "
-                    "when you explain the block; name the invariant constant but do "
+                    "min_long_run (from plan_insights) as the provided miles "
+                    "when you explain the band; name the invariant constant but do "
                     "not state the constant's numeric factor unless the insights "
                     "payload already includes it."
                 ),
