@@ -91,6 +91,21 @@ from src.utils.timezone_helpers import resolve_timezone
 logger = logging.getLogger(__name__)
 
 
+def _pre_taper_week_slice(weeks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Weeks before the first ``Taper`` phase label (observability only)."""
+    if not weeks:
+        return []
+    taper_start = next(
+        (
+            i
+            for i, w in enumerate(weeks)
+            if str(w.get("phase") or "").strip() == "Taper"
+        ),
+        len(weeks),
+    )
+    return list(weeks[:taper_start])
+
+
 def _weeks_for_peak_observability(ctx: PlanContext) -> List[Dict[str, Any]]:
     """Best-effort training weeks for pre-taper G (observability only)."""
     val = ctx.validation
@@ -118,17 +133,9 @@ def _weeks_for_peak_observability(ctx: PlanContext) -> List[Dict[str, Any]]:
 
 def _pre_taper_long_run_max_g(weeks: List[Dict[str, Any]]) -> Optional[float]:
     """Max long_run_miles over pre-taper weeks (first ``phase == \"Taper\"`` boundary)."""
-    if not weeks:
+    pre = _pre_taper_week_slice(weeks)
+    if not pre:
         return None
-    taper_start = next(
-        (
-            i
-            for i, w in enumerate(weeks)
-            if str(w.get("phase") or "").strip() == "Taper"
-        ),
-        len(weeks),
-    )
-    pre = weeks[:taper_start]
     vals: List[float] = []
     for w in pre:
         lr = w.get("long_run_miles")
@@ -141,36 +148,142 @@ def _pre_taper_long_run_max_g(weeks: List[Dict[str, Any]]) -> Optional[float]:
     return float(max(vals)) if vals else None
 
 
+def _marathon_target_time_total_minutes(target_time: Any) -> Optional[float]:
+    """Parse marathon goal time to total minutes (rough); None if missing/invalid."""
+    if target_time is None:
+        return None
+    s = str(target_time).strip()
+    if not s:
+        return None
+    parts = s.split(":")
+    try:
+        if len(parts) == 3:
+            h, m, sec = int(parts[0]), int(parts[1]), float(parts[2])
+            return h * 60.0 + m + sec / 60.0
+        if len(parts) == 2:
+            h, m = int(parts[0]), int(parts[1])
+            return h * 60.0 + m
+    except (ValueError, TypeError):
+        return None
+    return None
+
+
+def _is_just_finish_primary_goal(primary_goal: Any) -> bool:
+    s = str(primary_goal or "").strip().lower()
+    return s == "just finish" or ("just" in s and "finish" in s)
+
+
+def _goal_peak_expectations_marathon(
+    plan_request: Dict[str, Any],
+) -> Tuple[str, Optional[List[int]], bool]:
+    """
+    Observability-only tier: goal_tier, [lo, hi] miles, requires_peak_touch.
+
+    Transparent rules (no generation side effects).
+    """
+    if _is_just_finish_primary_goal(plan_request.get("primary_goal")):
+        return ("finish", [16, 18], False)
+
+    minutes = _marathon_target_time_total_minutes(plan_request.get("target_time"))
+    if minutes is not None:
+        if minutes <= 3 * 60 + 45:
+            return ("performance", [19, 20], True)
+        if minutes <= 4 * 60 + 15:
+            return ("moderate", [18, 19], False)
+        return ("finish", [16, 18], False)
+
+    return ("moderate", [16, 18], False)
+
+
+def _pre_taper_has_long_run_at_least(
+    weeks: List[Dict[str, Any]],
+    threshold_mi: float,
+) -> bool:
+    pre = _pre_taper_week_slice(weeks)
+    for w in pre:
+        lr = w.get("long_run_miles")
+        if lr is None:
+            continue
+        try:
+            if float(lr) >= threshold_mi - 1e-9:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def build_peak_miles_observability(
     *,
     recommended_peak_miles: Optional[float],
     weeks: List[Dict[str, Any]],
+    plan_request: Optional[Dict[str, Any]] = None,
+    race_type: str = "marathon",
 ) -> Dict[str, Any]:
     """
     JSON-safe peak observability: recommended target vs realized pre-taper max (G).
 
     Soft warning when effective < recommended * 0.95 (does not affect generation).
+    Goal-aware expectations are observability only (marathon).
     """
     eff = _pre_taper_long_run_max_g(weeks)
+    pr = plan_request if isinstance(plan_request, dict) else {}
+
+    goal_tier = "not_applicable"
+    expected_peak_range: Optional[List[int]] = None
+    requires_peak_touch = False
+    meets_expected_range: Optional[bool] = None
+    meets_peak_touch: Optional[bool] = None
+    goal_warnings: List[str] = []
+
+    if str(race_type).strip().lower() == "marathon":
+        goal_tier, expected_peak_range, requires_peak_touch = (
+            _goal_peak_expectations_marathon(pr)
+        )
+        if expected_peak_range is not None and len(expected_peak_range) == 2:
+            lo, hi = float(expected_peak_range[0]), float(expected_peak_range[1])
+            if eff is not None:
+                meets_expected_range = bool(lo <= eff <= hi)
+                if eff < lo:
+                    goal_warnings.append("effective peak below expected range")
+                elif eff > hi:
+                    goal_warnings.append("effective peak above expected range")
+            if requires_peak_touch:
+                touch_at = float(expected_peak_range[1]) - 0.5
+                meets_peak_touch = _pre_taper_has_long_run_at_least(weeks, touch_at)
+                if not meets_peak_touch:
+                    goal_warnings.append("no peak-touch week for performance goal")
+            else:
+                meets_peak_touch = None
+        else:
+            meets_expected_range = None
+            meets_peak_touch = None
+
+    base: Dict[str, Any] = {
+        "recommended_peak_miles": None,
+        "effective_peak_miles": eff,
+        "effective_below_recommended_95pct": False,
+        "warnings": [],
+        "goal_tier": goal_tier,
+        "expected_peak_range": expected_peak_range,
+        "requires_peak_touch": requires_peak_touch,
+        "meets_expected_range": meets_expected_range,
+        "meets_peak_touch": meets_peak_touch,
+        "goal_warnings": list(goal_warnings),
+    }
+
     if recommended_peak_miles is None:
-        return {
-            "recommended_peak_miles": None,
-            "effective_peak_miles": eff,
-            "effective_below_recommended_95pct": False,
-            "warnings": [],
-        }
+        return base
+
     rec = float(recommended_peak_miles)
+    base["recommended_peak_miles"] = rec
     below = False
     warnings: List[str] = []
     if rec > 0.0 and eff is not None and eff < rec * 0.95:
         below = True
         warnings.append("effective_peak_miles is below 95% of recommended_peak_miles")
-    return {
-        "recommended_peak_miles": rec,
-        "effective_peak_miles": eff,
-        "effective_below_recommended_95pct": below,
-        "warnings": warnings,
-    }
+    base["effective_below_recommended_95pct"] = below
+    base["warnings"] = warnings
+    return base
 
 
 class PlanGenerationOrchestratorV2:
@@ -494,6 +607,12 @@ class PlanGenerationOrchestratorV2:
         peak_miles_observability = build_peak_miles_observability(
             recommended_peak_miles=rec_peak,
             weeks=_weeks_for_peak_observability(ctx),
+            plan_request=(
+                ctx.runner_ctx.get("plan_request")
+                if isinstance(ctx.runner_ctx, dict)
+                else None
+            ),
+            race_type=self.race_type,
         )
         context_snapshot = {
             "validation": ctx.validation,
