@@ -7,10 +7,29 @@ primary goal, and calendar length so validation matches runner readiness.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from src.schemas.plan_schema import PrimaryGoal
 from src.services.training_plan.v2.race_configs.base_config import RaceDistanceConfig
+
+# Peak weekly caps (must match ``MarathonConfig.peak_caps``) for callers that omit ``peak_caps``.
+_DEFAULT_MARATHON_PEAK_CAPS: Dict[int, int] = {
+    3: 42,
+    4: 46,
+    5: 50,
+    6: 55,
+}
+
+# Calendar length: avoid stacking short-plan nudges with raised-band selection.
+_MIN_PLAN_WEEKS_FOR_RAISED_PEAK = 18
+
+# Raised peak requires LR ceiling ≥ this (e.g. 50 mpw × 0.40 = 20; 42 × 0.40 = 16.8 → off).
+_MIN_VOLUME_CEILING_MILES_FOR_RAISED_PEAK = 19.0
+
+# ``MarathonConfig.max_long_run_share_by_phase["Peak"]`` — max LR share at peak weekly cap.
+_MARATHON_PEAK_PHASE_LONG_RUN_SHARE = 0.40
+
+_MARATHON_ABSOLUTE_MAX_TARGET_PEAK_MILES = 20.0
 
 
 class RaceConfigPeakOverride:
@@ -58,29 +77,74 @@ def _goal_is_target_time(primary_goal: Optional[str]) -> bool:
     return "target" in s and "time" in s
 
 
+def _expected_peak_mpw(
+    runs_per_week: Optional[int],
+    peak_caps: Optional[Dict[int, int]],
+) -> Optional[float]:
+    if runs_per_week is None:
+        return None
+    caps = peak_caps if peak_caps is not None else _DEFAULT_MARATHON_PEAK_CAPS
+    v = caps.get(int(runs_per_week))
+    if v is None:
+        return None
+    return float(v)
+
+
 def resolve_marathon_adaptive_target_peak_miles(
     *,
     weekly_mileage: float,
     primary_goal: Optional[str],
     plan_length_weeks: Optional[int],
+    runs_per_week: Optional[int] = None,
+    peak_caps: Optional[Dict[int, int]] = None,
+    target_time: Optional[str] = None,
+    peak_phase_long_run_share: float = _MARATHON_PEAK_PHASE_LONG_RUN_SHARE,
 ) -> float:
     """
     Marathon peak long run (miles).
 
-    Volume bands (typical target range):
-        weekly_mileage < 40  -> 16–18 mi
-        40 <= weekly_mileage <= 55 -> 18–20 mi
-        weekly_mileage > 55 -> 20 mi
+    Volume bands (typical target range), driven by effective MPW for band selection:
+        mpw < 40  -> 16–18 mi
+        40 <= mpw <= 55 -> 18–20 mi
+        mpw > 55 -> 20 mi
+
+    **Raised peak:** for Target Time + explicit ``target_time``, sufficient plan length,
+    and volume ceiling (``peak_caps[runs_per_week] * peak share``) ≥ 19 mi, band selection
+    uses ``max(current_mpw, expected_peak_mpw)`` so low current volume can still target
+    a peak LR supported by configured peak-week mileage caps.
 
     Within a band, \"Just Finish\" biases lower, \"Target Time\" biases higher.
     Short calendars nudge the peak down (floored slightly below the band low when needed).
+
+    When ``runs_per_week`` / caps resolve, the result is clamped to the volume-derived
+    ceiling and to 20.0 mi.
     """
     mpw = float(weekly_mileage or 0.0)
     pw = plan_length_weeks
 
-    if mpw < 40.0:
+    expected_peak_mpw = _expected_peak_mpw(runs_per_week, peak_caps)
+    volume_ceiling_miles: Optional[float] = None
+    if expected_peak_mpw is not None and peak_phase_long_run_share > 0:
+        volume_ceiling_miles = float(expected_peak_mpw) * float(
+            peak_phase_long_run_share
+        )
+
+    use_raised_peak = (
+        _goal_is_target_time(primary_goal)
+        and bool(str(target_time or "").strip())
+        and pw is not None
+        and int(pw) >= _MIN_PLAN_WEEKS_FOR_RAISED_PEAK
+        and volume_ceiling_miles is not None
+        and volume_ceiling_miles >= _MIN_VOLUME_CEILING_MILES_FOR_RAISED_PEAK
+    )
+
+    mpw_for_bands = mpw
+    if use_raised_peak and expected_peak_mpw is not None:
+        mpw_for_bands = max(mpw, float(expected_peak_mpw))
+
+    if mpw_for_bands < 40.0:
         lo, hi = 16.0, 18.0
-    elif mpw <= 55.0:
+    elif mpw_for_bands <= 55.0:
         lo, hi = 18.0, 20.0
     else:
         lo, hi = 20.0, 20.0
@@ -108,4 +172,8 @@ def resolve_marathon_adaptive_target_peak_miles(
     peak = max(floor_miles, min(hi, peak))
     peak = round(peak * 2.0) / 2.0
     peak = max(floor_miles, min(hi, peak))
+
+    if volume_ceiling_miles is not None:
+        peak = min(peak, volume_ceiling_miles, _MARATHON_ABSOLUTE_MAX_TARGET_PEAK_MILES)
+
     return float(peak)
