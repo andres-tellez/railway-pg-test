@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, List, Dict, Optional, Union, Tuple
 from datetime import datetime, date
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,10 @@ try:
 except ImportError:
     RaceDistanceConfig = None  # type: ignore
 
+from src.domain.running.invariants import (
+    PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED,
+    PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX,
+)
 from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
 
 
@@ -1006,19 +1011,57 @@ def build_long_run_spine_weeks(
         (i for i, w in enumerate(weeks) if w.get("phase") == "Taper"),
         len(weeks),
     )
-    pre_taper = weeks[:taper_start_idx]
-    if pre_taper:
-        peak_long_run = max(float(w.get("long_run_miles") or 0.0) for w in pre_taper)
-        floor_lr = peak_long_run * 0.85
-        for i, w in enumerate(weeks):
-            if i >= taper_start_idx:
-                break
-            if w.get("phase") != "Peak":
-                continue
-            lr = max(floor_lr, float(w.get("long_run_miles") or 0.0))
+    peak_indices = [
+        i for i in range(taper_start_idx) if weeks[i].get("phase") == "Peak"
+    ]
+    if peak_indices:
+        orig = [float(weeks[i].get("long_run_miles") or 0.0) for i in peak_indices]
+        peak_block_max = max(orig)
+        floor_lr = peak_block_max * PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX
+        for j, i in enumerate(peak_indices):
+            lr = max(floor_lr, orig[j])
             if round_to_half:
                 lr = round_to_half_mile(lr, unit_system=unit_system)
-            w["long_run_miles"] = float(lr)
+            weeks[i]["long_run_miles"] = float(lr)
+
+        if len(peak_indices) >= 2:
+            cur = [float(weeks[i]["long_run_miles"]) for i in peak_indices]
+            if len({round(x, 4) for x in cur}) == 1:
+                hi = cur[0]
+                lo = math.ceil(floor_lr * 2 - 1e-9) / 2.0
+                if lo > hi:
+                    lo = hi
+                n_peak = len(peak_indices)
+                span = hi - lo
+                adjusted: List[float] = []
+                for j in range(n_peak):
+                    t = j / (n_peak - 1)
+                    lr = hi - span * t
+                    if round_to_half:
+                        lr = round_to_half_mile(lr, unit_system=unit_system)
+                    adjusted.append(float(lr))
+                for j in range(1, len(adjusted)):
+                    if adjusted[j] > adjusted[j - 1]:
+                        adjusted[j] = adjusted[j - 1]
+                for j in range(len(adjusted)):
+                    adjusted[j] = max(lo, adjusted[j])
+                for j in range(1, len(adjusted)):
+                    if adjusted[j] > adjusted[j - 1]:
+                        adjusted[j] = adjusted[j - 1]
+                for i, lr in zip(peak_indices, adjusted):
+                    weeks[i]["long_run_miles"] = float(lr)
+
+        if PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED:
+            peak_weeks_before_taper = [weeks[i] for i in peak_indices]
+            peak_lr = max(float(w["long_run_miles"]) for w in peak_weeks_before_taper)
+            floor = peak_lr * PEAK_LONG_RUN_MIN_FRACTION_OF_PEAK_BLOCK_MAX
+            assert all(
+                float(w["long_run_miles"]) >= floor for w in peak_weeks_before_taper
+            ), (
+                "Peak long-run floor (debug): "
+                f"peak_lr={peak_lr}, floor={floor}, "
+                f"miles={[float(w['long_run_miles']) for w in peak_weeks_before_taper]}"
+            )
 
     return weeks
 
