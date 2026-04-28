@@ -85,20 +85,20 @@
       },
       {
         "is_cutback": false,
-        "long_run_miles": 15.0,
+        "long_run_miles": 15.5,
         "phase": "Base",
         "week_label": "2026-01-12",
         "week_number": 2,
         "week_start_date": "2026-01-12",
-        "weekly_mileage": 30.0,
+        "weekly_mileage": 29.5,
         "workouts": [
           {
             "day": "Tue",
-            "distance_miles": 5.0,
+            "distance_miles": 4.0,
             "intensity": "easy",
             "is_quality": false,
             "label": "Easy",
-            "miles": 5.0,
+            "miles": 4.0,
             "pace_guidance": "Easy",
             "type": "easy",
             "workout_description": "Easy aerobic run for recovery and base building",
@@ -118,66 +118,7 @@
           },
           {
             "day": "Sat",
-            "distance_miles": 15.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Long",
-            "miles": 15.0,
-            "pace_guidance": "Easy",
-            "type": "long_run",
-            "workout_description": "Steady easy long run for aerobic endurance",
-            "workout_type": "Long"
-          },
-          {
-            "day": "Sun",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          }
-        ]
-      },
-      {
-        "is_cutback": false,
-        "long_run_miles": 16.0,
-        "phase": "Base",
-        "week_label": "2026-01-19",
-        "week_number": 3,
-        "week_start_date": "2026-01-19",
-        "weekly_mileage": 32.0,
-        "workouts": [
-          {
-            "day": "Tue",
-            "distance_miles": 6.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 6.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          },
-          {
-            "day": "Thu",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          },
-          {
-            "day": "Sat",
-            "distance_miles": 16.0,
+            "distance_miles": 15.5,
             "intensity": "easy",
             "is_quality": false,
             "label": "Long",
@@ -205,18 +146,18 @@
         "is_cutback": false,
         "long_run_miles": 16.5,
         "phase": "Base",
-        "week_label": "2026-01-26",
-        "week_number": 4,
-        "week_start_date": "2026-01-26",
-        "weekly_mileage": 34.5,
+        "week_label": "2026-01-19",
+        "week_number": 3,
+        "week_start_date": "2026-01-19",
+        "weekly_mileage": 32.5,
         "workouts": [
           {
             "day": "Tue",
-            "distance_miles": 8.0,
+            "distance_miles": 6.0,
             "intensity": "easy",
             "is_quality": false,
             "label": "Easy",
-            "miles": 8.0,
+            "miles": 6.0,
             "pace_guidance": "Easy",
             "type": "easy",
             "workout_description": "Easy aerobic run for recovery and base building",
@@ -262,6 +203,65 @@
       },
       {
         "is_cutback": true,
+        "long_run_miles": 12.5,
+        "phase": "Base",
+        "week_label": "2026-01-26",
+        "week_number": 4,
+        "week_start_date": "2026-01-26",
+        "weekly_mileage": 30.5,
+        "workouts": [
+          {
+            "day": "Tue",
+            "distance_miles": 8.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 8.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          },
+          {
+            "day": "Thu",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          },
+          {
+            "day": "Sat",
+            "distance_miles": 12.5,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Long",
+            "miles": 12.0,
+            "pace_guidance": "Easy",
+            "type": "long_run",
+            "workout_description": "Steady easy long run for aerobic endurance",
+            "workout_type": "Long"
+          },
+          {
+            "day": "Sun",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          }
+        ]
+      },
+      {
+        "is_cutback": false,
         "long_run_miles": 12.5,
         "phase": "Base",
         "week_label": "2026-02-02",
@@ -2058,12 +2058,12 @@
       },
       {
         "is_cutback": false,
-        "long_run_miles": 15.0,
+        "long_run_miles": 14.5,
         "phase": "Peak",
         "week_label": "2026-08-17",
         "week_number": 33,
         "week_start_date": "2026-08-17",
-        "weekly_mileage": 33.0,
+        "weekly_mileage": 32.5,
         "workouts": [
           {
             "day": "Tue",
@@ -2091,11 +2091,11 @@
           },
           {
             "day": "Sat",
-            "distance_miles": 15.0,
+            "distance_miles": 14.5,
             "intensity": "easy",
             "is_quality": false,
             "label": "Long",
-            "miles": 15.0,
+            "miles": 14.0,
             "pace_guidance": "Easy",
             "type": "long_run",
             "workout_description": "Steady easy long run for aerobic endurance",
@@ -2117,12 +2117,12 @@
       },
       {
         "is_cutback": false,
-        "long_run_miles": 15.0,
+        "long_run_miles": 15.5,
         "phase": "Peak",
         "week_label": "2026-08-24",
         "week_number": 34,
         "week_start_date": "2026-08-24",
-        "weekly_mileage": 33.0,
+        "weekly_mileage": 33.5,
         "workouts": [
           {
             "day": "Tue",
@@ -2150,66 +2150,7 @@
           },
           {
             "day": "Sat",
-            "distance_miles": 15.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Long",
-            "miles": 15.0,
-            "pace_guidance": "Easy",
-            "type": "long_run",
-            "workout_description": "Steady easy long run for aerobic endurance",
-            "workout_type": "Long"
-          },
-          {
-            "day": "Sun",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          }
-        ]
-      },
-      {
-        "is_cutback": false,
-        "long_run_miles": 16.0,
-        "phase": "Peak",
-        "week_label": "2026-08-31",
-        "week_number": 35,
-        "week_start_date": "2026-08-31",
-        "weekly_mileage": 34.0,
-        "workouts": [
-          {
-            "day": "Tue",
-            "distance_miles": 8.0,
-            "intensity": "very_hard",
-            "is_quality": true,
-            "label": "Intervals",
-            "miles": 8.0,
-            "pace_guidance": "Interval (hard effort, 3-5 min repeats)",
-            "type": "intervals",
-            "workout_description": "High-intensity repeats with recovery jogs between",
-            "workout_type": "Intervals"
-          },
-          {
-            "day": "Thu",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          },
-          {
-            "day": "Sat",
-            "distance_miles": 16.0,
+            "distance_miles": 15.5,
             "intensity": "easy",
             "is_quality": false,
             "label": "Long",
@@ -2235,12 +2176,12 @@
       },
       {
         "is_cutback": false,
-        "long_run_miles": 16.0,
+        "long_run_miles": 16.5,
         "phase": "Peak",
-        "week_label": "2026-09-07",
-        "week_number": 36,
-        "week_start_date": "2026-09-07",
-        "weekly_mileage": 34.0,
+        "week_label": "2026-08-31",
+        "week_number": 35,
+        "week_start_date": "2026-08-31",
+        "weekly_mileage": 34.5,
         "workouts": [
           {
             "day": "Tue",
@@ -2268,7 +2209,66 @@
           },
           {
             "day": "Sat",
-            "distance_miles": 16.0,
+            "distance_miles": 16.5,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Long",
+            "miles": 16.0,
+            "pace_guidance": "Easy",
+            "type": "long_run",
+            "workout_description": "Steady easy long run for aerobic endurance",
+            "workout_type": "Long"
+          },
+          {
+            "day": "Sun",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          }
+        ]
+      },
+      {
+        "is_cutback": false,
+        "long_run_miles": 15.5,
+        "phase": "Peak",
+        "week_label": "2026-09-07",
+        "week_number": 36,
+        "week_start_date": "2026-09-07",
+        "weekly_mileage": 33.5,
+        "workouts": [
+          {
+            "day": "Tue",
+            "distance_miles": 8.0,
+            "intensity": "very_hard",
+            "is_quality": true,
+            "label": "Intervals",
+            "miles": 8.0,
+            "pace_guidance": "Interval (hard effort, 3-5 min repeats)",
+            "type": "intervals",
+            "workout_description": "High-intensity repeats with recovery jogs between",
+            "workout_type": "Intervals"
+          },
+          {
+            "day": "Thu",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          },
+          {
+            "day": "Sat",
+            "distance_miles": 15.5,
             "intensity": "easy",
             "is_quality": false,
             "label": "Long",
@@ -2536,15 +2536,15 @@
   "pass1_rationale": {
     "base_mpw": 38.0,
     "cfg": {
-      "cutEvery": 4,
+      "cutEvery": 3,
       "cutFactor": 0.85,
-      "inc": 1.0,
+      "inc": 1.5,
       "singlePeak": true,
       "taperWeeks": 3
     },
     "consecutive_count": 0,
     "consecutive_runs_detected": false,
-    "global_peak_week_number": 4,
+    "global_peak_week_number": 3,
     "longest_recent": 14.0,
     "mode": "fixed_length",
     "peak_block_peak_week_number": 35,
@@ -2578,8 +2578,7 @@
     "start_rule": "median_single_peak_week_anchor",
     "target_long_run_curve_miles": [
       14.0,
-      15.0,
-      16.0,
+      15.5,
       16.5,
       12.5,
       12.5,
@@ -2609,10 +2608,11 @@
       12.5,
       12.5,
       12.5,
-      15.0,
-      15.0,
-      16.0,
-      16.0,
+      12.5,
+      14.5,
+      15.5,
+      16.5,
+      15.5,
       11.5,
       8.0,
       5.0
@@ -2698,20 +2698,20 @@
       },
       {
         "is_cutback": false,
-        "long_run_miles": 15.0,
+        "long_run_miles": 15.5,
         "phase": "Base",
         "week_label": "2026-01-12",
         "week_number": 2,
         "week_start_date": "2026-01-12",
-        "weekly_mileage": 30.0,
+        "weekly_mileage": 29.5,
         "workouts": [
           {
             "day": "Tue",
-            "distance_miles": 5.0,
+            "distance_miles": 4.0,
             "intensity": "easy",
             "is_quality": false,
             "label": "Easy",
-            "miles": 5.0,
+            "miles": 4.0,
             "pace_guidance": "Easy",
             "type": "easy",
             "workout_description": "Easy aerobic run for recovery and base building",
@@ -2731,66 +2731,7 @@
           },
           {
             "day": "Sat",
-            "distance_miles": 15.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Long",
-            "miles": 15.0,
-            "pace_guidance": "Easy",
-            "type": "long_run",
-            "workout_description": "Steady easy long run for aerobic endurance",
-            "workout_type": "Long"
-          },
-          {
-            "day": "Sun",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          }
-        ]
-      },
-      {
-        "is_cutback": false,
-        "long_run_miles": 16.0,
-        "phase": "Base",
-        "week_label": "2026-01-19",
-        "week_number": 3,
-        "week_start_date": "2026-01-19",
-        "weekly_mileage": 32.0,
-        "workouts": [
-          {
-            "day": "Tue",
-            "distance_miles": 6.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 6.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          },
-          {
-            "day": "Thu",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          },
-          {
-            "day": "Sat",
-            "distance_miles": 16.0,
+            "distance_miles": 15.5,
             "intensity": "easy",
             "is_quality": false,
             "label": "Long",
@@ -2818,18 +2759,18 @@
         "is_cutback": false,
         "long_run_miles": 16.5,
         "phase": "Base",
-        "week_label": "2026-01-26",
-        "week_number": 4,
-        "week_start_date": "2026-01-26",
-        "weekly_mileage": 34.5,
+        "week_label": "2026-01-19",
+        "week_number": 3,
+        "week_start_date": "2026-01-19",
+        "weekly_mileage": 32.5,
         "workouts": [
           {
             "day": "Tue",
-            "distance_miles": 8.0,
+            "distance_miles": 6.0,
             "intensity": "easy",
             "is_quality": false,
             "label": "Easy",
-            "miles": 8.0,
+            "miles": 6.0,
             "pace_guidance": "Easy",
             "type": "easy",
             "workout_description": "Easy aerobic run for recovery and base building",
@@ -2875,6 +2816,65 @@
       },
       {
         "is_cutback": true,
+        "long_run_miles": 12.5,
+        "phase": "Base",
+        "week_label": "2026-01-26",
+        "week_number": 4,
+        "week_start_date": "2026-01-26",
+        "weekly_mileage": 30.5,
+        "workouts": [
+          {
+            "day": "Tue",
+            "distance_miles": 8.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 8.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          },
+          {
+            "day": "Thu",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          },
+          {
+            "day": "Sat",
+            "distance_miles": 12.5,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Long",
+            "miles": 12.0,
+            "pace_guidance": "Easy",
+            "type": "long_run",
+            "workout_description": "Steady easy long run for aerobic endurance",
+            "workout_type": "Long"
+          },
+          {
+            "day": "Sun",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          }
+        ]
+      },
+      {
+        "is_cutback": false,
         "long_run_miles": 12.5,
         "phase": "Base",
         "week_label": "2026-02-02",
@@ -4671,12 +4671,12 @@
       },
       {
         "is_cutback": false,
-        "long_run_miles": 15.0,
+        "long_run_miles": 14.5,
         "phase": "Peak",
         "week_label": "2026-08-17",
         "week_number": 33,
         "week_start_date": "2026-08-17",
-        "weekly_mileage": 33.0,
+        "weekly_mileage": 32.5,
         "workouts": [
           {
             "day": "Tue",
@@ -4704,11 +4704,11 @@
           },
           {
             "day": "Sat",
-            "distance_miles": 15.0,
+            "distance_miles": 14.5,
             "intensity": "easy",
             "is_quality": false,
             "label": "Long",
-            "miles": 15.0,
+            "miles": 14.0,
             "pace_guidance": "Easy",
             "type": "long_run",
             "workout_description": "Steady easy long run for aerobic endurance",
@@ -4730,12 +4730,12 @@
       },
       {
         "is_cutback": false,
-        "long_run_miles": 15.0,
+        "long_run_miles": 15.5,
         "phase": "Peak",
         "week_label": "2026-08-24",
         "week_number": 34,
         "week_start_date": "2026-08-24",
-        "weekly_mileage": 33.0,
+        "weekly_mileage": 33.5,
         "workouts": [
           {
             "day": "Tue",
@@ -4763,66 +4763,7 @@
           },
           {
             "day": "Sat",
-            "distance_miles": 15.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Long",
-            "miles": 15.0,
-            "pace_guidance": "Easy",
-            "type": "long_run",
-            "workout_description": "Steady easy long run for aerobic endurance",
-            "workout_type": "Long"
-          },
-          {
-            "day": "Sun",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          }
-        ]
-      },
-      {
-        "is_cutback": false,
-        "long_run_miles": 16.0,
-        "phase": "Peak",
-        "week_label": "2026-08-31",
-        "week_number": 35,
-        "week_start_date": "2026-08-31",
-        "weekly_mileage": 34.0,
-        "workouts": [
-          {
-            "day": "Tue",
-            "distance_miles": 8.0,
-            "intensity": "very_hard",
-            "is_quality": true,
-            "label": "Intervals",
-            "miles": 8.0,
-            "pace_guidance": "Interval (hard effort, 3-5 min repeats)",
-            "type": "intervals",
-            "workout_description": "High-intensity repeats with recovery jogs between",
-            "workout_type": "Intervals"
-          },
-          {
-            "day": "Thu",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          },
-          {
-            "day": "Sat",
-            "distance_miles": 16.0,
+            "distance_miles": 15.5,
             "intensity": "easy",
             "is_quality": false,
             "label": "Long",
@@ -4848,12 +4789,12 @@
       },
       {
         "is_cutback": false,
-        "long_run_miles": 16.0,
+        "long_run_miles": 16.5,
         "phase": "Peak",
-        "week_label": "2026-09-07",
-        "week_number": 36,
-        "week_start_date": "2026-09-07",
-        "weekly_mileage": 34.0,
+        "week_label": "2026-08-31",
+        "week_number": 35,
+        "week_start_date": "2026-08-31",
+        "weekly_mileage": 34.5,
         "workouts": [
           {
             "day": "Tue",
@@ -4881,7 +4822,66 @@
           },
           {
             "day": "Sat",
-            "distance_miles": 16.0,
+            "distance_miles": 16.5,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Long",
+            "miles": 16.0,
+            "pace_guidance": "Easy",
+            "type": "long_run",
+            "workout_description": "Steady easy long run for aerobic endurance",
+            "workout_type": "Long"
+          },
+          {
+            "day": "Sun",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          }
+        ]
+      },
+      {
+        "is_cutback": false,
+        "long_run_miles": 15.5,
+        "phase": "Peak",
+        "week_label": "2026-09-07",
+        "week_number": 36,
+        "week_start_date": "2026-09-07",
+        "weekly_mileage": 33.5,
+        "workouts": [
+          {
+            "day": "Tue",
+            "distance_miles": 8.0,
+            "intensity": "very_hard",
+            "is_quality": true,
+            "label": "Intervals",
+            "miles": 8.0,
+            "pace_guidance": "Interval (hard effort, 3-5 min repeats)",
+            "type": "intervals",
+            "workout_description": "High-intensity repeats with recovery jogs between",
+            "workout_type": "Intervals"
+          },
+          {
+            "day": "Thu",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          },
+          {
+            "day": "Sat",
+            "distance_miles": 15.5,
             "intensity": "easy",
             "is_quality": false,
             "label": "Long",
