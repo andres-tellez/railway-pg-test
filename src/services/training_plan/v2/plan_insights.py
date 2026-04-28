@@ -11,6 +11,16 @@ from typing import Any, Dict, List
 from src.services.training_plan.v2.plan_context import PlanContext
 
 
+def _peak_weeks_before_taper(weeks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    taper_start = next(
+        (i for i, w in enumerate(weeks) if w.get("phase") == "Taper"),
+        len(weeks),
+    )
+    return [
+        w for i, w in enumerate(weeks) if i < taper_start and w.get("phase") == "Peak"
+    ]
+
+
 def build_plan_insights(context: PlanContext) -> Dict[str, Any]:
     """
     Extracts a structured summary from PlanContext without recomputing logic.
@@ -38,6 +48,19 @@ def build_plan_insights(context: PlanContext) -> Dict[str, Any]:
     peak_week_index = (
         (long_runs.index(peak_long_run) + 1) if peak_long_run in long_runs else None
     )
+
+    peak_before_taper = _peak_weeks_before_taper(weeks)
+    peak_block_lrs: List[float] = []
+    for w in peak_before_taper:
+        lr = w.get("long_run_miles")
+        if lr is not None:
+            peak_block_lrs.append(float(lr))
+    peak_phase_evidence: Dict[str, Any] | None = None
+    if peak_block_lrs:
+        peak_phase_evidence = {
+            "max_long_run": max(peak_block_lrs),
+            "min_long_run": min(peak_block_lrs),
+        }
 
     first_three = weeks[:3]
 
@@ -69,4 +92,5 @@ def build_plan_insights(context: PlanContext) -> Dict[str, Any]:
         "spine_quality": {
             "issues": spine_issues,
         },
+        "peak_phase_evidence": peak_phase_evidence,
     }
