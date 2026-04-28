@@ -10,7 +10,6 @@ from __future__ import annotations
 from typing import Any, List, Dict, Optional, Union, Tuple
 from datetime import datetime, date
 import logging
-import math
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +70,53 @@ def compute_long_run_peak_week_metadata(
         if abs(_lr(w) - pb_max) <= 0.05:
             out["peak_block_peak_week_number"] = int(w.get("week_number") or 0) or None
             break
+    return out
+
+
+def _coached_peak_long_run_miles(
+    n_peak: int,
+    lo: float,
+    hi: float,
+    *,
+    round_to_half: bool,
+    unit_system: str,
+) -> List[float]:
+    """
+    Intentional calendar Peak long-run pattern: ramp to apex, then one step down
+    (e.g. 18 → 19 → 20 → 19 when ``hi`` is 20). Values are clamped to ``[lo, hi]``
+    and optionally rounded to half-mile increments.
+    """
+    if n_peak <= 0:
+        return []
+    hi_f = float(hi)
+    lo_f = float(lo)
+    if hi_f < lo_f:
+        lo_f, hi_f = hi_f, lo_f
+    if n_peak == 1:
+        raw: List[float] = [hi_f]
+    elif n_peak == 2:
+        raw = [max(lo_f, hi_f - 1.0), hi_f]
+    elif n_peak == 3:
+        raw = [max(lo_f, hi_f - 1.5), hi_f, max(lo_f, hi_f - 1.0)]
+    else:
+        raw = [
+            max(lo_f, hi_f - 2.0),
+            max(lo_f, hi_f - 1.0),
+            hi_f,
+            max(lo_f, hi_f - 1.0),
+        ]
+        if n_peak > 4:
+            raw.extend([max(lo_f, hi_f - 1.0)] * (n_peak - 4))
+    raw = raw[:n_peak]
+    while len(raw) < n_peak:
+        raw.append(max(lo_f, hi_f - 1.0))
+
+    out: List[float] = []
+    for x in raw:
+        v = float(max(lo_f, min(hi_f, x)))
+        if round_to_half:
+            v = float(round_to_half_mile(v, unit_system=unit_system))
+        out.append(max(lo_f, min(hi_f, v)))
     return out
 
 
@@ -1026,51 +1072,15 @@ def build_long_run_spine_weeks(
                 lo = float(hi)
 
             n_peak = len(peak_indices)
-            clamped: List[float] = []
-            for i in peak_indices:
-                v = float(weeks[i].get("long_run_miles") or 0.0)
-                v = max(lo, min(hi, v))
-                if round_to_half:
-                    v = round_to_half_mile(v, unit_system=unit_system)
-                v = max(lo, min(hi, float(v)))
-                clamped.append(v)
-
-            if n_peak == 1:
-                weeks[peak_indices[0]]["long_run_miles"] = clamped[0]
-            else:
-                adjusted: List[float] = []
-                for j in range(n_peak):
-                    t = j / (n_peak - 1)
-                    span = hi - lo
-                    descent = hi - span * (0.3 * t)
-                    osc = 0.0
-                    if span >= 1.0:
-                        osc = 0.5 * math.sin(math.pi * t)
-                    elif span >= 0.5:
-                        osc = 0.25 * math.sin(math.pi * t)
-                    cand = descent + osc
-                    cand = max(lo, min(hi, cand))
-                    if round_to_half:
-                        cand = round_to_half_mile(cand, unit_system=unit_system)
-                    cand = max(lo, min(hi, float(cand)))
-                    blended = max(lo, min(hi, 0.65 * cand + 0.35 * clamped[j]))
-                    if round_to_half:
-                        blended = round_to_half_mile(blended, unit_system=unit_system)
-                    blended = max(lo, min(hi, float(blended)))
-                    adjusted.append(blended)
-
-                if len({round(x, 2) for x in adjusted}) == 1 and (hi - lo) >= 0.5:
-                    for j in range(n_peak):
-                        bump = (j - (n_peak - 1) / 2.0) * 0.5
-                        adjusted[j] = max(lo, min(hi, adjusted[j] + bump))
-                        if round_to_half:
-                            adjusted[j] = round_to_half_mile(
-                                adjusted[j], unit_system=unit_system
-                            )
-                        adjusted[j] = max(lo, min(hi, float(adjusted[j])))
-
-                for idx, lr in zip(peak_indices, adjusted):
-                    weeks[idx]["long_run_miles"] = float(lr)
+            pattern = _coached_peak_long_run_miles(
+                n_peak,
+                float(lo),
+                float(hi),
+                round_to_half=round_to_half,
+                unit_system=unit_system,
+            )
+            for idx, lr in zip(peak_indices, pattern):
+                weeks[idx]["long_run_miles"] = float(lr)
 
             if PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED:
                 peak_weeks_before_taper = [weeks[i] for i in peak_indices]

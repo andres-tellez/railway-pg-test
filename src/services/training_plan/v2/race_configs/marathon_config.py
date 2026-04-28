@@ -14,13 +14,13 @@ class MarathonConfig(RaceDistanceConfig):
     # Long Run Progression
     @property
     def long_run_increment(self) -> float:
-        """Default +1 mile build step during Base/Build."""
-        return 1.0
+        """Build-step miles between deload weeks (~1.5 mi for a 2-build + cutback cadence)."""
+        return 1.5
 
     @property
     def cutback_every(self) -> int:
-        """Run a cutback every 4 build weeks."""
-        return 4
+        """Micro-cycle: cutback on the 3rd build week (build → build → cutback)."""
+        return 3
 
     @property
     def cutback_factor(self) -> float:
