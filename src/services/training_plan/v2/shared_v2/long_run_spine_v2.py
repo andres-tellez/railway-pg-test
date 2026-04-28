@@ -1000,7 +1000,27 @@ def build_long_run_spine_weeks(
         config=config,
     )
 
-    return _week_dicts_from_long_run_curve(curve, taper_weeks=taper_weeks)
+    weeks = _week_dicts_from_long_run_curve(curve, taper_weeks=taper_weeks)
+
+    taper_start_idx = next(
+        (i for i, w in enumerate(weeks) if w.get("phase") == "Taper"),
+        len(weeks),
+    )
+    pre_taper = weeks[:taper_start_idx]
+    if pre_taper:
+        peak_long_run = max(float(w.get("long_run_miles") or 0.0) for w in pre_taper)
+        floor_lr = peak_long_run * 0.85
+        for i, w in enumerate(weeks):
+            if i >= taper_start_idx:
+                break
+            if w.get("phase") != "Peak":
+                continue
+            lr = max(floor_lr, float(w.get("long_run_miles") or 0.0))
+            if round_to_half:
+                lr = round_to_half_mile(lr, unit_system=unit_system)
+            w["long_run_miles"] = float(lr)
+
+    return weeks
 
 
 def generate_long_run_spine(
