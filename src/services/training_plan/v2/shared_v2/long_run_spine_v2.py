@@ -98,6 +98,59 @@ def _peak_four_week_ladder(lo_f: float, hi_f: float) -> List[float]:
     return [v0, v1, v2, v3]
 
 
+# Miles within this band are treated as duplicates for Peak week-to-week UX.
+_PEAK_LR_ADJ_DUP_TOL_MI = 0.06
+
+
+def _bump_adjacent_duplicate_peak_long_runs_revisit(
+    peak_miles: List[float],
+    lo_f: float,
+    hi_f: float,
+    *,
+    round_to_half: bool,
+    unit_system: str,
+) -> None:
+    """
+    Break **adjacent** Peak long runs that are still equal after ladder + rounding.
+
+    **Why this exists:** :func:`_peak_four_week_ladder` and half-mile rounding can
+    still yield duplicate early Peak weeks in tight ``[lo, hi]`` bands, or consumer
+    paths can collapse half-miles—athletes then see a flat plateau (e.g. 18, 18, …)
+    despite headroom below ``hi``.
+
+    **What it does:** Single left-to-right pass; if week *i* equals week *i−1*
+    (within :data:`_PEAK_LR_ADJ_DUP_TOL_MI`) and is strictly below ``hi``, add
+    the smallest progress step (0.5 mi if ``round_to_half`` else 1.0 mi), clamp
+    to ``[lo_f, hi_f]``, and re-apply half-mile rounding when enabled.
+
+    **REVISIT (product + coaching policy):** This is a pragmatic guardrail, not a
+    full progression model. Replace with a single explicit Peak sequence contract
+    (including max jump, LR share of week, and 3- vs 4-week Peak blocks) so we do
+    not stack ad-hoc fixes. Track when revisiting: coached ladder, placement
+    integer miles, and Pass3 ``round_workout_distance`` should stay aligned.
+
+    Mutates ``peak_miles`` in place.
+    """
+    if len(peak_miles) < 2:
+        return
+    step = 0.5 if round_to_half else 1.0
+    tol = _PEAK_LR_ADJ_DUP_TOL_MI
+    for i in range(1, len(peak_miles)):
+        prev = float(peak_miles[i - 1])
+        cur = float(peak_miles[i])
+        if abs(cur - prev) > tol:
+            continue
+        if cur >= hi_f - 1e-9:
+            continue
+        bumped = float(cur + step)
+        if round_to_half:
+            bumped = float(round_to_half_mile(bumped, unit_system=unit_system))
+        bumped = max(lo_f, min(hi_f, bumped))
+        if bumped <= cur + tol:
+            continue
+        peak_miles[i] = bumped
+
+
 def _coached_peak_long_run_miles(
     n_peak: int,
     lo: float,
@@ -139,6 +192,9 @@ def _coached_peak_long_run_miles(
         if round_to_half:
             v = float(round_to_half_mile(v, unit_system=unit_system))
         out.append(max(lo_f, min(hi_f, v)))
+    _bump_adjacent_duplicate_peak_long_runs_revisit(
+        out, lo_f, hi_f, round_to_half=round_to_half, unit_system=unit_system
+    )
     return out
 
 
