@@ -2117,12 +2117,12 @@
       },
       {
         "is_cutback": false,
-        "long_run_miles": 17.0,
+        "long_run_miles": 17.5,
         "phase": "Peak",
         "week_label": "2026-08-24",
         "week_number": 34,
         "week_start_date": "2026-08-24",
-        "weekly_mileage": 35.0,
+        "weekly_mileage": 35.5,
         "workouts": [
           {
             "day": "Tue",
@@ -2150,11 +2150,11 @@
           },
           {
             "day": "Sat",
-            "distance_miles": 17.0,
+            "distance_miles": 17.5,
             "intensity": "easy",
             "is_quality": false,
             "label": "Long",
-            "miles": 17.0,
+            "miles": 18.0,
             "pace_guidance": "Easy",
             "type": "long_run",
             "workout_description": "Steady easy long run for aerobic endurance",
@@ -2610,7 +2610,7 @@
       14.0,
       14.0,
       16.5,
-      17.0,
+      17.5,
       18.5,
       17.5,
       13.0,
@@ -4730,12 +4730,12 @@
       },
       {
         "is_cutback": false,
-        "long_run_miles": 17.0,
+        "long_run_miles": 17.5,
         "phase": "Peak",
         "week_label": "2026-08-24",
         "week_number": 34,
         "week_start_date": "2026-08-24",
-        "weekly_mileage": 35.0,
+        "weekly_mileage": 35.5,
         "workouts": [
           {
             "day": "Tue",
@@ -4763,11 +4763,11 @@
           },
           {
             "day": "Sat",
-            "distance_miles": 17.0,
+            "distance_miles": 17.5,
             "intensity": "easy",
             "is_quality": false,
             "label": "Long",
-            "miles": 17.0,
+            "miles": 18.0,
             "pace_guidance": "Easy",
             "type": "long_run",
             "workout_description": "Steady easy long run for aerobic endurance",
