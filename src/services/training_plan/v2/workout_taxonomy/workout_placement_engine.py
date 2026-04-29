@@ -71,6 +71,7 @@ from .workout_definitions import (
 )
 from .weekly_templates import get_template
 from .placement_rules import get_rules, validate_placement
+from src.services.training_plan.v2.shared_v2.rounding_utils import whole_miles_half_up
 
 logger = logging.getLogger(__name__)
 
@@ -962,7 +963,7 @@ class WorkoutPlacementEngine:
             result[day] = {
                 "day": day,
                 "type": workout_type,
-                "miles": int(round(miles)),
+                "miles": whole_miles_half_up(miles),
                 "distance_miles": float(miles),
                 "label": short_label,
                 "workout_type": short_label,

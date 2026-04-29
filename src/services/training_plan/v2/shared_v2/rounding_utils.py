@@ -7,6 +7,8 @@ internally. All rounding happens in miles for consistency - frontend handles
 unit conversion for display using toDisplayDistance().
 """
 
+import math
+
 # Conversion constants
 MI_TO_KM = 1.609344
 KM_TO_MI = 1 / MI_TO_KM
@@ -69,6 +71,20 @@ def round_to_half_mile(value: float, unit_system: str = "imperial") -> float:
     """
     # Always round to 0.5 miles (unit_system parameter ignored for consistency)
     return round(value * 2) / 2.0
+
+
+def whole_miles_half_up(miles: float) -> int:
+    """
+    Integer miles for athlete-facing workout fields.
+
+    Python's ``round()`` uses banker's rounding (e.g. ``round(18.5)`` is ``18``),
+    which collapsed Peak long-run targets like **18.5 mi** to **18** in placement.
+    Here, positive half-miles always round up to the next whole mile.
+    """
+    x = float(miles)
+    if x <= 0:
+        return 0
+    return int(math.floor(x + 0.5))
 
 
 def round_to_whole_mile(
