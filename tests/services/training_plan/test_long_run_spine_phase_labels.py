@@ -66,6 +66,15 @@ def test_coached_peak_four_week_ramp_no_duplicate_opening_weeks() -> None:
     assert out[3] < out[2]
 
 
+def test_coached_peak_band_175_195_no_colliding_whole_mile_display() -> None:
+    """17.5 vs 18.0 spine both round to 18 mi in the UI; bump week 2 to 18.5 (→19)."""
+    out = _coached_peak_long_run_miles(
+        4, 17.5, 19.5, round_to_half=True, unit_system="imperial"
+    )
+    assert out[:2] == [17.5, 18.5]
+    assert out[2] == 19.5
+
+
 def test_assign_training_intent_phases_trailing_peak_and_peak_flag():
     # n=6, taper 2 → pre_count=4; total_weeks 6 → K=3; Peak = last 3 weeks (indices 1,2,3)
     weeks = [
