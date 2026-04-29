@@ -73,6 +73,31 @@ def compute_long_run_peak_week_metadata(
     return out
 
 
+def _peak_four_week_ladder(lo_f: float, hi_f: float) -> List[float]:
+    """
+    Exactly four Peak weeks: climb by half-mile steps to apex, then one step down.
+
+    Avoids duplicate mileage in weeks 1–2 (e.g. 18, 18, …) when ``[lo, hi]`` still
+    has room for a proper ramp (typical marathon: 18 → 19 → 20 → 19).
+    """
+    apex = float(hi_f)
+    lo_f = float(lo_f)
+    v0 = max(lo_f, min(apex, apex - 2.0))
+    # Second week: one half-mile above v0, stay strictly below apex for a two-step ramp
+    v1 = max(lo_f, min(apex - 0.5, v0 + 0.5))
+    if v1 <= v0 and apex - v0 >= 1.0:
+        v1 = min(apex - 0.5, v0 + 0.5)
+        v1 = max(lo_f, v1)
+    v2 = apex
+    v1 = min(v1, v2 - 0.5)
+    v1 = max(lo_f, v1)
+    # Down week: prefer apex − 1 mi within band, never at or above apex
+    v3 = max(lo_f, min(apex - 0.5, apex - 1.0))
+    v3 = min(v3, v2 - 0.5)
+    v3 = max(lo_f, v3)
+    return [v0, v1, v2, v3]
+
+
 def _coached_peak_long_run_miles(
     n_peak: int,
     lo: float,
@@ -98,15 +123,12 @@ def _coached_peak_long_run_miles(
         raw = [max(lo_f, hi_f - 1.0), hi_f]
     elif n_peak == 3:
         raw = [max(lo_f, hi_f - 1.5), hi_f, max(lo_f, hi_f - 1.0)]
+    elif n_peak == 4:
+        raw = _peak_four_week_ladder(lo_f, hi_f)
     else:
-        raw = [
-            max(lo_f, hi_f - 2.0),
-            max(lo_f, hi_f - 1.0),
-            hi_f,
-            max(lo_f, hi_f - 1.0),
-        ]
-        if n_peak > 4:
-            raw.extend([max(lo_f, hi_f - 1.0)] * (n_peak - 4))
+        head = _peak_four_week_ladder(lo_f, hi_f)
+        tail_val = max(lo_f, min(hi_f - 0.5, hi_f - 1.0))
+        raw = head + [tail_val] * (n_peak - 4)
     raw = raw[:n_peak]
     while len(raw) < n_peak:
         raw.append(max(lo_f, hi_f - 1.0))
@@ -1078,6 +1100,14 @@ def build_long_run_spine_weeks(
                 float(hi),
                 round_to_half=round_to_half,
                 unit_system=unit_system,
+            )
+            logger.debug(
+                "Peak LR coached pattern: G=%.2f lo=%.2f hi=%.2f n_peak=%d miles=%s",
+                float(G),
+                float(lo),
+                float(hi),
+                n_peak,
+                [float(x) for x in pattern],
             )
             for idx, lr in zip(peak_indices, pattern):
                 weeks[idx]["long_run_miles"] = float(lr)
