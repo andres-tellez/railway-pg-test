@@ -104,7 +104,7 @@ def test_build_target_long_run_curve_matches_spine_dynamic_length_golden(
         19.0,
         17.0,
         18.0,
-        19.0,
+        18.5,
         20.0,
         19.0,
         14.0,

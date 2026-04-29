@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src.services.training_plan.v2.race_configs.marathon_config import MarathonConfig
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
+    _coached_peak_long_run_miles,
     assign_training_intent_phases,
     build_long_run_spine_weeks,
     capped_peak_training_weeks,
@@ -26,6 +27,17 @@ def test_capped_peak_training_weeks_table():
     assert capped_peak_training_weeks(24) == 4
     assert capped_peak_training_weeks(25) == 4
     assert capped_peak_training_weeks(40) == 4
+
+
+def test_coached_peak_four_week_ramp_no_duplicate_opening_weeks() -> None:
+    """Peak block should step up by half miles (no 18, 18, 20 plateaus)."""
+    out = _coached_peak_long_run_miles(
+        4, 17.0, 20.0, round_to_half=True, unit_system="imperial"
+    )
+    assert out == [18.0, 18.5, 20.0, 19.0]
+    assert out[1] > out[0]
+    assert out[2] > out[1]
+    assert out[3] < out[2]
 
 
 def test_assign_training_intent_phases_trailing_peak_and_peak_flag():
