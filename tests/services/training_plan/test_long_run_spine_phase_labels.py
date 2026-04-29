@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src.services.training_plan.v2.race_configs.marathon_config import MarathonConfig
 from src.services.training_plan.v2.shared_v2.long_run_spine_v2 import (
+    _bump_adjacent_duplicate_peak_long_runs_revisit,
     _coached_peak_long_run_miles,
     assign_training_intent_phases,
     build_long_run_spine_weeks,
@@ -27,6 +28,31 @@ def test_capped_peak_training_weeks_table():
     assert capped_peak_training_weeks(24) == 4
     assert capped_peak_training_weeks(25) == 4
     assert capped_peak_training_weeks(40) == 4
+
+
+def test_bump_adjacent_duplicate_peak_long_runs_revisit_breaks_plateau() -> None:
+    """Guardrail: equal adjacent Peak LRs get a small step when below ``hi``."""
+    peak = [18.0, 18.0, 20.0, 19.0]
+    _bump_adjacent_duplicate_peak_long_runs_revisit(
+        peak, 17.0, 20.0, round_to_half=True, unit_system="imperial"
+    )
+    assert peak == [18.0, 18.5, 20.0, 19.0]
+
+
+def test_bump_adjacent_duplicate_peak_long_runs_revisit_whole_mile_step() -> None:
+    peak = [18.0, 18.0]
+    _bump_adjacent_duplicate_peak_long_runs_revisit(
+        peak, 17.0, 20.0, round_to_half=False, unit_system="imperial"
+    )
+    assert peak == [18.0, 19.0]
+
+
+def test_bump_adjacent_duplicate_peak_long_runs_revisit_no_room_at_ceiling() -> None:
+    peak = [20.0, 20.0]
+    _bump_adjacent_duplicate_peak_long_runs_revisit(
+        peak, 18.0, 20.0, round_to_half=True, unit_system="imperial"
+    )
+    assert peak == [20.0, 20.0]
 
 
 def test_coached_peak_four_week_ramp_no_duplicate_opening_weeks() -> None:
