@@ -25,7 +25,10 @@ from src.domain.running.invariants import (
     PEAK_LONG_RUN_FLOOR_DEBUG_ASSERT_ENABLED,
     PEAK_LONG_RUN_MIN_FRACTION_OF_GLOBAL_PRE_TAPER_MAX,
 )
-from src.services.training_plan.v2.shared_v2.rounding_utils import round_to_half_mile
+from src.services.training_plan.v2.shared_v2.rounding_utils import (
+    round_to_half_mile,
+    whole_miles_half_up,
+)
 
 
 def compute_long_run_peak_week_metadata(
@@ -151,6 +154,49 @@ def _bump_adjacent_duplicate_peak_long_runs_revisit(
         peak_miles[i] = bumped
 
 
+def _bump_peak_long_runs_when_whole_mile_display_collides(
+    peak_miles: List[float],
+    lo_f: float,
+    hi_f: float,
+    *,
+    round_to_half: bool,
+    unit_system: str,
+) -> None:
+    """
+    If two adjacent Peak spine miles differ but **athlete-facing whole miles** match
+    (via :func:`whole_miles_half_up`), bump the later week so the overview does not
+    show a false plateau (e.g. **17.5** and **18.0** both render as **18**).
+
+    Mutates ``peak_miles`` in place. Re-run until stable so a single +0.5 can clear
+    stacked collisions (e.g. **17.5 → 18.0** still collides until **18.5**).
+    """
+    if len(peak_miles) < 2:
+        return
+    step = 0.5 if round_to_half else 1.0
+    max_passes = max(4, len(peak_miles) + 2)
+    for _ in range(max_passes):
+        changed = False
+        for i in range(1, len(peak_miles)):
+            prev = float(peak_miles[i - 1])
+            cur = float(peak_miles[i])
+            if whole_miles_half_up(prev) != whole_miles_half_up(cur):
+                continue
+            if cur >= hi_f - 1e-9:
+                continue
+            bumped = cur + step
+            if round_to_half:
+                bumped = float(round_to_half_mile(bumped, unit_system=unit_system))
+            bumped = max(lo_f, min(hi_f, bumped))
+            if bumped <= cur + 1e-9:
+                continue
+            if whole_miles_half_up(bumped) == whole_miles_half_up(prev):
+                continue
+            peak_miles[i] = bumped
+            changed = True
+        if not changed:
+            break
+
+
 def _coached_peak_long_run_miles(
     n_peak: int,
     lo: float,
@@ -193,6 +239,9 @@ def _coached_peak_long_run_miles(
             v = float(round_to_half_mile(v, unit_system=unit_system))
         out.append(max(lo_f, min(hi_f, v)))
     _bump_adjacent_duplicate_peak_long_runs_revisit(
+        out, lo_f, hi_f, round_to_half=round_to_half, unit_system=unit_system
+    )
+    _bump_peak_long_runs_when_whole_mile_display_collides(
         out, lo_f, hi_f, round_to_half=round_to_half, unit_system=unit_system
     )
     return out
