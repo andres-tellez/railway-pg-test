@@ -1157,12 +1157,17 @@ def build_long_run_spine_weeks(
                 round_to_half=round_to_half,
                 unit_system=unit_system,
             )
-            logger.debug(
-                "Peak LR coached pattern: G=%.2f lo=%.2f hi=%.2f n_peak=%d miles=%s",
+            peak_week_numbers = [
+                int(weeks[i].get("week_number") or 0) for i in peak_indices
+            ]
+            logger.info(
+                "[peak_lr_spine] coached_peak_long_run_miles G=%.2f lo=%.2f hi=%.2f "
+                "n_peak=%d week_numbers=%s miles=%s",
                 float(G),
                 float(lo),
                 float(hi),
                 n_peak,
+                peak_week_numbers,
                 [float(x) for x in pattern],
             )
             for idx, lr in zip(peak_indices, pattern):

@@ -175,6 +175,33 @@ class Pass3WorkoutDistribution:
                             )
                     workouts.append(workout_data)
 
+            if str(phase).strip().lower() == "peak":
+                peak_lr_row = next(
+                    (
+                        x
+                        for x in workouts
+                        if x.get("type") == "long_run" and x.get("day") == long_run_day
+                    ),
+                    None,
+                )
+                if peak_lr_row is not None:
+                    logger.info(
+                        "[pass3_peak_lr] week_number=%s skel_long_run_mi=%.2f weekly_total=%.1f "
+                        "long_run_day=%s placed_miles=%s placed_distance_miles=%s",
+                        week_num,
+                        long_run,
+                        weekly_total,
+                        long_run_day,
+                        peak_lr_row.get("miles"),
+                        peak_lr_row.get("distance_miles"),
+                    )
+                else:
+                    logger.warning(
+                        "[pass3_peak_lr] week_number=%s no long_run on long_run_day=%s in schedule",
+                        week_num,
+                        long_run_day,
+                    )
+
             logger.debug(
                 f"Week {week_num} ({phase}): Distributed {len(workouts)} workouts "
                 f"using template-based placement"
