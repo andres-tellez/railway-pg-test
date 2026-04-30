@@ -1,5 +1,9 @@
 # db/dao/plans_py
 
+from __future__ import annotations
+
+from uuid import UUID
+
 from sqlalchemy.orm import Session
 
 from src.db.models.activities import Activity
@@ -8,6 +12,15 @@ from src.db.models.plans import Plan
 from src.db.models.user_phase_goals import UserPhaseGoal
 from src.db.models.weekly_decision_log import WeeklyDecisionLog
 from src.db.models.weekly_metrics import WeeklyMetrics
+
+
+def _plan_user_id_key(user_id: str) -> UUID | str:
+    """``plans.user_id`` is UUID on PostgreSQL; ORM compares reliably with UUID, not plain str."""
+    try:
+        return UUID(str(user_id))
+    except (ValueError, TypeError, AttributeError):
+        return str(user_id)
+
 
 _ACTIVITY_PLAN_SCORING_CLEAR = {
     Activity.matched_plan_workout_id: None,
@@ -45,9 +58,10 @@ def get_plan(session: Session, plan_id: int) -> Plan | None:
 
 
 def list_plans_for_user(session: Session, user_id: str) -> list[Plan]:
+    uid = _plan_user_id_key(user_id)
     return (
         session.query(Plan)
-        .filter_by(user_id=user_id)
+        .filter_by(user_id=uid)
         .order_by(Plan.created_at.desc())
         .all()
     )
@@ -58,7 +72,7 @@ def get_plan_with_workouts(
 ) -> dict | None:
     query = session.query(Plan).filter(Plan.id == plan_id)
     if user_id:
-        query = query.filter(Plan.user_id == user_id)
+        query = query.filter(Plan.user_id == _plan_user_id_key(user_id))
 
     plan = query.first()
     if not plan:
@@ -95,7 +109,8 @@ def get_plan_with_workouts(
 
 def get_active_plan(session: Session, user_id: str) -> Plan | None:
     """Get the currently active plan for a user."""
-    return session.query(Plan).filter_by(user_id=user_id, is_active=True).first()
+    uid = _plan_user_id_key(user_id)
+    return session.query(Plan).filter_by(user_id=uid, is_active=True).first()
 
 
 def set_plan_active(session: Session, plan_id: int, user_id: str) -> bool:
@@ -106,7 +121,8 @@ def set_plan_active(session: Session, plan_id: int, user_id: str) -> bool:
         return False
 
     # Deactivate all plans for this user
-    session.query(Plan).filter_by(user_id=user_id).update({"is_active": False})
+    uid = _plan_user_id_key(user_id)
+    session.query(Plan).filter_by(user_id=uid).update({"is_active": False})
 
     # Activate the specified plan
     plan.is_active = True

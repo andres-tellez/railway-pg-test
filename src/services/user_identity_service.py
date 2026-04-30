@@ -43,9 +43,9 @@ def get_user_status(user_id: str) -> dict:
     session = get_session()
     try:
         has_onboarded = (
-            session.execute(
+            session.scalars(
                 select(UserProfile).where(UserProfile.user_id == user_id_str)
-            ).scalar_one_or_none()
+            ).first()
             is not None
         )
 
