@@ -21,7 +21,7 @@ Key Features:
 
 Sync Strategies:
 - Incremental: Fetches activities since last sync timestamp (default)
-- Full: Fetches all activities within lookback period (first sync or force flag)
+- Full: Fetches activities from Strava within the ingest lookback window (first sync or force flag); see `STRAVA_INGEST_LOOKBACK_WEEKS` in `strava_reconciliation_service`
 
 Processing Flow:
 1. Validate athlete_id and parameters
@@ -105,6 +105,7 @@ from src.utils.strava_exceptions import (
 from src.db.dao.strava_sync_status_dao import StravaSyncStatusDAO
 from src.utils.rate_limiter import get_rate_limiter
 from src.services.strava_reconciliation_service import (
+    STRAVA_INGEST_LOOKBACK_WEEKS,
     compute_strava_six_week_window,
     filter_strava_runs_in_six_week_window,
 )
@@ -338,7 +339,8 @@ def run_full_ingestion_and_enrichment(
             )
         else:
             logger.info(
-                f"🔄 Full sync: fetching activities from {six_week_start_dt.isoformat()} (last 6 full weeks + current week)"
+                f"🔄 Full sync: fetching activities from {six_week_start_dt.isoformat()} "
+                f"(last {STRAVA_INGEST_LOOKBACK_WEEKS} full weeks + current week)"
             )
 
         logger.info(

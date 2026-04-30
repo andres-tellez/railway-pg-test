@@ -57,6 +57,12 @@ SECRET_KEY=supersecretkey
 
 ---
 
+## Strava activity sync (rolling window)
+
+Full sync, filtering after fetch, and `GET .../strava/sync-health` share one window: runs with `start_date` on or after **Monday 00:00 UTC** of the **N**th full ISO week before the current week start, through now. **N** is `STRAVA_INGEST_LOOKBACK_WEEKS` in `src/services/strava_reconciliation_service.py` (currently **3**).
+
+---
+
 ## 💻 Running Locally
 
 ```bash
