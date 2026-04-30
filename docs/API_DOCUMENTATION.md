@@ -545,6 +545,16 @@ If unauthenticated `POST` returns Werkzeug **404**, the deployed build does not 
 
 ---
 
+### GET /api/strava/sync-health
+
+**Description:** Compare Strava run activity IDs to the database for the same rolling window as ingestion full sync (Monday 00:00 UTC at the start of **`STRAVA_INGEST_LOOKBACK_WEEKS`** full ISO weeks before the current week, through now — see `src/services/strava_reconciliation_service.py`; currently **3** weeks).
+
+**Authentication:** Required (Bearer token)
+
+**Notes:** Read-only for the database; may call the Strava activities list API to build the diff.
+
+---
+
 ## Error Response Format
 
 All error responses follow this standard format:
