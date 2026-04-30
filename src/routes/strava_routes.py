@@ -701,7 +701,8 @@ def get_strava_status():
 @requires_auth
 def strava_sync_health():
     """
-    Compare Strava Run IDs vs DB for the same ~6-week window used by ingestion.
+    Compare Strava Run IDs vs DB for the same rolling ingest window used by full sync
+    (see STRAVA_INGEST_LOOKBACK_WEEKS in strava_reconciliation_service).
 
     Read-only aside from Strava list requests needed to compute the diff.
     """

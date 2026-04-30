@@ -2,8 +2,11 @@
 Strava ↔ DB reconciliation for the same rolling window used by ingestion.
 
 Compares Strava Run activity IDs against stored activities for the authenticated
-user in the canonical six-week window (Monday-based, UTC midnight bounds),
+user in the canonical ingest window (Monday-based, UTC midnight bounds),
 then supports bounded repair via GET /activities/{id} detail fetches.
+
+The window length is ``STRAVA_INGEST_LOOKBACK_WEEKS`` full ISO weeks before the
+current week start through "now" (same source as full sync ``after`` timestamp).
 """
 
 from __future__ import annotations
@@ -25,13 +28,21 @@ from src.utils.rate_limiter import get_rate_limiter
 
 logger = logging.getLogger(__name__)
 
+# Full sync, reconciliation, and sync-health use this many full ISO weeks back
+# from the current week start (Monday 00:00 UTC) for the `after` timestamp.
+STRAVA_INGEST_LOOKBACK_WEEKS = 3
+
 MAX_MISSING_IDS_PREVIEW = 50
 RECONCILE_RATE_BUFFER = 8
 DEFAULT_RECONCILE_MAX_FETCH = 15
 
 
 class StravaSixWeekWindow(NamedTuple):
-    """Aligned with `run_full_ingestion_and_enrichment` date windowing."""
+    """Ingest/reconciliation window; aligned with `run_full_ingestion_and_enrichment`.
+
+    Field ``six_week_start`` is the UTC Monday 00:00 at the start of the lookback
+    window (historical name; span is ``STRAVA_INGEST_LOOKBACK_WEEKS`` weeks).
+    """
 
     current_week_start: date
     six_week_start: date
@@ -43,7 +54,7 @@ class StravaSixWeekWindow(NamedTuple):
 
 def compute_strava_six_week_window() -> StravaSixWeekWindow:
     current_week_start = get_current_week_start()
-    six_week_start = current_week_start - timedelta(weeks=6)
+    six_week_start = current_week_start - timedelta(weeks=STRAVA_INGEST_LOOKBACK_WEEKS)
     two_week_cutoff = current_week_start - timedelta(weeks=2)
 
     six_week_start_dt = datetime.combine(

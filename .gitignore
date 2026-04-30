@@ -29,6 +29,7 @@ htmlcov/
 *.dump
 # ...except schema migrations checked into the repo (see migrations/sql/).
 !migrations/sql/*.sql
+!scripts/truncate_all_public_data.sql
 
 # Test logs
 pytest_log.txt
