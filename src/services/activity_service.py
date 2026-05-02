@@ -124,7 +124,11 @@ def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None
 def enrich_one_activity(
     session, access_token, activity_id, *, fetch_streams: bool = True
 ):
-    """Enrich a single activity with streams, splits, zones."""
+    """Enrich a single activity: summary fields, HR zones, and optionally streams + mile splits.
+
+    Stream fetch and split upserts run only when both ``fetch_streams`` and ``config.ENABLE_SPLITS``
+    are true (``ENABLE_SPLITS`` env, default true). Activity row updates do not require splits.
+    """
     try:
         client = StravaClient(access_token)
         retries = 3
@@ -136,12 +140,17 @@ def enrich_one_activity(
             zones_data = client.get_hr_zones(activity_id)
             streams = {}
 
-            # Fetch streams only if needed for splits (not for HR zone calculation)
-            # HR zones are only available via Strava's zones API (paid users only)
-            if fetch_streams:
+            # Fetch streams only for mile/lap splits (not for HR zone calculation).
+            # HR zones come from Strava's zones API only. Skip stream calls when splits are disabled.
+            if fetch_streams and config.ENABLE_SPLITS:
                 streams = client.get_streams(
                     activity_id,
                     keys=["distance", "time", "velocity_smooth", "heartrate"],
+                )
+            elif fetch_streams and not config.ENABLE_SPLITS:
+                log.info(
+                    "Skipping stream fetch for activity %s (ENABLE_SPLITS disabled)",
+                    activity_id,
                 )
             else:
                 log.info(
@@ -192,13 +201,19 @@ def enrich_one_activity(
         update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
 
         splits = []
-        if fetch_streams:
+        if fetch_streams and config.ENABLE_SPLITS:
             splits = build_mile_splits(activity_id, streams)
             if splits:
                 upsert_splits(session, splits)
                 log.info("Synced %d splits for activity %s", len(splits), activity_id)
         else:
-            log.debug("Split generation skipped for activity %s", activity_id)
+            if fetch_streams and not config.ENABLE_SPLITS:
+                log.debug(
+                    "Split generation skipped for activity %s (ENABLE_SPLITS disabled)",
+                    activity_id,
+                )
+            else:
+                log.debug("Split generation skipped for activity %s", activity_id)
 
         return True
     except Exception as e:  # pylint: disable=broad-exception-caught

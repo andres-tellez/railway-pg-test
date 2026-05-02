@@ -38,6 +38,10 @@ class Config:
         os.getenv("STRAVA_INITIAL_BACKOFF", 10)
     )  # Initial backoff in seconds
 
+    # ===== Ingestion / enrichment =====
+    # When false, enrichment skips Strava stream fetch and split/lap persistence (activity rows unchanged).
+    ENABLE_SPLITS = os.getenv("ENABLE_SPLITS", "true").lower() in ("true", "1", "yes")
+
     # ===== Ingestion Defaults =====
     DEFAULT_LOOKBACK_DAYS = int(
         os.getenv("DEFAULT_LOOKBACK_DAYS", 365)

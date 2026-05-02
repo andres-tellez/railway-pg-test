@@ -105,6 +105,34 @@ def test_enrich_one_activity_success(
     mock_session.commit.assert_called()
 
 
+@patch("src.services.activity_service.StravaClient")
+@patch(
+    "src.services.activity_service.extract_hr_zone_percentages",
+    return_value=[10, 20, 30, 25, 15],
+)
+@patch("src.services.activity_service.upsert_splits")
+def test_enrich_one_activity_skips_streams_when_enable_splits_false(
+    mock_upsert,
+    mock_extract_zones,
+    MockClient,
+    mock_session,
+    dummy_activity_json,
+    dummy_zones_data,
+):
+    mock_client = MockClient.return_value
+    mock_client.get_activity.return_value = dummy_activity_json
+    mock_client.get_hr_zones.return_value = dummy_zones_data
+
+    with patch.object(svc.config, "ENABLE_SPLITS", False):
+        result = svc.enrich_one_activity(mock_session, "fake-token", 123)
+
+    assert result is True
+    mock_client.get_activity.assert_called_once_with(123)
+    mock_client.get_hr_zones.assert_called_once()
+    mock_client.get_streams.assert_not_called()
+    mock_upsert.assert_not_called()
+
+
 @patch("src.services.activity_service.get_valid_token", return_value="fake-token")
 @patch("src.services.activity_service.enrich_one_activity", return_value=True)
 def test_enrich_one_activity_with_refresh_calls_enrich(
