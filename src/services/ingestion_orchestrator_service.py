@@ -326,6 +326,8 @@ def run_full_ingestion_and_enrichment(
         use_incremental, last_sync_at = should_use_incremental_sync(
             session, athlete_id, force_full=force_full_sync
         )
+        # TEMP: disable incremental to isolate full-window ingestion (restore after validation).
+        use_incremental = False
 
         after_ts = max(window_after_ts, after or 0)
         before_ts = before or now_ts
@@ -345,7 +347,12 @@ def run_full_ingestion_and_enrichment(
 
         print("[INGEST_DEBUG] SYNC MODE")
         print("use_incremental:", use_incremental)
+        print("window_after_ts:", window_after_ts)
         print("final_after_ts:", after_ts)
+        print(
+            "last_sync_at:",
+            last_sync_at.isoformat() if last_sync_at is not None else None,
+        )
 
         logger.info(
             "Prepared date window: after=%s, before=%s",
@@ -447,6 +454,10 @@ def run_full_ingestion_and_enrichment(
                 idx + 1,
                 num_chunks,
                 len(all_fetched),
+            )
+            print(
+                "[INGEST_DEBUG] strava_newest_this_chunk:",
+                all_fetched[0].get("start_date") if all_fetched else None,
             )
             runs_only = filter_strava_runs_in_six_week_window(
                 six_week_start_dt, all_fetched
