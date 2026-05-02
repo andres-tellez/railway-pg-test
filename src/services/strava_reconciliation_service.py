@@ -68,6 +68,9 @@ def compute_strava_six_week_window() -> StravaSixWeekWindow:
         two_week_cutoff, dt_time.min, tzinfo=timezone.utc
     )
     six_week_start = window_start_dt.date()
+    print("[INGEST_DEBUG] WINDOW")
+    print("after_ts:", window_after_ts)
+    print("before_ts:", before_ts)
     return StravaSixWeekWindow(
         current_week_start=cw,
         six_week_start=six_week_start,
@@ -95,6 +98,9 @@ def filter_strava_runs_in_six_week_window(
             continue
         if start_dt >= six_week_start_dt:
             runs_only.append(activity)
+    print("[INGEST_DEBUG] FILTER")
+    print("before:", len(activities))
+    print("after:", len(runs_only))
     return runs_only
 
 

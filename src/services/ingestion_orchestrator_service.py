@@ -343,6 +343,10 @@ def run_full_ingestion_and_enrichment(
                 f"(last {STRAVA_INGEST_LOOKBACK_WEEKS} full weeks + current week)"
             )
 
+        print("[INGEST_DEBUG] SYNC MODE")
+        print("use_incremental:", use_incremental)
+        print("final_after_ts:", after_ts)
+
         logger.info(
             "Prepared date window: after=%s, before=%s",
             datetime.fromtimestamp(after_ts, tz=timezone.utc).isoformat(),
