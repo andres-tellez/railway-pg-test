@@ -652,6 +652,13 @@ class ActivityIngestionService:
         # condition but provide a reasonable safety cap for total fetches.
         filtered_target = type_limit if type_limit is not None else None
 
+        def _ingest_debug_fetch_return(result: list) -> list:
+            print("[INGEST_DEBUG] STRAVA RESPONSE")
+            print("count:", len(result))
+            if result:
+                print("newest:", result[0].get("start_date"))
+            return result
+
         while True:
             batch = self.client.get_activities_page(
                 page=page,
@@ -669,11 +676,13 @@ class ActivityIngestionService:
                     if activity.get("type") == type_filter:
                         filtered.append(activity)
                         if filtered_target and len(filtered) >= filtered_target:
-                            return filtered[:filtered_target]
+                            return _ingest_debug_fetch_return(
+                                filtered[:filtered_target]
+                            )
 
             # Stop early if we reached the unfiltered limit (only when not filtering).
             if not type_filter and limit and len(results) >= limit:
-                return results[:limit]
+                return _ingest_debug_fetch_return(results[:limit])
 
             log.info(
                 f"[INFO] Page {page} -> {len(batch)} activities (total={len(results)})"
@@ -685,7 +694,9 @@ class ActivityIngestionService:
                 break
 
             page += 1
-        return filtered[:filtered_target] if type_filter else results
+        return _ingest_debug_fetch_return(
+            filtered[:filtered_target] if type_filter else results
+        )
 
     def ingest_full_history(
         self, lookback_days=None, max_activities=None, per_page=None, dry_run=False
