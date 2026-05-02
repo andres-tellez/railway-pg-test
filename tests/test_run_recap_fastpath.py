@@ -14,11 +14,16 @@ def test_wants_fastpath_how_was_my_run_opening():
 
 
 def test_wants_fastpath_how_did_today_go():
-    assert wants_run_recap_fastpath("How did today go?", [])
+    anchor = "2026-05-02"
+    assert wants_run_recap_fastpath("How did today go?", [], anchor)
+    d = decide_run_recap_fastpath("How did today go?", [], anchor)
+    assert d.eligible and not d.use_most_recent_run
+    assert d.prefetch_local_date == anchor
 
 
-def test_rejects_last_run():
-    assert not wants_run_recap_fastpath("How was my last run?", [])
+def test_wants_fastpath_how_was_my_last_run():
+    d = decide_run_recap_fastpath("How was my last run?", [])
+    assert d.eligible and d.use_most_recent_run
 
 
 def test_rejects_when_prior_user_turn_exists():
@@ -39,6 +44,7 @@ def test_allows_assistant_only_preamble_then_first_user_recap():
     assert wants_run_recap_fastpath("How was my run?", hist)
     d = decide_run_recap_fastpath("How was my run?", hist)
     assert d.eligible and d.reason_code == "eligible"
+    assert d.use_most_recent_run
 
 
 def test_contraction_hows_my_run():
