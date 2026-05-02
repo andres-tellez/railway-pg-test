@@ -14,7 +14,7 @@ Provides centralized audit logging for:
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
-from flask import request, g
+from flask import request, g, has_app_context
 from src.db.db_session import get_session
 from src.db.models.auth_audit_log import AuthAuditLog
 
@@ -47,20 +47,19 @@ def log_auth_event(
         user_agent: User agent string (auto-detected if None)
     """
     try:
-        # Auto-detect IP and user agent from request if available
-        if ip_address is None and request:
-            ip_address = (
-                request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-                if request.headers.get("X-Forwarded-For")
-                else (request.remote_addr or "unknown")
-            )
+        if has_app_context():
+            if ip_address is None:
+                ip_address = (
+                    request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                    if request.headers.get("X-Forwarded-For")
+                    else (request.remote_addr or "unknown")
+                )
 
-        if user_agent is None and request:
-            user_agent = request.headers.get("User-Agent")
+            if user_agent is None:
+                user_agent = request.headers.get("User-Agent")
 
-        # Try to get user_id from Flask g if not provided
-        if user_id is None and hasattr(g, "user_id"):
-            user_id = g.user_id
+            if user_id is None:
+                user_id = getattr(g, "user_id", None)
 
         # Create audit log entry
         session = get_session()
