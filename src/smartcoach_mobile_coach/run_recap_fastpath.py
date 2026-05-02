@@ -102,27 +102,58 @@ def prefetch_opening_anchor_run_recap(
     session: Session,
     internal_user_id: str,
     anchor_local_date: str,
+    *,
+    use_most_recent_run: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
-    Resolve exactly one Run on anchor_local_date and build get_run_summary payload.
+    Resolve one Run and build get_run_summary payload.
 
-    Returns None if disambiguation, no runs, errors, or invalid anchor.
+    By default resolves ``anchor_local_date`` via ``find_runs_by_date``. When
+    ``use_most_recent_run`` is true, resolves the newest stored Run via
+    ``search_runs`` (limit 1).
     """
     from src.smartcoach_mobile_coach.agent_tools import (
         tool_find_runs_by_date,
         tool_get_run_summary,
+        tool_search_runs,
     )
 
-    ld = (anchor_local_date or "").strip()[:10]
-    if len(ld) != 10:
-        return None
+    ld: str
+    fr: Dict[str, Any]
+    aid: int
 
-    fr = tool_find_runs_by_date(session, internal_user_id, ld)
-    if fr.get("error") or fr.get("no_runs") or fr.get("disambiguation_needed"):
-        return None
-    aid = fr.get("activity_id")
-    if not isinstance(aid, int):
-        return None
+    if use_most_recent_run:
+        sr = tool_search_runs(session, internal_user_id, limit=1)
+        if sr.get("error"):
+            return None
+        matches = sr.get("matches") or []
+        if not matches:
+            return None
+        m0 = matches[0]
+        raw_aid = m0.get("activity_id")
+        if not isinstance(raw_aid, int):
+            return None
+        ld = str(m0.get("start_local_date") or "").strip()[:10]
+        if len(ld) != 10:
+            return None
+        aid = raw_aid
+        fr = {
+            "disambiguation_needed": False,
+            "activity_id": aid,
+            "local_date": ld,
+            "resolved_via": "most_recent_run",
+        }
+    else:
+        ld = (anchor_local_date or "").strip()[:10]
+        if len(ld) != 10:
+            return None
+        fr = tool_find_runs_by_date(session, internal_user_id, ld)
+        if fr.get("error") or fr.get("no_runs") or fr.get("disambiguation_needed"):
+            return None
+        raw_aid = fr.get("activity_id")
+        if not isinstance(raw_aid, int):
+            return None
+        aid = raw_aid
 
     # Opening recap: skip peer tables + saved HR profile (large / slow). Keep execution
     # KPIs in the structured payload for the app card / continuity.
@@ -317,16 +348,34 @@ def system_appendix_for_prefetch(
     """Append compact run context JSON + no-tools instruction (minimal tokens)."""
     ld = (recap_run_local_date or "").strip()[:10]
     day = (prose_anchor_day or "today").strip().lower()
-    if day not in ("today", "yesterday"):
-        day = "today"
-    poss = "today's" if day == "today" else "yesterday's"
+    if day == "latest":
+        poss = "your latest run's"
+        opener = f"The user is asking about **their most recent run** (local calendar day **{ld}**)."
+        resolved = f"Resolved **activity_id** `{prefetch.get('activity_id')}` as the newest stored Run."
+        user_date_lines = (
+            "**User-facing framing:** They mean **their latest recorded run** — do not imply it was "
+            "calendar **today** unless that matches this run’s day. Prefer natural phrasing "
+            "(e.g. **latest run**, **that run**) over assuming **today**."
+        )
+    else:
+        if day not in ("today", "yesterday"):
+            day = "today"
+        poss = "today's" if day == "today" else "yesterday's"
+        opener = f"The user is asking about their run on **{ld}** (device-local calendar day)."
+        resolved = f"Resolved **activity_id** `{prefetch.get('activity_id')}` for that anchor day."
+        user_date_lines = (
+            f"**User-facing dates:** In prose to the athlete, say **{day}** for the anchor run — **never** "
+            "read out `anchor_local_date`, `calendar_local_date`, or `week_monday` as YYYY-MM-DD or "
+            "numeric slash dates. Use `when_vs_anchor` for prior single-run days and `spoken_timeframe` "
+            "for week volume rows."
+        )
     slim = _run_recap_prefetch_slim_for_llm()
     compact = _compact_run_context_for_llm(prefetch, ld)
     lines = [
         "",
         "## Pre-loaded run data (server-side, compact)",
-        f"The user is asking about their run on **{ld}** (device-local calendar day).",
-        f"Resolved **activity_id** `{prefetch.get('activity_id')}` for that anchor day.",
+        opener,
+        resolved,
         "Authoritative metrics for this turn (same source as `get_run_summary`, trimmed for speed):",
         "```json",
         json.dumps(compact, default=str),
@@ -338,10 +387,7 @@ def system_appendix_for_prefetch(
         "kudos, watch-out, or a non-obvious contrast **when** `comparison_sessions`, KPI fields in JSON, "
         "or optional week-volume context justify it. If you ask a follow-up question, put it **after** "
         "a blank line (paragraph break) following the learning block.",
-        f"**User-facing dates:** In prose to the athlete, say **{day}** for the anchor run — **never** "
-        "read out `anchor_local_date`, `calendar_local_date`, or `week_monday` as YYYY-MM-DD or "
-        "numeric slash dates. Use `when_vs_anchor` for prior single-run days and `spoken_timeframe` "
-        "for week volume rows.",
+        user_date_lines,
     ]
     if slim:
         lines.extend(

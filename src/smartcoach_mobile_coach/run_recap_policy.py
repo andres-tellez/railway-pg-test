@@ -35,7 +35,6 @@ def prior_user_turn_count(conversation_history: List[Dict[str, str]]) -> int:
 # "yesterday", which is handled via device anchor minus one calendar day when
 # a recap phrase matches).
 _ANCHOR_RECAP_BLOCKED = (
-    "last run",
     "that run",
     "last race",
     "this run",
@@ -49,7 +48,9 @@ _ANCHOR_RECAP_BLOCKED = (
 # Positive phrases (substring match on normalized lower text).
 _ANCHOR_RECAP_PHRASES = (
     "how was my run",
+    "how was my last run",
     "how did my run go",
+    "how did my last run",
     "how did today go",
     "how was today",
     "how did today",
@@ -99,6 +100,7 @@ class RunRecapFastpathDecision:
     reason_code: str
     prior_user_turn_count: int
     prefetch_local_date: Optional[str] = None
+    use_most_recent_run: bool = False
 
 
 def decide_run_recap_fastpath(
@@ -137,4 +139,13 @@ def decide_run_recap_fastpath(
         return RunRecapFastpathDecision(
             True, "eligible_yesterday", turns, prefetch_local_date=prev_day
         )
-    return RunRecapFastpathDecision(True, "eligible", turns)
+    if "today" in (user_message or "").lower():
+        ld = (anchor_local_date or "").strip()[:10]
+        if len(ld) != 10:
+            return RunRecapFastpathDecision(
+                False, "invalid_anchor_for_yesterday", turns
+            )
+        return RunRecapFastpathDecision(
+            True, "eligible", turns, prefetch_local_date=ld, use_most_recent_run=False
+        )
+    return RunRecapFastpathDecision(True, "eligible", turns, use_most_recent_run=True)

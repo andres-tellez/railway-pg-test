@@ -53,20 +53,23 @@ class StravaSixWeekWindow(NamedTuple):
 
 
 def compute_strava_six_week_window() -> StravaSixWeekWindow:
-    current_week_start = get_current_week_start()
-    six_week_start = current_week_start - timedelta(weeks=STRAVA_INGEST_LOOKBACK_WEEKS)
-    two_week_cutoff = current_week_start - timedelta(weeks=2)
+    now_utc = datetime.now(timezone.utc)
+    lookback = timedelta(days=STRAVA_INGEST_LOOKBACK_WEEKS * 7)
+    window_start_dt = now_utc - lookback
 
-    six_week_start_dt = datetime.combine(
-        six_week_start, dt_time.min, tzinfo=timezone.utc
-    )
+    six_week_start_dt = window_start_dt
+    window_after_ts = int(window_start_dt.timestamp())
+    before_ts = int(now_utc.timestamp())
+
+    cw = get_current_week_start()
+    two_week_cutoff = cw - timedelta(weeks=2)
+
     two_week_cutoff_dt = datetime.combine(
         two_week_cutoff, dt_time.min, tzinfo=timezone.utc
     )
-    window_after_ts = int(six_week_start_dt.timestamp())
-    before_ts = int(datetime.utcnow().replace(tzinfo=timezone.utc).timestamp())
+    six_week_start = window_start_dt.date()
     return StravaSixWeekWindow(
-        current_week_start=current_week_start,
+        current_week_start=cw,
         six_week_start=six_week_start,
         six_week_start_dt=six_week_start_dt,
         two_week_cutoff_dt=two_week_cutoff_dt,

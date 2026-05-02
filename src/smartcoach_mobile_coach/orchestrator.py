@@ -1305,10 +1305,10 @@ DATA RETRIEVAL & TOOL RULES
 - **Weekly miles across multiple weeks** (e.g. "mileage each week", "weekly miles in the last 30 days"): call **`aggregate_runs_in_range`** with inclusive **`start_date_from`** / **`start_date_to`** and answer from **`weekly_summaries`** in that payload (same all-runs source as totals). Use **`week_label`** when listing weeks and respect **`weekly_summaries_scope`**. Do **not** answer this from **`get_weekly_training_insight`** alone (that is one precomputed week, not a per-week table).
 
 - **Thread context — no `activity_id` in history:** The model only sees past **user and assistant plain text**, not prior tool JSON. If you answered with a **specific run** (race name, **date** like YYYY-MM-DD, or “last marathon” from `search_runs`), a follow-up such as **“how did I do?”**, **“how was that run?”**, **“what was my pace?”**, or **“tell me more”** refers to **that** run — **not** automatically “today.” You must obtain an **`activity_id`** again, then call **`get_run_summary`**.
-- **Re-resolving that run (pick one path):** (1) If the **prior assistant message** contains a calendar **date** (YYYY-MM-DD or a clear month/day/year), call **`find_runs_by_date`** with that **`local_date`** (disambiguate if multiple runs). (2) Else if the thread was about **last marathon / long race / similar**, call **`search_runs`** again with the **same style of filters** (e.g. `min_distance_m` ~42000) and use the **top match’s `activity_id`**. (3) Only if the user clearly means **today’s** run again, use the device anchor date below.
-- Use the system-provided "today" date for vague queries about **this calendar day** only (e.g. "my run", "today") when they are **not** clearly continuing a **different** run from the prior turn.
-- When the user refers to "my run" or "last run" **without** having just discussed another specific run, treat it as the run on the system-provided date unless they name another day.
-- For follow-up requests about **today’s** same run (e.g. "include KPIs", "add Z2 pace", "show HR drift") with no new date, resolve with `find_runs_by_date` using the **system-provided anchor date** before answering.
+- **Re-resolving that run (pick one path):** (1) If the **prior assistant message** contains a calendar **date** (YYYY-MM-DD or a clear month/day/year), call **`find_runs_by_date`** with that **`local_date`** (disambiguate if multiple runs). (2) Else if the thread was about **last marathon / long race / similar**, call **`search_runs`** again with the **same style of filters** (e.g. `min_distance_m` ~42000) and use the **top match’s `activity_id`**. (3) If the follow-up is about **today’s** run on the device calendar and the **prior turn** already established that topic via explicit **today** language or a reply grounded in **`find_runs_by_date`** on the **device anchor date**, use **`find_runs_by_date`** with that **anchor date** (see device context).
+- **Single-run recap — no explicit calendar day in the message** (e.g. “how was my run?”, “how was my last run?”, “my run”) when they are **not** clearly continuing a **different** run from the prior turn: call **`search_runs`** with **`limit=1`** (**newest first** — default sort) for the **most recent run in the DB**, then **`get_run_summary`** on that **`activity_id`**. **Do not** treat these vague phrases as “today” unless they also say **today** (case-insensitive).
+- **Explicit calendar today:** when the user’s message contains **`today`** (case-insensitive) and they mean **this** calendar day’s run, call **`find_runs_by_date`** with **`local_date`** exactly the **device anchor date** (see device context), then **`get_run_summary`** as needed — same rule as run-recap fastpath (**today** → anchor day; no **today** → most recent run).
+- For follow-up requests about the **same** run (e.g. "include KPIs", "add Z2 pace", "show HR drift") with no new date, use the **thread-continuation** paths above; only use **`find_runs_by_date`** with the **device anchor date** when that follow-up clearly continues a run you already tied to **today** / that anchor day.
 - For run-level KPI requests, call `get_run_summary` for the resolved activity before responding.
 - **Per-mile / lap / split HR or pace** (e.g. "mile over mile", "each mile", "splits", "lap by lap"): with a resolved **`activity_id`**, call **`get_run_splits`**. Answer from **`splits`** rows (**`avg_heart_rate_display`**, **`avg_pace_display`**, **`segment_label`**) and **`scope`**. If **`splits`** is empty, say no stored laps and stay honest — do not invent a per-mile table. If **`splits_truncated`** is true, only **returned** laps are present (first+last by lap order); use **`splits_total_count`** for how many laps exist and **do not** infer missing middle laps.
 - **Split-detail answers from `get_run_splits`:** you may compute **grounded** comparisons across returned rows (deltas, halves, outlier checks) — **only** from those rows, not from recall. Look for patterns a human coach would flag: **warmup** first split, **late fade**, a **one-off surge**, **steadier middle miles**, whether **pace change** explains an **HR** move.
@@ -2249,11 +2249,11 @@ def _device_anchor_system_section(
     return (
         f'## Device context (authoritative calendar "today")\n'
         f"- The user's local calendar date on their phone right now is **{anchor_local_date}** (IANA timezone: {tz_display}).\n"
-        f'- For "how was my run?", "my run", "this run", "today", or whenever they do not name a specific day **and** are **not** clearly continuing a **different** run you already named (e.g. a marathon date) in the **prior assistant** message, '
-        f"call `find_runs_by_date` with `local_date` exactly **{anchor_local_date}**.\n"
-        f'- If they **just** asked about a **past** run you identified by **name/date** and now say **"how did I do?"** / **"how was it?"** / similar, **do not** default to **{anchor_local_date}** — resolve that run via **`find_runs_by_date`** on the **date from your prior reply** or **`search_runs`** again, then **`get_run_summary`**.\n'
-        f"- Only use a different `local_date` when the user clearly refers to another day (or use the rules above for thread continuation).\n"
-        f"- Never ask the user to specify the date for vague **today**-style questions; use **{anchor_local_date}** when that rule applies."
+        f"- **Vague single-run recap** (e.g. **how was my run**, **how was my last run**, **my run**) with **no** **`today`** in the message — and **not** clearly continuing a **different** run you already named in the **prior assistant** message — is the **most recent run in the DB**: call **`search_runs`** with **`limit=1`** (newest first), then **`get_run_summary`**. **Do not** call **`find_runs_by_date`** with **{anchor_local_date}** for that opening.\n"
+        f"- **Explicit today:** when the message contains **`today`** (case-insensitive) and they mean this calendar day’s run, call **`find_runs_by_date`** with `local_date` exactly **{anchor_local_date}** (then **`get_run_summary`** as needed). Same split as run-recap fastpath.\n"
+        f'- If they **just** asked about a **past** run you identified by **name/date** and now say **"how did I do?"** / **"how was it?"** / **"this run"** / similar, **do not** default to **{anchor_local_date}** — resolve via **`find_runs_by_date`** on the **date from your prior reply** or **`search_runs`** again, then **`get_run_summary`**.\n'
+        f"- Use another `local_date` when the user clearly refers to that day (yesterday, weekday, YYYY-MM-DD, etc.), or follow thread-continuation rules.\n"
+        f"- Never ask the user to specify the date for vague recap openings; use **`search_runs`** (**most recent**) unless **today** is explicit, then use **{anchor_local_date}**."
     )
 
 
@@ -3031,19 +3031,37 @@ def run_mobile_agent_turn(
 
     prefetch: Optional[Dict[str, Any]] = None
     if recap_decision is not None and recap_decision.eligible:
-        recap_run_local_date = (
-            recap_decision.prefetch_local_date or anchor_local_date
-        ).strip()[:10]
-        prose_anchor_day = (
-            "yesterday" if recap_decision.prefetch_local_date else "today"
-        )
-        _tp0 = time.perf_counter()
-        prefetch = prefetch_opening_anchor_run_recap(
-            session, internal_user_id, recap_run_local_date
-        )
-        timings_ms["fastpath_prefetch_ms"] = round(
-            (time.perf_counter() - _tp0) * 1000, 2
-        )
+        if recap_decision.use_most_recent_run:
+            _tp0 = time.perf_counter()
+            prefetch = prefetch_opening_anchor_run_recap(
+                session,
+                internal_user_id,
+                anchor_local_date,
+                use_most_recent_run=True,
+            )
+            timings_ms["fastpath_prefetch_ms"] = round(
+                (time.perf_counter() - _tp0) * 1000, 2
+            )
+            recap_run_local_date = (
+                (prefetch or {}).get("find_runs_by_date") or {}
+            ).get("local_date") or ""
+            recap_run_local_date = str(recap_run_local_date).strip()[:10]
+            prose_anchor_day = "latest"
+        else:
+            recap_run_local_date = (
+                recap_decision.prefetch_local_date or anchor_local_date
+            ).strip()[:10]
+            if recap_decision.reason_code == "eligible_yesterday":
+                prose_anchor_day = "yesterday"
+            else:
+                prose_anchor_day = "today"
+            _tp0 = time.perf_counter()
+            prefetch = prefetch_opening_anchor_run_recap(
+                session, internal_user_id, recap_run_local_date
+            )
+            timings_ms["fastpath_prefetch_ms"] = round(
+                (time.perf_counter() - _tp0) * 1000, 2
+            )
         if prefetch:
             logger.info(
                 "[coach_fastpath] run_recap_opening user=%s… activity_id=%s gate=%s comparisons=%s week_volume=%s",
