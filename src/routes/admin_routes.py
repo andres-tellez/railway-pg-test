@@ -54,6 +54,7 @@ from src.db.db_session import get_session
 from src.services.strava_access_service import StravaClient
 from src.services.token_service import get_valid_token
 from src.db.dao.activity_dao import ActivityDAO
+from src.db.dao.user_identity_dao import persist_splits_for_user
 from src.db.models.user_athletes import UserAthleteLink
 from src.db.models.user_identity import UserIdentity
 import logging
@@ -504,8 +505,13 @@ def sync_activities():
                     enrich_one_activity_with_refresh,
                 )
 
+                persist_splits = persist_splits_for_user(session, user_id)
                 enrich_one_activity_with_refresh(
-                    session, athlete_id, activity_id, fetch_streams=True
+                    session,
+                    athlete_id,
+                    activity_id,
+                    fetch_streams=True,
+                    persist_splits=persist_splits,
                 )
                 logger.info(f"✅ Successfully enriched activity {activity_id}")
             except Exception as e:

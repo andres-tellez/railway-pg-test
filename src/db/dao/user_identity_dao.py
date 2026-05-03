@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime
-from typing import Mapping, Any, Optional, Dict
+from datetime import datetime, timezone
+from typing import Mapping, Any, Optional, Dict, Union
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
@@ -10,6 +10,7 @@ from src.db.db_session import get_session
 from src.db.models.user_identity import UserIdentity
 from src.db.models.user_auth_providers import UserAuthProvider
 from src.utils.email_verification import is_email_verified_claim
+from src.utils.config import config
 
 
 # ----------------------
@@ -25,6 +26,54 @@ def get_by_user_id(user_id: str) -> Optional[UserIdentity]:
 def get_by_email(email: str) -> Optional[UserIdentity]:
     db = get_session()
     return db.query(UserIdentity).filter(UserIdentity.email == email).first()
+
+
+def _normalize_user_id(user_id: Union[str, uuid.UUID, None]) -> Optional[uuid.UUID]:
+    if user_id is None:
+        return None
+    if isinstance(user_id, uuid.UUID):
+        return user_id
+    try:
+        return uuid.UUID(str(user_id))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def persist_splits_for_user(session, user_id: Union[str, uuid.UUID, None]) -> bool:
+    """
+    True when splits/streams should be fetched and persisted for this user.
+
+    Uses config.ENABLE_SPLITS as global kill switch and requires
+    ``initial_strava_import_completed_at`` on the user's row (NULL during first
+    onboarding). If ``user_id`` is omitted, only ``ENABLE_SPLITS`` applies.
+    """
+    if not config.ENABLE_SPLITS:
+        return False
+    uid = _normalize_user_id(user_id)
+    if uid is None:
+        return True
+    row = session.query(UserIdentity).filter(UserIdentity.user_id == uid).first()
+    if row is None:
+        return True
+    return row.initial_strava_import_completed_at is not None
+
+
+def mark_initial_strava_import_complete(
+    session, user_id: Union[str, uuid.UUID]
+) -> None:
+    """Set ``initial_strava_import_completed_at`` once (first successful onboarding)."""
+    uid = _normalize_user_id(user_id)
+    if uid is None:
+        return
+    now = datetime.now(timezone.utc)
+    session.execute(
+        update(UserIdentity)
+        .where(
+            UserIdentity.user_id == uid,
+            UserIdentity.initial_strava_import_completed_at.is_(None),
+        )
+        .values(initial_strava_import_completed_at=now)
+    )
 
 
 # ----------------------

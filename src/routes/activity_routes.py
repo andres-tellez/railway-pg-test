@@ -46,6 +46,7 @@ from sqlalchemy import text, bindparam
 from sqlalchemy.dialects.postgresql import UUID
 
 from src.db.dao.activity_dao import ActivityDAO
+from src.db.dao.user_identity_dao import persist_splits_for_user
 from src.db.dao.split_dao import get_splits_by_activity_id
 from src.db.db_session import get_session
 from src.services.activity_service import ActivityIngestionService, run_enrichment_batch
@@ -338,7 +339,10 @@ def enrich_single(activity_id: int):
             return jsonify({"error": f"Activity {activity_id} not found"}), 404
 
         athlete_id = row.athlete_id  # type: ignore[attr-defined]
-        service = ActivityIngestionService(session, athlete_id)
+        internal_user_id = getattr(g, "user_id", None)
+        service = ActivityIngestionService(
+            session, athlete_id, user_id=internal_user_id
+        )
         service.enrich_single_activity(activity_id)
         return jsonify({"status": "ok", "activity_id": activity_id}), 200
     except Exception as e:
@@ -361,7 +365,10 @@ def enrich_batch():
 
     session = get_session()
     try:
-        enriched_count = run_enrichment_batch(session, athlete_id, batch_size=batch)
+        persist_splits = persist_splits_for_user(session, getattr(g, "user_id", None))
+        enriched_count = run_enrichment_batch(
+            session, athlete_id, batch_size=batch, persist_splits=persist_splits
+        )
         return (
             jsonify(
                 {
