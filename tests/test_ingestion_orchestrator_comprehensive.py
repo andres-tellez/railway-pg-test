@@ -96,11 +96,6 @@ def patch_orchestrator_dependencies(monkeypatch, mock_session):
         "src.services.ingestion_orchestrator_service.run_enrichment_batches_in_window",
         lambda *_args, **_kwargs: (0, False),
     )
-    # Keep tests single-chunk for deterministic assertions.
-    monkeypatch.setattr(
-        "src.services.ingestion_orchestrator_service.STRAVA_SYNC_CHUNK_SECONDS",
-        365 * 24 * 60 * 60,
-    )
 
 
 @pytest.fixture

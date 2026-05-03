@@ -23,7 +23,6 @@ from src.services.activity_service import ActivityIngestionService
 from src.services.strava_access_service import StravaClient
 from src.services.token_service import get_valid_token
 from src.utils.config import config
-from src.utils.date_helpers import get_current_week_start
 from src.utils.rate_limiter import get_rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -53,26 +52,33 @@ class StravaSixWeekWindow(NamedTuple):
 
 
 def compute_strava_six_week_window() -> StravaSixWeekWindow:
+    """UTC week-aligned ingest window: Monday 00:00 UTC − 3 weeks through now_utc."""
     now_utc = datetime.now(timezone.utc)
-    lookback = timedelta(days=STRAVA_INGEST_LOOKBACK_WEEKS * 7)
-    window_start_dt = now_utc - lookback
-
-    six_week_start_dt = window_start_dt
+    today_utc = now_utc.date()
+    days_since_monday = today_utc.weekday()  # Monday = 0 (ISO)
+    current_week_start_date = today_utc - timedelta(days=days_since_monday)
+    window_start_date = current_week_start_date - timedelta(
+        weeks=STRAVA_INGEST_LOOKBACK_WEEKS
+    )
+    window_start_dt = datetime.combine(
+        window_start_date, dt_time.min, tzinfo=timezone.utc
+    )
     window_after_ts = int(window_start_dt.timestamp())
     before_ts = int(now_utc.timestamp())
 
-    cw = get_current_week_start()
-    two_week_cutoff = cw - timedelta(weeks=2)
-
+    two_week_cutoff_date = current_week_start_date - timedelta(weeks=2)
     two_week_cutoff_dt = datetime.combine(
-        two_week_cutoff, dt_time.min, tzinfo=timezone.utc
+        two_week_cutoff_date, dt_time.min, tzinfo=timezone.utc
     )
-    six_week_start = window_start_dt.date()
+
+    six_week_start = window_start_date
+    six_week_start_dt = window_start_dt
+
     print("[INGEST_DEBUG] WINDOW")
     print("after_ts:", window_after_ts)
     print("before_ts:", before_ts)
     return StravaSixWeekWindow(
-        current_week_start=cw,
+        current_week_start=current_week_start_date,
         six_week_start=six_week_start,
         six_week_start_dt=six_week_start_dt,
         two_week_cutoff_dt=two_week_cutoff_dt,

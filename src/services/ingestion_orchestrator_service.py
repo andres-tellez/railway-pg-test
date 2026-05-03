@@ -119,9 +119,6 @@ logger = logging.getLogger(__name__)
 # Automatic retries when Strava API headroom is too low (see rate-limit check below).
 MAX_SYNC_AUTO_RETRIES = 5
 
-# Fetch + enrich in segments so headroom is checked per segment (~2 weeks).
-STRAVA_SYNC_CHUNK_SECONDS = 14 * 24 * 60 * 60
-
 USER_MSG_HEADROOM_DEFERRED = (
     "Strava is extra busy right now, so we paused your run import on purpose — "
     "that avoids broken or partial data. SmartCoach will try again automatically in a few minutes. "
@@ -361,14 +358,7 @@ def run_full_ingestion_and_enrichment(
             datetime.fromtimestamp(before_ts, tz=timezone.utc).isoformat(),
         )
 
-        chunk_boundaries: list[tuple[int, int]] = []
-        ca = after_ts
-        while ca < before_ts:
-            cb = min(ca + STRAVA_SYNC_CHUNK_SECONDS, before_ts)
-            chunk_boundaries.append((ca, cb))
-            ca = cb
-
-        if not chunk_boundaries:
+        if after_ts >= before_ts:
             logger.warning(
                 "Empty Strava sync window (after_ts >= before_ts); skipping fetch"
             )
@@ -377,19 +367,8 @@ def run_full_ingestion_and_enrichment(
             sync_complete()
             return {"synced": 0, "enriched": 0}
 
-        # Oldest→newest segments are built above; process newest first so this week's
-        # runs are upserted and enriched (streams/splits) before older windows. Improves
-        # mid-sync coach queries and matches user expectations right after connect.
-        chunk_boundaries.reverse()
-
+        chunk_boundaries: list[tuple[int, int]] = [(after_ts, before_ts)]
         num_chunks = len(chunk_boundaries)
-        if num_chunks > 1:
-            logger.info(
-                "Splitting Strava sync into %d chunk(s) of up to %d days each "
-                "(headroom + success rate).",
-                num_chunks,
-                STRAVA_SYNC_CHUNK_SECONDS // 86400,
-            )
 
         service = ActivityIngestionService(session, athlete_id)
         total_inserted = 0

@@ -111,9 +111,9 @@ def test_ingestion_no_delays(
     end_time = time.time()
     elapsed = end_time - start_time
 
-    # Verify results (two ~7d chunks => fetch/enrich runs twice with current chunking)
-    assert result["synced"] == 4
-    assert result["enriched"] == 4
+    # Verify results (single full-window chunk => one fetch / upsert / enrich pass)
+    assert result["synced"] == 2
+    assert result["enriched"] == 2
 
     # Verify no artificial delays (should complete in < 1 second for mocked operations)
     # In real scenario, this would be much faster than before (which had 10+ seconds of delays)
@@ -123,8 +123,8 @@ def test_ingestion_no_delays(
     mock_service_class.assert_called_once()
     mock_service.fetch_all_activities.assert_called()
     mock_dao.upsert_activities.assert_called()
-    assert mock_dao.upsert_activities.call_count == 2
-    assert mock_enrichment.call_count == 2
+    assert mock_dao.upsert_activities.call_count == 1
+    assert mock_enrichment.call_count == 1
 
 
 @pytest.mark.usefixtures("app_context")
