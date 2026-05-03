@@ -88,7 +88,8 @@ from src.db.models.activities import Activity
 from src.services.token_service import get_valid_token
 from src.services.activity_service import (
     ActivityIngestionService,
-    run_enrichment_batch,
+    count_pending_detail_enrichment,
+    run_enrichment_batches_in_window,
 )
 from src.services.sync_tracking_service import (
     should_use_incremental_sync,
@@ -540,92 +541,22 @@ def run_full_ingestion_and_enrichment(
                 detail=f"Chunk {idx + 1}/{num_chunks}: saved {inserted_count} new runs",
             )
 
-            projected_enrichment_calls = 0
-            for act in runs_only:
-                start_date_str = act.get("start_date")
-                try:
-                    start_dt = (
-                        datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
-                        if start_date_str
-                        else None
-                    )
-                except Exception:
-                    start_dt = None
-                projected_enrichment_calls += 2  # detail + zones
-                if start_dt and start_dt >= two_week_cutoff_dt:
-                    projected_enrichment_calls += 1  # streams/splits
-
-            rate_limiter = get_rate_limiter()
-            stats = rate_limiter.get_stats()
-            remaining_15m = stats.get("remaining_15min", 0)
-            logger.info(
-                "Chunk %d/%d: projected enrichment Strava calls=%d, remaining_15min=%d",
-                idx + 1,
-                num_chunks,
-                projected_enrichment_calls,
-                remaining_15m,
-            )
-
-            RATE_BUFFER = 10
-            if projected_enrichment_calls + RATE_BUFFER > remaining_15m:
-                wait_seconds = max(stats.get("wait_time_seconds", 0), 60)
-                logger.warning(
-                    "Rate limit headroom too low (%d remaining, %d needed). Deferring "
-                    "after chunk %d/%d (runs already saved for this chunk). "
-                    "(sync_retry_attempt=%s).",
-                    remaining_15m,
-                    projected_enrichment_calls + RATE_BUFFER,
-                    idx + 1,
-                    num_chunks,
-                    sync_retry_attempt,
-                )
-                if not user_id:
-                    sync_error(
-                        USER_MSG_GENERIC_SYNC_FAILURE,
-                        error_code="RATE_LIMIT_HEADROOM_NO_USER",
-                    )
-                    raise StravaIngestionSyncError(
-                        athlete_id=athlete_id,
-                        reason="rate_limit_headroom_no_user",
-                        message=(
-                            "Strava is handling a lot of requests right now. "
-                            f"Please wait about {int(wait_seconds // 60) + 1} minutes before trying again."
-                        ),
-                    )
-                if sync_retry_attempt >= MAX_SYNC_AUTO_RETRIES:
-                    sync_error(
-                        USER_MSG_HEADROOM_EXHAUSTED,
-                        error_code="RATE_LIMIT_EXHAUSTED",
-                    )
-                    raise StravaIngestionSyncError(
-                        athlete_id=athlete_id,
-                        reason="rate_limit_retries_exhausted",
-                        message="Strava ingestion retries exhausted",
-                    )
-                retry_delay = max(float(wait_seconds), 120.0)
-                schedule_strava_ingestion_retry(
-                    user_id, athlete_id, retry_delay, sync_retry_attempt + 1
-                )
-                sync_error(
-                    USER_MSG_HEADROOM_DEFERRED,
-                    error_code="RATE_LIMIT_HEADROOM_DEFERRED",
-                )
-                return {
-                    "synced": total_inserted,
-                    "enriched": total_enriched,
-                    "deferred": True,
-                }
-
             enrich_after = chunk_after
             enrich_before = chunk_before
-            if after is None and before is None:
-                if num_chunks > 1:
-                    should_enrich = len(runs_only) > 0
-                else:
-                    should_enrich = inserted_count > 0
-            else:
-                should_enrich = True
+            RATE_BUFFER = 10
 
+            pending_detail = count_pending_detail_enrichment(
+                session, athlete_id, enrich_after, enrich_before
+            )
+            logger.info(
+                "Chunk %d/%d: pending detail enrichment in window=%d",
+                idx + 1,
+                num_chunks,
+                pending_detail,
+            )
+            should_enrich = pending_detail > 0
+
+            enriched = 0
             if should_enrich:
                 logger.info(
                     "Chunk %d/%d: enriching (after=%s before=%s)...",
@@ -635,33 +566,85 @@ def run_full_ingestion_and_enrichment(
                     enrich_before,
                 )
                 print(
-                    f"🔄 [Orchestrator] run_enrichment_batch chunk {idx + 1}/{num_chunks} "
+                    f"🔄 [Orchestrator] run_enrichment_batches_in_window chunk {idx + 1}/{num_chunks} "
                     f"athlete_id={athlete_id}, after={enrich_after}, before={enrich_before}",
                     flush=True,
                 )
 
                 try:
-                    enriched = (
-                        run_enrichment_batch(
-                            session,
-                            athlete_id,
-                            batch_size=batch_size,
-                            split_cutoff=two_week_cutoff_dt,
-                            after=enrich_after,
-                            before=enrich_before,
-                        )
-                        or 0
+                    enriched, defer_enrich = run_enrichment_batches_in_window(
+                        session,
+                        athlete_id,
+                        batch_size=batch_size,
+                        split_cutoff=two_week_cutoff_dt,
+                        after=enrich_after,
+                        before=enrich_before,
+                        max_batches_per_chunk=config.MAX_ENRICHMENT_BATCHES_PER_CHUNK,
+                        rate_buffer=RATE_BUFFER,
                     )
                     print(
-                        f"✅ [Orchestrator] chunk {idx + 1}/{num_chunks} enriched={enriched}",
+                        f"✅ [Orchestrator] chunk {idx + 1}/{num_chunks} enriched={enriched} "
+                        f"defer={defer_enrich}",
                         flush=True,
                     )
                     logger.info(
-                        "Chunk %d/%d: enriched %d activities",
+                        "Chunk %d/%d: enriched %d activities (defer=%s)",
                         idx + 1,
                         num_chunks,
                         enriched,
+                        defer_enrich,
                     )
+
+                    if defer_enrich:
+                        rate_limiter = get_rate_limiter()
+                        stats = rate_limiter.get_stats()
+                        wait_seconds = max(stats.get("wait_time_seconds", 0), 60)
+                        total_enriched += enriched
+                        logger.warning(
+                            "Rate limit headroom exhausted mid-enrichment (%s remaining). "
+                            "Deferring after chunk %d/%d (runs already saved). "
+                            "(sync_retry_attempt=%s).",
+                            stats.get("remaining_15min", 0),
+                            idx + 1,
+                            num_chunks,
+                            sync_retry_attempt,
+                        )
+                        if not user_id:
+                            sync_error(
+                                USER_MSG_GENERIC_SYNC_FAILURE,
+                                error_code="RATE_LIMIT_HEADROOM_NO_USER",
+                            )
+                            raise StravaIngestionSyncError(
+                                athlete_id=athlete_id,
+                                reason="rate_limit_headroom_no_user",
+                                message=(
+                                    "Strava is handling a lot of requests right now. "
+                                    f"Please wait about {int(wait_seconds // 60) + 1} minutes before trying again."
+                                ),
+                            )
+                        if sync_retry_attempt >= MAX_SYNC_AUTO_RETRIES:
+                            sync_error(
+                                USER_MSG_HEADROOM_EXHAUSTED,
+                                error_code="RATE_LIMIT_EXHAUSTED",
+                            )
+                            raise StravaIngestionSyncError(
+                                athlete_id=athlete_id,
+                                reason="rate_limit_retries_exhausted",
+                                message="Strava ingestion retries exhausted",
+                            )
+                        retry_delay = max(float(wait_seconds), 120.0)
+                        schedule_strava_ingestion_retry(
+                            user_id, athlete_id, retry_delay, sync_retry_attempt + 1
+                        )
+                        sync_error(
+                            USER_MSG_HEADROOM_DEFERRED,
+                            error_code="RATE_LIMIT_HEADROOM_DEFERRED",
+                        )
+                        return {
+                            "synced": total_inserted,
+                            "enriched": total_enriched,
+                            "deferred": True,
+                        }
                 except StravaTokenError as e:
                     logger.error(f"Token error during enrichment: {e}", exc_info=True)
                     enriched = 0
@@ -674,11 +657,10 @@ def run_full_ingestion_and_enrichment(
                     logger.warning("Enrichment failed, but ingestion continued")
             else:
                 logger.info(
-                    "Chunk %d/%d: skipping enrichment (no new rows this chunk)",
+                    "Chunk %d/%d: skipping enrichment (no pending detail in window)",
                     idx + 1,
                     num_chunks,
                 )
-                enriched = 0
 
             total_enriched += enriched
 

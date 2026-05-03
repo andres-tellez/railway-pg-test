@@ -49,6 +49,10 @@ class Config:
     DEFAULT_BATCH_SIZE = int(
         os.getenv("DEFAULT_BATCH_SIZE", 50)
     )  # Default batch size for enrichment
+    # Max enrichment batches per ingest chunk (each batch processes up to DEFAULT_BATCH_SIZE activities).
+    MAX_ENRICHMENT_BATCHES_PER_CHUNK = int(
+        os.getenv("MAX_ENRICHMENT_BATCHES_PER_CHUNK", "25")
+    )
     DEFAULT_PER_PAGE = int(
         os.getenv("DEFAULT_PER_PAGE", 50)
     )  # Default activities per page
