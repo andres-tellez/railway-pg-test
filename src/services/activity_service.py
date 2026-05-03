@@ -163,10 +163,12 @@ def count_pending_detail_enrichment(session, athlete_id, after=None, before=None
     return int(session.scalar(stmt) or 0)
 
 
-def project_strava_enrichment_calls(activities, split_cutoff):
+def project_strava_enrichment_calls(
+    activities, split_cutoff, *, persist_splits: bool = True
+):
     """
     Estimated Strava API calls for enriching the given activity rows (detail + zones;
-    plus streams when ``fetch_streams`` would be True for the row).
+    plus streams when ``fetch_streams`` would be True for the row and ``persist_splits``.
     """
     total = 0
     for row in activities:
@@ -183,18 +185,25 @@ def project_strava_enrichment_calls(activities, split_cutoff):
             fetch_streams = start_dt >= cutoff_dt
         elif split_cutoff is not None and start_date is None:
             fetch_streams = True
-        if fetch_streams:
+        if persist_splits and fetch_streams:
             total += 1
     return total
 
 
 def enrich_one_activity(
-    session, access_token, activity_id, *, fetch_streams: bool = True
+    session,
+    access_token,
+    activity_id,
+    *,
+    fetch_streams: bool = True,
+    persist_splits: bool = True,
 ):
     """Enrich a single activity: summary fields, HR zones, and optionally streams + mile splits.
 
-    Stream fetch and split upserts run only when both ``fetch_streams`` and ``config.ENABLE_SPLITS``
-    are true (``ENABLE_SPLITS`` env, default true). Activity row updates do not require splits.
+    Stream fetch and split upserts run only when both ``fetch_streams`` and ``persist_splits``
+    are true. Callers should pass ``persist_splits`` from
+    ``persist_splits_for_user`` (which folds in ``ENABLE_SPLITS``). Activity row
+    updates do not require splits or streams.
     """
     try:
         client = StravaClient(access_token)
@@ -229,15 +238,15 @@ def enrich_one_activity(
             streams = {}
 
             # Fetch streams only for mile/lap splits (not for HR zone calculation).
-            # HR zones come from Strava's zones API only. Skip stream calls when splits are disabled.
-            if fetch_streams and config.ENABLE_SPLITS:
+            # HR zones come from Strava's zones API only.
+            if fetch_streams and persist_splits:
                 streams = client.get_streams(
                     activity_id,
                     keys=["distance", "time", "velocity_smooth", "heartrate"],
                 )
-            elif fetch_streams and not config.ENABLE_SPLITS:
+            elif fetch_streams and not persist_splits:
                 log.info(
-                    "Skipping stream fetch for activity %s (ENABLE_SPLITS disabled)",
+                    "Skipping stream fetch for activity %s (persist_splits false)",
                     activity_id,
                 )
             else:
@@ -294,15 +303,15 @@ def enrich_one_activity(
         )
 
         splits = []
-        if fetch_streams and config.ENABLE_SPLITS:
+        if fetch_streams and persist_splits:
             splits = build_mile_splits(activity_id, streams)
             if splits:
                 upsert_splits(session, splits)
                 log.info("Synced %d splits for activity %s", len(splits), activity_id)
         else:
-            if fetch_streams and not config.ENABLE_SPLITS:
+            if fetch_streams and not persist_splits:
                 log.debug(
-                    "Split generation skipped for activity %s (ENABLE_SPLITS disabled)",
+                    "Split generation skipped for activity %s (persist_splits false)",
                     activity_id,
                 )
             else:
@@ -315,14 +324,24 @@ def enrich_one_activity(
 
 
 def enrich_one_activity_with_refresh(
-    session, athlete_id, activity_id, max_retries=2, *, fetch_streams: bool = True
+    session,
+    athlete_id,
+    activity_id,
+    max_retries=2,
+    *,
+    fetch_streams: bool = True,
+    persist_splits: bool = True,
 ):
     """Attempt enrichment with token refresh and retries."""
     for attempt in range(1, max_retries + 1):
         try:
             access_token = get_valid_token(session, athlete_id)
             enrich_one_activity(
-                session, access_token, activity_id, fetch_streams=fetch_streams
+                session,
+                access_token,
+                activity_id,
+                fetch_streams=fetch_streams,
+                persist_splits=persist_splits,
             )
             session.expire_all()
 
@@ -904,6 +923,19 @@ class ActivityIngestionService:
             self.session, self.athlete_id, activities, self.user_id
         )
 
+    def enrich_single_activity(self, activity_id: int, *, fetch_streams: bool = True):
+        """Enrich one run by id using this service's athlete (and optional user for split policy)."""
+        from src.db.dao.user_identity_dao import persist_splits_for_user
+
+        persist_splits = persist_splits_for_user(self.session, self.user_id)
+        enrich_one_activity_with_refresh(
+            self.session,
+            self.athlete_id,
+            activity_id,
+            fetch_streams=fetch_streams,
+            persist_splits=persist_splits,
+        )
+
 
 def run_enrichment_batch(
     session,
@@ -914,6 +946,7 @@ def run_enrichment_batch(
     after=None,
     before=None,
     activities=None,
+    persist_splits: bool = True,
 ):
     """
     Batch enrichment job for activities.
@@ -984,7 +1017,11 @@ def run_enrichment_batch(
 
         try:
             enrich_one_activity_with_refresh(
-                session, athlete_id, aid, fetch_streams=fetch_streams
+                session,
+                athlete_id,
+                aid,
+                fetch_streams=fetch_streams,
+                persist_splits=persist_splits,
             )
             enriched_count += 1
             log.info(f"Successfully enriched activity {aid} for athlete {athlete_id}")
@@ -1015,6 +1052,7 @@ def run_enrichment_batches_in_window(
     before=None,
     max_batches_per_chunk=None,
     rate_buffer=10,
+    persist_splits: bool = True,
 ):
     """
     Run enrichment repeatedly until no pending rows remain in the window or caps hit.
@@ -1040,7 +1078,9 @@ def run_enrichment_batches_in_window(
         if not activities:
             break
 
-        projected = project_strava_enrichment_calls(activities, split_cutoff)
+        projected = project_strava_enrichment_calls(
+            activities, split_cutoff, persist_splits=persist_splits
+        )
         stats = limiter.get_stats()
         remaining_15m = stats.get("remaining_15min", 0)
         if projected + rate_buffer > remaining_15m:
@@ -1062,6 +1102,7 @@ def run_enrichment_batches_in_window(
             after=after,
             before=before,
             activities=activities,
+            persist_splits=persist_splits,
         )
         total_enriched += batch_enriched
 

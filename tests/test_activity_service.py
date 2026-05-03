@@ -120,7 +120,7 @@ def test_enrich_one_activity_success(
     return_value=[10, 20, 30, 25, 15],
 )
 @patch("src.services.activity_service.upsert_splits")
-def test_enrich_one_activity_skips_streams_when_enable_splits_false(
+def test_enrich_one_activity_skips_streams_when_persist_splits_false(
     mock_upsert,
     mock_extract_zones,
     MockClient,
@@ -132,8 +132,9 @@ def test_enrich_one_activity_skips_streams_when_enable_splits_false(
     mock_client.get_activity.return_value = dummy_activity_json
     mock_client.get_hr_zones.return_value = dummy_zones_data
 
-    with patch.object(svc.config, "ENABLE_SPLITS", False):
-        result = svc.enrich_one_activity(mock_session, "fake-token", 123)
+    result = svc.enrich_one_activity(
+        mock_session, "fake-token", 123, persist_splits=False
+    )
 
     assert result is True
     mock_client.get_activity.assert_called_once_with(123)
@@ -151,7 +152,11 @@ def test_enrich_one_activity_with_refresh_calls_enrich(
     assert result is True
     mock_token.assert_called_once_with(mock_session, athlete_id)
     mock_enrich.assert_called_once_with(
-        mock_session, "fake-token", 456, fetch_streams=True
+        mock_session,
+        "fake-token",
+        456,
+        fetch_streams=True,
+        persist_splits=True,
     )
 
 
@@ -252,8 +257,26 @@ def test_run_enrichment_batch_calls_all(
     assert mock_enrich.call_count == 3
     mock_enrich.assert_has_calls(
         [
-            call(mock_session, athlete_id, 1, fetch_streams=True),
-            call(mock_session, athlete_id, 2, fetch_streams=True),
-            call(mock_session, athlete_id, 3, fetch_streams=True),
+            call(
+                mock_session,
+                athlete_id,
+                1,
+                fetch_streams=True,
+                persist_splits=True,
+            ),
+            call(
+                mock_session,
+                athlete_id,
+                2,
+                fetch_streams=True,
+                persist_splits=True,
+            ),
+            call(
+                mock_session,
+                athlete_id,
+                3,
+                fetch_streams=True,
+                persist_splits=True,
+            ),
         ]
     )

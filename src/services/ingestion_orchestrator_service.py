@@ -104,6 +104,10 @@ from src.utils.strava_exceptions import (
     StravaTokenError,
 )
 from src.db.dao.strava_sync_status_dao import StravaSyncStatusDAO
+from src.db.dao.user_identity_dao import (
+    persist_splits_for_user,
+    mark_initial_strava_import_complete,
+)
 from src.utils.rate_limiter import get_rate_limiter
 from src.services.strava_reconciliation_service import (
     STRAVA_INGEST_LOOKBACK_WEEKS,
@@ -113,6 +117,9 @@ from src.services.strava_reconciliation_service import (
 from src.services.strava_sync_retry_service import schedule_strava_ingestion_retry
 from src.db.dao.strava_ingestion_retry_dao import delete_retry_standalone
 from src.services.run_execution_analysis_service import analyze_recent_activity_window
+from src.services.coach_strava_readiness_service import (
+    evaluate_coach_strava_data_readiness,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +279,22 @@ def run_full_ingestion_and_enrichment(
         except Exception as exc:  # pragma: no cover
             logger.warning(f"Failed to record sync error: {exc}")
 
+    def maybe_mark_initial_import_complete():
+        if not user_id:
+            return
+        try:
+            readiness = evaluate_coach_strava_data_readiness(
+                session, str(user_id), int(athlete_id)
+            )
+            if readiness.coach_data_ready:
+                mark_initial_strava_import_complete(session, user_id)
+                session.commit()
+        except Exception:
+            logger.warning(
+                "mark_initial_strava_import_complete failed after sync",
+                exc_info=True,
+            )
+
     logger.info(
         f"[Ingestion] run_full_ingestion_and_enrichment called for user_id={user_id}, athlete_id={athlete_id}"
     )
@@ -283,6 +306,8 @@ def run_full_ingestion_and_enrichment(
         )
         sync_start()
         sync_progress(5, "Preparing sync")
+
+        persist_splits = persist_splits_for_user(session, user_id)
 
         win = compute_strava_six_week_window()
         six_week_start_dt = win.six_week_start_dt
@@ -365,6 +390,7 @@ def run_full_ingestion_and_enrichment(
             sync_progress(75, "Nothing to sync")
             update_last_sync_timestamp(session, athlete_id)
             sync_complete()
+            maybe_mark_initial_import_complete()
             return {"synced": 0, "enriched": 0}
 
         chunk_boundaries: list[tuple[int, int]] = [(after_ts, before_ts)]
@@ -560,6 +586,7 @@ def run_full_ingestion_and_enrichment(
                         before=enrich_before,
                         max_batches_per_chunk=config.MAX_ENRICHMENT_BATCHES_PER_CHUNK,
                         rate_buffer=RATE_BUFFER,
+                        persist_splits=persist_splits,
                     )
                     print(
                         f"✅ [Orchestrator] chunk {idx + 1}/{num_chunks} enriched={enriched} "
@@ -750,6 +777,7 @@ def run_full_ingestion_and_enrichment(
         sync_progress(95, "Finalizing sync")
         logger.info(f"Finished ingestion. Synced={inserted_count}, Enriched={enriched}")
         sync_complete()
+        maybe_mark_initial_import_complete()
         if user_id:
             try:
                 from src.services.weekly_insight_post_ingestion_backfill import (
