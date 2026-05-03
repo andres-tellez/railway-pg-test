@@ -19,6 +19,7 @@ from flask import Blueprint, jsonify, request
 
 from src.db.db_session import get_session
 from src.db.models.conversations import Conversation, ConversationMessage
+from src.db.models.user_athletes import UserAthleteLink
 from src.routes.conversation_routes import get_user_from_auth
 from src.services.security.external_apis.openai_service import (
     CostLimitExceededError,
@@ -32,6 +33,9 @@ from src.smartcoach_mobile_coach.http_rate_limit import (
 from src.smartcoach_mobile_coach.orchestrator import run_mobile_agent_turn
 from src.smartcoach_mobile_coach.thread_derived_context import (
     derive_thread_coach_context,
+)
+from src.services.coach_strava_readiness_service import (
+    evaluate_coach_strava_data_readiness,
 )
 from src.utils.response_utils import error_response
 
@@ -164,6 +168,18 @@ def _coerce_last_activity_id(payload: dict) -> Optional[int]:
     return aid if aid > 0 else None
 
 
+def _coerce_require_fresh_strava_data(payload: dict) -> bool:
+    """True when client asks to gate until Strava coach-data-ready."""
+    raw = payload.get("require_fresh_strava_data")
+    if raw is None:
+        raw = payload.get("requireFreshStravaData")
+    if raw is True:
+        return True
+    if isinstance(raw, str) and raw.strip().lower() in ("true", "1", "yes"):
+        return True
+    return False
+
+
 smartcoach_mobile_coach_bp = Blueprint(
     "smartcoach_mobile_coach",
     __name__,
@@ -220,7 +236,6 @@ def agent_messages(conversation_id):
             ),
             429,
         )
-    record_agent_http_request(uid_str)
 
     session = get_session()
     start = time.time()
@@ -234,6 +249,42 @@ def agent_messages(conversation_id):
         t_route1 = time.perf_counter()
         if not conversation:
             return jsonify({"error": "Conversation not found"}), 404
+
+        require_fresh = _coerce_require_fresh_strava_data(data)
+        if require_fresh:
+            link = session.query(UserAthleteLink).filter_by(user_id=uid_str).first()
+            if link:
+                readiness = evaluate_coach_strava_data_readiness(
+                    session, uid_str, link.athlete_id
+                )
+                if not readiness.coach_data_ready:
+                    logger.info(
+                        "[smartcoach_mobile_coach] coach data not ready correlation_id=%s "
+                        "user=%s pending_enrichment=%s sync_status=%s",
+                        correlation_id,
+                        uid_str,
+                        readiness.pending_detail_enrichment,
+                        readiness.sync_status,
+                    )
+                    return (
+                        jsonify(
+                            {
+                                "code": "STRAVA_REFRESH_IN_PROGRESS",
+                                "message": (
+                                    "Your recent run data is still updating. "
+                                    "Please try again in a few seconds."
+                                ),
+                                "retry_after_seconds": 5,
+                                "sync_status": readiness.sync_status,
+                                "pending_detail_enrichment_count": (
+                                    readiness.pending_detail_enrichment
+                                ),
+                            }
+                        ),
+                        425,
+                    )
+
+        record_agent_http_request(uid_str)
 
         prior = (
             session.query(ConversationMessage)

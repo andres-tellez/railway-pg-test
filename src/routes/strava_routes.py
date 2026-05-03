@@ -55,6 +55,9 @@ from src.services.strava_reconciliation_service import (
     build_sync_health_payload,
     reconcile_missing_runs,
 )
+from src.services.coach_strava_readiness_service import (
+    evaluate_coach_strava_data_readiness,
+)
 from src.utils.strava_helpers import (
     get_authenticated_user_id,
     get_user_athlete_link,
@@ -657,6 +660,10 @@ def get_strava_status():
             else None
         )
 
+        readiness = evaluate_coach_strava_data_readiness(
+            session, user_id, athlete_link.athlete_id
+        )
+
         return success_response(
             data={
                 "connected": True,
@@ -668,6 +675,8 @@ def get_strava_status():
                 ),
                 "activity_count": activity_count,
                 "sync_status": sync_payload,
+                "coach_data_ready": readiness.coach_data_ready,
+                "pending_detail_enrichment_count": readiness.pending_detail_enrichment,
                 "has_strava_premium": (
                     athlete_link.has_strava_premium
                     if hasattr(athlete_link, "has_strava_premium")
