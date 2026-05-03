@@ -197,7 +197,9 @@ def validation_error_response(
 
 
 def internal_error_response(
-    message: str = "Internal server error", log_error: Optional[Exception] = None
+    message: str = "Internal server error",
+    log_error: Optional[Exception] = None,
+    details: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], int]:
     """
     Create a standardized 500 Internal Server Error response.
@@ -205,6 +207,7 @@ def internal_error_response(
     Args:
         message: Error message (will be sanitized)
         log_error: Optional exception to log (for debugging)
+        details: Optional structured detail dict (same contract as error_response)
 
     Returns:
         Tuple of (JSON response, 500)
@@ -212,4 +215,9 @@ def internal_error_response(
     if log_error:
         logger.exception("Internal server error", exc_info=log_error)
 
-    return error_response(message, status_code=500, error_code="INTERNAL_ERROR")
+    return error_response(
+        message,
+        status_code=500,
+        error_code="INTERNAL_ERROR",
+        details=details,
+    )

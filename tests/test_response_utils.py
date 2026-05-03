@@ -142,6 +142,19 @@ def test_internal_error_response(app):
         assert response.json["error"] == "Database error"
 
 
+def test_internal_error_response_with_details(app):
+    """Test internal_error_response forwards optional details."""
+    with app.app_context():
+        response, status_code = internal_error_response(
+            "Strava status failed",
+            details={"detail": "column missing"},
+        )
+
+        assert status_code == 500
+        assert response.json["error_code"] == "INTERNAL_ERROR"
+        assert response.json["details"] == {"detail": "column missing"}
+
+
 def test_error_message_sanitization(app):
     """Test that long error messages are truncated."""
     with app.app_context():
