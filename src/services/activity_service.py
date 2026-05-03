@@ -6,7 +6,8 @@ import time
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+import hashlib
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 
 from src.services.token_service import get_valid_token
@@ -20,6 +21,24 @@ from src.db.models.activities import Activity
 
 log = get_logger(__name__)
 log.setLevel(logging.INFO)
+
+
+def _epoch_to_utc_iso(ts):
+    """Human-readable UTC instant for ingest validation logs."""
+    if ts is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError):
+        return f"<invalid ts {ts!r}>"
+
+
+def _access_token_fingerprint(access_token: str | None) -> str:
+    """Correlate requests without logging secret material."""
+    if not access_token:
+        return "empty"
+    digest = hashlib.sha256(access_token.encode("utf-8")).hexdigest()[:12]
+    return f"sha256:{digest} len={len(access_token)}"
 
 
 def log_strava_payload(activity_id, activity_json, zones_data, streams):
@@ -636,6 +655,7 @@ class ActivityIngestionService:
 
     def _refresh_client(self):
         access_token = get_valid_token(self.session, self.athlete_id)
+        self._access_token_fingerprint = _access_token_fingerprint(access_token)
         self.client = StravaClient(access_token)
 
     def fetch_all_activities(
@@ -659,6 +679,21 @@ class ActivityIngestionService:
             type_limit: Maximum number of filtered activities to return.
         """
         self._refresh_client()
+        log.info(
+            "[STRAVA_FETCH_VALIDATE] fetch_all_activities INPUT athlete_id=%s "
+            "after_ts=%s before_ts=%s after_utc=%s before_utc=%s "
+            "access_token_fp=%s per_page=%s type_filter=%r type_limit=%s limit=%s",
+            self.athlete_id,
+            after,
+            before,
+            _epoch_to_utc_iso(after),
+            _epoch_to_utc_iso(before),
+            getattr(self, "_access_token_fingerprint", "?"),
+            per_page or config.STRAVA_PER_PAGE,
+            type_filter,
+            type_limit,
+            limit,
+        )
         page = 1
         results = []
         filtered: list[dict] = []
@@ -670,8 +705,21 @@ class ActivityIngestionService:
         def _ingest_debug_fetch_return(result: list) -> list:
             print("[INGEST_DEBUG] STRAVA RESPONSE")
             print("count:", len(result))
+            newest = result[0].get("start_date") if result else None
             if result:
-                print("newest:", result[0].get("start_date"))
+                print("newest:", newest)
+            runs_trace_count = len(filtered) if type_filter else None
+            log.info(
+                "[STRAVA_FETCH_VALIDATE] fetch_all_activities RESPONSE athlete_id=%s "
+                "returned_count=%s raw_strava_rows_fetched=%s runs_filtered_total=%s "
+                "newest_activity_start_date=%s access_token_fp=%s",
+                self.athlete_id,
+                len(result),
+                len(results),
+                runs_trace_count,
+                newest,
+                getattr(self, "_access_token_fingerprint", "?"),
+            )
             return result
 
         while True:
