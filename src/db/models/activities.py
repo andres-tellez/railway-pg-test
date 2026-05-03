@@ -75,3 +75,6 @@ class Activity(Base):
     planned_miles = Column(Float, nullable=True)
     actual_miles = Column(Float, nullable=True)
     completion_pct = Column(Float, nullable=True)
+
+    # Strava detail API + zones applied (enrichment pass completed)
+    detail_enriched_at = Column(DateTime(timezone=True), nullable=True)
