@@ -376,6 +376,11 @@ def run_full_ingestion_and_enrichment(
             sync_complete()
             return {"synced": 0, "enriched": 0}
 
+        # Oldest→newest segments are built above; process newest first so this week's
+        # runs are upserted and enriched (streams/splits) before older windows. Improves
+        # mid-sync coach queries and matches user expectations right after connect.
+        chunk_boundaries.reverse()
+
         num_chunks = len(chunk_boundaries)
         if num_chunks > 1:
             logger.info(
