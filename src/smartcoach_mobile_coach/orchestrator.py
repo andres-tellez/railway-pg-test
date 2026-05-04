@@ -82,6 +82,8 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
     INTENT_RACE_PROJECTION,
+    MODE_AMBIGUOUS,
+    MODE_MINIMAL,
     TURN_OPENING,
     ResponseDirective,
     classify_turn,
@@ -2528,6 +2530,157 @@ def _valid_run_summary_tool_payload(out: Any) -> Optional[Dict[str, Any]]:
     return out
 
 
+# --- Explicit user-stated goal → plan memory (deterministic fallback, Phase F) ---
+
+_MAX_GOAL_MEMORY_NORMALIZED_CHARS = 280
+
+_EXPLICIT_GOAL_INTENT_VERB_RE = re.compile(
+    r"\b("
+    r"i\s+want\s+to|i\s+would\s+like\s+to|i'?d\s+like\s+to|"
+    r"i'?m\s+(looking\s+to|trying\s+to|hoping\s+to)|"
+    r"my\s+goal\s+is|i\s+hope\s+to|i\s+plan\s+to|plan\s+to|"
+    r"training\s+for|train\s+for|preparing\s+to|preparing\s+for|prep\s+for|"
+    r"working\s+toward|work\s+toward|aim(?:ing)?\s+to|aim(?:ing)?\s+for"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_EXPLICIT_GOAL_NOUN_RE = re.compile(
+    r"\b("
+    r"half\s+marathon|full\s+marathon|ultra|marathon|"
+    r"10\s*km|10k|5\s*km|5k|half|hm\b|"
+    r"\bpr\b|personal\s+best|pb\b|qualif(y|ying)|"
+    r"sub\s*[- ]?\s*\d"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def normalize_goal_text(raw: str) -> str:
+    """Collapse whitespace and cap length for plan memory (matches tool cap)."""
+    t = " ".join((raw or "").strip().split())
+    if len(t) > _MAX_GOAL_MEMORY_NORMALIZED_CHARS:
+        t = t[:_MAX_GOAL_MEMORY_NORMALIZED_CHARS].rstrip()
+    return t
+
+
+def should_persist_explicit_goal_memory(
+    user_message: str,
+    response_directive: ResponseDirective,
+) -> bool:
+    """True only for explicit first-person goal statements; never inferred intent."""
+    if response_directive.investigate_first:
+        return False
+    if response_directive.interaction_mode in (MODE_MINIMAL, MODE_AMBIGUOUS):
+        return False
+    raw = (user_message or "").strip()
+    if len(raw) < 12:
+        return False
+    if not _EXPLICIT_GOAL_INTENT_VERB_RE.search(raw):
+        return False
+    if not _EXPLICIT_GOAL_NOUN_RE.search(raw):
+        return False
+    return True
+
+
+def _remember_plan_preference_saved_in_messages(messages: List[Dict[str, Any]]) -> bool:
+    for msg in messages:
+        if msg.get("role") != "tool":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, str):
+            continue
+        try:
+            body = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(body, dict):
+            continue
+        if body.get("saved") is True and isinstance(body.get("memory"), dict):
+            return True
+    return False
+
+
+def persist_explicit_goal_plan_memory(
+    session: Session,
+    internal_user_id: str,
+    text: str,
+    guard: Dict[str, bool],
+) -> None:
+    """Append goal memory via service layer; commit; invalidate user_context cache."""
+    if guard.get("committed"):
+        return
+    import uuid as _uuid
+
+    from src.services.coach.user_plan_memory_service import (
+        MEMORY_SOURCE_COACH_TOOL,
+        append_plan_memory,
+    )
+    from src.smartcoach_mobile_coach import user_context_cache
+
+    try:
+        user_uuid = _uuid.UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        logger.warning(
+            "[explicit_goal_memory] persist skipped: invalid internal_user_id"
+        )
+        return
+
+    row, deduplicated = append_plan_memory(
+        session,
+        user_uuid,
+        text,
+        source=MEMORY_SOURCE_COACH_TOOL,
+        memory_type="goal",
+    )
+    if row is None:
+        logger.warning(
+            "[explicit_goal_memory] persist skipped: append_plan_memory no row"
+        )
+        return
+
+    try:
+        session.commit()
+    except Exception:
+        logger.exception("[explicit_goal_memory] commit failed")
+        try:
+            session.rollback()
+        except Exception:
+            logger.debug("[explicit_goal_memory] rollback failed", exc_info=True)
+        return
+
+    guard["committed"] = True
+    user_context_cache.invalidate_user_context(str(user_uuid))
+    logger.info(
+        "[explicit_goal_memory] persisted user=%s… deduplicated=%s len=%s",
+        str(internal_user_id)[:8],
+        deduplicated,
+        len(text),
+    )
+
+
+def _maybe_run_explicit_goal_memory_fallback(
+    session: Session,
+    internal_user_id: str,
+    stashed_text: Optional[str],
+    messages: List[Dict[str, Any]],
+    guard: Dict[str, bool],
+) -> None:
+    """After tool loop: persist stashed goal if model did not call remember_plan_preference."""
+    if guard.get("committed"):
+        return
+    if not stashed_text or not stashed_text.strip():
+        return
+    if _remember_plan_preference_saved_in_messages(messages):
+        logger.info(
+            "[explicit_goal_memory] fallback skipped: remember_plan_preference already saved"
+        )
+        return
+    persist_explicit_goal_plan_memory(
+        session, internal_user_id, stashed_text.strip(), guard
+    )
+
+
 def run_mobile_agent_turn(
     session: Session,
     internal_user_id: str,
@@ -2647,6 +2800,11 @@ def run_mobile_agent_turn(
         ",".join(response_directive.avoid_repeating_metrics) or "none",
         response_directive.target_length,
     )
+
+    stashed_explicit_goal_text: Optional[str] = None
+    explicit_goal_memory_persist_guard: Dict[str, bool] = {"committed": False}
+    if should_persist_explicit_goal_memory(user_message, response_directive):
+        stashed_explicit_goal_text = normalize_goal_text(user_message)
 
     prior_plan_state = (
         thread_ctx.latest_plan_intake_state
@@ -3204,6 +3362,13 @@ def run_mobile_agent_turn(
                     len(text_fp),
                     timings_ms,
                 )
+                _maybe_run_explicit_goal_memory_fallback(
+                    session,
+                    internal_user_id,
+                    stashed_explicit_goal_text,
+                    messages,
+                    explicit_goal_memory_persist_guard,
+                )
                 return structured_fp, meta_fp
             logger.warning(
                 "[coach_fastpath] empty model text or invalid summary; using full agent loop"
@@ -3309,6 +3474,13 @@ def run_mobile_agent_turn(
                     loops,
                     len(text_fp),
                     timings_ms,
+                )
+                _maybe_run_explicit_goal_memory_fallback(
+                    session,
+                    internal_user_id,
+                    stashed_explicit_goal_text,
+                    messages,
+                    explicit_goal_memory_persist_guard,
                 )
                 return text_fp, meta_fp
             logger.warning(
@@ -3486,6 +3658,13 @@ def run_mobile_agent_turn(
                     loops,
                     len(text),
                 )
+                _maybe_run_explicit_goal_memory_fallback(
+                    session,
+                    internal_user_id,
+                    stashed_explicit_goal_text,
+                    messages,
+                    explicit_goal_memory_persist_guard,
+                )
                 return structured, meta
 
             pis_merged: Optional[Dict[str, Any]] = (
@@ -3569,9 +3748,23 @@ def run_mobile_agent_turn(
                     loops,
                     len(out_text),
                 )
+                _maybe_run_explicit_goal_memory_fallback(
+                    session,
+                    internal_user_id,
+                    stashed_explicit_goal_text,
+                    messages,
+                    explicit_goal_memory_persist_guard,
+                )
                 return structured_text, meta
 
             if text:
+                _maybe_run_explicit_goal_memory_fallback(
+                    session,
+                    internal_user_id,
+                    stashed_explicit_goal_text,
+                    messages,
+                    explicit_goal_memory_persist_guard,
+                )
                 return text, meta
 
     fallback = (
@@ -3629,5 +3822,19 @@ def run_mobile_agent_turn(
             "[smartcoach_mobile_coach] response_shape=text_plan_data_truncated loops=%s",
             loops,
         )
+        _maybe_run_explicit_goal_memory_fallback(
+            session,
+            internal_user_id,
+            stashed_explicit_goal_text,
+            messages,
+            explicit_goal_memory_persist_guard,
+        )
         return structured_trunc, meta_trunc
+    _maybe_run_explicit_goal_memory_fallback(
+        session,
+        internal_user_id,
+        stashed_explicit_goal_text,
+        messages,
+        explicit_goal_memory_persist_guard,
+    )
     return fallback, meta_trunc
