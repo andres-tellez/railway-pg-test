@@ -336,10 +336,11 @@ def test_orchestrator_source_wires_summary_after_tone_contract() -> None:
     # the arg list) rather than the def (which appears earlier in
     # the file).
     tone_idx = src.index("coach_tone_contract_section(),")
+    prose_idx = src.index("coach_turn_prose_shape_section(),")
     summary_idx = src.index("_prior_session_summary_section(\n                session,")
-    assert tone_idx < summary_idx, (
-        "_prior_session_summary_section must be composed AFTER "
-        "coach_tone_contract_section"
+    assert tone_idx < prose_idx < summary_idx, (
+        "system prompt order: coach_tone_contract_section, then "
+        "coach_turn_prose_shape_section, then _prior_session_summary_section"
     )
 
 

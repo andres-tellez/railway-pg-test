@@ -158,7 +158,8 @@ def test_orchestrator_source_wires_contract_after_phase_ux_and_before_tone() -> 
     phase_ux_idx = src.index("phase_ux_contract_section()")
     adjustment_idx = src.index("plan_adjustment_contract_section()")
     tone_idx = src.index("coach_tone_contract_section()")
-    assert phase_ux_idx < adjustment_idx < tone_idx
+    prose_idx = src.index("coach_turn_prose_shape_section()")
+    assert phase_ux_idx < adjustment_idx < tone_idx < prose_idx
 
 
 def test_orchestrator_does_not_wire_contract_into_plan_creation_branch() -> None:

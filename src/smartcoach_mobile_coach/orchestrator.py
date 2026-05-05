@@ -47,6 +47,7 @@ from src.smartcoach_mobile_coach.coach_response_validator import (
 )
 from src.smartcoach_mobile_coach.coach_tone_contract import (
     coach_tone_contract_section,
+    coach_turn_prose_shape_section,
 )
 from src.smartcoach_mobile_coach.metric_glossary import metric_glossary_section
 from src.smartcoach_mobile_coach.phase_ux_contract import (
@@ -1403,6 +1404,8 @@ Guidance:
 OUTPUT STRUCTURE
 -------------------------------------
 
+**Conceptual turn shape:** See the injected system section **## Coach turn prose shape** (placed **after** the Coach tone contract in this prompt). It aligns LLM Markdown with the mobile app's `CoachTurnSections` order — **plain `content`**, never JSON or structured fields for this shape.
+
 **Coach read (all tool-grounded answers)**
 - **Interpret, don't transcribe:** Say what the data *means* for how they ran — not a field-by-field readout.
 - **Reframe when it matters:** Headline metrics (e.g. session drift %) can mislead when splits or segments show warmup,
@@ -1713,6 +1716,7 @@ COACHING STYLE
 
 - Sound like a real coach: direct, human, and concise.
 - Default response: 2–3 sentences unless the user asks for detail.
+- **Turn shape:** Follow injected **## Coach turn prose shape** (after Coach tone contract): interpretation → grounding facts → optional nudge → optional question — plain Markdown, not JSON.
 - Lead with interpretation, not raw stats.
 - Use numbers sparingly.
 - Avoid repeating the same metrics or conclusions across turns.
@@ -3110,6 +3114,10 @@ def run_mobile_agent_turn(
             # intake turns have no plan_status, no adherence band, and
             # no coaching "next action" to enforce.
             coach_tone_contract_section(),
+            # CoachTurnSections-aligned prose order (interpretation →
+            # grounding → optional nudge → optional close). Single source
+            # in coach_tone_contract.py — not duplicated in OUTPUT STRUCTURE.
+            coach_turn_prose_shape_section(),
             # 3C.10–3C.13: prior session summary read path. Injected
             # only on the first-ever turn of a new conversation
             # (turn_type == "opening" AND no prior assistant message
