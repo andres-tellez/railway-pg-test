@@ -2,10 +2,18 @@
 
 | | |
 |---|---|
-| **Status** | Draft — design only; not implemented |
+| **Status** | Phase 1 backend **implemented** (optional ``sections`` + derived ``content``); mobile parsing/rendering later |
 | **Scope** | **`run_summary`** payloads for **opening run recap** (“How was my run?” / same phrase family). No other assistant shapes, no generalized coach platform. |
 
 **Out of scope:** Weekly summaries, plan chat, other tools, UI redesign, rewriting non–run-summary responses.
+
+### Phase 1 backend (shipped in repo)
+
+- **Module:** `src/smartcoach_mobile_coach/run_summary_sections.py` — paragraph heuristic + join matching mobile `renderCoachTurnToText` order.
+- **Orchestrator:** `enrich_run_summary_payload_with_sections` after **run recap fastpath** and **full-loop** `run_summary` returns.
+- **Env:** `SMARTCOACH_RUN_SUMMARY_SECTIONS_ENABLED` — default **on** (`1`). Set to `0` / `false` / `no` / `off` to omit `sections` and leave model `content` unchanged.
+- **`meta`:** `run_summary_sections: true` when `sections` were attached.
+- **`nudge`:** always `null` in Phase 1 (splitter does not isolate nudge yet).
 
 ---
 

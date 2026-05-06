@@ -102,6 +102,9 @@ from src.smartcoach_mobile_coach.run_recap_fastpath import (
     wants_split_detail_fastpath,
 )
 from src.smartcoach_mobile_coach.run_recap_policy import decide_run_recap_fastpath
+from src.smartcoach_mobile_coach.run_summary_sections import (
+    enrich_run_summary_payload_with_sections,
+)
 from src.smartcoach_mobile_coach.thread_derived_context import (
     DerivedThreadCoachContext,
     derive_thread_coach_context,
@@ -3367,11 +3370,16 @@ def run_mobile_agent_turn(
                     "content": text_fp,
                     "data": ok_payload,
                 }
+                structured_fp, sections_fp = enrich_run_summary_payload_with_sections(
+                    structured_fp
+                )
+                if sections_fp:
+                    meta_fp["run_summary_sections"] = True
                 logger.info(
                     "[smartcoach_mobile_coach] response_shape=run_summary "
                     "loops=%s fastpath=1 content_len=%s timings_ms=%s",
                     loops,
-                    len(text_fp),
+                    len(structured_fp.get("content") or ""),
                     timings_ms,
                 )
                 _maybe_run_explicit_goal_memory_fallback(
@@ -3665,10 +3673,15 @@ def run_mobile_agent_turn(
                     "content": text,
                     "data": latest_run_summary,
                 }
+                structured, sections_loop = enrich_run_summary_payload_with_sections(
+                    structured
+                )
+                if sections_loop:
+                    meta["run_summary_sections"] = True
                 logger.info(
                     "[smartcoach_mobile_coach] response_shape=run_summary loops=%s content_len=%s",
                     loops,
-                    len(text),
+                    len(structured.get("content") or ""),
                 )
                 _maybe_run_explicit_goal_memory_fallback(
                     session,
