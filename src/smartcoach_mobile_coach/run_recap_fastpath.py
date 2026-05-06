@@ -16,11 +16,11 @@ which tools to call.
 
 Prefetch uses **get_run_summary** with execution KPIs for the **HTTP/card**
 payload (structured run summary). The **LLM system appendix** uses a
-**compact** JSON slice: by default **facts only** (session headline: distance,
-pace, time, HR averages when present) so the opener does not anchor on drift /
-Z2 / band KPIs. Set ``SMARTCOACH_RUN_RECAP_PREFETCH_SLIM=0`` to put
-``training_kpis``, ``is_easy_run``, ``zone_bounds``, and
-``hr_drift_band_zones`` back into the compact JSON (legacy behavior).
+**compact** JSON slice: by default ``facts`` plus ``coach_prose_signals`` (a
+small KPI-derived slice: easy-run flag, drift band, Z2/easy displays) so prose
+can ground on SmartCoach signals **without** repeating headline stats from the
+card. Set ``SMARTCOACH_RUN_RECAP_PREFETCH_SLIM=0`` to put full ``training_kpis``,
+``zone_bounds``, and ``hr_drift_band_zones`` into the compact JSON (legacy).
 """
 
 from __future__ import annotations
@@ -73,12 +73,37 @@ def _split_fastpath_enabled() -> bool:
 
 def _run_recap_prefetch_slim_for_llm() -> bool:
     """
-    When true (default), compact JSON for the recap fastpath omits execution
-    KPIs / drift bands so the opener stays interpretation-first. Full
-    ``get_run_summary`` remains in prefetch for structured API responses.
+    When true (default), compact JSON omits full KPI blobs but still injects
+    ``coach_prose_signals`` for grounded prose. Full ``get_run_summary`` remains
+    in prefetch for the HTTP/card payload.
     """
     raw = (os.getenv("SMARTCOACH_RUN_RECAP_PREFETCH_SLIM") or "1").strip().lower()
     return raw not in ("0", "false", "no", "off")
+
+
+def _coach_prose_signals_from_summary(summary: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Minimal KPI-derived signals for slim fastpath prose (avoid duplicating card headlines).
+
+    ``training_kpis`` on the summary payload is the inner ``kpis`` dict from
+    ``tool_get_run_summary`` / ``get_run_kpi_detail``.
+    """
+    out: Dict[str, Any] = {}
+    if summary.get("is_easy_run") is not None:
+        out["is_easy_run"] = bool(summary.get("is_easy_run"))
+    tk = summary.get("training_kpis")
+    if not isinstance(tk, dict):
+        return out
+    band = tk.get("hr_drift_band")
+    if isinstance(band, str) and band.strip():
+        out["hr_drift_band"] = band.strip().lower()
+    z2d = tk.get("z2_band_pct_display")
+    if isinstance(z2d, str) and z2d.strip():
+        out["z2_band_pct_display"] = z2d.strip()
+    ed = tk.get("easy_pct_display")
+    if isinstance(ed, str) and ed.strip():
+        out["easy_pct_display"] = ed.strip()
+    return out
 
 
 def wants_run_recap_fastpath(
@@ -266,10 +291,10 @@ def _compact_run_context_for_llm(
     """
     Minimal JSON for the fast-path system prompt.
 
-    Default (slim): ``facts`` + ids/dates only — no execution KPI / drift slice
-    in the appendix (full ``get_run_summary`` still in prefetch for the card).
-    Legacy: set ``SMARTCOACH_RUN_RECAP_PREFETCH_SLIM=0`` to include KPIs and
-    zone/drift bands in the compact JSON.
+    Default (slim): ``facts`` + ``coach_prose_signals`` when present — full
+    execution KPI blobs omitted from compact (full ``get_run_summary`` remains
+    for the card/API). Legacy: ``SMARTCOACH_RUN_RECAP_PREFETCH_SLIM=0`` embeds
+    full ``training_kpis`` and zone/drift chart arrays in the compact JSON.
     """
     summary = prefetch.get("get_run_summary") or {}
     facts = summary.get("facts") if isinstance(summary.get("facts"), dict) else {}
@@ -286,6 +311,10 @@ def _compact_run_context_for_llm(
             out["plan_status"] = ps.strip()
         if ex_sum.get("violated_rest_day") is not None:
             out["violated_rest_day"] = bool(ex_sum.get("violated_rest_day"))
+    if _run_recap_prefetch_slim_for_llm():
+        sig = _coach_prose_signals_from_summary(summary)
+        if sig:
+            out["coach_prose_signals"] = sig
     if not _run_recap_prefetch_slim_for_llm():
         kpis = summary.get("training_kpis")
         if kpis is not None and not isinstance(kpis, dict):
@@ -339,7 +368,7 @@ def _compact_split_context_for_llm(
     return out
 
 
-def system_appendix_for_prefetch(
+def system_appendix_for_prefetch(  # pylint: disable=too-many-branches,line-too-long
     prefetch: Dict[str, Any],
     recap_run_local_date: str,
     *,
@@ -350,8 +379,12 @@ def system_appendix_for_prefetch(
     day = (prose_anchor_day or "today").strip().lower()
     if day == "latest":
         poss = "your latest run's"
-        opener = f"The user is asking about **their most recent run** (local calendar day **{ld}**)."
-        resolved = f"Resolved **activity_id** `{prefetch.get('activity_id')}` as the newest stored Run."
+        opener = (
+            f"The user is asking about **their most recent run** "
+            f"(local calendar day **{ld}**)."
+        )
+        aid = prefetch.get("activity_id")
+        resolved = f"Resolved **activity_id** `{aid}` as the newest stored Run."
         user_date_lines = (
             "**User-facing framing:** They mean **their latest recorded run** — do not imply it was "
             "calendar **today** unless that matches this run’s day. Prefer natural phrasing "
@@ -361,8 +394,12 @@ def system_appendix_for_prefetch(
         if day not in ("today", "yesterday"):
             day = "today"
         poss = "today's" if day == "today" else "yesterday's"
-        opener = f"The user is asking about their run on **{ld}** (device-local calendar day)."
-        resolved = f"Resolved **activity_id** `{prefetch.get('activity_id')}` for that anchor day."
+        opener = (
+            f"The user is asking about their run on **{ld}** "
+            "(device-local calendar day)."
+        )
+        aid = prefetch.get("activity_id")
+        resolved = f"Resolved **activity_id** `{aid}` for that anchor day."
         user_date_lines = (
             f"**User-facing dates:** In prose to the athlete, say **{day}** for the anchor run — **never** "
             "read out `anchor_local_date`, `calendar_local_date`, or `week_monday` as YYYY-MM-DD or "
@@ -381,35 +418,63 @@ def system_appendix_for_prefetch(
         json.dumps(compact, default=str),
         "```",
         "**Do not call any tools** — use only the JSON above for numbers.",
-        "**Layout (mobile):** The app shows the **RunSummaryCard** (from anchor `facts`) **above** your "
-        "Markdown. Your **`content` must not repeat** distance, duration, avg pace, avg/max HR, or any "
-        "other headline stat on that card — even paraphrased. Use **`content`** only for **learning**: "
-        "kudos, watch-out, or a non-obvious contrast **when** `comparison_sessions`, KPI fields in JSON, "
-        "or optional week-volume context justify it. If you ask a follow-up question, put it **after** "
-        "a blank line (paragraph break) following the learning block.",
+        "**Layout (mobile):** The app shows the **RunSummaryCard** (from anchor `facts`) "
+        "**above** your Markdown. Your **`content` must not repeat** distance, duration, "
+        "avg pace, avg/max HR, or any other headline stat on that card — even paraphrased. "
+        "Use **`content`** only for **learning**: kudos, watch-out, or a non-obvious contrast "
+        "**when** `coach_prose_signals`, `comparison_sessions`, full KPI fields in JSON "
+        "(non-slim), or optional week-volume context justify it. If you ask a follow-up "
+        "question, put it **after** a blank line (paragraph break) following the learning block.",
         user_date_lines,
     ]
     if slim:
-        lines.extend(
-            [
-                "**This opener (slim pre-load):** Anchor `facts` in the JSON populate the **card only** — "
-                "your **`content` must not quote** distance, pace, moving time, or HR averages from `facts`. "
-                "**Do not** cite HR drift %, drift bands, Z2 pace or adherence, `is_easy_run`, or zone "
-                "thresholds — they are **omitted** here on purpose. Do **not** invent them. The next user "
-                "turn uses the normal tool loop if they ask for drift/KPIs. **Ignore** any global instruction "
-                "to “prefer HR drift” **for this reply** when those fields are absent from the JSON.",
-            ]
-        )
+        signals = compact.get("coach_prose_signals")
+        if isinstance(signals, dict) and signals:
+            lines.extend(
+                [
+                    (
+                        "**Slim pre-load + `coach_prose_signals`:** Anchor `facts` populate the "
+                        "**RunSummaryCard** only. In **`content`**, do **not** repeat headline metrics "
+                        "from `facts`: distance, duration, moving time, avg pace, avg HR, max HR — "
+                        "even paraphrased.\n"
+                        "**Grounding:** Use **`coach_prose_signals`** when present (easy-run read, "
+                        "drift band, Z2 / easy time-in-zone displays). You may also use optional "
+                        "`comparison_sessions` / `week_volume_context` under their rules below.\n"
+                        "**Coach turn prose shape:** interpretation → grounding from signals → "
+                        "optional nudge → optional close. Keep the reply concise.\n"
+                        "**Numbers:** At **most one** numeric reference in the whole reply "
+                        "(e.g. one value from the displays if needed); prefer band labels and "
+                        "qualitative reads when enough.\n"
+                        "**Do not** paste Markdown KPI images or invent KPIs not implied by the JSON."
+                    ),
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    (
+                        "**This opener (slim pre-load):** Anchor `facts` in the JSON populate the "
+                        "**card only** — your **`content` must not quote** distance, pace, moving time, "
+                        "or HR averages from `facts`. **Do not** cite HR drift %, drift bands, Z2 pace "
+                        "or adherence, `is_easy_run`, or zone thresholds — they are **omitted** here on "
+                        "purpose. Do **not** invent them. The next user turn uses the normal tool loop "
+                        "if they ask for drift/KPIs. **Ignore** any global instruction to “prefer HR drift” "
+                        "**for this reply** when those fields are absent from the JSON."
+                    ),
+                ]
+            )
     if compact.get("week_volume_context"):
         lines.extend(
             [
-                "**Week volume (`week_volume_context`):** Compare **`this_week`** vs **`last_week`** "
-                "using **only** `run_count`, `total_mi_display`, and each row’s **`spoken_timeframe`** "
-                "(say “this week” / “last week” — **not** `week_monday` in the reply). **Optional:** "
-                f"add **at most one** short clause **only** if it surfaces something **non-obvious** "
-                f"(e.g. a sharp load swing the athlete might not already feel from the app). If the "
-                f"delta is routine, **omit** week volume entirely — do not recap totals for their own sake. "
-                "**Do not** invent other weekly stats, KPIs, or trends not in this JSON.",
+                (
+                    "**Week volume (`week_volume_context`):** Compare **`this_week`** vs **`last_week`** "
+                    "using **only** `run_count`, `total_mi_display`, and each row’s **`spoken_timeframe`** "
+                    "(say “this week” / “last week” — **not** `week_monday` in the reply). **Optional:** "
+                    "add **at most one** short clause **only** if it surfaces something **non-obvious** "
+                    "(e.g. a sharp load swing the athlete might not already feel from the app). If the "
+                    "delta is routine, **omit** week volume entirely — do not recap totals for their own "
+                    "sake. **Do not** invent other weekly stats, KPIs, or trends not in this JSON."
+                ),
             ]
         )
     if compact.get("comparison_sessions"):
@@ -430,8 +495,8 @@ def system_appendix_for_prefetch(
     else:
         lines.append(
             "**Prior-run contrast:** The JSON has **no** `comparison_sessions` — do **not** describe "
-            f"another **specific day's** run from memory. Do **not** restate anchor `facts` headline "
-            f"metrics in `content` (the card shows them). `week_volume_context`: only under the optional "
+            "another **specific day's** run from memory. Do **not** restate anchor `facts` headline "
+            "metrics in `content` (the card shows them). `week_volume_context`: only under the optional "
             "non-obvious rule above."
         )
     return "\n".join(lines)
@@ -447,7 +512,10 @@ def system_appendix_for_split_prefetch(
         "",
         "## Pre-loaded split data (server-side, compact)",
         f"The user is asking for split detail on their run near **{ld}**.",
-        f"Resolved **activity_id** `{prefetch.get('activity_id')}` via `{prefetch.get('resolved_from')}`.",
+        (
+            f"Resolved **activity_id** `{prefetch.get('activity_id')}` "
+            f"via `{prefetch.get('resolved_from')}`."
+        ),
         "Authoritative per-lap rows for this turn (`get_run_splits` source):",
         "```json",
         json.dumps(compact, default=str),
