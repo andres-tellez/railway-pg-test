@@ -94,6 +94,57 @@ def _coerce_eval_model_header() -> Optional[str]:
     return None
 
 
+def _log_agent_messages_response_audit(gpt_response: Any) -> None:
+    """
+    Temporary Phase 1 validation: outbound assistant payload summary only (no PII).
+    WARNING so it stays visible if Railway suppresses INFO.
+    """
+    if not isinstance(gpt_response, dict):
+        logger.warning(
+            "[agent_messages_response] response_type=%s has_data=0 has_sections=0 "
+            "content_len=0 sections_fields_present= grounding_count=0 has_close=0",
+            type(gpt_response).__name__,
+        )
+        return
+
+    rtype = str(gpt_response.get("type") or "").strip() or "unknown"
+    has_data = 1 if gpt_response.get("data") is not None else 0
+    sections = gpt_response.get("sections")
+    has_sections = 1 if isinstance(sections, dict) else 0
+    raw_content = gpt_response.get("content")
+    content_len = len(raw_content) if isinstance(raw_content, str) else 0
+
+    fields_present: list[str] = []
+    grounding_count = 0
+    has_close = 0
+    if isinstance(sections, dict):
+        if str(sections.get("interpretation") or "").strip():
+            fields_present.append("interpretation")
+        grounding = sections.get("grounding") or []
+        grounding_count = sum(1 for g in grounding if isinstance(g, str) and g.strip())
+        if grounding_count:
+            fields_present.append("grounding")
+        close_raw = sections.get("close")
+        has_close = 1 if isinstance(close_raw, str) and close_raw.strip() else 0
+        if has_close:
+            fields_present.append("close")
+        nudge_raw = sections.get("nudge")
+        if isinstance(nudge_raw, str) and nudge_raw.strip():
+            fields_present.append("nudge")
+
+    logger.warning(
+        "[agent_messages_response] response_type=%s has_data=%s has_sections=%s "
+        "content_len=%s sections_fields_present=%s grounding_count=%s has_close=%s",
+        rtype,
+        has_data,
+        has_sections,
+        content_len,
+        ",".join(fields_present),
+        grounding_count,
+        has_close,
+    )
+
+
 def _llm_plain_text_from_stored_message(role: str, content: str) -> str:
     """
     Assistant rows may store JSON for structured mobile payloads; the agent only sees plain insight text.
@@ -442,6 +493,8 @@ def agent_messages(conversation_id):
         resp_headers = {}
         if model_used:
             resp_headers["X-SmartCoach-Model-Used"] = model_used
+
+        _log_agent_messages_response_audit(gpt_response)
 
         return (
             jsonify(
