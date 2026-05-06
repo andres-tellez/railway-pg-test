@@ -106,6 +106,7 @@ Canonical docs under [`docs/`](docs/):
 - **API:** [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md)
 - **Phase checklists:** [`docs/PHASE_1_IMPLEMENTATION_CHECKLIST.md`](docs/PHASE_1_IMPLEMENTATION_CHECKLIST.md), [`docs/PHASE_2_IMPLEMENTATION_CHECKLIST.md`](docs/PHASE_2_IMPLEMENTATION_CHECKLIST.md)
 - **How docs relate:** [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md)
+- **RFC (draft):** [`docs/RUN_SUMMARY_STRUCTURED_RESPONSE_RFC.md`](docs/RUN_SUMMARY_STRUCTURED_RESPONSE_RFC.md) — optional `sections` on `run_summary` for enforceable `CoachTurnSections`
 
 **OAuth helper:** `python src/scripts/verify_oauth_config.py`
 
