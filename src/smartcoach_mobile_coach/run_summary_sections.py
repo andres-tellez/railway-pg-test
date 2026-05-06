@@ -10,9 +10,12 @@ Env ``SMARTCOACH_RUN_SUMMARY_SECTIONS_ENABLED`` (default **on**): set to ``0`` /
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 _SPLIT_BLOCKS = re.compile(r"\n\s*\n+")
 
@@ -112,4 +115,26 @@ def enrich_run_summary_payload_with_sections(
     out = dict(payload)
     out["sections"] = sections
     out["content"] = derived
+
+    grounding = sections.get("grounding") or []
+    grounding_count = sum(1 for g in grounding if isinstance(g, str) and g.strip())
+    close_raw = sections.get("close")
+    has_close = 1 if isinstance(close_raw, str) and close_raw.strip() else 0
+    fields_present: List[str] = ["interpretation"]
+    if grounding_count:
+        fields_present.append("grounding")
+    if has_close:
+        fields_present.append("close")
+    nudge_raw = sections.get("nudge")
+    if isinstance(nudge_raw, str) and nudge_raw.strip():
+        fields_present.append("nudge")
+
+    logger.info(
+        "[smartcoach_mobile_coach] response_shape=run_summary run_summary_sections=1 "
+        "sections_fields_present=%s content_len=%s grounding_count=%s has_close=%s",
+        ",".join(fields_present),
+        len(derived),
+        grounding_count,
+        has_close,
+    )
     return out, True
