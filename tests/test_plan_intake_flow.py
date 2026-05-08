@@ -4,6 +4,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     PLAN_UX_STAGE_CONFIRM,
     PLAN_UX_STAGE_FAST_TRACK,
     PLAN_UX_STAGE_GOAL_ALIGNMENT,
+    alignment_pause_coaching_facts_system_section,
     build_core_structured_ui_prompt,
     build_plan_request_from_state,
     mark_plan_runner_understanding_shown,
@@ -69,6 +70,74 @@ def test_build_core_structured_ui_prompt_race_distance_when_collecting(monkeypat
 def test_structured_intake_core_v1_enabled_truthy(monkeypatch):
     monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "on")
     assert structured_intake_core_v1_enabled() is True
+
+
+def test_alignment_state_refreshes_after_frequency_structured_answer(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "1")
+    base = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-11",
+            "race_distance": "Marathon",
+            "primary_goal": "Target Time",
+            "target_time": "3:00:00",
+            "training_days": ["Mon", "Tue", "Sun"],
+        },
+    )
+    stale_alignment = {
+        "enabled": True,
+        "ambition_stance": "HIGH_TENSION",
+        "baseline_band": "THIN",
+        "goal_demand": "TIME_TARGET",
+        "answers": {},
+        "asked_categories": [],
+        "question_count": 0,
+        "state": {
+            "pause_required": True,
+            "generation_ready": False,
+            "unresolved_flags": ["frequency_flexibility", "posture_priority"],
+            "allowed_question_categories": [
+                "frequency_flexibility",
+                "posture_priority",
+            ],
+            "posture_state": "UNRESOLVED",
+            "attributions": [],
+            "question_count": 0,
+        },
+        "attributions": [],
+    }
+    base["alignment"] = stale_alignment
+    out = update_plan_intake_state(
+        base,
+        updates={"alignment_frequency_flexible": True},
+    )
+    inner = (out.get("alignment") or {}).get("state") or {}
+    assert "frequency_flexibility" not in (inner.get("unresolved_flags") or [])
+    assert (inner.get("allowed_question_categories") or [])[:1] == ["posture_priority"]
+
+
+def test_alignment_pause_coaching_facts_section_when_paused(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "1")
+    intake = {
+        "draft": {
+            "primary_goal": "Target Time",
+            "target_time": "3:00:00",
+            "training_days": ["Mon", "Tue", "Sun"],
+        },
+        "alignment": {
+            "ambition_stance": "HIGH_TENSION",
+            "baseline_band": "THIN",
+            "goal_demand": "TIME_TARGET",
+            "state": {
+                "pause_required": True,
+                "generation_ready": False,
+                "allowed_question_categories": ["frequency_flexibility"],
+            },
+        },
+    }
+    text = alignment_pause_coaching_facts_system_section(intake)
+    assert "HIGH_TENSION" in text
+    assert "frequency_flexibility" in text
 
 
 def test_plan_intake_updates_to_ready_state():

@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from dateutil import parser as date_parser
 
+from src.coaching_intelligence.intake_alignment import evaluate_intake_alignment_state
 from src.schemas.plan_schema import PlanCreateSchema, PrimaryGoal
 from src.utils.date_helpers import DAY_NAMES_ABBREV
 
@@ -33,6 +34,129 @@ PLAN_UX_STAGE_DETAILS = "details"
 PLAN_UX_STAGE_CONFIRM = "confirm"
 PLAN_UX_STAGE_FAST_TRACK = "fast_track"
 PLAN_UX_STAGE_GENERATED = "generated"
+
+
+def _intake_alignment_feature_enabled() -> bool:
+    return (
+        os.getenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1") or ""
+    ).strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _recompute_alignment_branch(
+    alignment: Dict[str, Any],
+    draft: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    After merging alignment answers, refresh ``alignment.state`` so ``ui_prompt`` and
+    observability match resolved flags (stale state used to repeat the same chips).
+    """
+    if not _intake_alignment_feature_enabled():
+        return alignment
+    stance = alignment.get("ambition_stance")
+    if not stance:
+        return alignment
+    answers = dict(alignment.get("answers") or {})
+    asked = [
+        str(x)
+        for x in list(alignment.get("asked_categories") or [])
+        if isinstance(x, str)
+    ]
+    qc_raw = alignment.get("question_count")
+    try:
+        qc = int(qc_raw) if qc_raw is not None else 0
+    except (TypeError, ValueError):
+        qc = 0
+    if qc == 0 and asked:
+        qc = len(asked)
+    qc = max(0, min(3, qc))
+
+    ast = evaluate_intake_alignment_state(
+        ambition_stance=str(stance),
+        primary_goal=str(draft.get("primary_goal") or ""),
+        frequency_flexible=answers.get("frequency_flexible"),
+        posture_priority=answers.get("posture_priority"),
+        timeline_flexible=answers.get("timeline_flexible"),
+        question_count=qc,
+    )
+    prior_attr = [
+        str(x) for x in list(alignment.get("attributions") or []) if isinstance(x, str)
+    ]
+    merged_attr = sorted(set(prior_attr + list(ast.get("attributions") or [])))
+    observability = dict(alignment.get("observability") or {})
+    observability.update(
+        {
+            "pause_fired": bool(ast.get("pause_required")),
+            "posture_selected": ast.get("posture_state"),
+            "alignment_resolved": bool(ast.get("generation_ready")),
+            "question_count": ast.get("question_count"),
+        }
+    )
+    return {
+        **alignment,
+        "answers": answers,
+        "state": ast,
+        "attributions": merged_attr,
+        "observability": observability,
+    }
+
+
+def alignment_pause_coaching_facts_system_section(
+    intake_state: Optional[Dict[str, Any]],
+) -> str:
+    """
+    Deterministic facts + instructions so the LLM interprets tension before alignment chips.
+    Does not prescribe user-facing wording.
+    """
+    if not isinstance(intake_state, dict):
+        return ""
+    if not _intake_alignment_feature_enabled():
+        return ""
+    al = intake_state.get("alignment")
+    if not isinstance(al, dict):
+        return ""
+    st = al.get("state")
+    if not isinstance(st, dict):
+        return ""
+    if not st.get("pause_required") or st.get("generation_ready"):
+        return ""
+    draft = intake_state.get("draft")
+    if not isinstance(draft, dict):
+        draft = {}
+    cats = [
+        str(x)
+        for x in list(st.get("allowed_question_categories") or [])
+        if isinstance(x, str)
+    ]
+    next_cat = cats[0] if cats else ""
+    tdays = draft.get("training_days")
+    day_list = tdays if isinstance(tdays, list) else []
+    day_count = len(day_list)
+    days_preview = ", ".join(str(d) for d in day_list) if day_list else "n/a"
+
+    return (
+        "## Intake alignment — coach-facing facts (read silently; do not dump as a list to the user)\n"
+        "Before the **inline controls** ask the next question, write like a coach—not a workflow:\n"
+        "1. **Interpret** what the deterministic signals imply for *this* athlete in **1–2 short sentences**.\n"
+        "2. **Name the tension or tradeoff** (goal vs current structure / volume) in **one sentence**.\n"
+        "3. **Explain why the next question matters** for staying healthy, consistent, or realistic pacing—in **one sentence**.\n"
+        "4. Then ask **one** question that matches the **inline chips** (do not invent a different question).\n"
+        "\n"
+        "Deterministic context (ground truth; translate into plain language—never echo raw key names or rule codes to the user):\n"
+        f"- **Ambition stance:** {al.get('ambition_stance')}\n"
+        f"- **Baseline band (recent volume proxy):** {al.get('baseline_band')}\n"
+        f"- **Goal demand:** {al.get('goal_demand')}\n"
+        f"- **Primary goal (draft):** {draft.get('primary_goal')}\n"
+        f"- **Target time (draft):** {draft.get('target_time') or 'n/a'}\n"
+        f"- **Training days:** {day_count} ({days_preview})\n"
+        f"- **Next alignment topic (must match chips):** {next_cat or 'n/a'}\n"
+        "\n"
+        "Keep coaching prose before the chips to **at most 4 short sentences** total; warm and specific; "
+        "no filler openers (“Great!”, “I’m here to help”)."
+    ).strip()
 
 
 def structured_intake_core_v1_enabled() -> bool:
@@ -1244,13 +1368,13 @@ def update_plan_intake_state(
         "errors": errors,
         "confirmation_summary": _confirmation_summary(draft),
     }
+    merged_al: Optional[Dict[str, Any]] = None
     if alignment_answers:
-        state["alignment"] = {
-            **alignment,
-            "answers": alignment_answers,
-        }
+        merged_al = {**alignment, "answers": alignment_answers}
     elif alignment:
-        state["alignment"] = alignment
+        merged_al = dict(alignment)
+    if merged_al is not None:
+        state["alignment"] = _recompute_alignment_branch(merged_al, draft)
     return state
 
 
