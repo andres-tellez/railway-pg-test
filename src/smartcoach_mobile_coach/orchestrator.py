@@ -576,7 +576,12 @@ _UPDATE_PLAN_INTAKE_OPENAI_TOOL: Dict[str, Any] = {
                         "primary_goal (Just Finish|Target Time), target_time "
                         "(clock or phrases like 3h40m), training_days "
                         "(list and/or comma text; ranges like Monday through Saturday, weekdays, Mon thru Fri), "
-                        "long_run_day, notes, plan_name."
+                        "long_run_day, notes, plan_name. "
+                        "For intake alignment (when generation is paused), allowed keys are also: "
+                        "alignment_frequency_flexible (boolean-like), "
+                        "alignment_posture_priority (performance|balanced|durability), "
+                        "alignment_timeline_flexible (boolean-like), and "
+                        "alignment_question_asked_category (string category name)."
                     ),
                 },
                 "clear_fields": {
@@ -613,6 +618,13 @@ _GENERATE_TRAINING_PLAN_OPENAI_TOOL: Dict[str, Any] = {
                 "activity_weeks": {
                     "type": "integer",
                     "description": "Optional lookback window for activity baseline (default 12).",
+                },
+                "alignment_answers": {
+                    "type": "object",
+                    "description": (
+                        "Optional deprecated alias for compatibility. Prefer update_plan_intake "
+                        "alignment_* updates while generation is paused."
+                    ),
                 },
             },
             "required": ["confirm"],

@@ -952,6 +952,32 @@ def _auto_fill_long_run_day(draft: Dict[str, Any]) -> None:
     draft["long_run_day"] = sorted(tdays, key=lambda d: order.get(d, -1))[-1]
 
 
+def _normalize_alignment_bool(raw: Any) -> Optional[bool]:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        s = raw.strip().lower()
+        if s in ("yes", "y", "true", "1"):
+            return True
+        if s in ("no", "n", "false", "0"):
+            return False
+    return None
+
+
+def _normalize_alignment_posture(raw: Any) -> Optional[str]:
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip().lower()
+    aliases = {
+        "performance": "PERFORMANCE_LEANING",
+        "performance_leaning": "PERFORMANCE_LEANING",
+        "balanced": "BALANCED",
+        "durability": "DURABILITY_FIRST",
+        "durability_first": "DURABILITY_FIRST",
+    }
+    return aliases.get(s)
+
+
 def update_plan_intake_state(
     current_state: Optional[Dict[str, Any]],
     *,
@@ -966,6 +992,8 @@ def update_plan_intake_state(
     had_prior_draft = bool(draft)
     prior_ready_to_generate = bool(state.get("ready_to_generate"))
     errors: List[str] = []
+    alignment = dict(state.get("alignment") or {})
+    alignment_answers = dict(alignment.get("answers") or {})
 
     if clear_fields:
         for f in clear_fields:
@@ -1049,6 +1077,41 @@ def update_plan_intake_state(
                 draft[key] = raw.strip()
             else:
                 errors.append(f"{key} must be a string.")
+        elif key == "alignment_frequency_flexible":
+            v = _normalize_alignment_bool(raw)
+            if v is None:
+                errors.append("alignment_frequency_flexible must be boolean-like.")
+            else:
+                alignment_answers["frequency_flexible"] = v
+        elif key == "alignment_posture_priority":
+            v = _normalize_alignment_posture(raw)
+            if v is None:
+                errors.append(
+                    "alignment_posture_priority must be one of performance, balanced, durability."
+                )
+            else:
+                alignment_answers["posture_priority"] = v
+        elif key == "alignment_timeline_flexible":
+            v = _normalize_alignment_bool(raw)
+            if v is None:
+                errors.append("alignment_timeline_flexible must be boolean-like.")
+            else:
+                alignment_answers["timeline_flexible"] = v
+        elif key == "alignment_question_asked_category":
+            if isinstance(raw, str) and raw.strip():
+                category = raw.strip()
+                asked = [
+                    str(x)
+                    for x in list(alignment.get("asked_categories") or [])
+                    if isinstance(x, str)
+                ]
+                asked.append(category)
+                alignment["asked_categories"] = asked
+                alignment["question_count"] = len(asked)
+            else:
+                errors.append(
+                    "alignment_question_asked_category must be a non-empty string."
+                )
 
     _fill_race_distance_from_named_event(draft)
     _fill_race_name_from_user_text(draft, source_user_message)
@@ -1104,6 +1167,13 @@ def update_plan_intake_state(
         "errors": errors,
         "confirmation_summary": _confirmation_summary(draft),
     }
+    if alignment_answers:
+        state["alignment"] = {
+            **alignment,
+            "answers": alignment_answers,
+        }
+    elif alignment:
+        state["alignment"] = alignment
     return state
 
 

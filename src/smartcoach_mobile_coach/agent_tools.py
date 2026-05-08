@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import warnings
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -12,6 +13,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, text, update
 
 from src.db.dao.activity_dao import ActivityDAO
+from src.coaching_intelligence import (
+    evaluate_ambition_gap,
+    evaluate_intake_alignment_state,
+)
 from src.smartcoach_mobile_coach.config import INSIGHT_SCHEMA_VERSION
 from src.smartcoach_mobile_coach.db_helpers import (
     fetch_user_hr_profile_for_coach,
@@ -30,6 +35,9 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     build_plan_request_from_state,
     summarize_this_week_from_plan_rows,
     update_plan_intake_state,
+)
+from src.smartcoach_mobile_coach.plan_intake_activity_context import (
+    compute_plan_intake_activity_summary,
 )
 from src.smartcoach_mobile_coach.run_insight import (
     apply_insight_table_labels,
@@ -65,6 +73,7 @@ logger = logging.getLogger("smartcoach_mobile_coach")
 
 _DEFAULT_KPI_WEEKS = 4
 _MAX_KPI_WEEKS = 52
+_INTAKE_ALIGNMENT_FEATURE_FLAG = "SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1"
 
 
 def _increment_tool_call_count(session: Session, tool_name: str) -> None:
@@ -117,6 +126,14 @@ def _coerce_tool_bool(value: Any, default: bool) -> bool:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return bool(value)
     return default
+
+
+def _intake_alignment_enabled() -> bool:
+    return (os.getenv(_INTAKE_ALIGNMENT_FEATURE_FLAG) or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _parse_optional_float(value: Any) -> Optional[float]:
@@ -1940,6 +1957,94 @@ def tool_generate_training_plan(
             "message": str(e),
             "plan_intake_state": current_state,
         }
+
+    if _intake_alignment_enabled():
+        prior_alignment = dict((current_state or {}).get("alignment") or {})
+        prior_answers = dict(prior_alignment.get("answers") or {})
+        question_count = _safe_int(prior_alignment.get("question_count")) or 0
+        asked_categories = [
+            str(x)
+            for x in list(prior_alignment.get("asked_categories") or [])
+            if isinstance(x, str)
+        ]
+        if question_count == 0 and asked_categories:
+            question_count = len(asked_categories)
+
+        intake_summary = compute_plan_intake_activity_summary(
+            session=session,
+            internal_user_id=str(internal_user_id),
+        )
+        ambition = evaluate_ambition_gap(
+            weekly_mileage=float(
+                intake_summary.get("avg_miles_per_week_approx") or 0.0
+            ),
+            primary_goal=str(plan_request.get("primary_goal") or ""),
+            target_time=str(plan_request.get("target_time") or ""),
+            longest_run_miles=float(intake_summary.get("longest_run_miles") or 0.0),
+        )
+        alignment_state = evaluate_intake_alignment_state(
+            ambition_stance=str(ambition.get("stance") or ""),
+            primary_goal=str(plan_request.get("primary_goal") or ""),
+            frequency_flexible=prior_answers.get("frequency_flexible"),
+            posture_priority=prior_answers.get("posture_priority"),
+            timeline_flexible=prior_answers.get("timeline_flexible"),
+            question_count=question_count,
+        )
+
+        next_state = dict(current_state)
+        next_state["alignment"] = {
+            "enabled": True,
+            "ambition_stance": ambition.get("stance"),
+            "goal_demand": ambition.get("goal_demand"),
+            "baseline_band": ambition.get("baseline_band"),
+            "question_count": alignment_state.get("question_count"),
+            "asked_categories": asked_categories,
+            "answers": prior_answers,
+            "state": alignment_state,
+            "attributions": sorted(
+                set(
+                    list(ambition.get("attributions") or [])
+                    + list(alignment_state.get("attributions") or [])
+                )
+            ),
+            "observability": {
+                "pause_fired": bool(alignment_state.get("pause_required")),
+                "categories_asked": asked_categories,
+                "posture_selected": alignment_state.get("posture_state"),
+                "alignment_resolved": bool(alignment_state.get("generation_ready")),
+                "question_count": alignment_state.get("question_count"),
+                "generation_proceeded": bool(alignment_state.get("generation_ready")),
+            },
+        }
+
+        if not alignment_state.get("generation_ready"):
+            alignment_brief = {
+                "state": alignment_state,
+                "allowed_question_categories": alignment_state.get(
+                    "allowed_question_categories", []
+                ),
+                "required_truths": [
+                    "The planner remains deterministic and unchanged once generation starts.",
+                    "Current training baseline and goal can create tradeoffs in how aggressive to be.",
+                ],
+                "banned_claims": [
+                    "Do not promise a specific finish time or guaranteed outcome.",
+                    "Do not claim plan generation logic has changed.",
+                ],
+                "posture_context": {
+                    "current": alignment_state.get("posture_state"),
+                    "stance": ambition.get("stance"),
+                    "goal_demand": ambition.get("goal_demand"),
+                },
+            }
+            return {
+                "error": "alignment_required",
+                "message": "Ask bounded alignment questions before generating the plan.",
+                "plan_intake_state": next_state,
+                "alignment_brief": alignment_brief,
+            }
+
+        current_state = next_state
 
     try:
         result, gen_context_snapshot = run_v2_plan_generation(
