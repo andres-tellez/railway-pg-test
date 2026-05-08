@@ -1991,6 +1991,33 @@ def _join_nonempty_system_sections(*sections: str) -> str:
     return "\n\n".join(s.strip() for s in sections if (s or "").strip())
 
 
+def _plan_creation_minimal_system_content(
+    *,
+    plan_intake_ctx: Optional[Dict[str, Any]],
+    anchor_local_date: str,
+    client_timezone: Optional[str],
+    activity_ctx_block: str,
+    response_directive: ResponseDirective,
+    user_message: str,
+    thread_ctx: Any,
+) -> str:
+    """Minimal plan-creation system prompt (same sections as the pre-loop build)."""
+    return _join_nonempty_system_sections(
+        PLAN_CREATION_SYSTEM_PROMPT_BASE,
+        _structured_intake_core_v1_plan_creation_addon(),
+        _plan_intake_phase_system_section(plan_intake_ctx),
+        _device_anchor_system_section(anchor_local_date, client_timezone),
+        activity_ctx_block,
+        alignment_pause_coaching_facts_system_section(plan_intake_ctx),
+        _plan_creation_directive_stub(response_directive),
+        _plan_creation_system_section(
+            user_message,
+            response_directive.intent,
+            thread_ctx,
+        ),
+    )
+
+
 def _plan_generation_fastpath_reply(tool_out: Dict[str, Any]) -> str:
     """
     Deterministic post-generation copy for yes->generate fastpath.
@@ -3192,19 +3219,14 @@ def run_mobile_agent_turn(
         else None
     )
     if plan_creation_mode and not use_full_prompt_for_plan:
-        system_content = _join_nonempty_system_sections(
-            PLAN_CREATION_SYSTEM_PROMPT_BASE,
-            _structured_intake_core_v1_plan_creation_addon(),
-            _plan_intake_phase_system_section(plan_intake_ctx),
-            _device_anchor_system_section(anchor_local_date, client_timezone),
-            activity_ctx_block,
-            alignment_pause_coaching_facts_system_section(plan_intake_ctx),
-            _plan_creation_directive_stub(response_directive),
-            _plan_creation_system_section(
-                user_message,
-                response_directive.intent,
-                thread_ctx,
-            ),
+        system_content = _plan_creation_minimal_system_content(
+            plan_intake_ctx=plan_intake_ctx,
+            anchor_local_date=anchor_local_date,
+            client_timezone=client_timezone,
+            activity_ctx_block=activity_ctx_block,
+            response_directive=response_directive,
+            user_message=user_message,
+            thread_ctx=thread_ctx,
         )
     else:
         base_block = MINIMAL_SYSTEM_PROMPT_BASE if use_min_base else SYSTEM_PROMPT_BASE
@@ -3713,6 +3735,7 @@ def run_mobile_agent_turn(
                 source_user_message=(user_message or "").strip() or None,
                 tool_result_cache=tool_result_cache,
             )
+            intake_state_from_tools: Optional[Dict[str, Any]] = None
             for d in dispatched:
                 tc = d["tc"]
                 name = d["name"]
@@ -3734,6 +3757,7 @@ def run_mobile_agent_turn(
                     pis = out.get("plan_intake_state")
                     if isinstance(pis, dict):
                         latest_plan_intake_state = pis
+                        intake_state_from_tools = pis
                     if name == "update_plan_intake":
                         turn_had_plan_intake_update = True
                     pg = out.get("plan_generation")
@@ -3745,6 +3769,29 @@ def run_mobile_agent_turn(
                         "tool_call_id": tc["id"],
                         "content": d["tool_content"],
                     }
+                )
+            # Tool results can refresh alignment / intake after the initial system
+            # message was built from thread_ctx. Patch the system prompt so
+            # alignment_pause_coaching_facts and phase gates see the same state
+            # as the tool payloads on the next model call.
+            if (
+                intake_state_from_tools is not None
+                and plan_creation_mode
+                and not use_full_prompt_for_plan
+                and messages
+                and messages[0].get("role") == "system"
+            ):
+                messages[0]["content"] = _plan_creation_minimal_system_content(
+                    plan_intake_ctx=intake_state_from_tools,
+                    anchor_local_date=anchor_local_date,
+                    client_timezone=client_timezone,
+                    activity_ctx_block=activity_ctx_block,
+                    response_directive=response_directive,
+                    user_message=user_message,
+                    thread_ctx=replace(
+                        thread_ctx,
+                        latest_plan_intake_state=intake_state_from_tools,
+                    ),
                 )
             loop_details.append(loop_entry)
             continue
