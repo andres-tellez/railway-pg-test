@@ -136,6 +136,20 @@ def _intake_alignment_enabled() -> bool:
     )
 
 
+def _next_alignment_question(allowed_categories: List[str]) -> str:
+    first = allowed_categories[0] if allowed_categories else ""
+    if first == "frequency_flexibility":
+        return "Would you be open to adding one run day to support this goal?"
+    if first == "posture_priority":
+        return (
+            "What should lead if tradeoffs appear: performance first, durability first, "
+            "or a balanced approach?"
+        )
+    if first == "timeline_flexibility":
+        return "If needed, are you open to adjusting timeline expectations slightly?"
+    return "What feels most adjustable for you right now?"
+
+
 def _parse_optional_float(value: Any) -> Optional[float]:
     if value is None:
         return None
@@ -2018,11 +2032,12 @@ def tool_generate_training_plan(
         }
 
         if not alignment_state.get("generation_ready"):
+            allowed_categories = list(
+                alignment_state.get("allowed_question_categories") or []
+            )
             alignment_brief = {
                 "state": alignment_state,
-                "allowed_question_categories": alignment_state.get(
-                    "allowed_question_categories", []
-                ),
+                "allowed_question_categories": allowed_categories,
                 "required_truths": [
                     "The planner remains deterministic and unchanged once generation starts.",
                     "Current training baseline and goal can create tradeoffs in how aggressive to be.",
@@ -2036,10 +2051,16 @@ def tool_generate_training_plan(
                     "stance": ambition.get("stance"),
                     "goal_demand": ambition.get("goal_demand"),
                 },
+                "response_style": {
+                    "ask_one_question_only": True,
+                    "avoid_numbered_lists": True,
+                    "tone": "lightweight_collaborative_coach",
+                },
+                "suggested_next_question": _next_alignment_question(allowed_categories),
             }
             return {
                 "error": "alignment_required",
-                "message": "Ask bounded alignment questions before generating the plan.",
+                "message": "Ask one short alignment question before generating the plan.",
                 "plan_intake_state": next_state,
                 "alignment_brief": alignment_brief,
             }

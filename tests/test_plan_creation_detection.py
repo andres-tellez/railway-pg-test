@@ -329,3 +329,12 @@ def test_plan_creation_guardrail_does_not_replace_when_ready_to_confirm() -> Non
     text = "Here’s the recap. Does that look right?"
     out = _enforce_plan_creation_response_guardrails(text, plan_intake_state=intake)
     assert "look right" in out.lower() or "recap" in out.lower()
+
+
+def test_plan_creation_guardrail_strips_numbered_list_artifacts() -> None:
+    out = _enforce_plan_creation_response_guardrails(
+        "1. Would you be open to adding one run day?\n2. These will help me align the plan."
+    )
+    assert "1." not in out
+    assert "2." not in out
+    assert "Would you be open to adding one run day?" in out

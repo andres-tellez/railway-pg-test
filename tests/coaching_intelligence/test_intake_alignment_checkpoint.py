@@ -98,3 +98,85 @@ def test_generate_plan_coherent_path_still_invokes_planner(monkeypatch):
     )
 
     assert out["error"] == "plan_generation_failed"
+
+
+def test_feature_flag_off_preserves_legacy_generation_path(monkeypatch):
+    monkeypatch.delenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", raising=False)
+    monkeypatch.setattr(
+        agent_tools,
+        "build_plan_request_from_state",
+        lambda _s: _s["draft"],
+    )
+
+    def _ambition_gap_must_not_run(**_kwargs):
+        raise AssertionError("alignment evaluator should not run when feature is off")
+
+    monkeypatch.setattr(
+        agent_tools, "evaluate_ambition_gap", _ambition_gap_must_not_run
+    )
+
+    def _raise_after_reaching_planner(**_kwargs):
+        raise RuntimeError("planner-called")
+
+    monkeypatch.setattr(
+        agent_tools, "run_v2_plan_generation", _raise_after_reaching_planner
+    )
+
+    out = agent_tools.tool_generate_training_plan(
+        session=MagicMock(),
+        internal_user_id="u-1",
+        args={"confirm": True},
+        current_state=_state(),
+    )
+
+    assert out["error"] == "plan_generation_failed"
+
+
+def test_high_tension_resolved_still_uses_same_planner_path(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "true")
+    monkeypatch.setattr(
+        agent_tools,
+        "build_plan_request_from_state",
+        lambda _s: _s["draft"],
+    )
+    monkeypatch.setattr(
+        agent_tools,
+        "compute_plan_intake_activity_summary",
+        lambda **_kwargs: {"avg_miles_per_week_approx": 10.0, "longest_run_miles": 8.0},
+    )
+    monkeypatch.setattr(
+        agent_tools,
+        "evaluate_ambition_gap",
+        lambda **_kwargs: {
+            "stance": "HIGH_TENSION",
+            "goal_demand": "TIME_TARGET",
+            "baseline_band": "THIN",
+            "attributions": ["STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE"],
+        },
+    )
+
+    state = _state()
+    state["alignment"] = {
+        "answers": {
+            "frequency_flexible": True,
+            "posture_priority": "BALANCED",
+        },
+        "asked_categories": ["frequency_flexibility", "posture_priority"],
+        "question_count": 2,
+    }
+
+    def _raise_after_reaching_planner(**_kwargs):
+        raise RuntimeError("planner-called")
+
+    monkeypatch.setattr(
+        agent_tools, "run_v2_plan_generation", _raise_after_reaching_planner
+    )
+
+    out = agent_tools.tool_generate_training_plan(
+        session=MagicMock(),
+        internal_user_id="u-1",
+        args={"confirm": True},
+        current_state=state,
+    )
+
+    assert out["error"] == "plan_generation_failed"

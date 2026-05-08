@@ -978,6 +978,59 @@ def _normalize_alignment_posture(raw: Any) -> Optional[str]:
     return aliases.get(s)
 
 
+def _extract_alignment_answers_from_user_message(
+    source_user_message: Optional[str],
+) -> Dict[str, Any]:
+    msg = (source_user_message or "").strip().lower()
+    if not msg:
+        return {}
+
+    out: Dict[str, Any] = {}
+
+    # Frequency flexibility (can add/adjust running days)
+    if re.search(
+        r"\b(add|another|extra|more)\s+(day|run)\b|\bcan\s+add\b|\bflexible\s+on\s+days\b",
+        msg,
+    ):
+        out["frequency_flexible"] = True
+    elif re.search(
+        r"\b(can(?:not|'t)\s+add|no\s+extra\s+day|keep\s+the\s+same\s+days|fixed\s+schedule)\b",
+        msg,
+    ):
+        out["frequency_flexible"] = False
+
+    # Posture priority (performance vs durability vs balanced)
+    if re.search(
+        r"\b(balance|balanced|middle\s+ground|both)\b",
+        msg,
+    ):
+        out["posture_priority"] = "BALANCED"
+    elif re.search(
+        r"\b(performance|faster|aggressive|push|chase\s+time|time\s+goal)\b",
+        msg,
+    ):
+        out["posture_priority"] = "PERFORMANCE_LEANING"
+    elif re.search(
+        r"\b(durability|healthy|stay\s+healthy|injury|sustainable|consistency\s+first|safe)\b",
+        msg,
+    ):
+        out["posture_priority"] = "DURABILITY_FIRST"
+
+    # Timeline flexibility (race-date/time flexibility if needed)
+    if re.search(
+        r"\b(flexible\s+on\s+(date|timeline)|can\s+(move|shift|push)\s+(it|the\s+date)|date\s+is\s+flexible)\b",
+        msg,
+    ):
+        out["timeline_flexible"] = True
+    elif re.search(
+        r"\b(date\s+is\s+fixed|timeline\s+is\s+fixed|cannot\s+move\s+(it|date)|can't\s+move\s+(it|date)|not\s+flexible)\b",
+        msg,
+    ):
+        out["timeline_flexible"] = False
+
+    return out
+
+
 def update_plan_intake_state(
     current_state: Optional[Dict[str, Any]],
     *,
@@ -1133,6 +1186,14 @@ def update_plan_intake_state(
     _fill_goal_time_from_user_message(draft, source_user_message)
 
     _fill_training_days_from_user_message(draft, ux, source_user_message)
+    msg_alignment_answers = _extract_alignment_answers_from_user_message(
+        source_user_message
+    )
+    if msg_alignment_answers:
+        # Explicit `updates` values win; source-message extraction fills gaps.
+        for key, value in msg_alignment_answers.items():
+            if key not in alignment_answers:
+                alignment_answers[key] = value
 
     if "training_days" not in draft and "training_days_count" not in ux:
         day_count = _extract_training_days_count(source_user_message)

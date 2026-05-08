@@ -2078,6 +2078,31 @@ def _plan_intake_phase_system_section(
 
 def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
     """User-facing fallback when the model/tool loop returns plan state but no prose."""
+    alignment = intake_state.get("alignment")
+    if isinstance(alignment, dict):
+        st = alignment.get("state")
+        if (
+            isinstance(st, dict)
+            and st.get("pause_required")
+            and not st.get("generation_ready")
+        ):
+            allowed = st.get("allowed_question_categories") or []
+            first = (
+                allowed[0]
+                if isinstance(allowed, list) and allowed and isinstance(allowed[0], str)
+                else ""
+            )
+            if first == "frequency_flexibility":
+                return "Would you be open to adding one run day to support this goal?"
+            if first == "posture_priority":
+                return (
+                    "What should lead if tradeoffs appear: performance first, durability first, "
+                    "or a balanced approach?"
+                )
+            if first == "timeline_flexibility":
+                return "If needed, are you open to slightly adjusting timeline expectations?"
+            return "What feels most adjustable for you right now?"
+
     if intake_state.get("ready_to_generate"):
         summ = (intake_state.get("confirmation_summary") or "").strip()
         if summ:
@@ -2184,6 +2209,8 @@ def _enforce_plan_creation_response_guardrails(
         if len(kept) >= 4:
             break
     out = "\n".join(kept).strip() or (text or "").strip()
+    # Keep intake/alignment questions conversational; strip list numbering artifacts.
+    out = re.sub(r"(?m)^\s*\d+\.\s*", "", out).strip()
     if isinstance(plan_intake_state, dict) and not plan_intake_state.get(
         "ready_to_generate"
     ):

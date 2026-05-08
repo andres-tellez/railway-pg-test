@@ -506,3 +506,30 @@ def test_plan_intake_infers_target_time_from_message_when_goal_missing():
     assert state["draft"]["primary_goal"] == "Target Time"
     assert state["draft"]["target_time"] == "3:40"
     assert state["ready_to_generate"] is True
+
+
+def test_plan_intake_infers_alignment_frequency_flexible_from_user_message():
+    state = update_plan_intake_state(
+        {
+            "draft": {
+                "race_distance": "Marathon",
+                "race_date": "2026-10-11",
+                "primary_goal": "Target Time",
+                "target_time": "3:00:00",
+                "training_days": ["Thu", "Sat"],
+            },
+            "alignment": {},
+        },
+        updates={},
+        source_user_message="Add another day. Make it Tue.",
+    )
+    assert state["alignment"]["answers"]["frequency_flexible"] is True
+
+
+def test_plan_intake_does_not_override_explicit_alignment_updates_with_message_parse():
+    state = update_plan_intake_state(
+        {"draft": {}, "alignment": {}},
+        updates={"alignment_frequency_flexible": False},
+        source_user_message="I can add another day if needed",
+    )
+    assert state["alignment"]["answers"]["frequency_flexible"] is False
