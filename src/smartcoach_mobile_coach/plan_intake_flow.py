@@ -104,6 +104,26 @@ def _recompute_alignment_branch(
     }
 
 
+def schedule_confirmation_system_section(intake_state: Optional[Dict[str, Any]]) -> str:
+    """
+    When the client shows Yes/No for draft training days, steer model prose to match chips.
+    """
+    if not isinstance(intake_state, dict):
+        return ""
+    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if not ux.get("schedule_confirm_before_posture"):
+        return ""
+    return (
+        "## Schedule confirmation (matches inline Yes / No)\n"
+        "Inline controls ask whether their **current draft training days** are correct **before** "
+        "any alignment tradeoff (posture) question.\n"
+        "- Ground briefly in what they already committed (weekdays from intake).\n"
+        "- Ask **one** yes/no style closing question that matches **Yes** / **No, change days** — "
+        "not posture, performance, durability, or recovery philosophy.\n"
+        "- Do **not** ask them to confirm posture or priorities on this turn."
+    ).strip()
+
+
 def plan_intake_alignment_pause_active(intake_state: Optional[Dict[str, Any]]) -> bool:
     """
     True when intake alignment is blocking generation (pause_required, not resolved).
@@ -1225,6 +1245,7 @@ def update_plan_intake_state(
         if isinstance(draft.get("training_days"), list)
         else None
     )
+    prior_expansion_pending = bool(ux.get("training_days_expansion_pending"))
 
     if clear_fields:
         for f in clear_fields:
@@ -1343,6 +1364,17 @@ def update_plan_intake_state(
                 errors.append(
                     "alignment_question_asked_category must be a non-empty string."
                 )
+        elif key == "schedule_days_confirmed":
+            v = _normalize_alignment_bool(raw)
+            if v is None:
+                errors.append("schedule_days_confirmed must be boolean-like.")
+            elif v is True:
+                ux.pop("schedule_confirm_before_posture", None)
+            else:
+                ux.pop("schedule_confirm_before_posture", None)
+                ux["training_days_expansion_pending"] = True
+                draft.pop("training_days", None)
+                ux.pop("training_days_count", None)
 
     _fill_race_distance_from_named_event(draft)
     _fill_race_name_from_user_text(draft, source_user_message)
@@ -1410,6 +1442,12 @@ def update_plan_intake_state(
                 td_changed = True
         if explicit_td or td_changed:
             ux.pop("training_days_expansion_pending", None)
+
+    expansion_cleared_this_turn = prior_expansion_pending and not ux.get(
+        "training_days_expansion_pending"
+    )
+    if expansion_cleared_this_turn:
+        ux["schedule_confirm_before_posture"] = True
 
     missing = _missing_required_fields(draft)
     if ux.get("training_days_expansion_pending"):

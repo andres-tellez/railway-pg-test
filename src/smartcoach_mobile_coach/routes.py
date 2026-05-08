@@ -303,6 +303,11 @@ def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
             if isinstance(v, str) and v.strip() in DAY_NAMES_ABBREV:
                 out["long_run_day"] = v.strip()
 
+    if "schedule_days_confirmed" in updates:
+        v = updates.get("schedule_days_confirmed")
+        if isinstance(v, bool):
+            out["schedule_days_confirmed"] = v
+
     return out or None
 
 

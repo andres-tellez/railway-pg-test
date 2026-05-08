@@ -703,6 +703,45 @@ def test_training_days_commit_clears_expansion_pending():
         updates={"training_days": ["Mon", "Wed", "Thu", "Sat"]},
     )
     assert nxt["ux"].get("training_days_expansion_pending") is not True
+    assert nxt["ux"].get("schedule_confirm_before_posture") is True
+
+
+def test_schedule_confirm_yes_clears_pending():
+    st = update_plan_intake_state(
+        {
+            "draft": {
+                "race_distance": "Marathon",
+                "race_date": "2026-10-11",
+                "primary_goal": "Target Time",
+                "target_time": "3:00:00",
+                "training_days": ["Mon", "Wed", "Thu", "Sat"],
+            },
+            "alignment": {},
+            "ux": {"schedule_confirm_before_posture": True},
+        },
+        updates={"schedule_days_confirmed": True},
+    )
+    assert st["ux"].get("schedule_confirm_before_posture") is not True
+
+
+def test_schedule_confirm_no_reopens_training_days():
+    st = update_plan_intake_state(
+        {
+            "draft": {
+                "race_distance": "Marathon",
+                "race_date": "2026-10-11",
+                "primary_goal": "Target Time",
+                "target_time": "3:00:00",
+                "training_days": ["Mon", "Wed", "Thu", "Sat"],
+            },
+            "alignment": {},
+            "ux": {"schedule_confirm_before_posture": True},
+        },
+        updates={"schedule_days_confirmed": False},
+    )
+    assert st["ux"].get("schedule_confirm_before_posture") is not True
+    assert st["ux"].get("training_days_expansion_pending") is True
+    assert "training_days" in st["missing_required"]
 
 
 def test_ready_to_generate_false_until_alignment_resolved(monkeypatch):

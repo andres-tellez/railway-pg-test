@@ -81,6 +81,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     plan_intake_alignment_pause_active,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
+    schedule_confirmation_system_section,
     structured_intake_core_v1_enabled,
     user_confirms_plan_intake,
 )
@@ -2010,6 +2011,7 @@ def _plan_creation_minimal_system_content(
         _device_anchor_system_section(anchor_local_date, client_timezone),
         activity_ctx_block,
         alignment_pause_coaching_facts_system_section(plan_intake_ctx),
+        schedule_confirmation_system_section(plan_intake_ctx),
         _plan_creation_directive_stub(response_directive),
         _plan_creation_system_section(
             user_message,
@@ -2161,10 +2163,52 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
     return "Tell me a bit more about the race you want to train for."
 
 
+def _schedule_confirmation_ui_prompt_from_plan_intake_state(
+    intake_state: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Yes/No on draft training days after expansion; must run before posture alignment chips."""
+    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if not ux.get("schedule_confirm_before_posture"):
+        return None
+    draft = (
+        intake_state.get("draft") if isinstance(intake_state.get("draft"), dict) else {}
+    )
+    days = draft.get("training_days")
+    if not isinstance(days, list) or not days:
+        return None
+    day_preview = ", ".join(str(d) for d in days if isinstance(d, str))
+    return {
+        "version": 1,
+        "field_key": "plan_intake.schedule_confirmation",
+        "control_type": "single_select_chips",
+        "selection_mode": "single",
+        "required": True,
+        "prompt": (
+            f"You'll train on {day_preview}. Does this weekly schedule look right?"
+        ),
+        "options": [
+            {
+                "id": "sched_yes",
+                "label": "Yes",
+                "user_message": "Yes, that weekly schedule looks right.",
+                "updates": {"schedule_days_confirmed": True},
+            },
+            {
+                "id": "sched_no",
+                "label": "No, change days",
+                "user_message": "I'd like to change my training days.",
+                "updates": {"schedule_days_confirmed": False},
+            },
+        ],
+    }
+
+
 def _alignment_ui_prompt_from_plan_intake_state(
     intake_state: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if ux.get("schedule_confirm_before_posture"):
+        return None
     if ux.get("training_days_expansion_pending"):
         # User must re-pick concrete weekdays before the next alignment chip (e.g. posture).
         return None
@@ -2242,6 +2286,9 @@ def _ui_prompt_from_plan_intake_state(
 ) -> Optional[Dict[str, Any]]:
     if not isinstance(intake_state, dict):
         return None
+    sched = _schedule_confirmation_ui_prompt_from_plan_intake_state(intake_state)
+    if sched is not None:
+        return sched
     alignment_prompt = _alignment_ui_prompt_from_plan_intake_state(intake_state)
     if alignment_prompt is not None:
         return alignment_prompt
