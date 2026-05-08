@@ -53,7 +53,15 @@ from src.smartcoach_mobile_coach.weekly_insights_service import (
     get_latest_weekly_insight,
     weekly_insight_tool_slim_default_from_env,
 )
+from src.db.dao.user_profile_dao import get_user_profile
 from src.routes.plan_generation_v2 import run_v2_plan_generation
+from src.services.training_plan.v2.plan_validation_silent_repair import (
+    attempt_silent_repair_then_revalidate,
+)
+from src.services.training_plan.v2.race_distance_factory_v2 import (
+    get_race_distance_services,
+    normalize_race_distance,
+)
 from src.services.llm.openai_coach_adapter import OpenAICoachAdapter
 from src.services.security.external_apis.openai_service import get_openai_service
 from src.services.training_plan.plan_storage_service import PlanStorageService
@@ -2077,6 +2085,35 @@ def tool_generate_training_plan(
             activity_weeks=activity_weeks,
             mode="rolling",
         )
+        if not result.get("valid") or not result.get("validated_plan"):
+            plan_blob = result.get("validated_plan") or result.get("draft")
+            violations_list = list(result.get("violations") or [])
+            if plan_blob and violations_list:
+                race_label = normalize_race_distance(
+                    plan_request.get("race_distance") or "Marathon"
+                )
+                svc = get_race_distance_services(race_label)
+                race_cfg = svc["race_config"]
+                profile = get_user_profile(session, str(internal_user_id))
+                unit_sys = (
+                    (profile.get("unit_system") or "imperial")
+                    if profile
+                    else "imperial"
+                )
+                repaired_val = attempt_silent_repair_then_revalidate(
+                    plan_blob,
+                    violations_list,
+                    config=race_cfg,
+                    unit_system=str(unit_sys),
+                )
+                if repaired_val:
+                    result.update(
+                        {
+                            **repaired_val,
+                            "draft": repaired_val.get("validated_plan"),
+                            "silent_validation_repair_applied": True,
+                        }
+                    )
     except Exception as e:
         logger.exception("Plan generation failed user=%s", internal_user_id)
         return {
@@ -2091,10 +2128,21 @@ def tool_generate_training_plan(
         }
 
     if not result.get("valid") or not result.get("validated_plan"):
+        logger.warning(
+            "[generate_training_plan] validation_failed user=%s rules=%s",
+            str(internal_user_id)[:8],
+            [
+                v.get("rule")
+                for v in (result.get("violations") or [])
+                if isinstance(v, dict)
+            ],
+        )
         out = {
             "error": "plan_validation_failed",
-            "message": "The training plan could not be validated for this schedule and fitness profile.",
-            "violations": result.get("violations", []),
+            "message": (
+                "Your plan couldn't be finalized automatically. "
+                "Try a small change to race date or training days, or try again in a moment."
+            ),
             "plan_intake_state": current_state,
         }
         gf = result.get("generation_failure")
