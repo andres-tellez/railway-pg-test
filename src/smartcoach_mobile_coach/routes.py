@@ -12,6 +12,7 @@ import logging
 import os
 import time
 import uuid
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any, Optional, Tuple
 
@@ -31,7 +32,9 @@ from src.smartcoach_mobile_coach.http_rate_limit import (
     record_agent_http_request,
 )
 from src.smartcoach_mobile_coach.orchestrator import run_mobile_agent_turn
+from src.smartcoach_mobile_coach.agent_tools import tool_update_plan_intake
 from src.smartcoach_mobile_coach.thread_derived_context import (
+    DerivedThreadCoachContext,
     derive_thread_coach_context,
 )
 from src.services.coach_strava_readiness_service import (
@@ -231,6 +234,69 @@ def _coerce_require_fresh_strava_data(payload: dict) -> bool:
     return False
 
 
+def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
+    raw = payload.get("structured_input")
+    if not isinstance(raw, dict):
+        return None
+    if str(raw.get("kind") or "").strip() != "update_plan_intake":
+        return None
+    updates = raw.get("updates")
+    if not isinstance(updates, dict):
+        return None
+    out: dict = {}
+    if "alignment_frequency_flexible" in updates:
+        v = updates.get("alignment_frequency_flexible")
+        if isinstance(v, bool):
+            out["alignment_frequency_flexible"] = v
+    if "alignment_posture_priority" in updates:
+        v = updates.get("alignment_posture_priority")
+        if isinstance(v, str) and v.strip().lower() in (
+            "performance",
+            "balanced",
+            "durability",
+        ):
+            out["alignment_posture_priority"] = v.strip().lower()
+    return out or None
+
+
+def _apply_structured_intake_updates(
+    session: Any,
+    internal_user_id: str,
+    *,
+    thread_ctx: DerivedThreadCoachContext,
+    updates: Optional[dict],
+    source_user_message: str,
+) -> DerivedThreadCoachContext:
+    if not isinstance(updates, dict) or not updates:
+        return thread_ctx
+    prior_state = thread_ctx.latest_plan_intake_state
+    if not isinstance(prior_state, dict):
+        return thread_ctx
+    try:
+        out = tool_update_plan_intake(
+            session,
+            str(internal_user_id),
+            {"updates": updates},
+            current_state=prior_state,
+            source_user_message=source_user_message,
+        )
+        merged = out.get("plan_intake_state")
+        if isinstance(merged, dict):
+            logger.info(
+                "[smartcoach_mobile_coach] structured_intake_updates applied user=%s fields=%s",
+                str(internal_user_id)[:8],
+                sorted(list(updates.keys())),
+            )
+            return replace(thread_ctx, latest_plan_intake_state=merged)
+    except Exception:
+        logger.warning(
+            "[smartcoach_mobile_coach] structured_intake_updates_failed user=%s",
+            str(internal_user_id)[:8],
+            exc_info=True,
+        )
+    return thread_ctx
+
+
 smartcoach_mobile_coach_bp = Blueprint(
     "smartcoach_mobile_coach",
     __name__,
@@ -353,9 +419,17 @@ def agent_messages(conversation_id):
             for m in prior
         ]
         thread_ctx_raw = derive_thread_coach_context(raw_history)
+        structured_updates = _coerce_structured_intake_updates(data)
+        thread_ctx_for_turn = _apply_structured_intake_updates(
+            session,
+            uid_str,
+            thread_ctx=thread_ctx_raw,
+            updates=structured_updates,
+            source_user_message=message.strip(),
+        )
         hint_activity_id = _coerce_last_activity_id(data)
         if hint_activity_id is None:
-            hint_activity_id = thread_ctx_raw.last_structured_run_activity_id
+            hint_activity_id = thread_ctx_for_turn.last_structured_run_activity_id
         t_route3 = time.perf_counter()
         anchor_date, client_tz = _resolve_anchor_local_date(data)
 
@@ -382,7 +456,7 @@ def agent_messages(conversation_id):
                 client_timezone=client_tz,
                 eval_model_override=_coerce_eval_model_header(),
                 last_activity_id_hint=hint_activity_id,
-                thread_derived_context=thread_ctx_raw,
+                thread_derived_context=thread_ctx_for_turn,
             )
         except RateLimitExceededError as e:
             session.rollback()

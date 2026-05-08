@@ -2127,6 +2127,80 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
     return "Tell me a bit more about the race you want to train for."
 
 
+def _ui_prompt_from_plan_intake_state(
+    intake_state: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(intake_state, dict):
+        return None
+    alignment = intake_state.get("alignment")
+    if not isinstance(alignment, dict):
+        return None
+    st = alignment.get("state")
+    if not isinstance(st, dict):
+        return None
+    if not st.get("pause_required") or st.get("generation_ready"):
+        return None
+    allowed = st.get("allowed_question_categories") or []
+    first = (
+        allowed[0]
+        if isinstance(allowed, list) and allowed and isinstance(allowed[0], str)
+        else ""
+    )
+    if first == "frequency_flexibility":
+        return {
+            "version": 1,
+            "field_key": "alignment.frequency_flexible",
+            "control_type": "single_select_chips",
+            "selection_mode": "single",
+            "required": True,
+            "prompt": "Would you be open to adding one run day to support this goal?",
+            "options": [
+                {
+                    "id": "frequency_fixed",
+                    "label": "Keep schedule fixed",
+                    "user_message": "Keep my current days fixed.",
+                    "updates": {"alignment_frequency_flexible": False},
+                },
+                {
+                    "id": "frequency_open",
+                    "label": "Open to adding a day",
+                    "user_message": "I can add one day.",
+                    "updates": {"alignment_frequency_flexible": True},
+                },
+            ],
+        }
+    if first == "posture_priority":
+        return {
+            "version": 1,
+            "field_key": "alignment.posture_priority",
+            "control_type": "single_select_chips",
+            "selection_mode": "single",
+            "required": True,
+            "prompt": "If tradeoffs appear, what should lead?",
+            "options": [
+                {
+                    "id": "posture_performance",
+                    "label": "Performance first",
+                    "user_message": "Let's prioritize performance.",
+                    "updates": {"alignment_posture_priority": "performance"},
+                },
+                {
+                    "id": "posture_balanced",
+                    "label": "Balanced",
+                    "user_message": "Let's keep a balanced approach.",
+                    "updates": {"alignment_posture_priority": "balanced"},
+                },
+                {
+                    "id": "posture_durability",
+                    "label": "Durability first",
+                    "user_message": "Let's prioritize durability and staying healthy.",
+                    "updates": {"alignment_posture_priority": "durability"},
+                },
+            ],
+        }
+    return None
+
+
 # Premature “wrap up / confirm / generate” language while still in COLLECTING.
 _PLAN_INTAKE_PREMATURE_CONFIRM_RE = re.compile(
     r"(?is)"
@@ -3804,6 +3878,9 @@ def run_mobile_agent_turn(
                 }
                 if pis_merged is not None:
                     structured_text["data"]["plan_intake_state"] = pis_merged
+                    ui_prompt = _ui_prompt_from_plan_intake_state(pis_merged)
+                    if isinstance(ui_prompt, dict):
+                        structured_text["data"]["ui_prompt"] = ui_prompt
                 if latest_plan_generation is not None:
                     structured_text["data"]["plan_generation"] = latest_plan_generation
                 logger.info(
