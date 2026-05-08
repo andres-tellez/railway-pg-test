@@ -2164,6 +2164,10 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
 def _alignment_ui_prompt_from_plan_intake_state(
     intake_state: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
+    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if ux.get("training_days_expansion_pending"):
+        # User must re-pick concrete weekdays before the next alignment chip (e.g. posture).
+        return None
     alignment = intake_state.get("alignment")
     if not isinstance(alignment, dict):
         return None

@@ -662,3 +662,71 @@ def test_plan_intake_does_not_override_explicit_alignment_updates_with_message_p
         source_user_message="I can add another day if needed",
     )
     assert state["alignment"]["answers"]["frequency_flexible"] is False
+
+
+def test_frequency_flexible_true_sets_expansion_pending_and_missing_training_days():
+    state = update_plan_intake_state(
+        {
+            "draft": {
+                "race_distance": "Marathon",
+                "race_date": "2026-10-11",
+                "primary_goal": "Target Time",
+                "target_time": "3:00:00",
+                "training_days": ["Mon", "Tue", "Sun"],
+            },
+            "alignment": {},
+        },
+        updates={"alignment_frequency_flexible": True},
+    )
+    assert state["ux"].get("training_days_expansion_pending") is True
+    assert "training_days" in state["missing_required"]
+    assert state["ready_to_generate"] is False
+
+
+def test_training_days_commit_clears_expansion_pending():
+    base = update_plan_intake_state(
+        {
+            "draft": {
+                "race_distance": "Marathon",
+                "race_date": "2026-10-11",
+                "primary_goal": "Target Time",
+                "target_time": "3:00:00",
+                "training_days": ["Mon", "Tue", "Sun"],
+            },
+            "alignment": {},
+        },
+        updates={"alignment_frequency_flexible": True},
+    )
+    assert base["ux"].get("training_days_expansion_pending") is True
+    nxt = update_plan_intake_state(
+        base,
+        updates={"training_days": ["Mon", "Wed", "Thu", "Sat"]},
+    )
+    assert nxt["ux"].get("training_days_expansion_pending") is not True
+
+
+def test_ready_to_generate_false_until_alignment_resolved(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "1")
+    s0 = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "target_time": "3:00:00",
+            "training_days": ["Mon", "Tue", "Wed", "Thu"],
+        },
+    )
+    assert s0["ready_to_generate"] is True
+    s1 = update_plan_intake_state(
+        {
+            **s0,
+            "alignment": {
+                "ambition_stance": "HIGH_TENSION",
+                "answers": {"frequency_flexible": True},
+            },
+        },
+        updates={},
+    )
+    assert s1["ready_to_generate"] is False
+    assert s1["status"] == "collecting"

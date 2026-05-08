@@ -1219,6 +1219,12 @@ def update_plan_intake_state(
     errors: List[str] = []
     alignment = dict(state.get("alignment") or {})
     alignment_answers = dict(alignment.get("answers") or {})
+    prior_alignment_answers = dict(alignment_answers)
+    prior_training_days_for_expansion = (
+        list(draft["training_days"])
+        if isinstance(draft.get("training_days"), list)
+        else None
+    )
 
     if clear_fields:
         for f in clear_fields:
@@ -1370,6 +1376,13 @@ def update_plan_intake_state(
                 alignment_answers[key] = value
 
     if (
+        alignment_answers.get("frequency_flexible") is True
+        and prior_alignment_answers.get("frequency_flexible") is not True
+    ):
+        # User agreed to add/adjust capacity — must re-pick concrete weekdays next.
+        ux["training_days_expansion_pending"] = True
+
+    if (
         not skip_nl_core
         and "training_days" not in draft
         and "training_days_count" not in ux
@@ -1385,7 +1398,23 @@ def update_plan_intake_state(
 
     _auto_fill_long_run_day(draft)
 
+    # Cleared after user commits a new weekday set (structured `updates` or draft change).
+    if ux.get("training_days_expansion_pending"):
+        explicit_td = isinstance(up, dict) and "training_days" in up
+        cur_td = draft.get("training_days")
+        td_changed = False
+        if isinstance(cur_td, list):
+            if isinstance(prior_training_days_for_expansion, list):
+                td_changed = cur_td != prior_training_days_for_expansion
+            else:
+                td_changed = True
+        if explicit_td or td_changed:
+            ux.pop("training_days_expansion_pending", None)
+
     missing = _missing_required_fields(draft)
+    if ux.get("training_days_expansion_pending"):
+        if "training_days" not in missing:
+            missing = ["training_days"] + [m for m in missing if m != "training_days"]
     ready_to_generate = len(missing) == 0 and len(errors) == 0
     status = "ready_to_confirm" if not missing else "collecting"
     ux["stage"] = _plan_ux_stage_for_state(
@@ -1413,6 +1442,24 @@ def update_plan_intake_state(
         merged_al = dict(alignment)
     if merged_al is not None:
         state["alignment"] = _recompute_alignment_branch(merged_al, draft)
+    if _intake_alignment_feature_enabled():
+        al_out = state.get("alignment")
+        if isinstance(al_out, dict):
+            ast = al_out.get("state")
+            if (
+                isinstance(ast, dict)
+                and ast.get("pause_required")
+                and not ast.get("generation_ready")
+            ):
+                state["ready_to_generate"] = False
+                state["status"] = "collecting"
+                state["ux"]["stage"] = _plan_ux_stage_for_state(
+                    draft,
+                    state["missing_required"],
+                    ready_to_generate=False,
+                    had_prior_draft=had_prior_draft,
+                    prior_ready_to_generate=prior_ready_to_generate,
+                )
     return state
 
 
@@ -1525,13 +1572,23 @@ def build_core_structured_ui_prompt(
         }
 
     if first == "training_days":
+        ux_in = (
+            intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+        )
+        expansion = bool(ux_in.get("training_days_expansion_pending"))
+        prompt = (
+            "Update your weekly running days — add your extra day or adjust the mix, "
+            "then confirm."
+            if expansion
+            else "Which days work for training? Select all that apply, then confirm."
+        )
         return {
             "version": 1,
             "field_key": "plan_intake.training_days",
             "control_type": "multi_select_chips",
             "selection_mode": "multi",
             "required": True,
-            "prompt": "Which days work for training? Select all that apply, then confirm.",
+            "prompt": prompt,
             "multi_select_submit": {
                 "label": "Confirm days",
                 "updates_key": "training_days",
