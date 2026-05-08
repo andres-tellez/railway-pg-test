@@ -75,9 +75,11 @@ from src.smartcoach_mobile_coach.plan_intake_activity_context import (
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     _human_missing_label,
+    build_core_structured_ui_prompt,
     mark_plan_runner_understanding_shown,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
+    structured_intake_core_v1_enabled,
     user_confirms_plan_intake,
 )
 from src.smartcoach_mobile_coach.dialogue_manager import (
@@ -2127,11 +2129,9 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
     return "Tell me a bit more about the race you want to train for."
 
 
-def _ui_prompt_from_plan_intake_state(
-    intake_state: Optional[Dict[str, Any]],
+def _alignment_ui_prompt_from_plan_intake_state(
+    intake_state: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
-    if not isinstance(intake_state, dict):
-        return None
     alignment = intake_state.get("alignment")
     if not isinstance(alignment, dict):
         return None
@@ -2199,6 +2199,33 @@ def _ui_prompt_from_plan_intake_state(
             ],
         }
     return None
+
+
+def _ui_prompt_from_plan_intake_state(
+    intake_state: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(intake_state, dict):
+        return None
+    alignment_prompt = _alignment_ui_prompt_from_plan_intake_state(intake_state)
+    if alignment_prompt is not None:
+        return alignment_prompt
+    return build_core_structured_ui_prompt(intake_state)
+
+
+def _structured_intake_core_v1_plan_creation_addon() -> str:
+    if not structured_intake_core_v1_enabled():
+        return ""
+    return (
+        "## Structured intake (core athletic fields)\n"
+        "- **Authoritative state:** `race_distance`, `race_date`, `primary_goal`, `target_time`, and "
+        "`training_days` are committed via **mobile inline controls** + `structured_input` / tools. "
+        "**Treat the latest tool `plan_intake_state.draft` as the only source of truth** for those fields.\n"
+        "- **Do not** tell the athlete a core detail is saved unless it appears in that draft after the latest merge.\n"
+        "- Prefer **not** passing those five keys in `update_plan_intake` `updates` from model inference; use "
+        "optional fields (`race_name`, `race_location`, `notes`, `long_run_day`, …) there when helpful.\n"
+        "- Your role for core slots: **coach copy, pacing, and explanation**—not silent extraction into those "
+        "five keys.\n"
+    ).strip()
 
 
 # Premature “wrap up / confirm / generate” language while still in COLLECTING.
@@ -3166,6 +3193,7 @@ def run_mobile_agent_turn(
     if plan_creation_mode and not use_full_prompt_for_plan:
         system_content = _join_nonempty_system_sections(
             PLAN_CREATION_SYSTEM_PROMPT_BASE,
+            _structured_intake_core_v1_plan_creation_addon(),
             _plan_intake_phase_system_section(plan_intake_ctx),
             _device_anchor_system_section(anchor_local_date, client_timezone),
             activity_ctx_block,

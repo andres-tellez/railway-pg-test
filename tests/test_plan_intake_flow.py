@@ -4,10 +4,12 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     PLAN_UX_STAGE_CONFIRM,
     PLAN_UX_STAGE_FAST_TRACK,
     PLAN_UX_STAGE_GOAL_ALIGNMENT,
+    build_core_structured_ui_prompt,
+    build_plan_request_from_state,
     mark_plan_runner_understanding_shown,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
-    build_plan_request_from_state,
+    structured_intake_core_v1_enabled,
     update_plan_intake_state,
     user_confirms_plan_intake,
 )
@@ -22,6 +24,51 @@ def test_plan_intake_missing_required_order_for_empty_draft():
         "training_days",
     ]
     assert state["ux"]["stage"] == "understand_runner"
+
+
+def test_structured_core_v1_skips_nl_race_date_from_user_message(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
+    state = update_plan_intake_state(
+        None,
+        updates={"race_distance": "Marathon"},
+        source_user_message="October 11, 2026",
+    )
+    assert state["draft"].get("race_date") is None
+
+
+def test_structured_core_v1_off_still_fills_nl_race_date(monkeypatch):
+    monkeypatch.delenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", raising=False)
+    state = update_plan_intake_state(
+        None,
+        updates={"race_distance": "Marathon"},
+        source_user_message="October 11, 2026",
+    )
+    assert state["draft"].get("race_date") == "2026-10-11"
+
+
+def test_build_core_structured_ui_prompt_disabled_without_flag(monkeypatch):
+    monkeypatch.delenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", raising=False)
+    state = update_plan_intake_state(None)
+    assert build_core_structured_ui_prompt(state) is None
+
+
+def test_build_core_structured_ui_prompt_race_distance_when_collecting(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
+    state = update_plan_intake_state(None)
+    prompt = build_core_structured_ui_prompt(state)
+    assert prompt is not None
+    assert prompt["field_key"] == "plan_intake.race_distance"
+    assert prompt["control_type"] == "single_select_chips"
+    assert any(
+        o.get("updates", {}).get("race_distance") == "Marathon"
+        for o in (prompt.get("options") or [])
+        if isinstance(o, dict)
+    )
+
+
+def test_structured_intake_core_v1_enabled_truthy(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "on")
+    assert structured_intake_core_v1_enabled() is True
 
 
 def test_plan_intake_updates_to_ready_state():

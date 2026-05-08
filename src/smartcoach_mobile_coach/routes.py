@@ -33,10 +33,14 @@ from src.smartcoach_mobile_coach.http_rate_limit import (
 )
 from src.smartcoach_mobile_coach.orchestrator import run_mobile_agent_turn
 from src.smartcoach_mobile_coach.agent_tools import tool_update_plan_intake
+from src.smartcoach_mobile_coach.plan_intake_flow import (
+    structured_intake_core_v1_enabled,
+)
 from src.smartcoach_mobile_coach.thread_derived_context import (
     DerivedThreadCoachContext,
     derive_thread_coach_context,
 )
+from src.utils.date_helpers import DAY_NAMES_ABBREV
 from src.services.coach_strava_readiness_service import (
     evaluate_coach_strava_data_readiness,
 )
@@ -234,6 +238,9 @@ def _coerce_require_fresh_strava_data(payload: dict) -> bool:
     return False
 
 
+_VALID_STRUCTURED_PRIMARY_GOALS = frozenset({"Just Finish", "Target Time"})
+
+
 def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
     raw = payload.get("structured_input")
     if not isinstance(raw, dict):
@@ -256,6 +263,46 @@ def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
             "durability",
         ):
             out["alignment_posture_priority"] = v.strip().lower()
+
+    if structured_intake_core_v1_enabled():
+        if "race_distance" in updates:
+            v = updates.get("race_distance")
+            if isinstance(v, str) and v.strip():
+                out["race_distance"] = v.strip()
+        if "race_date" in updates:
+            v = updates.get("race_date")
+            if isinstance(v, str) and v.strip():
+                out["race_date"] = v.strip()
+        if "primary_goal" in updates:
+            v = updates.get("primary_goal")
+            if isinstance(v, str) and v.strip() in _VALID_STRUCTURED_PRIMARY_GOALS:
+                out["primary_goal"] = v.strip()
+        if "target_time" in updates:
+            v = updates.get("target_time")
+            if v is None:
+                out["target_time"] = None
+            elif isinstance(v, str) and v.strip():
+                out["target_time"] = v.strip()
+        if "training_days" in updates:
+            v = updates.get("training_days")
+            if isinstance(v, list):
+                days: list[str] = []
+                for x in v:
+                    if isinstance(x, str) and x in DAY_NAMES_ABBREV:
+                        days.append(x)
+                if days:
+                    seen: set[str] = set()
+                    uniq: list[str] = []
+                    for d in days:
+                        if d not in seen:
+                            seen.add(d)
+                            uniq.append(d)
+                    out["training_days"] = uniq
+        if "long_run_day" in updates:
+            v = updates.get("long_run_day")
+            if isinstance(v, str) and v.strip() in DAY_NAMES_ABBREV:
+                out["long_run_day"] = v.strip()
+
     return out or None
 
 
