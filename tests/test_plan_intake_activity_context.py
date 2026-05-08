@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 from src.smartcoach_mobile_coach.plan_intake_activity_context import (
@@ -57,12 +58,20 @@ def test_compute_plan_intake_activity_summary(mock_fetch):
         {"date": "2026-04-03", "distance": 10.0},
     ]
     session = MagicMock()
-    out = compute_plan_intake_activity_summary(session, "user-uuid", lookback_weeks=12)
+    out = compute_plan_intake_activity_summary(
+        session,
+        "user-uuid",
+        lookback_weeks=12,
+        anchor_local_date=date(2026, 4, 15),
+    )
     assert out["activities_found"] == 2
     assert out["has_running_data"] is True
     assert out["total_miles_window"] == 16.0
     assert out["longest_run_miles"] == 10.0
     assert out["runs_per_week_approx"] == 0.2
+    assert out["completed_calendar_weeks_count"] == 2
+    assert out["avg_miles_per_week_approx"] == 8.0  # mean of two completed ISO weeks
+    assert abs(out["avg_miles_per_week_raw_window"] - 16.0 / 12.0) < 0.06
     mock_fetch.assert_called_once()
 
 

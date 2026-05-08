@@ -9,12 +9,23 @@ when plan_creation_mode restricts tools to intake only.
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
 from src.services.training_plan.data_collection_service import DataCollectionService
+
+
+def parse_anchor_local_date_yyyy_mm_dd(raw: Optional[str]) -> Optional[date]:
+    """Parse mobile ``YYYY-MM-DD`` device anchor; used for ISO week boundaries."""
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        return datetime.strptime(raw.strip()[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def _lookback_weeks_from_env() -> int:
@@ -39,6 +50,54 @@ def _parse_activity_date(value: Any) -> Optional[datetime]:
             return datetime.strptime(raw[:10], "%Y-%m-%d")
         except ValueError:
             return None
+
+
+def _monday_of_calendar_week(d: date) -> date:
+    return d - timedelta(days=d.weekday())
+
+
+def _calendar_week_volume_stats(
+    activities: List[Dict[str, Any]],
+    *,
+    anchor_date: date,
+) -> Dict[str, Any]:
+    """
+    Group miles by ISO weeks (Monday start). Baseline excludes the **current**
+    calendar week (the week containing ``anchor_date``), so partial in-progress
+    weeks do not drag the typical-week number down (trust UX).
+    """
+    totals: Dict[date, float] = defaultdict(float)
+    for a in activities:
+        dt = _parse_activity_date(a.get("date"))
+        if dt is None:
+            continue
+        d = dt.date()
+        try:
+            miles = float(a.get("distance") or 0.0)
+        except (TypeError, ValueError):
+            miles = 0.0
+        totals[_monday_of_calendar_week(d)] += miles
+
+    this_monday = _monday_of_calendar_week(anchor_date)
+    completed_totals = [totals[m] for m in totals if m < this_monday]
+    avg_completed = (
+        sum(completed_totals) / float(len(completed_totals))
+        if completed_totals
+        else 0.0
+    )
+    min_c = min(completed_totals) if completed_totals else 0.0
+    max_c = max(completed_totals) if completed_totals else 0.0
+    current_partial = float(totals.get(this_monday, 0.0))
+
+    return {
+        "calendar_anchor_date": anchor_date.isoformat(),
+        "current_calendar_week_monday": this_monday.isoformat(),
+        "current_calendar_week_miles_partial": round(current_partial, 1),
+        "completed_calendar_weeks_count": len(completed_totals),
+        "avg_miles_completed_calendar_weeks": round(avg_completed, 1),
+        "weekly_miles_min_completed": round(min_c, 1),
+        "weekly_miles_max_completed": round(max_c, 1),
+    }
 
 
 def _weekly_mileage_stats(
@@ -94,17 +153,23 @@ def compute_plan_intake_activity_summary(
     internal_user_id: str,
     *,
     lookback_weeks: Optional[int] = None,
+    anchor_local_date: Optional[date] = None,
 ) -> Dict[str, Any]:
     """
     Return a small dict of facts from DB runs (type Run) in the lookback window.
 
     ``activities_found == 0`` means no ingested runs in that window (Strava empty
     or not linked)—not a judgment about account link state.
+
+    ``anchor_local_date`` should be the athlete's local calendar **today** when
+    available so ISO-week boundaries match their week; otherwise defaults to
+    server **date.today()**.
     """
     w = lookback_weeks if lookback_weeks is not None else _lookback_weeks_from_env()
     activities: List[Dict[str, Any]] = DataCollectionService.fetch_strava_activities(
         session, str(internal_user_id), weeks=w
     )
+    anchor = anchor_local_date if anchor_local_date is not None else date.today()
     n = len(activities)
     total_miles = 0.0
     for a in activities:
@@ -132,16 +197,34 @@ def compute_plan_intake_activity_summary(
         latest_date = str(d0) if d0 else None
     weekly_stats = _weekly_mileage_stats(activities, w)
     effort_stats = _effort_control_summary(activities)
+    cal_stats = _calendar_week_volume_stats(activities, anchor_date=anchor)
+    completed_n = int(cal_stats.get("completed_calendar_weeks_count") or 0)
+    # Primary coaching baseline: typical complete weeks only (excludes partial current week).
+    avg_primary = (
+        float(cal_stats.get("avg_miles_completed_calendar_weeks") or 0.0)
+        if completed_n > 0
+        else avg_week
+    )
+    if completed_n > 0:
+        weekly_stats["weekly_miles_min_active"] = float(
+            cal_stats.get("weekly_miles_min_completed") or 0.0
+        )
+        weekly_stats["weekly_miles_max_active"] = float(
+            cal_stats.get("weekly_miles_max_completed") or 0.0
+        )
+
     return {
         "lookback_weeks": w,
         "activities_found": n,
         "has_running_data": n > 0,
         "total_miles_window": round(total_miles, 1),
-        "avg_miles_per_week_approx": round(avg_week, 1),
+        "avg_miles_per_week_raw_window": round(avg_week, 1),
+        "avg_miles_per_week_approx": round(avg_primary, 1),
         "longest_run_miles": round(longest_miles, 1) if longest_miles else 0.0,
         "longest_run_date": longest_date,
         "latest_run_date": latest_date,
         "runs_per_week_approx": round(n / float(w), 1) if w else 0.0,
+        **cal_stats,
         **weekly_stats,
         **effort_stats,
     }
@@ -154,6 +237,9 @@ def format_plan_intake_activity_context_block(summary: Dict[str, Any]) -> str:
     has = bool(summary.get("has_running_data"))
     total = summary.get("total_miles_window")
     avg = summary.get("avg_miles_per_week_approx")
+    avg_raw = summary.get("avg_miles_per_week_raw_window")
+    partial = summary.get("current_calendar_week_miles_partial")
+    completed_wk = int(summary.get("completed_calendar_weeks_count") or 0)
     long_mi = summary.get("longest_run_miles")
     long_dt = summary.get("longest_run_date") or "—"
     latest = summary.get("latest_run_date") or "—"
@@ -167,11 +253,37 @@ def format_plan_intake_activity_context_block(summary: Dict[str, Any]) -> str:
         lines.extend(
             [
                 f"- **Total miles (window):** ~**{total}** mi",
-                f"- **Approx. average per week** (total ÷ {w}): ~**{avg}** mi/wk",
+            ]
+        )
+        if completed_wk > 0:
+            lines.append(
+                f"- **Typical weekly volume** (mean of **{completed_wk}** completed Mon–Sun week(s), "
+                f"**excluding** the current partial week): ~**{avg}** mi/wk"
+            )
+        else:
+            lines.append(
+                f"- **Approx. average per week** (total ÷ {w}, no prior full week in window): ~**{avg}** mi/wk"
+            )
+        if avg_raw is not None and completed_wk > 0:
+            lines.append(
+                f"- **Raw average** (total ÷ {w}, includes partial current week): ~**{avg_raw}** mi/wk "
+                "(do **not** treat as typical volume — use **Typical weekly volume** for coaching)."
+            )
+        if partial is not None and float(partial) > 0:
+            lines.append(
+                f"- **Current calendar week to date (partial):** ~**{partial}** mi "
+                "(in progress — not a full week)."
+            )
+        lines.extend(
+            [
                 f"- **Longest single run in window:** **{long_mi}** mi on **{long_dt}**",
                 f"- **Most recent run date:** **{latest}**",
                 "",
                 "### Coaching rules for plan intake",
+            ]
+        )
+        lines.extend(
+            [
                 "- **Do not** ask for self-reported weekly mileage, years running, or generic “experience level” — "
                 "baseline for the plan comes from this snapshot + generation-time tools.",
                 "- First make the runner feel understood in brief coach language, then ask natural questions that map "
@@ -302,6 +414,10 @@ def apply_plan_activity_preamble_to_assistant_markdown(
 def build_plan_intake_activity_context_block(
     session: Session,
     internal_user_id: str,
+    *,
+    anchor_local_date: Optional[date] = None,
 ) -> str:
-    summary = compute_plan_intake_activity_summary(session, internal_user_id)
+    summary = compute_plan_intake_activity_summary(
+        session, internal_user_id, anchor_local_date=anchor_local_date
+    )
     return format_plan_intake_activity_context_block(summary)

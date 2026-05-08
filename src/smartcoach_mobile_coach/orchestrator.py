@@ -28,6 +28,7 @@ import logging
 import os
 import re
 import time
+from datetime import date
 from dataclasses import replace
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -72,6 +73,7 @@ from src.smartcoach_mobile_coach.plan_intake_activity_context import (
     apply_plan_activity_preamble_to_assistant_markdown,
     compute_plan_intake_activity_summary,
     format_plan_intake_activity_context_block,
+    parse_anchor_local_date_yyyy_mm_dd,
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     _human_missing_label,
@@ -3222,8 +3224,11 @@ def run_mobile_agent_turn(
     )
     if _inject_act:
         try:
+            anchor_d = (
+                parse_anchor_local_date_yyyy_mm_dd(anchor_local_date) or date.today()
+            )
             activity_summary_for_turn = compute_plan_intake_activity_summary(
-                session, str(internal_user_id)
+                session, str(internal_user_id), anchor_local_date=anchor_d
             )
             activity_ctx_block = format_plan_intake_activity_context_block(
                 activity_summary_for_turn
