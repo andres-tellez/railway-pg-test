@@ -139,9 +139,15 @@ def alignment_pause_coaching_facts_system_section(
 
     return (
         "## Intake alignment — coach-facing facts (read silently; do not dump as a list to the user)\n"
+        "This section appears **after** **## Athlete activity snapshot** when that block is present—use it.\n"
+        "**Ground your opening** in **at least one concrete fact** from the activity snapshot "
+        "(e.g. typical weekly mileage band, run frequency, or longest recent run) **and** tie it to what "
+        "they already entered (goal type, target time if set, training days). Show you are reasoning "
+        "about *their* situation—not generic advice.\n"
+        "\n"
         "Before the **inline controls** ask the next question, write like a coach—not a workflow:\n"
-        "1. **Interpret** what the deterministic signals imply for *this* athlete in **1–2 short sentences**.\n"
-        "2. **Name the tension or tradeoff** (goal vs current structure / volume) in **one sentence**.\n"
+        "1. **Interpret** what the signals imply for *this* athlete in **1–2 short sentences**.\n"
+        "2. **Name the tension or tradeoff** (stated goal vs current structure / volume) in **one sentence**.\n"
         "3. **Explain why the next question matters** for staying healthy, consistent, or realistic pacing—in **one sentence**.\n"
         "4. Then ask **one** question that matches the **inline chips** (do not invent a different question).\n"
         "\n"
@@ -153,6 +159,9 @@ def alignment_pause_coaching_facts_system_section(
         f"- **Target time (draft):** {draft.get('target_time') or 'n/a'}\n"
         f"- **Training days:** {day_count} ({days_preview})\n"
         f"- **Next alignment topic (must match chips):** {next_cat or 'n/a'}\n"
+        "\n"
+        "If there is **no** activity snapshot block (thin data), say so briefly and lean on the deterministic "
+        "stance/band lines above—still connect goal and schedule before the chips.\n"
         "\n"
         "Keep coaching prose before the chips to **at most 4 short sentences** total; warm and specific; "
         "no filler openers (“Great!”, “I’m here to help”)."
@@ -1032,23 +1041,34 @@ def mark_plan_runner_understanding_shown(
 
 
 def _missing_required_fields(draft: Dict[str, Any]) -> List[str]:
+    """
+    Missing fields in intake order. When primary_goal is Target Time, ``target_time``
+    is required immediately after goal type — before ``training_days`` — so structured
+    UI and conversation ask for clock time next, not weekly schedule first.
+    """
     out: List[str] = []
     for f in REQUIRED_FIELDS:
         v = draft.get(f)
+        missing_f = False
         if v is None:
+            missing_f = True
+        elif isinstance(v, str) and not v.strip():
+            missing_f = True
+        elif isinstance(v, list) and not v:
+            missing_f = True
+        if missing_f:
             out.append(f)
-            continue
-        if isinstance(v, str) and not v.strip():
-            out.append(f)
-            continue
-        if isinstance(v, list) and not v:
-            out.append(f)
-            continue
-    if draft.get("primary_goal") == PrimaryGoal.TARGET_TIME.value and not (
-        isinstance(draft.get("target_time"), str)
-        and draft.get("target_time", "").strip()
-    ):
-        out.append("target_time")
+        if f == "primary_goal" and not missing_f:
+            pg = draft.get("primary_goal")
+            if (
+                isinstance(pg, str)
+                and pg.strip() == PrimaryGoal.TARGET_TIME.value
+                and not (
+                    isinstance(draft.get("target_time"), str)
+                    and draft.get("target_time", "").strip()
+                )
+            ):
+                out.append("target_time")
     return out
 
 

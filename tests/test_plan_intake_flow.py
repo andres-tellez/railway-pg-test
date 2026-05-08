@@ -183,6 +183,19 @@ def test_plan_intake_target_time_required_for_target_goal():
     assert state["ux"]["stage"] == "details"
 
 
+def test_missing_required_orders_target_time_before_training_days():
+    """Clock goal should be collected immediately after goal type, not after schedule."""
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-12",
+            "race_distance": "Marathon",
+            "primary_goal": "Target Time",
+        },
+    )
+    assert state["missing_required"] == ["target_time", "training_days"]
+
+
 def test_plan_intake_ux_stage_goal_alignment_after_distance_only():
     state = update_plan_intake_state(None, updates={"race_distance": "Marathon"})
     assert state["ux"]["stage"] == PLAN_UX_STAGE_GOAL_ALIGNMENT

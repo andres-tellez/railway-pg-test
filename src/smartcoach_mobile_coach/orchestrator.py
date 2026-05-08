@@ -3196,9 +3196,9 @@ def run_mobile_agent_turn(
             PLAN_CREATION_SYSTEM_PROMPT_BASE,
             _structured_intake_core_v1_plan_creation_addon(),
             _plan_intake_phase_system_section(plan_intake_ctx),
-            alignment_pause_coaching_facts_system_section(plan_intake_ctx),
             _device_anchor_system_section(anchor_local_date, client_timezone),
             activity_ctx_block,
+            alignment_pause_coaching_facts_system_section(plan_intake_ctx),
             _plan_creation_directive_stub(response_directive),
             _plan_creation_system_section(
                 user_message,
