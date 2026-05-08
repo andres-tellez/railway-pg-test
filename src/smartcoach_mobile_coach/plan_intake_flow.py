@@ -10,6 +10,7 @@ This module keeps collection/validation state outside the LLM:
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -32,6 +33,15 @@ PLAN_UX_STAGE_DETAILS = "details"
 PLAN_UX_STAGE_CONFIRM = "confirm"
 PLAN_UX_STAGE_FAST_TRACK = "fast_track"
 PLAN_UX_STAGE_GENERATED = "generated"
+
+
+def structured_intake_core_v1_enabled() -> bool:
+    """
+    When true, core plan-intake athletic fields are owned by structured commits
+    (inline controls + structured_input), not conversational NL merge into draft.
+    """
+    raw = (os.getenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1") or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
 
 
 def _normalize_goal(value: Any) -> Optional[str]:
@@ -1173,19 +1183,21 @@ def update_plan_intake_state(
     # (e.g. "A marathon", "the full marathon"), infer from the latest message.
     # Named-event fill above only sees race_name/location/plan_name; bare phrases
     # like "a marathon" do not populate race_name (event-title regex needs a longer prefix).
-    rd_cur = draft.get("race_distance")
-    if not (isinstance(rd_cur, str) and rd_cur.strip()):
-        msg_rd = _try_infer_race_distance((source_user_message or "").strip())
-        if msg_rd:
-            draft["race_distance"] = msg_rd
+    skip_nl_core = structured_intake_core_v1_enabled()
+    if not skip_nl_core:
+        rd_cur = draft.get("race_distance")
+        if not (isinstance(rd_cur, str) and rd_cur.strip()):
+            msg_rd = _try_infer_race_distance((source_user_message or "").strip())
+            if msg_rd:
+                draft["race_distance"] = msg_rd
 
-    _fill_race_date_from_user_message(draft, source_user_message)
+        _fill_race_date_from_user_message(draft, source_user_message)
 
-    _fill_primary_goal_from_user_message(draft, source_user_message)
+        _fill_primary_goal_from_user_message(draft, source_user_message)
 
-    _fill_goal_time_from_user_message(draft, source_user_message)
+        _fill_goal_time_from_user_message(draft, source_user_message)
 
-    _fill_training_days_from_user_message(draft, ux, source_user_message)
+        _fill_training_days_from_user_message(draft, ux, source_user_message)
     msg_alignment_answers = _extract_alignment_answers_from_user_message(
         source_user_message
     )
@@ -1195,7 +1207,11 @@ def update_plan_intake_state(
             if key not in alignment_answers:
                 alignment_answers[key] = value
 
-    if "training_days" not in draft and "training_days_count" not in ux:
+    if (
+        not skip_nl_core
+        and "training_days" not in draft
+        and "training_days_count" not in ux
+    ):
         day_count = _extract_training_days_count(source_user_message)
         if day_count is not None:
             ux["training_days_count"] = day_count
@@ -1236,6 +1252,140 @@ def update_plan_intake_state(
     elif alignment:
         state["alignment"] = alignment
     return state
+
+
+def build_core_structured_ui_prompt(
+    intake_state: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """
+    Inline controls for core athletic intake when SMARTCOACH_STRUCTURED_INTAKE_CORE_V1 is on.
+
+    Alignment pause prompts take precedence in the orchestrator; this fills remaining slots
+    from ``missing_required[0]``.
+    """
+    if not structured_intake_core_v1_enabled():
+        return None
+    if not isinstance(intake_state, dict):
+        return None
+    if intake_state.get("ready_to_generate"):
+        return None
+    missing_raw = intake_state.get("missing_required") or []
+    missing = [m for m in missing_raw if isinstance(m, str)]
+    if not missing:
+        return None
+    first = missing[0]
+
+    if first == "race_distance":
+        return {
+            "version": 1,
+            "field_key": "plan_intake.race_distance",
+            "control_type": "single_select_chips",
+            "selection_mode": "single",
+            "required": True,
+            "prompt": "What distance are you training for?",
+            "options": [
+                {
+                    "id": "dist_half",
+                    "label": "Half marathon",
+                    "user_message": "I'm training for a half marathon.",
+                    "updates": {"race_distance": "Half Marathon"},
+                },
+                {
+                    "id": "dist_full",
+                    "label": "Marathon",
+                    "user_message": "I'm training for a marathon.",
+                    "updates": {"race_distance": "Marathon"},
+                },
+            ],
+        }
+
+    if first == "race_date":
+        return {
+            "version": 1,
+            "field_key": "plan_intake.race_date",
+            "control_type": "date_picker",
+            "selection_mode": "single",
+            "required": True,
+            "prompt": "When is your race? Tap below to open your calendar.",
+            "options": [],
+        }
+
+    if first == "primary_goal":
+        return {
+            "version": 1,
+            "field_key": "plan_intake.primary_goal",
+            "control_type": "single_select_chips",
+            "selection_mode": "single",
+            "required": True,
+            "prompt": "Is the goal to finish strong, or are you targeting a specific time?",
+            "options": [
+                {
+                    "id": "goal_finish",
+                    "label": "Finish strong",
+                    "user_message": "I want to finish strong — no specific time goal.",
+                    "updates": {"primary_goal": PrimaryGoal.JUST_FINISH.value},
+                },
+                {
+                    "id": "goal_time",
+                    "label": "Target time",
+                    "user_message": "I'm targeting a specific finish time.",
+                    "updates": {"primary_goal": PrimaryGoal.TARGET_TIME.value},
+                },
+            ],
+        }
+
+    if first == "target_time":
+        presets: List[tuple[str, str, str]] = [
+            ("tt_300", "3:00", "3:00:00"),
+            ("tt_315", "3:15", "3:15:00"),
+            ("tt_330", "3:30", "3:30:00"),
+            ("tt_345", "3:45", "3:45:00"),
+            ("tt_400", "4:00", "4:00:00"),
+            ("tt_430", "4:30", "4:30:00"),
+            ("tt_500", "5:00", "5:00:00"),
+        ]
+        return {
+            "version": 1,
+            "field_key": "plan_intake.target_time",
+            "control_type": "single_select_chips",
+            "selection_mode": "single",
+            "required": True,
+            "prompt": "What finish time are you aiming for?",
+            "options": [
+                {
+                    "id": pid,
+                    "label": label,
+                    "user_message": f"I'm aiming for about {label} (finish ~{clock}).",
+                    "updates": {"target_time": clock},
+                }
+                for pid, label, clock in presets
+            ],
+        }
+
+    if first == "training_days":
+        return {
+            "version": 1,
+            "field_key": "plan_intake.training_days",
+            "control_type": "multi_select_chips",
+            "selection_mode": "multi",
+            "required": True,
+            "prompt": "Which days work for training? Select all that apply, then confirm.",
+            "multi_select_submit": {
+                "label": "Confirm days",
+                "updates_key": "training_days",
+            },
+            "options": [
+                {
+                    "id": d,
+                    "label": d,
+                    "user_message": "",
+                    "updates": {},
+                }
+                for d in DAY_NAMES_ABBREV
+            ],
+        }
+
+    return None
 
 
 def build_plan_request_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
