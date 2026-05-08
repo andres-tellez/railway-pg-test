@@ -331,6 +331,37 @@ def test_plan_creation_guardrail_does_not_replace_when_ready_to_confirm() -> Non
     assert "look right" in out.lower() or "recap" in out.lower()
 
 
+def test_plan_creation_guardrail_alignment_pause_keeps_fifth_sentence() -> None:
+    """Alignment pause copy may need five sentences (interpret → tension → rationale → question)."""
+    intake = {
+        "ready_to_generate": False,
+        "alignment": {"state": {"pause_required": True, "generation_ready": False}},
+        "draft": {},
+    }
+    text = (
+        "Your goal is ambitious versus recent volume. "
+        "Three days leaves little cushion. "
+        "Adding a day improves durability. "
+        "That matters for staying healthy. "
+        "Would you be open to adding one run day?"
+    )
+    out = _enforce_plan_creation_response_guardrails(text, plan_intake_state=intake)
+    assert "Would you be open" in out
+    assert "cushion" in out.lower()
+
+
+def test_plan_creation_guardrail_collecting_caps_at_four_sentences() -> None:
+    intake = {
+        "ready_to_generate": False,
+        "missing_required": ["training_days"],
+        "draft": {},
+    }
+    text = "First. Second. Third. Fourth. Fifth."
+    out = _enforce_plan_creation_response_guardrails(text, plan_intake_state=intake)
+    assert "Fifth" not in out
+    assert len([s for s in out.split("\n") if s.strip()]) == 4
+
+
 def test_plan_creation_guardrail_strips_numbered_list_artifacts() -> None:
     out = _enforce_plan_creation_response_guardrails(
         "1. Would you be open to adding one run day?\n2. These will help me align the plan."

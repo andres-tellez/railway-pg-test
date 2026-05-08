@@ -78,6 +78,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     alignment_pause_coaching_facts_system_section,
     build_core_structured_ui_prompt,
     mark_plan_runner_understanding_shown,
+    plan_intake_alignment_pause_active,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
     structured_intake_core_v1_enabled,
@@ -2123,7 +2124,10 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
                 else ""
             )
             if first == "frequency_flexibility":
-                return "Would you be open to adding one run day to support this goal?"
+                return (
+                    "Before we generate your plan, use the options below to tell me how flexible "
+                    "you can be with your weekly running structure for this goal."
+                )
             if first == "posture_priority":
                 return (
                     "What should lead if tradeoffs appear: performance first, durability first, "
@@ -2315,14 +2319,19 @@ def _enforce_plan_creation_response_guardrails(
     """
     Lightweight UX guardrail for intake replies: no filler, <=4 sentences, one question.
 
-    This intentionally runs after deterministic preamble insertion, so the response
-    can be shaped as 3 runner-understanding sentences + 1 natural question.
+    Runs on **model-authored text only** — callers apply deterministic preambles *after*
+    this step so activity-overview paragraphs are not counted toward the sentence cap.
+
+    Alignment pause turns may need an extra sentence (interpretation + tradeoff + rationale + question);
+    those allow five sentences.
 
     When still collecting (``ready_to_generate`` false), strip premature full-plan
     confirmation / generate language and fall back to the next deterministic question.
     """
     if not (text or "").strip():
         return text
+
+    max_kept = 5 if plan_intake_alignment_pause_active(plan_intake_state) else 4
 
     kept: List[str] = []
     question_seen = False
@@ -2335,7 +2344,7 @@ def _enforce_plan_creation_response_guardrails(
                 continue
             question_seen = True
         kept.append(sentence)
-        if len(kept) >= 4:
+        if len(kept) >= max_kept:
             break
     out = "\n".join(kept).strip() or (text or "").strip()
     # Keep intake/alignment questions conversational; strip list numbering artifacts.
@@ -3928,6 +3937,13 @@ def run_mobile_agent_turn(
                     out_text = "Your training plan is saved. Open the **Plan** tab for workouts and dates."
                 if not out_text:
                     out_text = "Thanks — I noted that for your plan setup."
+                if plan_creation_mode and latest_plan_generation is None:
+                    out_text = _enforce_plan_creation_response_guardrails(
+                        out_text,
+                        plan_intake_state=(
+                            pis_merged if isinstance(pis_merged, dict) else None
+                        ),
+                    )
                 runner_understanding_shown = plan_runner_understanding_shown(pis_merged)
                 out_text_with_preamble = (
                     apply_plan_activity_preamble_to_assistant_markdown(
@@ -3941,13 +3957,6 @@ def run_mobile_agent_turn(
                     pis_merged = mark_plan_runner_understanding_shown(pis_merged)
                     latest_plan_intake_state = pis_merged
                 out_text = out_text_with_preamble
-                if plan_creation_mode and latest_plan_generation is None:
-                    out_text = _enforce_plan_creation_response_guardrails(
-                        out_text,
-                        plan_intake_state=(
-                            pis_merged if isinstance(pis_merged, dict) else None
-                        ),
-                    )
                 structured_text = {
                     "type": "text",
                     "content": out_text,

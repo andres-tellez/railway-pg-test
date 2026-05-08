@@ -104,6 +104,24 @@ def _recompute_alignment_branch(
     }
 
 
+def plan_intake_alignment_pause_active(intake_state: Optional[Dict[str, Any]]) -> bool:
+    """
+    True when intake alignment is blocking generation (pause_required, not resolved).
+
+    Used by orchestrator guardrails and UI hints — same condition as
+    ``alignment_pause_coaching_facts_system_section`` emitting non-empty text.
+    """
+    if not isinstance(intake_state, dict):
+        return False
+    al = intake_state.get("alignment")
+    if not isinstance(al, dict):
+        return False
+    st = al.get("state")
+    if not isinstance(st, dict):
+        return False
+    return bool(st.get("pause_required")) and not bool(st.get("generation_ready"))
+
+
 def alignment_pause_coaching_facts_system_section(
     intake_state: Optional[Dict[str, Any]],
 ) -> str:
@@ -121,7 +139,7 @@ def alignment_pause_coaching_facts_system_section(
     st = al.get("state")
     if not isinstance(st, dict):
         return ""
-    if not st.get("pause_required") or st.get("generation_ready"):
+    if not plan_intake_alignment_pause_active(intake_state):
         return ""
     draft = intake_state.get("draft")
     if not isinstance(draft, dict):
@@ -163,8 +181,8 @@ def alignment_pause_coaching_facts_system_section(
         "If there is **no** activity snapshot block (thin data), say so briefly and lean on the deterministic "
         "stance/band lines above—still connect goal and schedule before the chips.\n"
         "\n"
-        "Keep coaching prose before the chips to **at most 4 short sentences** total; warm and specific; "
-        "no filler openers (“Great!”, “I’m here to help”)."
+        "Keep coaching prose before the chips to **at most 5 short sentences** total (interpretation may need two); "
+        "warm and specific; no filler openers (“Great!”, “I’m here to help”)."
     ).strip()
 
 

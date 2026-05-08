@@ -2052,7 +2052,8 @@ def tool_generate_training_plan(
                     "goal_demand": ambition.get("goal_demand"),
                 },
                 "response_style": {
-                    "ask_one_question_only": True,
+                    "coaching_prose_before_controls": True,
+                    "ask_one_question_only": False,
                     "avoid_numbered_lists": True,
                     "tone": "lightweight_collaborative_coach",
                 },
@@ -2060,7 +2061,13 @@ def tool_generate_training_plan(
             }
             return {
                 "error": "alignment_required",
-                "message": "Ask one short alignment question before generating the plan.",
+                "message": (
+                    "Alignment checkpoint: generation is paused until the user answers one alignment topic. "
+                    "Do **not** reply with only the short `suggested_next_question` line. Follow the system "
+                    "prompt **## Intake alignment — coach-facing facts** (and activity snapshot): ground in their "
+                    "data, name the tradeoff, explain why the choice matters, then end with one closing question "
+                    "that matches the same topic as `suggested_next_question` / the inline UI chips."
+                ),
                 "plan_intake_state": next_state,
                 "alignment_brief": alignment_brief,
             }
