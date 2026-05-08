@@ -586,7 +586,7 @@ _UPDATE_PLAN_INTAKE_OPENAI_TOOL: Dict[str, Any] = {
                         "long_run_day, notes, plan_name. "
                         "For intake alignment (when generation is paused), allowed keys are also: "
                         "alignment_frequency_flexible (boolean-like), "
-                        "alignment_posture_priority (performance|balanced|durability), "
+                        "alignment_posture_priority (optional override; server infers default otherwise), "
                         "alignment_timeline_flexible (boolean-like), and "
                         "alignment_question_asked_category (string category name)."
                     ),
@@ -2132,11 +2132,6 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
                     "Before we generate your plan, use the options below to tell me how flexible "
                     "you can be with your weekly running structure for this goal."
                 )
-            if first == "posture_priority":
-                return (
-                    "What should lead if tradeoffs appear: performance first, durability first, "
-                    "or a balanced approach?"
-                )
             if first == "timeline_flexibility":
                 return "If needed, are you open to slightly adjusting timeline expectations?"
             return "What feels most adjustable for you right now?"
@@ -2248,35 +2243,6 @@ def _alignment_ui_prompt_from_plan_intake_state(
                     "label": "Open to adding a day",
                     "user_message": "I can add one day.",
                     "updates": {"alignment_frequency_flexible": True},
-                },
-            ],
-        }
-    if first == "posture_priority":
-        return {
-            "version": 1,
-            "field_key": "alignment.posture_priority",
-            "control_type": "single_select_chips",
-            "selection_mode": "single",
-            "required": True,
-            "prompt": "If tradeoffs appear, what should lead?",
-            "options": [
-                {
-                    "id": "posture_performance",
-                    "label": "Performance first",
-                    "user_message": "Let's prioritize performance.",
-                    "updates": {"alignment_posture_priority": "performance"},
-                },
-                {
-                    "id": "posture_balanced",
-                    "label": "Balanced",
-                    "user_message": "Let's keep a balanced approach.",
-                    "updates": {"alignment_posture_priority": "balanced"},
-                },
-                {
-                    "id": "posture_durability",
-                    "label": "Durability first",
-                    "user_message": "Let's prioritize durability and staying healthy.",
-                    "updates": {"alignment_posture_priority": "durability"},
                 },
             ],
         }

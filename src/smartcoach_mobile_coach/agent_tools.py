@@ -140,11 +140,6 @@ def _next_alignment_question(allowed_categories: List[str]) -> str:
     first = allowed_categories[0] if allowed_categories else ""
     if first == "frequency_flexibility":
         return "Would you be open to adding one run day to support this goal?"
-    if first == "posture_priority":
-        return (
-            "What should lead if tradeoffs appear: performance first, durability first, "
-            "or a balanced approach?"
-        )
     if first == "timeline_flexibility":
         return "If needed, are you open to adjusting timeline expectations slightly?"
     return "What feels most adjustable for you right now?"

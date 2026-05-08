@@ -21,6 +21,10 @@ from src.coaching_intelligence.intake_alignment import evaluate_intake_alignment
 from src.schemas.plan_schema import PlanCreateSchema, PrimaryGoal
 from src.utils.date_helpers import DAY_NAMES_ABBREV
 
+_POSTURE_STATES_FOR_STORAGE = frozenset(
+    {"PERFORMANCE_LEANING", "BALANCED", "DURABILITY_FIRST"}
+)
+
 REQUIRED_FIELDS: tuple[str, ...] = (
     "race_distance",
     "race_date",
@@ -82,6 +86,11 @@ def _recompute_alignment_branch(
         timeline_flexible=answers.get("timeline_flexible"),
         question_count=qc,
     )
+    answers = dict(answers)
+    ps_state = ast.get("posture_state")
+    if not answers.get("posture_priority") and isinstance(ps_state, str):
+        if ps_state in _POSTURE_STATES_FOR_STORAGE:
+            answers["posture_priority"] = ps_state
     prior_attr = [
         str(x) for x in list(alignment.get("attributions") or []) if isinstance(x, str)
     ]

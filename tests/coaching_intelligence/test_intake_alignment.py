@@ -20,14 +20,8 @@ def test_high_tension_path_requires_core_questions():
     )
     assert out["pause_required"] is True
     assert out["generation_ready"] is False
-    assert out["unresolved_flags"] == [
-        "frequency_flexibility",
-        "posture_priority",
-    ]
-    assert out["allowed_question_categories"] == [
-        "frequency_flexibility",
-        "posture_priority",
-    ]
+    assert out["unresolved_flags"] == ["frequency_flexibility"]
+    assert out["allowed_question_categories"] == ["frequency_flexibility"]
 
 
 def test_bounded_question_behavior_adds_optional_timeline_only_when_needed():
@@ -61,15 +55,23 @@ def test_generation_readiness_transitions_after_answers():
         ambition_stance="MANAGEABLE_TENSION",
         primary_goal="Target Time",
     )
-    after = evaluate_intake_alignment_state(
+    after_explicit = evaluate_intake_alignment_state(
         ambition_stance="MANAGEABLE_TENSION",
         primary_goal="Target Time",
         frequency_flexible=True,
         posture_priority="performance",
     )
+    after_inferred = evaluate_intake_alignment_state(
+        ambition_stance="MANAGEABLE_TENSION",
+        primary_goal="Target Time",
+        frequency_flexible=True,
+    )
     assert before["generation_ready"] is False
-    assert after["generation_ready"] is True
-    assert after["posture_state"] == "PERFORMANCE_LEANING"
+    assert after_explicit["generation_ready"] is True
+    assert after_explicit["posture_state"] == "PERFORMANCE_LEANING"
+    assert after_inferred["generation_ready"] is True
+    assert after_inferred["posture_state"] == "PERFORMANCE_LEANING"
+    assert "RULE_ALIGNMENT_POSTURE_INFERRED" in after_inferred["attributions"]
 
 
 def test_question_cap_enforcement_forces_resolved_state():

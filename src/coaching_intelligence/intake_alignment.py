@@ -13,9 +13,28 @@ from typing import Any, Dict, List, Optional
 
 _POSTURE_VALUES = frozenset({"PERFORMANCE_LEANING", "BALANCED", "DURABILITY_FIRST"})
 
-_CORE_CATEGORIES = ("frequency_flexibility", "posture_priority")
+# MVP: do not surface explicit posture UI; frequency + optional timeline only.
+_RESOLVABLE_UI_CATEGORIES = ("frequency_flexibility",)
 _OPTIONAL_CATEGORIES = ("timeline_flexibility",)
 _MAX_QUESTIONS = 3
+
+
+def _infer_posture_mvp(
+    *,
+    frequency_flexible: bool,
+    ambition_stance: str,
+) -> str:
+    """
+    Default posture when the athlete does not choose a chip (MVP: no posture prompt).
+
+    Open to more running days + ambitious goal implies performance bias; fixed schedule
+    under high tension implies durability bias; otherwise balanced.
+    """
+    if frequency_flexible:
+        return "PERFORMANCE_LEANING"
+    if ambition_stance == "HIGH_TENSION":
+        return "DURABILITY_FIRST"
+    return "BALANCED"
 
 
 def _normalize_bool(value: Any) -> Optional[bool]:
@@ -82,14 +101,21 @@ def evaluate_intake_alignment_state(
         attributions.append("RULE_ALIGNMENT_NO_PAUSE_REQUIRED")
 
     freq_flexible = _normalize_bool(frequency_flexible)
-    posture = _normalize_posture(posture_priority)
+    posture_explicit = _normalize_posture(posture_priority)
     timeline = _normalize_bool(timeline_flexible)
+
+    inferred_posture: Optional[str] = None
+    if pause_required and freq_flexible is not None and posture_explicit is None:
+        inferred_posture = _infer_posture_mvp(
+            frequency_flexible=freq_flexible,
+            ambition_stance=ambition_stance,
+        )
+        attributions.append("RULE_ALIGNMENT_POSTURE_INFERRED")
 
     if pause_required:
         if freq_flexible is None:
             unresolved_flags.append("frequency_flexibility")
-        if posture is None:
-            unresolved_flags.append("posture_priority")
+        # Posture is inferred once frequency is known — never block MVP on posture chips.
         if (
             ambition_stance == "HIGH_TENSION"
             and freq_flexible is False
@@ -100,8 +126,10 @@ def evaluate_intake_alignment_state(
 
     if not pause_required:
         posture_state = "BALANCED"
-    elif posture is not None:
-        posture_state = posture
+    elif posture_explicit is not None:
+        posture_state = posture_explicit
+    elif inferred_posture is not None:
+        posture_state = inferred_posture
     elif fq >= _MAX_QUESTIONS:
         posture_state = "BALANCED"
         unresolved_flags = []
@@ -110,7 +138,7 @@ def evaluate_intake_alignment_state(
         posture_state = "UNRESOLVED"
 
     if pause_required and fq < _MAX_QUESTIONS:
-        for category in _CORE_CATEGORIES:
+        for category in _RESOLVABLE_UI_CATEGORIES:
             if category in unresolved_flags:
                 allowed_question_categories.append(category)
         for category in _OPTIONAL_CATEGORIES:

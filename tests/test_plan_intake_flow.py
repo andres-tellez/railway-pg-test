@@ -95,10 +95,9 @@ def test_alignment_state_refreshes_after_frequency_structured_answer(monkeypatch
         "state": {
             "pause_required": True,
             "generation_ready": False,
-            "unresolved_flags": ["frequency_flexibility", "posture_priority"],
+            "unresolved_flags": ["frequency_flexibility"],
             "allowed_question_categories": [
                 "frequency_flexibility",
-                "posture_priority",
             ],
             "posture_state": "UNRESOLVED",
             "attributions": [],
@@ -113,7 +112,12 @@ def test_alignment_state_refreshes_after_frequency_structured_answer(monkeypatch
     )
     inner = (out.get("alignment") or {}).get("state") or {}
     assert "frequency_flexibility" not in (inner.get("unresolved_flags") or [])
-    assert (inner.get("allowed_question_categories") or [])[:1] == ["posture_priority"]
+    assert inner.get("generation_ready") is True
+    assert inner.get("posture_state") == "PERFORMANCE_LEANING"
+    assert (out.get("alignment") or {}).get("answers", {}).get("posture_priority") == (
+        "PERFORMANCE_LEANING"
+    )
+    assert (inner.get("allowed_question_categories") or []) == []
 
 
 def test_alignment_pause_coaching_facts_section_when_paused(monkeypatch):
@@ -762,7 +766,7 @@ def test_ready_to_generate_false_until_alignment_resolved(monkeypatch):
             **s0,
             "alignment": {
                 "ambition_stance": "HIGH_TENSION",
-                "answers": {"frequency_flexible": True},
+                "answers": {},
             },
         },
         updates={},

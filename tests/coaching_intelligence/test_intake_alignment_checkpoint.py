@@ -52,7 +52,6 @@ def test_generate_plan_pauses_for_high_tension_when_alignment_enabled(monkeypatc
     assert out["error"] == "alignment_required"
     assert out["alignment_brief"]["allowed_question_categories"] == [
         "frequency_flexibility",
-        "posture_priority",
     ]
     assert run_mock.called is False
 
@@ -161,7 +160,7 @@ def test_high_tension_resolved_still_uses_same_planner_path(monkeypatch):
             "frequency_flexible": True,
             "posture_priority": "BALANCED",
         },
-        "asked_categories": ["frequency_flexibility", "posture_priority"],
+        "asked_categories": ["frequency_flexibility"],
         "question_count": 2,
     }
 
