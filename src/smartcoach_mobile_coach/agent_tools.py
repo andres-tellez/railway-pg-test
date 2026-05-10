@@ -13,9 +13,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, text, update
 
 from src.db.dao.activity_dao import ActivityDAO
-from src.coaching_intelligence import (
-    evaluate_ambition_gap,
-    evaluate_intake_alignment_state,
+from src.coaching_intelligence.pre_generation_runner_assessment import (
+    build_pre_generation_runner_assessment,
+    extract_alignment_answer_bookkeeping,
 )
 from src.smartcoach_mobile_coach.config import INSIGHT_SCHEMA_VERSION
 from src.smartcoach_mobile_coach.db_helpers import (
@@ -35,9 +35,6 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     build_plan_request_from_state,
     summarize_this_week_from_plan_rows,
     update_plan_intake_state,
-)
-from src.smartcoach_mobile_coach.plan_intake_activity_context import (
-    compute_plan_intake_activity_summary,
 )
 from src.smartcoach_mobile_coach.run_insight import (
     apply_insight_table_labels,
@@ -151,6 +148,16 @@ def _next_alignment_question(allowed_categories: List[str]) -> str:
     if first == "timeline_flexibility":
         return "If needed, are you open to adjusting timeline expectations slightly?"
     return "What feels most adjustable for you right now?"
+
+
+_ASSESSMENT_FAILURE_DETAIL_MAX_LEN = 500
+
+
+def _sanitize_assessment_failure_detail(exc: BaseException) -> str:
+    raw = str(exc).strip().replace("\n", " ").replace("\r", " ")
+    if len(raw) > _ASSESSMENT_FAILURE_DETAIL_MAX_LEN:
+        return raw[: _ASSESSMENT_FAILURE_DETAIL_MAX_LEN - 1] + "…"
+    return raw
 
 
 def _parse_optional_float(value: Any) -> Optional[float]:
@@ -1975,37 +1982,43 @@ def tool_generate_training_plan(
             "plan_intake_state": current_state,
         }
 
-    if _intake_alignment_enabled():
-        prior_alignment = dict((current_state or {}).get("alignment") or {})
-        prior_answers = dict(prior_alignment.get("answers") or {})
-        question_count = _safe_int(prior_alignment.get("question_count")) or 0
-        asked_categories = [
-            str(x)
-            for x in list(prior_alignment.get("asked_categories") or [])
-            if isinstance(x, str)
-        ]
-        if question_count == 0 and asked_categories:
-            question_count = len(asked_categories)
-
-        intake_summary = compute_plan_intake_activity_summary(
-            session=session,
-            internal_user_id=str(internal_user_id),
+    try:
+        assessment = build_pre_generation_runner_assessment(
+            session,
+            str(internal_user_id),
+            plan_request=plan_request,
+            plan_intake_state=current_state,
+            alignment_enabled=_intake_alignment_enabled(),
         )
-        ambition = evaluate_ambition_gap(
-            weekly_mileage=float(
-                intake_summary.get("avg_miles_per_week_approx") or 0.0
+    except Exception as e:
+        logger.exception(
+            "[generate_training_plan] pre_generation_runner_assessment failed user=%s",
+            internal_user_id,
+        )
+        return {
+            "error": "pre_generation_runner_assessment_failed",
+            "tool": "generate_training_plan",
+            "message": (
+                "We couldn't load your activity summary needed before creating your plan. "
+                "Please try again in a moment."
             ),
-            primary_goal=str(plan_request.get("primary_goal") or ""),
-            target_time=str(plan_request.get("target_time") or ""),
-            longest_run_miles=float(intake_summary.get("longest_run_miles") or 0.0),
-        )
-        alignment_state = evaluate_intake_alignment_state(
-            ambition_stance=str(ambition.get("stance") or ""),
-            primary_goal=str(plan_request.get("primary_goal") or ""),
-            frequency_flexible=prior_answers.get("frequency_flexible"),
-            posture_priority=prior_answers.get("posture_priority"),
-            timeline_flexible=prior_answers.get("timeline_flexible"),
-            question_count=question_count,
+            "failure": {
+                "stage": "pre_generation_runner_assessment",
+                "exception_type": type(e).__name__,
+                "detail": _sanitize_assessment_failure_detail(e),
+            },
+            "plan_intake_state": current_state,
+        }
+
+    assessment_payload = assessment.as_api_dict()
+
+    if _intake_alignment_enabled():
+        ambition = assessment.ambition_gap
+        alignment_state = assessment.intake_alignment_state
+        assert ambition is not None and alignment_state is not None
+
+        prior_answers, _question_count, asked_categories = (
+            extract_alignment_answer_bookkeeping(current_state)
         )
 
         next_state = dict(current_state)
@@ -2073,6 +2086,7 @@ def tool_generate_training_plan(
                 ),
                 "plan_intake_state": next_state,
                 "alignment_brief": alignment_brief,
+                "pre_generation_runner_assessment": assessment_payload,
             }
 
         current_state = next_state
@@ -2222,6 +2236,7 @@ def tool_generate_training_plan(
         "plan_intake_state": next_state,
         "plan_generation": plan_generation_payload,
         "message": "Plan created and activated successfully.",
+        "pre_generation_runner_assessment": assessment_payload,
     }
 
 
