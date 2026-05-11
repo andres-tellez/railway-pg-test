@@ -20,7 +20,7 @@ Exactly one of:
 | Status | Meaning (coarse) |
 |--------|------------------|
 | `needs_more_info` | Required alignment answers are still missing (`intake_alignment_state.unresolved_flags` while not `generation_ready`), **or** ambition reports `INSUFFICIENT_GOAL_CONTEXT`. |
-| `needs_user_decision` | Tradeoff / thin-signal paths: e.g. **`activities_found == 0`** (always this status—not `needs_more_info`), goal–volume tension (`HIGH_TENSION` / `MANAGEABLE_TENSION`), `thin_baseline_data`, alignment not ready **without** unresolved flags, (when alignment evaluation is off) **Target Time** with low average weekly mileage, **and** minimal **goal-realism** rules: sub‑3 marathon with **≤3** or **4** non‑established training days, marathon **Target Time** with **THIN** baseline, short timeline to race, etc. (see `classify_assessment_status_v1` in `pre_generation_runner_review.py`). |
+| `needs_user_decision` | Tradeoff / thin-signal paths: e.g. **`activities_found == 0`** (always this status—not `needs_more_info`), goal–volume tension (`HIGH_TENSION` / `MANAGEABLE_TENSION`), `thin_baseline_data`, alignment not ready **without** unresolved flags, (when alignment evaluation is off) **Target Time** with low average weekly mileage, **and** minimal **goal-realism** rules: sub‑3 marathon (clock target **≤ 3:00:00**, including exactly **3:00:00**) with **≤3** or **4** non‑established training days, marathon **Target Time** with **THIN** baseline, short timeline to race, etc. (see `classify_assessment_status_v1` in `pre_generation_runner_review.py`). |
 | `ready_to_generate` | Else — coherent enough to proceed the **review narrative** (not the same as `plan_intake_state.ready_to_generate`). |
 
 ## Split confirmation (plan creation)

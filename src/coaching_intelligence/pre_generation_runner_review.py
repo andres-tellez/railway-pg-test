@@ -91,7 +91,8 @@ def _thin_goal_realism_needs_user_decision(
     agd = ag if isinstance(ag, dict) else {}
 
     marathon = _full_marathon_distance(plan_request)
-    sub_three = secs is not None and secs < 3 * 3600
+    # Include exactly 3:00:00 as sub-3-level / very high demand for review routing.
+    sub_three = secs is not None and secs <= 3 * 3600
     established = str(agd.get("baseline_band") or "") == "ESTABLISHED"
     goal_demand = str(agd.get("goal_demand") or "")
     baseline_band = str(agd.get("baseline_band") or "")

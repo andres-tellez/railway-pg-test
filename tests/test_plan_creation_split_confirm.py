@@ -149,3 +149,42 @@ def test_classify_sub_three_three_days():
         )
         == STATUS_NEEDS_DECISION
     )
+
+
+def test_classify_three_hours_flat_three_days_needs_user_decision():
+    """Exact 3:00:00 counts as sub-3-level for marathon + ≤3 run days (tradeoff review)."""
+    from src.coaching_intelligence.pre_generation_runner_review import (
+        STATUS_NEEDS_DECISION,
+        classify_assessment_status_v1,
+    )
+
+    assessment_api = {
+        "activity_summary": {
+            "activities_found": 5,
+            "avg_miles_per_week_approx": 45.0,
+            "longest_run_miles": 18.0,
+        },
+        "ambition_gap": {
+            "stance": "COHERENT",
+            "baseline_band": "ESTABLISHED",
+            "goal_demand": "TIME_TARGET",
+        },
+        "intake_alignment_state": {
+            "generation_ready": True,
+            "unresolved_flags": [],
+        },
+    }
+    plan_request = {
+        "race_distance": "Marathon",
+        "primary_goal": "Target Time",
+        "target_time": "3:00:00",
+        "training_days": ["Mon", "Wed", "Sat"],
+        "race_date": "2027-01-01",
+    }
+    assert (
+        classify_assessment_status_v1(
+            assessment_api=assessment_api,
+            plan_request=plan_request,
+        )
+        == STATUS_NEEDS_DECISION
+    )
