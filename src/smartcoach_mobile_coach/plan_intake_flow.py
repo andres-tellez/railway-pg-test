@@ -69,6 +69,8 @@ def _clear_plan_confirmation_ux(ux: Dict[str, Any]) -> None:
     ux.pop("runner_tradeoff_resolved", None)
     ux.pop("runner_review_assessment_status", None)
     ux.pop("runner_tradeoff_edit_focus", None)
+    ux.pop("runner_add_day_pick_pending", None)
+    ux.pop("expansion_base_training_days", None)
 
 
 def _truthy(raw: Any) -> bool:
@@ -1460,12 +1462,23 @@ def update_plan_intake_state(
                 ux["runner_tradeoff_pending"] = False
                 ux.pop("runner_tradeoff_edit_focus", None)
             elif choice == "expand_running_days":
+                # Original four-way choice is done; sub-flow collects the extra day.
+                ux["runner_tradeoff_resolved"] = True
+                ux["runner_tradeoff_pending"] = False
+                ux.pop("runner_tradeoff_edit_focus", None)
                 ux["training_days_expansion_pending"] = True
+                ux["runner_add_day_pick_pending"] = True
+                if isinstance(prior_training_days_for_expansion, list):
+                    ux["expansion_base_training_days"] = list(
+                        prior_training_days_for_expansion
+                    )
                 draft.pop("training_days", None)
                 ux.pop("training_days_count", None)
             elif choice == "adjust_goal":
+                ux["runner_tradeoff_pending"] = False
                 ux["runner_tradeoff_edit_focus"] = "goal"
             elif choice == "adjust_timeline":
+                ux["runner_tradeoff_pending"] = False
                 ux["runner_tradeoff_edit_focus"] = "timeline"
 
     _fill_race_distance_from_named_event(draft)
@@ -1524,7 +1537,15 @@ def update_plan_intake_state(
 
     if plan_creation_split_confirm_enabled():
         if _material_draft_digest(draft) != prior_digest:
-            _clear_plan_confirmation_ux(ux)
+            # ``expand_running_days`` intentionally clears ``training_days`` to re-collect
+            # one extra day — not a generic material edit; do not wipe split-confirm UX.
+            tradeoff_expand = (
+                isinstance(up, dict)
+                and str(up.get("runner_tradeoff_choice") or "").strip().lower()
+                == "expand_running_days"
+            )
+            if not tradeoff_expand:
+                _clear_plan_confirmation_ux(ux)
 
     # Cleared after user commits a new weekday set (structured `updates` or draft change).
     if ux.get("training_days_expansion_pending"):
@@ -1538,6 +1559,8 @@ def update_plan_intake_state(
                 td_changed = True
         if explicit_td or td_changed:
             ux.pop("training_days_expansion_pending", None)
+            ux.pop("runner_add_day_pick_pending", None)
+            ux.pop("expansion_base_training_days", None)
 
     expansion_cleared_this_turn = prior_expansion_pending and not ux.get(
         "training_days_expansion_pending"
@@ -1725,6 +1748,9 @@ def build_core_structured_ui_prompt(
             intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
         )
         expansion = bool(ux_in.get("training_days_expansion_pending"))
+        if expansion and ux_in.get("runner_add_day_pick_pending"):
+            # Orchestrator serves single-select weekday chips for add-one-day flow.
+            return None
         prompt = (
             "Update your weekly running days — add your extra day or adjust the mix, "
             "then confirm."

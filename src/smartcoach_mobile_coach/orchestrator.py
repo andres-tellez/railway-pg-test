@@ -98,6 +98,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     structured_intake_core_v1_enabled,
     user_confirms_plan_intake,
 )
+from src.utils.date_helpers import DAY_NAMES_ABBREV
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
     INTENT_RACE_PROJECTION,
@@ -2033,7 +2034,14 @@ def _merge_split_confirm_ux_after_runner_review(
         if prev_ra == "ready_to_generate" and tradeoff_ok:
             uxs["runner_tradeoff_resolved"] = False
             tradeoff_ok = False
-        uxs["runner_tradeoff_pending"] = not tradeoff_ok
+        # Follow-up branches after a tradeoff chip (add day / edit goal / timeline): do not
+        # re-show the four-way prompt while collecting the next answer.
+        if uxs.get("training_days_expansion_pending") or uxs.get(
+            "runner_tradeoff_edit_focus"
+        ):
+            uxs["runner_tradeoff_pending"] = False
+        else:
+            uxs["runner_tradeoff_pending"] = not tradeoff_ok
     elif ra == "needs_more_info":
         uxs["runner_tradeoff_pending"] = False
         if not tradeoff_ok:
@@ -2190,6 +2198,27 @@ def _plan_intake_phase_system_section(
     """
     if not isinstance(intake_state, dict):
         return ""
+    ux_phase = (
+        intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    )
+    if ux_phase.get("runner_add_day_pick_pending") and ux_phase.get(
+        "training_days_expansion_pending"
+    ):
+        draft0 = (
+            intake_state.get("draft")
+            if isinstance(intake_state.get("draft"), dict)
+            else {}
+        )
+        tt0 = draft0.get("target_time") or "your marathon time"
+        return (
+            "## Adding a training day\n"
+            "- The athlete chose **Add another training day**. Start with **one sentence**: "
+            "an extra run day usually gives more room for weekly mileage and easier spacing of "
+            f"quality work toward a goal like **{tt0}**.\n"
+            "- They pick **one** weekday from the chips below—do **not** repeat the earlier "
+            "four-option list.\n"
+            "- Do **not** show **Create my plan** until `training_days` is saved again.\n"
+        )
     if intake_state.get("ready_to_generate"):
         if plan_creation_split_confirm_enabled():
             ux = (
@@ -2209,22 +2238,24 @@ def _plan_intake_phase_system_section(
             if not ux.get("runner_review_delivered"):
                 return (
                     "## Runner assessment phase\n"
-                    "- Give **one holistic coaching assessment** grounded in activity / ambition / "
-                    "alignment data from tools — opinion on realism and tradeoffs.\n"
+                    "- Give **one short coaching assessment** grounded in activity / ambition / "
+                    "alignment data—plain language, like a real coach.\n"
                     "- Do **not** call `generate_training_plan` in this phase.\n"
                 )
             if ux.get("runner_tradeoff_pending"):
                 return (
-                    "## Runner tradeoff — decision required\n"
+                    "## Goal / schedule — choose next step\n"
                     "- `pre_generation_runner_review.assessment_status` is **`needs_user_decision`**. "
-                    "Lead with the **specific tension** (quote stated goal + weekly structure from "
-                    "`plan_intake_state.draft`, e.g. sub‑3 marathon vs three run days)—not generic "
-                    '"tradeoffs" or "comfort" language.\n'
-                    "- Ground sentences in **`summary_lines`**, **`concerns`**, and **`recommended_next_step`** "
-                    "from `pre_generation_runner_review`; translate them into natural coach prose.\n"
-                    "- The athlete should use **inline chips** to choose next steps, or adjust intake "
-                    "in chat. Do **not** show or imply **Create my plan** until they acknowledge "
-                    "**Continue with this tradeoff** or change material schedule/goal/timeline.\n"
+                    "Lead with the **specific issue** using stated goal + weekly run days from "
+                    "`plan_intake_state.draft` (e.g. a 3:00 marathon goal with only three run days).\n"
+                    "- Follow **`summary_lines`**, **`concerns`**, **`recommended_next_step`** from "
+                    "`pre_generation_runner_review`; say why it matters in **simple runner terms** "
+                    "(mileage, endurance, recovery)—no vague asks.\n"
+                    "- User-facing wording: avoid **tradeoff**, **path**, **tension**, **commitment**, "
+                    "**coherence**.\n"
+                    "- They pick **inline chips** below or edit intake in chat. Do **not** show "
+                    "**Create my plan** until they choose an option (including **keep goal and schedule**) "
+                    "or change material schedule/goal/race date.\n"
                     "- Do **not** call `generate_training_plan` until `ux.runner_tradeoff_resolved` "
                     "is true or they change draft fields and complete the split-confirm flow again.\n"
                 )
@@ -2313,6 +2344,74 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
     return "Tell me a bit more about the race you want to train for."
 
 
+_WEEKDAY_CHIP_LABELS = {
+    "Mon": "Monday",
+    "Tue": "Tuesday",
+    "Wed": "Wednesday",
+    "Thu": "Thursday",
+    "Fri": "Friday",
+    "Sat": "Saturday",
+    "Sun": "Sunday",
+}
+
+
+def _merge_base_training_days_with_one(base: List[str], add: str) -> List[str]:
+    s = {str(d) for d in base if isinstance(d, str)}
+    s.add(str(add).strip())
+    return [d for d in DAY_NAMES_ABBREV if d in s]
+
+
+def _additional_training_day_ui_prompt_from_plan_intake_state(
+    intake_state: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Single weekday pick after **Add another training day** (replaces four-way chips)."""
+    if not plan_creation_split_confirm_enabled():
+        return None
+    if not isinstance(intake_state, dict):
+        return None
+    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if not ux.get("runner_add_day_pick_pending"):
+        return None
+    if not ux.get("training_days_expansion_pending"):
+        return None
+    base = ux.get("expansion_base_training_days")
+    if not isinstance(base, list) or not base:
+        return None
+    missing = [
+        m for m in (intake_state.get("missing_required") or []) if isinstance(m, str)
+    ]
+    if "training_days" not in missing:
+        return None
+    existing = {str(d) for d in base if isinstance(d, str)}
+    candidates = [d for d in DAY_NAMES_ABBREV if d not in existing]
+    if not candidates:
+        return None
+    options: List[Dict[str, Any]] = []
+    for d in candidates:
+        merged = _merge_base_training_days_with_one(base, d)
+        label = _WEEKDAY_CHIP_LABELS.get(d, d)
+        day_list = ", ".join(merged)
+        options.append(
+            {
+                "id": f"add_day_{d.lower()}",
+                "label": label,
+                "user_message": (
+                    f"I'd like to add {label} — my training days should be {day_list}."
+                ),
+                "updates": {"training_days": merged},
+            }
+        )
+    return {
+        "version": 1,
+        "field_key": "plan_intake.collect_additional_training_day",
+        "control_type": "single_select_chips",
+        "selection_mode": "single",
+        "required": True,
+        "prompt": "Which additional day would you like to include?",
+        "options": options,
+    }
+
+
 def _schedule_confirmation_ui_prompt_from_plan_intake_state(
     intake_state: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
@@ -2370,6 +2469,8 @@ def _plan_generation_confirm_ui_prompt_from_plan_intake_state(
         return None
     if ux.get("runner_tradeoff_pending"):
         return None
+    if ux.get("runner_tradeoff_edit_focus") in ("goal", "timeline"):
+        return None
     if ux.get(
         "runner_review_assessment_status"
     ) == "needs_user_decision" and not ux.get("runner_tradeoff_resolved"):
@@ -2395,7 +2496,7 @@ def _plan_generation_confirm_ui_prompt_from_plan_intake_state(
 def _runner_tradeoff_ui_prompt_from_plan_intake_state(
     intake_state: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
-    """Structured tradeoff choices when review status is needs_user_decision."""
+    """Structured choices when review status is needs_user_decision."""
     if not plan_creation_split_confirm_enabled():
         return None
     if not intake_state.get("ready_to_generate"):
@@ -2417,33 +2518,35 @@ def _runner_tradeoff_ui_prompt_from_plan_intake_state(
         "control_type": "single_select_chips",
         "selection_mode": "single",
         "required": True,
-        "prompt": "How should we handle this tradeoff before building your plan?",
+        "prompt": "A few options before we build your plan:",
         "options": [
             {
                 "id": "rt_expand",
                 "label": "Add another training day",
                 "user_message": (
-                    "I'd like to add another running day — let's adjust my training days."
+                    "I'd like to add another training day — let's adjust my training days."
                 ),
                 "updates": {"runner_tradeoff_choice": "expand_running_days"},
             },
             {
                 "id": "rt_goal",
-                "label": "Adjust my target goal",
-                "user_message": "I want to adjust my race goal or target time.",
+                "label": "Adjust my marathon goal",
+                "user_message": "I want to change my marathon goal or target time.",
                 "updates": {"runner_tradeoff_choice": "adjust_goal"},
             },
             {
                 "id": "rt_time",
-                "label": "Adjust my race timeline",
-                "user_message": "I want to adjust my race date or timeline.",
+                "label": "Move my goal race farther out",
+                "user_message": (
+                    "I want more time before my race — let's adjust my goal race date."
+                ),
                 "updates": {"runner_tradeoff_choice": "adjust_timeline"},
             },
             {
                 "id": "rt_continue",
-                "label": "Continue with this tradeoff",
+                "label": "Keep the current goal and schedule",
                 "user_message": (
-                    "I'm okay continuing with this tradeoff — I'm ready to proceed."
+                    "Let's keep my current goal and weekly schedule and move on to building the plan."
                 ),
                 "updates": {"runner_tradeoff_choice": "continue_tradeoff"},
             },
@@ -2508,6 +2611,9 @@ def _ui_prompt_from_plan_intake_state(
     sched = _schedule_confirmation_ui_prompt_from_plan_intake_state(intake_state)
     if sched is not None:
         return sched
+    add_day = _additional_training_day_ui_prompt_from_plan_intake_state(intake_state)
+    if add_day is not None:
+        return add_day
     tradeoff = _runner_tradeoff_ui_prompt_from_plan_intake_state(intake_state)
     if tradeoff is not None:
         return tradeoff

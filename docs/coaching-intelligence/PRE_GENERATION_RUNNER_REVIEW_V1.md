@@ -31,7 +31,9 @@ Material edits to **race_distance**, **race_date**, **primary_goal**, **target_t
 
 ### Tradeoff chips (`needs_user_decision`)
 
-When **`assessment_status`** is **`needs_user_decision`**, the API stamps **`ux.runner_tradeoff_pending`** until the athlete resolves the tradeoff. Inline **`ui_prompt`** shows four chips (`runner_tradeoff_choice`): **Add another running day**, **Adjust my goal**, **Adjust my timeline**, **Continue with this tradeoff**. **Create my plan** stays hidden until **`runner_tradeoff_pending`** is cleared (continue path or material edits that reset UX). **`runner_tradeoff_resolved`** is set when the user taps **Continue** so a later review snapshot that still classifies as high-friction does not loop chips forever.
+When **`assessment_status`** is **`needs_user_decision`**, the API stamps **`ux.runner_tradeoff_pending`** until the athlete picks an option. Inline **`ui_prompt`** shows four chips (`runner_tradeoff_choice`): **Add another training day**, **Adjust my marathon goal**, **Move my goal race farther out**, **Keep the current goal and schedule**. **Create my plan** stays hidden until **`runner_tradeoff_pending`** is cleared (last option or material edits that reset UX). **`runner_tradeoff_resolved`** is set when the user picks **Keep the current goal and schedule** (or another branch) so a later review snapshot that still classifies as high-friction does not loop chips forever.
+
+**Add another training day:** choosing that chip sets **`runner_tradeoff_pending`** false, **`runner_tradeoff_resolved`** true, and **`ux.runner_add_day_pick_pending`** + **`expansion_base_training_days`** so the next **`ui_prompt`** is single-select weekdays not already in the base list (`field_key`: **`plan_intake.collect_additional_training_day`**), not the four-way prompt again.
 
 ## Feature flag (runner review payload)
 

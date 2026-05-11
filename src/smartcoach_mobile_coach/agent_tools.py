@@ -2028,8 +2028,17 @@ def tool_generate_training_plan(
                 "error": "runner_tradeoff_unresolved",
                 "tool": "generate_training_plan",
                 "message": (
-                    "The athlete must resolve the runner tradeoff (chips or intake edits) "
-                    "or tap Continue with this tradeoff before generating."
+                    "The athlete must pick one of the inline options (or update goal/schedule in chat) "
+                    "before generating."
+                ),
+                "plan_intake_state": current_state,
+            }
+        if ux_gate.get("runner_add_day_pick_pending"):
+            return {
+                "error": "runner_add_day_unresolved",
+                "tool": "generate_training_plan",
+                "message": (
+                    "The athlete must pick the extra weekday (chips) before generating."
                 ),
                 "plan_intake_state": current_state,
             }
@@ -2134,7 +2143,7 @@ def tool_generate_training_plan(
                 "allowed_question_categories": allowed_categories,
                 "required_truths": [
                     "The planner remains deterministic and unchanged once generation starts.",
-                    "Current training baseline and goal can create tradeoffs in how aggressive to be.",
+                    "Current training baseline and stated goal may not match — how aggressive we can be depends on both.",
                 ],
                 "banned_claims": [
                     "Do not promise a specific finish time or guaranteed outcome.",
@@ -2159,7 +2168,7 @@ def tool_generate_training_plan(
                     "Alignment checkpoint: generation is paused until the user answers one alignment topic. "
                     "Do **not** reply with only the short `suggested_next_question` line. Follow the system "
                     "prompt **## Intake alignment — coach-facing facts** (and activity snapshot): ground in their "
-                    "data, name the tradeoff, explain why the choice matters, then end with one closing question "
+                    "data, say plainly what's mismatched or uncertain, explain why it matters, then end with one closing question "
                     "that matches the same topic as `suggested_next_question` / the inline UI chips."
                 ),
                 "plan_intake_state": next_state,
