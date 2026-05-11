@@ -254,20 +254,24 @@ def _copy_lines_for_v1(
 
     elif status == STATUS_NEEDS_DECISION:
         if _marathon_fast_goal_three_or_fewer_run_days(plan_request):
-            tt = str(plan_request.get("target_time") or "").strip() or "stated"
+            tt = str(plan_request.get("target_time") or "").strip() or "this"
             n_run = len(plan_request.get("training_days") or [])
             summary_lines.append(
-                f"Your **{tt}** marathon target on **{n_run}** running day(s) per week is a very "
-                "aggressive schedule pairing—weekly volume and durability work are structurally limited."
+                f"A **{tt}** marathon goal with only **{n_run}** running day(s) per week is very ambitious."
+            )
+            summary_lines.append(
+                "Most runners targeting this kind of time train more often to build weekly mileage "
+                "and the endurance a fast marathon requires."
             )
             concerns.append(
-                "A sub‑3:00–level marathon goal on only three run days per week may not allow enough "
-                "repeated quality and long-run load to support the goal safely."
+                "With only a few run days each week, hitting weekly volume for this goal will be harder "
+                "than on a busier schedule—worth deciding how you want to approach it before we build the plan."
             )
             nxt = (
-                "Say clearly that this goal + schedule is a major tradeoff. Before building the plan, "
-                "the athlete must choose (via the inline options) to add a training day, adjust the goal "
-                "or timeline, or explicitly continue with this tradeoff—do not offer plan generation before that."
+                "2–4 short sentences: lead with goal + run days, then why it matters in plain running terms. "
+                "End with: you can pick an option below (or change details in chat). "
+                "Do not offer **Create my plan** until they choose. "
+                "Avoid the words: tradeoff, path, tension, commitment, coherence."
             )
         elif activities_found == 0:
             summary_lines.append(
@@ -277,37 +281,54 @@ def _copy_lines_for_v1(
             concerns.append(
                 "Proceeding will rely heavily on intake answers rather than logged volume."
             )
+            nxt = (
+                "Say we have little recent run data to size the plan; keep it short. "
+                "They can still pick an option or adjust intake. "
+                "Avoid: tradeoff, path, tension, commitment, coherence."
+            )
         elif stance in ("HIGH_TENSION", "MANAGEABLE_TENSION"):
             summary_lines.append(
                 f"Stated goal and recent volume read as **{stance.replace('_', ' ').lower()}** "
                 f"(baseline band: {ag.get('baseline_band')})."
             )
             concerns.append(
-                "There is a tradeoff between goal ambition and current training structure/volume."
+                "The goal and recent weekly mileage don’t line up neatly—you’ll want to adjust expectations "
+                "or training volume before locking in a plan."
+            )
+            nxt = (
+                "Explain mismatch in simple terms; point them to the options or intake edits. "
+                "Avoid: tradeoff, path, tension, commitment, coherence."
             )
         elif ag.get("thin_baseline_data"):
             summary_lines.append(
                 f"Recent weekly mileage (~{avg_mi:.1f} mi/wk) is thin relative to goal demand."
             )
-            concerns.append("Volume signal may not match aggressive pace goals.")
+            concerns.append(
+                "Building safely toward an aggressive goal usually needs more steady weekly volume "
+                "than we’re seeing in the window."
+            )
+            nxt = (
+                "Name the gap briefly; suggest options below or adjusting goal/days. "
+                "Avoid: tradeoff, path, tension, commitment, coherence."
+            )
         else:
             summary_lines.append(
-                "Goal and baseline signals warrant an explicit athlete decision before generating."
+                "Goal and recent signals suggest pausing for a clear choice before generating."
             )
             concerns.append(
-                "Acknowledge tradeoffs or adjust goal/schedule before proceeding."
+                "Either tweak goal or schedule, or confirm you’re okay proceeding as entered."
             )
-        nxt = (
-            "Give a concise coach opinion on tradeoffs; ask the athlete to confirm they "
-            "accept the path or adjust goal/days—then offer yes/no to generate when aligned."
-        )
+            nxt = (
+                "Keep it direct and short; use chips or chat to resolve—no vague asks to “accept” anything. "
+                "Avoid: tradeoff, path, tension, commitment, coherence."
+            )
 
     else:
         summary_lines.append(
             f"Goal **{primary_goal}** with recent training context (~{avg_mi:.1f} mi/wk avg in window)."
         )
         summary_lines.append(
-            "Signals are coherent enough to proceed if the athlete confirms."
+            "Training story and goal look workable enough to move ahead if the athlete confirms."
         )
         nxt = (
             "Offer a short recap (race, goal, schedule) and ask for explicit confirmation "
@@ -393,9 +414,10 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
         parts.append(f"**Recommended next step for your prose:** {nxt}")
     parts.extend(
         [
-            "- Write **one holistic assessment** before asking for final generate confirmation "
-            "when appropriate.",
+            "- Write **one short assessment** before asking for final generate confirmation when appropriate.",
             "- Do **not** invent weekly mileage or stance labels not supported by tool/assessment data.",
+            "- In user-facing wording, avoid: **tradeoff**, **path**, **tension**, **commitment**, "
+            "**coherence** (use plain running-coach language instead).",
         ]
     )
     return "\n".join(parts).strip()
