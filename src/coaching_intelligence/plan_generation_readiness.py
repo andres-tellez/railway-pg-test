@@ -212,7 +212,7 @@ def _missing_required_fields(plan_request: Dict[str, Any]) -> List[str]:
 
 
 def _assessment_parts(
-    assessment_api: Dict[str, Any]
+    assessment_api: Dict[str, Any],
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     activity = assessment_api.get("activity_summary")
     ambition = assessment_api.get("ambition_gap")
@@ -536,6 +536,7 @@ def _recommended_path(
 
 def _input_digest(builder: _ReadinessBuilder, *, goal_profile: str) -> Dict[str, Any]:
     weeks = builder.weeks_to_race
+    act = builder.activity if isinstance(builder.activity, dict) else {}
     return {
         "goal_profile": goal_profile,
         "primary_goal": builder.plan_request.get("primary_goal"),
@@ -547,6 +548,9 @@ def _input_digest(builder: _ReadinessBuilder, *, goal_profile: str) -> Dict[str,
         "avg_miles_per_week_approx": round(builder.avg_mpw, 1),
         "longest_run_miles": round(builder.longest_run_miles, 1),
         "activities_found": builder.activities_found,
+        "lookback_weeks": act.get("lookback_weeks"),
+        "active_weeks": act.get("active_weeks"),
+        "completed_calendar_weeks_count": act.get("completed_calendar_weeks_count"),
         "ambition_stance": builder.ambition_stance or None,
         "baseline_band": builder.baseline_band or None,
         "goal_demand": builder.goal_demand or None,
@@ -942,26 +946,61 @@ def _build_category_assessments(
     return out
 
 
-COACH_ANALYSIS_FOR_LLM_SCHEMA = "coach_analysis_for_llm.v1"
+COACH_ANALYSIS_FOR_LLM_SCHEMA = "coach_analysis_for_llm.v1.1"
+
+
+def _main_concern_lines(
+    plan_generation_readiness: Dict[str, Any],
+    applicable_rows: List[Dict[str, Any]],
+) -> List[str]:
+    """Concern bullets from existing readiness only (no new policy)."""
+    out: List[str] = []
+    seen_lower: set[str] = set()
+
+    def add(text: str) -> None:
+        t = str(text).strip()
+        if not t:
+            return
+        key = t.lower()
+        if key in seen_lower:
+            return
+        seen_lower.add(key)
+        out.append(t)
+
+    for kf in plan_generation_readiness.get("key_findings") or []:
+        add(str(kf))
+    for lf in plan_generation_readiness.get("limiting_factors") or []:
+        add(str(lf))
+    for row in applicable_rows:
+        st = str(row.get("status") or "")
+        if st not in (STATUS_WARN, STATUS_BAD):
+            continue
+        cid = str(row.get("category_id") or "").replace("_", " ")
+        codes = row.get("reason_codes") or []
+        code_str = ", ".join(str(c) for c in codes if str(c).strip())
+        line = f"{cid}: {st}"
+        if code_str:
+            line += f" ({code_str})"
+        add(line)
+    return out[:24]
 
 
 def build_coach_analysis_for_llm(
     plan_generation_readiness: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Deterministic, LLM-facing summary; no new policy — derived only from readiness."""
+    """Deterministic UI + LLM-tone summary; derived only from readiness."""
     if not isinstance(plan_generation_readiness, dict):
         return {
             "schema_version": COACH_ANALYSIS_FOR_LLM_SCHEMA,
             "error": "invalid_readiness",
         }
     digest = plan_generation_readiness.get("inputs_digest") or {}
-    rp = plan_generation_readiness.get("recommended_path") or {}
+    rp_raw = plan_generation_readiness.get("recommended_path")
+    rp = rp_raw if isinstance(rp_raw, dict) else {}
     decision = str(plan_generation_readiness.get("decision") or "").strip()
     goal_profile = str(plan_generation_readiness.get("goal_profile") or "").strip()
 
     facts_reviewed: List[Dict[str, str]] = []
-    if goal_profile:
-        facts_reviewed.append({"label": "Goal profile", "value": goal_profile})
 
     goal_parts: List[str] = []
     rd = digest.get("race_distance")
@@ -976,16 +1015,13 @@ def build_coach_analysis_for_llm(
     if goal_parts:
         facts_reviewed.append({"label": "Goal", "value": " — ".join(goal_parts)})
 
-    weeks = digest.get("weeks_to_race")
-    if weeks is not None and str(weeks).strip():
-        facts_reviewed.append(
-            {"label": "Timeline", "value": f"{weeks} week(s) to race"}
-        )
+    if goal_profile:
+        facts_reviewed.append({"label": "Goal profile", "value": goal_profile})
 
     for row in plan_generation_readiness.get("category_assessments") or []:
         if row.get("category_id") != CATEGORY_TRAINING_AVAILABILITY:
             continue
-        fu = row.get("facts_used") or {}
+        fu = row.get("facts_used") if isinstance(row.get("facts_used"), dict) else {}
         n = fu.get("training_day_count")
         days = fu.get("training_days")
         if n is not None or (isinstance(days, list) and len(days) > 0):
@@ -1004,29 +1040,52 @@ def build_coach_analysis_for_llm(
                 )
         break
 
-    avg = digest.get("avg_weekly_mileage_last_42d_mi")
+    avg = digest.get("avg_miles_per_week_approx")
+    if avg is None:
+        avg = digest.get("avg_weekly_mileage_last_42d_mi")
     if avg is not None and str(avg).strip():
         facts_reviewed.append(
-            {"label": "Recent mileage (42d avg)", "value": f"{avg} mi/week"}
+            {"label": "Recent mileage (approx)", "value": f"{avg} mi/week"}
         )
 
-    longest = digest.get("longest_run_last_56d_mi")
+    longest = digest.get("longest_run_miles")
+    if longest is None:
+        longest = digest.get("longest_run_last_56d_mi")
     if longest is not None and str(longest).strip():
-        facts_reviewed.append({"label": "Longest run (56d)", "value": f"{longest} mi"})
-
-    activities = digest.get("activities_found_last_42d")
-    if activities is not None and str(activities).strip():
         facts_reviewed.append(
-            {
-                "label": "Activity log (coverage)",
-                "value": f"{activities} logged runs in 42d — recency only, not fitness",
-            }
+            {"label": "Longest recent run (approx)", "value": f"{longest} mi"}
+        )
+
+    weeks = digest.get("weeks_to_race")
+    if weeks is not None and str(weeks).strip():
+        facts_reviewed.append(
+            {"label": "Timeline", "value": f"{weeks} week(s) to race"}
+        )
+
+    activities = digest.get("activities_found")
+    if activities is None:
+        activities = digest.get("activities_found_last_42d")
+    lookback = digest.get("lookback_weeks")
+    active = digest.get("active_weeks")
+    ccw = digest.get("completed_calendar_weeks_count")
+    coverage_bits: List[str] = []
+    if activities is not None and str(activities).strip():
+        coverage_bits.append(
+            f"{activities} logged activities in sync lookback (coverage only, not fitness)"
+        )
+    if active is not None and lookback is not None and str(lookback).strip():
+        coverage_bits.append(f"{active} active week(s) in ~{lookback} lookback week(s)")
+    elif ccw is not None and str(ccw).strip():
+        coverage_bits.append(f"{ccw} calendar week(s) with completed mileage data")
+    if coverage_bits:
+        facts_reviewed.append(
+            {"label": "Data confidence (coverage)", "value": " — ".join(coverage_bits)}
         )
 
     applicable = [
         row
         for row in (plan_generation_readiness.get("category_assessments") or [])
-        if row.get("applies_to_goal") is True
+        if isinstance(row, dict) and row.get("applies_to_goal") is True
     ]
     cat_lines: List[str] = []
     for row in applicable:
@@ -1036,9 +1095,29 @@ def build_coach_analysis_for_llm(
         code_str = ", ".join(str(c) for c in codes if str(c).strip())
         cat_lines.append(f"{cid}: {status}" + (f" ({code_str})" if code_str else ""))
 
-    coach_read = str(rp.get("message") or "").strip()
+    headline = str(rp.get("message") or "").strip()
+    coach_read = headline
     if decision:
-        coach_read = f"Decision: {decision}. {coach_read}".strip()
+        coach_read = f"Decision: {decision}. {headline}".strip()
+
+    rec_path_ui = _json_safe_facts(
+        {
+            "type": rp.get("type"),
+            "message": rp.get("message"),
+            "suggested_next_step": rp.get("suggested_next_step"),
+        }
+    )
+
+    required_changes = [
+        str(x)
+        for x in (plan_generation_readiness.get("required_changes") or [])
+        if str(x).strip()
+    ]
+    limiting_factors = [
+        str(x)
+        for x in (plan_generation_readiness.get("limiting_factors") or [])
+        if str(x).strip()
+    ]
 
     return {
         "schema_version": COACH_ANALYSIS_FOR_LLM_SCHEMA,
@@ -1047,8 +1126,13 @@ def build_coach_analysis_for_llm(
         "readiness_level": str(
             plan_generation_readiness.get("readiness_level") or ""
         ).strip(),
+        "headline": headline,
         "coach_read": coach_read,
+        "recommended_path": rec_path_ui,
+        "required_changes": required_changes,
+        "limiting_factors": limiting_factors,
         "key_findings": list(plan_generation_readiness.get("key_findings") or [])[:5],
+        "main_concerns": _main_concern_lines(plan_generation_readiness, applicable),
         "facts_reviewed": facts_reviewed,
         "applicable_category_summaries": cat_lines[:24],
         "recommended_actions": list(

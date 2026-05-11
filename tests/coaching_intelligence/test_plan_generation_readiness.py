@@ -351,15 +351,21 @@ def test_coach_analysis_for_llm_matches_readiness_and_omits_non_applicable_categ
     )
     coach = out.get("coach_analysis_for_llm")
     assert isinstance(coach, dict)
-    assert coach.get("schema_version") == "coach_analysis_for_llm.v1"
+    assert coach.get("schema_version") == "coach_analysis_for_llm.v1.1"
     assert coach["recommended_actions"] == out["allowed_user_actions"]
     assert coach["key_findings"] == out["key_findings"]
     assert coach["decision"] == out["decision"]
     assert coach["readiness_level"] == out["readiness_level"]
     assert str(coach["coach_read"]).startswith("Decision:")
+    assert "headline" in coach and str(coach["headline"]).strip()
+    assert "main_concerns" in coach and isinstance(coach["main_concerns"], list)
+    assert "recommended_path" in coach and isinstance(coach["recommended_path"], dict)
+    dig = out.get("inputs_digest") or {}
+    labels = {r["label"] for r in coach["facts_reviewed"]}
+    if dig.get("avg_miles_per_week_approx") is not None:
+        assert "Recent mileage (approx)" in labels
     summaries = coach["applicable_category_summaries"]
     assert not any("effort_control" in s for s in summaries)
-    labels = {r["label"] for r in coach["facts_reviewed"]}
     assert "Goal profile" in labels
     assert "Training schedule" in labels
     json.dumps(coach)

@@ -2235,9 +2235,13 @@ def _plan_intake_phase_system_section(
                 )
             if not ux.get("runner_review_delivered"):
                 return (
-                    "## Runner assessment phase\n"
-                    "- Give **one short coaching assessment** grounded in activity / ambition / "
-                    "alignment data—plain language, like a real coach.\n"
+                    "## Runner assessment phase (structured UI)\n"
+                    "- The app displays a **deterministic Runner Analysis card** from "
+                    "`plan_generation_readiness.coach_analysis_for_llm` (facts reviewed, concerns, "
+                    "recommended path, allowed actions). That card is the coaching authority.\n"
+                    "- Do **not** repeat the full analysis, numbers, schedule, or action list in prose.\n"
+                    "- Optional only: **at most two short sentences** of warmth or empathy — no new facts, "
+                    "metrics, categories, or recommendations beyond that payload.\n"
                     "- Do **not** call `generate_training_plan` in this phase.\n"
                 )
             phase = str(ux.get("plan_creation_phase") or "")
@@ -2258,12 +2262,10 @@ def _plan_intake_phase_system_section(
             if tradeoff_chips:
                 return (
                     "## Goal / schedule — choose next step\n"
-                    "- `pre_generation_runner_review.assessment_status` is **`needs_user_decision`**. "
-                    "Lead with the **specific issue** using stated goal + weekly run days from "
-                    "`plan_intake_state.draft` (e.g. a 3:00 marathon goal with only three run days).\n"
-                    "- Follow **`summary_lines`**, **`concerns`**, **`recommended_next_step`** from "
-                    "`pre_generation_runner_review`; say why it matters in **simple runner terms** "
-                    "(mileage, endurance, recovery)—no vague asks.\n"
+                    "- Runner Analysis in the app is driven by **`coach_analysis_for_llm`** inside "
+                    "`pre_generation_runner_review.plan_generation_readiness`. Treat it as authoritative; "
+                    "do **not** contradict it or revive legacy `summary_lines` / `concerns` if they differ.\n"
+                    "- Brief prose optional only (warmth / clarity); chips carry the real choices.\n"
                     "- User-facing wording: avoid **tradeoff**, **path**, **tension**, **commitment**, "
                     "**coherence**.\n"
                     "- They pick **inline chips** below or edit intake in chat. Do **not** show "
@@ -2430,6 +2432,30 @@ def _strip_plan_creation_filler_sentence(sentence: str) -> str:
     return out
 
 
+def _plan_intake_runner_analysis_relaxed_prose(
+    intake_state: Optional[Dict[str, Any]],
+) -> bool:
+    """
+    When True, skip the 4-sentence cap: Runner Analysis facts render in the app;
+    model may add only brief warmth.
+    """
+    if not isinstance(intake_state, dict):
+        return False
+    if not intake_state.get("ready_to_generate"):
+        return False
+    if not plan_creation_split_confirm_enabled():
+        return False
+    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if not ux.get("intake_confirmed"):
+        return False
+    if not ux.get("runner_review_delivered"):
+        return True
+    phase = str(ux.get("plan_creation_phase") or "")
+    if phase == PHASE_AWAITING_TRADEOFF_CHOICE or ux.get("runner_tradeoff_pending"):
+        return True
+    return False
+
+
 def _enforce_plan_creation_response_guardrails(
     text: str,
     *,
@@ -2444,11 +2470,24 @@ def _enforce_plan_creation_response_guardrails(
     Alignment pause turns may need an extra sentence (interpretation + tradeoff + rationale + question);
     those allow five sentences.
 
+    Runner Analysis / tradeoff turns skip the sentence cap — structured facts render in the client.
+
     When still collecting (``ready_to_generate`` false), strip premature full-plan
     confirmation / generate language and fall back to the next deterministic question.
     """
     if not (text or "").strip():
         return text
+
+    out = (text or "").strip()
+    out = re.sub(r"(?m)^\s*\d+\.\s*", "", out).strip()
+    if isinstance(plan_intake_state, dict) and not plan_intake_state.get(
+        "ready_to_generate"
+    ):
+        if _PLAN_INTAKE_PREMATURE_CONFIRM_RE.search(out):
+            return _natural_plan_intake_fallback_question(plan_intake_state)
+
+    if _plan_intake_runner_analysis_relaxed_prose(plan_intake_state):
+        return out
 
     max_kept = 5 if plan_intake_alignment_pause_active(plan_intake_state) else 4
 
@@ -2466,7 +2505,6 @@ def _enforce_plan_creation_response_guardrails(
         if len(kept) >= max_kept:
             break
     out = "\n".join(kept).strip() or (text or "").strip()
-    # Keep intake/alignment questions conversational; strip list numbering artifacts.
     out = re.sub(r"(?m)^\s*\d+\.\s*", "", out).strip()
     if isinstance(plan_intake_state, dict) and not plan_intake_state.get(
         "ready_to_generate"
@@ -3349,14 +3387,14 @@ def run_mobile_agent_turn(
         if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict)
         else None
     )
+    pre_generation_review_section_plan = ""
+    if plan_creation_mode and isinstance(plan_intake_ctx, dict):
+        pre_generation_review_section_plan, _ = _try_build_runner_review_bundle(
+            session,
+            str(internal_user_id),
+            plan_intake_ctx,
+        )
     if plan_creation_mode and not use_full_prompt_for_plan:
-        pre_generation_review_section = ""
-        if isinstance(plan_intake_ctx, dict):
-            pre_generation_review_section, _ = _try_build_runner_review_bundle(
-                session,
-                str(internal_user_id),
-                plan_intake_ctx,
-            )
         system_content = _plan_creation_minimal_system_content(
             plan_intake_ctx=plan_intake_ctx,
             anchor_local_date=anchor_local_date,
@@ -3365,7 +3403,7 @@ def run_mobile_agent_turn(
             response_directive=response_directive,
             user_message=user_message,
             thread_ctx=thread_ctx,
-            pre_generation_review_section=pre_generation_review_section,
+            pre_generation_review_section=pre_generation_review_section_plan,
         )
     else:
         base_block = MINIMAL_SYSTEM_PROMPT_BASE if use_min_base else SYSTEM_PROMPT_BASE
@@ -3454,6 +3492,7 @@ def run_mobile_agent_turn(
                 response_directive, plan_creation_mode=plan_creation_mode
             ),
             activity_ctx_block,
+            pre_generation_review_section_plan if plan_creation_mode else "",
             _plan_intake_phase_system_section(
                 plan_intake_ctx if plan_creation_mode else None
             ),

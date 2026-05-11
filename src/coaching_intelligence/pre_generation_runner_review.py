@@ -409,20 +409,20 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
     bullets = "\n".join(f"- {s}" for s in lines[:4])
     concern_blk = "\n".join(f"- {c}" for c in concerns[:2])
     parts = [
-        "## Pre-generation runner review (v1 — ground coach opinion here)",
+        "## Pre-generation runner review (v1 — narrative hints; UI is authoritative)",
         f"- **assessment_status:** `{status}`",
-        "**Summary (do not contradict; translate into natural coach language):**",
+        "**Legacy summary_lines / concerns (optional tone only; if they conflict with `coach_analysis_for_llm`, ignore them):**",
         bullets,
     ]
     if concern_blk:
-        parts.extend(["**Concerns (address plainly):**", concern_blk])
+        parts.extend(["**Legacy concerns:**", concern_blk])
     if readiness:
         coach = readiness.get("coach_analysis_for_llm")
         coach = coach if isinstance(coach, dict) else {}
         if coach:
             parts.extend(
                 [
-                    "**coach_analysis_for_llm (authoritative structured summary — paraphrase only; do not add facts, categories, metrics, or actions beyond this object):**",
+                    "**coach_analysis_for_llm (AUTHORITATIVE — facts, concerns, path, actions; mobile renders this in Runner Analysis. Paraphrase only with empathy; never add facts or categories beyond it):**",
                     "```json",
                     json.dumps(coach, ensure_ascii=False, indent=2),
                     "```",
@@ -474,13 +474,17 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
                     "- No HR drift, Z2 pace, or other physiology unless a fact key above explicitly includes it in `facts_used`."
                 )
     if nxt:
-        parts.append(f"**Recommended next step for your prose:** {nxt}")
+        parts.append(
+            f"**Legacy recommended_next_step (optional; optional warmth only):** {nxt}"
+        )
     parts.extend(
         [
-            "- Write **one short assessment** before asking for final generate confirmation when appropriate.",
-            "- Ground Runner Analysis prose in **`coach_analysis_for_llm`**: same facts, same actions, same decision — warmer wording only.",
-            "- If `decision` is `defer` or `block`, do **not** imply the athlete is ready to generate a plan; mirror `coach_read` and `recommended_actions`.",
-            "- Do **not** invent numbers or labels not present in `coach_analysis_for_llm`, readiness `inputs_digest`, or applicable category `facts_used` above.",
+            "- The **Runner Analysis card in the app** is built from `coach_analysis_for_llm`; do **not** "
+            "recreate that content in long prose.",
+            "- Optional only: up to **two short sentences** of warmth; same facts and actions as the card.",
+            "- If `decision` is `defer` or `block`, do **not** imply the athlete is ready to generate a plan.",
+            "- Do **not** invent numbers or labels not present in `coach_analysis_for_llm` or applicable category "
+            "`facts_used` above.",
             "- In user-facing wording, avoid: **tradeoff**, **path**, **tension**, **commitment**, "
             "**coherence** (use plain running-coach language instead).",
         ]
