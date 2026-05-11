@@ -1,0 +1,31 @@
+# Staging: unblock Railway when "Wait for CI" is enabled.
+#
+# Railway docs require a workflow with `on: push: branches` so deployments
+# can leave WAITING. This job is intentionally fast and needs no DATABASE_URL.
+#
+# Also verify: Railway service → Settings → Source → trigger branch = staging,
+# Autodeploy = enabled, and watch paths (if any) include files you change.
+
+name: staging-ci
+
+on:
+  push:
+    branches:
+      - staging
+
+concurrency:
+  group: staging-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Byte-compile Python (syntax gate, no DB)
+        run: python -m compileall -q src
