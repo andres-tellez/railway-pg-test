@@ -240,6 +240,15 @@ def _coerce_require_fresh_strava_data(payload: dict) -> bool:
 
 _VALID_STRUCTURED_PRIMARY_GOALS = frozenset({"Just Finish", "Target Time"})
 
+_VALID_STRUCTURED_RUNNER_TRADEOFF_CHOICES = frozenset(
+    {
+        "expand_running_days",
+        "continue_tradeoff",
+        "adjust_goal",
+        "adjust_timeline",
+    }
+)
+
 
 def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
     raw = payload.get("structured_input")
@@ -307,6 +316,18 @@ def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
         v = updates.get("schedule_days_confirmed")
         if isinstance(v, bool):
             out["schedule_days_confirmed"] = v
+
+    if "runner_tradeoff_choice" in updates:
+        v = updates.get("runner_tradeoff_choice")
+        if isinstance(v, str):
+            choice = v.strip().lower()
+            if choice in _VALID_STRUCTURED_RUNNER_TRADEOFF_CHOICES:
+                out["runner_tradeoff_choice"] = choice
+
+    if "plan_generation_confirmed" in updates:
+        v = updates.get("plan_generation_confirmed")
+        if isinstance(v, bool):
+            out["plan_generation_confirmed"] = v
 
     return out or None
 
