@@ -60,3 +60,18 @@ def test_sub3_three_days_coach_payload_lists_facts_and_concerns_not_effort_contr
     by_id = {c["category_id"]: c for c in out["category_assessments"]}
     assert by_id[CATEGORY_EFFORT_CONTROL]["applies_to_goal"] is False
     json.dumps(coach)
+
+    disp = out["runner_analysis_display"]
+    assert disp["schema_version"] == "runner_analysis_display.v1"
+    blob = json.dumps(disp)
+    assert "RULE_" not in blob
+    assert "competitive_performance" not in blob.lower()
+    assert "training_availability" not in blob.lower()
+    assert len(disp["why_concerned"]) <= 4
+    assert len(disp["why_concerned"]) >= 1
+    cr_low = disp["coach_read"].lower()
+    assert "recommend" in cr_low
+    assert "sub-3" in cr_low or "three runs" in cr_low
+    path = disp.get("recommended_path") or {}
+    assert path.get("lead")
+    assert ACTION_ADD_RUNNING_DAY in disp["recommended_actions"]

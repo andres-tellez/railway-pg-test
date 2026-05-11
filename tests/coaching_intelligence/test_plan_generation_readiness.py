@@ -370,6 +370,12 @@ def test_coach_analysis_for_llm_matches_readiness_and_omits_non_applicable_categ
     assert "Training schedule" in labels
     json.dumps(coach)
 
+    disp = out.get("runner_analysis_display")
+    assert isinstance(disp, dict)
+    assert disp.get("schema_version") == "runner_analysis_display.v1"
+    assert "RULE_" not in json.dumps(disp)
+    assert isinstance(disp.get("facts"), list)
+
 
 def test_same_volume_finish_is_not_sub3_unrealistic():
     """Completion profile must not hit sub-3 currently_unrealistic for the same volume."""
