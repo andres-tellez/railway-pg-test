@@ -74,6 +74,19 @@ def _weeks_until_race(plan_request: Dict[str, Any]) -> Optional[float]:
     return (d - today).days / 7.0
 
 
+def _marathon_fast_goal_three_or_fewer_run_days(plan_request: Dict[str, Any]) -> bool:
+    """Same structural pairing as the first branch of `_thin_goal_realism_needs_user_decision`."""
+    pg = str(plan_request.get("primary_goal") or "").strip().lower()
+    if pg != "target time":
+        return False
+    secs = _parse_clock_seconds(str(plan_request.get("target_time") or ""))
+    td = plan_request.get("training_days")
+    n_days = len(td) if isinstance(td, list) else 0
+    marathon = _full_marathon_distance(plan_request)
+    sub_three = secs is not None and secs <= 3 * 3600
+    return bool(marathon and sub_three and n_days <= 3)
+
+
 def _thin_goal_realism_needs_user_decision(
     *,
     plan_request: Dict[str, Any],
@@ -240,7 +253,23 @@ def _copy_lines_for_v1(
         )
 
     elif status == STATUS_NEEDS_DECISION:
-        if activities_found == 0:
+        if _marathon_fast_goal_three_or_fewer_run_days(plan_request):
+            tt = str(plan_request.get("target_time") or "").strip() or "stated"
+            n_run = len(plan_request.get("training_days") or [])
+            summary_lines.append(
+                f"Your **{tt}** marathon target on **{n_run}** running day(s) per week is a very "
+                "aggressive schedule pairing—weekly volume and durability work are structurally limited."
+            )
+            concerns.append(
+                "A sub‑3:00–level marathon goal on only three run days per week may not allow enough "
+                "repeated quality and long-run load to support the goal safely."
+            )
+            nxt = (
+                "Say clearly that this goal + schedule is a major tradeoff. Before building the plan, "
+                "the athlete must choose (via the inline options) to add a training day, adjust the goal "
+                "or timeline, or explicitly continue with this tradeoff—do not offer plan generation before that."
+            )
+        elif activities_found == 0:
             summary_lines.append(
                 "No recent running activities were found in the lookback window—"
                 "baseline signals are thin."

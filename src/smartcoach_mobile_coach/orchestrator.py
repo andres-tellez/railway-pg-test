@@ -2006,6 +2006,42 @@ def _join_nonempty_system_sections(*sections: str) -> str:
     return "\n\n".join(s.strip() for s in sections if (s or "").strip())
 
 
+def _merge_split_confirm_ux_after_runner_review(
+    uxs: Dict[str, Any],
+    runner_review_api: Optional[Dict[str, Any]],
+    *,
+    intake_confirmed: bool,
+) -> None:
+    """
+    Stamp runner-review-driven UX flags on outbound ``plan_intake_state``.
+
+    ``runner_tradeoff_resolved`` is set **only** by ``update_plan_intake``
+    (``runner_tradeoff_choice``). Never infer it from ``ready_to_generate``
+    review status — that incorrectly suppressed tradeoff chips when the classifier
+    later returned ``needs_user_decision``.
+    """
+    if intake_confirmed:
+        uxs["runner_review_delivered"] = True
+    if runner_review_api is None:
+        uxs.setdefault("runner_tradeoff_pending", False)
+        return
+    ra = str(runner_review_api.get("assessment_status") or "")
+    prev_ra = str(uxs.get("runner_review_assessment_status") or "")
+    uxs["runner_review_assessment_status"] = ra
+    tradeoff_ok = bool(uxs.get("runner_tradeoff_resolved"))
+    if ra == "needs_user_decision":
+        if prev_ra == "ready_to_generate" and tradeoff_ok:
+            uxs["runner_tradeoff_resolved"] = False
+            tradeoff_ok = False
+        uxs["runner_tradeoff_pending"] = not tradeoff_ok
+    elif ra == "needs_more_info":
+        uxs["runner_tradeoff_pending"] = False
+        if not tradeoff_ok:
+            uxs["runner_tradeoff_resolved"] = False
+    else:
+        uxs["runner_tradeoff_pending"] = False
+
+
 def _try_build_runner_review_bundle(
     session: Session,
     internal_user_id: str,
@@ -2181,7 +2217,11 @@ def _plan_intake_phase_system_section(
                 return (
                     "## Runner tradeoff — decision required\n"
                     "- `pre_generation_runner_review.assessment_status` is **`needs_user_decision`**. "
-                    "Name the tradeoff plainly (see review summary/concerns).\n"
+                    "Lead with the **specific tension** (quote stated goal + weekly structure from "
+                    "`plan_intake_state.draft`, e.g. sub‑3 marathon vs three run days)—not generic "
+                    '"tradeoffs" or "comfort" language.\n'
+                    "- Ground sentences in **`summary_lines`**, **`concerns`**, and **`recommended_next_step`** "
+                    "from `pre_generation_runner_review`; translate them into natural coach prose.\n"
                     "- The athlete should use **inline chips** to choose next steps, or adjust intake "
                     "in chat. Do **not** show or imply **Create my plan** until they acknowledge "
                     "**Continue with this tradeoff** or change material schedule/goal/timeline.\n"
@@ -2330,6 +2370,10 @@ def _plan_generation_confirm_ui_prompt_from_plan_intake_state(
         return None
     if ux.get("runner_tradeoff_pending"):
         return None
+    if ux.get(
+        "runner_review_assessment_status"
+    ) == "needs_user_decision" and not ux.get("runner_tradeoff_resolved"):
+        return None
     return {
         "version": 1,
         "field_key": "plan_intake.plan_generation_confirm",
@@ -2377,7 +2421,7 @@ def _runner_tradeoff_ui_prompt_from_plan_intake_state(
         "options": [
             {
                 "id": "rt_expand",
-                "label": "Add another running day",
+                "label": "Add another training day",
                 "user_message": (
                     "I'd like to add another running day — let's adjust my training days."
                 ),
@@ -2385,13 +2429,13 @@ def _runner_tradeoff_ui_prompt_from_plan_intake_state(
             },
             {
                 "id": "rt_goal",
-                "label": "Adjust my goal",
+                "label": "Adjust my target goal",
                 "user_message": "I want to adjust my race goal or target time.",
                 "updates": {"runner_tradeoff_choice": "adjust_goal"},
             },
             {
                 "id": "rt_time",
-                "label": "Adjust my timeline",
+                "label": "Adjust my race timeline",
                 "user_message": "I want to adjust my race date or timeline.",
                 "updates": {"runner_tradeoff_choice": "adjust_timeline"},
             },
@@ -4228,24 +4272,11 @@ def run_mobile_agent_turn(
                         "ready_to_generate"
                     ):
                         uxs = dict(pis_for_client.get("ux") or {})
-                        if uxs.get("intake_confirmed"):
-                            uxs["runner_review_delivered"] = True
-                        if runner_review_api is not None:
-                            ra = str(runner_review_api.get("assessment_status") or "")
-                            uxs["runner_review_assessment_status"] = ra
-                            tradeoff_ok = bool(uxs.get("runner_tradeoff_resolved"))
-                            if ra == "needs_user_decision":
-                                uxs["runner_tradeoff_pending"] = not tradeoff_ok
-                            elif ra == "needs_more_info":
-                                uxs["runner_tradeoff_pending"] = False
-                                if not tradeoff_ok:
-                                    uxs["runner_tradeoff_resolved"] = False
-                            else:
-                                uxs["runner_tradeoff_pending"] = False
-                                uxs["runner_tradeoff_resolved"] = True
-                        else:
-                            uxs.setdefault("runner_tradeoff_pending", False)
-                            uxs["runner_tradeoff_resolved"] = True
+                        _merge_split_confirm_ux_after_runner_review(
+                            uxs,
+                            runner_review_api,
+                            intake_confirmed=bool(uxs.get("intake_confirmed")),
+                        )
                         pis_for_client["ux"] = uxs
                     structured_text["data"]["plan_intake_state"] = pis_for_client
                     ui_prompt = _ui_prompt_from_plan_intake_state(pis_for_client)

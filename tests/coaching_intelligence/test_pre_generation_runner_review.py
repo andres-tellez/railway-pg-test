@@ -94,6 +94,23 @@ def test_classify_unresolved_alignment_flags_is_needs_more_info():
     )
 
 
+def test_marathon_three_hours_three_days_review_names_structural_tradeoff():
+    """Goal-realism path uses concrete goal + run-day count in summary/concerns."""
+    assessment_api = _coherent_marathon_target_time_assessment()
+    plan_request = _marathon_target_time_plan(
+        target_time="3:00:00",
+        training_days=["Mon", "Wed", "Sat"],
+    )
+    review = build_pre_generation_runner_review_v1(
+        assessment_api=assessment_api,
+        plan_request=plan_request,
+    )
+    blob = " ".join(review.summary_lines + review.concerns).lower()
+    assert "3:00" in blob
+    assert "running day" in blob or "day(s)" in blob
+    assert review.assessment_status == STATUS_NEEDS_DECISION
+
+
 def test_marathon_three_hours_flat_three_days_needs_user_decision():
     """3:00:00 is sub-3-level for review; with ≤3 run days requires explicit tradeoff."""
     assert (
