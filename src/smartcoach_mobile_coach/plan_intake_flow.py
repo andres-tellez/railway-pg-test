@@ -40,6 +40,69 @@ PLAN_UX_STAGE_FAST_TRACK = "fast_track"
 PLAN_UX_STAGE_GENERATED = "generated"
 
 
+def plan_creation_split_confirm_enabled() -> bool:
+    """When True, plan generation requires intake + runner review + explicit create intent."""
+    raw = (
+        (os.getenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1") or "1").strip().lower()
+    )
+    return raw not in ("0", "false", "no", "off")
+
+
+def _material_draft_digest(draft: Dict[str, Any]) -> tuple:
+    td = draft.get("training_days")
+    td_norm = tuple(td) if isinstance(td, list) else td
+    return (
+        draft.get("race_distance"),
+        draft.get("race_date"),
+        draft.get("primary_goal"),
+        draft.get("target_time"),
+        td_norm,
+        draft.get("long_run_day"),
+    )
+
+
+def _clear_plan_confirmation_ux(ux: Dict[str, Any]) -> None:
+    ux.pop("intake_confirmed", None)
+    ux.pop("runner_review_delivered", None)
+    ux.pop("plan_generation_confirmed", None)
+    ux.pop("runner_tradeoff_pending", None)
+    ux.pop("runner_tradeoff_resolved", None)
+    ux.pop("runner_review_assessment_status", None)
+    ux.pop("runner_tradeoff_edit_focus", None)
+
+
+def _truthy(raw: Any) -> bool:
+    if raw is True:
+        return True
+    if isinstance(raw, str):
+        return raw.strip().lower() in ("true", "1", "yes")
+    return False
+
+
+def user_requests_plan_generation(user_message: str) -> bool:
+    """
+    Explicit plan-build phrases only (not generic \"yes\").
+
+    Whole-message match for create / build / generate the plan.
+    """
+    raw = (user_message or "").strip()
+    if not raw or len(raw) > 160:
+        return False
+    s = raw.lower().strip()
+    if re.search(
+        r"\b(but|except|change|wrong|actually|instead|not quite|hold on|wait)\b",
+        s,
+    ):
+        return False
+    core = re.sub(r"[\s.!?…,;:\"'`]+", " ", s).strip()
+    return bool(
+        re.match(
+            r"(?is)^(?:please\s+)?(?:create my plan|build my plan|generate the plan)(?:\s*[.!?…])*$",
+            core,
+        )
+    )
+
+
 def _intake_alignment_feature_enabled() -> bool:
     return (
         os.getenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1") or ""
@@ -1241,6 +1304,9 @@ def update_plan_intake_state(
     source_user_message: Optional[str] = None,
 ) -> Dict[str, Any]:
     state = _coerce_state(None if reset else current_state)
+    prior_digest = _material_draft_digest(
+        dict((current_state or {}).get("draft") or {}) if not reset else dict()
+    )
     draft: Dict[str, Any] = dict(state.get("draft") or {})
     ux: Dict[str, Any] = dict(state.get("ux") or {})
     had_prior_draft = bool(draft)
@@ -1384,6 +1450,23 @@ def update_plan_intake_state(
                 ux["training_days_expansion_pending"] = True
                 draft.pop("training_days", None)
                 ux.pop("training_days_count", None)
+        elif key == "plan_generation_confirmed":
+            # Structured chip — validated after merge when split-confirm is enabled.
+            pass
+        elif key == "runner_tradeoff_choice":
+            choice = str(raw or "").strip().lower()
+            if choice == "continue_tradeoff":
+                ux["runner_tradeoff_resolved"] = True
+                ux["runner_tradeoff_pending"] = False
+                ux.pop("runner_tradeoff_edit_focus", None)
+            elif choice == "expand_running_days":
+                ux["training_days_expansion_pending"] = True
+                draft.pop("training_days", None)
+                ux.pop("training_days_count", None)
+            elif choice == "adjust_goal":
+                ux["runner_tradeoff_edit_focus"] = "goal"
+            elif choice == "adjust_timeline":
+                ux["runner_tradeoff_edit_focus"] = "timeline"
 
     _fill_race_distance_from_named_event(draft)
     _fill_race_name_from_user_text(draft, source_user_message)
@@ -1438,6 +1521,10 @@ def update_plan_intake_state(
             errors.append("long_run_day must be one of training_days.")
 
     _auto_fill_long_run_day(draft)
+
+    if plan_creation_split_confirm_enabled():
+        if _material_draft_digest(draft) != prior_digest:
+            _clear_plan_confirmation_ux(ux)
 
     # Cleared after user commits a new weekday set (structured `updates` or draft change).
     if ux.get("training_days_expansion_pending"):
@@ -1507,6 +1594,21 @@ def update_plan_intake_state(
                     had_prior_draft=had_prior_draft,
                     prior_ready_to_generate=prior_ready_to_generate,
                 )
+    if plan_creation_split_confirm_enabled():
+        u_final = dict(state.get("ux") or {})
+        if state.get("ready_to_generate"):
+            msg_end = (source_user_message or "").strip()
+            if user_confirms_plan_intake(msg_end):
+                u_final["intake_confirmed"] = True
+            chip_ok = isinstance(up, dict) and _truthy(
+                up.get("plan_generation_confirmed")
+            )
+            if u_final.get("intake_confirmed") and u_final.get(
+                "runner_review_delivered"
+            ):
+                if user_requests_plan_generation(msg_end) or chip_ok:
+                    u_final["plan_generation_confirmed"] = True
+        state["ux"] = u_final
     return state
 
 

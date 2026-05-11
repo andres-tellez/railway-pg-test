@@ -11,15 +11,106 @@ limitations, and v2 backlog.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Dict, List
+from datetime import date, datetime, timezone
+from typing import Any, Dict, List, Optional
 
 SCHEMA_VERSION = "pre_generation_runner_review.v1"
 
 STATUS_READY = "ready_to_generate"
 STATUS_NEEDS_DECISION = "needs_user_decision"
 STATUS_NEEDS_INFO = "needs_more_info"
+
+_SHORT_TIMELINE_WEEKS = 16
+
+
+def _full_marathon_distance(plan_request: Dict[str, Any]) -> bool:
+    rd = str(plan_request.get("race_distance") or "").strip().lower()
+    if "half" in rd:
+        return False
+    return "marathon" in rd
+
+
+def _parse_clock_seconds(tt: Optional[str]) -> Optional[float]:
+    if not tt or not str(tt).strip():
+        return None
+    s = str(tt).strip()
+    m = re.match(
+        r"^\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$",
+        s,
+    )
+    if not m:
+        return None
+    try:
+        if m.group(3) is not None:
+            h = int(m.group(1))
+            mn = int(m.group(2))
+            sec = int(m.group(3))
+            return h * 3600 + mn * 60 + sec
+        mn = int(m.group(1))
+        sec = int(m.group(2))
+        return mn * 60 + sec
+    except (TypeError, ValueError):
+        return None
+
+
+def _weeks_until_race(plan_request: Dict[str, Any]) -> Optional[float]:
+    raw = plan_request.get("race_date")
+    if raw is None:
+        return None
+    if isinstance(raw, date) and not isinstance(raw, datetime):
+        d = raw
+    elif isinstance(raw, datetime):
+        d = raw.date()
+    else:
+        try:
+            d = datetime.strptime(str(raw)[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    today = date.today()
+    if d <= today:
+        return 0.0
+    return (d - today).days / 7.0
+
+
+def _thin_goal_realism_needs_user_decision(
+    *,
+    plan_request: Dict[str, Any],
+    assessment_api: Dict[str, Any],
+) -> bool:
+    """Minimal deterministic checks — no scoring engine."""
+    pg = str(plan_request.get("primary_goal") or "").strip().lower()
+    if pg != "target time":
+        return False
+    secs = _parse_clock_seconds(str(plan_request.get("target_time") or ""))
+    td = plan_request.get("training_days")
+    n_days = len(td) if isinstance(td, list) else 0
+    act = assessment_api.get("activity_summary") or {}
+    ag = assessment_api.get("ambition_gap")
+    agd = ag if isinstance(ag, dict) else {}
+
+    marathon = _full_marathon_distance(plan_request)
+    sub_three = secs is not None and secs < 3 * 3600
+    established = str(agd.get("baseline_band") or "") == "ESTABLISHED"
+    goal_demand = str(agd.get("goal_demand") or "")
+    baseline_band = str(agd.get("baseline_band") or "")
+
+    if marathon and sub_three and n_days <= 3:
+        return True
+    if marathon and sub_three and n_days == 4 and not established:
+        return True
+    if marathon and goal_demand == "TIME_TARGET" and baseline_band == "THIN":
+        return True
+    wk = _weeks_until_race(plan_request)
+    if (
+        marathon
+        and pg == "target time"
+        and wk is not None
+        and wk < _SHORT_TIMELINE_WEEKS
+    ):
+        return True
+    return False
 
 
 def runner_review_feature_enabled() -> bool:
@@ -60,8 +151,15 @@ def classify_assessment_status_v1(
         unresolved = [str(x) for x in list(ial.get("unresolved_flags") or []) if x]
         if not ial.get("generation_ready") and unresolved:
             return STATUS_NEEDS_INFO
-        if not ial.get("generation_ready"):
-            return STATUS_NEEDS_DECISION
+
+    if _thin_goal_realism_needs_user_decision(
+        plan_request=plan_request,
+        assessment_api=assessment_api,
+    ):
+        return STATUS_NEEDS_DECISION
+
+    if isinstance(ial, dict) and not ial.get("generation_ready"):
+        return STATUS_NEEDS_DECISION
 
     if activities_found == 0:
         return STATUS_NEEDS_DECISION
@@ -88,9 +186,10 @@ def _allowed_actions_for_status(status: str) -> List[str]:
         return ["provide_alignment_answers", "adjust_intake_via_update_plan_intake"]
     if status == STATUS_NEEDS_DECISION:
         return [
-            "acknowledge_tradeoff_and_proceed",
-            "adjust_goal_or_schedule_via_update_plan_intake",
-            "confirm_generate_when_ready",
+            "expand_running_days",
+            "adjust_goal",
+            "adjust_timeline",
+            "continue_tradeoff",
         ]
     return ["confirm_generate_when_ready"]
 

@@ -89,6 +89,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     alignment_pause_coaching_facts_system_section,
     build_core_structured_ui_prompt,
     build_plan_request_from_state,
+    plan_creation_split_confirm_enabled,
     mark_plan_runner_understanding_shown,
     plan_intake_alignment_pause_active,
     plan_intake_premature_confirmation_reply,
@@ -2023,6 +2024,14 @@ def _try_build_runner_review_bundle(
         "ready_to_generate"
     ):
         return ("", None)
+    if plan_creation_split_confirm_enabled():
+        ux0 = (
+            plan_intake_state.get("ux")
+            if isinstance(plan_intake_state.get("ux"), dict)
+            else {}
+        )
+        if not ux0.get("intake_confirmed"):
+            return ("", None)
     try:
         plan_request = build_plan_request_from_state(plan_intake_state)
         assessment = build_pre_generation_runner_assessment(
@@ -2146,6 +2155,55 @@ def _plan_intake_phase_system_section(
     if not isinstance(intake_state, dict):
         return ""
     if intake_state.get("ready_to_generate"):
+        if plan_creation_split_confirm_enabled():
+            ux = (
+                intake_state.get("ux")
+                if isinstance(intake_state.get("ux"), dict)
+                else {}
+            )
+            if not ux.get("intake_confirmed"):
+                return (
+                    "## Plan intake phase — AWAITING_INTAKE_RECAP_CONFIRM\n"
+                    "- **All required fields are present.** Give a **short** recap "
+                    "(race, goal, schedule) and ask whether **that summary is accurate**.\n"
+                    "- Do **not** ask to generate or create the plan yet; do **not** call "
+                    "`generate_training_plan`. Generic yes here confirms intake only.\n"
+                    "- Do **not** re-ask for fields already present in the draft / tool state.\n"
+                )
+            if not ux.get("runner_review_delivered"):
+                return (
+                    "## Runner assessment phase\n"
+                    "- Give **one holistic coaching assessment** grounded in activity / ambition / "
+                    "alignment data from tools — opinion on realism and tradeoffs.\n"
+                    "- Do **not** call `generate_training_plan` in this phase.\n"
+                )
+            if ux.get("runner_tradeoff_pending"):
+                return (
+                    "## Runner tradeoff — decision required\n"
+                    "- `pre_generation_runner_review.assessment_status` is **`needs_user_decision`**. "
+                    "Name the tradeoff plainly (see review summary/concerns).\n"
+                    "- The athlete should use **inline chips** to choose next steps, or adjust intake "
+                    "in chat. Do **not** show or imply **Create my plan** until they acknowledge "
+                    "**Continue with this tradeoff** or change material schedule/goal/timeline.\n"
+                    "- Do **not** call `generate_training_plan` until `ux.runner_tradeoff_resolved` "
+                    "is true or they change draft fields and complete the split-confirm flow again.\n"
+                )
+            if not ux.get("plan_generation_confirmed"):
+                return (
+                    "## Plan build confirmation\n"
+                    "- Ask the athlete to **explicitly authorize building the plan**: tap "
+                    "**Create my plan** or say exactly **create my plan**, **build my plan**, or "
+                    "**generate the plan**.\n"
+                    "- A generic **yes** is **not** sufficient. Do **not** call "
+                    "`generate_training_plan` until `plan_generation_confirmed` is true in "
+                    "`plan_intake_state.ux`.\n"
+                )
+            return (
+                "## Plan generation — AUTHORIZED\n"
+                "- The athlete has completed intake confirmation, runner assessment, and explicit "
+                "plan-build consent. You may call `generate_training_plan` with `confirm=true` "
+                "when appropriate.\n"
+            )
         return (
             "## Plan intake phase — READY_TO_CONFIRM\n"
             "- **All required fields are present** (see tool intake payload). Give a **short** recap "
@@ -2255,6 +2313,100 @@ def _schedule_confirmation_ui_prompt_from_plan_intake_state(
     }
 
 
+def _plan_generation_confirm_ui_prompt_from_plan_intake_state(
+    intake_state: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Explicit Create my plan chip after runner review; requires split-confirm mode."""
+    if not plan_creation_split_confirm_enabled():
+        return None
+    if not intake_state.get("ready_to_generate"):
+        return None
+    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if not ux.get("intake_confirmed") or not ux.get("runner_review_delivered"):
+        return None
+    if ux.get("plan_generation_confirmed"):
+        return None
+    if ux.get("runner_review_assessment_status") == "needs_more_info":
+        return None
+    if ux.get("runner_tradeoff_pending"):
+        return None
+    return {
+        "version": 1,
+        "field_key": "plan_intake.plan_generation_confirm",
+        "control_type": "single_select_chips",
+        "selection_mode": "single",
+        "required": True,
+        "prompt": "When you’re ready, create your training plan.",
+        "options": [
+            {
+                "id": "create_plan",
+                "label": "Create my plan",
+                "user_message": "Create my plan",
+                "updates": {"plan_generation_confirmed": True},
+            },
+        ],
+    }
+
+
+def _runner_tradeoff_ui_prompt_from_plan_intake_state(
+    intake_state: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Structured tradeoff choices when review status is needs_user_decision."""
+    if not plan_creation_split_confirm_enabled():
+        return None
+    if not intake_state.get("ready_to_generate"):
+        return None
+    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if ux.get("schedule_confirm_before_posture"):
+        return None
+    if ux.get("training_days_expansion_pending"):
+        return None
+    if not ux.get("intake_confirmed") or not ux.get("runner_review_delivered"):
+        return None
+    if ux.get("runner_review_assessment_status") != "needs_user_decision":
+        return None
+    if not ux.get("runner_tradeoff_pending"):
+        return None
+    return {
+        "version": 1,
+        "field_key": "plan_intake.runner_tradeoff",
+        "control_type": "single_select_chips",
+        "selection_mode": "single",
+        "required": True,
+        "prompt": "How should we handle this tradeoff before building your plan?",
+        "options": [
+            {
+                "id": "rt_expand",
+                "label": "Add another running day",
+                "user_message": (
+                    "I'd like to add another running day — let's adjust my training days."
+                ),
+                "updates": {"runner_tradeoff_choice": "expand_running_days"},
+            },
+            {
+                "id": "rt_goal",
+                "label": "Adjust my goal",
+                "user_message": "I want to adjust my race goal or target time.",
+                "updates": {"runner_tradeoff_choice": "adjust_goal"},
+            },
+            {
+                "id": "rt_time",
+                "label": "Adjust my timeline",
+                "user_message": "I want to adjust my race date or timeline.",
+                "updates": {"runner_tradeoff_choice": "adjust_timeline"},
+            },
+            {
+                "id": "rt_continue",
+                "label": "Continue with this tradeoff",
+                "user_message": (
+                    "I'm okay continuing with this tradeoff — I'm ready to proceed."
+                ),
+                "updates": {"runner_tradeoff_choice": "continue_tradeoff"},
+            },
+        ],
+    }
+
+
 def _alignment_ui_prompt_from_plan_intake_state(
     intake_state: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
@@ -2312,6 +2464,12 @@ def _ui_prompt_from_plan_intake_state(
     sched = _schedule_confirmation_ui_prompt_from_plan_intake_state(intake_state)
     if sched is not None:
         return sched
+    tradeoff = _runner_tradeoff_ui_prompt_from_plan_intake_state(intake_state)
+    if tradeoff is not None:
+        return tradeoff
+    gen_chip = _plan_generation_confirm_ui_prompt_from_plan_intake_state(intake_state)
+    if gen_chip is not None:
+        return gen_chip
     alignment_prompt = _alignment_ui_prompt_from_plan_intake_state(intake_state)
     if alignment_prompt is not None:
         return alignment_prompt
@@ -4056,19 +4214,43 @@ def run_mobile_agent_turn(
                     "data": {},
                 }
                 if pis_merged is not None:
-                    structured_text["data"]["plan_intake_state"] = pis_merged
-                    ui_prompt = _ui_prompt_from_plan_intake_state(pis_merged)
-                    if isinstance(ui_prompt, dict):
-                        structured_text["data"]["ui_prompt"] = ui_prompt
+                    pis_for_client = dict(pis_merged)
                     _, runner_review_api = _try_build_runner_review_bundle(
                         session,
                         str(internal_user_id),
-                        pis_merged,
+                        pis_for_client,
                     )
                     if runner_review_api is not None:
                         structured_text["data"][
                             "pre_generation_runner_review"
                         ] = runner_review_api
+                    if plan_creation_split_confirm_enabled() and pis_for_client.get(
+                        "ready_to_generate"
+                    ):
+                        uxs = dict(pis_for_client.get("ux") or {})
+                        if uxs.get("intake_confirmed"):
+                            uxs["runner_review_delivered"] = True
+                        if runner_review_api is not None:
+                            ra = str(runner_review_api.get("assessment_status") or "")
+                            uxs["runner_review_assessment_status"] = ra
+                            tradeoff_ok = bool(uxs.get("runner_tradeoff_resolved"))
+                            if ra == "needs_user_decision":
+                                uxs["runner_tradeoff_pending"] = not tradeoff_ok
+                            elif ra == "needs_more_info":
+                                uxs["runner_tradeoff_pending"] = False
+                                if not tradeoff_ok:
+                                    uxs["runner_tradeoff_resolved"] = False
+                            else:
+                                uxs["runner_tradeoff_pending"] = False
+                                uxs["runner_tradeoff_resolved"] = True
+                        else:
+                            uxs.setdefault("runner_tradeoff_pending", False)
+                            uxs["runner_tradeoff_resolved"] = True
+                        pis_for_client["ux"] = uxs
+                    structured_text["data"]["plan_intake_state"] = pis_for_client
+                    ui_prompt = _ui_prompt_from_plan_intake_state(pis_for_client)
+                    if isinstance(ui_prompt, dict):
+                        structured_text["data"]["ui_prompt"] = ui_prompt
                 if latest_plan_generation is not None:
                     structured_text["data"]["plan_generation"] = latest_plan_generation
                 logger.info(

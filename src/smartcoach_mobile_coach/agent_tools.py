@@ -33,6 +33,7 @@ from src.smartcoach_mobile_coach.marathon_projection_service import (
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     PLAN_UX_STAGE_GENERATED,
     build_plan_request_from_state,
+    plan_creation_split_confirm_enabled,
     summarize_this_week_from_plan_rows,
     update_plan_intake_state,
 )
@@ -1555,19 +1556,41 @@ def tool_update_plan_intake(
         reset=reset,
         source_user_message=msg if isinstance(msg, str) else None,
     )
+    ready = bool(state.get("ready_to_generate"))
+    ux_tip = state.get("ux") if isinstance(state.get("ux"), dict) else {}
+    if ready and plan_creation_split_confirm_enabled():
+        if not ux_tip.get("intake_confirmed"):
+            merge_msg = (
+                "All required fields are present. Ask for intake recap confirmation "
+                "(race, goal, schedule) before the runner assessment."
+            )
+        elif not ux_tip.get("runner_review_delivered"):
+            merge_msg = "Intake confirmed — runner assessment should follow on the assistant turn."
+        elif not ux_tip.get("plan_generation_confirmed"):
+            merge_msg = (
+                "After your runner assessment, ask the athlete to tap Create my plan "
+                "or say create/build/generate the plan."
+            )
+        else:
+            merge_msg = (
+                "Plan creation is authorized — call generate_training_plan with confirm=true "
+                "when appropriate."
+            )
+    else:
+        merge_msg = (
+            "Plan intake updated. Ask one missing field next."
+            if not ready
+            else "All required fields are present. Ask for confirmation before generating."
+        )
     return {
         "plan_intake_state": state,
         "status": state.get("status"),
-        "ready_to_generate": bool(state.get("ready_to_generate")),
+        "ready_to_generate": ready,
         "missing_required": state.get("missing_required", []),
         "missing_required_labels": state.get("missing_required_labels", []),
         "errors": state.get("errors", []),
         "confirmation_summary": state.get("confirmation_summary"),
-        "message": (
-            "Plan intake updated. Ask one missing field next."
-            if not state.get("ready_to_generate")
-            else "All required fields are present. Ask for confirmation before generating."
-        ),
+        "message": merge_msg,
     }
 
 
@@ -1965,6 +1988,61 @@ def tool_generate_training_plan(
             "plan_intake_state": current_state,
             "confirmation_summary": current_state.get("confirmation_summary"),
         }
+
+    ux_gate = (
+        current_state.get("ux") if isinstance(current_state.get("ux"), dict) else {}
+    )
+    if plan_creation_split_confirm_enabled():
+        if not ux_gate.get("intake_confirmed"):
+            return {
+                "error": "intake_not_confirmed",
+                "tool": "generate_training_plan",
+                "message": (
+                    "Intake recap must be confirmed before generating. "
+                    "Wait for the user to confirm their race/goal/schedule summary first."
+                ),
+                "plan_intake_state": current_state,
+            }
+        if not ux_gate.get("runner_review_delivered"):
+            return {
+                "error": "runner_review_pending",
+                "tool": "generate_training_plan",
+                "message": (
+                    "Runner assessment phase is not complete. "
+                    "Do not call generate_training_plan until after the review step."
+                ),
+                "plan_intake_state": current_state,
+            }
+        if not ux_gate.get("plan_generation_confirmed"):
+            return {
+                "error": "plan_generation_not_confirmed",
+                "tool": "generate_training_plan",
+                "message": (
+                    "The user must explicitly ask to create the plan (e.g. Create my plan) "
+                    "after the runner assessment—generic yes to the intake recap is not enough."
+                ),
+                "plan_intake_state": current_state,
+            }
+        if ux_gate.get("runner_tradeoff_pending"):
+            return {
+                "error": "runner_tradeoff_unresolved",
+                "tool": "generate_training_plan",
+                "message": (
+                    "The athlete must resolve the runner tradeoff (chips or intake edits) "
+                    "or tap Continue with this tradeoff before generating."
+                ),
+                "plan_intake_state": current_state,
+            }
+        if ux_gate.get("runner_review_assessment_status") == "needs_more_info":
+            return {
+                "error": "runner_review_needs_more_info",
+                "tool": "generate_training_plan",
+                "message": (
+                    "Alignment or goal context is still incomplete — finish open items "
+                    "before generating."
+                ),
+                "plan_intake_state": current_state,
+            }
 
     activity_weeks_raw = args.get("activity_weeks", 12)
     try:
