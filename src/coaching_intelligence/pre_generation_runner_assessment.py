@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -74,11 +74,19 @@ def extract_alignment_answer_bookkeeping(
     return prior_answers, question_count, asked_categories
 
 
+def _json_safe_plan_field(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
 def _plan_request_digest(plan_request: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "primary_goal": plan_request.get("primary_goal"),
         "race_distance": plan_request.get("race_distance"),
-        "race_date": plan_request.get("race_date"),
+        "race_date": _json_safe_plan_field(plan_request.get("race_date")),
         "target_time": plan_request.get("target_time"),
         "training_days": plan_request.get("training_days"),
     }

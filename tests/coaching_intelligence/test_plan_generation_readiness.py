@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+import json
+from datetime import date, datetime, timedelta
 
 from src.coaching_intelligence.plan_generation_readiness import (
     DECISION_ALLOW,
@@ -205,3 +206,59 @@ def test_policy_output_is_stable_for_same_inputs():
         plan_request=plan,
         assessment_api=assessment,
     )
+
+
+def test_readiness_payload_json_serializable_when_plan_request_has_date_objects():
+    """Regression: agent-messages persists assistant payload via json.dumps."""
+    plan = _plan(race_date=date(2026, 10, 11))
+    out = evaluate_plan_generation_readiness(
+        plan_request=plan,
+        assessment_api=_assessment(),
+    )
+    raw = json.dumps(out)
+    assert "2026-10-11" in raw
+    assert isinstance(json.loads(raw)["inputs_digest"]["race_date"], str)
+
+    plan_dt = _plan(race_date=datetime(2026, 10, 11, 12, 30))
+    out_dt = evaluate_plan_generation_readiness(
+        plan_request=plan_dt,
+        assessment_api=_assessment(),
+    )
+    assert isinstance(json.loads(json.dumps(out_dt))["inputs_digest"]["race_date"], str)
+
+
+def test_readiness_nested_in_response_shape_json_serializable():
+    plan = _plan(race_date=date(2026, 10, 11))
+    readiness = evaluate_plan_generation_readiness(
+        plan_request=plan,
+        assessment_api=_assessment(),
+    )
+    payload = {
+        "type": "text",
+        "content": "x",
+        "data": {
+            "plan_intake_state": {"ux": {"plan_generation_readiness": readiness}},
+            "pre_generation_runner_review": {
+                "plan_generation_readiness": readiness,
+                "assessment_status": "needs_user_decision",
+            },
+        },
+    }
+    json.dumps(payload)
+
+
+def test_plan_request_digest_json_serializable_for_pydantic_date_race():
+    from src.coaching_intelligence.pre_generation_runner_assessment import (
+        _plan_request_digest,
+    )
+
+    digest = _plan_request_digest(
+        {
+            "primary_goal": "Target Time",
+            "race_distance": "Marathon",
+            "race_date": date(2026, 10, 11),
+            "target_time": "3:00:00",
+            "training_days": ["Mon"],
+        }
+    )
+    assert json.loads(json.dumps(digest))["race_date"] == "2026-10-11"

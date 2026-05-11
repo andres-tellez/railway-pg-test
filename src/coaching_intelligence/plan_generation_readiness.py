@@ -12,6 +12,16 @@ import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+
+def _json_safe_scalar(value: Any) -> Any:
+    """Coerce date/datetime to ISO strings for API JSON payloads (readiness only)."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
 SCHEMA_VERSION = "plan_generation_readiness.v1"
 
 DECISION_ALLOW = "allow"
@@ -389,7 +399,7 @@ def _input_digest(builder: _ReadinessBuilder) -> Dict[str, Any]:
     return {
         "primary_goal": builder.plan_request.get("primary_goal"),
         "race_distance": builder.plan_request.get("race_distance"),
-        "race_date": builder.plan_request.get("race_date"),
+        "race_date": _json_safe_scalar(builder.plan_request.get("race_date")),
         "target_time": builder.plan_request.get("target_time"),
         "training_day_count": _training_day_count(builder.plan_request),
         "weeks_to_race": round(weeks, 1) if weeks is not None else None,
