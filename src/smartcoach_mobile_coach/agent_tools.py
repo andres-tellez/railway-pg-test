@@ -30,6 +30,12 @@ from src.smartcoach_mobile_coach.insight_cache import cache_key, get_cached, set
 from src.smartcoach_mobile_coach.marathon_projection_service import (
     get_marathon_projection,
 )
+from src.smartcoach_mobile_coach.plan_creation_ui import (
+    PHASE_AWAITING_TRADEOFF_CHOICE,
+    PHASE_COLLECTING_ADDITIONAL_TRAINING_DAY,
+    PHASE_GENERATED,
+    sync_legacy_ux_from_phase,
+)
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     PLAN_UX_STAGE_GENERATED,
     build_plan_request_from_state,
@@ -2023,7 +2029,11 @@ def tool_generate_training_plan(
                 ),
                 "plan_intake_state": current_state,
             }
-        if ux_gate.get("runner_tradeoff_pending"):
+        phase_gate = str(ux_gate.get("plan_creation_phase") or "")
+        tradeoff_blocked = phase_gate == PHASE_AWAITING_TRADEOFF_CHOICE or (
+            not phase_gate and ux_gate.get("runner_tradeoff_pending")
+        )
+        if tradeoff_blocked:
             return {
                 "error": "runner_tradeoff_unresolved",
                 "tool": "generate_training_plan",
@@ -2033,7 +2043,10 @@ def tool_generate_training_plan(
                 ),
                 "plan_intake_state": current_state,
             }
-        if ux_gate.get("runner_add_day_pick_pending"):
+        add_day_blocked = phase_gate == PHASE_COLLECTING_ADDITIONAL_TRAINING_DAY or (
+            not phase_gate and ux_gate.get("runner_add_day_pick_pending")
+        )
+        if add_day_blocked:
             return {
                 "error": "runner_add_day_unresolved",
                 "tool": "generate_training_plan",
@@ -2311,6 +2324,9 @@ def tool_generate_training_plan(
     next_state["last_generated_plan_id"] = int(plan_id)
     next_ux = dict(next_state.get("ux") or {})
     next_ux["stage"] = PLAN_UX_STAGE_GENERATED
+    if plan_creation_split_confirm_enabled():
+        next_ux["plan_creation_phase"] = PHASE_GENERATED
+        sync_legacy_ux_from_phase(next_ux, PHASE_GENERATED)
     next_state["ux"] = next_ux
     return {
         "ok": True,

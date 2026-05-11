@@ -71,6 +71,7 @@ def _clear_plan_confirmation_ux(ux: Dict[str, Any]) -> None:
     ux.pop("runner_tradeoff_edit_focus", None)
     ux.pop("runner_add_day_pick_pending", None)
     ux.pop("expansion_base_training_days", None)
+    ux.pop("plan_creation_phase", None)
 
 
 def _truthy(raw: Any) -> bool:
@@ -1459,12 +1460,10 @@ def update_plan_intake_state(
             choice = str(raw or "").strip().lower()
             if choice == "continue_tradeoff":
                 ux["runner_tradeoff_resolved"] = True
-                ux["runner_tradeoff_pending"] = False
                 ux.pop("runner_tradeoff_edit_focus", None)
             elif choice == "expand_running_days":
                 # Original four-way choice is done; sub-flow collects the extra day.
                 ux["runner_tradeoff_resolved"] = True
-                ux["runner_tradeoff_pending"] = False
                 ux.pop("runner_tradeoff_edit_focus", None)
                 ux["training_days_expansion_pending"] = True
                 ux["runner_add_day_pick_pending"] = True
@@ -1475,10 +1474,8 @@ def update_plan_intake_state(
                 draft.pop("training_days", None)
                 ux.pop("training_days_count", None)
             elif choice == "adjust_goal":
-                ux["runner_tradeoff_pending"] = False
                 ux["runner_tradeoff_edit_focus"] = "goal"
             elif choice == "adjust_timeline":
-                ux["runner_tradeoff_pending"] = False
                 ux["runner_tradeoff_edit_focus"] = "timeline"
 
     _fill_race_distance_from_named_event(draft)
@@ -1632,7 +1629,20 @@ def update_plan_intake_state(
                 if user_requests_plan_generation(msg_end) or chip_ok:
                     u_final["plan_generation_confirmed"] = True
         state["ux"] = u_final
+    _sync_plan_creation_phase_and_legacy_flags(state)
     return state
+
+
+def _sync_plan_creation_phase_and_legacy_flags(state: Dict[str, Any]) -> None:
+    """Recompute ``ux.plan_creation_phase`` and mirror legacy tradeoff flags."""
+    if not plan_creation_split_confirm_enabled():
+        return
+    from src.smartcoach_mobile_coach import plan_creation_ui as _pcu
+
+    _pcu.recompute_plan_creation_phase(state)
+    ux = state.get("ux")
+    if isinstance(ux, dict):
+        _pcu.sync_legacy_ux_from_phase(ux, str(ux.get("plan_creation_phase") or ""))
 
 
 def build_core_structured_ui_prompt(

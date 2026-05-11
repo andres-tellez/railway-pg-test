@@ -87,7 +87,6 @@ from src.smartcoach_mobile_coach.plan_intake_activity_context import (
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     _human_missing_label,
     alignment_pause_coaching_facts_system_section,
-    build_core_structured_ui_prompt,
     build_plan_request_from_state,
     plan_creation_split_confirm_enabled,
     mark_plan_runner_understanding_shown,
@@ -98,7 +97,14 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     structured_intake_core_v1_enabled,
     user_confirms_plan_intake,
 )
-from src.utils.date_helpers import DAY_NAMES_ABBREV
+from src.smartcoach_mobile_coach.plan_creation_ui import (
+    PHASE_AWAITING_TRADEOFF_CHOICE,
+    PHASE_COLLECTING_ADDITIONAL_TRAINING_DAY,
+    PHASE_COLLECTING_GOAL_ADJUSTMENT,
+    PHASE_COLLECTING_TIMELINE_ADJUSTMENT,
+    apply_review_to_plan_intake_ux_for_phase,
+    compute_plan_creation_ui,
+)
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
     INTENT_RACE_PROJECTION,
@@ -2007,49 +2013,6 @@ def _join_nonempty_system_sections(*sections: str) -> str:
     return "\n\n".join(s.strip() for s in sections if (s or "").strip())
 
 
-def _merge_split_confirm_ux_after_runner_review(
-    uxs: Dict[str, Any],
-    runner_review_api: Optional[Dict[str, Any]],
-    *,
-    intake_confirmed: bool,
-) -> None:
-    """
-    Stamp runner-review-driven UX flags on outbound ``plan_intake_state``.
-
-    ``runner_tradeoff_resolved`` is set **only** by ``update_plan_intake``
-    (``runner_tradeoff_choice``). Never infer it from ``ready_to_generate``
-    review status — that incorrectly suppressed tradeoff chips when the classifier
-    later returned ``needs_user_decision``.
-    """
-    if intake_confirmed:
-        uxs["runner_review_delivered"] = True
-    if runner_review_api is None:
-        uxs.setdefault("runner_tradeoff_pending", False)
-        return
-    ra = str(runner_review_api.get("assessment_status") or "")
-    prev_ra = str(uxs.get("runner_review_assessment_status") or "")
-    uxs["runner_review_assessment_status"] = ra
-    tradeoff_ok = bool(uxs.get("runner_tradeoff_resolved"))
-    if ra == "needs_user_decision":
-        if prev_ra == "ready_to_generate" and tradeoff_ok:
-            uxs["runner_tradeoff_resolved"] = False
-            tradeoff_ok = False
-        # Follow-up branches after a tradeoff chip (add day / edit goal / timeline): do not
-        # re-show the four-way prompt while collecting the next answer.
-        if uxs.get("training_days_expansion_pending") or uxs.get(
-            "runner_tradeoff_edit_focus"
-        ):
-            uxs["runner_tradeoff_pending"] = False
-        else:
-            uxs["runner_tradeoff_pending"] = not tradeoff_ok
-    elif ra == "needs_more_info":
-        uxs["runner_tradeoff_pending"] = False
-        if not tradeoff_ok:
-            uxs["runner_tradeoff_resolved"] = False
-    else:
-        uxs["runner_tradeoff_pending"] = False
-
-
 def _try_build_runner_review_bundle(
     session: Session,
     internal_user_id: str,
@@ -2201,9 +2164,15 @@ def _plan_intake_phase_system_section(
     ux_phase = (
         intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
     )
-    if ux_phase.get("runner_add_day_pick_pending") and ux_phase.get(
-        "training_days_expansion_pending"
-    ):
+    phase0 = str(ux_phase.get("plan_creation_phase") or "")
+    add_day_flow = (
+        plan_creation_split_confirm_enabled()
+        and phase0 == PHASE_COLLECTING_ADDITIONAL_TRAINING_DAY
+    ) or (
+        ux_phase.get("runner_add_day_pick_pending")
+        and ux_phase.get("training_days_expansion_pending")
+    )
+    if add_day_flow:
         draft0 = (
             intake_state.get("draft")
             if isinstance(intake_state.get("draft"), dict)
@@ -2242,7 +2211,22 @@ def _plan_intake_phase_system_section(
                     "alignment data—plain language, like a real coach.\n"
                     "- Do **not** call `generate_training_plan` in this phase.\n"
                 )
-            if ux.get("runner_tradeoff_pending"):
+            phase = str(ux.get("plan_creation_phase") or "")
+            if phase in (
+                PHASE_COLLECTING_GOAL_ADJUSTMENT,
+                PHASE_COLLECTING_TIMELINE_ADJUSTMENT,
+            ) or ux.get("runner_tradeoff_edit_focus") in ("goal", "timeline"):
+                return (
+                    "## Plan intake — adjusting goal or timeline\n"
+                    "- The athlete chose to adjust **goal** or **race date** from the pre-plan review. "
+                    "Help them update those fields via chat or structured controls.\n"
+                    "- Do **not** offer **Create my plan** until material intake is consistent again "
+                    "and the split-confirm flow catches up.\n"
+                )
+            tradeoff_chips = phase == PHASE_AWAITING_TRADEOFF_CHOICE or (
+                not phase and ux.get("runner_tradeoff_pending")
+            )
+            if tradeoff_chips:
                 return (
                     "## Goal / schedule — choose next step\n"
                     "- `pre_generation_runner_review.assessment_status` is **`needs_user_decision`**. "
@@ -2344,286 +2328,10 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
     return "Tell me a bit more about the race you want to train for."
 
 
-_WEEKDAY_CHIP_LABELS = {
-    "Mon": "Monday",
-    "Tue": "Tuesday",
-    "Wed": "Wednesday",
-    "Thu": "Thursday",
-    "Fri": "Friday",
-    "Sat": "Saturday",
-    "Sun": "Sunday",
-}
-
-
-def _merge_base_training_days_with_one(base: List[str], add: str) -> List[str]:
-    s = {str(d) for d in base if isinstance(d, str)}
-    s.add(str(add).strip())
-    return [d for d in DAY_NAMES_ABBREV if d in s]
-
-
-def _additional_training_day_ui_prompt_from_plan_intake_state(
-    intake_state: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
-    """Single weekday pick after **Add another training day** (replaces four-way chips)."""
-    if not plan_creation_split_confirm_enabled():
-        return None
-    if not isinstance(intake_state, dict):
-        return None
-    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
-    if not ux.get("runner_add_day_pick_pending"):
-        return None
-    if not ux.get("training_days_expansion_pending"):
-        return None
-    base = ux.get("expansion_base_training_days")
-    if not isinstance(base, list) or not base:
-        return None
-    missing = [
-        m for m in (intake_state.get("missing_required") or []) if isinstance(m, str)
-    ]
-    if "training_days" not in missing:
-        return None
-    existing = {str(d) for d in base if isinstance(d, str)}
-    candidates = [d for d in DAY_NAMES_ABBREV if d not in existing]
-    if not candidates:
-        return None
-    options: List[Dict[str, Any]] = []
-    for d in candidates:
-        merged = _merge_base_training_days_with_one(base, d)
-        label = _WEEKDAY_CHIP_LABELS.get(d, d)
-        day_list = ", ".join(merged)
-        options.append(
-            {
-                "id": f"add_day_{d.lower()}",
-                "label": label,
-                "user_message": (
-                    f"I'd like to add {label} — my training days should be {day_list}."
-                ),
-                "updates": {"training_days": merged},
-            }
-        )
-    return {
-        "version": 1,
-        "field_key": "plan_intake.collect_additional_training_day",
-        "control_type": "single_select_chips",
-        "selection_mode": "single",
-        "required": True,
-        "prompt": "Which additional day would you like to include?",
-        "options": options,
-    }
-
-
-def _schedule_confirmation_ui_prompt_from_plan_intake_state(
-    intake_state: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
-    """Yes/No on draft training days after expansion; must run before posture alignment chips."""
-    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
-    if not ux.get("schedule_confirm_before_posture"):
-        return None
-    draft = (
-        intake_state.get("draft") if isinstance(intake_state.get("draft"), dict) else {}
-    )
-    days = draft.get("training_days")
-    if not isinstance(days, list) or not days:
-        return None
-    day_preview = ", ".join(str(d) for d in days if isinstance(d, str))
-    return {
-        "version": 1,
-        "field_key": "plan_intake.schedule_confirmation",
-        "control_type": "single_select_chips",
-        "selection_mode": "single",
-        "required": True,
-        "prompt": (
-            f"You'll train on {day_preview}. Does this weekly schedule look right?"
-        ),
-        "options": [
-            {
-                "id": "sched_yes",
-                "label": "Yes",
-                "user_message": "Yes, that weekly schedule looks right.",
-                "updates": {"schedule_days_confirmed": True},
-            },
-            {
-                "id": "sched_no",
-                "label": "No, change days",
-                "user_message": "I'd like to change my training days.",
-                "updates": {"schedule_days_confirmed": False},
-            },
-        ],
-    }
-
-
-def _plan_generation_confirm_ui_prompt_from_plan_intake_state(
-    intake_state: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
-    """Explicit Create my plan chip after runner review; requires split-confirm mode."""
-    if not plan_creation_split_confirm_enabled():
-        return None
-    if not intake_state.get("ready_to_generate"):
-        return None
-    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
-    if not ux.get("intake_confirmed") or not ux.get("runner_review_delivered"):
-        return None
-    if ux.get("plan_generation_confirmed"):
-        return None
-    if ux.get("runner_review_assessment_status") == "needs_more_info":
-        return None
-    if ux.get("runner_tradeoff_pending"):
-        return None
-    if ux.get("runner_tradeoff_edit_focus") in ("goal", "timeline"):
-        return None
-    if ux.get(
-        "runner_review_assessment_status"
-    ) == "needs_user_decision" and not ux.get("runner_tradeoff_resolved"):
-        return None
-    return {
-        "version": 1,
-        "field_key": "plan_intake.plan_generation_confirm",
-        "control_type": "single_select_chips",
-        "selection_mode": "single",
-        "required": True,
-        "prompt": "When you’re ready, create your training plan.",
-        "options": [
-            {
-                "id": "create_plan",
-                "label": "Create my plan",
-                "user_message": "Create my plan",
-                "updates": {"plan_generation_confirmed": True},
-            },
-        ],
-    }
-
-
-def _runner_tradeoff_ui_prompt_from_plan_intake_state(
-    intake_state: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
-    """Structured choices when review status is needs_user_decision."""
-    if not plan_creation_split_confirm_enabled():
-        return None
-    if not intake_state.get("ready_to_generate"):
-        return None
-    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
-    if ux.get("schedule_confirm_before_posture"):
-        return None
-    if ux.get("training_days_expansion_pending"):
-        return None
-    if not ux.get("intake_confirmed") or not ux.get("runner_review_delivered"):
-        return None
-    if ux.get("runner_review_assessment_status") != "needs_user_decision":
-        return None
-    if not ux.get("runner_tradeoff_pending"):
-        return None
-    return {
-        "version": 1,
-        "field_key": "plan_intake.runner_tradeoff",
-        "control_type": "single_select_chips",
-        "selection_mode": "single",
-        "required": True,
-        "prompt": "A few options before we build your plan:",
-        "options": [
-            {
-                "id": "rt_expand",
-                "label": "Add another training day",
-                "user_message": (
-                    "I'd like to add another training day — let's adjust my training days."
-                ),
-                "updates": {"runner_tradeoff_choice": "expand_running_days"},
-            },
-            {
-                "id": "rt_goal",
-                "label": "Adjust my marathon goal",
-                "user_message": "I want to change my marathon goal or target time.",
-                "updates": {"runner_tradeoff_choice": "adjust_goal"},
-            },
-            {
-                "id": "rt_time",
-                "label": "Move my goal race farther out",
-                "user_message": (
-                    "I want more time before my race — let's adjust my goal race date."
-                ),
-                "updates": {"runner_tradeoff_choice": "adjust_timeline"},
-            },
-            {
-                "id": "rt_continue",
-                "label": "Keep the current goal and schedule",
-                "user_message": (
-                    "Let's keep my current goal and weekly schedule and move on to building the plan."
-                ),
-                "updates": {"runner_tradeoff_choice": "continue_tradeoff"},
-            },
-        ],
-    }
-
-
-def _alignment_ui_prompt_from_plan_intake_state(
-    intake_state: Dict[str, Any],
-) -> Optional[Dict[str, Any]]:
-    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
-    if ux.get("schedule_confirm_before_posture"):
-        return None
-    if ux.get("training_days_expansion_pending"):
-        # User must re-pick concrete weekdays before the next alignment chip (e.g. posture).
-        return None
-    alignment = intake_state.get("alignment")
-    if not isinstance(alignment, dict):
-        return None
-    st = alignment.get("state")
-    if not isinstance(st, dict):
-        return None
-    if not st.get("pause_required") or st.get("generation_ready"):
-        return None
-    allowed = st.get("allowed_question_categories") or []
-    first = (
-        allowed[0]
-        if isinstance(allowed, list) and allowed and isinstance(allowed[0], str)
-        else ""
-    )
-    if first == "frequency_flexibility":
-        return {
-            "version": 1,
-            "field_key": "alignment.frequency_flexible",
-            "control_type": "single_select_chips",
-            "selection_mode": "single",
-            "required": True,
-            "prompt": "Would you be open to adding one run day to support this goal?",
-            "options": [
-                {
-                    "id": "frequency_fixed",
-                    "label": "Keep schedule fixed",
-                    "user_message": "Keep my current days fixed.",
-                    "updates": {"alignment_frequency_flexible": False},
-                },
-                {
-                    "id": "frequency_open",
-                    "label": "Open to adding a day",
-                    "user_message": "I can add one day.",
-                    "updates": {"alignment_frequency_flexible": True},
-                },
-            ],
-        }
-    return None
-
-
 def _ui_prompt_from_plan_intake_state(
     intake_state: Optional[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
-    if not isinstance(intake_state, dict):
-        return None
-    sched = _schedule_confirmation_ui_prompt_from_plan_intake_state(intake_state)
-    if sched is not None:
-        return sched
-    add_day = _additional_training_day_ui_prompt_from_plan_intake_state(intake_state)
-    if add_day is not None:
-        return add_day
-    tradeoff = _runner_tradeoff_ui_prompt_from_plan_intake_state(intake_state)
-    if tradeoff is not None:
-        return tradeoff
-    gen_chip = _plan_generation_confirm_ui_prompt_from_plan_intake_state(intake_state)
-    if gen_chip is not None:
-        return gen_chip
-    alignment_prompt = _alignment_ui_prompt_from_plan_intake_state(intake_state)
-    if alignment_prompt is not None:
-        return alignment_prompt
-    return build_core_structured_ui_prompt(intake_state)
+    return compute_plan_creation_ui(intake_state)
 
 
 def _structured_intake_core_v1_plan_creation_addon() -> str:
@@ -4377,13 +4085,17 @@ def run_mobile_agent_turn(
                     if plan_creation_split_confirm_enabled() and pis_for_client.get(
                         "ready_to_generate"
                     ):
-                        uxs = dict(pis_for_client.get("ux") or {})
-                        _merge_split_confirm_ux_after_runner_review(
-                            uxs,
+                        apply_review_to_plan_intake_ux_for_phase(
+                            pis_for_client,
                             runner_review_api,
-                            intake_confirmed=bool(uxs.get("intake_confirmed")),
+                            intake_confirmed=bool(
+                                (
+                                    pis_for_client.get("ux")
+                                    if isinstance(pis_for_client.get("ux"), dict)
+                                    else {}
+                                ).get("intake_confirmed")
+                            ),
                         )
-                        pis_for_client["ux"] = uxs
                     structured_text["data"]["plan_intake_state"] = pis_for_client
                     ui_prompt = _ui_prompt_from_plan_intake_state(pis_for_client)
                     if isinstance(ui_prompt, dict):

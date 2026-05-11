@@ -14,7 +14,13 @@ def _state() -> dict:
             "primary_goal": "Target Time",
             "target_time": "3:00:00",
             "training_days": ["Tue", "Thu", "Sat"],
-        }
+        },
+        "ux": {
+            "intake_confirmed": True,
+            "runner_review_delivered": True,
+            "plan_generation_confirmed": True,
+            "runner_review_assessment_status": "ready_to_generate",
+        },
     }
 
 

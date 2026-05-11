@@ -27,13 +27,15 @@ Exactly one of:
 
 **`SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1`** (default **on**): separates **intake recap confirm**, **runner assessment** (this review), and **explicit plan build** (`plan_intake_state.ux`: `intake_confirmed`, `runner_review_delivered`, `plan_generation_confirmed`). `generate_training_plan` is rejected until all three are satisfied. Generic **yes** after intake recap does **not** set plan-generation consent; use **Create my plan** / **create my plan** / **build my plan** / **generate the plan**.
 
-Material edits to **race_distance**, **race_date**, **primary_goal**, **target_time**, **training_days**, or **long_run_day** clear the three flags.
+**Plan-creation phase:** when split confirm is on, **`ux.plan_creation_phase`** is the single source of truth for where the athlete is in the plan-creation UX (e.g. `awaiting_intake_confirmation`, `awaiting_tradeoff_choice`, `collecting_additional_training_day`, `awaiting_plan_generation_confirmation`). **`compute_plan_creation_ui`** is the only server entry that builds plan-creation structured chips (plus alignment pause chips, same precedence as before). **`runner_tradeoff_pending`** / **`runner_tradeoff_resolved`** are derived from phase for backward compatibility for one release.
+
+Material edits to **race_distance**, **race_date**, **primary_goal**, **target_time**, **training_days**, or **long_run_day** clear the three flags (and phase is recomputed after `update_plan_intake_state`).
 
 ### Tradeoff chips (`needs_user_decision`)
 
-When **`assessment_status`** is **`needs_user_decision`**, the API stamps **`ux.runner_tradeoff_pending`** until the athlete picks an option. Inline **`ui_prompt`** shows four chips (`runner_tradeoff_choice`): **Add another training day**, **Adjust my marathon goal**, **Move my goal race farther out**, **Keep the current goal and schedule**. **Create my plan** stays hidden until **`runner_tradeoff_pending`** is cleared (last option or material edits that reset UX). **`runner_tradeoff_resolved`** is set when the user picks **Keep the current goal and schedule** (or another branch) so a later review snapshot that still classifies as high-friction does not loop chips forever.
+When **`assessment_status`** is **`needs_user_decision`** and the phase is **`awaiting_tradeoff_choice`**, inline **`ui_prompt`** shows four chips (`runner_tradeoff_choice`): **Add another training day**, **Adjust my marathon goal**, **Move my goal race farther out**, **Keep the current goal and schedule**. **Create my plan** stays hidden until the phase advances (e.g. **keep goal and schedule** or completing a sub-flow). **`runner_tradeoff_resolved`** is still driven by tool updates (`runner_tradeoff_choice`) and kept in sync with phase so a later review snapshot that still classifies as high-friction does not loop chips forever.
 
-**Add another training day:** choosing that chip sets **`runner_tradeoff_pending`** false, **`runner_tradeoff_resolved`** true, and **`ux.runner_add_day_pick_pending`** + **`expansion_base_training_days`** so the next **`ui_prompt`** is single-select weekdays not already in the base list (`field_key`: **`plan_intake.collect_additional_training_day`**), not the four-way prompt again.
+**Add another training day:** choosing that chip moves phase to **`collecting_additional_training_day`** and sets **`ux.runner_add_day_pick_pending`** + **`expansion_base_training_days`** so the next **`ui_prompt`** is single-select weekdays not already in the base list (`field_key`: **`plan_intake.collect_additional_training_day`**), not the four-way prompt again.
 
 ## Feature flag (runner review payload)
 
