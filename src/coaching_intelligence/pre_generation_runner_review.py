@@ -10,6 +10,7 @@ limitations, and v2 backlog.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -416,6 +417,17 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
     if concern_blk:
         parts.extend(["**Concerns (address plainly):**", concern_blk])
     if readiness:
+        coach = readiness.get("coach_analysis_for_llm")
+        coach = coach if isinstance(coach, dict) else {}
+        if coach:
+            parts.extend(
+                [
+                    "**coach_analysis_for_llm (authoritative structured summary — paraphrase only; do not add facts, categories, metrics, or actions beyond this object):**",
+                    "```json",
+                    json.dumps(coach, ensure_ascii=False, indent=2),
+                    "```",
+                ]
+            )
         rp = readiness.get("recommended_path")
         rp = rp if isinstance(rp, dict) else {}
         parts.extend(
@@ -430,42 +442,45 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
         )
         cats = readiness.get("category_assessments")
         if isinstance(cats, list) and cats:
-            parts.append(
-                "**Category assessments (ok / warn / bad — explain using only listed facts; do not invent signals):**"
-            )
-            for row in cats:
-                if not isinstance(row, dict):
-                    continue
-                cid = row.get("category_id")
-                st = row.get("status")
-                rcs = row.get("reason_codes") or []
-                facts = row.get("facts_used")
-                if isinstance(facts, dict) and facts:
-                    fk = ", ".join(
-                        f"{k}={facts.get(k)}"
-                        for k in sorted(facts.keys(), key=lambda x: str(x))[:10]
-                    )
-                else:
-                    fk = ""
-                rc_s = ", ".join(str(x) for x in rcs) if rcs else ""
-                appl = row.get("applies_to_goal")
-                line = f"- `{cid}`: applies_to_goal={appl}, **{st}**"
-                if rc_s:
-                    line += f"; rules: {rc_s}"
-                if fk:
-                    line += f"; facts: {fk}"
-                parts.append(line)
-            parts.append(
-                "- Only explain categories where `applies_to_goal` is true for this athlete; others are out of scope for this goal profile."
-                " No HR drift, Z2 pace, or other physiology unless a fact key explicitly includes it in `facts_used`."
-            )
+            applicable_cats = [
+                row
+                for row in cats
+                if isinstance(row, dict) and row.get("applies_to_goal") is True
+            ]
+            if applicable_cats:
+                parts.append(
+                    "**Category assessments (ok / warn / bad — applicable to this goal only; facts below supplement `coach_analysis_for_llm`):**"
+                )
+                for row in applicable_cats:
+                    cid = row.get("category_id")
+                    st = row.get("status")
+                    rcs = row.get("reason_codes") or []
+                    facts = row.get("facts_used")
+                    if isinstance(facts, dict) and facts:
+                        fk = ", ".join(
+                            f"{k}={facts.get(k)}"
+                            for k in sorted(facts.keys(), key=lambda x: str(x))[:10]
+                        )
+                    else:
+                        fk = ""
+                    rc_s = ", ".join(str(x) for x in rcs) if rcs else ""
+                    line = f"- `{cid}`: **{st}**"
+                    if rc_s:
+                        line += f"; rules: {rc_s}"
+                    if fk:
+                        line += f"; facts: {fk}"
+                    parts.append(line)
+                parts.append(
+                    "- No HR drift, Z2 pace, or other physiology unless a fact key above explicitly includes it in `facts_used`."
+                )
     if nxt:
         parts.append(f"**Recommended next step for your prose:** {nxt}")
     parts.extend(
         [
             "- Write **one short assessment** before asking for final generate confirmation when appropriate.",
-            "- The LLM may explain readiness in plain language, but must not override `decision` or offer actions absent from `allowed_user_actions`.",
-            "- Do **not** invent numbers or labels not present in review summary, readiness `inputs_digest`, or `category_assessments[].facts_used`.",
+            "- Ground Runner Analysis prose in **`coach_analysis_for_llm`**: same facts, same actions, same decision — warmer wording only.",
+            "- If `decision` is `defer` or `block`, do **not** imply the athlete is ready to generate a plan; mirror `coach_read` and `recommended_actions`.",
+            "- Do **not** invent numbers or labels not present in `coach_analysis_for_llm`, readiness `inputs_digest`, or applicable category `facts_used` above.",
             "- In user-facing wording, avoid: **tradeoff**, **path**, **tension**, **commitment**, "
             "**coherence** (use plain running-coach language instead).",
         ]

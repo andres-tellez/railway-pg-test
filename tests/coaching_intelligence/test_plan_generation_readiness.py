@@ -332,6 +332,39 @@ def test_ready_coherent_finish_goal_marks_most_categories_ok():
     assert by_id[CATEGORY_EFFORT_CONTROL]["status"] == STATUS_OK
 
 
+def test_coach_analysis_for_llm_matches_readiness_and_omits_non_applicable_categories():
+    """Structured LLM payload is derived only from readiness; no effort_control when N/A."""
+    out = evaluate_plan_generation_readiness(
+        plan_request=_plan(
+            primary_goal="Just Finish",
+            target_time="",
+            training_days=["Tue", "Thu", "Sat", "Sun"],
+        ),
+        assessment_api=_assessment(
+            avg_mpw=34,
+            longest=14,
+            activities_found=16,
+            baseline_band="ESTABLISHED",
+            stance="COHERENT",
+            goal_demand="FINISH",
+        ),
+    )
+    coach = out.get("coach_analysis_for_llm")
+    assert isinstance(coach, dict)
+    assert coach.get("schema_version") == "coach_analysis_for_llm.v1"
+    assert coach["recommended_actions"] == out["allowed_user_actions"]
+    assert coach["key_findings"] == out["key_findings"]
+    assert coach["decision"] == out["decision"]
+    assert coach["readiness_level"] == out["readiness_level"]
+    assert str(coach["coach_read"]).startswith("Decision:")
+    summaries = coach["applicable_category_summaries"]
+    assert not any("effort_control" in s for s in summaries)
+    labels = {r["label"] for r in coach["facts_reviewed"]}
+    assert "Goal profile" in labels
+    assert "Training schedule" in labels
+    json.dumps(coach)
+
+
 def test_same_volume_finish_is_not_sub3_unrealistic():
     """Completion profile must not hit sub-3 currently_unrealistic for the same volume."""
     shared = dict(

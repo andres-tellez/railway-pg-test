@@ -942,6 +942,122 @@ def _build_category_assessments(
     return out
 
 
+COACH_ANALYSIS_FOR_LLM_SCHEMA = "coach_analysis_for_llm.v1"
+
+
+def build_coach_analysis_for_llm(
+    plan_generation_readiness: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Deterministic, LLM-facing summary; no new policy — derived only from readiness."""
+    if not isinstance(plan_generation_readiness, dict):
+        return {
+            "schema_version": COACH_ANALYSIS_FOR_LLM_SCHEMA,
+            "error": "invalid_readiness",
+        }
+    digest = plan_generation_readiness.get("inputs_digest") or {}
+    rp = plan_generation_readiness.get("recommended_path") or {}
+    decision = str(plan_generation_readiness.get("decision") or "").strip()
+    goal_profile = str(plan_generation_readiness.get("goal_profile") or "").strip()
+
+    facts_reviewed: List[Dict[str, str]] = []
+    if goal_profile:
+        facts_reviewed.append({"label": "Goal profile", "value": goal_profile})
+
+    goal_parts: List[str] = []
+    rd = digest.get("race_distance")
+    if rd:
+        goal_parts.append(str(rd))
+    pg = digest.get("primary_goal")
+    if pg:
+        goal_parts.append(str(pg))
+    tt = digest.get("target_time")
+    if tt:
+        goal_parts.append(f"target {tt}")
+    if goal_parts:
+        facts_reviewed.append({"label": "Goal", "value": " — ".join(goal_parts)})
+
+    weeks = digest.get("weeks_to_race")
+    if weeks is not None and str(weeks).strip():
+        facts_reviewed.append(
+            {"label": "Timeline", "value": f"{weeks} week(s) to race"}
+        )
+
+    for row in plan_generation_readiness.get("category_assessments") or []:
+        if row.get("category_id") != CATEGORY_TRAINING_AVAILABILITY:
+            continue
+        fu = row.get("facts_used") or {}
+        n = fu.get("training_day_count")
+        days = fu.get("training_days")
+        if n is not None or (isinstance(days, list) and len(days) > 0):
+            parts: List[str] = []
+            if n is not None:
+                parts.append(f"{n} running day(s)/week")
+            if isinstance(days, list) and days:
+                day_names = [
+                    str(d).strip().capitalize() for d in days if str(d).strip()
+                ]
+                if day_names:
+                    parts.append(", ".join(day_names))
+            if parts:
+                facts_reviewed.append(
+                    {"label": "Training schedule", "value": " — ".join(parts)}
+                )
+        break
+
+    avg = digest.get("avg_weekly_mileage_last_42d_mi")
+    if avg is not None and str(avg).strip():
+        facts_reviewed.append(
+            {"label": "Recent mileage (42d avg)", "value": f"{avg} mi/week"}
+        )
+
+    longest = digest.get("longest_run_last_56d_mi")
+    if longest is not None and str(longest).strip():
+        facts_reviewed.append({"label": "Longest run (56d)", "value": f"{longest} mi"})
+
+    activities = digest.get("activities_found_last_42d")
+    if activities is not None and str(activities).strip():
+        facts_reviewed.append(
+            {
+                "label": "Activity log (coverage)",
+                "value": f"{activities} logged runs in 42d — recency only, not fitness",
+            }
+        )
+
+    applicable = [
+        row
+        for row in (plan_generation_readiness.get("category_assessments") or [])
+        if row.get("applies_to_goal") is True
+    ]
+    cat_lines: List[str] = []
+    for row in applicable:
+        cid = str(row.get("category_id") or "")
+        status = str(row.get("status") or "")
+        codes = row.get("reason_codes") or []
+        code_str = ", ".join(str(c) for c in codes if str(c).strip())
+        cat_lines.append(f"{cid}: {status}" + (f" ({code_str})" if code_str else ""))
+
+    coach_read = str(rp.get("message") or "").strip()
+    if decision:
+        coach_read = f"Decision: {decision}. {coach_read}".strip()
+
+    return {
+        "schema_version": COACH_ANALYSIS_FOR_LLM_SCHEMA,
+        "goal_profile": goal_profile,
+        "decision": decision,
+        "readiness_level": str(
+            plan_generation_readiness.get("readiness_level") or ""
+        ).strip(),
+        "coach_read": coach_read,
+        "key_findings": list(plan_generation_readiness.get("key_findings") or [])[:5],
+        "facts_reviewed": facts_reviewed,
+        "applicable_category_summaries": cat_lines[:24],
+        "recommended_actions": list(
+            plan_generation_readiness.get("allowed_user_actions") or []
+        ),
+        "enforcement_codes": list(plan_generation_readiness.get("reason_codes") or []),
+    }
+
+
 def _finalize(
     builder: _ReadinessBuilder,
     *,
@@ -957,7 +1073,7 @@ def _finalize(
     limiting_factors = _ordered_unique(builder.limiting_factors)
     required_changes = _ordered_unique(builder.required_changes)
     final_decision = decision or _decision_for_level(readiness_level)
-    return {
+    core: Dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "goal_profile": goal_profile,
         "decision": final_decision,
@@ -983,6 +1099,8 @@ def _finalize(
         ),
         "inputs_digest": _input_digest(builder, goal_profile=goal_profile),
     }
+    core["coach_analysis_for_llm"] = build_coach_analysis_for_llm(core)
+    return core
 
 
 def evaluate_plan_generation_readiness(
