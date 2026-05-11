@@ -94,7 +94,14 @@ def test_full_sub_three_add_tuesday_recap_then_create_chip(monkeypatch_split_con
     s4 = update_plan_intake_state(s3b, updates={}, source_user_message="yes")
     apply_review_to_plan_intake_ux_for_phase(
         s4,
-        {"assessment_status": "ready_to_generate"},
+        {
+            "assessment_status": "ready_to_generate",
+            "plan_generation_readiness": {
+                "decision": "allow",
+                "readiness_level": "stretch",
+                "allowed_user_actions": ["create_plan", "continue_with_warning"],
+            },
+        },
         intake_confirmed=True,
     )
     assert (

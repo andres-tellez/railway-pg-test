@@ -70,9 +70,8 @@ def _readiness_allowed_actions(ux: Dict[str, Any]) -> List[str]:
 def _readiness_allows_create_plan(ux: Dict[str, Any]) -> bool:
     readiness = _plan_generation_readiness(ux)
     if not readiness:
-        return True
-    actions = _readiness_allowed_actions(ux)
-    return readiness.get("decision") == "allow" and "create_plan" in actions
+        return False
+    return readiness.get("decision") == "allow"
 
 
 def _option_allowed_by_readiness(

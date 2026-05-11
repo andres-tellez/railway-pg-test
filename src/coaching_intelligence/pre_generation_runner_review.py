@@ -421,19 +421,51 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
         parts.extend(
             [
                 "**Plan generation readiness (deterministic; do not override):**",
+                f"- goal_profile: `{readiness.get('goal_profile')}`",
                 f"- decision: `{readiness.get('decision')}`",
                 f"- readiness_level: `{readiness.get('readiness_level')}`",
                 f"- allowed_user_actions: `{', '.join(str(x) for x in list(readiness.get('allowed_user_actions') or []))}`",
                 f"- recommended_path: `{rp.get('type')}` — {rp.get('message') or ''}",
             ]
         )
+        cats = readiness.get("category_assessments")
+        if isinstance(cats, list) and cats:
+            parts.append(
+                "**Category assessments (ok / warn / bad — explain using only listed facts; do not invent signals):**"
+            )
+            for row in cats:
+                if not isinstance(row, dict):
+                    continue
+                cid = row.get("category_id")
+                st = row.get("status")
+                rcs = row.get("reason_codes") or []
+                facts = row.get("facts_used")
+                if isinstance(facts, dict) and facts:
+                    fk = ", ".join(
+                        f"{k}={facts.get(k)}"
+                        for k in sorted(facts.keys(), key=lambda x: str(x))[:10]
+                    )
+                else:
+                    fk = ""
+                rc_s = ", ".join(str(x) for x in rcs) if rcs else ""
+                appl = row.get("applies_to_goal")
+                line = f"- `{cid}`: applies_to_goal={appl}, **{st}**"
+                if rc_s:
+                    line += f"; rules: {rc_s}"
+                if fk:
+                    line += f"; facts: {fk}"
+                parts.append(line)
+            parts.append(
+                "- Only explain categories where `applies_to_goal` is true for this athlete; others are out of scope for this goal profile."
+                " No HR drift, Z2 pace, or other physiology unless a fact key explicitly includes it in `facts_used`."
+            )
     if nxt:
         parts.append(f"**Recommended next step for your prose:** {nxt}")
     parts.extend(
         [
             "- Write **one short assessment** before asking for final generate confirmation when appropriate.",
             "- The LLM may explain readiness in plain language, but must not override `decision` or offer actions absent from `allowed_user_actions`.",
-            "- Do **not** invent weekly mileage or stance labels not supported by tool/assessment data.",
+            "- Do **not** invent numbers or labels not present in review summary, readiness `inputs_digest`, or `category_assessments[].facts_used`.",
             "- In user-facing wording, avoid: **tradeoff**, **path**, **tension**, **commitment**, "
             "**coherence** (use plain running-coach language instead).",
         ]

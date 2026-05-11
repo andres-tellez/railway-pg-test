@@ -178,6 +178,11 @@ def test_ui_prompt_tradeoff_not_create_when_needs_decision_pending(
                 "plan_creation_phase": "awaiting_plan_generation_confirmation",
                 "runner_tradeoff_pending": False,
                 "runner_tradeoff_resolved": True,
+                "plan_generation_readiness": {
+                    "decision": "allow",
+                    "readiness_level": "ready",
+                    "allowed_user_actions": ["create_plan"],
+                },
             },
         }
     )
@@ -313,6 +318,52 @@ def test_plan_generation_hidden_when_readiness_defers(monkeypatch_split_confirm)
         "alignment": {},
     }
 
+    assert compute_plan_creation_ui(intake) is None
+
+
+def test_plan_generation_shown_when_decision_allow_even_if_actions_omit_create_plan(
+    monkeypatch_split_confirm,
+):
+    """Create chip follows readiness decision = allow (not the actions list alone)."""
+    intake = {
+        "ready_to_generate": True,
+        "draft": _marathon_draft(),
+        "ux": {
+            "intake_confirmed": True,
+            "runner_review_delivered": True,
+            "runner_review_assessment_status": "ready_to_generate",
+            "runner_tradeoff_resolved": True,
+            "runner_tradeoff_pending": False,
+            "plan_creation_phase": "awaiting_plan_generation_confirmation",
+            "plan_generation_readiness": {
+                "decision": "allow",
+                "readiness_level": "ready",
+                "allowed_user_actions": [],
+            },
+        },
+        "missing_required": [],
+        "alignment": {},
+    }
+    gen_ui = compute_plan_creation_ui(intake)
+    assert gen_ui is not None
+    assert gen_ui.get("field_key") == "plan_intake.plan_generation_confirm"
+
+
+def test_plan_generation_hidden_when_no_readiness_snapshot(monkeypatch_split_confirm):
+    intake = {
+        "ready_to_generate": True,
+        "draft": _marathon_draft(),
+        "ux": {
+            "intake_confirmed": True,
+            "runner_review_delivered": True,
+            "runner_review_assessment_status": "ready_to_generate",
+            "runner_tradeoff_resolved": True,
+            "runner_tradeoff_pending": False,
+            "plan_creation_phase": "awaiting_plan_generation_confirmation",
+        },
+        "missing_required": [],
+        "alignment": {},
+    }
     assert compute_plan_creation_ui(intake) is None
 
 
