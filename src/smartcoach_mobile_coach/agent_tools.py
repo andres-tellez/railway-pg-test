@@ -17,6 +17,9 @@ from src.coaching_intelligence.pre_generation_runner_assessment import (
     build_pre_generation_runner_assessment,
     extract_alignment_answer_bookkeeping,
 )
+from src.coaching_intelligence.plan_generation_readiness import (
+    evaluate_plan_generation_readiness,
+)
 from src.smartcoach_mobile_coach.config import INSIGHT_SCHEMA_VERSION
 from src.smartcoach_mobile_coach.db_helpers import (
     fetch_user_hr_profile_for_coach,
@@ -2111,6 +2114,26 @@ def tool_generate_training_plan(
         }
 
     assessment_payload = assessment.as_api_dict()
+    readiness_payload = evaluate_plan_generation_readiness(
+        plan_request=plan_request,
+        assessment_api=assessment_payload,
+    )
+    if readiness_payload.get("decision") != "allow":
+        return {
+            "error": (
+                "plan_generation_readiness_deferred"
+                if readiness_payload.get("decision") == "defer"
+                else "plan_generation_readiness_blocked"
+            ),
+            "tool": "generate_training_plan",
+            "message": (
+                "The deterministic readiness check does not allow plan generation yet. "
+                "Explain the recommendation and use the allowed actions to continue."
+            ),
+            "plan_intake_state": current_state,
+            "pre_generation_runner_assessment": assessment_payload,
+            "plan_generation_readiness": readiness_payload,
+        }
 
     if _intake_alignment_enabled():
         ambition = assessment.ambition_gap
@@ -2340,6 +2363,7 @@ def tool_generate_training_plan(
         "plan_generation": plan_generation_payload,
         "message": "Plan created and activated successfully.",
         "pre_generation_runner_assessment": assessment_payload,
+        "plan_generation_readiness": readiness_payload,
     }
 
 

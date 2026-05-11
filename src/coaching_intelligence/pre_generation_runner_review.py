@@ -400,6 +400,11 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
         str(x) for x in list(review_api.get("concerns") or []) if str(x).strip()
     ]
     nxt = str(review_api.get("recommended_next_step") or "").strip()
+    readiness = (
+        review_api.get("plan_generation_readiness")
+        if isinstance(review_api.get("plan_generation_readiness"), dict)
+        else {}
+    )
     bullets = "\n".join(f"- {s}" for s in lines[:4])
     concern_blk = "\n".join(f"- {c}" for c in concerns[:2])
     parts = [
@@ -410,11 +415,24 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
     ]
     if concern_blk:
         parts.extend(["**Concerns (address plainly):**", concern_blk])
+    if readiness:
+        rp = readiness.get("recommended_path")
+        rp = rp if isinstance(rp, dict) else {}
+        parts.extend(
+            [
+                "**Plan generation readiness (deterministic; do not override):**",
+                f"- decision: `{readiness.get('decision')}`",
+                f"- readiness_level: `{readiness.get('readiness_level')}`",
+                f"- allowed_user_actions: `{', '.join(str(x) for x in list(readiness.get('allowed_user_actions') or []))}`",
+                f"- recommended_path: `{rp.get('type')}` — {rp.get('message') or ''}",
+            ]
+        )
     if nxt:
         parts.append(f"**Recommended next step for your prose:** {nxt}")
     parts.extend(
         [
             "- Write **one short assessment** before asking for final generate confirmation when appropriate.",
+            "- The LLM may explain readiness in plain language, but must not override `decision` or offer actions absent from `allowed_user_actions`.",
             "- Do **not** invent weekly mileage or stance labels not supported by tool/assessment data.",
             "- In user-facing wording, avoid: **tradeoff**, **path**, **tension**, **commitment**, "
             "**coherence** (use plain running-coach language instead).",

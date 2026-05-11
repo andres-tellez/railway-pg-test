@@ -50,6 +50,41 @@ _WEEKDAY_CHIP_LABELS = {
 }
 
 
+def _plan_generation_readiness(ux: Dict[str, Any]) -> Dict[str, Any]:
+    readiness = ux.get("plan_generation_readiness")
+    return readiness if isinstance(readiness, dict) else {}
+
+
+def _readiness_decision(ux: Dict[str, Any]) -> str:
+    return str(_plan_generation_readiness(ux).get("decision") or "").strip()
+
+
+def _readiness_allowed_actions(ux: Dict[str, Any]) -> List[str]:
+    readiness = _plan_generation_readiness(ux)
+    actions = readiness.get("allowed_user_actions")
+    if not isinstance(actions, list):
+        return []
+    return [str(action) for action in actions if str(action or "").strip()]
+
+
+def _readiness_allows_create_plan(ux: Dict[str, Any]) -> bool:
+    readiness = _plan_generation_readiness(ux)
+    if not readiness:
+        return True
+    actions = _readiness_allowed_actions(ux)
+    return readiness.get("decision") == "allow" and "create_plan" in actions
+
+
+def _option_allowed_by_readiness(
+    ux: Dict[str, Any],
+    action_aliases: List[str],
+) -> bool:
+    allowed = set(_readiness_allowed_actions(ux))
+    if not allowed:
+        return True
+    return any(alias in allowed for alias in action_aliases)
+
+
 def _merge_base_training_days_with_one(base: List[str], add: str) -> List[str]:
     s = {str(d) for d in base if isinstance(d, str)}
     s.add(str(add).strip())
@@ -205,6 +240,64 @@ def _runner_tradeoff_ui_prompt(
         return None
     if ux.get("plan_creation_phase") != PHASE_AWAITING_TRADEOFF_CHOICE:
         return None
+    options = [
+        {
+            "id": "rt_expand",
+            "label": "Add another training day",
+            "user_message": (
+                "I'd like to add another training day — let's adjust my training days."
+            ),
+            "updates": {"runner_tradeoff_choice": "expand_running_days"},
+            "_readiness_actions": ["add_running_day", "expand_running_days"],
+        },
+        {
+            "id": "rt_goal",
+            "label": "Adjust my marathon goal",
+            "user_message": "I want to change my marathon goal or target time.",
+            "updates": {"runner_tradeoff_choice": "adjust_goal"},
+            "_readiness_actions": ["adjust_goal"],
+        },
+        {
+            "id": "rt_time",
+            "label": "Move my goal race farther out",
+            "user_message": (
+                "I want more time before my race — let's adjust my goal race date."
+            ),
+            "updates": {"runner_tradeoff_choice": "adjust_timeline"},
+            "_readiness_actions": ["adjust_timeline"],
+        },
+        {
+            "id": "rt_base",
+            "label": "Build base first",
+            "user_message": (
+                "I want to build more base first before chasing this goal."
+            ),
+            "updates": {"runner_tradeoff_choice": "build_base_first"},
+            "_readiness_actions": ["build_base_first"],
+        },
+        {
+            "id": "rt_continue",
+            "label": "Keep the current goal and schedule",
+            "user_message": (
+                "Let's keep my current goal and weekly schedule and move on to building the plan."
+            ),
+            "updates": {"runner_tradeoff_choice": "continue_tradeoff"},
+            "_readiness_actions": ["continue_tradeoff", "continue_with_warning"],
+        },
+    ]
+    filtered_options: List[Dict[str, Any]] = []
+    for option in options:
+        aliases = [
+            str(alias)
+            for alias in list(option.get("_readiness_actions") or [])
+            if str(alias).strip()
+        ]
+        if _option_allowed_by_readiness(ux, aliases):
+            cleaned = dict(option)
+            cleaned.pop("_readiness_actions", None)
+            filtered_options.append(cleaned)
+    if not filtered_options:
+        return None
     return {
         "version": 1,
         "field_key": "plan_intake.runner_tradeoff",
@@ -212,38 +305,7 @@ def _runner_tradeoff_ui_prompt(
         "selection_mode": "single",
         "required": True,
         "prompt": "A few options before we build your plan:",
-        "options": [
-            {
-                "id": "rt_expand",
-                "label": "Add another training day",
-                "user_message": (
-                    "I'd like to add another training day — let's adjust my training days."
-                ),
-                "updates": {"runner_tradeoff_choice": "expand_running_days"},
-            },
-            {
-                "id": "rt_goal",
-                "label": "Adjust my marathon goal",
-                "user_message": "I want to change my marathon goal or target time.",
-                "updates": {"runner_tradeoff_choice": "adjust_goal"},
-            },
-            {
-                "id": "rt_time",
-                "label": "Move my goal race farther out",
-                "user_message": (
-                    "I want more time before my race — let's adjust my goal race date."
-                ),
-                "updates": {"runner_tradeoff_choice": "adjust_timeline"},
-            },
-            {
-                "id": "rt_continue",
-                "label": "Keep the current goal and schedule",
-                "user_message": (
-                    "Let's keep my current goal and weekly schedule and move on to building the plan."
-                ),
-                "updates": {"runner_tradeoff_choice": "continue_tradeoff"},
-            },
-        ],
+        "options": filtered_options,
     }
 
 
@@ -262,6 +324,8 @@ def _plan_generation_confirm_ui_prompt(
     if ux.get("plan_generation_confirmed"):
         return None
     if ux.get("runner_review_assessment_status") == "needs_more_info":
+        return None
+    if not _readiness_allows_create_plan(ux):
         return None
     if ux.get("runner_tradeoff_edit_focus") in ("goal", "timeline"):
         return None
@@ -338,9 +402,19 @@ def recompute_plan_creation_phase(state: Dict[str, Any]) -> None:
         ux["plan_creation_phase"] = PHASE_COLLECTING_TIMELINE_ADJUSTMENT
         state["ux"] = ux
         return
+    if ux.get("runner_tradeoff_edit_focus") == "base":
+        ux["plan_creation_phase"] = PHASE_COLLECTING_GOAL_ADJUSTMENT
+        state["ux"] = ux
+        return
 
     if ra == "needs_more_info":
         ux["plan_creation_phase"] = PHASE_COLLECTING_INTAKE
+        state["ux"] = ux
+        return
+
+    readiness_decision = _readiness_decision(ux)
+    if readiness_decision in ("defer", "block"):
+        ux["plan_creation_phase"] = PHASE_AWAITING_TRADEOFF_CHOICE
         state["ux"] = ux
         return
 
@@ -400,6 +474,9 @@ def apply_review_to_plan_intake_ux_for_phase(
         ra = str(runner_review_api.get("assessment_status") or "")
         prev_ra = str(uxs.get("runner_review_assessment_status") or "")
         uxs["runner_review_assessment_status"] = ra
+        readiness = runner_review_api.get("plan_generation_readiness")
+        if isinstance(readiness, dict):
+            uxs["plan_generation_readiness"] = readiness
         tradeoff_ok = bool(uxs.get("runner_tradeoff_resolved"))
         if ra == "needs_user_decision":
             if prev_ra == "ready_to_generate" and tradeoff_ok:

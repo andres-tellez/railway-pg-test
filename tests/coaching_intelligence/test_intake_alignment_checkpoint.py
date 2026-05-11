@@ -34,7 +34,11 @@ def test_generate_plan_pauses_for_high_tension_when_alignment_enabled(monkeypatc
     monkeypatch.setattr(
         pgra,
         "compute_plan_intake_activity_summary",
-        lambda **_kwargs: {"avg_miles_per_week_approx": 10.0, "longest_run_miles": 8.0},
+        lambda **_kwargs: {
+            "avg_miles_per_week_approx": 10.0,
+            "longest_run_miles": 8.0,
+            "activities_found": 8,
+        },
     )
     monkeypatch.setattr(
         pgra,
@@ -56,15 +60,14 @@ def test_generate_plan_pauses_for_high_tension_when_alignment_enabled(monkeypatc
         current_state=_state(),
     )
 
-    assert out["error"] == "alignment_required"
-    assert out["alignment_brief"]["allowed_question_categories"] == [
-        "frequency_flexibility",
-    ]
+    assert out["error"] == "plan_generation_readiness_deferred"
     assert out["pre_generation_runner_assessment"]["schema_version"].endswith(".v1")
     assert (
         out["pre_generation_runner_assessment"]["ambition_gap"]["stance"]
         == "HIGH_TENSION"
     )
+    assert out["plan_generation_readiness"]["decision"] == "defer"
+    assert "create_plan" not in out["plan_generation_readiness"]["allowed_user_actions"]
     assert run_mock.called is False
 
 
@@ -81,6 +84,7 @@ def test_generate_plan_coherent_path_still_invokes_planner(monkeypatch):
         lambda **_kwargs: {
             "avg_miles_per_week_approx": 40.0,
             "longest_run_miles": 16.0,
+            "activities_found": 16,
         },
     )
     monkeypatch.setattr(
@@ -101,11 +105,14 @@ def test_generate_plan_coherent_path_still_invokes_planner(monkeypatch):
         agent_tools, "run_v2_plan_generation", _raise_after_reaching_planner
     )
 
+    state = _state()
+    state["draft"]["training_days"] = ["Mon", "Tue", "Thu", "Sat", "Sun"]
+
     out = agent_tools.tool_generate_training_plan(
         session=MagicMock(),
         internal_user_id="u-1",
         args={"confirm": True},
-        current_state=_state(),
+        current_state=state,
     )
 
     assert out["error"] == "plan_generation_failed"
@@ -124,6 +131,7 @@ def test_feature_flag_off_preserves_legacy_generation_path(monkeypatch):
         lambda **_kwargs: {
             "avg_miles_per_week_approx": 30.0,
             "longest_run_miles": 10.0,
+            "activities_found": 10,
         },
     )
 
@@ -146,17 +154,22 @@ def test_feature_flag_off_preserves_legacy_generation_path(monkeypatch):
         agent_tools, "run_v2_plan_generation", _raise_after_reaching_planner
     )
 
+    state = _state()
+    state["draft"]["primary_goal"] = "Just Finish"
+    state["draft"]["target_time"] = ""
+    state["draft"]["training_days"] = ["Tue", "Thu", "Sat", "Sun"]
+
     out = agent_tools.tool_generate_training_plan(
         session=MagicMock(),
         internal_user_id="u-1",
         args={"confirm": True},
-        current_state=_state(),
+        current_state=state,
     )
 
     assert out["error"] == "plan_generation_failed"
 
 
-def test_high_tension_resolved_still_uses_same_planner_path(monkeypatch):
+def test_high_tension_resolved_still_obeys_readiness_gate(monkeypatch):
     monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "true")
     monkeypatch.setattr(
         agent_tools,
@@ -166,7 +179,11 @@ def test_high_tension_resolved_still_uses_same_planner_path(monkeypatch):
     monkeypatch.setattr(
         pgra,
         "compute_plan_intake_activity_summary",
-        lambda **_kwargs: {"avg_miles_per_week_approx": 10.0, "longest_run_miles": 8.0},
+        lambda **_kwargs: {
+            "avg_miles_per_week_approx": 10.0,
+            "longest_run_miles": 8.0,
+            "activities_found": 8,
+        },
     )
     monkeypatch.setattr(
         pgra,
@@ -203,7 +220,11 @@ def test_high_tension_resolved_still_uses_same_planner_path(monkeypatch):
         current_state=state,
     )
 
-    assert out["error"] == "plan_generation_failed"
+    assert out["error"] == "plan_generation_readiness_deferred"
+    assert out["plan_generation_readiness"]["readiness_level"] in (
+        "currently_unrealistic",
+        "high_risk",
+    )
 
 
 def test_pre_generation_assessment_failure_is_structured_and_skips_planner(monkeypatch):

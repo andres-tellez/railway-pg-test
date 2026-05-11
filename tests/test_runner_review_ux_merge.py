@@ -290,3 +290,59 @@ def test_plan_generation_hidden_when_edit_focus_goal(monkeypatch_split_confirm):
     }
     _finalize_phase(intake)
     assert compute_plan_creation_ui(intake) is None
+
+
+def test_plan_generation_hidden_when_readiness_defers(monkeypatch_split_confirm):
+    intake = {
+        "ready_to_generate": True,
+        "draft": _marathon_draft(),
+        "ux": {
+            "intake_confirmed": True,
+            "runner_review_delivered": True,
+            "runner_review_assessment_status": "ready_to_generate",
+            "runner_tradeoff_resolved": True,
+            "runner_tradeoff_pending": False,
+            "plan_creation_phase": "awaiting_plan_generation_confirmation",
+            "plan_generation_readiness": {
+                "decision": "defer",
+                "readiness_level": "high_risk",
+                "allowed_user_actions": ["add_running_day", "adjust_goal"],
+            },
+        },
+        "missing_required": [],
+        "alignment": {},
+    }
+
+    assert compute_plan_creation_ui(intake) is None
+
+
+def test_currently_unrealistic_tradeoff_filters_continue(monkeypatch_split_confirm):
+    intake = {
+        "ready_to_generate": True,
+        "draft": _marathon_draft(),
+        "ux": {
+            "intake_confirmed": True,
+            "runner_review_delivered": True,
+            "runner_review_assessment_status": "needs_user_decision",
+            "runner_tradeoff_pending": True,
+            "runner_tradeoff_resolved": False,
+            "plan_generation_readiness": {
+                "decision": "defer",
+                "readiness_level": "currently_unrealistic",
+                "allowed_user_actions": [
+                    "add_running_day",
+                    "adjust_goal",
+                    "adjust_timeline",
+                    "build_base_first",
+                ],
+            },
+        },
+        "missing_required": [],
+        "alignment": {},
+    }
+    _finalize_phase(intake)
+
+    tradeoff = compute_plan_creation_ui(intake)
+    option_ids = {o["id"] for o in tradeoff.get("options") or []}
+    assert "rt_continue" not in option_ids
+    assert option_ids == {"rt_expand", "rt_goal", "rt_time", "rt_base"}

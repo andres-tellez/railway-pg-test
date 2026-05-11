@@ -246,6 +246,7 @@ _VALID_STRUCTURED_RUNNER_TRADEOFF_CHOICES = frozenset(
         "continue_tradeoff",
         "adjust_goal",
         "adjust_timeline",
+        "build_base_first",
     }
 )
 

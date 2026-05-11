@@ -41,6 +41,9 @@ from src.services.security.external_apis.openai_service import get_openai_servic
 from src.coaching_intelligence.pre_generation_runner_assessment import (
     build_pre_generation_runner_assessment,
 )
+from src.coaching_intelligence.plan_generation_readiness import (
+    evaluate_plan_generation_readiness,
+)
 from src.coaching_intelligence.pre_generation_runner_review import (
     build_pre_generation_runner_review_v1,
     pre_generation_runner_review_system_section,
@@ -2013,6 +2016,24 @@ def _join_nonempty_system_sections(*sections: str) -> str:
     return "\n\n".join(s.strip() for s in sections if (s or "").strip())
 
 
+def _assessment_status_from_readiness(readiness_api: Dict[str, Any]) -> str:
+    decision = str(readiness_api.get("decision") or "").strip()
+    readiness_level = str(readiness_api.get("readiness_level") or "").strip()
+    required_changes = {
+        str(change)
+        for change in list(readiness_api.get("required_changes") or [])
+        if str(change).strip()
+    }
+    if decision == "allow":
+        return "ready_to_generate"
+    if (
+        readiness_level == "insufficient_data"
+        and "complete_alignment_questions" in required_changes
+    ):
+        return "needs_more_info"
+    return "needs_user_decision"
+
+
 def _try_build_runner_review_bundle(
     session: Session,
     internal_user_id: str,
@@ -2049,11 +2070,19 @@ def _try_build_runner_review_bundle(
             alignment_enabled=_intake_alignment_enabled(),
         )
         assessment_api = assessment.as_api_dict()
+        readiness_api = evaluate_plan_generation_readiness(
+            plan_request=plan_request,
+            assessment_api=assessment_api,
+        )
         review = build_pre_generation_runner_review_v1(
             assessment_api=assessment_api,
             plan_request=plan_request,
         )
         review_api = review.as_api_dict()
+        review_api["assessment_status"] = _assessment_status_from_readiness(
+            readiness_api
+        )
+        review_api["plan_generation_readiness"] = readiness_api
         section = pre_generation_runner_review_system_section(review_api)
         return (section, review_api)
     except Exception:

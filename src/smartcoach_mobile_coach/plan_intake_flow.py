@@ -68,6 +68,7 @@ def _clear_plan_confirmation_ux(ux: Dict[str, Any]) -> None:
     ux.pop("runner_tradeoff_pending", None)
     ux.pop("runner_tradeoff_resolved", None)
     ux.pop("runner_review_assessment_status", None)
+    ux.pop("plan_generation_readiness", None)
     ux.pop("runner_tradeoff_edit_focus", None)
     ux.pop("runner_add_day_pick_pending", None)
     ux.pop("expansion_base_training_days", None)
@@ -1477,6 +1478,8 @@ def update_plan_intake_state(
                 ux["runner_tradeoff_edit_focus"] = "goal"
             elif choice == "adjust_timeline":
                 ux["runner_tradeoff_edit_focus"] = "timeline"
+            elif choice == "build_base_first":
+                ux["runner_tradeoff_edit_focus"] = "base"
 
     _fill_race_distance_from_named_event(draft)
     _fill_race_name_from_user_text(draft, source_user_message)

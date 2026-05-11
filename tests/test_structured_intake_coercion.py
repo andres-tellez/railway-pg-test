@@ -29,6 +29,18 @@ def test_coerce_normalizes_tradeoff_choice_case():
     }
 
 
+def test_coerce_passes_build_base_first_tradeoff_choice():
+    payload = {
+        "structured_input": {
+            "kind": "update_plan_intake",
+            "updates": {"runner_tradeoff_choice": "build_base_first"},
+        }
+    }
+    assert _coerce_structured_intake_updates(payload) == {
+        "runner_tradeoff_choice": "build_base_first"
+    }
+
+
 def test_coerce_drops_unknown_tradeoff_choice():
     payload = {
         "structured_input": {
