@@ -38,7 +38,16 @@ from sqlalchemy import text
 from src.db.dao.user_profile_dao import get_user_profile
 from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
 from src.services.security.external_apis.openai_service import get_openai_service
+from src.coaching_intelligence.pre_generation_runner_assessment import (
+    build_pre_generation_runner_assessment,
+)
+from src.coaching_intelligence.pre_generation_runner_review import (
+    build_pre_generation_runner_review_v1,
+    pre_generation_runner_review_system_section,
+    runner_review_feature_enabled,
+)
 from src.smartcoach_mobile_coach.agent_tools import (
+    _intake_alignment_enabled,
     execute_tool,
     tool_generate_training_plan,
     tool_update_plan_intake,
@@ -79,6 +88,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     _human_missing_label,
     alignment_pause_coaching_facts_system_section,
     build_core_structured_ui_prompt,
+    build_plan_request_from_state,
     mark_plan_runner_understanding_shown,
     plan_intake_alignment_pause_active,
     plan_intake_premature_confirmation_reply,
@@ -1995,6 +2005,49 @@ def _join_nonempty_system_sections(*sections: str) -> str:
     return "\n\n".join(s.strip() for s in sections if (s or "").strip())
 
 
+def _try_build_runner_review_bundle(
+    session: Session,
+    internal_user_id: str,
+    plan_intake_state: Dict[str, Any],
+) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """
+    Build optional pre-generation runner review system section + API dict.
+
+    Returns ``("", None)`` when the feature is off, intake is not
+    ``ready_to_generate``, or assessment/plan_request construction fails.
+    Failures are logged and never break the turn.
+    """
+    if not runner_review_feature_enabled():
+        return ("", None)
+    if not isinstance(plan_intake_state, dict) or not plan_intake_state.get(
+        "ready_to_generate"
+    ):
+        return ("", None)
+    try:
+        plan_request = build_plan_request_from_state(plan_intake_state)
+        assessment = build_pre_generation_runner_assessment(
+            session,
+            str(internal_user_id),
+            plan_request=plan_request,
+            plan_intake_state=plan_intake_state,
+            alignment_enabled=_intake_alignment_enabled(),
+        )
+        assessment_api = assessment.as_api_dict()
+        review = build_pre_generation_runner_review_v1(
+            assessment_api=assessment_api,
+            plan_request=plan_request,
+        )
+        review_api = review.as_api_dict()
+        section = pre_generation_runner_review_system_section(review_api)
+        return (section, review_api)
+    except Exception:
+        logger.warning(
+            "[smartcoach_mobile_coach] pre_generation_runner_review_bundle_failed",
+            exc_info=True,
+        )
+        return ("", None)
+
+
 def _plan_creation_minimal_system_content(
     *,
     plan_intake_ctx: Optional[Dict[str, Any]],
@@ -2004,6 +2057,7 @@ def _plan_creation_minimal_system_content(
     response_directive: ResponseDirective,
     user_message: str,
     thread_ctx: Any,
+    pre_generation_review_section: str = "",
 ) -> str:
     """Minimal plan-creation system prompt (same sections as the pre-loop build)."""
     return _join_nonempty_system_sections(
@@ -2012,6 +2066,7 @@ def _plan_creation_minimal_system_content(
         _plan_intake_phase_system_section(plan_intake_ctx),
         _device_anchor_system_section(anchor_local_date, client_timezone),
         activity_ctx_block,
+        pre_generation_review_section,
         alignment_pause_coaching_facts_system_section(plan_intake_ctx),
         schedule_confirmation_system_section(plan_intake_ctx),
         _plan_creation_directive_stub(response_directive),
@@ -3250,6 +3305,13 @@ def run_mobile_agent_turn(
         else None
     )
     if plan_creation_mode and not use_full_prompt_for_plan:
+        pre_generation_review_section = ""
+        if isinstance(plan_intake_ctx, dict):
+            pre_generation_review_section, _ = _try_build_runner_review_bundle(
+                session,
+                str(internal_user_id),
+                plan_intake_ctx,
+            )
         system_content = _plan_creation_minimal_system_content(
             plan_intake_ctx=plan_intake_ctx,
             anchor_local_date=anchor_local_date,
@@ -3258,6 +3320,7 @@ def run_mobile_agent_turn(
             response_directive=response_directive,
             user_message=user_message,
             thread_ctx=thread_ctx,
+            pre_generation_review_section=pre_generation_review_section,
         )
     else:
         base_block = MINIMAL_SYSTEM_PROMPT_BASE if use_min_base else SYSTEM_PROMPT_BASE
@@ -3812,6 +3875,13 @@ def run_mobile_agent_turn(
                 and messages
                 and messages[0].get("role") == "system"
             ):
+                pre_generation_review_section = ""
+                if isinstance(intake_state_from_tools, dict):
+                    pre_generation_review_section, _ = _try_build_runner_review_bundle(
+                        session,
+                        str(internal_user_id),
+                        intake_state_from_tools,
+                    )
                 messages[0]["content"] = _plan_creation_minimal_system_content(
                     plan_intake_ctx=intake_state_from_tools,
                     anchor_local_date=anchor_local_date,
@@ -3823,6 +3893,7 @@ def run_mobile_agent_turn(
                         thread_ctx,
                         latest_plan_intake_state=intake_state_from_tools,
                     ),
+                    pre_generation_review_section=pre_generation_review_section,
                 )
             loop_details.append(loop_entry)
             continue
@@ -3989,6 +4060,15 @@ def run_mobile_agent_turn(
                     ui_prompt = _ui_prompt_from_plan_intake_state(pis_merged)
                     if isinstance(ui_prompt, dict):
                         structured_text["data"]["ui_prompt"] = ui_prompt
+                    _, runner_review_api = _try_build_runner_review_bundle(
+                        session,
+                        str(internal_user_id),
+                        pis_merged,
+                    )
+                    if runner_review_api is not None:
+                        structured_text["data"][
+                            "pre_generation_runner_review"
+                        ] = runner_review_api
                 if latest_plan_generation is not None:
                     structured_text["data"]["plan_generation"] = latest_plan_generation
                 logger.info(
