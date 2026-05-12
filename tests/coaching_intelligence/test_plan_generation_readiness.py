@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from src.coaching_intelligence.plan_generation_readiness import (
     CATEGORY_CONSISTENCY,
@@ -10,6 +11,7 @@ from src.coaching_intelligence.plan_generation_readiness import (
     CATEGORY_GOAL_DEMAND,
     CATEGORY_LONG_RUN_DURABILITY,
     CATEGORY_ORDER,
+    CATEGORY_PERFORMANCE_ALIGNMENT,
     CATEGORY_TIMELINE,
     CATEGORY_TRAINING_AVAILABILITY,
     CATEGORY_VOLUME_BASELINE,
@@ -58,6 +60,7 @@ def _assessment(
     goal_demand: str = "TIME_TARGET",
     alignment_ready: bool = True,
     unresolved_flags: list[str] | None = None,
+    **activity_extras: Any,
 ) -> dict:
     act: dict = {
         "avg_miles_per_week_approx": avg_mpw,
@@ -66,6 +69,7 @@ def _assessment(
         "lookback_weeks": 6,
         "completed_calendar_weeks_count": 4 if activities_found > 0 else 0,
     }
+    act.update(activity_extras)
     return {
         "schema_version": "pre_generation_runner_assessment.v1",
         "activity_summary": act,
@@ -139,6 +143,13 @@ def test_sub3_established_profile_allows_with_stretch_warning():
             activities_found=20,
             baseline_band="ESTABLISHED",
             stance="COHERENT",
+            typical_easy_pace_sec_per_mi=420.0,
+            best_sustained_endurance_pace_sec_per_mi=405.0,
+            pace_reliability="high",
+            runs_usable_pace_count=18,
+            long_runs_ge_10_mi_count=5,
+            weeks_with_long_run_10plus=4,
+            long_run_progression_trend="flat",
         ),
     )
 
@@ -146,6 +157,58 @@ def test_sub3_established_profile_allows_with_stretch_warning():
     assert out["readiness_level"] == LEVEL_STRETCH
     assert "RULE_SUB3_ESTABLISHED_BASELINE" in out["reason_codes"]
     assert "create_plan" in out["allowed_user_actions"]
+
+
+def test_sub3_established_but_slow_observed_pace_escalates_to_high_risk():
+    """P1: performance_alignment dominates — training structure can look fine while paces lag goal MP."""
+    out = evaluate_plan_generation_readiness(
+        plan_request=_plan(training_days=["Mon", "Tue", "Thu", "Sat", "Sun"]),
+        assessment_api=_assessment(
+            avg_mpw=42.0,
+            longest=16.0,
+            activities_found=20,
+            baseline_band="ESTABLISHED",
+            stance="COHERENT",
+            typical_easy_pace_sec_per_mi=560.0,
+            best_sustained_endurance_pace_sec_per_mi=530.0,
+            pace_reliability="medium",
+            runs_usable_pace_count=10,
+            long_runs_ge_10_mi_count=4,
+            weeks_with_long_run_10plus=3,
+            long_run_progression_trend="flat",
+        ),
+    )
+
+    assert out["readiness_level"] == LEVEL_HIGH_RISK
+    assert "RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE" in out["reason_codes"]
+    by_id = {c["category_id"]: c for c in out["category_assessments"]}
+    assert by_id[CATEGORY_PERFORMANCE_ALIGNMENT]["status"] == STATUS_BAD
+
+
+def test_sub3_sparse_long_run_pattern_escalates():
+    """P2: durability quality — one long effort is not a pattern."""
+    out = evaluate_plan_generation_readiness(
+        plan_request=_plan(training_days=["Mon", "Tue", "Thu", "Sat", "Sun"]),
+        assessment_api=_assessment(
+            avg_mpw=42.0,
+            longest=16.0,
+            activities_found=12,
+            baseline_band="ESTABLISHED",
+            stance="COHERENT",
+            typical_easy_pace_sec_per_mi=418.0,
+            best_sustained_endurance_pace_sec_per_mi=402.0,
+            pace_reliability="high",
+            runs_usable_pace_count=14,
+            long_runs_ge_10_mi_count=1,
+            weeks_with_long_run_10plus=1,
+            long_run_progression_trend="flat",
+            lookback_weeks=8,
+            active_weeks=6,
+            completed_calendar_weeks_count=6,
+        ),
+    )
+    assert out["readiness_level"] == LEVEL_HIGH_RISK
+    assert "RULE_LONG_RUN_PATTERN_THIN" in out["reason_codes"]
 
 
 def test_unresolved_alignment_defers_for_missing_alignment_answer():
@@ -272,7 +335,7 @@ def test_v2_schema_category_assessments_shape_and_order():
         assessment_api=_assessment(),
     )
     assert out["schema_version"] == SCHEMA_VERSION
-    assert SCHEMA_VERSION == "plan_generation_readiness.v2.1"
+    assert SCHEMA_VERSION == "plan_generation_readiness.v2.2"
     assert out["goal_profile"] == GOAL_PROFILE_COMPETITIVE_PERFORMANCE
     cats = out.get("category_assessments")
     assert isinstance(cats, list)
@@ -330,6 +393,7 @@ def test_ready_coherent_finish_goal_marks_most_categories_ok():
         assert by_id[cid]["status"] == STATUS_OK
     assert by_id[CATEGORY_EFFORT_CONTROL]["applies_to_goal"] is False
     assert by_id[CATEGORY_EFFORT_CONTROL]["status"] == STATUS_OK
+    assert by_id[CATEGORY_PERFORMANCE_ALIGNMENT]["applies_to_goal"] is False
 
 
 def test_coach_analysis_for_llm_matches_readiness_and_omits_non_applicable_categories():

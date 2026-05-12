@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from sqlalchemy.orm import Session
 
@@ -128,6 +128,181 @@ def _weekly_mileage_stats(
     }
 
 
+_MIN_MOVING_TIME_SEC_FOR_PACE = 20 * 60
+_MIN_DISTANCE_MI_PACE_SAMPLE = 3.0
+_MIN_DISTANCE_MI_SUSTAINED = 8.0
+_LONG_RUN_GEOFENCE_MI = 10.0
+_LONG_RUN_12_MI = 12.0
+
+
+def _pace_sec_per_mile(distance_mi: float, moving_time_s: int) -> Optional[float]:
+    if distance_mi <= 0 or moving_time_s <= 0:
+        return None
+    return float(moving_time_s) / float(distance_mi)
+
+
+def _median_float(values: List[float]) -> Optional[float]:
+    if not values:
+        return None
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    if n % 2:
+        return float(s[mid])
+    return (float(s[mid - 1]) + float(s[mid])) / 2.0
+
+
+def _performance_and_long_run_signals(
+    activities: List[Dict[str, Any]],
+    *,
+    anchor_date: date,
+    lookback_weeks: int,
+) -> Dict[str, Any]:
+    """
+    P0/P2 deterministic signals for readiness — pace proxies, reliability, long-run pattern.
+
+    Pace is **observational** (Strava distance + moving time), not a physiology model.
+    """
+    empty = {
+        "pace_reliability": "none",
+        "runs_usable_pace_count": 0,
+        "typical_easy_pace_sec_per_mi": None,
+        "best_sustained_endurance_pace_sec_per_mi": None,
+        "hr_coverage_ratio": None,
+        "long_runs_ge_10_mi_count": 0,
+        "long_runs_ge_12_mi_count": 0,
+        "weeks_with_long_run_10plus": 0,
+        "long_run_progression_trend": "unknown",
+    }
+    if not activities or lookback_weeks <= 0:
+        return dict(empty)
+
+    max_dist = 0.0
+    dated_rows: List[tuple[date, float, int]] = []
+    usable_paces: List[float] = []
+    sustained_paces: List[float] = []
+
+    for a in activities:
+        try:
+            d_mi = float(a.get("distance") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        try:
+            mt = int(a.get("moving_time") or 0)
+        except (TypeError, ValueError):
+            mt = 0
+        dt = _parse_activity_date(a.get("date"))
+        if dt is None:
+            continue
+        d_only = dt.date()
+        pace = _pace_sec_per_mile(d_mi, mt)
+        dated_rows.append((d_only, d_mi, mt))
+        max_dist = max(max_dist, d_mi)
+        if (
+            pace is not None
+            and mt >= _MIN_MOVING_TIME_SEC_FOR_PACE
+            and d_mi >= _MIN_DISTANCE_MI_PACE_SAMPLE
+        ):
+            usable_paces.append(pace)
+            if d_mi >= _MIN_DISTANCE_MI_SUSTAINED:
+                sustained_paces.append(pace)
+
+    easy_threshold = max(6.0, max_dist * 0.88) if max_dist > 0 else 6.0
+    easy_paces: List[float] = []
+    for a in activities:
+        try:
+            d_mi = float(a.get("distance") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        try:
+            mt = int(a.get("moving_time") or 0)
+        except (TypeError, ValueError):
+            mt = 0
+        pace = _pace_sec_per_mile(d_mi, mt)
+        if (
+            pace is not None
+            and mt >= _MIN_MOVING_TIME_SEC_FOR_PACE
+            and d_mi >= _MIN_DISTANCE_MI_PACE_SAMPLE
+            and d_mi <= easy_threshold
+        ):
+            easy_paces.append(pace)
+
+    typical_easy = (
+        _median_float(easy_paces) if easy_paces else _median_float(usable_paces)
+    )
+    best_sustained = min(sustained_paces) if sustained_paces else None
+
+    n_pace = len(usable_paces)
+    if n_pace < 3:
+        pace_rel = "none"
+    elif n_pace < 5:
+        pace_rel = "low"
+    elif n_pace < 12:
+        pace_rel = "medium"
+    else:
+        pace_rel = "high"
+
+    hr_n = 0
+    for a in activities:
+        hr = a.get("average_heartrate")
+        if hr is None:
+            continue
+        try:
+            float(hr)
+        except (TypeError, ValueError):
+            continue
+        hr_n += 1
+    hr_ratio = hr_n / float(len(activities)) if activities else None
+
+    n10 = n12 = 0
+    weeks_lr: Set[date] = set()
+    for d_only, d_mi, _mt in dated_rows:
+        if d_mi >= _LONG_RUN_12_MI:
+            n12 += 1
+        if d_mi >= _LONG_RUN_GEOFENCE_MI:
+            n10 += 1
+            weeks_lr.add(_monday_of_calendar_week(d_only))
+
+    trend = "unknown"
+    if dated_rows:
+        all_dates = sorted({d for d, _, _ in dated_rows})
+        if len(all_dates) >= 2:
+            mid_date = all_dates[len(all_dates) // 2]
+            first_half_max = max(
+                (dm for d, dm, _ in dated_rows if d < mid_date and dm >= 8.0),
+                default=0.0,
+            )
+            second_half_max = max(
+                (dm for d, dm, _ in dated_rows if d >= mid_date and dm >= 8.0),
+                default=0.0,
+            )
+            if first_half_max <= 0 and second_half_max <= 0:
+                trend = "unknown"
+            elif second_half_max > first_half_max + 1.5:
+                trend = "up"
+            elif first_half_max > second_half_max + 1.5:
+                trend = "down"
+            else:
+                trend = "flat"
+
+    out: Dict[str, Any] = {
+        "pace_reliability": pace_rel,
+        "runs_usable_pace_count": n_pace,
+        "typical_easy_pace_sec_per_mi": (
+            round(typical_easy, 1) if typical_easy else None
+        ),
+        "best_sustained_endurance_pace_sec_per_mi": (
+            round(best_sustained, 1) if best_sustained else None
+        ),
+        "hr_coverage_ratio": round(hr_ratio, 3) if hr_ratio is not None else None,
+        "long_runs_ge_10_mi_count": n10,
+        "long_runs_ge_12_mi_count": n12,
+        "weeks_with_long_run_10plus": len(weeks_lr),
+        "long_run_progression_trend": trend,
+    }
+    return out
+
+
 def _effort_control_summary(activities: List[Dict[str, Any]]) -> Dict[str, Any]:
     counts = {"too_hard": 0, "too_easy": 0, "on_target": 0}
     for a in activities:
@@ -197,6 +372,9 @@ def compute_plan_intake_activity_summary(
         latest_date = str(d0) if d0 else None
     weekly_stats = _weekly_mileage_stats(activities, w)
     effort_stats = _effort_control_summary(activities)
+    perf_lr_stats = _performance_and_long_run_signals(
+        activities, anchor_date=anchor, lookback_weeks=w
+    )
     cal_stats = _calendar_week_volume_stats(activities, anchor_date=anchor)
     completed_n = int(cal_stats.get("completed_calendar_weeks_count") or 0)
     # Primary coaching baseline: typical complete weeks only (excludes partial current week).
@@ -227,6 +405,7 @@ def compute_plan_intake_activity_summary(
         **cal_stats,
         **weekly_stats,
         **effort_stats,
+        **perf_lr_stats,
     }
 
 

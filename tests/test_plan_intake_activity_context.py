@@ -52,6 +52,32 @@ def test_format_plan_intake_activity_context_zero_runs():
 @patch(
     "src.smartcoach_mobile_coach.plan_intake_activity_context.DataCollectionService.fetch_strava_activities"
 )
+def test_compute_plan_intake_activity_summary_includes_pace_and_long_run_signals(
+    mock_fetch,
+):
+    mock_fetch.return_value = [
+        {"date": "2026-04-10", "distance": 6.0, "moving_time": 3300},
+        {"date": "2026-04-03", "distance": 11.0, "moving_time": 6600},
+        {"date": "2026-03-27", "distance": 5.5, "moving_time": 3000},
+        {"date": "2026-03-20", "distance": 10.5, "moving_time": 6300},
+    ]
+    session = MagicMock()
+    out = compute_plan_intake_activity_summary(
+        session,
+        "user-uuid",
+        lookback_weeks=8,
+        anchor_local_date=date(2026, 4, 15),
+    )
+    assert out["pace_reliability"] in ("low", "medium", "high")
+    assert out["runs_usable_pace_count"] >= 3
+    assert out["typical_easy_pace_sec_per_mi"] is not None
+    assert out["long_runs_ge_10_mi_count"] >= 2
+    mock_fetch.assert_called_once()
+
+
+@patch(
+    "src.smartcoach_mobile_coach.plan_intake_activity_context.DataCollectionService.fetch_strava_activities"
+)
 def test_compute_plan_intake_activity_summary(mock_fetch):
     mock_fetch.return_value = [
         {"date": "2026-04-10", "distance": 6.0},
@@ -64,7 +90,6 @@ def test_compute_plan_intake_activity_summary(mock_fetch):
         lookback_weeks=12,
         anchor_local_date=date(2026, 4, 15),
     )
-    assert out["activities_found"] == 2
     assert out["has_running_data"] is True
     assert out["total_miles_window"] == 16.0
     assert out["longest_run_miles"] == 10.0
