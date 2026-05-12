@@ -602,3 +602,86 @@ def test_plan_request_digest_json_serializable_for_pydantic_date_race():
         }
     )
     assert json.loads(json.dumps(digest))["race_date"] == "2026-10-11"
+
+
+def _assessment_sub3_perf_durability_freq_stack(**overrides: Any) -> dict:
+    """Baseline body: sub-3 time target + 3 days + large pace gap + thin long runs."""
+    base: dict = {
+        "avg_mpw": 42.0,
+        "longest": 16.0,
+        "activities_found": 20,
+        "baseline_band": "ESTABLISHED",
+        "stance": "COHERENT",
+        "typical_easy_pace_sec_per_mi": 560.0,
+        "best_sustained_endurance_pace_sec_per_mi": 530.0,
+        "pace_reliability": "medium",
+        "runs_usable_pace_count": 10,
+        "long_runs_ge_10_mi_count": 1,
+        "weeks_with_long_run_10plus": 1,
+        "long_run_progression_trend": "flat",
+    }
+    base.update(overrides)
+    return _assessment(**base)
+
+
+def test_sub3_unsupported_perf_gap_orders_main_reasons_and_softens_frequency():
+    """Performance → durability → frequency; frequency is never the sole concern line."""
+    out = evaluate_plan_generation_readiness(
+        plan_request=_plan(training_days=["Mon", "Wed", "Sat"]),
+        assessment_api=_assessment_sub3_perf_durability_freq_stack(),
+    )
+    rc = set(out["reason_codes"])
+    assert "RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE" in rc
+    assert rc & {
+        "RULE_LONG_RUN_PATTERN_THIN",
+        "RULE_LONG_RUN_FREQUENCY_LOW",
+    }
+    assert "RULE_SUB3_THREE_DAYS_HIGH_RISK" in rc
+
+    why = out["runner_analysis_display"]["why_concerned"]
+    assert len(why) >= 3
+    assert "observed paces" in why[0].lower()
+    assert "durability" in why[1].lower()
+    low2 = why[2].lower()
+    assert "three" in low2 and "day" in low2
+    assert "also" in low2
+    assert "/mi/mi" not in " ".join(why)
+
+
+def test_sub3_unsupported_large_perf_gap_user_actions_adjust_goal_only():
+    out = evaluate_plan_generation_readiness(
+        plan_request=_plan(training_days=["Mon", "Wed", "Sat"]),
+        assessment_api=_assessment_sub3_perf_durability_freq_stack(),
+    )
+    assert out["allowed_user_actions"] == ["adjust_goal"]
+    disp = out["runner_analysis_display"]
+    assert disp["recommended_actions"] == ["adjust_goal"]
+    assert "add_running_day" not in disp["recommended_actions"]
+    gd = disp.get("goal_direction") or {}
+    prim = gd.get("primary_action") or {}
+    assert prim.get("id") == "adjust_goal"
+    assert prim.get("label") == "Update my marathon goal"
+
+
+def test_sub3_relaxed_goal_time_recomputes_readiness_for_plan_creation():
+    """After easing the time target, readiness can reach allow + create_plan (re-assess)."""
+    assess = _assessment_sub3_perf_durability_freq_stack()
+    tight = evaluate_plan_generation_readiness(
+        plan_request=_plan(
+            training_days=["Mon", "Wed", "Sat"],
+            target_time="3:00:00",
+        ),
+        assessment_api=assess,
+    )
+    assert tight["decision"] != DECISION_ALLOW
+    assert "create_plan" not in tight["allowed_user_actions"]
+
+    relaxed = evaluate_plan_generation_readiness(
+        plan_request=_plan(
+            training_days=["Mon", "Wed", "Sat"],
+            target_time="3:40:00",
+        ),
+        assessment_api=assess,
+    )
+    assert relaxed["decision"] == DECISION_ALLOW
+    assert "create_plan" in relaxed["allowed_user_actions"]

@@ -2060,6 +2060,11 @@ def _try_build_runner_review_bundle(
         )
         if not ux0.get("intake_confirmed"):
             return ("", None)
+        if (
+            ux0.get("runner_goal_edit_pending")
+            or ux0.get("runner_tradeoff_edit_focus") == "goal"
+        ):
+            return ("", None)
     try:
         plan_request = build_plan_request_from_state(plan_intake_state)
         assessment = build_pre_generation_runner_assessment(
@@ -2312,6 +2317,14 @@ def _plan_intake_phase_system_section(
 
 def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
     """User-facing fallback when the model/tool loop returns plan state but no prose."""
+    ux_fb = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    phase_fb = str(ux_fb.get("plan_creation_phase") or "")
+    if (
+        phase_fb == "collecting_goal_adjustment"
+        or ux_fb.get("runner_goal_edit_pending")
+        or ux_fb.get("runner_tradeoff_edit_focus") == "goal"
+    ):
+        return "Got it. What goal do you want to use for this race instead?"
     alignment = intake_state.get("alignment")
     if isinstance(alignment, dict):
         st = alignment.get("state")

@@ -625,6 +625,58 @@ def _confidence(
     return out
 
 
+def _marathon_target_time_digest(digest: Dict[str, Any]) -> bool:
+    """Marathon + explicit time-goal intent from intake digest (display/policy helper)."""
+    rd = str(digest.get("race_distance") or "").lower()
+    if "marathon" not in rd or "half" in rd:
+        return False
+    pg = str(digest.get("primary_goal") or "").lower()
+    return "target" in pg
+
+
+def _target_time_clock_seconds_leq_3h(digest: Dict[str, Any]) -> bool:
+    secs = _parse_clock_seconds(digest.get("target_time"))
+    if secs is None:
+        return False
+    return secs <= 3 * 3600
+
+
+def _should_sub3_perf_large_gap_actions_adjust_goal_only(
+    *,
+    goal_profile: str,
+    digest: Dict[str, Any],
+    decision: str,
+    readiness_level: str,
+    reason_codes: Sequence[str],
+) -> bool:
+    """
+    Suppress near-term ``add_running_day`` as a misleading remediation when the
+    primary issue is **large** pace/capability gap on a **sub-3-class** marathon
+    time goal — only ``adjust_goal`` remains in ``allowed_user_actions``.
+    """
+    if goal_profile != GOAL_PROFILE_COMPETITIVE_PERFORMANCE:
+        return False
+    if not _marathon_target_time_digest(digest):
+        return False
+    if not (
+        _is_sub3_marathon_digest(digest) or _target_time_clock_seconds_leq_3h(digest)
+    ):
+        return False
+    if not (
+        decision != DECISION_ALLOW
+        or readiness_level
+        in (
+            LEVEL_HIGH_RISK,
+            LEVEL_CURRENTLY_UNREALISTIC,
+        )
+    ):
+        return False
+    rc = {str(c).strip() for c in reason_codes if str(c).strip()}
+    if not (rc & _PERF_ALIGNMENT_BAD_REASON_CODES):
+        return False
+    return True
+
+
 def _allowed_actions_for(
     *,
     decision: str,
@@ -841,6 +893,13 @@ _REASON_CATEGORY_BUMPS: Tuple[Tuple[str, str, int], ...] = (
     ("RULE_LONG_RUN_PATTERN_THIN", CATEGORY_LONG_RUN_DURABILITY, _SEV_WARN),
     ("RULE_LONG_RUN_FREQUENCY_LOW", CATEGORY_LONG_RUN_DURABILITY, _SEV_WARN),
     ("RULE_LONG_RUN_RECENT_REGRESSION", CATEGORY_LONG_RUN_DURABILITY, _SEV_WARN),
+)
+
+# Performance-alignment reasons filed as BAD (pace/capability gaps — not data-thin alone).
+_PERF_ALIGNMENT_BAD_REASON_CODES: frozenset = frozenset(
+    code
+    for code, cat, sev in _REASON_CATEGORY_BUMPS
+    if cat == CATEGORY_PERFORMANCE_ALIGNMENT and sev == _SEV_BAD
 )
 
 _REASON_CODES_BY_CATEGORY: Dict[str, frozenset] = {
@@ -2009,77 +2068,135 @@ def _compact_pace_and_pattern_facts(digest: Dict[str, Any]) -> List[Dict[str, st
     return rows
 
 
+def _main_reason_perf_gap_codes(codes: Set[str]) -> Set[str]:
+    """``RULE_PERFORMANCE_*`` that describe pace/capability alignment (not data-thin alone)."""
+    return {
+        c
+        for c in codes
+        if c.startswith("RULE_PERFORMANCE_") and c != "RULE_PERFORMANCE_PACE_DATA_THIN"
+    }
+
+
+def _main_reason_longrun_codes(codes: Set[str]) -> Set[str]:
+    return codes & {
+        "RULE_LONG_RUN_PATTERN_THIN",
+        "RULE_LONG_RUN_FREQUENCY_LOW",
+        "RULE_LONG_RUN_RECENT_REGRESSION",
+        "RULE_SUB3_VERY_LOW_MILEAGE_AND_SHORT_LONG_RUN",
+    }
+
+
+def _main_reason_frequency_codes(codes: Set[str]) -> Set[str]:
+    return codes & {
+        "RULE_SUB3_THREE_DAYS_HIGH_RISK",
+        "RULE_SUB3_FOUR_DAYS_WEAK_BASELINE",
+    }
+
+
+def _bullet_performance_alignment(
+    codes: Set[str], digest: Dict[str, Any]
+) -> Optional[str]:
+    gp = _safe_float_fact(digest.get("goal_marathon_pace_sec_per_mi"))
+    pace_bit = (
+        f"**~{_fmt_pace_min_mi(gp)}**" if gp is not None else "**goal marathon pace**"
+    )
+
+    if codes & {
+        "RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE",
+        "RULE_PERFORMANCE_NO_SUSTAINED_PACE_NEAR_GOAL",
+    }:
+        return f"Your observed paces are still **far** from the {pace_bit} pace this goal requires."
+    if codes & {
+        "RULE_PERFORMANCE_MODERATE_GAP_EASY_VS_GOAL_PACE",
+        "RULE_PERFORMANCE_STRETCH_SUSTAINED_VS_GOAL",
+    }:
+        return f"Your observed paces are still **well behind** the {pace_bit} this goal points toward."
+    perf_rest = _main_reason_perf_gap_codes(codes)
+    if perf_rest:
+        return f"Performance alignment against {pace_bit} still shows a **meaningful gap** in what we can see."
+    return None
+
+
+def _bullet_longrun_durability(codes: Set[str]) -> Optional[str]:
+    if not _main_reason_longrun_codes(codes):
+        return None
+    return "Your long-run **durability** is still developing for this standard."
+
+
+def _bullet_training_structure(
+    codes: Set[str], *, aggressive: bool, sub3: bool, n_run_days: int, softer_also: bool
+) -> Optional[str]:
+    three = "RULE_SUB3_THREE_DAYS_HIGH_RISK" in codes or (
+        aggressive and sub3 and n_run_days > 0 and n_run_days <= 3
+    )
+    four = "RULE_SUB3_FOUR_DAYS_WEAK_BASELINE" in codes or (
+        aggressive and sub3 and n_run_days == 4
+    )
+    if three:
+        if softer_also:
+            return "Three running days/week **also** limits the volume and repeatability needed for a serious sub-3 build."
+        return "**Three** running days/week is **too low** for this standard."
+    if four:
+        return "**Four** days/week is usually **still short** for this standard."
+    return None
+
+
+def _bullet_timeline_or_data(codes: Set[str], *, aggressive: bool) -> Optional[str]:
+    if "RULE_SUB3_SHORT_TIMELINE" in codes or (
+        "RULE_MARATHON_TIME_TARGET_SHORT_TIMELINE" in codes
+    ):
+        return "**Timeline** to the race is **tight** for earning this goal safely."
+    if "RULE_PERFORMANCE_PACE_DATA_THIN" in codes and aggressive:
+        return "Pace signal from synced runs is still **thin** for a full read."
+    if "RULE_MARATHON_TIME_TARGET_THIN_BASELINE" in codes or (
+        "RULE_SUB3_BASELINE_NOT_ESTABLISHED" in codes
+    ):
+        return "Aerobic **base volume** is still **light** for this target."
+    if "RULE_SUB3_VERY_LOW_MILEAGE_AND_SHORT_LONG_RUN" in codes:
+        if "RULE_LONG_RUN_PATTERN_THIN" not in codes and (
+            "RULE_LONG_RUN_FREQUENCY_LOW" not in codes
+        ):
+            return "**Volume** and **long run** are both far below this demand."
+    if "RULE_EFFORT_CONTROL_DOMINANT_TOO_HARD" in codes:
+        return "Recent running skews **too hard** for easy aerobic development."
+    return None
+
+
 def _main_reason_bullets(
     codes: Set[str],
+    digest: Dict[str, Any],
     *,
     aggressive: bool,
     sub3: bool,
     n_run_days: int,
 ) -> List[str]:
-    """Max 3 short bullets; themes only — avoids repeating long ``RULE_*`` template copy."""
+    """Max 3 bullets; display order: performance → durability → structure → timeline/data."""
     out: List[str] = []
 
-    def add(line: str) -> None:
-        if len(out) >= 3 or not line.strip():
+    def push(line: Optional[str]) -> None:
+        if not line or len(out) >= 3:
             return
         key = line.strip().lower()
         if any(key == o.strip().lower() for o in out):
             return
         out.append(line.strip())
 
-    perf_bad = codes & {
-        "RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE",
-        "RULE_PERFORMANCE_NO_SUSTAINED_PACE_NEAR_GOAL",
-    }
-    perf_mod = codes & {
-        "RULE_PERFORMANCE_MODERATE_GAP_EASY_VS_GOAL_PACE",
-        "RULE_PERFORMANCE_STRETCH_SUSTAINED_VS_GOAL",
-    }
-    if perf_bad:
-        add("Observed training pace is **far** from goal marathon pace.")
-    elif perf_mod:
-        add("Training pace is still **well behind** goal marathon pace.")
-    elif "RULE_PERFORMANCE_PACE_DATA_THIN" in codes and aggressive:
-        add("Pace signal from synced runs is still **thin** for a full read.")
-
-    if "RULE_SUB3_THREE_DAYS_HIGH_RISK" in codes or (
-        aggressive and sub3 and n_run_days > 0 and n_run_days <= 3
-    ):
-        add("**Three** running days/week is **too low** for this standard.")
-    elif "RULE_SUB3_FOUR_DAYS_WEAK_BASELINE" in codes or (
-        aggressive and sub3 and n_run_days == 4
-    ):
-        add("**Four** days/week is usually **still short** for this standard.")
-
-    if "RULE_LONG_RUN_PATTERN_THIN" in codes:
-        add("Long-run **pattern** is thin — few repeated quality long efforts.")
-    elif "RULE_LONG_RUN_FREQUENCY_LOW" in codes:
-        add("Meaningful long runs show up **too rarely**.")
-    elif "RULE_LONG_RUN_RECENT_REGRESSION" in codes:
-        add("Long-run trend has **slipped** recently.")
-
-    if len(out) >= 3:
-        return out[:3]
-
-    if "RULE_SUB3_SHORT_TIMELINE" in codes or (
-        "RULE_MARATHON_TIME_TARGET_SHORT_TIMELINE" in codes
-    ):
-        add("**Timeline** to the race is **tight** for earning this goal safely.")
-    if len(out) >= 3:
-        return out[:3]
-    if "RULE_MARATHON_TIME_TARGET_THIN_BASELINE" in codes or (
-        "RULE_SUB3_BASELINE_NOT_ESTABLISHED" in codes
-    ):
-        add("Aerobic **base volume** is still **light** for this target.")
-    if len(out) >= 3:
-        return out[:3]
-    if "RULE_SUB3_VERY_LOW_MILEAGE_AND_SHORT_LONG_RUN" in codes:
-        add("**Volume** and **long run** are both far below this demand.")
-    if len(out) >= 3:
-        return out[:3]
-    if "RULE_EFFORT_CONTROL_DOMINANT_TOO_HARD" in codes:
-        add("Recent running skews **too hard** for easy aerobic development.")
-
+    perf_gaps = bool(_main_reason_perf_gap_codes(codes))
+    lr_gaps = bool(_main_reason_longrun_codes(codes))
+    push(_bullet_performance_alignment(codes, digest))
+    push(_bullet_longrun_durability(codes))
+    softer_freq = perf_gaps or lr_gaps
+    push(
+        _bullet_training_structure(
+            codes,
+            aggressive=aggressive,
+            sub3=sub3,
+            n_run_days=n_run_days,
+            softer_also=softer_freq,
+        )
+    )
+    if len(out) < 3:
+        push(_bullet_timeline_or_data(codes, aggressive=aggressive))
     return out[:3]
 
 
@@ -2095,6 +2212,14 @@ def _dedupe_bullets_vs_verdict(verdict: str, bullets: Sequence[str]) -> List[str
     for b in bullets:
         bb = _strip_md_for_compare(str(b))
         if not bb.strip():
+            continue
+        tier_keep = bb.startswith("your observed paces are still") or (
+            "your long-run durability is still" in bb
+        )
+        if tier_keep:
+            out.append(str(b).strip())
+            if len(out) >= 3:
+                break
             continue
         if bb in v:
             continue
@@ -2338,6 +2463,7 @@ def build_runner_analysis_display(
     )
     raw_bullets = _main_reason_bullets(
         codes,
+        digest,
         aggressive=aggressive,
         sub3=sub3,
         n_run_days=n_days,
@@ -2393,6 +2519,20 @@ def _finalize(
     limiting_factors = _ordered_unique(builder.limiting_factors)
     required_changes = _ordered_unique(builder.required_changes)
     final_decision = decision or _decision_for_level(readiness_level)
+    inputs_digest = _input_digest(builder, goal_profile=goal_profile)
+    allowed_user_actions = _allowed_actions_for(
+        decision=final_decision,
+        readiness_level=readiness_level,
+        required_changes=required_changes,
+    )
+    if _should_sub3_perf_large_gap_actions_adjust_goal_only(
+        goal_profile=goal_profile,
+        digest=inputs_digest,
+        decision=final_decision,
+        readiness_level=readiness_level,
+        reason_codes=reason_codes,
+    ):
+        allowed_user_actions = [ACTION_ADJUST_GOAL]
     core: Dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "goal_profile": goal_profile,
@@ -2412,12 +2552,8 @@ def _finalize(
             required_changes=required_changes,
             reason_codes=reason_codes,
         ),
-        "allowed_user_actions": _allowed_actions_for(
-            decision=final_decision,
-            readiness_level=readiness_level,
-            required_changes=required_changes,
-        ),
-        "inputs_digest": _input_digest(builder, goal_profile=goal_profile),
+        "allowed_user_actions": allowed_user_actions,
+        "inputs_digest": inputs_digest,
     }
     core["coach_analysis_for_llm"] = build_coach_analysis_for_llm(core)
     core["runner_analysis_display"] = build_runner_analysis_display(core)

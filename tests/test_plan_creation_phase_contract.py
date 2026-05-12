@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import pytest
 
+from src.smartcoach_mobile_coach.orchestrator import (
+    _natural_plan_intake_fallback_question,
+)
 from src.smartcoach_mobile_coach.plan_creation_ui import (
     PHASE_AWAITING_INTAKE_CONFIRMATION,
     PHASE_AWAITING_PLAN_GENERATION_CONFIRMATION,
     PHASE_AWAITING_TRADEOFF_CHOICE,
     PHASE_COLLECTING_ADDITIONAL_TRAINING_DAY,
+    PHASE_COLLECTING_GOAL_ADJUSTMENT,
     apply_review_to_plan_intake_ux_for_phase,
     compute_plan_creation_ui,
 )
@@ -28,6 +32,11 @@ DRAFT_SUB3 = {
 @pytest.fixture
 def monkeypatch_split_confirm(monkeypatch):
     monkeypatch.setenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1", "1")
+
+
+@pytest.fixture
+def monkeypatch_structured_core_v1(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
 
 
 def test_sub_three_recap_phase_and_no_chips(monkeypatch_split_confirm):
@@ -110,3 +119,49 @@ def test_full_sub_three_add_tuesday_recap_then_create_chip(monkeypatch_split_con
     gen_ui = compute_plan_creation_ui(s4)
     assert gen_ui is not None
     assert gen_ui.get("field_key") == "plan_intake.plan_generation_confirm"
+
+
+def test_adjust_goal_sets_goal_edit_pending_and_goal_adjustment_ui(
+    monkeypatch_split_confirm,
+    monkeypatch_structured_core_v1,
+):
+    """Choosing adjust_goal must enter goal-edit flow (not re-show tradeoff chips)."""
+    s0 = update_plan_intake_state(
+        {"draft": dict(DRAFT_SUB3), "ux": {}, "alignment": {}},
+        updates={},
+        source_user_message="",
+    )
+    s1 = update_plan_intake_state(s0, updates={}, source_user_message="yes")
+    apply_review_to_plan_intake_ux_for_phase(
+        s1,
+        {
+            "assessment_status": "needs_user_decision",
+            "plan_generation_readiness": {
+                "decision": "defer",
+                "readiness_level": "high_risk",
+                "allowed_user_actions": ["adjust_goal"],
+            },
+        },
+        intake_confirmed=True,
+    )
+    assert s1["ux"]["plan_creation_phase"] == PHASE_AWAITING_TRADEOFF_CHOICE
+
+    s1["ux"]["plan_generation_confirmed"] = True
+    s2 = update_plan_intake_state(
+        s1,
+        updates={"runner_tradeoff_choice": "adjust_goal"},
+        source_user_message="",
+    )
+    assert s2["ux"].get("runner_goal_edit_pending") is True
+    assert s2["ux"].get("runner_tradeoff_edit_focus") == "goal"
+    assert s2["ux"].get("plan_generation_confirmed") is None
+    assert s2["ux"]["plan_creation_phase"] == PHASE_COLLECTING_GOAL_ADJUSTMENT
+
+    fb = _natural_plan_intake_fallback_question(s2)
+    assert "Got it." in fb
+    assert "goal" in fb.lower()
+
+    ga = compute_plan_creation_ui(s2)
+    assert ga is not None
+    assert ga.get("field_key") == "plan_intake.goal_adjustment"
+    assert "What goal do you want" in (ga.get("prompt") or "")

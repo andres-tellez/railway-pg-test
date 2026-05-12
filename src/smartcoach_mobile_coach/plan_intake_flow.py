@@ -75,6 +75,17 @@ def _clear_plan_confirmation_ux(ux: Dict[str, Any]) -> None:
     ux.pop("plan_creation_phase", None)
 
 
+def _soft_reset_runner_review_after_goal_edit(ux: Dict[str, Any]) -> None:
+    """Keep intake confirmation; clear stale runner review consent after a material goal edit."""
+    ux.pop("plan_generation_confirmed", None)
+    ux.pop("runner_review_delivered", None)
+    ux.pop("runner_tradeoff_resolved", None)
+    ux.pop("runner_tradeoff_edit_focus", None)
+    ux.pop("runner_goal_edit_pending", None)
+    ux.pop("plan_generation_readiness", None)
+    ux.pop("plan_creation_phase", None)
+
+
 def _truthy(raw: Any) -> bool:
     if raw is True:
         return True
@@ -1334,6 +1345,7 @@ def update_plan_intake_state(
     up = updates or {}
     if not isinstance(up, dict):
         up = {}
+    prior_ux_snapshot = dict(ux)
 
     for key, raw in up.items():
         if key == "race_date":
@@ -1476,6 +1488,8 @@ def update_plan_intake_state(
                 ux.pop("training_days_count", None)
             elif choice == "adjust_goal":
                 ux["runner_tradeoff_edit_focus"] = "goal"
+                ux["runner_goal_edit_pending"] = True
+                ux.pop("plan_generation_confirmed", None)
             elif choice == "adjust_timeline":
                 ux["runner_tradeoff_edit_focus"] = "timeline"
             elif choice == "build_base_first":
@@ -1544,8 +1558,18 @@ def update_plan_intake_state(
                 and str(up.get("runner_tradeoff_choice") or "").strip().lower()
                 == "expand_running_days"
             )
+            goal_ux_touch = isinstance(up, dict) and (
+                "target_time" in up or "primary_goal" in up
+            )
+            from_goal_edit_flow = bool(
+                prior_ux_snapshot.get("runner_goal_edit_pending")
+                or prior_ux_snapshot.get("runner_tradeoff_edit_focus") == "goal"
+            )
             if not tradeoff_expand:
-                _clear_plan_confirmation_ux(ux)
+                if goal_ux_touch and from_goal_edit_flow:
+                    _soft_reset_runner_review_after_goal_edit(ux)
+                else:
+                    _clear_plan_confirmation_ux(ux)
 
     # Cleared after user commits a new weekday set (structured `updates` or draft change).
     if ux.get("training_days_expansion_pending"):
@@ -1661,7 +1685,12 @@ def build_core_structured_ui_prompt(
         return None
     if not isinstance(intake_state, dict):
         return None
-    if intake_state.get("ready_to_generate"):
+    ux_in = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    phase = str(ux_in.get("plan_creation_phase") or "")
+    if intake_state.get("ready_to_generate") and phase not in (
+        "collecting_goal_adjustment",
+        "collecting_timeline_adjustment",
+    ):
         return None
     missing_raw = intake_state.get("missing_required") or []
     missing = [m for m in missing_raw if isinstance(m, str)]

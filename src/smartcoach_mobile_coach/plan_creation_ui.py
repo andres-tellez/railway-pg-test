@@ -12,7 +12,9 @@ from typing import Any, Dict, List, Optional
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     build_core_structured_ui_prompt,
     plan_creation_split_confirm_enabled,
+    structured_intake_core_v1_enabled,
 )
+from src.schemas.plan_schema import PrimaryGoal
 from src.utils.date_helpers import DAY_NAMES_ABBREV
 
 # --- Phase constants (v1; split-confirm path only) ---
@@ -171,6 +173,62 @@ def _schedule_confirmation_ui_prompt(
                 "user_message": "I'd like to change my training days.",
                 "updates": {"schedule_days_confirmed": False},
             },
+        ],
+    }
+
+
+def _goal_adjustment_ui_prompt(
+    intake_state: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Structured chips after user chooses **adjust goal** from runner review."""
+    if not structured_intake_core_v1_enabled():
+        return None
+    draft = (
+        intake_state.get("draft") if isinstance(intake_state.get("draft"), dict) else {}
+    )
+    rd = str(draft.get("race_distance") or "").lower()
+    if "marathon" not in rd or "half" in rd:
+        return None
+    presets: List[tuple[str, str, str]] = [
+        ("ga_tt300", "3:00", "3:00:00"),
+        ("ga_tt315", "3:15", "3:15:00"),
+        ("ga_tt330", "3:30", "3:30:00"),
+        ("ga_tt340", "3:40", "3:40:00"),
+        ("ga_tt345", "3:45", "3:45:00"),
+        ("ga_tt400", "4:00", "4:00:00"),
+        ("ga_tt430", "4:30", "4:30:00"),
+        ("ga_tt500", "5:00", "5:00:00"),
+    ]
+    time_options = [
+        {
+            "id": pid,
+            "label": label,
+            "user_message": f"I'm aiming for about {label} (finish ~{clock}).",
+            "updates": {
+                "primary_goal": PrimaryGoal.TARGET_TIME.value,
+                "target_time": clock,
+            },
+        }
+        for pid, label, clock in presets
+    ]
+    return {
+        "version": 1,
+        "field_key": "plan_intake.goal_adjustment",
+        "control_type": "single_select_chips",
+        "selection_mode": "single",
+        "required": True,
+        "prompt": "What goal do you want to use for this race instead?",
+        "options": [
+            {
+                "id": "ga_finish",
+                "label": "Finish strong (no time target)",
+                "user_message": "I want to finish strong — no specific time goal.",
+                "updates": {
+                    "primary_goal": PrimaryGoal.JUST_FINISH.value,
+                    "target_time": None,
+                },
+            },
+            *time_options,
         ],
     }
 
@@ -387,12 +445,6 @@ def recompute_plan_creation_phase(state: Dict[str, Any]) -> None:
         state["ux"] = ux
         return
 
-    if not ux.get("runner_review_delivered"):
-        # Runner-review API not merged onto this snapshot yet (orchestrator stamps next).
-        ux["plan_creation_phase"] = PHASE_COLLECTING_INTAKE
-        state["ux"] = ux
-        return
-
     if ux.get("runner_tradeoff_edit_focus") == "goal":
         ux["plan_creation_phase"] = PHASE_COLLECTING_GOAL_ADJUSTMENT
         state["ux"] = ux
@@ -403,6 +455,12 @@ def recompute_plan_creation_phase(state: Dict[str, Any]) -> None:
         return
     if ux.get("runner_tradeoff_edit_focus") == "base":
         ux["plan_creation_phase"] = PHASE_COLLECTING_GOAL_ADJUSTMENT
+        state["ux"] = ux
+        return
+
+    if not ux.get("runner_review_delivered"):
+        # Runner-review API not merged onto this snapshot yet (orchestrator stamps next).
+        ux["plan_creation_phase"] = PHASE_COLLECTING_INTAKE
         state["ux"] = ux
         return
 
@@ -516,6 +574,11 @@ def compute_plan_creation_ui(
         add_day = _additional_training_day_ui_prompt(intake_state)
         if add_day is not None:
             return add_day
+
+    if phase == PHASE_COLLECTING_GOAL_ADJUSTMENT:
+        ga = _goal_adjustment_ui_prompt(intake_state)
+        if ga is not None:
+            return ga
 
     if phase == PHASE_AWAITING_TRADEOFF_CHOICE:
         tradeoff = _runner_tradeoff_ui_prompt(intake_state)
