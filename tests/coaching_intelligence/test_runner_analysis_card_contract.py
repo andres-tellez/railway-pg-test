@@ -6,6 +6,7 @@ import json
 
 from src.coaching_intelligence.plan_generation_readiness import (
     ACTION_ADD_RUNNING_DAY,
+    ACTION_ADJUST_GOAL,
     CATEGORY_EFFORT_CONTROL,
     DECISION_DEFER,
     evaluate_plan_generation_readiness,
@@ -62,7 +63,17 @@ def test_sub3_three_days_coach_payload_lists_facts_and_concerns_not_effort_contr
     json.dumps(coach)
 
     disp = out["runner_analysis_display"]
-    assert disp["schema_version"] == "runner_analysis_display.v1.1"
+    assert disp["schema_version"] == "runner_analysis_display.v1.2"
+    gd = disp.get("goal_direction") or {}
+    assert isinstance(gd, dict)
+    assert gd.get("schema_version") == "goal_direction_display.v1"
+    assert gd.get("direction_id") == "long_term_sub3_development"
+    assert gd.get("headline") == "Long-term sub-3 development"
+    assert isinstance(gd.get("framing"), str) and "sub-3" in gd["framing"].lower()
+    assert isinstance(gd.get("next_steps"), list) and len(gd["next_steps"]) >= 3
+    pa = gd.get("primary_action") or {}
+    assert pa.get("id") == ACTION_ADJUST_GOAL
+    assert pa.get("label") == "Update my marathon goal"
     blob = json.dumps(disp)
     assert "RULE_" not in blob
     assert "competitive_performance" not in blob.lower()

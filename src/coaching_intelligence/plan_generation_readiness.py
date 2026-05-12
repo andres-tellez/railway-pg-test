@@ -1438,7 +1438,338 @@ def build_coach_analysis_for_llm(
     }
 
 
-RUNNER_ANALYSIS_DISPLAY_SCHEMA = "runner_analysis_display.v1.1"
+RUNNER_ANALYSIS_DISPLAY_SCHEMA = "runner_analysis_display.v1.2"
+GOAL_DIRECTION_DISPLAY_SCHEMA = "goal_direction_display.v1"
+
+_GOAL_DIRECTION_PRIMARY_LABELS: Dict[str, str] = {
+    ACTION_ADJUST_GOAL: "Update my marathon goal",
+    ACTION_CREATE_PLAN: "Create my plan",
+    ACTION_ADD_RUNNING_DAY: "Add another training day",
+    ACTION_ADJUST_TIMELINE: "Move my goal race farther out",
+    ACTION_BUILD_BASE_FIRST: "Build base first",
+    ACTION_PROVIDE_ALIGNMENT_ANSWERS: "Answer alignment questions",
+    ACTION_INGEST_MORE_ACTIVITY: "Sync more activity / add training history",
+    ACTION_CONTINUE_WITH_WARNING: "Continue with current goal (acknowledge risk)",
+}
+
+
+def _pick_goal_direction_action_id(
+    allowed: Sequence[str], preferences: Sequence[str]
+) -> str:
+    s = [str(x).strip() for x in allowed if str(x).strip()]
+    for pref in preferences:
+        if pref in s:
+            return pref
+    return s[0] if s else ACTION_ADJUST_GOAL
+
+
+def _goal_direction_primary_action(
+    allowed: Sequence[str], preferences: Sequence[str]
+) -> Dict[str, str]:
+    action_id = _pick_goal_direction_action_id(allowed, preferences)
+    label = _GOAL_DIRECTION_PRIMARY_LABELS.get(action_id) or action_id.replace("_", " ")
+    return {"id": action_id, "label": label}
+
+
+def _build_goal_direction_display(
+    plan_generation_readiness: Dict[str, Any],
+    *,
+    digest: Dict[str, Any],
+    goal_profile: str,
+    aggressive: bool,
+    sub3: bool,
+    codes: Set[str],
+    n_run_days: int,
+    allowed_actions: Sequence[str],
+) -> Dict[str, Any]:
+    """Qualitative, developmental goal guidance for Runner Analysis (no engine band labels)."""
+    _ = (codes, n_run_days)
+    decision = str(plan_generation_readiness.get("decision") or "").strip()
+    lvl = str(plan_generation_readiness.get("readiness_level") or "").strip()
+    when = _race_month_year_phrase(digest)
+    allowed = [str(x).strip() for x in allowed_actions if str(x).strip()]
+    allowed_set = set(allowed)
+
+    def reassess_bullet() -> str:
+        return (
+            "When you change your goal here, the next coach reply re-runs this read automatically — "
+            "same inputs, fresh snapshot."
+        )
+
+    # --- insufficient / gate paths (still developmental, not "validation failed")
+    if lvl == LEVEL_INSUFFICIENT_DATA:
+        if ACTION_PROVIDE_ALIGNMENT_ANSWERS in allowed_set:
+            primary_prefs = [
+                ACTION_PROVIDE_ALIGNMENT_ANSWERS,
+                ACTION_INGEST_MORE_ACTIVITY,
+                ACTION_ADJUST_GOAL,
+            ]
+        else:
+            primary_prefs = [
+                ACTION_INGEST_MORE_ACTIVITY,
+                ACTION_ADJUST_GOAL,
+                ACTION_ADJUST_TIMELINE,
+            ]
+        return {
+            "schema_version": GOAL_DIRECTION_DISPLAY_SCHEMA,
+            "direction_id": "clarify_training_picture",
+            "headline": "Sharpen the picture before we commit the plan",
+            "framing": (
+                "I don’t yet have a solid enough read on your training context to recommend **how** we should "
+                "frame this cycle. A few intake answers or a bit more synced history usually clears that up — "
+                "then we can name a honest direction for **this** race."
+            ),
+            "next_steps": [
+                "Resolve the open intake questions (or sync more runs) so this read is grounded in real weeks.",
+                "Once that lands, we’ll re-shape the goal language around what your schedule and logs support.",
+                reassess_bullet(),
+            ],
+            "primary_action": _goal_direction_primary_action(allowed, primary_prefs),
+        }
+
+    if decision == DECISION_ALLOW:
+        if lvl == LEVEL_STRETCH:
+            if goal_profile == GOAL_PROFILE_COMPLETION:
+                hid = "patient_completion_build"
+                hl = "Patient completion-strong cycle"
+                fr = (
+                    f"For **{when}**, a **finish-strong** plan is still appropriate — it just deserves a **patient** build: "
+                    "durability and consistency ahead of hero weeks. You’re choosing clarity over rushing the ramp."
+                )
+                nxt = [
+                    "Keep the finish line in view, and let weekly rhythm + long runs earn confidence.",
+                    "Use the plan to **absorb** volume before any late push.",
+                    reassess_bullet(),
+                ]
+            elif goal_profile == GOAL_PROFILE_MODERATE_PERFORMANCE:
+                hid = "patient_moderate_build"
+                hl = "Patient moderate-goal build"
+                fr = (
+                    "Your current setup can move toward this target, but it sits on the **outer edge** of what I’d "
+                    f"stack for **{when}**. The developmental play is steady frequency, breathable volume, and "
+                    "repeatable long efforts — not forcing pace before the base is honest."
+                )
+                nxt = [
+                    "Lock the plan with eyes open to the ambitious edge you’re choosing, and keep easy days **actually easy**.",
+                    "Protect the long run as your primary durability lever this block.",
+                    reassess_bullet(),
+                ]
+            else:
+                hid = "patient_performance_build"
+                hl = "Patient performance build"
+                fr = (
+                    "This target can stay on the radar, but for **this** cycle I’d treat it as an **ambitious edge** — "
+                    f"earned week‑by‑week for **{when}**, not assumed on paper. We’ll prioritize frequency, "
+                    "absorbable volume, and long-run durability before we talk sharp sharpening."
+                )
+                nxt = [
+                    "Proceed with the plan only if you’re willing to treat the first phase as **foundation**, not proof.",
+                    "Expect check-ins as fitness shows up — we adjust load before we chase pace.",
+                    reassess_bullet(),
+                ]
+            return {
+                "schema_version": GOAL_DIRECTION_DISPLAY_SCHEMA,
+                "direction_id": hid,
+                "headline": hl,
+                "framing": fr,
+                "next_steps": nxt,
+                "primary_action": _goal_direction_primary_action(
+                    allowed, [ACTION_CREATE_PLAN, ACTION_CONTINUE_WITH_WARNING]
+                ),
+            }
+
+        if goal_profile == GOAL_PROFILE_COMPLETION:
+            return {
+                "schema_version": GOAL_DIRECTION_DISPLAY_SCHEMA,
+                "direction_id": "strong_completion_focus",
+                "headline": "Strong completion-focused cycle",
+                "framing": (
+                    f"For **{when}**, the coaching recommendation for this block is a **healthy, finish-line plan** — "
+                    "fitness that shows up on the day, not a numbers chase. Your goal reads as **completion-first**, "
+                    "and that’s a respectable way to run a first or return marathon."
+                ),
+                "next_steps": [
+                    "Use the plan to **build durability** you can repeat, not spikes you survive.",
+                    "Keep the emphasis on **steady weeks** and a long run you can recover from.",
+                    reassess_bullet(),
+                ],
+                "primary_action": _goal_direction_primary_action(
+                    allowed, [ACTION_CREATE_PLAN]
+                ),
+            }
+
+        if goal_profile == GOAL_PROFILE_MODERATE_PERFORMANCE:
+            return {
+                "schema_version": GOAL_DIRECTION_DISPLAY_SCHEMA,
+                "direction_id": "moderate_performance_build",
+                "headline": "Moderate marathon performance build",
+                "framing": (
+                    f"For **{when}**, a **moderate performance** arc fits: race-day execution built on consistent "
+                    "aerobic work, not a reckless sprint to peak. I’d coach this cycle around **repeatable quality** "
+                    "and pacing maturity — the things that move a mid-pack target over time."
+                ),
+                "next_steps": [
+                    "Let the plan connect easy volume, a touch of quality, and long-run strength.",
+                    "Treat race pace as **something you grow into**, not something you force early.",
+                    reassess_bullet(),
+                ],
+                "primary_action": _goal_direction_primary_action(
+                    allowed, [ACTION_CREATE_PLAN]
+                ),
+            }
+
+        # Competitive / aggressive time goals that clear the ready bar
+        return {
+            "schema_version": GOAL_DIRECTION_DISPLAY_SCHEMA,
+            "direction_id": "ready_performance_build",
+            "headline": "Performance build for this goal",
+            "framing": (
+                f"Based on what we can see, **this cycle can plan forward** toward **{when}** with a performance lens — "
+                "still earned on frequency, volume, and long-run durability. The work ahead is **developmental**: "
+                "stack honest weeks, then sharpen only when the base holds."
+            ),
+            "next_steps": [
+                "Use the generated plan as your **structure**, not a wish list — protect consistency.",
+                "Let checkpoints confirm you’re absorbing load before any late push.",
+                reassess_bullet(),
+            ],
+            "primary_action": _goal_direction_primary_action(
+                allowed, [ACTION_CREATE_PLAN]
+            ),
+        }
+
+    # --- defer / not-yet paths
+    if aggressive and sub3:
+        return {
+            "schema_version": GOAL_DIRECTION_DISPLAY_SCHEMA,
+            "direction_id": "long_term_sub3_development",
+            "headline": "Long-term sub-3 development",
+            "framing": (
+                "For this cycle, I would not build around a sub-3 target yet. The better coaching move is to update "
+                "this race goal and use the plan to build the foundation that could make sub-3 realistic later."
+            ),
+            "next_steps": [
+                "Update the marathon goal for this race.",
+                "Build toward higher running frequency and sustainable mileage.",
+                "Reassess the sub-3 trajectory after another training block.",
+                reassess_bullet(),
+            ],
+            "primary_action": _goal_direction_primary_action(
+                allowed,
+                [
+                    ACTION_ADJUST_GOAL,
+                    ACTION_ADD_RUNNING_DAY,
+                    ACTION_BUILD_BASE_FIRST,
+                    ACTION_ADJUST_TIMELINE,
+                ],
+            ),
+        }
+
+    if aggressive and not sub3:
+        return {
+            "schema_version": GOAL_DIRECTION_DISPLAY_SCHEMA,
+            "direction_id": "competitive_time_goal_development",
+            "headline": "Competitive time-goal — earn the cycle first",
+            "framing": (
+                "For **this** marathon cycle, I wouldn’t anchor the plan to this time target yet — the healthier move "
+                "is to **reset the goal language**, then build the frequency, volume, and long-run durability that "
+                f"make a strong race at **{when}** believable. Think **earn the standard**, then re-choose the clock."
+            ),
+            "next_steps": [
+                "Update the marathon goal or target time to something this block can honestly serve.",
+                "Put **weekly structure** and **repeatable long runs** ahead of pace obsession.",
+                "After a foundation phase, re-open the performance conversation with fresh data.",
+                reassess_bullet(),
+            ],
+            "primary_action": _goal_direction_primary_action(
+                allowed,
+                [
+                    ACTION_ADJUST_GOAL,
+                    ACTION_ADD_RUNNING_DAY,
+                    ACTION_BUILD_BASE_FIRST,
+                    ACTION_ADJUST_TIMELINE,
+                ],
+            ),
+        }
+
+    if goal_profile == GOAL_PROFILE_MODERATE_PERFORMANCE:
+        return {
+            "schema_version": GOAL_DIRECTION_DISPLAY_SCHEMA,
+            "direction_id": "moderate_goal_recentering",
+            "headline": "Recenter the moderate performance target",
+            "framing": (
+                "I’d pause before locking a plan to this moderate time goal — not because you lack heart, but because "
+                "the **week-to-week picture** still needs to support it for **this race**. The coaching move is to "
+                "**soften or shift the target**, then build the cycle that earns a better ask next time."
+            ),
+            "next_steps": [
+                "Adjust the marathon goal or timeline so the block matches your real training bandwidth.",
+                "Rebuild easy frequency and long-run rhythm before we chase pace.",
+                reassess_bullet(),
+            ],
+            "primary_action": _goal_direction_primary_action(
+                allowed,
+                [
+                    ACTION_ADJUST_GOAL,
+                    ACTION_ADJUST_TIMELINE,
+                    ACTION_ADD_RUNNING_DAY,
+                    ACTION_BUILD_BASE_FIRST,
+                ],
+            ),
+        }
+
+    if goal_profile == GOAL_PROFILE_COMPLETION:
+        return {
+            "schema_version": GOAL_DIRECTION_DISPLAY_SCHEMA,
+            "direction_id": "completion_goal_recentering",
+            "headline": "Protect the finish-line goal",
+            "framing": (
+                f"For **{when}**, the kindest coaching move is to **protect a finish-line plan** — adjust timeline or "
+                "expectations so we’re not compressing health into a short ramp. Completion is still a **big** outcome; "
+                "it deserves breathing room in the calendar and in weekly volume."
+            ),
+            "next_steps": [
+                "Move the race farther out or simplify what “success” means for this cycle.",
+                "Stack **gentle consistency** before any late sharpening.",
+                reassess_bullet(),
+            ],
+            "primary_action": _goal_direction_primary_action(
+                allowed,
+                [
+                    ACTION_ADJUST_TIMELINE,
+                    ACTION_ADJUST_GOAL,
+                    ACTION_ADD_RUNNING_DAY,
+                    ACTION_BUILD_BASE_FIRST,
+                ],
+            ),
+        }
+
+    return {
+        "schema_version": GOAL_DIRECTION_DISPLAY_SCHEMA,
+        "direction_id": "grounded_next_steps",
+        "headline": "Line up the plan with real training bandwidth",
+        "framing": (
+            "Before we generate a plan, I’d get your **goal language** and **weekly reality** pointing the same "
+            f"direction for **{when}**. Small intake changes here are how we keep the block developmental — not "
+            "binary pass/fail."
+        ),
+        "next_steps": [
+            "Pick the lever you can honestly change: goal, timeline, or weekly structure.",
+            "Come back once that’s updated — this read refreshes on the next coach reply.",
+        ],
+        "primary_action": _goal_direction_primary_action(
+            allowed,
+            [
+                ACTION_ADJUST_GOAL,
+                ACTION_ADD_RUNNING_DAY,
+                ACTION_ADJUST_TIMELINE,
+                ACTION_BUILD_BASE_FIRST,
+                ACTION_PROVIDE_ALIGNMENT_ANSWERS,
+                ACTION_INGEST_MORE_ACTIVITY,
+            ],
+        ),
+    }
+
 
 # User-facing concern copy keyed by deterministic rule codes (no new policy).
 _RULE_CONCERN_COPY: Dict[str, str] = {
@@ -2025,6 +2356,17 @@ def build_runner_analysis_display(
         if str(x).strip()
     ]
 
+    goal_direction = _build_goal_direction_display(
+        plan_generation_readiness,
+        digest=digest,
+        goal_profile=goal_profile,
+        aggressive=aggressive,
+        sub3=sub3,
+        codes=codes,
+        n_run_days=n_days,
+        allowed_actions=actions,
+    )
+
     return {
         "schema_version": RUNNER_ANALYSIS_DISPLAY_SCHEMA,
         "coach_read": coach_read,
@@ -2032,6 +2374,7 @@ def build_runner_analysis_display(
         "facts": facts,
         "recommended_path": path_ui,
         "recommended_actions": actions,
+        "goal_direction": goal_direction,
     }
 
 
