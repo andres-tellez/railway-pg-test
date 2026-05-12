@@ -1438,7 +1438,7 @@ def build_coach_analysis_for_llm(
     }
 
 
-RUNNER_ANALYSIS_DISPLAY_SCHEMA = "runner_analysis_display.v1"
+RUNNER_ANALYSIS_DISPLAY_SCHEMA = "runner_analysis_display.v1.1"
 
 # User-facing concern copy keyed by deterministic rule codes (no new policy).
 _RULE_CONCERN_COPY: Dict[str, str] = {
@@ -1616,77 +1616,162 @@ def _long_run_interpretation(miles: float, *, sub3: bool) -> str:
     return "Long-run exposure will guide how aggressively we can progress."
 
 
-def _runner_display_performance_capability(
-    digest: Dict[str, Any]
-) -> Optional[Dict[str, str]]:
-    """Evidence row: goal MP vs observed training paces + long-run pattern (competitive marathon time goals)."""
+def _race_month_year_phrase(digest: Dict[str, Any]) -> str:
+    """User-facing race timing, e.g. ``October 2026`` — display only."""
+    raw = digest.get("race_date")
+    if raw is None:
+        return "this goal race"
+    try:
+        if isinstance(raw, str) and len(raw.strip()) >= 10:
+            d = datetime.strptime(raw.strip()[:10], "%Y-%m-%d").date()
+            return d.strftime("%B %Y")
+    except ValueError:
+        pass
+    return "this goal race"
+
+
+def _compact_pace_and_pattern_facts(digest: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Single-line fact rows only (no coaching notes)."""
+    rows: List[Dict[str, str]] = []
     gp = _safe_float_fact(digest.get("goal_marathon_pace_sec_per_mi"))
-    if gp is None:
-        return None
-    goal_disp = _fmt_pace_min_mi(gp)
-    chunks = [
-        f"Goal marathon pace implied by your target time: **~{goal_disp}** (math on your clock time—not a guarantee)."
-    ]
+    if gp is not None:
+        rows.append(
+            {
+                "title": "Goal marathon pace (from target time)",
+                "summary": f"~{_fmt_pace_min_mi(gp)}",
+            }
+        )
     easy = _safe_float_fact(digest.get("typical_easy_pace_sec_per_mi"))
-    sustained = _safe_float_fact(digest.get("best_sustained_endurance_pace_sec_per_mi"))
     if easy is not None:
-        chunks.append(
-            f"Typical easy / steady training pace in synced runs: **~{_fmt_pace_min_mi(easy)}**."
+        rows.append(
+            {"title": "Typical training pace", "summary": f"~{_fmt_pace_min_mi(easy)}"}
         )
+    sustained = _safe_float_fact(digest.get("best_sustained_endurance_pace_sec_per_mi"))
     if sustained is not None:
-        chunks.append(
-            f"Best pace on longer efforts (about **8+ mi**) in this window: **~{_fmt_pace_min_mi(sustained)}**."
-        )
-    rel = str(digest.get("pace_reliability") or "")
-    notes: List[str] = []
-    if rel in ("none", "low"):
-        notes.append(
-            "Pace read is **only** as trustworthy as the **number and variety** of synced runs—right now that’s thin."
-        )
-    if easy is not None and (easy - gp) > 90:
-        notes.append(
-            "**Coach read:** your day-to-day running pace is still **far from** goal marathon speed—**capability**, "
-            "not just mileage, has to move over time."
-        )
-    elif easy is not None and (easy - gp) > 55:
-        notes.append(
-            "There’s **still a real gap** between easy running and the pace this goal implies."
+        rows.append(
+            {
+                "title": "Best sustained pace (8+ mi)",
+                "summary": f"~{_fmt_pace_min_mi(sustained)}",
+            }
         )
     n10 = digest.get("long_runs_ge_10_mi_count")
     ww = digest.get("weeks_with_long_run_10plus")
     if n10 is not None and ww is not None:
-        notes.append(
-            f"**Durability pattern:** {n10} run(s) **≥10 mi** spread across **{ww}** calendar week(s) in the lookback."
+        rows.append(
+            {
+                "title": "Long-run pattern",
+                "summary": f"{n10} runs ≥10 mi across {ww} calendar week(s)",
+            }
         )
-    tr = digest.get("long_run_progression_trend")
-    if tr and str(tr) not in ("unknown", ""):
-        notes.append(f"Long-run **trend** in this window: **{tr}**.")
+    elif n10 is not None:
+        rows.append(
+            {"title": "Long-run pattern", "summary": f"{n10} runs ≥10 mi (lookback)"}
+        )
+    pr = digest.get("pace_reliability")
+    if pr and str(pr) in ("none", "low"):
+        rows.append(
+            {
+                "title": "Pace data reliability",
+                "summary": f"Limited ({pr}) — fewer usable pace samples in sync",
+            }
+        )
+    return rows
 
-    row: Dict[str, str] = {
-        "title": "Pace & long-run durability (observed)",
-        "summary": " ".join(chunks),
-    }
-    if notes:
-        row["note"] = " ".join(notes)
-    return row
 
-
-def _why_concerned_user(reason_codes: Sequence[str]) -> List[str]:
+def _main_reason_bullets(
+    codes: Set[str],
+    *,
+    aggressive: bool,
+    sub3: bool,
+    n_run_days: int,
+) -> List[str]:
+    """Max 3 short bullets; themes only — avoids repeating long ``RULE_*`` template copy."""
     out: List[str] = []
-    seen: set[str] = set()
-    for code in reason_codes:
-        c = str(code).strip()
-        if not c or c == "RULE_DEFAULT_READY":
+
+    def add(line: str) -> None:
+        if len(out) >= 3 or not line.strip():
+            return
+        key = line.strip().lower()
+        if any(key == o.strip().lower() for o in out):
+            return
+        out.append(line.strip())
+
+    perf_bad = codes & {
+        "RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE",
+        "RULE_PERFORMANCE_NO_SUSTAINED_PACE_NEAR_GOAL",
+    }
+    perf_mod = codes & {
+        "RULE_PERFORMANCE_MODERATE_GAP_EASY_VS_GOAL_PACE",
+        "RULE_PERFORMANCE_STRETCH_SUSTAINED_VS_GOAL",
+    }
+    if perf_bad:
+        add("Observed training pace is **far** from goal marathon pace.")
+    elif perf_mod:
+        add("Training pace is still **well behind** goal marathon pace.")
+    elif "RULE_PERFORMANCE_PACE_DATA_THIN" in codes and aggressive:
+        add("Pace signal from synced runs is still **thin** for a full read.")
+
+    if "RULE_SUB3_THREE_DAYS_HIGH_RISK" in codes or (
+        aggressive and sub3 and n_run_days > 0 and n_run_days <= 3
+    ):
+        add("**Three** running days/week is **too low** for this standard.")
+    elif "RULE_SUB3_FOUR_DAYS_WEAK_BASELINE" in codes or (
+        aggressive and sub3 and n_run_days == 4
+    ):
+        add("**Four** days/week is usually **still short** for this standard.")
+
+    if "RULE_LONG_RUN_PATTERN_THIN" in codes:
+        add("Long-run **pattern** is thin — few repeated quality long efforts.")
+    elif "RULE_LONG_RUN_FREQUENCY_LOW" in codes:
+        add("Meaningful long runs show up **too rarely**.")
+    elif "RULE_LONG_RUN_RECENT_REGRESSION" in codes:
+        add("Long-run trend has **slipped** recently.")
+
+    if len(out) >= 3:
+        return out[:3]
+
+    if "RULE_SUB3_SHORT_TIMELINE" in codes or (
+        "RULE_MARATHON_TIME_TARGET_SHORT_TIMELINE" in codes
+    ):
+        add("**Timeline** to the race is **tight** for earning this goal safely.")
+    if len(out) >= 3:
+        return out[:3]
+    if "RULE_MARATHON_TIME_TARGET_THIN_BASELINE" in codes or (
+        "RULE_SUB3_BASELINE_NOT_ESTABLISHED" in codes
+    ):
+        add("Aerobic **base volume** is still **light** for this target.")
+    if len(out) >= 3:
+        return out[:3]
+    if "RULE_SUB3_VERY_LOW_MILEAGE_AND_SHORT_LONG_RUN" in codes:
+        add("**Volume** and **long run** are both far below this demand.")
+    if len(out) >= 3:
+        return out[:3]
+    if "RULE_EFFORT_CONTROL_DOMINANT_TOO_HARD" in codes:
+        add("Recent running skews **too hard** for easy aerobic development.")
+
+    return out[:3]
+
+
+def _strip_md_for_compare(s: str) -> str:
+    return re.sub(r"\*+", "", s).lower()
+
+
+def _dedupe_bullets_vs_verdict(verdict: str, bullets: Sequence[str]) -> List[str]:
+    """Drop bullets that largely repeat the verdict (display-only de-duplication)."""
+    v = _strip_md_for_compare(verdict)
+    vwords = {w for w in re.findall(r"[a-z0-9]+", v) if len(w) > 2}
+    out: List[str] = []
+    for b in bullets:
+        bb = _strip_md_for_compare(str(b))
+        if not bb.strip():
             continue
-        msg = _RULE_CONCERN_COPY.get(c)
-        if not msg:
+        if bb in v:
             continue
-        key = msg[:80].lower()
-        if key in seen:
+        bwords = {w for w in re.findall(r"[a-z0-9]+", bb) if len(w) > 2}
+        if bwords and vwords and len(bwords & vwords) / len(bwords) >= 0.55:
             continue
-        seen.add(key)
-        out.append(msg)
-        if len(out) >= 4:
+        out.append(str(b).strip())
+        if len(out) >= 3:
             break
     return out
 
@@ -1699,50 +1784,49 @@ def _display_recommended_path(
     codes: Set[str],
     n_run_days: int,
 ) -> Dict[str, str]:
+    _ = (codes, n_run_days)
     ptype = str(rp.get("type") or "").strip()
-    lead = str(rp.get("message") or "").strip()
-    support = str(rp.get("suggested_next_step") or "").strip()
+    lead = ""
+    support = ""
 
-    if ptype == PATH_ADD_RUNNING_DAY and aggressive:
+    if ptype == PATH_ADD_RUNNING_DAY and aggressive and sub3:
         lead = (
-            "Priority: **rebuild your weekly rhythm** before we treat this plan as responsible. "
-            "For a goal this demanding, think **adding real running frequency**—often "
-            "**five or more days per week over time**—while aerobic durability catches up."
+            "**Not a one-extra-day fix.** Earn **5–6 easy running days/week over time**, "
+            "**sustainable mileage**, repeated **quality long runs**, and a smaller **pace gap** — then "
+            "**reassess** the time goal."
         )
-        if "RULE_SUB3_THREE_DAYS_HIGH_RISK" in codes and n_run_days <= 3:
-            support = (
-                "Next: add repeatable easy days first; then we layer mileage and long-run progression "
-                "you can absorb—not a single cosmetic extra day."
-            )
-        elif support:
-            support = "Next: expand training days, keep easy days truly easy, then revisit volume and long runs."
+    elif ptype == PATH_ADD_RUNNING_DAY and aggressive:
+        lead = "**Frequency first** — sustained weekly structure, not one cosmetic extra easy day."
+    elif ptype == PATH_BUILD_BASE_FIRST and aggressive and sub3:
+        lead = (
+            "**Base phase first**: easy volume, steadier weeks, and **repeatable long runs** before this "
+            "time target is grounded."
+        )
     elif ptype == PATH_BUILD_BASE_FIRST and aggressive:
-        lead = (
-            "You need a **base phase** first: more easy aerobic volume, steadier weeks, and longer long "
-            "runs before locking a plan to this time target."
-        )
+        lead = "**Build base first**: more easy aerobic volume and steadier weeks before this time goal is realistic."
     elif ptype == PATH_ADJUST_GOAL and aggressive and sub3:
-        lead = (
-            "If you won’t change schedule or timeline, **the time goal** likely needs to move. "
-            "Sub-3 marathons punish weak frequency and thin durability."
-        )
+        lead = "If structure and timeline won’t move, **the time goal** has to — sub-3 won’t bend to thin weeks."
+    elif ptype == PATH_ADJUST_GOAL and aggressive:
+        lead = "**Adjust the time goal** (or timeline/frequency) so the plan matches what training can support."
     elif ptype == PATH_ADJUST_TIMELINE and aggressive:
-        lead = (
-            "More runway before race day is one of the cleanest fixes—extra weeks to build frequency, "
-            "volume, and long-run endurance."
-        )
-    elif not lead:
-        lead = "Review the options below and choose what you’re willing to change before we build the plan."
+        lead = "**More runway** before the race is a clean lever — extra weeks to earn fitness safely."
+    elif ptype == PATH_CREATE_PLAN:
+        lead = str(rp.get("message") or "").strip()
+    else:
+        lead = str(rp.get("message") or "").strip()
 
-    out: Dict[str, str] = {}
-    if lead:
-        out["lead"] = lead
+    if not lead:
+        lead = (
+            "Pick what you’re willing to change below, then we can build responsibly."
+        )
+
+    out: Dict[str, str] = {"lead": lead}
     if support:
         out["support"] = support
     return out
 
 
-def _coach_read_user(
+def _coach_verdict_user(
     r: Dict[str, Any],
     digest: Dict[str, Any],
     *,
@@ -1751,67 +1835,55 @@ def _coach_read_user(
     codes: Set[str],
     n_run_days: int,
 ) -> str:
+    _ = n_run_days
     decision = str(r.get("decision") or "").strip()
     lvl = str(r.get("readiness_level") or "").strip()
     gp_label = _goal_profile_label_for_user(str(r.get("goal_profile") or ""))
+    when = _race_month_year_phrase(digest)
 
     if decision == DECISION_ALLOW and lvl == LEVEL_READY:
         return (
-            "Based on what you’ve shared and your recent training snapshot, moving forward with a plan "
-            f"for this marathon goal looks reasonable when you’re ready. ({gp_label})"
+            f"Based on what we can see, you’re **reasonable to plan forward** for this marathon "
+            f"({when}). ({gp_label})"
         )
+
     if decision == DECISION_ALLOW and lvl == LEVEL_STRETCH:
-        stretch = (
-            "This goal is a **real stretch** from your current baseline. We can still map a plan, but "
-            "expect a patient build—**consistency, frequency, and aerobic volume** will matter more than "
-            "any single hard workout."
-        )
-        if codes & {
-            "RULE_PERFORMANCE_MODERATE_GAP_EASY_VS_GOAL_PACE",
-            "RULE_PERFORMANCE_STRETCH_SUSTAINED_VS_GOAL",
-        }:
+        if sub3 and aggressive:
             return (
-                stretch
-                + " Right now your **observed training paces** still look **short of** what this clock time "
-                "implies—we’d treat that as **“not yet”**, not **“never”**, and build honestly toward it."
+                f"This is a **serious stretch** for {when}. We can still build a plan — treat it as "
+                "**patient development** on frequency, volume, durability, and pace, not a quick bridge."
             )
-        return stretch
+        return (
+            "This goal is a **stretch** from your current baseline — expect a **consistency-first** build "
+            f"for {when}."
+        )
+
+    if decision != DECISION_ALLOW and aggressive and sub3:
+        s1 = f"You are **not** currently in **sub-3 marathon shape** for **{when}**."
+        s2 = (
+            "The gap is **structural**: aerobic development, weekly frequency, long-run durability, "
+            "and observed pace — not a small schedule tweak."
+        )
+        s3 = (
+            "Treat **sub-3 as a longer-term target** for this cycle unless you **change the race goal** "
+            "or **move the race**."
+        )
+        if "RULE_PERFORMANCE_PACE_DATA_THIN" in codes and not (
+            codes
+            & {
+                "RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE",
+                "RULE_PERFORMANCE_NO_SUSTAINED_PACE_NEAR_GOAL",
+            }
+        ):
+            return f"{s1} {s2} Pace data is still **limited** — I’ll weight rhythm and volume until it firms up. {s3}"
+        return f"{s1} {s2} {s3}"
 
     if decision != DECISION_ALLOW and aggressive:
-        parts: List[str] = [
-            "**I don’t recommend building this plan as-is.** "
-            f"This is a **{gp_label.lower()}**, and your current setup doesn’t support that responsibly yet."
-        ]
-        if sub3 and n_run_days <= 3:
-            parts.append(
-                "A **sub-3 marathon** on **three runs per week** is not how experienced coaches usually "
-                "stack this—think **progress toward 5+ running days per week**, substantially more "
-                "**aerobic volume over time**, and **marathon-specific endurance**, not a soft tweak."
-            )
-        elif sub3 and n_run_days == 4:
-            parts.append(
-                "**Four days** can be a bridge, but it does **not** mean you’re suddenly ready for sub-3—"
-                "baseline and durability still have to earn that target."
-            )
-        if sub3:
-            parts.append(
-                "Sub-3 training rewards **high-frequency easy running**, patient volume progression, "
-                "and long-run durability built over many weeks—that standard doesn’t bend."
-            )
-        else:
-            parts.append(
-                "We likely need **more running days**, **more sustainable volume**, a **softer goal**, "
-                "or **more calendar**—often a mix—before this plan is grounded."
-            )
-        if codes & {
-            "RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE",
-            "RULE_PERFORMANCE_NO_SUSTAINED_PACE_NEAR_GOAL",
-        }:
-            parts.append(
-                "**Pace evidence** from your recent running still looks **far from** what this marathon time "
-                "demands—a separate issue from heart or willingness."
-            )
-        return " ".join(parts)
+        return (
+            f"You’re **not** lined up with this **aggressive marathon time goal** for **{when}** yet. "
+            "The levers are **frequency**, **durability**, **base volume**, and **pace evidence** — "
+            "**adjust goal, timeline, or weekly structure** before locking a plan."
+        )
 
     rp = (
         r.get("recommended_path") if isinstance(r.get("recommended_path"), dict) else {}
@@ -1878,38 +1950,22 @@ def build_runner_analysis_display(
         goal_line_parts.append(f"target {tt}")
     goal_summary = " — ".join(goal_line_parts) if goal_line_parts else ""
 
-    gp_note = ""
-    if goal_profile:
-        gp_note = f"Framed as a {_goal_profile_label_for_user(goal_profile).lower()}—expectations match that demand."
-
     facts: List[Dict[str, str]] = []
     if goal_summary:
-        row_g = {"title": "Goal", "summary": goal_summary}
-        if gp_note:
-            row_g["note"] = gp_note
-        facts.append(row_g)
+        facts.append({"title": "Goal", "summary": goal_summary})
 
     sched_summary = (
         f"{n_days} running days per week" if n_days else "Training days not set"
     )
     if run_days_list:
         sched_summary += f" ({', '.join(run_days_list)})"
-    sched_note = ""
-    if aggressive and n_days and n_days <= 3:
-        sched_note = "For this goal class, **low frequency is a major limiter**—it needs to be addressed seriously."
-    elif n_days and n_days < 5 and sub3:
-        sched_note = "Sub-3 work usually **trends toward more frequent easy running**, built up over months."
-    row_s: Dict[str, str] = {"title": "Training rhythm", "summary": sched_summary}
-    if sched_note:
-        row_s["note"] = sched_note
-    facts.append(row_s)
+    facts.append({"title": "Training rhythm", "summary": sched_summary})
 
     if mpw is not None:
         facts.append(
             {
                 "title": "Recent weekly volume",
                 "summary": f"~{mpw:.1f} mi/week (recent snapshot)",
-                "note": _mileage_interpretation(mpw, sub3=sub3, aggressive=aggressive),
             }
         )
     if longest is not None and longest > 0:
@@ -1917,13 +1973,10 @@ def build_runner_analysis_display(
             {
                 "title": "Longest recent run",
                 "summary": f"~{longest:.1f} mi",
-                "note": _long_run_interpretation(longest, sub3=sub3),
             }
         )
     if aggressive:
-        perf_row = _runner_display_performance_capability(digest)
-        if perf_row:
-            facts.append(perf_row)
+        facts.extend(_compact_pace_and_pattern_facts(digest))
     if weeks is not None and str(weeks).strip():
         facts.append(
             {
@@ -1939,13 +1992,12 @@ def build_runner_analysis_display(
             {
                 "title": "Recent logs",
                 "summary": cov,
-                "note": "What we could **see in your history**, not a full fitness judgment.",
             }
         )
 
-    facts = facts[:7]
+    facts = facts[:12]
 
-    coach_read = _coach_read_user(
+    coach_read = _coach_verdict_user(
         plan_generation_readiness,
         digest,
         aggressive=aggressive,
@@ -1953,7 +2005,13 @@ def build_runner_analysis_display(
         codes=codes,
         n_run_days=n_days,
     )
-    why = _why_concerned_user(reason_codes)
+    raw_bullets = _main_reason_bullets(
+        codes,
+        aggressive=aggressive,
+        sub3=sub3,
+        n_run_days=n_days,
+    )
+    why = _dedupe_bullets_vs_verdict(coach_read, raw_bullets)
     path_ui = _display_recommended_path(
         rp,
         aggressive=aggressive,

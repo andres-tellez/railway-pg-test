@@ -436,7 +436,7 @@ def test_coach_analysis_for_llm_matches_readiness_and_omits_non_applicable_categ
 
     disp = out.get("runner_analysis_display")
     assert isinstance(disp, dict)
-    assert disp.get("schema_version") == "runner_analysis_display.v1"
+    assert disp.get("schema_version") == "runner_analysis_display.v1.1"
     assert "RULE_" not in json.dumps(disp)
     assert isinstance(disp.get("facts"), list)
 
