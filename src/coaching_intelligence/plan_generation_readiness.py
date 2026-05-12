@@ -5,9 +5,10 @@ Deterministic coaching recommendation layer for deciding whether the current
 runner profile supports generating the requested plan. This module is pure:
 no planner imports, no database access, no LLM calls.
 
-v2 adds ``category_assessments`` (ok / warn / bad). v2.1 gates performance
-rules by ``goal_profile`` (completion vs moderate vs competitive). v2.2 adds
+v2 adds ``category_assessments`` (ok / warn / bad). v2.1 gates the strictest
+**performance_alignment** rules by ``goal_profile`` (completion vs moderate vs competitive). v2.2 adds
 **performance_alignment** (pace vs marathon goal pace, reliability-gated),
+moderate marathon **developmental** pace warnings (distinct ``RULE_MODERATE_*``),
 extends **long-run durability** with pattern signals from the activity snapshot,
 and keeps **one** policy surface in this module.
 
@@ -109,6 +110,19 @@ PATH_BUILD_BASE_FIRST = "build_base_first"
 PATH_PROVIDE_ALIGNMENT = "provide_alignment_answers"
 PATH_INGEST_MORE_ACTIVITY = "ingest_more_activity"
 
+_DEVELOPMENTAL_MODERATE_MARATHON_PATH_MESSAGE = (
+    "This goal is more realistic than sub-3, but it is still a developmental performance build. "
+    "The plan can be created, but success depends on closing the pace gap, improving consistency, "
+    "and building long-run durability."
+)
+_DEVELOPMENTAL_MODERATE_MARATHON_RECOMMENDED_PATH: Dict[str, str] = {
+    "type": PATH_CREATE_PLAN,
+    "message": _DEVELOPMENTAL_MODERATE_MARATHON_PATH_MESSAGE,
+    "suggested_next_step": (
+        "Create the plan with a patience-first mindset — prioritize consistency and durable long runs."
+    ),
+}
+
 _SUB3_SECONDS = 3 * 60 * 60
 # Marathon clock <= 3:30:00 inclusive → competitive; strictly slower → moderate.
 _COMPETITIVE_MARATHON_MAX_SECONDS = 3 * 3600 + 30 * 60  # 3:30:00
@@ -125,7 +139,14 @@ _CONSISTENCY_WEEKLY_SPREAD_MI_WARN = 30.0
 _CONSISTENCY_MIN_COMPLETED_WEEKS_FOR_SPREAD = 3
 _EFFORT_CONTROL_MIN_RUNS = 4
 
+# Moderate marathon time goals — softer pace-vs-goal gates than competitive (sec/mi behind goal pace).
+_MODERATE_PERF_EASY_GAP_WARN_SEC = 50.0
+_MODERATE_PERF_SUSTAINED_GAP_WARN_SEC = 45.0
+
 _REQUIRED_PLAN_FIELDS = ("race_distance", "race_date", "primary_goal", "training_days")
+
+# Distinct from competitive ``RULE_PERFORMANCE_*`` — developmental WARN for moderate profile only.
+RULE_MODERATE_PERFORMANCE_PACE_GAP = "RULE_MODERATE_PERFORMANCE_PACE_GAP"
 
 
 def _safe_float(value: Any) -> Optional[float]:
@@ -417,11 +438,16 @@ def _category_applies_to_goal(
 ) -> bool:
     """When False, severity is shown as ok for UX; category does not encode policy for that profile."""
     if category_id == CATEGORY_PERFORMANCE_ALIGNMENT:
-        if goal_profile != GOAL_PROFILE_COMPETITIVE_PERFORMANCE:
+        if goal_profile == GOAL_PROFILE_COMPLETION:
             return False
         return bool(
             _is_marathon(builder.plan_request)
             and _is_target_time_goal(builder.plan_request)
+            and goal_profile
+            in (
+                GOAL_PROFILE_COMPETITIVE_PERFORMANCE,
+                GOAL_PROFILE_MODERATE_PERFORMANCE,
+            )
         )
     if category_id == CATEGORY_EFFORT_CONTROL:
         if goal_profile == GOAL_PROFILE_COMPLETION:
@@ -430,19 +456,12 @@ def _category_applies_to_goal(
     return True
 
 
-def _apply_marathon_performance_alignment_rules(
+def _apply_competitive_marathon_pace_rules(
     builder: _ReadinessBuilder,
-    goal_profile: str,
     plan_request: Dict[str, Any],
+    goal_pace: float,
 ) -> None:
-    """P1: competitive marathon time goals — observed pace vs goal marathon pace (reliability-gated)."""
-    if goal_profile != GOAL_PROFILE_COMPETITIVE_PERFORMANCE:
-        return
-    if not (_is_marathon(plan_request) and _is_target_time_goal(plan_request)):
-        return
-    goal_pace = _marathon_goal_pace_sec_per_mi(plan_request)
-    if goal_pace is None:
-        return
+    """Strict performance alignment — sub-3 / BQ-class competitive marathon time goals."""
     rel = str(builder.activity.get("pace_reliability") or "none")
     easy = _safe_float(builder.activity.get("typical_easy_pace_sec_per_mi"))
     sustained = _safe_float(
@@ -477,6 +496,77 @@ def _apply_marathon_performance_alignment_rules(
             builder.add_reason("RULE_PERFORMANCE_STRETCH_SUSTAINED_VS_GOAL")
 
 
+def _apply_moderate_marathon_pace_rules(
+    builder: _ReadinessBuilder,
+    plan_request: Dict[str, Any],
+    goal_pace: float,
+) -> None:
+    """Developmental pace alignment for moderate marathon time goals — WARN only, no goal requirement."""
+    _ = plan_request
+    rel = str(builder.activity.get("pace_reliability") or "none")
+    if rel in ("none", "low"):
+        return
+    easy = _safe_float(builder.activity.get("typical_easy_pace_sec_per_mi"))
+    sustained = _safe_float(
+        builder.activity.get("best_sustained_endurance_pace_sec_per_mi")
+    )
+    easy_gap = (easy - goal_pace) if easy is not None else None
+    sustained_gap = (sustained - goal_pace) if sustained is not None else None
+    if (easy_gap is not None and easy_gap > _MODERATE_PERF_EASY_GAP_WARN_SEC) or (
+        sustained_gap is not None
+        and sustained_gap > _MODERATE_PERF_SUSTAINED_GAP_WARN_SEC
+    ):
+        builder.add_reason(RULE_MODERATE_PERFORMANCE_PACE_GAP)
+        builder.add_limiting_factor("moderate_time_goal_pace_still_developmental")
+
+
+def _apply_marathon_performance_alignment_rules(
+    builder: _ReadinessBuilder,
+    goal_profile: str,
+    plan_request: Dict[str, Any],
+) -> None:
+    """Marathon target-time pace vs goal — competitive (strict) or moderate (developmental WARN)."""
+    if goal_profile == GOAL_PROFILE_COMPLETION:
+        return
+    if not (_is_marathon(plan_request) and _is_target_time_goal(plan_request)):
+        return
+    goal_pace = _marathon_goal_pace_sec_per_mi(plan_request)
+    if goal_pace is None:
+        return
+    if goal_profile == GOAL_PROFILE_COMPETITIVE_PERFORMANCE:
+        _apply_competitive_marathon_pace_rules(builder, plan_request, goal_pace)
+    elif goal_profile == GOAL_PROFILE_MODERATE_PERFORMANCE:
+        _apply_moderate_marathon_pace_rules(builder, plan_request, goal_pace)
+
+
+def _moderate_marathon_compound_stress_count(
+    builder: _ReadinessBuilder,
+    plan_request: Dict[str, Any],
+) -> int:
+    """Signals used only with moderate pace-gap — escalate only when several axes are weak."""
+    n = 0
+    if _training_day_count(plan_request) <= 3:
+        n += 1
+    wk = builder.weeks_to_race
+    if wk is not None and wk < _SHORT_TIMELINE_WEEKS:
+        n += 1
+    if builder.baseline_band == "THIN":
+        n += 1
+    rc = set(builder.reason_codes)
+    if rc & {
+        "RULE_CONSISTENCY_SPARSE_ACTIVE_WEEKS",
+        "RULE_CONSISTENCY_HIGH_WEEKLY_VARIANCE",
+    }:
+        n += 1
+    if 0 < builder.longest_run_miles < 8.0:
+        n += 1
+    if 0 < builder.activities_found < 5:
+        n += 1
+    if 0 < builder.avg_mpw < 20.0:
+        n += 1
+    return n
+
+
 def _apply_long_run_quality_rules(
     builder: _ReadinessBuilder,
     goal_profile: str,
@@ -509,14 +599,28 @@ def _escalate_readiness_for_performance_alignment(
     plan_request: Dict[str, Any],
     level: str,
 ) -> str:
-    if goal_profile != GOAL_PROFILE_COMPETITIVE_PERFORMANCE:
-        return level
     if not (_is_marathon(plan_request) and _is_target_time_goal(plan_request)):
+        return level
+    rc = set(builder.reason_codes)
+
+    if goal_profile == GOAL_PROFILE_MODERATE_PERFORMANCE:
+        if RULE_MODERATE_PERFORMANCE_PACE_GAP not in rc:
+            return level
+        rel = str(builder.activity.get("pace_reliability") or "none")
+        if rel in ("none", "low"):
+            return level
+        stress = _moderate_marathon_compound_stress_count(builder, plan_request)
+        if stress >= 2 and level in (LEVEL_READY, LEVEL_STRETCH):
+            return LEVEL_HIGH_RISK
+        if level == LEVEL_READY:
+            return LEVEL_STRETCH
+        return level
+
+    if goal_profile != GOAL_PROFILE_COMPETITIVE_PERFORMANCE:
         return level
     rel = str(builder.activity.get("pace_reliability") or "none")
     if rel in ("none", "low"):
         return level
-    rc = set(builder.reason_codes)
     bad = {
         "RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE",
         "RULE_PERFORMANCE_NO_SUSTAINED_PACE_NEAR_GOAL",
@@ -610,7 +714,11 @@ def _confidence(
     if builder.activities_found < 3 or builder.baseline_band == "THIN":
         out = CONFIDENCE_MEDIUM
     if (
-        goal_profile == GOAL_PROFILE_COMPETITIVE_PERFORMANCE
+        goal_profile
+        in (
+            GOAL_PROFILE_COMPETITIVE_PERFORMANCE,
+            GOAL_PROFILE_MODERATE_PERFORMANCE,
+        )
         and _is_marathon(builder.plan_request)
         and _is_target_time_goal(builder.plan_request)
     ):
@@ -744,7 +852,9 @@ def _recommended_path(
     readiness_level: str,
     required_changes: Sequence[str],
     reason_codes: Sequence[str],
+    goal_profile: str,
 ) -> Dict[str, str]:
+    rc_set = {str(x) for x in reason_codes if str(x).strip()}
     if readiness_level == LEVEL_READY:
         return {
             "type": PATH_CREATE_PLAN,
@@ -752,6 +862,11 @@ def _recommended_path(
             "suggested_next_step": "Create the training plan.",
         }
     if readiness_level == LEVEL_STRETCH:
+        if (
+            goal_profile == GOAL_PROFILE_MODERATE_PERFORMANCE
+            and RULE_MODERATE_PERFORMANCE_PACE_GAP in rc_set
+        ):
+            return _DEVELOPMENTAL_MODERATE_MARATHON_RECOMMENDED_PATH
         return {
             "type": PATH_CREATE_PLAN,
             "message": "The requested plan is ambitious but workable with a clear warning.",
@@ -888,6 +1003,11 @@ _REASON_CATEGORY_BUMPS: Tuple[Tuple[str, str, int], ...] = (
         CATEGORY_PERFORMANCE_ALIGNMENT,
         _SEV_WARN,
     ),
+    (
+        RULE_MODERATE_PERFORMANCE_PACE_GAP,
+        CATEGORY_PERFORMANCE_ALIGNMENT,
+        _SEV_WARN,
+    ),
     ("RULE_PERFORMANCE_PACE_DATA_THIN", CATEGORY_PERFORMANCE_ALIGNMENT, _SEV_WARN),
     ("RULE_PERFORMANCE_PACE_DATA_THIN", CATEGORY_DATA_CONFIDENCE, _SEV_WARN),
     ("RULE_LONG_RUN_PATTERN_THIN", CATEGORY_LONG_RUN_DURABILITY, _SEV_WARN),
@@ -917,6 +1037,7 @@ _REASON_CODES_BY_CATEGORY: Dict[str, frozenset] = {
             "RULE_PERFORMANCE_MODERATE_GAP_EASY_VS_GOAL_PACE",
             "RULE_PERFORMANCE_STRETCH_SUSTAINED_VS_GOAL",
             "RULE_PERFORMANCE_PACE_DATA_THIN",
+            RULE_MODERATE_PERFORMANCE_PACE_GAP,
         }
     ),
     CATEGORY_TRAINING_AVAILABILITY: frozenset(
@@ -1601,18 +1722,28 @@ def _build_goal_direction_display(
                     reassess_bullet(),
                 ]
             elif goal_profile == GOAL_PROFILE_MODERATE_PERFORMANCE:
-                hid = "patient_moderate_build"
-                hl = "Patient moderate-goal build"
-                fr = (
-                    "Your current setup can move toward this target, but it sits on the **outer edge** of what I’d "
-                    f"stack for **{when}**. The developmental play is steady frequency, breathable volume, and "
-                    "repeatable long efforts — not forcing pace before the base is honest."
-                )
-                nxt = [
-                    "Lock the plan with eyes open to the ambitious edge you’re choosing, and keep easy days **actually easy**.",
-                    "Protect the long run as your primary durability lever this block.",
-                    reassess_bullet(),
-                ]
+                if RULE_MODERATE_PERFORMANCE_PACE_GAP in codes:
+                    hid = "moderate_marathon_developmental_pace"
+                    hl = "Developmental moderate performance build"
+                    fr = _DEVELOPMENTAL_MODERATE_MARATHON_PATH_MESSAGE
+                    nxt = [
+                        "Prioritize **easy volume**, steadier weeks, and **repeatable long runs** before leaning on race pace.",
+                        "Expect this block to feel like **earning the clock**, not assuming it — that’s normal for this evidence.",
+                        reassess_bullet(),
+                    ]
+                else:
+                    hid = "patient_moderate_build"
+                    hl = "Patient moderate-goal build"
+                    fr = (
+                        "Your current setup can move toward this target, but it sits on the **outer edge** of what I’d "
+                        f"stack for **{when}**. The developmental play is steady frequency, breathable volume, and "
+                        "repeatable long efforts — not forcing pace before the base is honest."
+                    )
+                    nxt = [
+                        "Lock the plan with eyes open to the ambitious edge you’re choosing, and keep easy days **actually easy**.",
+                        "Protect the long run as your primary durability lever this block.",
+                        reassess_bullet(),
+                    ]
             else:
                 hid = "patient_performance_build"
                 hl = "Patient performance build"
@@ -1905,6 +2036,10 @@ _RULE_CONCERN_COPY: Dict[str, str] = {
         "Your best sustained long-run type pacing is **getting closer**, but it’s **still behind** what this goal "
         "usually requires over the full marathon."
     ),
+    RULE_MODERATE_PERFORMANCE_PACE_GAP: (
+        "For a **moderate** marathon time goal, your **observed pace picture** still looks **developmental** relative "
+        "to the race pace this target implies — coaching-wise, that means patience and consistency, not panic."
+    ),
     "RULE_LONG_RUN_PATTERN_THIN": (
         "Long-run **durability** looks thin—you’ve rarely repeated meaningful long work in this window, not just a "
         "single longest run."
@@ -2069,12 +2204,15 @@ def _compact_pace_and_pattern_facts(digest: Dict[str, Any]) -> List[Dict[str, st
 
 
 def _main_reason_perf_gap_codes(codes: Set[str]) -> Set[str]:
-    """``RULE_PERFORMANCE_*`` that describe pace/capability alignment (not data-thin alone)."""
-    return {
+    """Pace/capability signal codes for ordering main reasons (excludes data-thin alone)."""
+    out = {
         c
         for c in codes
         if c.startswith("RULE_PERFORMANCE_") and c != "RULE_PERFORMANCE_PACE_DATA_THIN"
     }
+    if RULE_MODERATE_PERFORMANCE_PACE_GAP in codes:
+        out.add(RULE_MODERATE_PERFORMANCE_PACE_GAP)
+    return out
 
 
 def _main_reason_longrun_codes(codes: Set[str]) -> Set[str]:
@@ -2100,6 +2238,12 @@ def _bullet_performance_alignment(
     pace_bit = (
         f"**~{_fmt_pace_min_mi(gp)}**" if gp is not None else "**goal marathon pace**"
     )
+
+    if RULE_MODERATE_PERFORMANCE_PACE_GAP in codes:
+        return (
+            f"This target is **more realistic** than sub-3 class goals, but your **observed paces** still sit **behind** "
+            f"{pace_bit} — expect a **developmental** build, not an on-paper match yet."
+        )
 
     if codes & {
         "RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE",
@@ -2213,8 +2357,10 @@ def _dedupe_bullets_vs_verdict(verdict: str, bullets: Sequence[str]) -> List[str
         bb = _strip_md_for_compare(str(b))
         if not bb.strip():
             continue
-        tier_keep = bb.startswith("your observed paces are still") or (
-            "your long-run durability is still" in bb
+        tier_keep = (
+            bb.startswith("your observed paces are still")
+            or ("your long-run durability is still" in bb)
+            or ("this target is **more realistic** than sub-3" in bb)
         )
         if tier_keep:
             out.append(str(b).strip())
@@ -2304,6 +2450,12 @@ def _coach_verdict_user(
         )
 
     if decision == DECISION_ALLOW and lvl == LEVEL_STRETCH:
+        gp_prof = str(r.get("goal_profile") or "").strip()
+        if (
+            gp_prof == GOAL_PROFILE_MODERATE_PERFORMANCE
+            and RULE_MODERATE_PERFORMANCE_PACE_GAP in codes
+        ):
+            return _DEVELOPMENTAL_MODERATE_MARATHON_PATH_MESSAGE
         if sub3 and aggressive:
             return (
                 f"This is a **serious stretch** for {when}. We can still build a plan — treat it as "
@@ -2551,6 +2703,7 @@ def _finalize(
             readiness_level=readiness_level,
             required_changes=required_changes,
             reason_codes=reason_codes,
+            goal_profile=goal_profile,
         ),
         "allowed_user_actions": allowed_user_actions,
         "inputs_digest": inputs_digest,

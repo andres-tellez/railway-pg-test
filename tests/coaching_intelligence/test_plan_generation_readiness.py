@@ -26,6 +26,7 @@ from src.coaching_intelligence.plan_generation_readiness import (
     LEVEL_INSUFFICIENT_DATA,
     LEVEL_READY,
     LEVEL_STRETCH,
+    RULE_MODERATE_PERFORMANCE_PACE_GAP,
     SCHEMA_VERSION,
     STATUS_BAD,
     STATUS_OK,
@@ -684,4 +685,73 @@ def test_sub3_relaxed_goal_time_recomputes_readiness_for_plan_creation():
         assessment_api=assess,
     )
     assert relaxed["decision"] == DECISION_ALLOW
+    assert relaxed["readiness_level"] == LEVEL_STRETCH
+    assert RULE_MODERATE_PERFORMANCE_PACE_GAP in relaxed["reason_codes"]
     assert "create_plan" in relaxed["allowed_user_actions"]
+    assert "continue_with_warning" in relaxed["allowed_user_actions"]
+    by_id = {c["category_id"]: c for c in relaxed["category_assessments"]}
+    pa = by_id[CATEGORY_PERFORMANCE_ALIGNMENT]
+    assert pa["applies_to_goal"] is True
+    assert pa["status"] == STATUS_WARN
+    assert RULE_MODERATE_PERFORMANCE_PACE_GAP in pa["reason_codes"]
+    fu = pa["facts_used"]
+    assert fu.get("gap_easy_minus_goal_sec_per_mi") is not None
+    coach = relaxed["runner_analysis_display"]["coach_read"]
+    assert "developmental" in coach.lower()
+    assert "supported by the current profile" not in coach.lower()
+    rp_msg = str(relaxed.get("recommended_path", {}).get("message") or "")
+    assert "developmental" in rp_msg.lower()
+    assert "supported by the current profile" not in rp_msg.lower()
+
+
+def test_completion_marathon_skips_performance_alignment_category():
+    """Finish / completion profile must not judge marathon pace vs a time target."""
+    out = evaluate_plan_generation_readiness(
+        plan_request=_plan(
+            primary_goal="Just Finish",
+            target_time="",
+            training_days=["Mon", "Tue", "Thu", "Sat"],
+        ),
+        assessment_api=_assessment(
+            avg_mpw=34,
+            longest=14,
+            activities_found=16,
+            baseline_band="ESTABLISHED",
+            stance="COHERENT",
+            goal_demand="FINISH",
+            typical_easy_pace_sec_per_mi=600.0,
+            best_sustained_endurance_pace_sec_per_mi=580.0,
+            pace_reliability="high",
+        ),
+    )
+    assert out["goal_profile"] == GOAL_PROFILE_COMPLETION
+    by_id = {c["category_id"]: c for c in out["category_assessments"]}
+    assert by_id[CATEGORY_PERFORMANCE_ALIGNMENT]["applies_to_goal"] is False
+    assert by_id[CATEGORY_PERFORMANCE_ALIGNMENT]["status"] == STATUS_OK
+
+
+def test_moderate_marathon_pace_gap_compound_stress_defers_plan_creation():
+    """Two+ structural weaknesses with moderate pace gap escalates beyond allow (no create_plan)."""
+    out = evaluate_plan_generation_readiness(
+        plan_request=_plan(
+            training_days=["Mon", "Wed", "Sat"],
+            target_time="3:40:00",
+        ),
+        assessment_api=_assessment(
+            avg_mpw=42.0,
+            longest=7.0,
+            activities_found=20,
+            baseline_band="MODERATE",
+            stance="COHERENT",
+            typical_easy_pace_sec_per_mi=560.0,
+            best_sustained_endurance_pace_sec_per_mi=530.0,
+            pace_reliability="medium",
+            runs_usable_pace_count=10,
+            goal_demand="TIME_TARGET",
+        ),
+    )
+    assert out["goal_profile"] == GOAL_PROFILE_MODERATE_PERFORMANCE
+    assert RULE_MODERATE_PERFORMANCE_PACE_GAP in out["reason_codes"]
+    assert out["readiness_level"] == LEVEL_HIGH_RISK
+    assert out["decision"] == DECISION_DEFER
+    assert "create_plan" not in out["allowed_user_actions"]
