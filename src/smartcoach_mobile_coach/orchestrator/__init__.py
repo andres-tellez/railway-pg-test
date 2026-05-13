@@ -28,6 +28,8 @@ import logging
 import os
 import re
 import time
+import unicodedata
+from datetime import date
 from dataclasses import replace
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -37,7 +39,13 @@ from sqlalchemy import text
 from src.db.dao.user_profile_dao import get_user_profile
 from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
 from src.services.security.external_apis.openai_service import get_openai_service
+from src.coaching_intelligence.pre_generation_runner_review import (
+    build_pre_generation_runner_review_v1,
+    pre_generation_runner_review_system_section,
+    runner_review_feature_enabled,
+)
 from src.smartcoach_mobile_coach.agent_tools import (
+    _intake_alignment_enabled,
     execute_tool,
     tool_generate_training_plan,
     tool_update_plan_intake,
@@ -47,6 +55,7 @@ from src.smartcoach_mobile_coach.coach_response_validator import (
 )
 from src.smartcoach_mobile_coach.coach_tone_contract import (
     coach_tone_contract_section,
+    coach_turn_prose_shape_section,
 )
 from src.smartcoach_mobile_coach.metric_glossary import metric_glossary_section
 from src.smartcoach_mobile_coach.phase_ux_contract import (
@@ -71,21 +80,51 @@ from src.smartcoach_mobile_coach.plan_intake_activity_context import (
     apply_plan_activity_preamble_to_assistant_markdown,
     compute_plan_intake_activity_summary,
     format_plan_intake_activity_context_block,
+    parse_anchor_local_date_yyyy_mm_dd,
 )
+from src.smartcoach_mobile_coach.orchestrator.plan_creation_branch import (
+    PLAN_CREATION_SYSTEM_PROMPT_BASE,
+    _device_anchor_system_section,
+    _enforce_plan_creation_response_guardrails,
+    build_deterministic_plan_intake_chip_assistant_payload,
+    _eager_merge_plan_intake_user_turn,
+    _join_nonempty_system_sections,
+    _natural_plan_intake_fallback_question,
+    _plan_creation_directive_stub,
+    _plan_creation_minimal_system_content,
+    _plan_creation_system_section,
+    _plan_intake_phase_system_section,
+    _structured_intake_core_v1_plan_creation_addon,
+    _try_build_runner_review_bundle,
+    _ui_prompt_from_plan_intake_state,
+)
+
 from src.smartcoach_mobile_coach.plan_intake_flow import (
-    _human_missing_label,
+    alignment_pause_coaching_facts_system_section,
+    build_plan_request_from_state,
+    plan_creation_split_confirm_enabled,
     mark_plan_runner_understanding_shown,
+    plan_intake_alignment_pause_active,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
+    schedule_confirmation_system_section,
+    structured_intake_core_v1_enabled,
     user_confirms_plan_intake,
+    user_requests_plan_generation,
+)
+from src.smartcoach_mobile_coach.plan_creation_ui import (
+    apply_review_to_plan_intake_ux_for_phase,
 )
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PLAN_CREATION,
     INTENT_RACE_PROJECTION,
+    MODE_AMBIGUOUS,
+    MODE_MINIMAL,
     TURN_OPENING,
     ResponseDirective,
     classify_turn,
     extract_conversation_state,
+    infer_intent,
     plan_response,
     response_directive_section,
 )
@@ -99,6 +138,9 @@ from src.smartcoach_mobile_coach.run_recap_fastpath import (
     wants_split_detail_fastpath,
 )
 from src.smartcoach_mobile_coach.run_recap_policy import decide_run_recap_fastpath
+from src.smartcoach_mobile_coach.run_summary_sections import (
+    enrich_run_summary_payload_with_sections,
+)
 from src.smartcoach_mobile_coach.thread_derived_context import (
     DerivedThreadCoachContext,
     derive_thread_coach_context,
@@ -266,6 +308,100 @@ def _user_message_matches_plan_creation_regex(user_message: str) -> bool:
     return signals >= 2
 
 
+def _fold_approx_ascii_for_intent(user_message: str) -> str:
+    """Strip combining marks so e.g. 'créate' matches ASCII 'create' heuristics."""
+    s = user_message or ""
+    nkfd = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in nkfd if not unicodedata.combining(c))
+
+
+def _plan_creation_intent_clarification_enabled() -> bool:
+    raw = (
+        (os.getenv("SMARTCOACH_PLAN_CREATION_INTENT_CLARIFICATION") or "1")
+        .strip()
+        .lower()
+    )
+    return raw not in ("0", "false", "no", "off")
+
+
+_DECLINE_PLAN_CLARIFICATION_RE = re.compile(
+    r"(?is)\b(no|nope|nah|not\s+really|something\s+else|not\s+what\s+i\s+meant|"
+    r"different\s+thing|don'?t)\b"
+)
+
+
+def _user_declines_plan_creation_clarification(user_message: str) -> bool:
+    raw = (user_message or "").strip()
+    if not raw:
+        return False
+    return bool(_DECLINE_PLAN_CLARIFICATION_RE.search(raw))
+
+
+def _user_confirms_plan_creation_clarification(user_message: str) -> bool:
+    if user_confirms_plan_intake(user_message):
+        return True
+    m = (user_message or "").strip().lower()
+    if "create a running plan" in m:
+        return True
+    if "start plan setup" in m:
+        return True
+    return False
+
+
+def _plan_creation_clarification_ui_prompt() -> Dict[str, Any]:
+    return {
+        "version": 1,
+        "field_key": "plan_creation_intent_clarification",
+        "selection_mode": "single",
+        "required": True,
+        "prompt": "Is your goal to set up a structured running plan?",
+        "options": [
+            {
+                "id": "confirm_plan_creation_intent",
+                "label": "Yes — start plan setup",
+                "user_message": "Yes, I want to create a running plan.",
+                "updates": {"confirm_plan_creation_intent": True},
+            },
+            {
+                "id": "decline_plan_creation_intent",
+                "label": "No — something else",
+                "user_message": "No, that's not what I meant.",
+                "updates": {"decline_plan_creation_intent": True},
+            },
+        ],
+    }
+
+
+def _should_offer_plan_creation_clarification(
+    *,
+    user_message: str,
+    thread_ctx: DerivedThreadCoachContext,
+    response_directive: ResponseDirective,
+    has_active_plan: bool,
+) -> bool:
+    """Offer disambiguation when accent-folded text looks like plan setup but strict ASCII paths miss."""
+    if not _plan_creation_intent_clarification_enabled():
+        return False
+    if has_active_plan:
+        return False
+    if isinstance(thread_ctx.latest_plan_intake_state, dict):
+        return False
+    if thread_ctx.plan_creation_clarification_pending:
+        return False
+    raw = (user_message or "").strip()
+    if not raw:
+        return False
+    strict = (
+        response_directive.intent == INTENT_PLAN_CREATION
+        or _user_message_matches_plan_creation_regex(raw)
+    )
+    folded = _fold_approx_ascii_for_intent(raw)
+    loose = infer_intent(
+        folded
+    ) == INTENT_PLAN_CREATION or _user_message_matches_plan_creation_regex(folded)
+    return bool(loose and not strict)
+
+
 def _user_has_active_plan(session: Session, user_id: str) -> bool:
     """Cheap existence check — is there a row in `plans` with is_active=TRUE?
 
@@ -307,6 +443,7 @@ def _is_plan_creation_turn(
     thread_ctx: DerivedThreadCoachContext,
     *,
     has_active_plan: bool,
+    force_after_clarification: bool = False,
 ) -> bool:
     """Decide whether the current turn should use the plan-creation prompt.
 
@@ -327,6 +464,10 @@ def _is_plan_creation_turn(
     old substring matcher treated "how was my run compared to the
     training plan?" as plan creation.
     """
+    if force_after_clarification:
+        if has_active_plan:
+            return False
+        return True
     # Rule 1 — mid-intake thread always wins.
     if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict):
         return True
@@ -570,7 +711,12 @@ _UPDATE_PLAN_INTAKE_OPENAI_TOOL: Dict[str, Any] = {
                         "primary_goal (Just Finish|Target Time), target_time "
                         "(clock or phrases like 3h40m), training_days "
                         "(list and/or comma text; ranges like Monday through Saturday, weekdays, Mon thru Fri), "
-                        "long_run_day, notes, plan_name."
+                        "long_run_day, notes, plan_name. "
+                        "For intake alignment (when generation is paused), allowed keys are also: "
+                        "alignment_frequency_flexible (boolean-like), "
+                        "alignment_posture_priority (optional override; server infers default otherwise), "
+                        "alignment_timeline_flexible (boolean-like), and "
+                        "alignment_question_asked_category (string category name)."
                     ),
                 },
                 "clear_fields": {
@@ -607,6 +753,13 @@ _GENERATE_TRAINING_PLAN_OPENAI_TOOL: Dict[str, Any] = {
                 "activity_weeks": {
                     "type": "integer",
                     "description": "Optional lookback window for activity baseline (default 12).",
+                },
+                "alignment_answers": {
+                    "type": "object",
+                    "description": (
+                        "Optional deprecated alias for compatibility. Prefer update_plan_intake "
+                        "alignment_* updates while generation is paused."
+                    ),
                 },
             },
             "required": ["confirm"],
@@ -1236,7 +1389,7 @@ CONVERSATION & BREVITY
 - **Default length:** for **most** messages (follow-ups, narrow questions, non-run topics), aim for **2–3 sentences**. Go longer only when they clearly want a full breakdown (e.g. "explain in detail", "walk me through everything", "full recap").
 - **Progress / readiness / weekly trend** (holistic *how am I doing*, *on track*, *this week* — **not** structured **`run_summary`**): **≤3 sentences** hard cap — see **OUTPUT STRUCTURE — Progress check-in**; **one idea per sentence**; **spoken** (mid-run / post-run coach), not written analysis.
 - **Default voice (non-run-recap topics):** **woven coach prose** — short paragraphs, **bold** the key numbers (Markdown `**…**`) where helpful. See **OUTPUT STRUCTURE** below. Do **not** open with process filler ("Let me pull…", "Now let me calculate…").
-- **First open-ended run question** in the thread (e.g. "how was my run", "how did today go"): when a **structured run summary** is present, **`content`** follows **OUTPUT STRUCTURE — Insight + Facts** — **≤3 insight sentences**, flexible shape (not a fixed verdict→number→advice template). **Do not** add a **fourth insight** sentence. You **may** add **one optional 4th sentence** that is **only** a short, specific follow-up question when it adds value for engagement (see **OUTPUT STRUCTURE — Optional close**); not every turn. Not report-like.
+- **First open-ended run question** in the thread (e.g. "how was my run", "how did today go"): when a **structured run summary** is present, **`content`** follows **OUTPUT STRUCTURE — Insight + Facts** — **≤3 insight sentences**, in the **Coach turn prose shape** order (**interpretation → grounding → optional nudge → optional close**). **Do not** add a **fourth insight** sentence. You **may** add **one optional 4th sentence** that is **only** a short, specific follow-up question when it adds value for engagement (see **OUTPUT STRUCTURE — Optional close**); not every turn. Not report-like.
 - **Interpretation-first opener (first open-ended run question + card):** **Sentence 1** of **`content`** must be a **human coach read** (judgment, reaction, or how the run *felt* athletically) — **not** distance, duration, pace, or average HR as the **opening** line. The **RunSummaryCard** already carries headline stats; do **not** open like a caption for the card ("You ran 10 miles at 9:59…"). You may still use **at most one** numeric anchor **later** in the insight when it helps (per **OUTPUT STRUCTURE** numeric rules), not as sentence 1.
 - **Follow-ups and narrow questions:** reply **only** to the new ask. **Do not repeat** distance, pace, duration, HR, session-level KPI numbers you already stated (e.g. early/late HR, peak split HR, drift %), or the same conclusions unless they ask to repeat or recap.
 - **Same-run follow-ups (thread-led, not analysis-led):** When the thread already discussed this run (especially when **## Thread-led coach context** is present), **sentence 1** must **answer the user's latest message** (feeling, worry, contradiction, or new angle) — **not** a fresh opener that re-describes the run (miles / pace / HR / drift) as if starting from scratch. **At most one** new tool-grounded fact in the opening when it is **strictly necessary** for that answer; otherwise continuity beats re-narration.
@@ -1305,10 +1458,10 @@ DATA RETRIEVAL & TOOL RULES
 - **Weekly miles across multiple weeks** (e.g. "mileage each week", "weekly miles in the last 30 days"): call **`aggregate_runs_in_range`** with inclusive **`start_date_from`** / **`start_date_to`** and answer from **`weekly_summaries`** in that payload (same all-runs source as totals). Use **`week_label`** when listing weeks and respect **`weekly_summaries_scope`**. Do **not** answer this from **`get_weekly_training_insight`** alone (that is one precomputed week, not a per-week table).
 
 - **Thread context — no `activity_id` in history:** The model only sees past **user and assistant plain text**, not prior tool JSON. If you answered with a **specific run** (race name, **date** like YYYY-MM-DD, or “last marathon” from `search_runs`), a follow-up such as **“how did I do?”**, **“how was that run?”**, **“what was my pace?”**, or **“tell me more”** refers to **that** run — **not** automatically “today.” You must obtain an **`activity_id`** again, then call **`get_run_summary`**.
-- **Re-resolving that run (pick one path):** (1) If the **prior assistant message** contains a calendar **date** (YYYY-MM-DD or a clear month/day/year), call **`find_runs_by_date`** with that **`local_date`** (disambiguate if multiple runs). (2) Else if the thread was about **last marathon / long race / similar**, call **`search_runs`** again with the **same style of filters** (e.g. `min_distance_m` ~42000) and use the **top match’s `activity_id`**. (3) Only if the user clearly means **today’s** run again, use the device anchor date below.
-- Use the system-provided "today" date for vague queries about **this calendar day** only (e.g. "my run", "today") when they are **not** clearly continuing a **different** run from the prior turn.
-- When the user refers to "my run" or "last run" **without** having just discussed another specific run, treat it as the run on the system-provided date unless they name another day.
-- For follow-up requests about **today’s** same run (e.g. "include KPIs", "add Z2 pace", "show HR drift") with no new date, resolve with `find_runs_by_date` using the **system-provided anchor date** before answering.
+- **Re-resolving that run (pick one path):** (1) If the **prior assistant message** contains a calendar **date** (YYYY-MM-DD or a clear month/day/year), call **`find_runs_by_date`** with that **`local_date`** (disambiguate if multiple runs). (2) Else if the thread was about **last marathon / long race / similar**, call **`search_runs`** again with the **same style of filters** (e.g. `min_distance_m` ~42000) and use the **top match’s `activity_id`**. (3) If the follow-up is about **today’s** run on the device calendar and the **prior turn** already established that topic via explicit **today** language or a reply grounded in **`find_runs_by_date`** on the **device anchor date**, use **`find_runs_by_date`** with that **anchor date** (see device context).
+- **Single-run recap — no explicit calendar day in the message** (e.g. “how was my run?”, “how was my last run?”, “my run”) when they are **not** clearly continuing a **different** run from the prior turn: call **`search_runs`** with **`limit=1`** (**newest first** — default sort) for the **most recent run in the DB**, then **`get_run_summary`** on that **`activity_id`**. **Do not** treat these vague phrases as “today” unless they also say **today** (case-insensitive).
+- **Explicit calendar today:** when the user’s message contains **`today`** (case-insensitive) and they mean **this** calendar day’s run, call **`find_runs_by_date`** with **`local_date`** exactly the **device anchor date** (see device context), then **`get_run_summary`** as needed — same rule as run-recap fastpath (**today** → anchor day; no **today** → most recent run).
+- For follow-up requests about the **same** run (e.g. "include KPIs", "add Z2 pace", "show HR drift") with no new date, use the **thread-continuation** paths above; only use **`find_runs_by_date`** with the **device anchor date** when that follow-up clearly continues a run you already tied to **today** / that anchor day.
 - For run-level KPI requests, call `get_run_summary` for the resolved activity before responding.
 - **Per-mile / lap / split HR or pace** (e.g. "mile over mile", "each mile", "splits", "lap by lap"): with a resolved **`activity_id`**, call **`get_run_splits`**. Answer from **`splits`** rows (**`avg_heart_rate_display`**, **`avg_pace_display`**, **`segment_label`**) and **`scope`**. If **`splits`** is empty, say no stored laps and stay honest — do not invent a per-mile table. If **`splits_truncated`** is true, only **returned** laps are present (first+last by lap order); use **`splits_total_count`** for how many laps exist and **do not** infer missing middle laps.
 - **Split-detail answers from `get_run_splits`:** you may compute **grounded** comparisons across returned rows (deltas, halves, outlier checks) — **only** from those rows, not from recall. Look for patterns a human coach would flag: **warmup** first split, **late fade**, a **one-off surge**, **steadier middle miles**, whether **pace change** explains an **HR** move.
@@ -1401,6 +1554,8 @@ Guidance:
 OUTPUT STRUCTURE
 -------------------------------------
 
+**Conceptual turn shape:** See the injected system section **## Coach turn prose shape** (placed **after** the Coach tone contract in this prompt). It aligns LLM Markdown with the mobile app's `CoachTurnSections` order — **plain `content`**, never JSON or structured fields for this shape.
+
 **Coach read (all tool-grounded answers)**
 - **Interpret, don't transcribe:** Say what the data *means* for how they ran — not a field-by-field readout.
 - **Reframe when it matters:** Headline metrics (e.g. session drift %) can mislead when splits or segments show warmup,
@@ -1419,8 +1574,9 @@ When a structured run_summary is present:
 * If instructions conflict, resolve them in this order:
   1) **CORE PRINCIPLES** (tool-grounded, no invention)
   2) **COACH BEHAVIOR** (human interaction priority)
-  3) **OUTPUT STRUCTURE — run-level feedback** (shape and brevity)
-  4) STYLE / preferences / per-turn directives
+  3) **Coach turn prose shape** (injected section after Coach tone contract) — **primary conceptual flow** for coaching prose: interpretation → grounding → optional nudge → optional close; this block and **OUTPUT STRUCTURE** below are **aligned**, not competing templates
+  4) **OUTPUT STRUCTURE — run-level feedback** (numeric caps, card separation, sentence counts)
+  5) STYLE / preferences / per-turn directives
 
 * **Exception:** When **## Response directive** shows **Coaching depth requested: yes**, apply the **Depth-request
   exception** under **Insight + Facts** (below) and the matching **Progress check-in** depth rules when the answer is
@@ -1428,9 +1584,9 @@ When a structured run_summary is present:
   **numeric** deltas in **`content`**, or pasting a **full** stat lineup in prose (the card holds metrics).
 
 If any instruction conflicts with this section:
-→ Use OUTPUT STRUCTURE as your default shape while preserving CORE PRINCIPLES and COACH BEHAVIOR priorities.
+→ Prefer **Coach turn prose shape** for *how ideas are ordered* in `content`, and **OUTPUT STRUCTURE** for caps, tools, and card rules — together they define one consistent model, not a “free-form vs structure” choice.
 
-This is a strong default, not a rigid template.
+This is a strong default: **stable conceptual flow**, with natural variation in **wording** only.
 
 - The closing bullet of **INTERPRETATION FRAMEWORK** (qualitative lead, sparse numbers) is **qualified** here:
   **default:** at most **one** numeric anchor anywhere in **`content`** when useful; **depth-request mode:** **up to two**
@@ -1453,11 +1609,11 @@ This is a strong default, not a rigid template.
   question when it meaningfully improves dialogue — **occasionally**, not every turn. It must tie to what you
   discussed; **no** generic closings ("Anything else?", "Let me know if…"). See **Optional close** below.
 - Keep formatting honest: line breaks can improve readability, but should not be used to pad repetitive insight content.
-- **Content shape — flexible (not a fixed template):** Lead with your coaching read (insight, reaction, or judgment).
-  **Vary** order and rhythm from reply to reply — do **not** default to the same pattern every time (e.g. one-line
-  verdict + drift % + generic advice). You may **lead with a reaction**, fold the key number into the middle, or stay
-  mostly qualitative when that fits the run. Keep **`content`** a **few tight sentences**; stay conversational, not
-  report-like.
+- **Content shape (dominant):** Responses should generally follow a clear conceptual flow: **interpretation → grounding →
+  optional nudge → optional close** (same as **Coach turn prose shape**; woven prose, not labeled headers in the reply).
+  Natural variation in **tone and phrasing** is encouraged, but the **overall structure** should stay consistent. Keep
+  **`content`** a **few tight sentences** (see **Brevity** in Coach turn prose shape); stay conversational, not
+  report-like. **Sentence 1** remains a **coach read** (no stat headline as opener) per rules below.
 - **Numbers in `content`:** **At most one** tool-verbatim numeric anchor in the **whole** `content` when it genuinely
   supports the point (**prefer** drift / `hr_drift_pct` when it is the main signal — but pick another single
   `*_display` if drift is not the story). **Do not** repeat the card's metric lineup; **do not** pack **three or more**
@@ -1486,8 +1642,9 @@ This is a strong default, not a rigid template.
 - **Avoid filler** and scene-setting: **do not** lean on words like **"today"**, **"you completed"**, **"this run
   was"**, **"overall"** as throat-clearing. Prefer **"Solid run"** over **"Solid run today"** when the card
   already dates the activity.
-- **Avoid a fixed template:** do not always open with a one-line verdict then a drift % then generic advice — vary
-  structure so replies do not read the same every time.
+- **Wording, not structure:** within the **Coach turn prose shape** flow, change **phrasing** turn to turn so replies
+  do not feel copy-pasted — **do not** drop interpretation-first, shuffle the role of sentences, or open with a **stat
+  headline** as sentence 1 when this section forbids it.
 
 - **Formatting:** Line breaks between sentences are OK for mobile readability; use them for clarity, not to pad repetitive analysis.
 
@@ -1572,11 +1729,12 @@ structured **`run_summary`**:
 - **Do not** default to report-style blocks: no standing section titles like **Insight**, **Running Trends**,
   **Stats**, **What stood out**, or a **labeled bullet stat dump** unless the user clearly asked for a list,
   breakdown, or side-by-side comparison.
-- **Order (flexible):** takeaway → facts that matter → one interpretation → optional one next step or question.
-  **All numbers** from tools only; use `*_display` / tool fields verbatim where you state numbers.
+- **Order (woven prose):** **interpretation → grounding → optional nudge → optional close** when a full coaching answer
+  applies (same spirit as **Coach turn prose shape**). **All numbers** from tools only; use `*_display` / tool fields
+  verbatim where you state numbers.
 
-**Anti-template fatigue:** If prior replies in the thread already used a heavy structure, **shift** to
-simpler prose this time — same facts, different flow.
+**Anti-repetition:** If prior replies in the thread felt **word-for-word** tired, refresh **phrasing** — keep the same
+**conceptual flow**; do not replace structure with a stat recap.
 
 **When bullets or a small table are appropriate**
 - User asked to **list**, **break down**, **each week**, **compare** explicitly → **short** bullets or a
@@ -1593,7 +1751,7 @@ simpler prose this time — same facts, different flow.
 
 **Race / milestone** (after `get_run_summary` from `search_runs`): use the **same Insight + Facts** pattern as
 **run-level feedback** when a structured run summary is present — **default ≤3** insight sentences (**never** a 4th
-**insight** sentence), flexible shape, **≤1** numeric anchor in **`content`** by default (**prefer HR drift** when it is
+**insight** sentence), **Coach turn prose shape** (interpretation → grounding → optional nudge → optional close), **≤1** numeric anchor in **`content`** by default (**prefer HR drift** when it is
 the main signal), plus the same **optional engagement question** as **Optional close** when it adds value; **when Coaching depth requested: yes**, **Insight + Facts
 depth exception** applies (**≤5** insight sentences, **≤2** anchors, **never** a 6th **insight** sentence), plus optional
 engagement question. Conversational not report-like, **no** full stat lineup in **`content`**. Follow **Race / milestone**
@@ -1604,7 +1762,7 @@ in STYLE (no invented PR/goals).
 For **follow-ups** or **specific** questions (e.g. one metric, yes/no, "what about drift?"):
 **2–3 sentences**, direct — skip full recap unless they ask to recap. CONVERSATION & BREVITY rules apply.
 **Exception:** If the reply includes **structured `run_summary`** with a card, **`content`** obeys **Insight + Facts**
-— **default ≤3** insight sentences (flexible shape — not a fixed verdict + explanation + guidance slot machine), **never** a 4th **insight**
+— **default ≤3** insight sentences (**Coach turn prose shape** — interpretation → grounding → optional nudge → optional close), **never** a 4th **insight**
 sentence; **when Coaching depth requested: yes**, **depth exception** (**≤5** insight sentences, **≤2** anchors, **up to two**
 sentences for *why* when needed), **never** a 6th **insight** sentence. In both cases, **optional** short engagement
 question per **Optional close** when it adds value. **Do not** let generic follow-up length guidance override this block.
@@ -1617,7 +1775,8 @@ STYLE
 
 - Be calm, direct, and confident — **brief by default** for follow-ups (2–3 sentences unless they ask for depth).
 - **Run-level `get_run_summary` replies:** **Insight + Facts** (OUTPUT STRUCTURE) — **default ≤3** insight sentences in
-  **`content`** when the structured card is present (**never** a 4th **insight** sentence); **flexible** shape; **≤1**
+  **`content`** when the structured card is present (**never** a 4th **insight** sentence); **Coach turn prose shape**
+  (interpretation → grounding → optional nudge → optional close); **≤1**
   numeric anchor in **`content`** by default (**prefer HR drift** when it is the main signal); **optional** one short
   engagement question per **Optional close** when it adds value. **When Coaching depth requested: yes:** **≤5** insight
   sentences, **≤2** anchors total, **up to two** sentences for *why* when needed (**never** a 6th **insight** sentence),
@@ -1655,7 +1814,7 @@ STYLE
 
 - **Race / milestone replies (after `get_run_summary` for a discovered race):** **Warm and compact** — same
   **Insight + Facts** pattern (**default ≤3** insight sentences, **never** a 4th **insight** sentence; **when Coaching depth requested: yes** → **≤5**
-  insight sentences, **never** a 6th **insight** sentence; flexible shape; **≤1** anchor default, **≤2** in
+  insight sentences, **never** a 6th **insight** sentence; **Coach turn prose shape**; **≤1** anchor default, **≤2** in
   depth; **prefer HR drift** when it is the main signal); optional short engagement question per **Optional close** when it adds value; structured summary carries **title**, **date**, **time**, **pace**, **distance** on the
   card. **`content`** = insight only — **no** full stat lineup; **do not** add peer **numeric** deltas in
   **`content`**. **Do not** say **PR** unless a tool field says so. **Do not** invent **future goals** or
@@ -1711,11 +1870,12 @@ COACHING STYLE
 
 - Sound like a real coach: direct, human, and concise.
 - Default response: 2–3 sentences unless the user asks for detail.
+- **Turn shape:** Follow injected **## Coach turn prose shape** (after Coach tone contract): interpretation → grounding facts → optional nudge → optional question — plain Markdown, not JSON.
 - Lead with interpretation, not raw stats.
 - Use numbers sparingly.
 - Avoid repeating the same metrics or conclusions across turns.
 - Answer the question asked — do not over-explain.
-- Use natural, varied language.
+- Vary **wording** turn to turn; keep the **Coach turn prose shape** flow (interpretation → grounding → optional nudge → optional close).
 
 -------------------------------------
 RESPONSE BEHAVIOR
@@ -1812,83 +1972,6 @@ Follow the Response Directive provided in this turn:
 These override default behavior when specified.
 """.strip()
 
-PLAN_CREATION_SYSTEM_PROMPT_BASE = """
-You are SmartCoach helping one runner create a training plan through deterministic server tools.
-Primary objective: make plan setup feel like a real coaching conversation while preserving deterministic server intake and generation.
-
-Required fields (exact keys for `update_plan_intake` `updates`): `race_distance`, `race_date`,
-`primary_goal`, `training_days`, and `target_time` only when `primary_goal` is **Target Time**.
-Optional enrichments any time before generate: `race_name`, `race_location`, `long_run_day`, `notes`, `plan_name`.
-
-Experience stages:
-- `understand_runner`: the server may prepend a short deterministic runner understanding summary. Do not repeat it.
-- `goal_alignment`: ask naturally what they are training for; map the answer into race distance/name/date when possible.
-- `details`: collect remaining details in natural language.
-- `confirm`: summarize simply and ask whether it looks right.
-- `fast_track`: if the user gave enough details upfront, skip redundant questions and move to confirmation.
-- `generated`: after plan creation, explain what was created and point them to the Plan tab.
-
-Intake behavior:
-- **Always** call `update_plan_intake` on the latest user message (merge partial answers in `updates`).
-- **While `missing_required` is non-empty, never end the turn with prose alone** — call `update_plan_intake` first so the server can merge fields (short prompts depend on tools for truth).
-- Use the **latest tool result** `missing_required` as the source of truth for what is still missing.
-- Ask **exactly one** clear question per turn when a question is needed. Do **not** ask overlapping questions.
-- Never expose the words `missing_required`, `ready_to_generate`, field keys, or tool/status names to the user.
-- Preferred first question: “What are you training for?” or “What are you training for right now?”
-- Ask in coach language, not form language: “What are you training for?”, “Are you trying to finish strong or hit a specific time?”, “Which days of the week work best for you?”
-- Do not use filler openers like “Great!”, “I’m here to help”, “I can help with that”, or “Let’s get started.”
-- If the user volunteers several answers at once, pass them all in one `updates` object and then ask only
-  for what remains in `missing_required`.
-- If the user gives only a numeric running frequency (for example, “5 days per week”), pass that as
-  `training_days` so the server can store the count, but **do not** invent weekdays. If `training_days`
-  remains missing and `ux.training_days_count` is present, ask exactly one question: “Which days of the week work best for you?”
-- **Never** ask for final “generate the plan?” yes/no until the latest `update_plan_intake` shows
-  `ready_to_generate=true`. A days-per-week **count** alone is not a complete schedule—collect actual weekdays
-  before any full-plan confirmation.
-- If the latest tool result is `ready_to_generate=true`, do **not** ask another intake question. Move to confirmation.
-- **Do not** ask for self-reported “experience level” or “beginner/intermediate/advanced” for this flow;
-  baseline comes from their activity data, not chat labels.
-- **Do not** ask how many **weeks** (or months) the plan should run or how long they want to train; the server sets length from **race date** and baseline. **Never** ask that even right after they gave a race date—ask the next `missing_required` field only.
-- **Do not** suggest arbitrary race products (e.g. 5K/10K) as plan targets. Supported distances today are
-  **Half Marathon** and **Marathon** only. If they want another distance, say it is not supported yet and
-  offer Half or Full.
-- For `primary_goal`, the only valid values are **Just Finish** and **Target Time** (exactly those phrases
-  in `updates`). Frame the question as finishing the race vs hitting a goal time; if Target Time, ask for their
-  goal finish time (clock or spoken duration); pass it as `target_time`.
-- If the user gives a **clock time only** (e.g. “3:40”, “3:45:00”) without saying “target time”, still pass
-  `primary_goal` **Target Time** and `target_time` in `updates` — the server can also infer this from the
-  latest user message when the model omits it.
-- For `race_distance`, when the user names a **full marathon** event (e.g. “Chicago Marathon”, “Boston”, “a fall
-  marathon”) or clearly means 26.2, set `race_distance` to **Marathon** in the same `update_plan_intake` call and
-  **do not** ask half vs full again. Only ask half vs full when the goal distance is ambiguous (no named marathon,
-  no “half” / “13.1” / “marathon” / “26.2” signal). Same turn: set `race_name` to the event string they used.
-- For `race_date`, ask when the race is; accept natural language and pass it as `race_date`.
-- The server also parses common **date-only** replies (e.g. “October 11”) from the user’s last message into
-  `race_date` when the model forgets to pass `updates`—check the tool intake draft before asking for the date again.
-- The server also infers **weekday lists** (e.g. “Mon–Thu”, “Monday through Thursday”) from the user’s last message into
-  `training_days` when the model forgets to pass them in `updates`—check the tool intake draft before asking for weekdays again.
-- Whenever the user names a specific race, pass **`race_name`** in `updates` (exactly as they said is fine) so it
-  appears on the saved plan; do not wait for a separate prompt if they already named it.
-- After required fields are satisfied (`ready_to_generate` true) **and before** you ask for final yes/no to generate,
-  you may ask **once** for optional `notes` (injuries, travel, constraints)—if they decline or ignore, proceed.
-
-Confirmation and generate:
-- Only call `generate_training_plan` after explicit user confirmation with `confirm=true`.
-- Keep user-facing wording short and conversational: maximum **4 sentences** during intake (up to **3**
-  runner-understanding sentences + **1** question); up to a short multi-line walkthrough right after successful generation.
-- Confirmation should be simple: race, goal, schedule. Then ask “Does that look right?” or equivalent.
-- Tool payload is the source of truth; never invent field values not returned by tools.
-- The server accepts common **spoken dates**, **spoken training-day ranges** (e.g. “Monday through Saturday”,
-  “weekdays plus Saturday”), and **goal-time phrases** in tool updates; still pass what the user said in `updates`.
-
-After a successful `generate_training_plan`, provide a compact walkthrough using `plan_generation` payload:
-  1) confirm plan saved and mention start date (if present),
-  2) one baseline line (`baseline.avg_weekly_miles`, `baseline.longest_recent_run_miles` when present),
-  3) one high-level overview line (`overview.total_weeks`, `overview.phase_sequence`, peak long run or weekly mileage),
-  4) show Week 1 workouts from `this_week.workouts` when present; otherwise say workouts are ready in Plan,
-  5) explicitly direct the runner to the Plan tab for full details.
-""".strip()
-
 
 def _env_experiment_minimal_flag(name: str) -> bool:
     """True when env var is 1/true/yes/on (case-insensitive)."""
@@ -1900,6 +1983,41 @@ def _plan_confirm_fastpath_enabled() -> bool:
     """Deterministic yes→generate without an LLM round. Env SMARTCOACH_PLAN_CONFIRM_FASTPATH (default on)."""
     raw = (os.getenv("SMARTCOACH_PLAN_CONFIRM_FASTPATH") or "1").strip().lower()
     return raw not in ("0", "false", "no", "off")
+
+
+def should_plan_confirm_fastpath_fire(
+    prior_plan_state: Optional[Dict[str, Any]],
+    user_message: str,
+    *,
+    eval_model_override: Optional[str] = None,
+) -> bool:
+    """Bypass the LLM and call ``generate_training_plan`` deterministically.
+
+    Triggers when intake is ready and one of:
+    - athlete confirms intake recap ("yes"-style),
+    - athlete explicitly asks to build ("create my plan" / chip user_message),
+    - ``ux.plan_generation_confirmed`` is already True (chip merge in the route).
+    """
+    if not _plan_confirm_fastpath_enabled():
+        return False
+    if eval_model_override:
+        return False
+    if not isinstance(prior_plan_state, dict) or not prior_plan_state.get(
+        "ready_to_generate"
+    ):
+        return False
+    ux = (
+        prior_plan_state.get("ux")
+        if isinstance(prior_plan_state.get("ux"), dict)
+        else {}
+    )
+    if bool(ux.get("plan_generation_confirmed")):
+        return True
+    if user_confirms_plan_intake(user_message):
+        return True
+    if user_requests_plan_generation(user_message):
+        return True
+    return False
 
 
 def _plan_intake_forced_merge_enabled() -> bool:
@@ -1934,35 +2052,6 @@ def _experiment_response_directive_stub(directive: ResponseDirective) -> str:
     )
 
 
-def _plan_creation_directive_stub(directive: ResponseDirective) -> str:
-    return (
-        "## Response directive (plan creation mode)\n"
-        f"- Turn type: **{directive.turn_type}** | Intent: **{directive.intent}**\n"
-        "- Keep the response concise and coach-like; this should feel like guidance, not a form.\n"
-        "- Use `update_plan_intake` silently, then ask natural follow-up questions based on what is still missing. "
-        "Do not expose field names or tool state to the user.\n"
-        "- Ask exactly one question per turn when a question is needed. Preferred first question: "
-        "“What are you training for?” Do not pair it with “Do you have a specific race in mind?”\n"
-        "- Strip filler from your own wording: no “Great!”, “I’m here to help”, “I can help with that”, or “Let’s get started.”\n"
-        "- Keep intake replies to 4 sentences max. If enough details are present, skip redundant questions and confirm.\n"
-        "- If they gave a count like “5 days per week” but not actual weekdays, ask only: “Which days of the week work best for you?” "
-        "Do not invent weekdays.\n"
-        "- Do not ask final yes/no to generate until `ready_to_generate=true` from `update_plan_intake` "
-        "(a frequency count is not enough—weekdays must be set first).\n"
-        "- Follow **## Plan intake phase — …** in the system prompt: COLLECTING vs READY_TO_CONFIRM — never mix them.\n"
-        "- Infer Marathon from named full marathons when unambiguous; do not re-ask half vs full in that case.\n"
-        "- Do not ask experience level, plan length in weeks/months, or how long they want to train—length is from **race date** only. "
-        "After they give a race date, never ask about duration; ask the next `missing_required` field only. "
-        "Unsupported race distances: only Half / Marathon.\n"
-        "- If all required details exist, show a simple confirmation summary (race, goal, schedule) and ask explicit yes/no.\n"
-        "- Do not discuss unrelated run-analysis topics in this mode.\n"
-    )
-
-
-def _join_nonempty_system_sections(*sections: str) -> str:
-    return "\n\n".join(s.strip() for s in sections if (s or "").strip())
-
-
 def _plan_generation_fastpath_reply(tool_out: Dict[str, Any]) -> str:
     """
     Deterministic post-generation copy for yes->generate fastpath.
@@ -1982,189 +2071,6 @@ def _plan_generation_fastpath_reply(tool_out: Dict[str, Any]) -> str:
         f"{intro} View your Plan: click Plan in the app to review the full week-by-week schedule, "
         "and tell me if you want any tweaks."
     )
-
-
-def _eager_merge_plan_intake_user_turn(
-    session: Session,
-    internal_user_id: str,
-    *,
-    thread_ctx: DerivedThreadCoachContext,
-    user_message: str,
-) -> DerivedThreadCoachContext:
-    """Merge the current user line into deterministic intake before prompts and tools.
-
-    Thread-derived context only reflects **prior** assistant JSON, so without this
-    the model can see stale ``missing_required`` and repeat questions the user
-    already answered in the **current** message.
-    """
-    prior = getattr(thread_ctx, "latest_plan_intake_state", None)
-    if not isinstance(prior, dict) or not (user_message or "").strip():
-        return thread_ctx
-    try:
-        out = tool_update_plan_intake(
-            session,
-            str(internal_user_id),
-            {"updates": {}},
-            current_state=prior,
-            source_user_message=(user_message or "").strip(),
-        )
-        merged = out.get("plan_intake_state")
-        if isinstance(merged, dict):
-            return replace(thread_ctx, latest_plan_intake_state=merged)
-    except Exception:
-        logger.warning(
-            "[smartcoach_mobile_coach] plan_intake_eager_merge_failed",
-            exc_info=True,
-        )
-    return thread_ctx
-
-
-def _plan_intake_phase_system_section(
-    intake_state: Optional[Dict[str, Any]],
-) -> str:
-    """
-    Hard gate: collecting (missing fields) vs ready-to-confirm (generate yes/no).
-
-    Prevents the model from asking for final confirmation or re-asking captured fields
-    while ``ready_to_generate`` is still false.
-    """
-    if not isinstance(intake_state, dict):
-        return ""
-    if intake_state.get("ready_to_generate"):
-        return (
-            "## Plan intake phase — READY_TO_CONFIRM\n"
-            "- **All required fields are present** (see tool intake payload). Give a **short** recap "
-            "(race, goal, schedule) and **one** yes/no asking whether to generate the plan.\n"
-            "- Do **not** re-ask for fields already present in the draft / tool state.\n"
-        )
-    missing_raw = intake_state.get("missing_required") or []
-    missing = [m for m in missing_raw if isinstance(m, str)]
-    labels = ", ".join(_human_missing_label(m) for m in missing) or "see tool payload"
-    return (
-        "## Plan intake phase — COLLECTING\n"
-        f"- **Still missing (server order):** {labels}.\n"
-        "- Ask **one** natural question for the **next** missing item only (do not bundle unrelated asks).\n"
-        "- **Forbidden in this phase:** acting as if the plan is complete, full-plan “does everything look right?” "
-        "style summaries, yes/no to **generate** the plan, or “ready to create your plan?” — those are only allowed "
-        "after the tool shows `ready_to_generate=true`.\n"
-        "- Do **not** ask for anything already in the draft / tool intake state below.\n"
-    )
-
-
-def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
-    """User-facing fallback when the model/tool loop returns plan state but no prose."""
-    if intake_state.get("ready_to_generate"):
-        summ = (intake_state.get("confirmation_summary") or "").strip()
-        if summ:
-            return f"Here’s what I have: {summ} Does that look right?"
-        return "I have enough to build the plan. Does that look right?"
-
-    missing = intake_state.get("missing_required") or []
-    first = missing[0] if missing and isinstance(missing[0], str) else ""
-    if first == "race_distance":
-        return "What are you training for — a half marathon or a marathon?"
-    if first == "race_date":
-        return "Do you already have a race date in mind?"
-    if first == "primary_goal":
-        return "Is the goal to finish strong, or are you targeting a specific time?"
-    if first == "target_time":
-        return "What finish time are you aiming for?"
-    if first == "training_days":
-        ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
-        if ux.get("training_days_count"):
-            return "Which days of the week work best for you?"
-        return "How many days per week do you want to run, and which days usually work best?"
-    return "Tell me a bit more about the race you want to train for."
-
-
-# Premature “wrap up / confirm / generate” language while still in COLLECTING.
-_PLAN_INTAKE_PREMATURE_CONFIRM_RE = re.compile(
-    r"(?is)"
-    r"(does\s+that\s+(all\s+)?look\s+right|"
-    r"do\s+those\s+details\s+look|"
-    r"sound(s)?\s+good\s+to\s+(you|go)|"
-    r"ready\s+to\s+(generate|create)|"
-    r"go\s+ahead\s+and\s+(create|generate)|"
-    r"shall\s+i\s+(create|generate)|"
-    r"does\s+everything\s+look|"
-    r"look\s+right\s+to\s+you|"
-    r"create\s+(your|this)\s+plan\s+now|"
-    r"generate\s+(your|this)\s+plan)"
-)
-
-
-_PLAN_CREATION_FILLER_PATTERNS: Tuple[re.Pattern[str], ...] = (
-    re.compile(r"^\s*great[!.]?\s*", re.IGNORECASE),
-    re.compile(
-        r"^\s*i(?:'|’|\?)m here to help(?: you)?(?: with that)?[!.]?\s*",
-        re.IGNORECASE,
-    ),
-    re.compile(r"^\s*i can help(?: you)?(?: with that)?[!.]?\s*", re.IGNORECASE),
-    re.compile(r"^\s*happy to help[!.]?\s*", re.IGNORECASE),
-    re.compile(
-        r"^\s*let(?:'|’|\?)s get started(?: on your training plan)?[!.]?\s*",
-        re.IGNORECASE,
-    ),
-)
-
-
-def _split_plan_creation_sentences(text: str) -> List[str]:
-    normalized = re.sub(r"\s+", " ", (text or "").strip())
-    if not normalized:
-        return []
-    return [s.strip() for s in re.split(r"(?<=[.!?])\s+", normalized) if s.strip()]
-
-
-def _strip_plan_creation_filler_sentence(sentence: str) -> str:
-    out = sentence.strip()
-    changed = True
-    while changed:
-        changed = False
-        for pat in _PLAN_CREATION_FILLER_PATTERNS:
-            new_out = pat.sub("", out).strip()
-            if new_out != out:
-                out = new_out
-                changed = True
-    return out
-
-
-def _enforce_plan_creation_response_guardrails(
-    text: str,
-    *,
-    plan_intake_state: Optional[Dict[str, Any]] = None,
-) -> str:
-    """
-    Lightweight UX guardrail for intake replies: no filler, <=4 sentences, one question.
-
-    This intentionally runs after deterministic preamble insertion, so the response
-    can be shaped as 3 runner-understanding sentences + 1 natural question.
-
-    When still collecting (``ready_to_generate`` false), strip premature full-plan
-    confirmation / generate language and fall back to the next deterministic question.
-    """
-    if not (text or "").strip():
-        return text
-
-    kept: List[str] = []
-    question_seen = False
-    for raw_sentence in _split_plan_creation_sentences(text):
-        sentence = _strip_plan_creation_filler_sentence(raw_sentence)
-        if not sentence:
-            continue
-        if sentence.rstrip().endswith("?"):
-            if question_seen:
-                continue
-            question_seen = True
-        kept.append(sentence)
-        if len(kept) >= 4:
-            break
-    out = "\n".join(kept).strip() or (text or "").strip()
-    if isinstance(plan_intake_state, dict) and not plan_intake_state.get(
-        "ready_to_generate"
-    ):
-        if _PLAN_INTAKE_PREMATURE_CONFIRM_RE.search(out):
-            return _natural_plan_intake_fallback_question(plan_intake_state)
-    return out
 
 
 _DEFAULT_PREFS = {
@@ -2231,7 +2137,7 @@ def _coaching_preferences_section(prefs: Dict[str, Any]) -> str:
         "",
         "### Presentation rules",
         "- Prioritise the metrics listed above. Include others only when clearly valuable.",
-        "- **Single-run recap (`get_run_summary`):** when a **structured run summary** is present, **Insight + Facts** — **default ≤3** insight sentences in **`content`** (**never** a 4th **insight** sentence); **flexible** shape (not fixed verdict→number→advice); **≤1** numeric anchor in **`content`** by default (**prefer HR drift** when it is the main signal); **Coaching depth requested: yes** → **≤5** insight sentences, **≤2** anchors, **up to two** sentences for *why* when needed; **optional** one short engagement question per OUTPUT STRUCTURE **Optional close** when it adds value. **No** report tone or filler (*today* / *you completed* / *this run was* as openers). **Do not** paste **`hr_drift_summary_display`** into **`content`** (card shows drift).",
+        "- **Single-run recap (`get_run_summary`):** when a **structured run summary** is present, **Insight + Facts** — **default ≤3** insight sentences in **`content`** (**never** a 4th **insight** sentence); **Coach turn prose shape** (interpretation → grounding → optional nudge → optional close); **≤1** numeric anchor in **`content`** by default (**prefer HR drift** when it is the main signal); **Coaching depth requested: yes** → **≤5** insight sentences, **≤2** anchors, **up to two** sentences for *why* when needed; **optional** one short engagement question per OUTPUT STRUCTURE **Optional close** when it adds value. **No** report tone or filler (*today* / *you completed* / *this run was* as openers). **Do not** paste **`hr_drift_summary_display`** into **`content`** (card shows drift).",
         "- **Progress / readiness / weekly trend (not run_summary):** **default ≤3** body sentences, **verdict → constraint → action**, **~6–10 words** per sentence when possible, **prefer no numbers** (**≤1** only if essential), plus optional engagement question per OUTPUT STRUCTURE **Optional close** when it adds value; **Coaching depth requested: yes** → **≤5** body sentences, **≤2** numbers if essential, constraint may span **2** sentences, plus optional engagement question — OUTPUT STRUCTURE — Progress check-in.",
         "- **Other topics:** weave priority metrics into **prose** (short paragraphs, bold key values) — not labeled stat lists unless the user asks for a breakdown.",
         "- **Saved `run_summary_priority` metrics override generic level/tone limits for those metrics on the structured card and in tool payloads** — not as an excuse to dump every metric into **`content`** (Insight + Facts still applies).",
@@ -2240,21 +2146,6 @@ def _coaching_preferences_section(prefs: Dict[str, Any]) -> str:
         "- If the user asks to change preferences, call `save_coach_preference`.",
     ]
     return "\n".join(lines)
-
-
-def _device_anchor_system_section(
-    anchor_local_date: str, client_timezone: Optional[str]
-) -> str:
-    tz_display = (client_timezone or "").strip() or "unknown"
-    return (
-        f'## Device context (authoritative calendar "today")\n'
-        f"- The user's local calendar date on their phone right now is **{anchor_local_date}** (IANA timezone: {tz_display}).\n"
-        f'- For "how was my run?", "my run", "this run", "today", or whenever they do not name a specific day **and** are **not** clearly continuing a **different** run you already named (e.g. a marathon date) in the **prior assistant** message, '
-        f"call `find_runs_by_date` with `local_date` exactly **{anchor_local_date}**.\n"
-        f'- If they **just** asked about a **past** run you identified by **name/date** and now say **"how did I do?"** / **"how was it?"** / similar, **do not** default to **{anchor_local_date}** — resolve that run via **`find_runs_by_date`** on the **date from your prior reply** or **`search_runs`** again, then **`get_run_summary`**.\n'
-        f"- Only use a different `local_date` when the user clearly refers to another day (or use the rules above for thread continuation).\n"
-        f"- Never ask the user to specify the date for vague **today**-style questions; use **{anchor_local_date}** when that rule applies."
-    )
 
 
 def _hr_calibration_system_section(session: Session, internal_user_id: str) -> str:
@@ -2436,88 +2327,6 @@ def _intent_priority_override_section(intent: str) -> str:
     )
 
 
-def _plan_creation_system_section(
-    user_message: str,
-    intent: str,
-    thread_ctx: Any,
-) -> str:
-    msg = (user_message or "").lower()
-    intake_state = (
-        thread_ctx.latest_plan_intake_state
-        if hasattr(thread_ctx, "latest_plan_intake_state")
-        else None
-    )
-    active = (
-        intent == INTENT_PLAN_CREATION
-        or isinstance(intake_state, dict)
-        or any(
-            k in msg
-            for k in (
-                "create a plan",
-                "build a plan",
-                "training plan",
-                "plan for",
-                "help me train",
-                "make me a plan",
-            )
-        )
-    )
-    if not active:
-        return ""
-
-    lines = [
-        "## Plan creation flow (deterministic intake + deterministic generation)",
-        "- When this turn is about creating/updating a plan, always use tool `update_plan_intake` to capture the latest user details.",
-        "- **While `missing_required` is non-empty:** call `update_plan_intake` with `updates` derived from the user's last message **before** your final reply — do not send only prose (minimal prompt relies on tools for truth).",
-    ]
-    if isinstance(intake_state, dict):
-        draft = intake_state.get("draft") or {}
-        rd = draft.get("race_date") if isinstance(draft, dict) else None
-        if isinstance(rd, str) and rd.strip():
-            lines.append(
-                "- **`race_date` is already in intake** — do **not** ask how many weeks or months to train; "
-                "plan length is fixed from that date. Ask only the next `missing_required` field."
-            )
-    lines.extend(
-        [
-            "- Ask exactly one question per turn when a question is needed. Use server order internally: race_distance, "
-            "race_date, primary_goal (Just Finish | Target Time only), training_days, then target_time when goal is Target Time.",
-            "- If the user names a full marathon (e.g. Chicago Marathon) or clearly means 26.2, pass `race_distance` "
-            "(Marathon) and `race_name` in `update_plan_intake` the same turn—do not ask half vs full again.",
-            "- Do not ask experience level, how many weeks/months the plan should run, or how long they want to train; "
-            "plan length is **only** from race date + server rules. **Forbidden:** “How many weeks would you like…?” — never ask that. "
-            "If `race_date` is already in intake, the next question must be the next `missing_required` field only (not duration). "
-            "Non-supported race distances: plan generation supports Half Marathon and Marathon only.",
-            "- Do not claim details are saved unless `update_plan_intake` confirms them.",
-            "- Do not ask final yes/no to generate until `ready_to_generate=true` (a days-per-week count is not enough—"
-            "concrete weekdays must be in intake first).",
-            "- When `ready_to_generate=true`, present a simple confirmation summary and ask for explicit yes/no.",
-            "- Call `generate_training_plan` only after explicit confirmation, with `confirm=true`.",
-            "- Keep user-facing wording natural; never show tool names, field keys, `missing_required`, or `ready_to_generate` to the user.",
-        ],
-    )
-    if isinstance(intake_state, dict):
-        lines.extend(
-            [
-                "- Current deterministic intake state (from prior turn payload):",
-                "```json",
-                json.dumps(
-                    {
-                        "status": intake_state.get("status"),
-                        "missing_required": intake_state.get("missing_required"),
-                        "ready_to_generate": intake_state.get("ready_to_generate"),
-                        "confirmation_summary": intake_state.get(
-                            "confirmation_summary"
-                        ),
-                    },
-                    default=str,
-                ),
-                "```",
-            ]
-        )
-    return "\n".join(lines)
-
-
 def _valid_run_summary_tool_payload(out: Any) -> Optional[Dict[str, Any]]:
     """Success shape from get_run_summary — has facts for RunSummaryCard; exclude error stubs."""
     if not isinstance(out, dict) or out.get("error"):
@@ -2526,6 +2335,157 @@ def _valid_run_summary_tool_payload(out: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(facts, dict):
         return None
     return out
+
+
+# --- Explicit user-stated goal → plan memory (deterministic fallback, Phase F) ---
+
+_MAX_GOAL_MEMORY_NORMALIZED_CHARS = 280
+
+_EXPLICIT_GOAL_INTENT_VERB_RE = re.compile(
+    r"\b("
+    r"i\s+want\s+to|i\s+would\s+like\s+to|i'?d\s+like\s+to|"
+    r"i'?m\s+(looking\s+to|trying\s+to|hoping\s+to)|"
+    r"my\s+goal\s+is|i\s+hope\s+to|i\s+plan\s+to|plan\s+to|"
+    r"training\s+for|train\s+for|preparing\s+to|preparing\s+for|prep\s+for|"
+    r"working\s+toward|work\s+toward|aim(?:ing)?\s+to|aim(?:ing)?\s+for"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_EXPLICIT_GOAL_NOUN_RE = re.compile(
+    r"\b("
+    r"half\s+marathon|full\s+marathon|ultra|marathon|"
+    r"10\s*km|10k|5\s*km|5k|half|hm\b|"
+    r"\bpr\b|personal\s+best|pb\b|qualif(y|ying)|"
+    r"sub\s*[- ]?\s*\d"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def normalize_goal_text(raw: str) -> str:
+    """Collapse whitespace and cap length for plan memory (matches tool cap)."""
+    t = " ".join((raw or "").strip().split())
+    if len(t) > _MAX_GOAL_MEMORY_NORMALIZED_CHARS:
+        t = t[:_MAX_GOAL_MEMORY_NORMALIZED_CHARS].rstrip()
+    return t
+
+
+def should_persist_explicit_goal_memory(
+    user_message: str,
+    response_directive: ResponseDirective,
+) -> bool:
+    """True only for explicit first-person goal statements; never inferred intent."""
+    if response_directive.investigate_first:
+        return False
+    if response_directive.interaction_mode in (MODE_MINIMAL, MODE_AMBIGUOUS):
+        return False
+    raw = (user_message or "").strip()
+    if len(raw) < 12:
+        return False
+    if not _EXPLICIT_GOAL_INTENT_VERB_RE.search(raw):
+        return False
+    if not _EXPLICIT_GOAL_NOUN_RE.search(raw):
+        return False
+    return True
+
+
+def _remember_plan_preference_saved_in_messages(messages: List[Dict[str, Any]]) -> bool:
+    for msg in messages:
+        if msg.get("role") != "tool":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, str):
+            continue
+        try:
+            body = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(body, dict):
+            continue
+        if body.get("saved") is True and isinstance(body.get("memory"), dict):
+            return True
+    return False
+
+
+def persist_explicit_goal_plan_memory(
+    session: Session,
+    internal_user_id: str,
+    text: str,
+    guard: Dict[str, bool],
+) -> None:
+    """Append goal memory via service layer; commit; invalidate user_context cache."""
+    if guard.get("committed"):
+        return
+    import uuid as _uuid
+
+    from src.services.coach.user_plan_memory_service import (
+        MEMORY_SOURCE_COACH_TOOL,
+        append_plan_memory,
+    )
+    from src.smartcoach_mobile_coach import user_context_cache
+
+    try:
+        user_uuid = _uuid.UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        logger.warning(
+            "[explicit_goal_memory] persist skipped: invalid internal_user_id"
+        )
+        return
+
+    row, deduplicated = append_plan_memory(
+        session,
+        user_uuid,
+        text,
+        source=MEMORY_SOURCE_COACH_TOOL,
+        memory_type="goal",
+    )
+    if row is None:
+        logger.warning(
+            "[explicit_goal_memory] persist skipped: append_plan_memory no row"
+        )
+        return
+
+    try:
+        session.commit()
+    except Exception:
+        logger.exception("[explicit_goal_memory] commit failed")
+        try:
+            session.rollback()
+        except Exception:
+            logger.debug("[explicit_goal_memory] rollback failed", exc_info=True)
+        return
+
+    guard["committed"] = True
+    user_context_cache.invalidate_user_context(str(user_uuid))
+    logger.info(
+        "[explicit_goal_memory] persisted user=%s… deduplicated=%s len=%s",
+        str(internal_user_id)[:8],
+        deduplicated,
+        len(text),
+    )
+
+
+def _maybe_run_explicit_goal_memory_fallback(
+    session: Session,
+    internal_user_id: str,
+    stashed_text: Optional[str],
+    messages: List[Dict[str, Any]],
+    guard: Dict[str, bool],
+) -> None:
+    """After tool loop: persist stashed goal if model did not call remember_plan_preference."""
+    if guard.get("committed"):
+        return
+    if not stashed_text or not stashed_text.strip():
+        return
+    if _remember_plan_preference_saved_in_messages(messages):
+        logger.info(
+            "[explicit_goal_memory] fallback skipped: remember_plan_preference already saved"
+        )
+        return
+    persist_explicit_goal_plan_memory(
+        session, internal_user_id, stashed_text.strip(), guard
+    )
 
 
 def run_mobile_agent_turn(
@@ -2539,6 +2499,7 @@ def run_mobile_agent_turn(
     eval_model_override: Optional[str] = None,
     last_activity_id_hint: Optional[int] = None,
     thread_derived_context: Optional[DerivedThreadCoachContext] = None,
+    structured_intake_chip_turn: bool = False,
 ) -> Tuple[Union[str, Dict[str, Any]], Dict[str, Any]]:
     """
     Returns (assistant_reply, metadata with usage, cost, loops).
@@ -2552,6 +2513,9 @@ def run_mobile_agent_turn(
     thread_derived_context: optional context from **raw** stored message bodies (e.g. JSON
         assistant rows). Must be supplied when ``conversation_history`` is plain-text–only
         (see routes); otherwise ``plan_intake_state`` from prior turns is invisible here.
+    structured_intake_chip_turn: when True, routes merged ``structured_input`` into intake already
+        and the client sent ``structured_input_only``; skip NL eager-merge and return the
+        deterministic plan-intake assistant payload without calling OpenAI (if plan-creation mode).
     """
     service = get_openai_service()
     default_model = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
@@ -2622,12 +2586,13 @@ def run_mobile_agent_turn(
         if thread_derived_context is not None
         else derive_thread_coach_context(conversation_history)
     )
-    thread_ctx = _eager_merge_plan_intake_user_turn(
-        session,
-        str(internal_user_id),
-        thread_ctx=thread_ctx,
-        user_message=user_message,
-    )
+    if not structured_intake_chip_turn:
+        thread_ctx = _eager_merge_plan_intake_user_turn(
+            session,
+            str(internal_user_id),
+            thread_ctx=thread_ctx,
+            user_message=user_message,
+        )
     turn_type = classify_turn(user_message, conversation_history)
     conversation_state = extract_conversation_state(conversation_history)
     response_directive = plan_response(
@@ -2648,17 +2613,213 @@ def run_mobile_agent_turn(
         response_directive.target_length,
     )
 
+    has_active_plan = _user_has_active_plan(session, str(internal_user_id))
+    force_plan_creation_after_clarification = False
+
+    if _plan_creation_intent_clarification_enabled():
+        res = thread_ctx.plan_creation_clarification_resolution
+        if thread_ctx.plan_creation_clarification_pending:
+            if res == "confirm" or _user_confirms_plan_creation_clarification(
+                user_message
+            ):
+                force_plan_creation_after_clarification = True
+            elif res == "decline" or _user_declines_plan_creation_clarification(
+                user_message
+            ):
+                timings_cl = {
+                    "plan_creation_intent_clarification_ms": round(
+                        (time.perf_counter() - t_agent0) * 1000, 2
+                    ),
+                    "agent_orchestrator_total_ms": round(
+                        (time.perf_counter() - t_agent0) * 1000, 2
+                    ),
+                }
+                meta_cl: Dict[str, Any] = {
+                    "usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                    },
+                    "cost": 0.0,
+                    "loops": 0,
+                    "max_loops": _max_agent_loops(),
+                    "model": model,
+                    "plan_creation_intent_clarification": "declined",
+                    "timings_ms": timings_cl,
+                    "dialogue": {
+                        "turn_type": response_directive.turn_type,
+                        "intent": response_directive.intent,
+                        "turn_count": conversation_state.turn_count,
+                        "last_topic": conversation_state.last_topic,
+                        "target_length": response_directive.target_length,
+                        "narration_mode": response_directive.narration_mode,
+                        "tool_strategy": response_directive.tool_strategy,
+                        "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                        "allow_full_recap": response_directive.allow_full_recap,
+                        "investigate_first": response_directive.investigate_first,
+                        "interaction_mode": response_directive.interaction_mode,
+                        "thread_derived": thread_ctx.as_dict(),
+                    },
+                }
+                logger.info(
+                    "[smartcoach_mobile_coach] plan_creation_intent_clarification=declined"
+                )
+                return {
+                    "type": "text",
+                    "content": (
+                        "Understood. What would you like help with — your last run, "
+                        "weekly volume, race planning, or something else?"
+                    ),
+                    "data": {},
+                }, meta_cl
+            else:
+                timings_rq = {
+                    "plan_creation_intent_clarification_ms": round(
+                        (time.perf_counter() - t_agent0) * 1000, 2
+                    ),
+                    "agent_orchestrator_total_ms": round(
+                        (time.perf_counter() - t_agent0) * 1000, 2
+                    ),
+                }
+                meta_rq: Dict[str, Any] = {
+                    "usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                    },
+                    "cost": 0.0,
+                    "loops": 0,
+                    "max_loops": _max_agent_loops(),
+                    "model": model,
+                    "plan_creation_intent_clarification": "reask",
+                    "timings_ms": timings_rq,
+                    "dialogue": {
+                        "turn_type": response_directive.turn_type,
+                        "intent": response_directive.intent,
+                        "turn_count": conversation_state.turn_count,
+                        "last_topic": conversation_state.last_topic,
+                        "target_length": response_directive.target_length,
+                        "narration_mode": response_directive.narration_mode,
+                        "tool_strategy": response_directive.tool_strategy,
+                        "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                        "allow_full_recap": response_directive.allow_full_recap,
+                        "investigate_first": response_directive.investigate_first,
+                        "interaction_mode": response_directive.interaction_mode,
+                        "thread_derived": thread_ctx.as_dict(),
+                    },
+                }
+                logger.info(
+                    "[smartcoach_mobile_coach] plan_creation_intent_clarification=reask"
+                )
+                return {
+                    "type": "text",
+                    "content": (
+                        "I didn’t quite catch that. **Are you trying to set up a structured "
+                        "running plan**, or did you mean something else?"
+                    ),
+                    "data": {
+                        "plan_creation_clarification_pending": True,
+                        "ui_prompt": _plan_creation_clarification_ui_prompt(),
+                    },
+                }, meta_rq
+
+        elif _should_offer_plan_creation_clarification(
+            user_message=user_message,
+            thread_ctx=thread_ctx,
+            response_directive=response_directive,
+            has_active_plan=has_active_plan,
+        ):
+            timings_of = {
+                "plan_creation_intent_clarification_ms": round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                ),
+                "agent_orchestrator_total_ms": round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                ),
+            }
+            meta_of: Dict[str, Any] = {
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+                "cost": 0.0,
+                "loops": 0,
+                "max_loops": _max_agent_loops(),
+                "model": model,
+                "plan_creation_intent_clarification": "offered",
+                "timings_ms": timings_of,
+                "dialogue": {
+                    "turn_type": response_directive.turn_type,
+                    "intent": response_directive.intent,
+                    "turn_count": conversation_state.turn_count,
+                    "last_topic": conversation_state.last_topic,
+                    "target_length": response_directive.target_length,
+                    "narration_mode": response_directive.narration_mode,
+                    "tool_strategy": response_directive.tool_strategy,
+                    "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                    "allow_full_recap": response_directive.allow_full_recap,
+                    "investigate_first": response_directive.investigate_first,
+                    "interaction_mode": response_directive.interaction_mode,
+                    "thread_derived": thread_ctx.as_dict(),
+                },
+            }
+            logger.info(
+                "[smartcoach_mobile_coach] plan_creation_intent_clarification=offered"
+            )
+            return {
+                "type": "text",
+                "content": (
+                    "Sounds like you might want to **set up a structured running plan**. "
+                    "Is that what you’re trying to do?"
+                ),
+                "data": {
+                    "plan_creation_clarification_pending": True,
+                    "ui_prompt": _plan_creation_clarification_ui_prompt(),
+                },
+            }, meta_of
+
+    stashed_explicit_goal_text: Optional[str] = None
+    explicit_goal_memory_persist_guard: Dict[str, bool] = {"committed": False}
+    if should_persist_explicit_goal_memory(user_message, response_directive):
+        stashed_explicit_goal_text = normalize_goal_text(user_message)
+
     prior_plan_state = (
         thread_ctx.latest_plan_intake_state
         if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict)
         else None
     )
     if (
-        _plan_confirm_fastpath_enabled()
-        and prior_plan_state
+        plan_creation_split_confirm_enabled()
+        and isinstance(prior_plan_state, dict)
         and prior_plan_state.get("ready_to_generate")
-        and user_confirms_plan_intake(user_message)
-        and not eval_model_override
+    ):
+        ux_prior = (
+            prior_plan_state.get("ux")
+            if isinstance(prior_plan_state.get("ux"), dict)
+            else {}
+        )
+        if ux_prior.get("intake_confirmed") and not ux_prior.get(
+            "runner_review_delivered"
+        ):
+            pis_review = dict(prior_plan_state)
+            _, runner_review_api_fast = _try_build_runner_review_bundle(
+                session,
+                str(internal_user_id),
+                pis_review,
+                anchor_local_date=anchor_local_date,
+            )
+            apply_review_to_plan_intake_ux_for_phase(
+                pis_review,
+                runner_review_api_fast,
+                intake_confirmed=True,
+            )
+            prior_plan_state = pis_review
+            thread_ctx = replace(thread_ctx, latest_plan_intake_state=pis_review)
+    if should_plan_confirm_fastpath_fire(
+        prior_plan_state,
+        user_message,
+        eval_model_override=eval_model_override,
     ):
         t_plan_fast = time.perf_counter()
         out = tool_generate_training_plan(
@@ -2666,6 +2827,7 @@ def run_mobile_agent_turn(
             str(internal_user_id),
             {"confirm": True},
             current_state=prior_plan_state,
+            anchor_local_date=anchor_local_date,
         )
         if out.get("ok"):
             timings_fast: Dict[str, Any] = {
@@ -2781,17 +2943,83 @@ def run_mobile_agent_turn(
         )
         return structured_pc, meta_pc
 
-    # V1.6 hotfix — look up the user's active-plan status once per turn
-    # and feed it to _is_plan_creation_turn so users with a live plan
-    # are never accidentally routed into intake by substring hints on
-    # phrases like "training plan".
-    has_active_plan = _user_has_active_plan(session, internal_user_id)
+    # V1.6 hotfix — ``has_active_plan`` was resolved earlier (before intent
+    # clarification) so we do not query the DB twice per turn.
     plan_creation_mode = _is_plan_creation_turn(
         response_directive.intent,
         user_message,
         thread_ctx,
         has_active_plan=has_active_plan,
+        force_after_clarification=force_plan_creation_after_clarification,
     )
+    if structured_intake_chip_turn and plan_creation_mode and not eval_model_override:
+        pis_chip = getattr(thread_ctx, "latest_plan_intake_state", None)
+        if isinstance(pis_chip, dict):
+            t_chip = time.perf_counter()
+            activity_summary_chip: Optional[Dict[str, Any]] = None
+            if _plan_intake_activity_context_enabled():
+                try:
+                    anchor_d = (
+                        parse_anchor_local_date_yyyy_mm_dd(anchor_local_date)
+                        or date.today()
+                    )
+                    activity_summary_chip = compute_plan_intake_activity_summary(
+                        session, str(internal_user_id), anchor_local_date=anchor_d
+                    )
+                except Exception:
+                    logger.warning(
+                        "[smartcoach_mobile_coach] plan_intake_activity_context_failed "
+                        "deterministic_chip_turn",
+                        exc_info=True,
+                    )
+                    activity_summary_chip = None
+            gpt_chip = build_deterministic_plan_intake_chip_assistant_payload(
+                session,
+                str(internal_user_id),
+                plan_intake_state=pis_chip,
+                anchor_local_date=anchor_local_date,
+                activity_summary=activity_summary_chip,
+            )
+            timings_chip = {
+                "deterministic_plan_intake_chip_ms": round(
+                    (time.perf_counter() - t_chip) * 1000, 2
+                ),
+                "agent_orchestrator_total_ms": round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                ),
+            }
+            meta_chip: Dict[str, Any] = {
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+                "cost": 0.0,
+                "loops": 0,
+                "max_loops": _max_agent_loops(),
+                "model": model,
+                "deterministic_plan_intake_chip_turn": True,
+                "timings_ms": timings_chip,
+                "dialogue": {
+                    "turn_type": response_directive.turn_type,
+                    "intent": response_directive.intent,
+                    "turn_count": conversation_state.turn_count,
+                    "last_topic": conversation_state.last_topic,
+                    "target_length": response_directive.target_length,
+                    "narration_mode": response_directive.narration_mode,
+                    "tool_strategy": response_directive.tool_strategy,
+                    "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                    "allow_full_recap": response_directive.allow_full_recap,
+                    "investigate_first": response_directive.investigate_first,
+                    "interaction_mode": response_directive.interaction_mode,
+                    "thread_derived": thread_ctx.as_dict(),
+                },
+            }
+            logger.info(
+                "[smartcoach_mobile_coach] response_shape=text_plan_data "
+                "deterministic_plan_intake_chip_turn=1"
+            )
+            return gpt_chip, meta_chip
     openai_tools = _filter_tools_for_turn(
         openai_tools_all, plan_creation_mode=plan_creation_mode
     )
@@ -2825,8 +3053,11 @@ def run_mobile_agent_turn(
     )
     if _inject_act:
         try:
+            anchor_d = (
+                parse_anchor_local_date_yyyy_mm_dd(anchor_local_date) or date.today()
+            )
             activity_summary_for_turn = compute_plan_intake_activity_summary(
-                session, str(internal_user_id)
+                session, str(internal_user_id), anchor_local_date=anchor_d
             )
             activity_ctx_block = format_plan_intake_activity_context_block(
                 activity_summary_for_turn
@@ -2881,18 +3112,24 @@ def run_mobile_agent_turn(
         if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict)
         else None
     )
+    pre_generation_review_section_plan = ""
+    if plan_creation_mode and isinstance(plan_intake_ctx, dict):
+        pre_generation_review_section_plan, _ = _try_build_runner_review_bundle(
+            session,
+            str(internal_user_id),
+            plan_intake_ctx,
+            anchor_local_date=anchor_local_date,
+        )
     if plan_creation_mode and not use_full_prompt_for_plan:
-        system_content = _join_nonempty_system_sections(
-            PLAN_CREATION_SYSTEM_PROMPT_BASE,
-            _plan_intake_phase_system_section(plan_intake_ctx),
-            _device_anchor_system_section(anchor_local_date, client_timezone),
-            activity_ctx_block,
-            _plan_creation_directive_stub(response_directive),
-            _plan_creation_system_section(
-                user_message,
-                response_directive.intent,
-                thread_ctx,
-            ),
+        system_content = _plan_creation_minimal_system_content(
+            plan_intake_ctx=plan_intake_ctx,
+            anchor_local_date=anchor_local_date,
+            client_timezone=client_timezone,
+            activity_ctx_block=activity_ctx_block,
+            response_directive=response_directive,
+            user_message=user_message,
+            thread_ctx=thread_ctx,
+            pre_generation_review_section=pre_generation_review_section_plan,
         )
     else:
         base_block = MINIMAL_SYSTEM_PROMPT_BASE if use_min_base else SYSTEM_PROMPT_BASE
@@ -2952,6 +3189,10 @@ def run_mobile_agent_turn(
             # intake turns have no plan_status, no adherence band, and
             # no coaching "next action" to enforce.
             coach_tone_contract_section(),
+            # CoachTurnSections-aligned prose order (interpretation →
+            # grounding → optional nudge → optional close). Single source
+            # in coach_tone_contract.py — not duplicated in OUTPUT STRUCTURE.
+            coach_turn_prose_shape_section(),
             # 3C.10–3C.13: prior session summary read path. Injected
             # only on the first-ever turn of a new conversation
             # (turn_type == "opening" AND no prior assistant message
@@ -2977,6 +3218,7 @@ def run_mobile_agent_turn(
                 response_directive, plan_creation_mode=plan_creation_mode
             ),
             activity_ctx_block,
+            pre_generation_review_section_plan if plan_creation_mode else "",
             _plan_intake_phase_system_section(
                 plan_intake_ctx if plan_creation_mode else None
             ),
@@ -3031,19 +3273,37 @@ def run_mobile_agent_turn(
 
     prefetch: Optional[Dict[str, Any]] = None
     if recap_decision is not None and recap_decision.eligible:
-        recap_run_local_date = (
-            recap_decision.prefetch_local_date or anchor_local_date
-        ).strip()[:10]
-        prose_anchor_day = (
-            "yesterday" if recap_decision.prefetch_local_date else "today"
-        )
-        _tp0 = time.perf_counter()
-        prefetch = prefetch_opening_anchor_run_recap(
-            session, internal_user_id, recap_run_local_date
-        )
-        timings_ms["fastpath_prefetch_ms"] = round(
-            (time.perf_counter() - _tp0) * 1000, 2
-        )
+        if recap_decision.use_most_recent_run:
+            _tp0 = time.perf_counter()
+            prefetch = prefetch_opening_anchor_run_recap(
+                session,
+                internal_user_id,
+                anchor_local_date,
+                use_most_recent_run=True,
+            )
+            timings_ms["fastpath_prefetch_ms"] = round(
+                (time.perf_counter() - _tp0) * 1000, 2
+            )
+            recap_run_local_date = (
+                (prefetch or {}).get("find_runs_by_date") or {}
+            ).get("local_date") or ""
+            recap_run_local_date = str(recap_run_local_date).strip()[:10]
+            prose_anchor_day = "latest"
+        else:
+            recap_run_local_date = (
+                recap_decision.prefetch_local_date or anchor_local_date
+            ).strip()[:10]
+            if recap_decision.reason_code == "eligible_yesterday":
+                prose_anchor_day = "yesterday"
+            else:
+                prose_anchor_day = "today"
+            _tp0 = time.perf_counter()
+            prefetch = prefetch_opening_anchor_run_recap(
+                session, internal_user_id, recap_run_local_date
+            )
+            timings_ms["fastpath_prefetch_ms"] = round(
+                (time.perf_counter() - _tp0) * 1000, 2
+            )
         if prefetch:
             logger.info(
                 "[coach_fastpath] run_recap_opening user=%s… activity_id=%s gate=%s comparisons=%s week_volume=%s",
@@ -3179,12 +3439,24 @@ def run_mobile_agent_turn(
                     "content": text_fp,
                     "data": ok_payload,
                 }
+                structured_fp, sections_fp = enrich_run_summary_payload_with_sections(
+                    structured_fp
+                )
+                if sections_fp:
+                    meta_fp["run_summary_sections"] = True
                 logger.info(
                     "[smartcoach_mobile_coach] response_shape=run_summary "
                     "loops=%s fastpath=1 content_len=%s timings_ms=%s",
                     loops,
-                    len(text_fp),
+                    len(structured_fp.get("content") or ""),
                     timings_ms,
+                )
+                _maybe_run_explicit_goal_memory_fallback(
+                    session,
+                    internal_user_id,
+                    stashed_explicit_goal_text,
+                    messages,
+                    explicit_goal_memory_persist_guard,
                 )
                 return structured_fp, meta_fp
             logger.warning(
@@ -3292,6 +3564,13 @@ def run_mobile_agent_turn(
                     len(text_fp),
                     timings_ms,
                 )
+                _maybe_run_explicit_goal_memory_fallback(
+                    session,
+                    internal_user_id,
+                    stashed_explicit_goal_text,
+                    messages,
+                    explicit_goal_memory_persist_guard,
+                )
                 return text_fp, meta_fp
             logger.warning(
                 "[coach_fastpath] split_detail empty model text; using full agent loop"
@@ -3360,6 +3639,7 @@ def run_mobile_agent_turn(
                 source_user_message=(user_message or "").strip() or None,
                 tool_result_cache=tool_result_cache,
             )
+            intake_state_from_tools: Optional[Dict[str, Any]] = None
             for d in dispatched:
                 tc = d["tc"]
                 name = d["name"]
@@ -3381,6 +3661,7 @@ def run_mobile_agent_turn(
                     pis = out.get("plan_intake_state")
                     if isinstance(pis, dict):
                         latest_plan_intake_state = pis
+                        intake_state_from_tools = pis
                     if name == "update_plan_intake":
                         turn_had_plan_intake_update = True
                     pg = out.get("plan_generation")
@@ -3392,6 +3673,38 @@ def run_mobile_agent_turn(
                         "tool_call_id": tc["id"],
                         "content": d["tool_content"],
                     }
+                )
+            # Tool results can refresh alignment / intake after the initial system
+            # message was built from thread_ctx. Patch the system prompt so
+            # alignment_pause_coaching_facts and phase gates see the same state
+            # as the tool payloads on the next model call.
+            if (
+                intake_state_from_tools is not None
+                and plan_creation_mode
+                and not use_full_prompt_for_plan
+                and messages
+                and messages[0].get("role") == "system"
+            ):
+                pre_generation_review_section = ""
+                if isinstance(intake_state_from_tools, dict):
+                    pre_generation_review_section, _ = _try_build_runner_review_bundle(
+                        session,
+                        str(internal_user_id),
+                        intake_state_from_tools,
+                        anchor_local_date=anchor_local_date,
+                    )
+                messages[0]["content"] = _plan_creation_minimal_system_content(
+                    plan_intake_ctx=intake_state_from_tools,
+                    anchor_local_date=anchor_local_date,
+                    client_timezone=client_timezone,
+                    activity_ctx_block=activity_ctx_block,
+                    response_directive=response_directive,
+                    user_message=user_message,
+                    thread_ctx=replace(
+                        thread_ctx,
+                        latest_plan_intake_state=intake_state_from_tools,
+                    ),
+                    pre_generation_review_section=pre_generation_review_section,
                 )
             loop_details.append(loop_entry)
             continue
@@ -3463,10 +3776,22 @@ def run_mobile_agent_turn(
                     "content": text,
                     "data": latest_run_summary,
                 }
+                structured, sections_loop = enrich_run_summary_payload_with_sections(
+                    structured
+                )
+                if sections_loop:
+                    meta["run_summary_sections"] = True
                 logger.info(
                     "[smartcoach_mobile_coach] response_shape=run_summary loops=%s content_len=%s",
                     loops,
-                    len(text),
+                    len(structured.get("content") or ""),
+                )
+                _maybe_run_explicit_goal_memory_fallback(
+                    session,
+                    internal_user_id,
+                    stashed_explicit_goal_text,
+                    messages,
+                    explicit_goal_memory_persist_guard,
                 )
                 return structured, meta
 
@@ -3516,6 +3841,13 @@ def run_mobile_agent_turn(
                     out_text = "Your training plan is saved. Open the **Plan** tab for workouts and dates."
                 if not out_text:
                     out_text = "Thanks — I noted that for your plan setup."
+                if plan_creation_mode and latest_plan_generation is None:
+                    out_text = _enforce_plan_creation_response_guardrails(
+                        out_text,
+                        plan_intake_state=(
+                            pis_merged if isinstance(pis_merged, dict) else None
+                        ),
+                    )
                 runner_understanding_shown = plan_runner_understanding_shown(pis_merged)
                 out_text_with_preamble = (
                     apply_plan_activity_preamble_to_assistant_markdown(
@@ -3529,20 +3861,41 @@ def run_mobile_agent_turn(
                     pis_merged = mark_plan_runner_understanding_shown(pis_merged)
                     latest_plan_intake_state = pis_merged
                 out_text = out_text_with_preamble
-                if plan_creation_mode and latest_plan_generation is None:
-                    out_text = _enforce_plan_creation_response_guardrails(
-                        out_text,
-                        plan_intake_state=(
-                            pis_merged if isinstance(pis_merged, dict) else None
-                        ),
-                    )
                 structured_text = {
                     "type": "text",
                     "content": out_text,
                     "data": {},
                 }
                 if pis_merged is not None:
-                    structured_text["data"]["plan_intake_state"] = pis_merged
+                    pis_for_client = dict(pis_merged)
+                    _, runner_review_api = _try_build_runner_review_bundle(
+                        session,
+                        str(internal_user_id),
+                        pis_for_client,
+                        anchor_local_date=anchor_local_date,
+                    )
+                    if runner_review_api is not None:
+                        structured_text["data"][
+                            "pre_generation_runner_review"
+                        ] = runner_review_api
+                    if plan_creation_split_confirm_enabled() and pis_for_client.get(
+                        "ready_to_generate"
+                    ):
+                        apply_review_to_plan_intake_ux_for_phase(
+                            pis_for_client,
+                            runner_review_api,
+                            intake_confirmed=bool(
+                                (
+                                    pis_for_client.get("ux")
+                                    if isinstance(pis_for_client.get("ux"), dict)
+                                    else {}
+                                ).get("intake_confirmed")
+                            ),
+                        )
+                    structured_text["data"]["plan_intake_state"] = pis_for_client
+                    ui_prompt = _ui_prompt_from_plan_intake_state(pis_for_client)
+                    if isinstance(ui_prompt, dict):
+                        structured_text["data"]["ui_prompt"] = ui_prompt
                 if latest_plan_generation is not None:
                     structured_text["data"]["plan_generation"] = latest_plan_generation
                 logger.info(
@@ -3551,9 +3904,23 @@ def run_mobile_agent_turn(
                     loops,
                     len(out_text),
                 )
+                _maybe_run_explicit_goal_memory_fallback(
+                    session,
+                    internal_user_id,
+                    stashed_explicit_goal_text,
+                    messages,
+                    explicit_goal_memory_persist_guard,
+                )
                 return structured_text, meta
 
             if text:
+                _maybe_run_explicit_goal_memory_fallback(
+                    session,
+                    internal_user_id,
+                    stashed_explicit_goal_text,
+                    messages,
+                    explicit_goal_memory_persist_guard,
+                )
                 return text, meta
 
     fallback = (
@@ -3611,5 +3978,19 @@ def run_mobile_agent_turn(
             "[smartcoach_mobile_coach] response_shape=text_plan_data_truncated loops=%s",
             loops,
         )
+        _maybe_run_explicit_goal_memory_fallback(
+            session,
+            internal_user_id,
+            stashed_explicit_goal_text,
+            messages,
+            explicit_goal_memory_persist_guard,
+        )
         return structured_trunc, meta_trunc
+    _maybe_run_explicit_goal_memory_fallback(
+        session,
+        internal_user_id,
+        stashed_explicit_goal_text,
+        messages,
+        explicit_goal_memory_persist_guard,
+    )
     return fallback, meta_trunc

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 
-ORCH_SRC = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+ORCH_SRC = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
     encoding="utf-8"
 )
 

@@ -402,7 +402,7 @@ def test_phase_ux_contract_absent_in_plan_creation_branch() -> None:
     test in :mod:`test_phase_ux_contract`)."""
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     # Exactly one composition site — already asserted in

@@ -89,13 +89,12 @@ def patch_orchestrator_dependencies(monkeypatch, mock_session):
         lambda: _RateLimiterStub(),
     )
     monkeypatch.setattr(
-        "src.services.ingestion_orchestrator_service.run_enrichment_batch",
+        "src.services.ingestion_orchestrator_service.count_pending_detail_enrichment",
         lambda *_args, **_kwargs: 0,
     )
-    # Keep tests single-chunk for deterministic assertions.
     monkeypatch.setattr(
-        "src.services.ingestion_orchestrator_service.STRAVA_SYNC_CHUNK_SECONDS",
-        365 * 24 * 60 * 60,
+        "src.services.ingestion_orchestrator_service.run_enrichment_batches_in_window",
+        lambda *_args, **_kwargs: (0, False),
     )
 
 
@@ -261,22 +260,31 @@ class TestIngestionSyncErrors:
 class TestIngestionEnrichmentErrors:
     """Tests for enrichment-related errors during ingestion."""
 
-    @patch("src.services.ingestion_orchestrator_service.run_enrichment_batch")
+    @patch(
+        "src.services.ingestion_orchestrator_service.run_enrichment_batches_in_window",
+        side_effect=Exception("Enrichment failed"),
+    )
+    @patch(
+        "src.services.ingestion_orchestrator_service.count_pending_detail_enrichment",
+        return_value=1,
+    )
     @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
-    @patch("src.services.ingestion_orchestrator_service.get_valid_token")
+    @patch(
+        "src.services.ingestion_orchestrator_service.get_valid_token",
+        return_value="valid-token",
+    )
     def test_enrichment_failure_does_not_fail_ingestion(
         self,
         mock_get_token,
         mock_service_class,
+        _mock_count_pending,
         mock_enrichment,
         mock_session,
         sample_activity_data,
     ):
         """Test that enrichment failure doesn't fail entire ingestion."""
-        mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
         mock_service.fetch_all_activities.return_value = [sample_activity_data]
-        mock_enrichment.side_effect = Exception("Enrichment failed")
 
         # Mock DAO to return success
         with patch(
@@ -290,22 +298,31 @@ class TestIngestionEnrichmentErrors:
             assert result["synced"] == 1
             assert result["enriched"] == 0  # Enrichment failed
 
-    @patch("src.services.ingestion_orchestrator_service.run_enrichment_batch")
+    @patch(
+        "src.services.ingestion_orchestrator_service.run_enrichment_batches_in_window",
+        side_effect=StravaTokenError("Token expired"),
+    )
+    @patch(
+        "src.services.ingestion_orchestrator_service.count_pending_detail_enrichment",
+        return_value=1,
+    )
     @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
-    @patch("src.services.ingestion_orchestrator_service.get_valid_token")
+    @patch(
+        "src.services.ingestion_orchestrator_service.get_valid_token",
+        return_value="valid-token",
+    )
     def test_token_error_during_enrichment(
         self,
         mock_get_token,
         mock_service_class,
+        _mock_count_pending,
         mock_enrichment,
         mock_session,
         sample_activity_data,
     ):
         """Test that token error during enrichment is handled gracefully."""
-        mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
         mock_service.fetch_all_activities.return_value = [sample_activity_data]
-        mock_enrichment.side_effect = StravaTokenError("Token expired")
 
         # Mock DAO to return success
         with patch(
@@ -323,22 +340,32 @@ class TestIngestionEnrichmentErrors:
 class TestIngestionSuccess:
     """Tests for successful ingestion scenarios."""
 
-    @patch("src.services.ingestion_orchestrator_service.run_enrichment_batch")
+    @patch(
+        "src.services.ingestion_orchestrator_service.run_enrichment_batches_in_window",
+        return_value=(1, False),
+    )
+    @patch(
+        "src.services.ingestion_orchestrator_service.count_pending_detail_enrichment",
+        return_value=1,
+    )
     @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
-    @patch("src.services.ingestion_orchestrator_service.get_valid_token")
+    @patch(
+        "src.services.ingestion_orchestrator_service.get_valid_token",
+        return_value="valid-token",
+    )
     def test_successful_ingestion_and_enrichment(
         self,
         mock_get_token,
         mock_service_class,
+        _mock_count_pending,
         mock_enrichment,
         mock_session,
         sample_activity_data,
     ):
         """Test successful ingestion and enrichment."""
-        mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
         mock_service.fetch_all_activities.return_value = [sample_activity_data]
-        mock_enrichment.return_value = 1
+        mock_enrichment.return_value = (1, False)
 
         # Mock DAO to return success
         with patch(
@@ -351,21 +378,35 @@ class TestIngestionSuccess:
             assert result["synced"] == 1
             assert result["enriched"] == 1
 
-    @patch("src.services.ingestion_orchestrator_service.run_enrichment_batch")
+    @patch(
+        "src.services.ingestion_orchestrator_service.run_enrichment_batches_in_window",
+        return_value=(2, False),
+    )
+    @patch(
+        "src.services.ingestion_orchestrator_service.count_pending_detail_enrichment",
+        return_value=2,
+    )
     @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
-    @patch("src.services.ingestion_orchestrator_service.get_valid_token")
+    @patch(
+        "src.services.ingestion_orchestrator_service.get_valid_token",
+        return_value="valid-token",
+    )
     def test_filters_non_run_activities(
-        self, mock_get_token, mock_service_class, mock_enrichment, mock_session
+        self,
+        mock_get_token,
+        mock_service_class,
+        _mock_count_pending,
+        mock_enrichment,
+        mock_session,
     ):
         """Test that only Run activities are processed."""
-        mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
         mock_service.fetch_all_activities.return_value = [
             {"id": 1, "type": "Run", "external_id": "run1.fit"},
             {"id": 2, "type": "Ride", "external_id": "ride1.fit"},
             {"id": 3, "type": "Run", "external_id": "run2.fit"},
         ]
-        mock_enrichment.return_value = 2
+        mock_enrichment.return_value = (2, False)
 
         # Mock DAO to return success
         with patch(
@@ -443,22 +484,32 @@ class TestIngestionParameters:
         # Verify fetch_all_activities was called
         assert mock_service.fetch_all_activities.called
 
-    @patch("src.services.ingestion_orchestrator_service.run_enrichment_batch")
+    @patch(
+        "src.services.ingestion_orchestrator_service.run_enrichment_batches_in_window",
+        return_value=(1, False),
+    )
+    @patch(
+        "src.services.ingestion_orchestrator_service.count_pending_detail_enrichment",
+        return_value=1,
+    )
     @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
-    @patch("src.services.ingestion_orchestrator_service.get_valid_token")
+    @patch(
+        "src.services.ingestion_orchestrator_service.get_valid_token",
+        return_value="valid-token",
+    )
     def test_custom_batch_size(
         self,
         mock_get_token,
         mock_service_class,
+        _mock_count_pending,
         mock_enrichment,
         mock_session,
         sample_activity_data,
     ):
         """Test that custom batch_size is used for enrichment."""
-        mock_get_token.return_value = "valid-token"
         mock_service = mock_service_class.return_value
         mock_service.fetch_all_activities.return_value = [sample_activity_data]
-        mock_enrichment.return_value = 1
+        mock_enrichment.return_value = (1, False)
 
         # Mock DAO
         with patch(

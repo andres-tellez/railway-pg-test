@@ -317,7 +317,7 @@ def test_orchestrator_defines_gating_injector_helper() -> None:
 
 
 def test_orchestrator_source_wires_summary_after_tone_contract() -> None:
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     # Wired exactly once as a call (count == 2: 1 def + 1 call), and
@@ -336,17 +336,18 @@ def test_orchestrator_source_wires_summary_after_tone_contract() -> None:
     # the arg list) rather than the def (which appears earlier in
     # the file).
     tone_idx = src.index("coach_tone_contract_section(),")
+    prose_idx = src.index("coach_turn_prose_shape_section(),")
     summary_idx = src.index("_prior_session_summary_section(\n                session,")
-    assert tone_idx < summary_idx, (
-        "_prior_session_summary_section must be composed AFTER "
-        "coach_tone_contract_section"
+    assert tone_idx < prose_idx < summary_idx, (
+        "system prompt order: coach_tone_contract_section, then "
+        "coach_turn_prose_shape_section, then _prior_session_summary_section"
     )
 
 
 def test_orchestrator_source_does_not_wire_summary_into_plan_creation_branch() -> None:
     # Plan-creation turns already have their own restricted prompt
     # and do not benefit from cross-session summary context.
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     plan_creation_base_idx = src.index("PLAN_CREATION_SYSTEM_PROMPT_BASE")

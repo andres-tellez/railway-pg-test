@@ -14,7 +14,7 @@ Provides centralized audit logging for:
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
-from flask import request, g
+from flask import request, g, has_app_context, has_request_context
 from src.db.db_session import get_session
 from src.db.models.auth_audit_log import AuthAuditLog
 
@@ -47,20 +47,23 @@ def log_auth_event(
         user_agent: User agent string (auto-detected if None)
     """
     try:
-        # Auto-detect IP and user agent from request if available
-        if ip_address is None and request:
-            ip_address = (
-                request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-                if request.headers.get("X-Forwarded-For")
-                else (request.remote_addr or "unknown")
-            )
+        # HTTP-only fields: background threads have neither request nor app context.
+        if has_request_context():
+            if ip_address is None:
+                ip_address = (
+                    request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                    if request.headers.get("X-Forwarded-For")
+                    else (request.remote_addr or "unknown")
+                )
 
-        if user_agent is None and request:
-            user_agent = request.headers.get("User-Agent")
+            if user_agent is None:
+                user_agent = request.headers.get("User-Agent")
 
-        # Try to get user_id from Flask g if not provided
-        if user_id is None and hasattr(g, "user_id"):
-            user_id = g.user_id
+        if has_app_context() and user_id is None:
+            try:
+                user_id = getattr(g, "user_id", None)
+            except RuntimeError:
+                user_id = None
 
         # Create audit log entry
         session = get_session()
@@ -137,15 +140,19 @@ def log_logout(user_id: str, **kwargs):
 
 
 def log_token_refresh(
-    user_id: str, athlete_id: Optional[str] = None, success: bool = True, **kwargs
+    user_id: Optional[str] = None,
+    athlete_id: Optional[str] = None,
+    success: bool = True,
+    **kwargs,
 ):
     """Log token refresh event."""
+    label = user_id or athlete_id or "unknown"
     log_auth_event(
         event_type="token_refresh",
         event_status="success" if success else "failure",
         user_id=user_id,
         athlete_id=athlete_id,
-        message=f"Token refresh {'successful' if success else 'failed'} for user {user_id}",
+        message=f"Token refresh {'successful' if success else 'failed'} for {label}",
         **kwargs,
     )
 
@@ -169,13 +176,16 @@ def log_oauth_callback(
     )
 
 
-def log_token_revocation(user_id: str, athlete_id: str, **kwargs):
+def log_token_revocation(
+    user_id: Optional[str] = None, athlete_id: Optional[str] = None, **kwargs
+):
     """Log token revocation event."""
+    label = user_id or athlete_id or "unknown"
     log_auth_event(
         event_type="token_revocation",
         event_status="success",
         user_id=user_id,
         athlete_id=athlete_id,
-        message=f"Tokens revoked for user {user_id}, athlete {athlete_id}",
+        message=f"Tokens revoked for {label} (athlete {athlete_id})",
         **kwargs,
     )

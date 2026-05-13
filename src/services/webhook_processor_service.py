@@ -27,6 +27,7 @@ from src.db.models.user_athletes import UserAthleteLink
 from src.db.models.activities import Activity
 from src.services.activity_service import enrich_one_activity_with_refresh
 from src.db.dao.activity_dao import ActivityDAO
+from src.db.dao.user_identity_dao import persist_splits_for_user
 from src.services.strava_access_service import StravaClient
 from src.services.token_service import get_valid_token
 from sqlalchemy.orm import Session
@@ -196,7 +197,10 @@ def _handle_activity_create(session: Session, event: WebhookEvent, user_id):
 
         # Enrich the activity
         try:
-            enrich_one_activity_with_refresh(session, athlete_id, activity_id)
+            persist_splits = persist_splits_for_user(session, user_id)
+            enrich_one_activity_with_refresh(
+                session, athlete_id, activity_id, persist_splits=persist_splits
+            )
             logger.info(f"Successfully enriched activity {activity_id}")
         except Exception as e:
             logger.warning(f"Failed to enrich activity {activity_id}: {e}")
@@ -269,7 +273,10 @@ def _handle_activity_update(session: Session, event: WebhookEvent, user_id):
 
         # Re-enrich the activity
         try:
-            enrich_one_activity_with_refresh(session, athlete_id, activity_id)
+            persist_splits = persist_splits_for_user(session, user_id)
+            enrich_one_activity_with_refresh(
+                session, athlete_id, activity_id, persist_splits=persist_splits
+            )
             logger.info(f"Successfully re-enriched activity {activity_id}")
         except Exception as e:
             logger.warning(f"Failed to re-enrich activity {activity_id}: {e}")

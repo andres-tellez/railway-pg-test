@@ -96,6 +96,8 @@ We’ve added a skeleton workflow in `.github/workflows/cron-sync.yml` that:
 - Supports manual trigger
 - Runs placeholder logic (future expansion)
 
+**Staging → Railway:** `.github/workflows/staging-ci.yml` runs on every push to `staging` (fast `compileall` only, no database). If Railway has **Wait for CI** enabled, that flag requires a successful push workflow; without a matching `on: push: branches: [staging]` job, new commits may never deploy. In the Railway service: **Settings → Source** → trigger branch **staging**, **Autodeploy** enabled, and either leave **Wait for CI** off or keep it on with this workflow green. If deploys are skipped, check **watch paths** (empty = all paths) in the same settings.
+
 ---
 
 ## 📚 Documentation
@@ -106,6 +108,7 @@ Canonical docs under [`docs/`](docs/):
 - **API:** [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md)
 - **Phase checklists:** [`docs/PHASE_1_IMPLEMENTATION_CHECKLIST.md`](docs/PHASE_1_IMPLEMENTATION_CHECKLIST.md), [`docs/PHASE_2_IMPLEMENTATION_CHECKLIST.md`](docs/PHASE_2_IMPLEMENTATION_CHECKLIST.md)
 - **How docs relate:** [`docs/DOCUMENTATION_GOVERNANCE.md`](docs/DOCUMENTATION_GOVERNANCE.md)
+- **Design note (draft):** [`docs/RUN_SUMMARY_SECTIONS_DESIGN_NOTE.md`](docs/RUN_SUMMARY_SECTIONS_DESIGN_NOTE.md) — optional `sections` on opening `run_summary` (“How was my run?”) only
 
 **OAuth helper:** `python src/scripts/verify_oauth_config.py`
 
@@ -135,4 +138,4 @@ railway-pg-test/
 
 - Python 3.11+
 - SQLite or Postgres
-- A Strava API App (https://www.strava.com/settings/api)# Triggering redeploy
+- A Strava API App (https://www.strava.com/settings/api)

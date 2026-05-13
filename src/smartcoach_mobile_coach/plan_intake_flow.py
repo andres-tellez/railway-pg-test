@@ -10,14 +10,25 @@ This module keeps collection/validation state outside the LLM:
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from dateutil import parser as date_parser
 
+from src.smartcoach_mobile_coach.intake import normalize as intake_normalize
+from src.smartcoach_mobile_coach.intake import parsers as intake_parsers
+from src.smartcoach_mobile_coach.intake import state_machine as intake_state_machine
+from src.smartcoach_mobile_coach.intake import structured_updates as intake_structured
+
+from src.coaching_intelligence.intake_alignment import evaluate_intake_alignment_state
 from src.schemas.plan_schema import PlanCreateSchema, PrimaryGoal
 from src.utils.date_helpers import DAY_NAMES_ABBREV
+
+_POSTURE_STATES_FOR_STORAGE = frozenset(
+    {"PERFORMANCE_LEANING", "BALANCED", "DURABILITY_FIRST"}
+)
 
 REQUIRED_FIELDS: tuple[str, ...] = (
     "race_distance",
@@ -32,6 +43,266 @@ PLAN_UX_STAGE_DETAILS = "details"
 PLAN_UX_STAGE_CONFIRM = "confirm"
 PLAN_UX_STAGE_FAST_TRACK = "fast_track"
 PLAN_UX_STAGE_GENERATED = "generated"
+
+
+def plan_creation_split_confirm_enabled() -> bool:
+    """When True, plan generation requires intake + runner review + explicit create intent."""
+    raw = (
+        (os.getenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1") or "1").strip().lower()
+    )
+    return raw not in ("0", "false", "no", "off")
+
+
+def _material_draft_digest(draft: Dict[str, Any]) -> tuple:
+    td = draft.get("training_days")
+    td_norm = tuple(td) if isinstance(td, list) else td
+    return (
+        draft.get("race_distance"),
+        draft.get("race_date"),
+        draft.get("primary_goal"),
+        draft.get("target_time"),
+        td_norm,
+        draft.get("long_run_day"),
+    )
+
+
+def _truthy(raw: Any) -> bool:
+    if raw is True:
+        return True
+    if isinstance(raw, str):
+        return raw.strip().lower() in ("true", "1", "yes")
+    return False
+
+
+def user_requests_plan_generation(user_message: str) -> bool:
+    """
+    Explicit plan-build phrases only (not generic \"yes\").
+
+    Whole-message match for create / build / generate the plan.
+    """
+    raw = (user_message or "").strip()
+    if not raw or len(raw) > 160:
+        return False
+    s = raw.lower().strip()
+    if re.search(
+        r"\b(but|except|change|wrong|actually|instead|not quite|hold on|wait)\b",
+        s,
+    ):
+        return False
+    core = re.sub(r"[\s.!?…,;:\"'`]+", " ", s).strip()
+    return bool(
+        re.match(
+            r"(?is)^(?:please\s+)?(?:create my plan|build my plan|generate the plan)(?:\s*[.!?…])*$",
+            core,
+        )
+    )
+
+
+def _intake_alignment_feature_enabled() -> bool:
+    return (
+        os.getenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1") or ""
+    ).strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _recompute_alignment_branch(
+    alignment: Dict[str, Any],
+    draft: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    After merging alignment answers, refresh ``alignment.state`` so ``ui_prompt`` and
+    observability match resolved flags (stale state used to repeat the same chips).
+    """
+    if not _intake_alignment_feature_enabled():
+        return alignment
+    stance = alignment.get("ambition_stance")
+    if not stance:
+        return alignment
+    answers = dict(alignment.get("answers") or {})
+    asked = [
+        str(x)
+        for x in list(alignment.get("asked_categories") or [])
+        if isinstance(x, str)
+    ]
+    qc_raw = alignment.get("question_count")
+    try:
+        qc = int(qc_raw) if qc_raw is not None else 0
+    except (TypeError, ValueError):
+        qc = 0
+    if qc == 0 and asked:
+        qc = len(asked)
+    qc = max(0, min(3, qc))
+
+    # Server sets ``ambition_attributions`` when alignment is enabled (see ``agent_tools``).
+    # Empty list falls back to ``ambition_stance`` only inside ``evaluate_intake_alignment_state``.
+    ambition_attr = [
+        str(x)
+        for x in list(alignment.get("ambition_attributions") or [])
+        if isinstance(x, str)
+    ]
+    ast = evaluate_intake_alignment_state(
+        ambition_stance=str(stance),
+        primary_goal=str(draft.get("primary_goal") or ""),
+        ambition_attributions=ambition_attr,
+        frequency_flexible=answers.get("frequency_flexible"),
+        posture_priority=answers.get("posture_priority"),
+        timeline_flexible=answers.get("timeline_flexible"),
+        question_count=qc,
+    )
+    answers = dict(answers)
+    ps_state = ast.get("posture_state")
+    if not answers.get("posture_priority") and isinstance(ps_state, str):
+        if ps_state in _POSTURE_STATES_FOR_STORAGE:
+            answers["posture_priority"] = ps_state
+    prior_attr = [
+        str(x) for x in list(alignment.get("attributions") or []) if isinstance(x, str)
+    ]
+    merged_attr = sorted(set(prior_attr + list(ast.get("attributions") or [])))
+    observability = dict(alignment.get("observability") or {})
+    observability.update(
+        {
+            "pause_fired": bool(ast.get("pause_required")),
+            "posture_selected": ast.get("posture_state"),
+            "alignment_resolved": bool(ast.get("generation_ready")),
+            "question_count": ast.get("question_count"),
+        }
+    )
+    return {
+        **alignment,
+        "answers": answers,
+        "state": ast,
+        "attributions": merged_attr,
+        "observability": observability,
+    }
+
+
+def schedule_confirmation_system_section(intake_state: Optional[Dict[str, Any]]) -> str:
+    """
+    When the client shows Yes/No for draft training days, steer model prose to match chips.
+    """
+    if not isinstance(intake_state, dict):
+        return ""
+    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if not ux.get("schedule_confirm_before_posture"):
+        return ""
+    return (
+        "## Schedule confirmation (matches inline Yes / No)\n"
+        "Inline controls ask whether their **current draft training days** are correct **before** "
+        "any alignment tradeoff (posture) question.\n"
+        "- Ground briefly in what they already committed (weekdays from intake).\n"
+        "- Ask **one** yes/no style closing question that matches **Yes** / **No, change days** — "
+        "not posture, performance, durability, or recovery philosophy.\n"
+        "- Do **not** ask them to confirm posture or priorities on this turn."
+    ).strip()
+
+
+def plan_intake_alignment_pause_active(intake_state: Optional[Dict[str, Any]]) -> bool:
+    """
+    True when intake alignment is blocking generation (pause_required, not resolved).
+
+    Used by orchestrator guardrails and UI hints — same condition as
+    ``alignment_pause_coaching_facts_system_section`` emitting non-empty text.
+    """
+    if not isinstance(intake_state, dict):
+        return False
+    al = intake_state.get("alignment")
+    if not isinstance(al, dict):
+        return False
+    st = al.get("state")
+    if not isinstance(st, dict):
+        return False
+    return bool(st.get("pause_required")) and not bool(st.get("generation_ready"))
+
+
+def alignment_pause_coaching_facts_system_section(
+    intake_state: Optional[Dict[str, Any]],
+) -> str:
+    """
+    Deterministic facts + instructions so the LLM interprets tension before alignment chips.
+    Does not prescribe user-facing wording.
+    """
+    if not isinstance(intake_state, dict):
+        return ""
+    if not _intake_alignment_feature_enabled():
+        return ""
+    al = intake_state.get("alignment")
+    if not isinstance(al, dict):
+        return ""
+    st = al.get("state")
+    if not isinstance(st, dict):
+        return ""
+    if not plan_intake_alignment_pause_active(intake_state):
+        return ""
+    draft = intake_state.get("draft")
+    if not isinstance(draft, dict):
+        draft = {}
+    cats = [
+        str(x)
+        for x in list(st.get("allowed_question_categories") or [])
+        if isinstance(x, str)
+    ]
+    next_cat = cats[0] if cats else ""
+    raw_attr = al.get("ambition_attributions")
+    if isinstance(raw_attr, list):
+        ambition_attr_list = sorted(
+            {str(x).strip() for x in raw_attr if isinstance(x, str) and str(x).strip()}
+        )
+    else:
+        ambition_attr_list = []
+    attr_display = ", ".join(ambition_attr_list) if ambition_attr_list else "n/a"
+    legacy_stance = al.get("ambition_stance")
+    legacy_display = (
+        str(legacy_stance).strip()
+        if legacy_stance is not None and str(legacy_stance).strip()
+        else "n/a"
+    )
+    tdays = draft.get("training_days")
+    day_list = tdays if isinstance(tdays, list) else []
+    day_count = len(day_list)
+    days_preview = ", ".join(str(d) for d in day_list) if day_list else "n/a"
+
+    return (
+        "## Intake alignment — coach-facing facts (read silently; do not dump as a list to the user)\n"
+        "This section appears **after** **## Athlete activity snapshot** when that block is present—use it.\n"
+        "**Ground your opening** in **at least one concrete fact** from the activity snapshot "
+        "(e.g. typical weekly mileage band, run frequency, or longest recent run) **and** tie it to what "
+        "they already entered (goal type, target time if set, training days). Show you are reasoning "
+        "about *their* situation—not generic advice.\n"
+        "\n"
+        "Before the **inline controls** ask the next question, write like a coach—not a workflow:\n"
+        "1. **Interpret** what the signals imply for *this* athlete in **1–2 short sentences**.\n"
+        "2. **Name the tension or tradeoff** (stated goal vs current structure / volume) in **one sentence**.\n"
+        "3. **Explain why the next question matters** for staying healthy, consistent, or realistic pacing—in **one sentence**.\n"
+        "4. Then ask **one** question that matches the **inline chips** (do not invent a different question).\n"
+        "\n"
+        "Deterministic context (ground truth; translate into plain language—never echo raw key names or rule codes to the user):\n"
+        f"- **Ambition attributions (primary tension signal; paraphrase, do not read codes aloud):** {attr_display}\n"
+        f"- **Legacy stance label (API snapshot only; prefer attributions if they disagree):** {legacy_display}\n"
+        f"- **Baseline band (recent volume proxy):** {al.get('baseline_band')}\n"
+        f"- **Goal demand:** {al.get('goal_demand')}\n"
+        f"- **Primary goal (draft):** {draft.get('primary_goal')}\n"
+        f"- **Target time (draft):** {draft.get('target_time') or 'n/a'}\n"
+        f"- **Training days:** {day_count} ({days_preview})\n"
+        f"- **Next alignment topic (must match chips):** {next_cat or 'n/a'}\n"
+        "\n"
+        "If there is **no** activity snapshot block (thin data), say so briefly and lean on the deterministic "
+        "attribution / band lines above—still connect goal and schedule before the chips.\n"
+        "\n"
+        "Keep coaching prose before the chips to **at most 5 short sentences** total (interpretation may need two); "
+        "warm and specific; no filler openers (“Great!”, “I’m here to help”)."
+    ).strip()
+
+
+def structured_intake_core_v1_enabled() -> bool:
+    """
+    When true, core plan-intake athletic fields are owned by structured commits
+    (inline controls + structured_input), not conversational NL merge into draft.
+    """
+    raw = (os.getenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1") or "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
 
 
 def _normalize_goal(value: Any) -> Optional[str]:
@@ -898,23 +1169,34 @@ def mark_plan_runner_understanding_shown(
 
 
 def _missing_required_fields(draft: Dict[str, Any]) -> List[str]:
+    """
+    Missing fields in intake order. When primary_goal is Target Time, ``target_time``
+    is required immediately after goal type — before ``training_days`` — so structured
+    UI and conversation ask for clock time next, not weekly schedule first.
+    """
     out: List[str] = []
     for f in REQUIRED_FIELDS:
         v = draft.get(f)
+        missing_f = False
         if v is None:
+            missing_f = True
+        elif isinstance(v, str) and not v.strip():
+            missing_f = True
+        elif isinstance(v, list) and not v:
+            missing_f = True
+        if missing_f:
             out.append(f)
-            continue
-        if isinstance(v, str) and not v.strip():
-            out.append(f)
-            continue
-        if isinstance(v, list) and not v:
-            out.append(f)
-            continue
-    if draft.get("primary_goal") == PrimaryGoal.TARGET_TIME.value and not (
-        isinstance(draft.get("target_time"), str)
-        and draft.get("target_time", "").strip()
-    ):
-        out.append("target_time")
+        if f == "primary_goal" and not missing_f:
+            pg = draft.get("primary_goal")
+            if (
+                isinstance(pg, str)
+                and pg.strip() == PrimaryGoal.TARGET_TIME.value
+                and not (
+                    isinstance(draft.get("target_time"), str)
+                    and draft.get("target_time", "").strip()
+                )
+            ):
+                out.append("target_time")
     return out
 
 
@@ -952,6 +1234,85 @@ def _auto_fill_long_run_day(draft: Dict[str, Any]) -> None:
     draft["long_run_day"] = sorted(tdays, key=lambda d: order.get(d, -1))[-1]
 
 
+def _normalize_alignment_bool(raw: Any) -> Optional[bool]:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        s = raw.strip().lower()
+        if s in ("yes", "y", "true", "1"):
+            return True
+        if s in ("no", "n", "false", "0"):
+            return False
+    return None
+
+
+def _normalize_alignment_posture(raw: Any) -> Optional[str]:
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip().lower()
+    aliases = {
+        "performance": "PERFORMANCE_LEANING",
+        "performance_leaning": "PERFORMANCE_LEANING",
+        "balanced": "BALANCED",
+        "durability": "DURABILITY_FIRST",
+        "durability_first": "DURABILITY_FIRST",
+    }
+    return aliases.get(s)
+
+
+def _extract_alignment_answers_from_user_message(
+    source_user_message: Optional[str],
+) -> Dict[str, Any]:
+    msg = (source_user_message or "").strip().lower()
+    if not msg:
+        return {}
+
+    out: Dict[str, Any] = {}
+
+    # Frequency flexibility (can add/adjust running days)
+    if re.search(
+        r"\b(add|another|extra|more)\s+(day|run)\b|\bcan\s+add\b|\bflexible\s+on\s+days\b",
+        msg,
+    ):
+        out["frequency_flexible"] = True
+    elif re.search(
+        r"\b(can(?:not|'t)\s+add|no\s+extra\s+day|keep\s+the\s+same\s+days|fixed\s+schedule)\b",
+        msg,
+    ):
+        out["frequency_flexible"] = False
+
+    # Posture priority (performance vs durability vs balanced)
+    if re.search(
+        r"\b(balance|balanced|middle\s+ground|both)\b",
+        msg,
+    ):
+        out["posture_priority"] = "BALANCED"
+    elif re.search(
+        r"\b(performance|faster|aggressive|push|chase\s+time|time\s+goal)\b",
+        msg,
+    ):
+        out["posture_priority"] = "PERFORMANCE_LEANING"
+    elif re.search(
+        r"\b(durability|healthy|stay\s+healthy|injury|sustainable|consistency\s+first|safe)\b",
+        msg,
+    ):
+        out["posture_priority"] = "DURABILITY_FIRST"
+
+    # Timeline flexibility (race-date/time flexibility if needed)
+    if re.search(
+        r"\b(flexible\s+on\s+(date|timeline)|can\s+(move|shift|push)\s+(it|the\s+date)|date\s+is\s+flexible)\b",
+        msg,
+    ):
+        out["timeline_flexible"] = True
+    elif re.search(
+        r"\b(date\s+is\s+fixed|timeline\s+is\s+fixed|cannot\s+move\s+(it|date)|can't\s+move\s+(it|date)|not\s+flexible)\b",
+        msg,
+    ):
+        out["timeline_flexible"] = False
+
+    return out
+
+
 def update_plan_intake_state(
     current_state: Optional[Dict[str, Any]],
     *,
@@ -960,151 +1321,245 @@ def update_plan_intake_state(
     reset: bool = False,
     source_user_message: Optional[str] = None,
 ) -> Dict[str, Any]:
-    state = _coerce_state(None if reset else current_state)
+    up_in = updates if isinstance(updates, dict) else {}
+    up = dict(up_in)
+    effective_reset = reset
+    if str(up.get("runner_tradeoff_choice") or "").strip().lower() == "adjust_goal":
+        # New goal / tradeoff "adjust goal": restart from empty intake so the athlete
+        # goes through the same core + alignment questionnaire as first-time creation.
+        # Ignore companion updates on this turn to avoid skipping required prompts.
+        effective_reset = True
+        up = {}
+
+    state = _coerce_state(None if effective_reset else current_state)
+    prior_digest = _material_draft_digest(
+        dict((current_state or {}).get("draft") or {})
+        if not effective_reset
+        else dict()
+    )
     draft: Dict[str, Any] = dict(state.get("draft") or {})
     ux: Dict[str, Any] = dict(state.get("ux") or {})
     had_prior_draft = bool(draft)
     prior_ready_to_generate = bool(state.get("ready_to_generate"))
     errors: List[str] = []
+    alignment = dict(state.get("alignment") or {})
+    alignment_answers = dict(alignment.get("answers") or {})
+    prior_alignment_answers = dict(alignment_answers)
+    prior_training_days_for_expansion = (
+        list(draft["training_days"])
+        if isinstance(draft.get("training_days"), list)
+        else None
+    )
+    prior_expansion_pending = bool(ux.get("training_days_expansion_pending"))
 
     if clear_fields:
         for f in clear_fields:
             if isinstance(f, str) and f in draft:
                 draft.pop(f, None)
 
-    up = updates or {}
-    if not isinstance(up, dict):
-        up = {}
+    prior_ux_snapshot = dict(ux)
 
-    for key, raw in up.items():
-        if key == "race_date":
-            nd = _parse_race_date_natural_language(raw)
-            if nd is None:
-                errors.append(
-                    "race_date must be a real calendar day "
-                    "(e.g. 2026-10-11 or October 11, 2026)."
-                )
-            else:
-                draft["race_date"] = nd
-        elif key == "race_distance":
-            if isinstance(raw, str) and raw.strip():
-                draft["race_distance"] = _normalize_race_distance_intake(raw)
-            else:
-                errors.append("race_distance must be a non-empty string.")
-        elif key == "race_name":
-            if raw is None:
-                draft.pop("race_name", None)
-            elif isinstance(raw, str):
-                draft["race_name"] = raw.strip()[:255]
-            else:
-                errors.append("race_name must be a string.")
-        elif key == "race_location":
-            if raw is None:
-                draft.pop("race_location", None)
-            elif isinstance(raw, str):
-                draft["race_location"] = raw.strip()[:255]
-            else:
-                errors.append("race_location must be a string.")
-        elif key == "primary_goal":
-            ng = _normalize_goal(raw)
-            if ng is None:
-                errors.append("primary_goal must be 'Just Finish' or 'Target Time'.")
-            else:
-                draft["primary_goal"] = ng
-        elif key == "target_time":
-            if raw is None:
-                draft.pop("target_time", None)
-            elif isinstance(raw, str) and raw.strip():
-                draft["target_time"] = _normalize_target_time_phrase(raw.strip())
-            else:
-                errors.append("target_time must be a non-empty string when provided.")
-        elif key == "training_days":
-            ndays = _normalize_training_days(raw)
-            if ndays is None:
-                day_count = _extract_training_days_count(raw)
-                if day_count is not None:
-                    ux["training_days_count"] = day_count
-                    draft.pop("training_days", None)
-                else:
-                    errors.append(
-                        "training_days must be weekdays or ranges (e.g. Monday through Saturday, "
-                        "weekdays), abbreviations, or comma-separated lists."
-                    )
-            else:
-                draft["training_days"] = ndays
-                ux.pop("training_days_count", None)
-        elif key == "long_run_day":
-            if raw is None or (isinstance(raw, str) and not raw.strip()):
-                draft.pop("long_run_day", None)
-            else:
-                nd = _normalize_day(raw)
-                if nd is None:
-                    errors.append("long_run_day must be a valid weekday.")
-                else:
-                    draft["long_run_day"] = nd
-        elif key in ("notes", "plan_name", "user_timezone"):
-            if raw is None:
-                draft.pop(key, None)
-            elif isinstance(raw, str):
-                draft[key] = raw.strip()
-            else:
-                errors.append(f"{key} must be a string.")
+    intake_structured.apply_structured_updates(
+        up,
+        draft=draft,
+        ux=ux,
+        alignment=alignment,
+        alignment_answers=alignment_answers,
+        errors=errors,
+        prior_training_days_for_expansion=prior_training_days_for_expansion,
+    )
 
-    _fill_race_distance_from_named_event(draft)
-    _fill_race_name_from_user_text(draft, source_user_message)
+    skip_nl_core = structured_intake_core_v1_enabled()
+    intake_parsers.apply_natural_language_fills(
+        draft=draft,
+        ux=ux,
+        alignment_answers=alignment_answers,
+        prior_alignment_answers=prior_alignment_answers,
+        source_user_message=source_user_message,
+        skip_nl_core=skip_nl_core,
+    )
+    intake_normalize.validate_long_run_matches_training_days(draft, errors)
 
-    # When the model omits `race_distance` but the user answered in plain language
-    # (e.g. "A marathon", "the full marathon"), infer from the latest message.
-    # Named-event fill above only sees race_name/location/plan_name; bare phrases
-    # like "a marathon" do not populate race_name (event-title regex needs a longer prefix).
-    rd_cur = draft.get("race_distance")
-    if not (isinstance(rd_cur, str) and rd_cur.strip()):
-        msg_rd = _try_infer_race_distance((source_user_message or "").strip())
-        if msg_rd:
-            draft["race_distance"] = msg_rd
-
-    _fill_race_date_from_user_message(draft, source_user_message)
-
-    _fill_primary_goal_from_user_message(draft, source_user_message)
-
-    _fill_goal_time_from_user_message(draft, source_user_message)
-
-    _fill_training_days_from_user_message(draft, ux, source_user_message)
-
-    if "training_days" not in draft and "training_days_count" not in ux:
-        day_count = _extract_training_days_count(source_user_message)
-        if day_count is not None:
-            ux["training_days_count"] = day_count
-
-    if "training_days" in draft and draft.get("long_run_day"):
-        tdays = draft.get("training_days") or []
-        if draft["long_run_day"] not in tdays:
-            errors.append("long_run_day must be one of training_days.")
-
-    _auto_fill_long_run_day(draft)
-
-    missing = _missing_required_fields(draft)
-    ready_to_generate = len(missing) == 0 and len(errors) == 0
-    status = "ready_to_confirm" if not missing else "collecting"
-    ux["stage"] = _plan_ux_stage_for_state(
-        draft,
-        missing,
-        ready_to_generate=ready_to_generate,
+    return intake_state_machine.finalize_plan_intake_state(
+        draft=draft,
+        ux=ux,
+        errors=errors,
+        alignment=alignment,
+        alignment_answers=alignment_answers,
+        up=up,
+        prior_digest=prior_digest,
+        prior_ux_snapshot=prior_ux_snapshot,
+        prior_training_days_for_expansion=prior_training_days_for_expansion,
+        prior_expansion_pending=prior_expansion_pending,
         had_prior_draft=had_prior_draft,
         prior_ready_to_generate=prior_ready_to_generate,
+        source_user_message=source_user_message,
     )
-    state = {
-        "version": 1,
-        "status": status,
-        "draft": draft,
-        "ux": ux,
-        "missing_required": missing,
-        "missing_required_labels": [_human_missing_label(m) for m in missing],
-        "ready_to_generate": ready_to_generate,
-        "errors": errors,
-        "confirmation_summary": _confirmation_summary(draft),
-    }
-    return state
+
+
+def _sync_plan_creation_phase_and_legacy_flags(state: Dict[str, Any]) -> None:
+    """Recompute ``ux.plan_creation_phase`` and mirror legacy tradeoff flags."""
+    if not plan_creation_split_confirm_enabled():
+        return
+    from src.smartcoach_mobile_coach import plan_creation_ui as _pcu
+
+    _pcu.recompute_plan_creation_phase(state)
+    ux = state.get("ux")
+    if isinstance(ux, dict):
+        _pcu.sync_legacy_ux_from_phase(ux, str(ux.get("plan_creation_phase") or ""))
+
+
+def build_core_structured_ui_prompt(
+    intake_state: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """
+    Inline controls for core athletic intake when SMARTCOACH_STRUCTURED_INTAKE_CORE_V1 is on.
+
+    Alignment pause prompts take precedence in the orchestrator; this fills remaining slots
+    from ``missing_required[0]``.
+    """
+    if not structured_intake_core_v1_enabled():
+        return None
+    if not isinstance(intake_state, dict):
+        return None
+    ux_in = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    phase = str(ux_in.get("plan_creation_phase") or "")
+    if intake_state.get("ready_to_generate") and phase not in (
+        "collecting_goal_adjustment",
+        "collecting_timeline_adjustment",
+    ):
+        return None
+    missing_raw = intake_state.get("missing_required") or []
+    missing = [m for m in missing_raw if isinstance(m, str)]
+    if not missing:
+        return None
+    first = missing[0]
+
+    if first == "race_distance":
+        return {
+            "version": 1,
+            "field_key": "plan_intake.race_distance",
+            "control_type": "single_select_chips",
+            "selection_mode": "single",
+            "required": True,
+            "prompt": "What distance are you training for?",
+            "options": [
+                {
+                    "id": "dist_half",
+                    "label": "Half marathon",
+                    "user_message": "I'm training for a half marathon.",
+                    "updates": {"race_distance": "Half Marathon"},
+                },
+                {
+                    "id": "dist_full",
+                    "label": "Marathon",
+                    "user_message": "I'm training for a marathon.",
+                    "updates": {"race_distance": "Marathon"},
+                },
+            ],
+        }
+
+    if first == "race_date":
+        return {
+            "version": 1,
+            "field_key": "plan_intake.race_date",
+            "control_type": "date_picker",
+            "selection_mode": "single",
+            "required": True,
+            "prompt": "When is your race? Tap below to open your calendar.",
+            "options": [],
+        }
+
+    if first == "primary_goal":
+        return {
+            "version": 1,
+            "field_key": "plan_intake.primary_goal",
+            "control_type": "single_select_chips",
+            "selection_mode": "single",
+            "required": True,
+            "prompt": "Is the goal to finish strong, or are you targeting a specific time?",
+            "options": [
+                {
+                    "id": "goal_finish",
+                    "label": "Finish strong",
+                    "user_message": "I want to finish strong — no specific time goal.",
+                    "updates": {"primary_goal": PrimaryGoal.JUST_FINISH.value},
+                },
+                {
+                    "id": "goal_time",
+                    "label": "Target time",
+                    "user_message": "I'm targeting a specific finish time.",
+                    "updates": {"primary_goal": PrimaryGoal.TARGET_TIME.value},
+                },
+            ],
+        }
+
+    if first == "target_time":
+        presets: List[tuple[str, str, str]] = [
+            ("tt_300", "3:00", "3:00:00"),
+            ("tt_315", "3:15", "3:15:00"),
+            ("tt_330", "3:30", "3:30:00"),
+            ("tt_340", "3:40", "3:40:00"),
+            ("tt_345", "3:45", "3:45:00"),
+            ("tt_400", "4:00", "4:00:00"),
+            ("tt_430", "4:30", "4:30:00"),
+            ("tt_500", "5:00", "5:00:00"),
+        ]
+        return {
+            "version": 1,
+            "field_key": "plan_intake.target_time",
+            "control_type": "single_select_chips",
+            "selection_mode": "single",
+            "required": True,
+            "prompt": "What finish time are you aiming for?",
+            "options": [
+                {
+                    "id": pid,
+                    "label": label,
+                    "user_message": f"I'm aiming for about {label} (finish ~{clock}).",
+                    "updates": {"target_time": clock},
+                }
+                for pid, label, clock in presets
+            ],
+        }
+
+    if first == "training_days":
+        ux_in = (
+            intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+        )
+        expansion = bool(ux_in.get("training_days_expansion_pending"))
+        if expansion and ux_in.get("runner_add_day_pick_pending"):
+            # Orchestrator serves single-select weekday chips for add-one-day flow.
+            return None
+        prompt = (
+            "Update your weekly running days — add your extra day or adjust the mix, "
+            "then confirm."
+            if expansion
+            else "Which days work for training? Select all that apply, then confirm."
+        )
+        return {
+            "version": 1,
+            "field_key": "plan_intake.training_days",
+            "control_type": "multi_select_chips",
+            "selection_mode": "multi",
+            "required": True,
+            "prompt": prompt,
+            "multi_select_submit": {
+                "label": "Confirm days",
+                "updates_key": "training_days",
+            },
+            "options": [
+                {
+                    "id": d,
+                    "label": d,
+                    "user_message": "",
+                    "updates": {},
+                }
+                for d in DAY_NAMES_ABBREV
+            ],
+        }
+
+    return None
 
 
 def build_plan_request_from_state(state: Dict[str, Any]) -> Dict[str, Any]:

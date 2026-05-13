@@ -65,15 +65,24 @@ def dummy_streams():
 
 
 def test_get_activities_to_enrich_returns_ids(mock_session, athlete_id):
-    # Setup mock execute().fetchall()
-    mock_session.execute.return_value.fetchall.return_value = [
-        MagicMock(activity_id=101),
-        MagicMock(activity_id=102),
-        MagicMock(activity_id=103),
+    mock_rows = [
+        MagicMock(activity_id=101, start_date=None),
+        MagicMock(activity_id=102, start_date=None),
+        MagicMock(activity_id=103, start_date=None),
     ]
+    mock_exec_result = MagicMock()
+    mock_exec_result.all.return_value = mock_rows
+    mock_session.execute.return_value = mock_exec_result
     result = svc.get_activities_to_enrich(mock_session, athlete_id, limit=3)
-    assert result == [101, 102, 103]
+    assert result == [
+        {"activity_id": 101, "start_date": None},
+        {"activity_id": 102, "start_date": None},
+        {"activity_id": 103, "start_date": None},
+    ]
     mock_session.execute.assert_called_once()
+    stmt = mock_session.execute.call_args[0][0]
+    rendered = str(stmt.compile(compile_kwargs={"literal_binds": False}))
+    assert "detail_enriched_at" in rendered
 
 
 @patch("src.services.activity_service.StravaClient")
@@ -105,6 +114,35 @@ def test_enrich_one_activity_success(
     mock_session.commit.assert_called()
 
 
+@patch("src.services.activity_service.StravaClient")
+@patch(
+    "src.services.activity_service.extract_hr_zone_percentages",
+    return_value=[10, 20, 30, 25, 15],
+)
+@patch("src.services.activity_service.upsert_splits")
+def test_enrich_one_activity_skips_streams_when_persist_splits_false(
+    mock_upsert,
+    mock_extract_zones,
+    MockClient,
+    mock_session,
+    dummy_activity_json,
+    dummy_zones_data,
+):
+    mock_client = MockClient.return_value
+    mock_client.get_activity.return_value = dummy_activity_json
+    mock_client.get_hr_zones.return_value = dummy_zones_data
+
+    result = svc.enrich_one_activity(
+        mock_session, "fake-token", 123, persist_splits=False
+    )
+
+    assert result is True
+    mock_client.get_activity.assert_called_once_with(123)
+    mock_client.get_hr_zones.assert_called_once()
+    mock_client.get_streams.assert_not_called()
+    mock_upsert.assert_not_called()
+
+
 @patch("src.services.activity_service.get_valid_token", return_value="fake-token")
 @patch("src.services.activity_service.enrich_one_activity", return_value=True)
 def test_enrich_one_activity_with_refresh_calls_enrich(
@@ -113,14 +151,28 @@ def test_enrich_one_activity_with_refresh_calls_enrich(
     result = svc.enrich_one_activity_with_refresh(mock_session, athlete_id, 456)
     assert result is True
     mock_token.assert_called_once_with(mock_session, athlete_id)
-    mock_enrich.assert_called_once_with(mock_session, "fake-token", 456)
+    mock_enrich.assert_called_once_with(
+        mock_session,
+        "fake-token",
+        456,
+        fetch_streams=True,
+        persist_splits=True,
+    )
 
 
 def test_update_activity_enrichment_executes_sql(mock_session, dummy_activity_json):
     hr_zones = [10, 20, 30, 25, 15]
-    svc.update_activity_enrichment(mock_session, 123, dummy_activity_json, hr_zones)
+    svc.update_activity_enrichment(
+        mock_session,
+        123,
+        dummy_activity_json,
+        hr_zones,
+        set_detail_enriched_at=True,
+    )
     mock_session.execute.assert_called_once()
     mock_session.commit.assert_called_once()
+    stmt = mock_session.execute.call_args[0][0]
+    assert "detail_enriched_at" in stmt.text
 
 
 def test_extract_hr_zone_percentages_returns_correct_percentages():
@@ -156,13 +208,22 @@ def test_build_mile_splits_correctness():
 
 
 @patch("src.services.activity_service.ActivityDAO.upsert_activities")
+@patch("src.services.activity_service.ActivityIngestionService.fetch_all_activities")
 @patch("src.services.activity_service.StravaClient.get_activities")
 @patch("src.services.activity_service.get_valid_token", return_value="fake-token")
 def test_activity_ingestion_service_methods(
-    mock_token, mock_get_activities, mock_upsert, mock_session, athlete_id
+    mock_token,
+    mock_get_activities,
+    mock_fetch_all,
+    mock_upsert,
+    mock_session,
+    athlete_id,
 ):
     # Setup mock activities
-    # Setup mock activities with "Run" type to pass filtering logic
+    mock_fetch_all.return_value = [
+        {"id": 1, "type": "Run"},
+        {"id": 2, "type": "Run"},
+    ]
     mock_get_activities.return_value = [
         {"id": 1, "type": "Run"},
         {"id": 2, "type": "Run"},
@@ -170,14 +231,8 @@ def test_activity_ingestion_service_methods(
 
     service = svc.ActivityIngestionService(mock_session, athlete_id)
 
-    # ingest_recent calls DAO upsert
-    service.ingest_recent(lookback_days=10, max_activities=5)
-    mock_get_activities.assert_called()
-    mock_upsert.assert_called_once()
-
-    # ingest_full_history delegates to ingest_recent
-    mock_upsert.reset_mock()
     service.ingest_full_history(lookback_days=365, max_activities=10)
+    mock_fetch_all.assert_called()
     mock_upsert.assert_called_once()
 
     # ingest_between calls DAO upsert
@@ -193,13 +248,35 @@ def test_activity_ingestion_service_methods(
 def test_run_enrichment_batch_calls_all(
     mock_enrich, mock_get_activities, mock_session, athlete_id
 ):
-    mock_get_activities.return_value = [1, 2, 3]
+    mock_get_activities.return_value = [
+        {"activity_id": 1, "start_date": None},
+        {"activity_id": 2, "start_date": None},
+        {"activity_id": 3, "start_date": None},
+    ]
     svc.run_enrichment_batch(mock_session, athlete_id, batch_size=3)
     assert mock_enrich.call_count == 3
     mock_enrich.assert_has_calls(
         [
-            call(mock_session, athlete_id, 1),
-            call(mock_session, athlete_id, 2),
-            call(mock_session, athlete_id, 3),
+            call(
+                mock_session,
+                athlete_id,
+                1,
+                fetch_streams=True,
+                persist_splits=True,
+            ),
+            call(
+                mock_session,
+                athlete_id,
+                2,
+                fetch_streams=True,
+                persist_splits=True,
+            ),
+            call(
+                mock_session,
+                athlete_id,
+                3,
+                fetch_streams=True,
+                persist_splits=True,
+            ),
         ]
     )

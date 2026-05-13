@@ -6,13 +6,24 @@ Tests that ingestion orchestrator works correctly after removing artificial dela
 
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timedelta
 import time
 
+from src.utils.strava_exceptions import StravaIngestionSyncError
 from src.services.ingestion_orchestrator_service import (
     run_full_ingestion_and_enrichment,
 )
-from src.db.db_session import get_session
+
+
+VALID_TEST_USER_ID = "e3362637-9045-4aac-83ed-92bc1f2643b9"
+
+
+@pytest.fixture
+def app_context():
+    from flask import Flask
+
+    app = Flask(__name__)
+    with app.app_context():
+        yield
 
 
 @pytest.fixture
@@ -37,21 +48,29 @@ def mock_tokens():
     }
 
 
+@patch(
+    "src.services.ingestion_orchestrator_service.filter_strava_runs_in_six_week_window",
+    side_effect=lambda _six, acts: acts,
+)
+@pytest.mark.usefixtures("app_context")
 @patch("src.services.ingestion_orchestrator_service.get_session")
 @patch("src.services.ingestion_orchestrator_service.get_tokens_sa")
 @patch("src.services.ingestion_orchestrator_service.get_valid_token")
 @patch("src.services.ingestion_orchestrator_service.should_use_incremental_sync")
 @patch("src.services.ingestion_orchestrator_service.ActivityIngestionService")
 @patch("src.services.ingestion_orchestrator_service.ActivityDAO")
-@patch("src.services.ingestion_orchestrator_service.run_enrichment_batch")
+@patch("src.services.ingestion_orchestrator_service.count_pending_detail_enrichment")
+@patch("src.services.ingestion_orchestrator_service.run_enrichment_batches_in_window")
 def test_ingestion_no_delays(
     mock_enrichment,
+    mock_count_pending,
     mock_dao,
     mock_service_class,
     mock_incremental_sync,
     mock_get_token,
     mock_get_tokens,
     mock_get_session,
+    mock_no_filter,
     mock_session,
     mock_tokens,
 ):
@@ -65,32 +84,34 @@ def test_ingestion_no_delays(
     # Mock ActivityIngestionService
     mock_service = MagicMock()
     mock_client = MagicMock()
-    mock_client.get_activities.return_value = [
+    runs = [
         {"id": 12345, "type": "Run", "start_date": "2025-01-01T00:00:00Z"},
         {"id": 12346, "type": "Run", "start_date": "2025-01-02T00:00:00Z"},
     ]
+    mock_client.get_activities.return_value = runs
     mock_service.client = mock_client
+    mock_service.fetch_all_activities.return_value = runs
     mock_service_class.return_value = mock_service
 
     # Mock ActivityDAO
     mock_dao.upsert_activities.return_value = 2
 
-    # Mock enrichment
-    mock_enrichment.return_value = 2
+    mock_count_pending.return_value = 2
+    mock_enrichment.return_value = (2, False)
 
     # Record start time
     start_time = time.time()
 
     # Run ingestion
     result = run_full_ingestion_and_enrichment(
-        None, athlete_id=12345, user_id="test-user-id", max_activities=10
+        None, athlete_id=12345, user_id=VALID_TEST_USER_ID, max_activities=10
     )
 
     # Record end time
     end_time = time.time()
     elapsed = end_time - start_time
 
-    # Verify results
+    # Verify results (single full-window chunk => one fetch / upsert / enrich pass)
     assert result["synced"] == 2
     assert result["enriched"] == 2
 
@@ -100,11 +121,13 @@ def test_ingestion_no_delays(
 
     # Verify service was called
     mock_service_class.assert_called_once()
-    mock_client.get_activities.assert_called_once()
-    mock_dao.upsert_activities.assert_called_once()
-    mock_enrichment.assert_called_once()
+    mock_service.fetch_all_activities.assert_called()
+    mock_dao.upsert_activities.assert_called()
+    assert mock_dao.upsert_activities.call_count == 1
+    assert mock_enrichment.call_count == 1
 
 
+@pytest.mark.usefixtures("app_context")
 @patch("src.services.ingestion_orchestrator_service.get_session")
 @patch("src.services.ingestion_orchestrator_service.get_tokens_sa")
 @patch("src.services.ingestion_orchestrator_service.get_valid_token")
@@ -133,6 +156,7 @@ def test_ingestion_no_sleep_calls(
     mock_client = MagicMock()
     mock_client.get_activities.side_effect = Exception("Test error")
     mock_service.client = mock_client
+    mock_service.fetch_all_activities.side_effect = Exception("Test error")
     mock_service_class.return_value = mock_service
 
     # Patch time.sleep to track if it's called
@@ -142,9 +166,10 @@ def test_ingestion_no_sleep_calls(
         sleep_calls.append(seconds)
 
     with patch("time.sleep", side_effect=track_sleep):
-        result = run_full_ingestion_and_enrichment(
-            None, athlete_id=12345, user_id="test-user-id"
-        )
+        with pytest.raises(StravaIngestionSyncError):
+            run_full_ingestion_and_enrichment(
+                None, athlete_id=12345, user_id=VALID_TEST_USER_ID
+            )
 
     # Verify no sleep calls were made
     assert (

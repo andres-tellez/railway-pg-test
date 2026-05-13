@@ -5,6 +5,8 @@ Comprehensive tests for Strava OAuth and connection management routes.
 """
 
 import pytest
+import uuid
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock, Mock
 from flask import Flask
 from src.routes.strava_routes import strava_bp, strava_connection_bp
@@ -327,59 +329,109 @@ class TestDisconnectStrava:
 class TestGetStravaStatus:
     """Tests for /api/strava/status endpoint."""
 
+    @patch("src.routes.strava_routes.StravaSyncStatusDAO")
+    @patch("src.utils.auth0_jwt.resolve_user_id_from_auth_provider")
+    @patch("src.utils.auth0_jwt.verify_and_decode")
+    @patch("src.routes.strava_routes.compute_recent_run_rollup_for_user")
+    @patch("src.routes.strava_routes.evaluate_coach_strava_data_readiness")
     @patch("src.routes.strava_routes.get_authenticated_user_with_athlete")
     @patch("src.routes.strava_routes.get_session")
     def test_get_status_connected(
-        self, mock_get_session, mock_get_user_athlete, client
+        self,
+        mock_get_session,
+        mock_get_user_athlete,
+        mock_readiness,
+        mock_rollup,
+        mock_verify,
+        mock_resolve,
+        mock_dao_cls,
+        client,
     ):
         """Test getting status when Strava is connected."""
-        # Setup
-        mock_athlete_link = MagicMock()
-        mock_athlete_link.athlete_id = 98765
-        mock_athlete_link.created_at = None
+        from src.services.coach_strava_readiness_service import CoachStravaDataReadiness
+
+        mock_dao = MagicMock()
+        mock_dao.get_status.return_value = None
+        mock_dao.get_latest_for_user.return_value = None
+        mock_dao_cls.return_value = mock_dao
+
+        mock_verify.return_value = {"sub": "auth0|123"}
+        mock_resolve.return_value = uuid.UUID("00000000-0000-0000-0000-000000000042")
+        mock_readiness.return_value = CoachStravaDataReadiness(
+            coach_data_ready=True,
+            sync_status="complete",
+            pending_detail_enrichment=0,
+        )
+
+        # Setup — avoid MagicMock on athlete_link (JSON fields like premium would break jsonify)
+        mock_athlete_link = SimpleNamespace(
+            athlete_id=98765,
+            created_at=None,
+            has_strava_premium=False,
+            strava_premium_checked_at=None,
+        )
         mock_get_user_athlete.return_value = ("user-123", mock_athlete_link, None)
         mock_session = MagicMock()
         mock_session.query.return_value.filter_by.return_value.count.return_value = 25
         mock_get_session.return_value = mock_session
+        mock_rollup.return_value = {
+            "runs_28d": 4,
+            "weeks_with_runs_28d": 2,
+            "longest_run_meters_28d": 8500.0,
+        }
 
-        # Mock requires_auth decorator
-        with patch("src.routes.strava_routes.requires_auth", lambda f: f):
-            # Execute
-            response = client.get("/api/strava/status")
+        response = client.get(
+            "/api/strava/status",
+            headers={"Authorization": "Bearer test-jwt"},
+        )
 
-        # Verify
         assert response.status_code == 200
         data = response.get_json()
-        assert data["success"] is True
+        assert data["status"] == 200
         assert data["data"]["connected"] is True
         assert data["data"]["athlete_id"] == 98765
         assert data["data"]["activity_count"] == 25
+        assert data["data"]["recent_run_rollup"] == mock_rollup.return_value
 
+    @patch("src.routes.strava_routes.StravaSyncStatusDAO")
+    @patch("src.utils.auth0_jwt.resolve_user_id_from_auth_provider")
+    @patch("src.utils.auth0_jwt.verify_and_decode")
     @patch("src.routes.strava_routes.get_authenticated_user_with_athlete")
     @patch("src.routes.strava_routes.get_session")
     def test_get_status_not_connected(
-        self, mock_get_session, mock_get_user_athlete, client
+        self,
+        mock_get_session,
+        mock_get_user_athlete,
+        mock_verify,
+        mock_resolve,
+        mock_dao_cls,
+        client,
+        app,
     ):
         """Test getting status when Strava is not connected."""
-        # Setup
         from src.utils.response_utils import not_found_response
 
-        mock_get_user_athlete.return_value = (
-            "user-123",
-            None,
-            not_found_response(resource="Strava connection"),
-        )
+        mock_verify.return_value = {"sub": "auth0|123"}
+        mock_resolve.return_value = uuid.UUID("00000000-0000-0000-0000-000000000042")
+
+        mock_dao = MagicMock()
+        mock_dao.get_latest_for_user.return_value = None
+        mock_dao_cls.return_value = mock_dao
+
+        with app.app_context():
+            err = not_found_response(resource="Strava connection")
+
+        mock_get_user_athlete.return_value = ("user-123", None, err)
         mock_get_session.return_value = MagicMock()
 
-        # Mock requires_auth decorator
-        with patch("src.routes.strava_routes.requires_auth", lambda f: f):
-            # Execute
-            response = client.get("/api/strava/status")
+        response = client.get(
+            "/api/strava/status",
+            headers={"Authorization": "Bearer test-jwt"},
+        )
 
-        # Verify
         assert response.status_code == 200
         data = response.get_json()
-        assert data["success"] is True
+        assert data["status"] == 200
         assert data["data"]["connected"] is False
 
 

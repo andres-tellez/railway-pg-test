@@ -38,6 +38,10 @@ class Config:
         os.getenv("STRAVA_INITIAL_BACKOFF", 10)
     )  # Initial backoff in seconds
 
+    # ===== Ingestion / enrichment =====
+    # When false, enrichment skips Strava stream fetch and split/lap persistence (activity rows unchanged).
+    ENABLE_SPLITS = os.getenv("ENABLE_SPLITS", "true").lower() in ("true", "1", "yes")
+
     # ===== Ingestion Defaults =====
     DEFAULT_LOOKBACK_DAYS = int(
         os.getenv("DEFAULT_LOOKBACK_DAYS", 365)
@@ -45,6 +49,10 @@ class Config:
     DEFAULT_BATCH_SIZE = int(
         os.getenv("DEFAULT_BATCH_SIZE", 50)
     )  # Default batch size for enrichment
+    # Max enrichment batches per ingest chunk (each batch processes up to DEFAULT_BATCH_SIZE activities).
+    MAX_ENRICHMENT_BATCHES_PER_CHUNK = int(
+        os.getenv("MAX_ENRICHMENT_BATCHES_PER_CHUNK", "25")
+    )
     DEFAULT_PER_PAGE = int(
         os.getenv("DEFAULT_PER_PAGE", 50)
     )  # Default activities per page

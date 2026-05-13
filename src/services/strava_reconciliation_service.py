@@ -23,7 +23,6 @@ from src.services.activity_service import ActivityIngestionService
 from src.services.strava_access_service import StravaClient
 from src.services.token_service import get_valid_token
 from src.utils.config import config
-from src.utils.date_helpers import get_current_week_start
 from src.utils.rate_limiter import get_rate_limiter
 
 logger = logging.getLogger(__name__)
@@ -53,20 +52,35 @@ class StravaSixWeekWindow(NamedTuple):
 
 
 def compute_strava_six_week_window() -> StravaSixWeekWindow:
-    current_week_start = get_current_week_start()
-    six_week_start = current_week_start - timedelta(weeks=STRAVA_INGEST_LOOKBACK_WEEKS)
-    two_week_cutoff = current_week_start - timedelta(weeks=2)
+    """UTC week-aligned ingest window: Monday 00:00 UTC − 3 weeks through now_utc."""
+    now_utc = datetime.now(timezone.utc)
+    today_utc = now_utc.date()
+    days_since_monday = today_utc.weekday()  # Monday = 0 (ISO)
+    current_week_start_date = today_utc - timedelta(days=days_since_monday)
+    window_start_date = current_week_start_date - timedelta(
+        weeks=STRAVA_INGEST_LOOKBACK_WEEKS
+    )
+    window_start_dt = datetime.combine(
+        window_start_date, dt_time.min, tzinfo=timezone.utc
+    )
+    window_after_ts = int(window_start_dt.timestamp())
+    before_ts = int(now_utc.timestamp())
 
-    six_week_start_dt = datetime.combine(
-        six_week_start, dt_time.min, tzinfo=timezone.utc
-    )
+    two_week_cutoff_date = current_week_start_date - timedelta(weeks=2)
     two_week_cutoff_dt = datetime.combine(
-        two_week_cutoff, dt_time.min, tzinfo=timezone.utc
+        two_week_cutoff_date, dt_time.min, tzinfo=timezone.utc
     )
-    window_after_ts = int(six_week_start_dt.timestamp())
-    before_ts = int(datetime.utcnow().replace(tzinfo=timezone.utc).timestamp())
+
+    six_week_start = window_start_date
+    six_week_start_dt = window_start_dt
+
+    logger.debug(
+        "strava ingest window after_ts=%s before_ts=%s",
+        window_after_ts,
+        before_ts,
+    )
     return StravaSixWeekWindow(
-        current_week_start=current_week_start,
+        current_week_start=current_week_start_date,
         six_week_start=six_week_start,
         six_week_start_dt=six_week_start_dt,
         two_week_cutoff_dt=two_week_cutoff_dt,
@@ -92,6 +106,11 @@ def filter_strava_runs_in_six_week_window(
             continue
         if start_dt >= six_week_start_dt:
             runs_only.append(activity)
+    logger.debug(
+        "filter_strava_runs_in_six_week_window before=%s after=%s",
+        len(activities),
+        len(runs_only),
+    )
     return runs_only
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import warnings
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -12,6 +13,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, text, update
 
 from src.db.dao.activity_dao import ActivityDAO
+from src.coaching_intelligence.pre_generation_runner_assessment import (
+    extract_alignment_answer_bookkeeping,
+)
 from src.smartcoach_mobile_coach.config import INSIGHT_SCHEMA_VERSION
 from src.smartcoach_mobile_coach.db_helpers import (
     fetch_user_hr_profile_for_coach,
@@ -25,9 +29,19 @@ from src.smartcoach_mobile_coach.insight_cache import cache_key, get_cached, set
 from src.smartcoach_mobile_coach.marathon_projection_service import (
     get_marathon_projection,
 )
+from src.smartcoach_mobile_coach.plan_creation_ui import (
+    PHASE_AWAITING_TRADEOFF_CHOICE,
+    PHASE_COLLECTING_ADDITIONAL_TRAINING_DAY,
+    PHASE_GENERATED,
+    sync_legacy_ux_from_phase,
+)
+from src.smartcoach_mobile_coach.readiness_gate import (
+    get_or_compute_readiness_gate,
+)
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     PLAN_UX_STAGE_GENERATED,
     build_plan_request_from_state,
+    plan_creation_split_confirm_enabled,
     summarize_this_week_from_plan_rows,
     update_plan_intake_state,
 )
@@ -45,7 +59,15 @@ from src.smartcoach_mobile_coach.weekly_insights_service import (
     get_latest_weekly_insight,
     weekly_insight_tool_slim_default_from_env,
 )
+from src.db.dao.user_profile_dao import get_user_profile
 from src.routes.plan_generation_v2 import run_v2_plan_generation
+from src.services.training_plan.v2.plan_validation_silent_repair import (
+    attempt_silent_repair_then_revalidate,
+)
+from src.services.training_plan.v2.race_distance_factory_v2 import (
+    get_race_distance_services,
+    normalize_race_distance,
+)
 from src.services.llm.openai_coach_adapter import OpenAICoachAdapter
 from src.services.security.external_apis.openai_service import get_openai_service
 from src.services.training_plan.plan_storage_service import PlanStorageService
@@ -65,6 +87,7 @@ logger = logging.getLogger("smartcoach_mobile_coach")
 
 _DEFAULT_KPI_WEEKS = 4
 _MAX_KPI_WEEKS = 52
+_INTAKE_ALIGNMENT_FEATURE_FLAG = "SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1"
 
 
 def _increment_tool_call_count(session: Session, tool_name: str) -> None:
@@ -117,6 +140,33 @@ def _coerce_tool_bool(value: Any, default: bool) -> bool:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return bool(value)
     return default
+
+
+def _intake_alignment_enabled() -> bool:
+    return (os.getenv(_INTAKE_ALIGNMENT_FEATURE_FLAG) or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _next_alignment_question(allowed_categories: List[str]) -> str:
+    first = allowed_categories[0] if allowed_categories else ""
+    if first == "frequency_flexibility":
+        return "Would you be open to adding one run day to support this goal?"
+    if first == "timeline_flexibility":
+        return "If needed, are you open to adjusting timeline expectations slightly?"
+    return "What feels most adjustable for you right now?"
+
+
+_ASSESSMENT_FAILURE_DETAIL_MAX_LEN = 500
+
+
+def _sanitize_assessment_failure_detail(exc: BaseException) -> str:
+    raw = str(exc).strip().replace("\n", " ").replace("\r", " ")
+    if len(raw) > _ASSESSMENT_FAILURE_DETAIL_MAX_LEN:
+        return raw[: _ASSESSMENT_FAILURE_DETAIL_MAX_LEN - 1] + "…"
+    return raw
 
 
 def _parse_optional_float(value: Any) -> Optional[float]:
@@ -1514,19 +1564,41 @@ def tool_update_plan_intake(
         reset=reset,
         source_user_message=msg if isinstance(msg, str) else None,
     )
+    ready = bool(state.get("ready_to_generate"))
+    ux_tip = state.get("ux") if isinstance(state.get("ux"), dict) else {}
+    if ready and plan_creation_split_confirm_enabled():
+        if not ux_tip.get("intake_confirmed"):
+            merge_msg = (
+                "All required fields are present. Ask for intake recap confirmation "
+                "(race, goal, schedule) before the runner assessment."
+            )
+        elif not ux_tip.get("runner_review_delivered"):
+            merge_msg = "Intake confirmed — runner assessment should follow on the assistant turn."
+        elif not ux_tip.get("plan_generation_confirmed"):
+            merge_msg = (
+                "After your runner assessment, ask the athlete to tap Create my plan "
+                "or say create/build/generate the plan."
+            )
+        else:
+            merge_msg = (
+                "Plan creation is authorized — call generate_training_plan with confirm=true "
+                "when appropriate."
+            )
+    else:
+        merge_msg = (
+            "Plan intake updated. Ask one missing field next."
+            if not ready
+            else "All required fields are present. Ask for confirmation before generating."
+        )
     return {
         "plan_intake_state": state,
         "status": state.get("status"),
-        "ready_to_generate": bool(state.get("ready_to_generate")),
+        "ready_to_generate": ready,
         "missing_required": state.get("missing_required", []),
         "missing_required_labels": state.get("missing_required_labels", []),
         "errors": state.get("errors", []),
         "confirmation_summary": state.get("confirmation_summary"),
-        "message": (
-            "Plan intake updated. Ask one missing field next."
-            if not state.get("ready_to_generate")
-            else "All required fields are present. Ask for confirmation before generating."
-        ),
+        "message": merge_msg,
     }
 
 
@@ -1897,12 +1969,22 @@ def _build_plan_generation_brief(
     return "\n".join(lines)
 
 
+def _parse_optional_anchor_date_str(raw: Optional[str]) -> Optional[date]:
+    if not raw or not str(raw).strip():
+        return None
+    try:
+        return date.fromisoformat(str(raw).strip()[:10])
+    except ValueError:
+        return None
+
+
 def tool_generate_training_plan(
     session: Session,
     internal_user_id: str,
     args: Dict[str, Any],
     *,
     current_state: Optional[Dict[str, Any]] = None,
+    anchor_local_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Deterministically generate and save plan once intake is complete and confirmed.
@@ -1925,6 +2007,82 @@ def tool_generate_training_plan(
             "confirmation_summary": current_state.get("confirmation_summary"),
         }
 
+    ux_gate = (
+        current_state.get("ux") if isinstance(current_state.get("ux"), dict) else {}
+    )
+    if plan_creation_split_confirm_enabled():
+        if not ux_gate.get("intake_confirmed"):
+            return {
+                "error": "intake_not_confirmed",
+                "tool": "generate_training_plan",
+                "message": (
+                    "Intake recap must be confirmed before generating. "
+                    "Wait for the user to confirm their race/goal/schedule summary first."
+                ),
+                "plan_intake_state": current_state,
+            }
+        if not ux_gate.get("runner_review_delivered"):
+            return {
+                "error": "runner_review_pending",
+                "tool": "generate_training_plan",
+                "message": (
+                    "Runner assessment phase is not complete. "
+                    "Do not call generate_training_plan until after the review step."
+                ),
+                "plan_intake_state": current_state,
+            }
+        if not ux_gate.get("plan_generation_confirmed"):
+            return {
+                "error": "plan_generation_not_confirmed",
+                "tool": "generate_training_plan",
+                "message": (
+                    "The user must explicitly ask to create the plan (e.g. Create my plan) "
+                    "after the runner assessment—generic yes to the intake recap is not enough."
+                ),
+                "plan_intake_state": current_state,
+            }
+        phase_gate = str(ux_gate.get("plan_creation_phase") or "")
+        tradeoff_blocked = phase_gate == PHASE_AWAITING_TRADEOFF_CHOICE or (
+            not phase_gate and ux_gate.get("runner_tradeoff_pending")
+        )
+        if tradeoff_blocked:
+            return {
+                "error": "runner_tradeoff_unresolved",
+                "tool": "generate_training_plan",
+                "message": (
+                    "The athlete must pick one of the inline options (or update goal/schedule in chat) "
+                    "before generating."
+                ),
+                "plan_intake_state": current_state,
+            }
+        add_day_blocked = phase_gate == PHASE_COLLECTING_ADDITIONAL_TRAINING_DAY or (
+            not phase_gate and ux_gate.get("runner_add_day_pick_pending")
+        )
+        if add_day_blocked:
+            return {
+                "error": "runner_add_day_unresolved",
+                "tool": "generate_training_plan",
+                "message": (
+                    "The athlete must pick the extra weekday (chips) before generating."
+                ),
+                "plan_intake_state": current_state,
+            }
+        pg = ux_gate.get("plan_generation_readiness")
+        if isinstance(pg, dict):
+            dec = str(pg.get("decision") or "").strip()
+            lvl = str(pg.get("readiness_level") or "").strip()
+            if dec == "defer" and lvl == "insufficient_data":
+                # Error slug kept for mobile/tool clients (Phase 6: assessment_status is needs_user_decision).
+                return {
+                    "error": "runner_review_needs_more_info",
+                    "tool": "generate_training_plan",
+                    "message": (
+                        "Alignment or goal context is still incomplete — finish open items "
+                        "before generating."
+                    ),
+                    "plan_intake_state": current_state,
+                }
+
     activity_weeks_raw = args.get("activity_weeks", 12)
     try:
         activity_weeks = int(activity_weeks_raw)
@@ -1942,6 +2100,185 @@ def tool_generate_training_plan(
         }
 
     try:
+        gate_result = get_or_compute_readiness_gate(
+            session=session,
+            internal_user_id=str(internal_user_id),
+            plan_request=plan_request,
+            plan_intake_state=current_state,
+            alignment_enabled=_intake_alignment_enabled(),
+            anchor_local_date=_parse_optional_anchor_date_str(anchor_local_date),
+        )
+    except Exception as e:
+        logger.exception(
+            "[generate_training_plan] pre_generation_runner_assessment failed user=%s",
+            internal_user_id,
+        )
+        return {
+            "error": "pre_generation_runner_assessment_failed",
+            "tool": "generate_training_plan",
+            "message": (
+                "We couldn't load your activity summary needed before creating your plan. "
+                "Please try again in a moment."
+            ),
+            "failure": {
+                "stage": "pre_generation_runner_assessment",
+                "exception_type": type(e).__name__,
+                "detail": _sanitize_assessment_failure_detail(e),
+            },
+            "plan_intake_state": current_state,
+        }
+
+    assessment_payload = gate_result.assessment_api
+    readiness_payload = gate_result.readiness_api
+    logger.info(
+        "[readiness_gate] %s",
+        json.dumps(
+            {
+                "trace_id": readiness_payload.get("trace_id"),
+                "policy_version": readiness_payload.get("policy_version"),
+                "decision": readiness_payload.get("decision"),
+                "readiness_level": readiness_payload.get("readiness_level"),
+                "reason_codes": readiness_payload.get("reason_codes"),
+                "user_id": str(internal_user_id),
+                "plan_request_digest_sha256": gate_result.plan_request_digest_sha256,
+                "evidence_snapshot_id": readiness_payload.get("evidence_snapshot_id"),
+                "cache_status": gate_result.cache_status,
+            },
+            default=str,
+        ),
+    )
+    if readiness_payload.get("decision") != "allow":
+        logger.warning(
+            "[plan_generation_readiness_deferred] %s",
+            json.dumps(
+                {
+                    "error": (
+                        "plan_generation_readiness_deferred"
+                        if readiness_payload.get("decision") == "defer"
+                        else "plan_generation_readiness_blocked"
+                    ),
+                    "trace_id": readiness_payload.get("trace_id"),
+                    "decision": readiness_payload.get("decision"),
+                    "readiness_level": readiness_payload.get("readiness_level"),
+                    "confidence": readiness_payload.get("confidence"),
+                    "goal_profile": readiness_payload.get("goal_profile"),
+                    "reason_codes": readiness_payload.get("reason_codes"),
+                    "user_id": str(internal_user_id),
+                    "plan_request_digest_sha256": gate_result.plan_request_digest_sha256,
+                    "evidence_snapshot_id": readiness_payload.get(
+                        "evidence_snapshot_id"
+                    ),
+                    "cache_status": gate_result.cache_status,
+                },
+                default=str,
+            ),
+        )
+        return {
+            "error": (
+                "plan_generation_readiness_deferred"
+                if readiness_payload.get("decision") == "defer"
+                else "plan_generation_readiness_blocked"
+            ),
+            "tool": "generate_training_plan",
+            "message": (
+                "The deterministic readiness check does not allow plan generation yet. "
+                "Explain the recommendation and use the allowed actions to continue."
+            ),
+            "plan_intake_state": current_state,
+            "pre_generation_runner_assessment": assessment_payload,
+            "plan_generation_readiness": readiness_payload,
+        }
+
+    if _intake_alignment_enabled():
+        ambition = (
+            assessment_payload.get("ambition_gap")
+            if isinstance(assessment_payload.get("ambition_gap"), dict)
+            else None
+        )
+        alignment_state = (
+            assessment_payload.get("intake_alignment_state")
+            if isinstance(assessment_payload.get("intake_alignment_state"), dict)
+            else None
+        )
+        assert ambition is not None and alignment_state is not None
+
+        prior_answers, _question_count, asked_categories = (
+            extract_alignment_answer_bookkeeping(current_state)
+        )
+
+        next_state = dict(current_state)
+        next_state["alignment"] = {
+            "enabled": True,
+            "ambition_stance": ambition.get("stance"),
+            "ambition_attributions": list(ambition.get("attributions") or []),
+            "goal_demand": ambition.get("goal_demand"),
+            "baseline_band": ambition.get("baseline_band"),
+            "question_count": alignment_state.get("question_count"),
+            "asked_categories": asked_categories,
+            "answers": prior_answers,
+            "state": alignment_state,
+            "attributions": sorted(
+                set(
+                    list(ambition.get("attributions") or [])
+                    + list(alignment_state.get("attributions") or [])
+                )
+            ),
+            "observability": {
+                "pause_fired": bool(alignment_state.get("pause_required")),
+                "categories_asked": asked_categories,
+                "posture_selected": alignment_state.get("posture_state"),
+                "alignment_resolved": bool(alignment_state.get("generation_ready")),
+                "question_count": alignment_state.get("question_count"),
+                "generation_proceeded": bool(alignment_state.get("generation_ready")),
+            },
+        }
+
+        if not alignment_state.get("generation_ready"):
+            allowed_categories = list(
+                alignment_state.get("allowed_question_categories") or []
+            )
+            alignment_brief = {
+                "state": alignment_state,
+                "allowed_question_categories": allowed_categories,
+                "required_truths": [
+                    "The planner remains deterministic and unchanged once generation starts.",
+                    "Current training baseline and stated goal may not match — how aggressive we can be depends on both.",
+                ],
+                "banned_claims": [
+                    "Do not promise a specific finish time or guaranteed outcome.",
+                    "Do not claim plan generation logic has changed.",
+                ],
+                "posture_context": {
+                    "current": alignment_state.get("posture_state"),
+                    "stance": ambition.get("stance"),
+                    "ambition_attributions": list(ambition.get("attributions") or []),
+                    "goal_demand": ambition.get("goal_demand"),
+                },
+                "response_style": {
+                    "coaching_prose_before_controls": True,
+                    "ask_one_question_only": False,
+                    "avoid_numbered_lists": True,
+                    "tone": "lightweight_collaborative_coach",
+                },
+                "suggested_next_question": _next_alignment_question(allowed_categories),
+            }
+            return {
+                "error": "alignment_required",
+                "message": (
+                    "Alignment checkpoint: generation is paused until the user answers one alignment topic. "
+                    "Do **not** reply with only the short `suggested_next_question` line. Follow the system "
+                    "prompt **## Intake alignment — coach-facing facts** (and activity snapshot): ground in their "
+                    "data, say plainly what's mismatched or uncertain, explain why it matters, then end with one closing question "
+                    "that matches the same topic as `suggested_next_question` / the inline UI chips."
+                ),
+                "plan_intake_state": next_state,
+                "alignment_brief": alignment_brief,
+                "pre_generation_runner_assessment": assessment_payload,
+            }
+
+        current_state = next_state
+
+    try:
         result, gen_context_snapshot = run_v2_plan_generation(
             session=session,
             user_id=str(internal_user_id),
@@ -1949,6 +2286,35 @@ def tool_generate_training_plan(
             activity_weeks=activity_weeks,
             mode="rolling",
         )
+        if not result.get("valid") or not result.get("validated_plan"):
+            plan_blob = result.get("validated_plan") or result.get("draft")
+            violations_list = list(result.get("violations") or [])
+            if plan_blob and violations_list:
+                race_label = normalize_race_distance(
+                    plan_request.get("race_distance") or "Marathon"
+                )
+                svc = get_race_distance_services(race_label)
+                race_cfg = svc["race_config"]
+                profile = get_user_profile(session, str(internal_user_id))
+                unit_sys = (
+                    (profile.get("unit_system") or "imperial")
+                    if profile
+                    else "imperial"
+                )
+                repaired_val = attempt_silent_repair_then_revalidate(
+                    plan_blob,
+                    violations_list,
+                    config=race_cfg,
+                    unit_system=str(unit_sys),
+                )
+                if repaired_val:
+                    result.update(
+                        {
+                            **repaired_val,
+                            "draft": repaired_val.get("validated_plan"),
+                            "silent_validation_repair_applied": True,
+                        }
+                    )
     except Exception as e:
         logger.exception("Plan generation failed user=%s", internal_user_id)
         return {
@@ -1963,12 +2329,37 @@ def tool_generate_training_plan(
         }
 
     if not result.get("valid") or not result.get("validated_plan"):
+        violations = [
+            v for v in (result.get("violations") or []) if isinstance(v, dict)
+        ]
+        logger.warning(
+            "[generate_training_plan] validation_failed user=%s rules=%s",
+            str(internal_user_id)[:8],
+            [v.get("rule") for v in violations],
+        )
+        message = (
+            "Your plan couldn't be finalized automatically. "
+            "Try a small change to race date or training days, or try again in a moment."
+        )
+        if violations:
+            top = violations[0]
+            rule = str(top.get("rule") or "").strip()
+            detail = str(top.get("details") or "").strip()
+            suggestion = str(top.get("suggestion") or "").strip()
+            if rule == "unsafe_long_run_progression" and suggestion:
+                message = (
+                    "I couldn't finalize the plan because one long-run jump was unsafe. "
+                    f"{suggestion}."
+                )
+            elif detail:
+                message = detail
         out = {
             "error": "plan_validation_failed",
-            "message": "The training plan could not be validated for this schedule and fitness profile.",
-            "violations": result.get("violations", []),
+            "message": message,
             "plan_intake_state": current_state,
         }
+        if violations:
+            out["violations"] = violations
         gf = result.get("generation_failure")
         if gf:
             out["failure"] = gf
@@ -2034,6 +2425,9 @@ def tool_generate_training_plan(
     next_state["last_generated_plan_id"] = int(plan_id)
     next_ux = dict(next_state.get("ux") or {})
     next_ux["stage"] = PLAN_UX_STAGE_GENERATED
+    if plan_creation_split_confirm_enabled():
+        next_ux["plan_creation_phase"] = PHASE_GENERATED
+        sync_legacy_ux_from_phase(next_ux, PHASE_GENERATED)
     next_state["ux"] = next_ux
     return {
         "ok": True,
@@ -2046,6 +2440,8 @@ def tool_generate_training_plan(
         "plan_intake_state": next_state,
         "plan_generation": plan_generation_payload,
         "message": "Plan created and activated successfully.",
+        "pre_generation_runner_assessment": assessment_payload,
+        "plan_generation_readiness": readiness_payload,
     }
 
 
@@ -2352,6 +2748,7 @@ def execute_tool(
                 internal_user_id,
                 args,
                 current_state=plan_intake_state,
+                anchor_local_date=anchor_local_date,
             )
 
         return {"error": "unknown_tool", "message": f"Unknown tool: {name}"}

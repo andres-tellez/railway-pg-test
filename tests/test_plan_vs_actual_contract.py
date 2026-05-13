@@ -186,7 +186,7 @@ def test_orchestrator_source_wires_contract_into_non_plan_creation_branch() -> N
     # §§19.2–19.3 contract from every real coaching turn.
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     # The call appears exactly once (non-plan-creation branch).
@@ -206,7 +206,7 @@ def test_orchestrator_does_not_wire_contract_into_plan_creation_branch() -> None
     # vs actual yet) and should not bloat that prompt.
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     # Confirm the contract wire is below the PLAN_CREATION_SYSTEM_PROMPT_BASE

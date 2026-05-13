@@ -4,12 +4,18 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     PLAN_UX_STAGE_CONFIRM,
     PLAN_UX_STAGE_FAST_TRACK,
     PLAN_UX_STAGE_GOAL_ALIGNMENT,
+    alignment_pause_coaching_facts_system_section,
+    build_core_structured_ui_prompt,
+    build_plan_request_from_state,
     mark_plan_runner_understanding_shown,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
-    build_plan_request_from_state,
+    structured_intake_core_v1_enabled,
     update_plan_intake_state,
     user_confirms_plan_intake,
+)
+from tests.coaching_intelligence.ambition_gap_fixtures import (
+    synthetic_ambition_attributions,
 )
 
 
@@ -22,6 +28,155 @@ def test_plan_intake_missing_required_order_for_empty_draft():
         "training_days",
     ]
     assert state["ux"]["stage"] == "understand_runner"
+
+
+def test_structured_core_v1_skips_nl_race_date_from_user_message(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
+    state = update_plan_intake_state(
+        None,
+        updates={"race_distance": "Marathon"},
+        source_user_message="October 11, 2026",
+    )
+    assert state["draft"].get("race_date") is None
+
+
+def test_structured_core_v1_off_still_fills_nl_race_date(monkeypatch):
+    monkeypatch.delenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", raising=False)
+    state = update_plan_intake_state(
+        None,
+        updates={"race_distance": "Marathon"},
+        source_user_message="October 11, 2026",
+    )
+    assert state["draft"].get("race_date") == "2026-10-11"
+
+
+def test_build_core_structured_ui_prompt_disabled_without_flag(monkeypatch):
+    monkeypatch.delenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", raising=False)
+    state = update_plan_intake_state(None)
+    assert build_core_structured_ui_prompt(state) is None
+
+
+def test_build_core_structured_ui_prompt_race_distance_when_collecting(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
+    state = update_plan_intake_state(None)
+    prompt = build_core_structured_ui_prompt(state)
+    assert prompt is not None
+    assert prompt["field_key"] == "plan_intake.race_distance"
+    assert prompt["control_type"] == "single_select_chips"
+    assert any(
+        o.get("updates", {}).get("race_distance") == "Marathon"
+        for o in (prompt.get("options") or [])
+        if isinstance(o, dict)
+    )
+
+
+def test_build_core_structured_ui_prompt_target_time_includes_340_chip(monkeypatch):
+    """Coach often recommends ~3:40 — core intake chips must include it (matches goal_adjustment)."""
+    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "training_days": ["Mon", "Wed", "Sat"],
+        },
+    )
+    assert state["missing_required"][0] == "target_time"
+    prompt = build_core_structured_ui_prompt(state)
+    assert prompt is not None
+    assert prompt["field_key"] == "plan_intake.target_time"
+    by_label = {
+        str(o.get("label")): o
+        for o in (prompt.get("options") or [])
+        if isinstance(o, dict) and o.get("label")
+    }
+    assert "3:40" in by_label
+    assert by_label["3:40"].get("updates", {}).get("target_time") == "3:40:00"
+
+
+def test_structured_intake_core_v1_enabled_truthy(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "on")
+    assert structured_intake_core_v1_enabled() is True
+
+
+def test_alignment_state_refreshes_after_frequency_structured_answer(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "1")
+    base = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-11",
+            "race_distance": "Marathon",
+            "primary_goal": "Target Time",
+            "target_time": "3:00:00",
+            "training_days": ["Mon", "Tue", "Sun"],
+        },
+    )
+    _ag_attr = synthetic_ambition_attributions(
+        baseline_band="THIN",
+        goal_demand="TIME_TARGET",
+        thin_baseline_data=False,
+        longest_run_miles=8.0,
+    )
+    stale_alignment = {
+        "enabled": True,
+        "ambition_stance": "HIGH_TENSION",
+        "ambition_attributions": list(_ag_attr),
+        "baseline_band": "THIN",
+        "goal_demand": "TIME_TARGET",
+        "answers": {},
+        "asked_categories": [],
+        "question_count": 0,
+        "state": {
+            "pause_required": True,
+            "generation_ready": False,
+            "unresolved_flags": ["frequency_flexibility"],
+            "allowed_question_categories": [
+                "frequency_flexibility",
+            ],
+            "posture_state": "UNRESOLVED",
+            "attributions": [],
+            "question_count": 0,
+        },
+        "attributions": list(_ag_attr),
+    }
+    base["alignment"] = stale_alignment
+    out = update_plan_intake_state(
+        base,
+        updates={"alignment_frequency_flexible": True},
+    )
+    inner = (out.get("alignment") or {}).get("state") or {}
+    assert "frequency_flexibility" not in (inner.get("unresolved_flags") or [])
+    assert inner.get("generation_ready") is True
+    assert inner.get("posture_state") == "PERFORMANCE_LEANING"
+    assert (out.get("alignment") or {}).get("answers", {}).get("posture_priority") == (
+        "PERFORMANCE_LEANING"
+    )
+    assert (inner.get("allowed_question_categories") or []) == []
+
+
+def test_alignment_pause_coaching_facts_section_when_paused(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "1")
+    intake = {
+        "draft": {
+            "primary_goal": "Target Time",
+            "target_time": "3:00:00",
+            "training_days": ["Mon", "Tue", "Sun"],
+        },
+        "alignment": {
+            "ambition_stance": "HIGH_TENSION",
+            "baseline_band": "THIN",
+            "goal_demand": "TIME_TARGET",
+            "state": {
+                "pause_required": True,
+                "generation_ready": False,
+                "allowed_question_categories": ["frequency_flexibility"],
+            },
+        },
+    }
+    text = alignment_pause_coaching_facts_system_section(intake)
+    assert "HIGH_TENSION" in text
+    assert "frequency_flexibility" in text
 
 
 def test_plan_intake_updates_to_ready_state():
@@ -65,6 +220,19 @@ def test_plan_intake_target_time_required_for_target_goal():
     assert "target_time" in state["missing_required"]
     assert state["ready_to_generate"] is False
     assert state["ux"]["stage"] == "details"
+
+
+def test_missing_required_orders_target_time_before_training_days():
+    """Clock goal should be collected immediately after goal type, not after schedule."""
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_date": "2026-10-12",
+            "race_distance": "Marathon",
+            "primary_goal": "Target Time",
+        },
+    )
+    assert state["missing_required"] == ["target_time", "training_days"]
 
 
 def test_plan_intake_ux_stage_goal_alignment_after_distance_only():
@@ -506,3 +674,169 @@ def test_plan_intake_infers_target_time_from_message_when_goal_missing():
     assert state["draft"]["primary_goal"] == "Target Time"
     assert state["draft"]["target_time"] == "3:40"
     assert state["ready_to_generate"] is True
+
+
+def test_plan_intake_infers_alignment_frequency_flexible_from_user_message():
+    state = update_plan_intake_state(
+        {
+            "draft": {
+                "race_distance": "Marathon",
+                "race_date": "2026-10-11",
+                "primary_goal": "Target Time",
+                "target_time": "3:00:00",
+                "training_days": ["Thu", "Sat"],
+            },
+            "alignment": {},
+        },
+        updates={},
+        source_user_message="Add another day. Make it Tue.",
+    )
+    assert state["alignment"]["answers"]["frequency_flexible"] is True
+
+
+def test_plan_intake_does_not_override_explicit_alignment_updates_with_message_parse():
+    state = update_plan_intake_state(
+        {"draft": {}, "alignment": {}},
+        updates={"alignment_frequency_flexible": False},
+        source_user_message="I can add another day if needed",
+    )
+    assert state["alignment"]["answers"]["frequency_flexible"] is False
+
+
+def test_frequency_flexible_true_sets_expansion_pending_and_missing_training_days():
+    state = update_plan_intake_state(
+        {
+            "draft": {
+                "race_distance": "Marathon",
+                "race_date": "2026-10-11",
+                "primary_goal": "Target Time",
+                "target_time": "3:00:00",
+                "training_days": ["Mon", "Tue", "Sun"],
+            },
+            "alignment": {},
+        },
+        updates={"alignment_frequency_flexible": True},
+    )
+    assert state["ux"].get("training_days_expansion_pending") is True
+    assert "training_days" in state["missing_required"]
+    assert state["ready_to_generate"] is False
+
+
+def test_training_days_commit_clears_expansion_pending():
+    base = update_plan_intake_state(
+        {
+            "draft": {
+                "race_distance": "Marathon",
+                "race_date": "2026-10-11",
+                "primary_goal": "Target Time",
+                "target_time": "3:00:00",
+                "training_days": ["Mon", "Tue", "Sun"],
+            },
+            "alignment": {},
+        },
+        updates={"alignment_frequency_flexible": True},
+    )
+    assert base["ux"].get("training_days_expansion_pending") is True
+    nxt = update_plan_intake_state(
+        base,
+        updates={"training_days": ["Mon", "Wed", "Thu", "Sat"]},
+    )
+    assert nxt["ux"].get("training_days_expansion_pending") is not True
+    assert nxt["ux"].get("schedule_confirm_before_posture") is True
+
+
+def test_schedule_confirm_yes_clears_pending():
+    st = update_plan_intake_state(
+        {
+            "draft": {
+                "race_distance": "Marathon",
+                "race_date": "2026-10-11",
+                "primary_goal": "Target Time",
+                "target_time": "3:00:00",
+                "training_days": ["Mon", "Wed", "Thu", "Sat"],
+            },
+            "alignment": {},
+            "ux": {"schedule_confirm_before_posture": True},
+        },
+        updates={"schedule_days_confirmed": True},
+    )
+    assert st["ux"].get("schedule_confirm_before_posture") is not True
+
+
+def test_schedule_confirm_no_reopens_training_days():
+    st = update_plan_intake_state(
+        {
+            "draft": {
+                "race_distance": "Marathon",
+                "race_date": "2026-10-11",
+                "primary_goal": "Target Time",
+                "target_time": "3:00:00",
+                "training_days": ["Mon", "Wed", "Thu", "Sat"],
+            },
+            "alignment": {},
+            "ux": {"schedule_confirm_before_posture": True},
+        },
+        updates={"schedule_days_confirmed": False},
+    )
+    assert st["ux"].get("schedule_confirm_before_posture") is not True
+    assert st["ux"].get("training_days_expansion_pending") is True
+    assert "training_days" in st["missing_required"]
+
+
+def test_ready_to_generate_false_until_alignment_resolved(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "1")
+    s0 = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "target_time": "3:00:00",
+            "training_days": ["Mon", "Tue", "Wed", "Thu"],
+        },
+    )
+    assert s0["ready_to_generate"] is True
+    s1 = update_plan_intake_state(
+        {
+            **s0,
+            "alignment": {
+                "ambition_stance": "HIGH_TENSION",
+                "answers": {},
+            },
+        },
+        updates={},
+    )
+    assert s1["ready_to_generate"] is False
+    assert s1["status"] == "collecting"
+
+
+def test_apply_coach_suggested_goal_updates_time_and_soft_resets_review(monkeypatch):
+    """Runner-analysis 'Set goal around X' applies time and re-runs review without wiping intake."""
+    monkeypatch.setenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1", "1")
+    base = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "target_time": "3:00:00",
+            "training_days": ["Mon", "Wed", "Sat"],
+        },
+    )
+    base["ux"]["intake_confirmed"] = True
+    base["ux"]["runner_review_delivered"] = True
+    base["ux"]["plan_generation_confirmed"] = True
+
+    nxt = update_plan_intake_state(
+        base,
+        updates={
+            "primary_goal": "Target Time",
+            "target_time": "3:40:00",
+            "apply_coach_suggested_goal": True,
+        },
+    )
+    assert nxt["draft"]["target_time"] == "3:40:00"
+    assert nxt["draft"]["race_distance"] == "Marathon"
+    assert nxt["ux"].get("intake_confirmed") is True
+    assert nxt["ux"].get("runner_review_delivered") is not True
+    assert nxt["ux"].get("plan_generation_confirmed") is not True

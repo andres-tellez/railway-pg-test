@@ -331,7 +331,7 @@ def test_orchestrator_source_wires_contract_after_plan_guidance() -> None:
     # UX refines them).
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     assert src.count("phase_ux_contract_section()") == 1
@@ -350,7 +350,7 @@ def test_orchestrator_does_not_wire_contract_into_plan_creation_branch() -> None
     # prompt.
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     plan_creation_base_idx = src.index("PLAN_CREATION_SYSTEM_PROMPT_BASE")

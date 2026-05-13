@@ -6,8 +6,9 @@ import time
 import json
 import logging
 import os
-from datetime import datetime, timedelta
-from sqlalchemy import text
+import hashlib
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import and_, func, select, text
 
 from src.services.token_service import get_valid_token
 from src.db.dao.split_dao import upsert_splits
@@ -20,6 +21,24 @@ from src.db.models.activities import Activity
 
 log = get_logger(__name__)
 log.setLevel(logging.INFO)
+
+
+def _epoch_to_utc_iso(ts):
+    """Human-readable UTC instant for ingest validation logs."""
+    if ts is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError):
+        return f"<invalid ts {ts!r}>"
+
+
+def _access_token_fingerprint(access_token: str | None) -> str:
+    """Correlate requests without logging secret material."""
+    if not access_token:
+        return "empty"
+    digest = hashlib.sha256(access_token.encode("utf-8")).hexdigest()[:12]
+    return f"sha256:{digest} len={len(access_token)}"
 
 
 def log_strava_payload(activity_id, activity_json, zones_data, streams):
@@ -38,9 +57,37 @@ def log_strava_payload(activity_id, activity_json, zones_data, streams):
         log.warning("Could not write debug payload for %s: %s", activity_id, e)
 
 
+def _pending_detail_enrichment_where(athlete_id, after=None, before=None):
+    """
+    Shared SQLAlchemy predicate: Run rows for athlete pending Strava detail enrichment.
+
+    ``after`` / ``before`` are optional Unix timestamps; bounds are compared to
+    ``activities.start_date`` as naive UTC instants (aligned with list-ingest chunking).
+    """
+    parts = [
+        Activity.athlete_id == athlete_id,
+        Activity.type == "Run",
+        Activity.detail_enriched_at.is_(None),
+    ]
+    if after is not None:
+        after_dt = datetime.fromtimestamp(int(after), tz=timezone.utc).replace(
+            tzinfo=None
+        )
+        parts.append(Activity.start_date >= after_dt)
+    if before is not None:
+        before_dt = datetime.fromtimestamp(int(before), tz=timezone.utc).replace(
+            tzinfo=None
+        )
+        parts.append(Activity.start_date <= before_dt)
+    return and_(*parts)
+
+
 def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None):
     """
     Get activities (with start dates) for enrichment.
+
+    Only returns runs where detail enrichment has not been recorded yet
+    (``detail_enriched_at IS NULL``).
 
     Args:
         session: Database session
@@ -49,24 +96,6 @@ def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None
         after: Optional Unix timestamp - only get activities after this time
         before: Optional Unix timestamp - only get activities before this time
     """
-    query = """
-        SELECT activity_id, start_date
-        FROM activities
-        WHERE athlete_id = :athlete_id AND type = 'Run'
-    """
-    params = {"athlete_id": athlete_id, "limit": limit}
-
-    # Add date range filters if provided
-    # Use AT TIME ZONE 'UTC' to ensure timezone-aware comparison
-    if after is not None:
-        query += " AND start_date >= (to_timestamp(:after) AT TIME ZONE 'UTC')"
-        params["after"] = after
-    if before is not None:
-        query += " AND start_date <= (to_timestamp(:before) AT TIME ZONE 'UTC')"
-        params["before"] = before
-
-    query += " ORDER BY start_date DESC LIMIT :limit"
-
     import sys
 
     print(
@@ -84,8 +113,13 @@ def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None
         f"limit={limit}"
     )
 
-    result = session.execute(text(query), params)
-    rows = result.fetchall()
+    stmt = (
+        select(Activity.activity_id, Activity.start_date)
+        .where(_pending_detail_enrichment_where(athlete_id, after, before))
+        .order_by(Activity.start_date.desc())
+        .limit(limit)
+    )
+    rows = session.execute(stmt).all()
 
     print(
         f"🔍 [Get Activities] Query returned {len(rows)} activities",
@@ -121,27 +155,99 @@ def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None
     return activities
 
 
-def enrich_one_activity(
-    session, access_token, activity_id, *, fetch_streams: bool = True
+def count_pending_detail_enrichment(session, athlete_id, after=None, before=None):
+    """Count Run rows in the window with ``detail_enriched_at IS NULL``."""
+    stmt = select(func.count(Activity.activity_id)).where(
+        _pending_detail_enrichment_where(athlete_id, after, before)
+    )
+    return int(session.scalar(stmt) or 0)
+
+
+def project_strava_enrichment_calls(
+    activities, split_cutoff, *, persist_splits: bool = True
 ):
-    """Enrich a single activity with streams, splits, zones."""
+    """
+    Estimated Strava API calls for enriching the given activity rows (detail + zones;
+    plus streams when ``fetch_streams`` would be True for the row and ``persist_splits``.
+    """
+    total = 0
+    for row in activities:
+        start_date = row.get("start_date")
+        total += 2  # get_activity + get_hr_zones
+        fetch_streams = True
+        if split_cutoff is not None and start_date is not None:
+            start_dt = start_date
+            cutoff_dt = split_cutoff
+            if start_dt.tzinfo is None and cutoff_dt.tzinfo is not None:
+                start_dt = start_dt.replace(tzinfo=cutoff_dt.tzinfo)
+            elif start_dt.tzinfo is not None and cutoff_dt.tzinfo is None:
+                cutoff_dt = cutoff_dt.replace(tzinfo=start_dt.tzinfo)
+            fetch_streams = start_dt >= cutoff_dt
+        elif split_cutoff is not None and start_date is None:
+            fetch_streams = True
+        if persist_splits and fetch_streams:
+            total += 1
+    return total
+
+
+def enrich_one_activity(
+    session,
+    access_token,
+    activity_id,
+    *,
+    fetch_streams: bool = True,
+    persist_splits: bool = True,
+):
+    """Enrich a single activity: summary fields, HR zones, and optionally streams + mile splits.
+
+    Stream fetch and split upserts run only when both ``fetch_streams`` and ``persist_splits``
+    are true. Callers should pass ``persist_splits`` from
+    ``persist_splits_for_user`` (which folds in ``ENABLE_SPLITS``). Activity row
+    updates do not require splits or streams.
+    """
     try:
         client = StravaClient(access_token)
         retries = 3
         required_fields = ["distance", "moving_time", "average_speed", "name"]
         soft_fields = ["average_heartrate", "suffer_score", "max_speed", "calories"]
 
+        activity_json = None
         for attempt in range(retries):
             activity_json = client.get_activity(activity_id)
+            if not isinstance(activity_json, dict):
+                log.warning(
+                    "Invalid activity payload for activity %s, retry %d/%d...",
+                    activity_id,
+                    attempt + 1,
+                    retries,
+                )
+                time.sleep(1)
+                continue
+
+            if not all(activity_json.get(field) for field in required_fields):
+                log.warning(
+                    "Missing required fields for activity %s, retry %d/%d...",
+                    activity_id,
+                    attempt + 1,
+                    retries,
+                )
+                time.sleep(1)
+                continue
+
             zones_data = client.get_hr_zones(activity_id)
             streams = {}
 
-            # Fetch streams only if needed for splits (not for HR zone calculation)
-            # HR zones are only available via Strava's zones API (paid users only)
-            if fetch_streams:
+            # Fetch streams only for mile/lap splits (not for HR zone calculation).
+            # HR zones come from Strava's zones API only.
+            if fetch_streams and persist_splits:
                 streams = client.get_streams(
                     activity_id,
                     keys=["distance", "time", "velocity_smooth", "heartrate"],
+                )
+            elif fetch_streams and not persist_splits:
+                log.info(
+                    "Skipping stream fetch for activity %s (persist_splits false)",
+                    activity_id,
                 )
             else:
                 log.info(
@@ -149,20 +255,11 @@ def enrich_one_activity(
                     activity_id,
                 )
 
-            if all(activity_json.get(field) for field in required_fields):
-                break
-
-            log.warning(
-                "Missing required fields for activity %s, retry %d/%d...",
-                activity_id,
-                attempt + 1,
-                retries,
-            )
-            time.sleep(1)
+            break
         else:
             raise ValueError(
                 f"Critical data missing after retries for activity {activity_id}: "
-                f"{[(field, activity_json.get(field)) for field in required_fields]}"
+                f"{[(field, activity_json.get(field) if isinstance(activity_json, dict) else None) for field in required_fields]}"
             )
 
         log_strava_payload(activity_id, activity_json, zones_data, streams)
@@ -177,6 +274,14 @@ def enrich_one_activity(
 
         log.info("Enriching activity %s - %s", activity_id, activity_json.get("name"))
 
+        if not isinstance(activity_json, dict):
+            raise ValueError(f"Invalid activity response for activity {activity_id}")
+        aid = activity_json.get("id")
+        if aid is not None and int(aid) != int(activity_id):
+            raise ValueError(
+                f"Activity id mismatch for {activity_id}: response has id {aid!r}"
+            )
+
         # Extract HR zones from zones endpoint if available (paid users only)
         # Free users will have hr_zone_pcts = [0.0] * 5 (zones API returns 402)
         hr_zone_pcts = extract_hr_zone_percentages(zones_data)
@@ -189,16 +294,28 @@ def enrich_one_activity(
                 "HR zones are only available for paid Strava subscribers."
             )
 
-        update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts)
+        update_activity_enrichment(
+            session,
+            activity_id,
+            activity_json,
+            hr_zone_pcts,
+            set_detail_enriched_at=True,
+        )
 
         splits = []
-        if fetch_streams:
+        if fetch_streams and persist_splits:
             splits = build_mile_splits(activity_id, streams)
             if splits:
                 upsert_splits(session, splits)
                 log.info("Synced %d splits for activity %s", len(splits), activity_id)
         else:
-            log.debug("Split generation skipped for activity %s", activity_id)
+            if fetch_streams and not persist_splits:
+                log.debug(
+                    "Split generation skipped for activity %s (persist_splits false)",
+                    activity_id,
+                )
+            else:
+                log.debug("Split generation skipped for activity %s", activity_id)
 
         return True
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -207,14 +324,24 @@ def enrich_one_activity(
 
 
 def enrich_one_activity_with_refresh(
-    session, athlete_id, activity_id, max_retries=2, *, fetch_streams: bool = True
+    session,
+    athlete_id,
+    activity_id,
+    max_retries=2,
+    *,
+    fetch_streams: bool = True,
+    persist_splits: bool = True,
 ):
     """Attempt enrichment with token refresh and retries."""
     for attempt in range(1, max_retries + 1):
         try:
             access_token = get_valid_token(session, athlete_id)
             enrich_one_activity(
-                session, access_token, activity_id, fetch_streams=fetch_streams
+                session,
+                access_token,
+                activity_id,
+                fetch_streams=fetch_streams,
+                persist_splits=persist_splits,
             )
             session.expire_all()
 
@@ -273,8 +400,19 @@ def enrich_one_activity_with_refresh(
     raise RuntimeError(f"Enrichment failed for activity {activity_id}")
 
 
-def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts):
-    """Update enriched fields on activity."""
+def update_activity_enrichment(
+    session,
+    activity_id,
+    activity_json,
+    hr_zone_pcts,
+    *,
+    set_detail_enriched_at=False,
+):
+    """Update enriched fields on activity.
+
+    ``detail_enriched_at`` is set only when ``set_detail_enriched_at`` is True
+    (full success after Strava activity + zones calls completed without failure).
+    """
     conv = convert_metrics(
         {
             "distance": activity_json.get("distance"),
@@ -320,9 +458,14 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
         **conv,
     }
 
+    detail_clause = ""
+    if set_detail_enriched_at:
+        params["detail_enriched_at"] = datetime.now(timezone.utc)
+        detail_clause = ", detail_enriched_at = :detail_enriched_at"
+
     session.execute(
         text(
-            """
+            f"""
             UPDATE activities SET
                 name = :name,
                 distance = :distance,
@@ -347,6 +490,7 @@ def update_activity_enrichment(session, activity_id, activity_json, hr_zone_pcts
                 hr_zone_3 = :hr_zone_3,
                 hr_zone_4 = :hr_zone_4,
                 hr_zone_5 = :hr_zone_5
+                {detail_clause}
             WHERE activity_id = :activity_id
         """
         ),
@@ -621,6 +765,7 @@ class ActivityIngestionService:
 
     def _refresh_client(self):
         access_token = get_valid_token(self.session, self.athlete_id)
+        self._access_token_fingerprint = _access_token_fingerprint(access_token)
         self.client = StravaClient(access_token)
 
     def fetch_all_activities(
@@ -644,6 +789,21 @@ class ActivityIngestionService:
             type_limit: Maximum number of filtered activities to return.
         """
         self._refresh_client()
+        log.info(
+            "[STRAVA_FETCH_VALIDATE] fetch_all_activities INPUT athlete_id=%s "
+            "after_ts=%s before_ts=%s after_utc=%s before_utc=%s "
+            "access_token_fp=%s per_page=%s type_filter=%r type_limit=%s limit=%s",
+            self.athlete_id,
+            after,
+            before,
+            _epoch_to_utc_iso(after),
+            _epoch_to_utc_iso(before),
+            getattr(self, "_access_token_fingerprint", "?"),
+            per_page or config.STRAVA_PER_PAGE,
+            type_filter,
+            type_limit,
+            limit,
+        )
         page = 1
         results = []
         filtered: list[dict] = []
@@ -651,6 +811,26 @@ class ActivityIngestionService:
         # When looking for a filtered set, prefer that count as the stopping
         # condition but provide a reasonable safety cap for total fetches.
         filtered_target = type_limit if type_limit is not None else None
+
+        def _ingest_debug_fetch_return(result: list) -> list:
+            print("[INGEST_DEBUG] STRAVA RESPONSE")
+            print("count:", len(result))
+            newest = result[0].get("start_date") if result else None
+            if result:
+                print("newest:", newest)
+            runs_trace_count = len(filtered) if type_filter else None
+            log.info(
+                "[STRAVA_FETCH_VALIDATE] fetch_all_activities RESPONSE athlete_id=%s "
+                "returned_count=%s raw_strava_rows_fetched=%s runs_filtered_total=%s "
+                "newest_activity_start_date=%s access_token_fp=%s",
+                self.athlete_id,
+                len(result),
+                len(results),
+                runs_trace_count,
+                newest,
+                getattr(self, "_access_token_fingerprint", "?"),
+            )
+            return result
 
         while True:
             batch = self.client.get_activities_page(
@@ -669,11 +849,13 @@ class ActivityIngestionService:
                     if activity.get("type") == type_filter:
                         filtered.append(activity)
                         if filtered_target and len(filtered) >= filtered_target:
-                            return filtered[:filtered_target]
+                            return _ingest_debug_fetch_return(
+                                filtered[:filtered_target]
+                            )
 
             # Stop early if we reached the unfiltered limit (only when not filtering).
             if not type_filter and limit and len(results) >= limit:
-                return results[:limit]
+                return _ingest_debug_fetch_return(results[:limit])
 
             log.info(
                 f"[INFO] Page {page} -> {len(batch)} activities (total={len(results)})"
@@ -685,7 +867,9 @@ class ActivityIngestionService:
                 break
 
             page += 1
-        return filtered[:filtered_target] if type_filter else results
+        return _ingest_debug_fetch_return(
+            filtered[:filtered_target] if type_filter else results
+        )
 
     def ingest_full_history(
         self, lookback_days=None, max_activities=None, per_page=None, dry_run=False
@@ -739,9 +923,30 @@ class ActivityIngestionService:
             self.session, self.athlete_id, activities, self.user_id
         )
 
+    def enrich_single_activity(self, activity_id: int, *, fetch_streams: bool = True):
+        """Enrich one run by id using this service's athlete (and optional user for split policy)."""
+        from src.db.dao.user_identity_dao import persist_splits_for_user
+
+        persist_splits = persist_splits_for_user(self.session, self.user_id)
+        enrich_one_activity_with_refresh(
+            self.session,
+            self.athlete_id,
+            activity_id,
+            fetch_streams=fetch_streams,
+            persist_splits=persist_splits,
+        )
+
 
 def run_enrichment_batch(
-    session, athlete_id, batch_size=10, *, split_cutoff=None, after=None, before=None
+    session,
+    athlete_id,
+    batch_size=10,
+    *,
+    split_cutoff=None,
+    after=None,
+    before=None,
+    activities=None,
+    persist_splits: bool = True,
 ):
     """
     Batch enrichment job for activities.
@@ -749,26 +954,41 @@ def run_enrichment_batch(
     Args:
         session: Database session
         athlete_id: Strava athlete ID
-        batch_size: Number of activities to enrich
+        batch_size: Number of activities to enrich (ignored if ``activities`` is provided)
         split_cutoff: Optional datetime - activities before this won't fetch streams
         after: Optional Unix timestamp - only enrich activities after this time
         before: Optional Unix timestamp - only enrich activities before this time
+        activities: Optional pre-fetched list from :func:`get_activities_to_enrich`;
+            when set, ``after``/``before`` are not used for selection.
     """
     import sys
 
-    print(
-        f"🔄 [Enrichment Batch] Starting enrichment for athlete {athlete_id}, "
-        f"batch_size={batch_size}, after={after}, before={before}",
-        file=sys.stdout,
-        flush=True,
-    )
-    log.info(
-        f"🔄 [Enrichment Batch] Starting enrichment for athlete {athlete_id}, "
-        f"batch_size={batch_size}, after={after}, before={before}"
-    )
-    activities = get_activities_to_enrich(
-        session, athlete_id, batch_size, after=after, before=before
-    )
+    if activities is None:
+        print(
+            f"🔄 [Enrichment Batch] Starting enrichment for athlete {athlete_id}, "
+            f"batch_size={batch_size}, after={after}, before={before}",
+            file=sys.stdout,
+            flush=True,
+        )
+        log.info(
+            f"🔄 [Enrichment Batch] Starting enrichment for athlete {athlete_id}, "
+            f"batch_size={batch_size}, after={after}, before={before}"
+        )
+        activities = get_activities_to_enrich(
+            session, athlete_id, batch_size, after=after, before=before
+        )
+    else:
+        print(
+            f"🔄 [Enrichment Batch] Starting enrichment for athlete {athlete_id}, "
+            f"preselected_count={len(activities)}, after={after}, before={before}",
+            file=sys.stdout,
+            flush=True,
+        )
+        log.info(
+            f"🔄 [Enrichment Batch] Starting enrichment for athlete {athlete_id}, "
+            f"preselected_count={len(activities)}, after={after}, before={before}"
+        )
+
     log.info(f"📋 [Enrichment Batch] Found {len(activities)} activities to enrich")
     if not activities:
         log.warning(
@@ -797,7 +1017,11 @@ def run_enrichment_batch(
 
         try:
             enrich_one_activity_with_refresh(
-                session, athlete_id, aid, fetch_streams=fetch_streams
+                session,
+                athlete_id,
+                aid,
+                fetch_streams=fetch_streams,
+                persist_splits=persist_splits,
             )
             enriched_count += 1
             log.info(f"Successfully enriched activity {aid} for athlete {athlete_id}")
@@ -816,3 +1040,81 @@ def run_enrichment_batch(
         f"{enriched_count} enriched, {failed_count} failed"
     )
     return enriched_count
+
+
+def run_enrichment_batches_in_window(
+    session,
+    athlete_id,
+    batch_size,
+    *,
+    split_cutoff=None,
+    after=None,
+    before=None,
+    max_batches_per_chunk=None,
+    rate_buffer=10,
+    persist_splits: bool = True,
+):
+    """
+    Run enrichment repeatedly until no pending rows remain in the window or caps hit.
+
+    Returns:
+        (total_enriched, defer_due_to_rate_limit): when defer is True, stop and let the
+        caller schedule a retry (partial progress may already be persisted).
+    """
+    from src.utils.rate_limiter import get_rate_limiter
+
+    max_batches = (
+        max_batches_per_chunk
+        if max_batches_per_chunk is not None
+        else config.MAX_ENRICHMENT_BATCHES_PER_CHUNK
+    )
+    total_enriched = 0
+    limiter = get_rate_limiter()
+
+    for batch_num in range(max_batches):
+        activities = get_activities_to_enrich(
+            session, athlete_id, batch_size, after=after, before=before
+        )
+        if not activities:
+            break
+
+        projected = project_strava_enrichment_calls(
+            activities, split_cutoff, persist_splits=persist_splits
+        )
+        stats = limiter.get_stats()
+        remaining_15m = stats.get("remaining_15min", 0)
+        if projected + rate_buffer > remaining_15m:
+            log.warning(
+                "[Enrichment] Rate limit headroom too low (%s remaining, %s projected "
+                "+ buffer for batch %s). Deferring with %s activities enriched so far.",
+                remaining_15m,
+                projected,
+                batch_num + 1,
+                total_enriched,
+            )
+            return total_enriched, True
+
+        batch_enriched = run_enrichment_batch(
+            session,
+            athlete_id,
+            batch_size=batch_size,
+            split_cutoff=split_cutoff,
+            after=after,
+            before=before,
+            activities=activities,
+            persist_splits=persist_splits,
+        )
+        total_enriched += batch_enriched
+
+    pending_after = count_pending_detail_enrichment(
+        session, athlete_id, after=after, before=before
+    )
+    if pending_after > 0:
+        log.info(
+            "[Enrichment] %s activities still pending detail in this window "
+            "(batch cap max_batches_per_chunk=%s).",
+            pending_after,
+            max_batches,
+        )
+
+    return total_enriched, False

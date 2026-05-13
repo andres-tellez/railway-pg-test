@@ -90,6 +90,21 @@ def _internal_user_id_str(value) -> str:
         return str(value).strip()
 
 
+def _user_id_for_athlete(session, athlete_id) -> str | None:
+    """Resolve internal user_id for audit logs outside HTTP requests (e.g. Strava webhooks)."""
+    from src.db.models.user_athletes import UserAthleteLink
+
+    try:
+        aid = int(athlete_id)
+    except (TypeError, ValueError):
+        return None
+    link = session.query(UserAthleteLink).filter_by(athlete_id=aid).first()
+    if not link:
+        return None
+    s = _internal_user_id_str(link.user_id)
+    return s if s else None
+
+
 def get_session():
     return db_get_session()
 
@@ -173,7 +188,7 @@ def refresh_access_token(session, athlete_id):
     logger.info(f"Tokens refreshed and rotated: {redacted_tokens}")
 
     log_token_refresh(
-        user_id=None,  # Will be set by caller if available
+        user_id=_user_id_for_athlete(session, athlete_id),
         athlete_id=str(athlete_id),
         success=True,
         details={"rotated": True},
@@ -239,7 +254,7 @@ def refresh_token_if_expired(session, athlete_id):
     if token.is_revoked():
         logger.warning(f"Attempted to refresh revoked token for athlete {athlete_id}")
         log_token_refresh(
-            user_id=None,
+            user_id=_user_id_for_athlete(session, athlete_id),
             athlete_id=str(athlete_id),
             success=False,
             details={"reason": "token_revoked"},
@@ -261,7 +276,7 @@ def refresh_token_if_expired(session, athlete_id):
 
         logger.info(f"Tokens refreshed and rotated for athlete {athlete_id}")
         log_token_refresh(
-            user_id=None,  # Will be set by caller if available
+            user_id=_user_id_for_athlete(session, athlete_id),
             athlete_id=str(athlete_id),
             success=True,
             details={"rotated": True},
@@ -282,7 +297,7 @@ def delete_athlete_tokens(session, athlete_id):
     token = session.query(Token).filter_by(athlete_id=athlete_id).first()
     if token:
         log_token_revocation(
-            user_id=None,  # Will be set by caller if available
+            user_id=_user_id_for_athlete(session, athlete_id),
             athlete_id=str(athlete_id),
         )
 
@@ -309,7 +324,7 @@ def revoke_athlete_tokens(session, athlete_id):
         session.commit()
         logger.info(f"Tokens revoked for athlete {athlete_id}")
         log_token_revocation(
-            user_id=None,  # Will be set by caller if available
+            user_id=_user_id_for_athlete(session, athlete_id),
             athlete_id=str(athlete_id),
         )
         return True

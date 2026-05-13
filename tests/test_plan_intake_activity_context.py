@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 from src.smartcoach_mobile_coach.plan_intake_activity_context import (
     apply_plan_activity_preamble_to_assistant_markdown,
     build_plan_intake_activity_context_block,
+    build_runner_evidence,
     compute_plan_intake_activity_summary,
     format_plan_intake_activity_context_block,
     format_user_visible_activity_overview,
@@ -51,18 +53,75 @@ def test_format_plan_intake_activity_context_zero_runs():
 @patch(
     "src.smartcoach_mobile_coach.plan_intake_activity_context.DataCollectionService.fetch_strava_activities"
 )
+def test_compute_plan_intake_activity_summary_includes_pace_and_long_run_signals(
+    mock_fetch,
+):
+    mock_fetch.return_value = [
+        {"date": "2026-04-10", "distance": 6.0, "moving_time": 3300},
+        {"date": "2026-04-03", "distance": 11.0, "moving_time": 6600},
+        {"date": "2026-03-27", "distance": 5.5, "moving_time": 3000},
+        {"date": "2026-03-20", "distance": 10.5, "moving_time": 6300},
+    ]
+    session = MagicMock()
+    out = compute_plan_intake_activity_summary(
+        session,
+        "user-uuid",
+        lookback_weeks=8,
+        anchor_local_date=date(2026, 4, 15),
+    )
+    assert out["pace_reliability"] in ("low", "medium", "high")
+    assert out["runs_usable_pace_count"] >= 3
+    assert out["typical_easy_pace_sec_per_mi"] is not None
+    assert out["long_runs_ge_10_mi_count"] >= 2
+    mock_fetch.assert_called_once()
+
+
+@patch(
+    "src.smartcoach_mobile_coach.plan_intake_activity_context.DataCollectionService.fetch_strava_activities"
+)
+def test_build_runner_evidence_single_fetch_and_weekly_history_shape(
+    mock_fetch, monkeypatch
+):
+    monkeypatch.setenv("SMARTCOACH_PLAN_INTAKE_ACTIVITY_WEEKS", "6")
+    monkeypatch.setenv("SMARTCOACH_PLAN_INTAKE_HISTORY_WEEKS", "8")
+    mock_fetch.return_value = [
+        {"date": "2026-04-10", "distance": 6.0},
+        {"date": "2026-03-20", "distance": 5.0},
+    ]
+    session = MagicMock()
+    ev = build_runner_evidence(
+        session, "user-uuid", anchor_local_date=date(2026, 4, 15)
+    )
+    mock_fetch.assert_called_once_with(session, "user-uuid", weeks=8)
+    data = ev.to_api_dict()
+    assert data["history_lookback_weeks"] == 8
+    assert len(data["weekly_mileage_history"]) == 8
+    # two distinct ISO weeks with mileage in the 8-week window
+    assert data["consistency_weeks_active_in_history"] == 2
+
+
+@patch(
+    "src.smartcoach_mobile_coach.plan_intake_activity_context.DataCollectionService.fetch_strava_activities"
+)
 def test_compute_plan_intake_activity_summary(mock_fetch):
     mock_fetch.return_value = [
         {"date": "2026-04-10", "distance": 6.0},
         {"date": "2026-04-03", "distance": 10.0},
     ]
     session = MagicMock()
-    out = compute_plan_intake_activity_summary(session, "user-uuid", lookback_weeks=12)
-    assert out["activities_found"] == 2
+    out = compute_plan_intake_activity_summary(
+        session,
+        "user-uuid",
+        lookback_weeks=12,
+        anchor_local_date=date(2026, 4, 15),
+    )
     assert out["has_running_data"] is True
     assert out["total_miles_window"] == 16.0
     assert out["longest_run_miles"] == 10.0
     assert out["runs_per_week_approx"] == 0.2
+    assert out["completed_calendar_weeks_count"] == 2
+    assert out["avg_miles_per_week_approx"] == 8.0  # mean of two completed ISO weeks
+    assert abs(out["avg_miles_per_week_raw_window"] - 16.0 / 12.0) < 0.06
     mock_fetch.assert_called_once()
 
 

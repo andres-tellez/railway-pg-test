@@ -31,7 +31,10 @@ from src.smartcoach_mobile_coach import coach_tone_contract
 from src.smartcoach_mobile_coach.coach_tone_contract import (
     COACH_TONE_CONTRACT_BLOCK,
     COACH_TONE_CONTRACT_VERSION,
+    COACH_TURN_PROSE_SHAPE_BLOCK,
+    COACH_TURN_PROSE_SHAPE_VERSION,
     coach_tone_contract_section,
+    coach_turn_prose_shape_section,
 )
 from src.smartcoach_mobile_coach.dialogue_manager import (
     INTENT_PREFERENCE_UPDATE,
@@ -69,6 +72,9 @@ def test_module_surface_exports_expected_names() -> None:
     assert hasattr(coach_tone_contract, "COACH_TONE_CONTRACT_BLOCK")
     assert hasattr(coach_tone_contract, "COACH_TONE_CONTRACT_VERSION")
     assert hasattr(coach_tone_contract, "coach_tone_contract_section")
+    assert hasattr(coach_tone_contract, "COACH_TURN_PROSE_SHAPE_BLOCK")
+    assert hasattr(coach_tone_contract, "COACH_TURN_PROSE_SHAPE_VERSION")
+    assert hasattr(coach_tone_contract, "coach_turn_prose_shape_section")
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +85,22 @@ def test_module_surface_exports_expected_names() -> None:
 def test_contract_block_is_non_empty_string() -> None:
     assert isinstance(COACH_TONE_CONTRACT_BLOCK, str)
     assert COACH_TONE_CONTRACT_BLOCK.strip()
+
+
+def test_coach_turn_prose_shape_version_tag_and_section() -> None:
+    assert isinstance(COACH_TURN_PROSE_SHAPE_VERSION, int)
+    assert COACH_TURN_PROSE_SHAPE_VERSION == 2
+    assert (
+        f"<!-- coach_turn_prose_shape_version: {COACH_TURN_PROSE_SHAPE_VERSION} -->"
+        in COACH_TURN_PROSE_SHAPE_BLOCK
+    )
+    assert "## Coach turn prose shape" in COACH_TURN_PROSE_SHAPE_BLOCK
+    assert coach_turn_prose_shape_section() is COACH_TURN_PROSE_SHAPE_BLOCK
+
+
+def test_coach_turn_prose_shape_block_fits_prompt_budget_under_3kb() -> None:
+    size = len(COACH_TURN_PROSE_SHAPE_BLOCK.encode("utf-8"))
+    assert size < 3072, f"prose shape block grew to {size} bytes"
 
 
 def test_contract_block_fits_prompt_budget_under_3kb() -> None:
@@ -332,6 +354,8 @@ def test_orchestrator_imports_contract_section() -> None:
 
     assert hasattr(orchestrator, "coach_tone_contract_section")
     assert orchestrator.coach_tone_contract_section is coach_tone_contract_section
+    assert hasattr(orchestrator, "coach_turn_prose_shape_section")
+    assert orchestrator.coach_turn_prose_shape_section is coach_turn_prose_shape_section
 
 
 def test_orchestrator_source_wires_contract_into_non_plan_creation_branch() -> None:
@@ -341,15 +365,17 @@ def test_orchestrator_source_wires_contract_into_non_plan_creation_branch() -> N
     # are the final layer before preferences and device anchor).
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     assert src.count("coach_tone_contract_section()") == 1
+    assert src.count("coach_turn_prose_shape_section()") == 1
     guidance_idx = src.index("plan_guidance_contract_section()")
     tone_idx = src.index("coach_tone_contract_section()")
-    assert guidance_idx < tone_idx, (
-        "coach_tone_contract_section must be composed AFTER "
-        "plan_guidance_contract_section"
+    prose_idx = src.index("coach_turn_prose_shape_section()")
+    assert guidance_idx < tone_idx < prose_idx, (
+        "coach_turn_prose_shape_section must be composed AFTER "
+        "coach_tone_contract_section (and after plan_guidance)"
     )
 
 
@@ -359,7 +385,7 @@ def test_orchestrator_does_not_wire_contract_into_plan_creation_branch() -> None
     # meaning during intake and should not bloat that prompt.
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     plan_creation_base_idx = src.index("PLAN_CREATION_SYSTEM_PROMPT_BASE")

@@ -39,7 +39,8 @@ Prefer **new** docs anchored in Tier A–C rather than resurrecting deleted file
 | Shipped vs not shipped for a phase | `PHASE_*_IMPLEMENTATION_CHECKLIST.md` |
 | Endpoint / request / auth details | `API_DOCUMENTATION.md` |
 | Module-only internals | `README.md` next to the code, with a one-line pointer to Tier A for anything that sounds like a product rule |
+| Plan-gen **legacy vs active** inventories and **post-migration cleanup gates** (orchestrator, ambition/readiness/alignment) | `docs/plan_cleanup_tracker.md` — add rows/sections there instead of scattering “LEGACY” notes only in code comments |
 
 ---
 
-*Last updated: 2026-04-22 — `docs/` reduced to Tier A–C files plus this governance note.*
+*Last updated: 2026-05-12 — pointer to `plan_cleanup_tracker.md` for ambition/readiness legacy tracking.*
