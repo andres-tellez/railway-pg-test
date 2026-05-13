@@ -6,10 +6,15 @@ This repo’s **Database Backup** workflow runs **`pg_dump` against production P
 
 1. **GitHub → repository → Settings → Secrets and variables → Actions**
 2. Set **production** connection string **(required)** — use **one** of:
-   - **`PRODUCTION_DATABASE_URL`** (recommended — name makes it clear this must be **prod**, e.g. Railway `db-prod`)
-   - **`DATABASE_URL`** — only if this secret is **already** your **production** URL (never point it at staging for this workflow)
+   - **`PRODUCTION_DATABASE_URL`** (recommended) — use Railway **`DATABASE_PUBLIC_URL`** when **`DATABASE_URL`** uses **`.railway.internal`** (GitHub can’t reach internal hostnames).
+   - **`DATABASE_URL`** — only if this is already the **public** production URL
 
-The **GitHub Actions runner** must be able to reach **production** Postgres (public URL / network rules per Railway).
+The **GitHub Actions runner** runs **outside** Railway. It must use a **public** Postgres URL.
+
+- If your secret contains **`*.railway.internal`**, **`pg_dump` will fail** (`could not translate host name … Name or service not known`).
+- In Railway → **`db-prod`** → **Variables**, use **`DATABASE_PUBLIC_URL`** (if present) or the **public** / **TCP proxy** connection string Railway documents for external access—not the private **`DATABASE_URL`** meant for services inside the same project.
+
+Paste that **public** value into **`PRODUCTION_DATABASE_URL`** in GitHub (never commit it).
 
 ## Schedule
 
