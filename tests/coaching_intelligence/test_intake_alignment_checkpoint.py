@@ -340,6 +340,60 @@ def test_generate_plan_uses_shared_readiness_gate_helper(monkeypatch):
     assert run_mock.called is False
 
 
+def test_generate_plan_deferred_logs_plan_generation_readiness_deferred_with_trace(
+    caplog, monkeypatch
+):
+    import logging
+
+    monkeypatch.setattr(
+        agent_tools,
+        "build_plan_request_from_state",
+        lambda _s: _s["draft"],
+    )
+
+    def _gate(
+        *,
+        session,
+        internal_user_id,
+        plan_request,
+        plan_intake_state,
+        alignment_enabled,
+        anchor_local_date=None,
+    ):
+        return SimpleNamespace(
+            assessment_api={"schema_version": "pre_generation_runner_assessment.v1"},
+            readiness_api={
+                "trace_id": "tr-deferred-caplog",
+                "policy_version": "policy.v1.0",
+                "decision": "defer",
+                "readiness_level": "high_risk",
+                "reason_codes": ["RULE_SAMPLE"],
+                "confidence": "medium",
+                "goal_profile": "competitive_performance",
+                "evidence_snapshot_id": "ev-caplog",
+            },
+            plan_request_digest_sha256="digest-caplog",
+            cache_status="miss",
+        )
+
+    monkeypatch.setattr(agent_tools, "get_or_compute_readiness_gate", _gate)
+    monkeypatch.setattr(agent_tools, "run_v2_plan_generation", MagicMock())
+
+    with caplog.at_level(logging.WARNING, logger="smartcoach_mobile_coach"):
+        out = agent_tools.tool_generate_training_plan(
+            session=MagicMock(),
+            internal_user_id="u-1",
+            args={"confirm": True},
+            current_state=_state(),
+        )
+
+    assert out["error"] == "plan_generation_readiness_deferred"
+    assert any(
+        "[plan_generation_readiness_deferred]" in r.message for r in caplog.records
+    )
+    assert "tr-deferred-caplog" in caplog.text
+
+
 def test_execute_tool_returns_assessment_error_not_tool_execution_failed(monkeypatch):
     monkeypatch.setattr(
         agent_tools,

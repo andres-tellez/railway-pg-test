@@ -219,3 +219,65 @@ def test_get_or_compute_readiness_gate_cache_partitions_by_anchor(monkeypatch):
     assert b.cache_status == "miss"
     assert c.cache_status == "hit"
     assert calls["build"] == 2
+
+
+def test_readiness_decision_metric_emitted_on_hit_and_miss(caplog, monkeypatch):
+    import logging
+
+    readiness_gate._clear_readiness_gate_cache_for_tests()
+    calls = {"build": 0, "eval": 0}
+
+    def _build(*_args, **_kwargs):
+        calls["build"] += 1
+        return _FakeAssessment(
+            {
+                "evidence_snapshot_id": "ev-001",
+                "activity_summary": {"activities_found": 5},
+            }
+        )
+
+    def _eval(*_args, **_kwargs):
+        calls["eval"] += 1
+        return {
+            "trace_id": f"tr-{calls['eval']}",
+            "policy_version": "policy.v1.0",
+            "decision": "allow",
+            "readiness_level": "ready",
+            "confidence": "high",
+            "goal_profile": "moderate_performance",
+            "evidence_snapshot_id": "ev-001",
+            "reason_codes": [],
+        }
+
+    monkeypatch.setattr(
+        readiness_gate, "build_pre_generation_runner_assessment", _build
+    )
+    monkeypatch.setattr(readiness_gate, "evaluate_plan_generation_readiness", _eval)
+
+    with caplog.at_level(logging.INFO, logger="smartcoach_mobile_coach.readiness_gate"):
+        first = readiness_gate.get_or_compute_readiness_gate(
+            session=object(),
+            internal_user_id="u-1",
+            plan_request=_plan_request(),
+            plan_intake_state=_state(with_prior_readiness=True),
+            alignment_enabled=True,
+        )
+        second = readiness_gate.get_or_compute_readiness_gate(
+            session=object(),
+            internal_user_id="u-1",
+            plan_request=_plan_request(),
+            plan_intake_state=_state(with_prior_readiness=True),
+            alignment_enabled=True,
+        )
+
+    assert first.cache_status == "miss"
+    assert second.cache_status == "hit"
+    decision_lines = [
+        r.message
+        for r in caplog.records
+        if r.message.startswith("[readiness_decision]")
+    ]
+    assert len(decision_lines) == 2
+    assert '"cache_status": "miss"' in decision_lines[0]
+    assert '"cache_status": "hit"' in decision_lines[1]
+    assert "moderate_performance" in "".join(decision_lines)

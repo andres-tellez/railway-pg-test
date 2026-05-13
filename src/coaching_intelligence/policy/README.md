@@ -40,3 +40,7 @@ Below is the standard extension pattern. Names are illustrative; follow existing
 | Terrain / surface mix | Activity tags or route meta | Often softer signal; keep thresholds conservative at first. |
 
 Keeping new physics on **evidence → table → deficits → readiness reasons** preserves one forensic story: logs + `trace_id` + replay scripts can reproduce the same numbers end-to-end. The readiness gate’s in-process cache also partitions by **device anchor date** (`get_or_compute_readiness_gate(..., anchor_local_date=...)`) so calendar-week evidence does not collide across different local “today” values for the same user digest.
+
+## Runtime flags (`feature_flags.py`)
+
+- `SMARTCOACH_THIN_PACE_STRETCH_DOWNGRADE` — when `1` / `true` / `True`, competitive marathon time goals with **thin pace reliability** and **decent activity volume** are surfaced as **STRETCH** instead of **READY** (default off). See `tests/coaching_intelligence/test_thin_pace_competitive_smoke.py`.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import os
 import threading
 import time
@@ -16,6 +17,8 @@ from typing import Any, Dict, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from src.coaching_intelligence.policy.policy_table import POLICY_VERSION
+
+logger = logging.getLogger("smartcoach_mobile_coach.readiness_gate")
 
 _CACHE_TTL_ENV = "SMARTCOACH_READINESS_GATE_CACHE_TTL_SEC"
 _CACHE_TTL_DEFAULT_SEC = 30
@@ -60,6 +63,33 @@ def _plan_request_digest_sha256(plan_request: Dict[str, Any]) -> str:
 
 def _anchor_cache_segment(anchor_local_date: Optional[date]) -> str:
     return anchor_local_date.isoformat() if isinstance(anchor_local_date, date) else ""
+
+
+def _emit_readiness_decision_metric(
+    *,
+    internal_user_id: str,
+    digest_sha256: str,
+    readiness_api: Dict[str, Any],
+    cache_status: str,
+) -> None:
+    logger.info(
+        "[readiness_decision] %s",
+        json.dumps(
+            {
+                "decision": readiness_api.get("decision"),
+                "readiness_level": readiness_api.get("readiness_level"),
+                "confidence": readiness_api.get("confidence"),
+                "goal_profile": readiness_api.get("goal_profile"),
+                "cache_status": cache_status,
+                "policy_version": readiness_api.get("policy_version"),
+                "trace_id": readiness_api.get("trace_id"),
+                "evidence_snapshot_id": readiness_api.get("evidence_snapshot_id"),
+                "user_id": str(internal_user_id),
+                "plan_request_digest_sha256": digest_sha256,
+            },
+            default=str,
+        ),
+    )
 
 
 def _get_cached_entry(
@@ -136,6 +166,12 @@ def get_or_compute_readiness_gate(
     if prior_readiness is not None:
         entry = _get_cached_entry(cache_key=cache_key_lookup, now_mono=now_mono)
         if entry is not None:
+            _emit_readiness_decision_metric(
+                internal_user_id=str(internal_user_id),
+                digest_sha256=digest_sha256,
+                readiness_api=entry.readiness_api,
+                cache_status="hit",
+            )
             return ReadinessGateResult(
                 assessment_api=copy.deepcopy(entry.assessment_api),
                 readiness_api=copy.deepcopy(entry.readiness_api),
@@ -176,6 +212,12 @@ def get_or_compute_readiness_gate(
         now_mono=now_mono,
         assessment_api=assessment_api,
         readiness_api=readiness_api,
+    )
+    _emit_readiness_decision_metric(
+        internal_user_id=str(internal_user_id),
+        digest_sha256=digest_sha256,
+        readiness_api=readiness_api,
+        cache_status="miss",
     )
     return ReadinessGateResult(
         assessment_api=assessment_api,

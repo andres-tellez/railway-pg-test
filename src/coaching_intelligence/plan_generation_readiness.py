@@ -31,11 +31,14 @@ import uuid
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-from src.coaching_intelligence.policy.deficits import compute_deficits
 from src.coaching_intelligence.policy.demand import (
     compute_demand_score,
     interpolated_pace_gap_thresholds,
     pace_missing_triggers_thin_data,
+)
+from src.coaching_intelligence.policy.deficits import compute_deficits
+from src.coaching_intelligence.policy.feature_flags import (
+    thin_pace_stretch_downgrade_enabled,
 )
 from src.coaching_intelligence.policy.suggestions import derive_suggestions
 from src.coaching_intelligence.contracts.runner_evidence import RunnerEvidenceSummary
@@ -649,6 +652,14 @@ def _escalate_readiness_for_performance_alignment(
         return level
     rel = str(builder.activity_signal("pace_reliability") or "none")
     if rel in ("none", "low"):
+        if (
+            thin_pace_stretch_downgrade_enabled()
+            and level == LEVEL_READY
+            and "RULE_PERFORMANCE_PACE_DATA_THIN" in rc
+            and builder.activities_found >= 3
+            and builder.avg_mpw > 0
+        ):
+            return LEVEL_STRETCH
         return level
     bad = {
         "RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE",

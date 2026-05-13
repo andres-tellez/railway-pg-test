@@ -2148,6 +2148,31 @@ def tool_generate_training_plan(
         ),
     )
     if readiness_payload.get("decision") != "allow":
+        logger.warning(
+            "[plan_generation_readiness_deferred] %s",
+            json.dumps(
+                {
+                    "error": (
+                        "plan_generation_readiness_deferred"
+                        if readiness_payload.get("decision") == "defer"
+                        else "plan_generation_readiness_blocked"
+                    ),
+                    "trace_id": readiness_payload.get("trace_id"),
+                    "decision": readiness_payload.get("decision"),
+                    "readiness_level": readiness_payload.get("readiness_level"),
+                    "confidence": readiness_payload.get("confidence"),
+                    "goal_profile": readiness_payload.get("goal_profile"),
+                    "reason_codes": readiness_payload.get("reason_codes"),
+                    "user_id": str(internal_user_id),
+                    "plan_request_digest_sha256": gate_result.plan_request_digest_sha256,
+                    "evidence_snapshot_id": readiness_payload.get(
+                        "evidence_snapshot_id"
+                    ),
+                    "cache_status": gate_result.cache_status,
+                },
+                default=str,
+            ),
+        )
         return {
             "error": (
                 "plan_generation_readiness_deferred"
