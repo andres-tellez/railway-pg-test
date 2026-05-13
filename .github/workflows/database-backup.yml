@@ -1,5 +1,10 @@
-# Postgres logical backup via pg_dump → GitHub Actions artifact (no B2/S3).
-# Requires repository secret: DATABASE_URL (production Postgres URL reachable from GitHub runners).
+# Postgres logical backup: pg_dump of **production** Postgres → GitHub Actions artifact (no B2/S3).
+#
+# The database being backed up is always **production** (e.g. Railway `db-prod`).
+#
+# Secrets (Actions):
+#   - PRODUCTION_DATABASE_URL (recommended — makes “prod only” explicit)
+#   - or DATABASE_URL as fallback if it is your **production** URL (never staging)
 name: Database Backup
 
 on:
@@ -13,6 +18,9 @@ permissions:
 jobs:
   backup:
     runs-on: ubuntu-latest
+    env:
+      # Single source for pg_dump: production only (explicit secret preferred).
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL || secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,12 +33,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Create database backup
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Create production database backup
         run: |
           if [ -z "$DATABASE_URL" ]; then
-            echo "❌ DATABASE_URL secret is not set (GitHub → Settings → Secrets → Actions)."
+            echo "❌ Set PRODUCTION_DATABASE_URL (recommended) or DATABASE_URL to your **production** Postgres URL."
+            echo "   GitHub → Settings → Secrets and variables → Actions"
             exit 1
           fi
           mkdir -p backup-output
@@ -42,7 +49,7 @@ jobs:
       - name: Upload backup artifact
         uses: actions/upload-artifact@v4
         with:
-          name: postgres-backup-${{ github.run_number }}-${{ github.run_id }}
+          name: postgres-backup-prod-${{ github.run_number }}-${{ github.run_id }}
           path: backup-output/*.sql
           if-no-files-found: error
           retention-days: 90
