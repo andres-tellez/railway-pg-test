@@ -73,7 +73,10 @@ def test_sub3_three_days_coach_payload_lists_facts_and_concerns_not_effort_contr
     json.dumps(coach)
 
     disp = out["runner_analysis_display"]
-    assert disp["schema_version"] == "runner_analysis_display.v1.2"
+    assert disp["schema_version"] == "runner_analysis_display.v2"
+    verdict = disp.get("verdict") or {}
+    assert verdict.get("narrative") == disp.get("coach_read")
+    assert isinstance(disp.get("chips"), list)
     gd = disp.get("goal_direction") or {}
     assert isinstance(gd, dict)
     assert gd.get("schema_version") == "goal_direction_display.v1"

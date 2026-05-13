@@ -1678,7 +1678,7 @@ def build_coach_analysis_for_llm(
     }
 
 
-RUNNER_ANALYSIS_DISPLAY_SCHEMA = "runner_analysis_display.v1.2"
+RUNNER_ANALYSIS_DISPLAY_SCHEMA = "runner_analysis_display.v2"
 GOAL_DIRECTION_DISPLAY_SCHEMA = "goal_direction_display.v1"
 
 _GOAL_DIRECTION_PRIMARY_LABELS: Dict[str, str] = {
@@ -2562,6 +2562,26 @@ def _coach_verdict_user(
     return "Let’s adjust a few inputs before we generate your plan."
 
 
+def _runner_analysis_chips_from_suggestions(suggestions: Any) -> List[Dict[str, Any]]:
+    """Normalized chip rows for ``runner_analysis_display.v2`` (id, label, optional proposed_value)."""
+    if not isinstance(suggestions, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    for row in suggestions:
+        if not isinstance(row, dict):
+            continue
+        cid = str(row.get("id") or "").strip()
+        label = str(row.get("label") or "").strip()
+        if not cid or not label:
+            continue
+        chip: Dict[str, Any] = {"id": cid, "label": label}
+        pv = row.get("proposed_value")
+        if pv is not None and str(pv).strip():
+            chip["proposed_value"] = str(pv).strip()
+        out.append(chip)
+    return out
+
+
 def build_runner_analysis_display(
     plan_generation_readiness: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -2705,8 +2725,13 @@ def build_runner_analysis_display(
         allowed_actions=actions,
     )
 
+    sugg_raw = plan_generation_readiness.get("suggestions")
+    chips = _runner_analysis_chips_from_suggestions(sugg_raw)
+
     out: Dict[str, Any] = {
         "schema_version": RUNNER_ANALYSIS_DISPLAY_SCHEMA,
+        "verdict": {"narrative": coach_read},
+        "chips": chips,
         "coach_read": coach_read,
         "why_concerned": why,
         "facts": facts,
@@ -2717,9 +2742,8 @@ def build_runner_analysis_display(
     deficits_raw = plan_generation_readiness.get("deficits")
     if isinstance(deficits_raw, dict):
         out["deficits"] = deficits_raw
-    sugg = plan_generation_readiness.get("suggestions")
-    if isinstance(sugg, list):
-        out["suggestions"] = sugg
+    if isinstance(sugg_raw, list):
+        out["suggestions"] = sugg_raw
     return out
 
 
