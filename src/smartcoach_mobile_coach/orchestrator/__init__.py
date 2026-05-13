@@ -28,6 +28,7 @@ import logging
 import os
 import re
 import time
+import unicodedata
 from datetime import date
 from dataclasses import replace
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -122,6 +123,7 @@ from src.smartcoach_mobile_coach.dialogue_manager import (
     ResponseDirective,
     classify_turn,
     extract_conversation_state,
+    infer_intent,
     plan_response,
     response_directive_section,
 )
@@ -305,6 +307,100 @@ def _user_message_matches_plan_creation_regex(user_message: str) -> bool:
     return signals >= 2
 
 
+def _fold_approx_ascii_for_intent(user_message: str) -> str:
+    """Strip combining marks so e.g. 'créate' matches ASCII 'create' heuristics."""
+    s = user_message or ""
+    nkfd = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in nkfd if not unicodedata.combining(c))
+
+
+def _plan_creation_intent_clarification_enabled() -> bool:
+    raw = (
+        (os.getenv("SMARTCOACH_PLAN_CREATION_INTENT_CLARIFICATION") or "1")
+        .strip()
+        .lower()
+    )
+    return raw not in ("0", "false", "no", "off")
+
+
+_DECLINE_PLAN_CLARIFICATION_RE = re.compile(
+    r"(?is)\b(no|nope|nah|not\s+really|something\s+else|not\s+what\s+i\s+meant|"
+    r"different\s+thing|don'?t)\b"
+)
+
+
+def _user_declines_plan_creation_clarification(user_message: str) -> bool:
+    raw = (user_message or "").strip()
+    if not raw:
+        return False
+    return bool(_DECLINE_PLAN_CLARIFICATION_RE.search(raw))
+
+
+def _user_confirms_plan_creation_clarification(user_message: str) -> bool:
+    if user_confirms_plan_intake(user_message):
+        return True
+    m = (user_message or "").strip().lower()
+    if "create a running plan" in m:
+        return True
+    if "start plan setup" in m:
+        return True
+    return False
+
+
+def _plan_creation_clarification_ui_prompt() -> Dict[str, Any]:
+    return {
+        "version": 1,
+        "field_key": "plan_creation_intent_clarification",
+        "selection_mode": "single",
+        "required": True,
+        "prompt": "Is your goal to set up a structured running plan?",
+        "options": [
+            {
+                "id": "confirm_plan_creation_intent",
+                "label": "Yes — start plan setup",
+                "user_message": "Yes, I want to create a running plan.",
+                "updates": {"confirm_plan_creation_intent": True},
+            },
+            {
+                "id": "decline_plan_creation_intent",
+                "label": "No — something else",
+                "user_message": "No, that's not what I meant.",
+                "updates": {"decline_plan_creation_intent": True},
+            },
+        ],
+    }
+
+
+def _should_offer_plan_creation_clarification(
+    *,
+    user_message: str,
+    thread_ctx: DerivedThreadCoachContext,
+    response_directive: ResponseDirective,
+    has_active_plan: bool,
+) -> bool:
+    """Offer disambiguation when accent-folded text looks like plan setup but strict ASCII paths miss."""
+    if not _plan_creation_intent_clarification_enabled():
+        return False
+    if has_active_plan:
+        return False
+    if isinstance(thread_ctx.latest_plan_intake_state, dict):
+        return False
+    if thread_ctx.plan_creation_clarification_pending:
+        return False
+    raw = (user_message or "").strip()
+    if not raw:
+        return False
+    strict = (
+        response_directive.intent == INTENT_PLAN_CREATION
+        or _user_message_matches_plan_creation_regex(raw)
+    )
+    folded = _fold_approx_ascii_for_intent(raw)
+    loose = infer_intent(
+        folded
+    ) == INTENT_PLAN_CREATION or _user_message_matches_plan_creation_regex(folded)
+    return bool(loose and not strict)
+
+
 def _user_has_active_plan(session: Session, user_id: str) -> bool:
     """Cheap existence check — is there a row in `plans` with is_active=TRUE?
 
@@ -346,6 +442,7 @@ def _is_plan_creation_turn(
     thread_ctx: DerivedThreadCoachContext,
     *,
     has_active_plan: bool,
+    force_after_clarification: bool = False,
 ) -> bool:
     """Decide whether the current turn should use the plan-creation prompt.
 
@@ -366,6 +463,10 @@ def _is_plan_creation_turn(
     old substring matcher treated "how was my run compared to the
     training plan?" as plan creation.
     """
+    if force_after_clarification:
+        if has_active_plan:
+            return False
+        return True
     # Rule 1 — mid-intake thread always wins.
     if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict):
         return True
@@ -2506,6 +2607,172 @@ def run_mobile_agent_turn(
         response_directive.target_length,
     )
 
+    has_active_plan = _user_has_active_plan(session, str(internal_user_id))
+    force_plan_creation_after_clarification = False
+
+    if _plan_creation_intent_clarification_enabled():
+        res = thread_ctx.plan_creation_clarification_resolution
+        if thread_ctx.plan_creation_clarification_pending:
+            if res == "confirm" or _user_confirms_plan_creation_clarification(
+                user_message
+            ):
+                force_plan_creation_after_clarification = True
+            elif res == "decline" or _user_declines_plan_creation_clarification(
+                user_message
+            ):
+                timings_cl = {
+                    "plan_creation_intent_clarification_ms": round(
+                        (time.perf_counter() - t_agent0) * 1000, 2
+                    ),
+                    "agent_orchestrator_total_ms": round(
+                        (time.perf_counter() - t_agent0) * 1000, 2
+                    ),
+                }
+                meta_cl: Dict[str, Any] = {
+                    "usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                    },
+                    "cost": 0.0,
+                    "loops": 0,
+                    "max_loops": _max_agent_loops(),
+                    "model": model,
+                    "plan_creation_intent_clarification": "declined",
+                    "timings_ms": timings_cl,
+                    "dialogue": {
+                        "turn_type": response_directive.turn_type,
+                        "intent": response_directive.intent,
+                        "turn_count": conversation_state.turn_count,
+                        "last_topic": conversation_state.last_topic,
+                        "target_length": response_directive.target_length,
+                        "narration_mode": response_directive.narration_mode,
+                        "tool_strategy": response_directive.tool_strategy,
+                        "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                        "allow_full_recap": response_directive.allow_full_recap,
+                        "investigate_first": response_directive.investigate_first,
+                        "interaction_mode": response_directive.interaction_mode,
+                        "thread_derived": thread_ctx.as_dict(),
+                    },
+                }
+                logger.info(
+                    "[smartcoach_mobile_coach] plan_creation_intent_clarification=declined"
+                )
+                return {
+                    "type": "text",
+                    "content": (
+                        "Understood. What would you like help with — your last run, "
+                        "weekly volume, race planning, or something else?"
+                    ),
+                    "data": {},
+                }, meta_cl
+            else:
+                timings_rq = {
+                    "plan_creation_intent_clarification_ms": round(
+                        (time.perf_counter() - t_agent0) * 1000, 2
+                    ),
+                    "agent_orchestrator_total_ms": round(
+                        (time.perf_counter() - t_agent0) * 1000, 2
+                    ),
+                }
+                meta_rq: Dict[str, Any] = {
+                    "usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                    },
+                    "cost": 0.0,
+                    "loops": 0,
+                    "max_loops": _max_agent_loops(),
+                    "model": model,
+                    "plan_creation_intent_clarification": "reask",
+                    "timings_ms": timings_rq,
+                    "dialogue": {
+                        "turn_type": response_directive.turn_type,
+                        "intent": response_directive.intent,
+                        "turn_count": conversation_state.turn_count,
+                        "last_topic": conversation_state.last_topic,
+                        "target_length": response_directive.target_length,
+                        "narration_mode": response_directive.narration_mode,
+                        "tool_strategy": response_directive.tool_strategy,
+                        "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                        "allow_full_recap": response_directive.allow_full_recap,
+                        "investigate_first": response_directive.investigate_first,
+                        "interaction_mode": response_directive.interaction_mode,
+                        "thread_derived": thread_ctx.as_dict(),
+                    },
+                }
+                logger.info(
+                    "[smartcoach_mobile_coach] plan_creation_intent_clarification=reask"
+                )
+                return {
+                    "type": "text",
+                    "content": (
+                        "I didn’t quite catch that. **Are you trying to set up a structured "
+                        "running plan**, or did you mean something else?"
+                    ),
+                    "data": {
+                        "plan_creation_clarification_pending": True,
+                        "ui_prompt": _plan_creation_clarification_ui_prompt(),
+                    },
+                }, meta_rq
+
+        elif _should_offer_plan_creation_clarification(
+            user_message=user_message,
+            thread_ctx=thread_ctx,
+            response_directive=response_directive,
+            has_active_plan=has_active_plan,
+        ):
+            timings_of = {
+                "plan_creation_intent_clarification_ms": round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                ),
+                "agent_orchestrator_total_ms": round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                ),
+            }
+            meta_of: Dict[str, Any] = {
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+                "cost": 0.0,
+                "loops": 0,
+                "max_loops": _max_agent_loops(),
+                "model": model,
+                "plan_creation_intent_clarification": "offered",
+                "timings_ms": timings_of,
+                "dialogue": {
+                    "turn_type": response_directive.turn_type,
+                    "intent": response_directive.intent,
+                    "turn_count": conversation_state.turn_count,
+                    "last_topic": conversation_state.last_topic,
+                    "target_length": response_directive.target_length,
+                    "narration_mode": response_directive.narration_mode,
+                    "tool_strategy": response_directive.tool_strategy,
+                    "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                    "allow_full_recap": response_directive.allow_full_recap,
+                    "investigate_first": response_directive.investigate_first,
+                    "interaction_mode": response_directive.interaction_mode,
+                    "thread_derived": thread_ctx.as_dict(),
+                },
+            }
+            logger.info(
+                "[smartcoach_mobile_coach] plan_creation_intent_clarification=offered"
+            )
+            return {
+                "type": "text",
+                "content": (
+                    "Sounds like you might want to **set up a structured running plan**. "
+                    "Is that what you’re trying to do?"
+                ),
+                "data": {
+                    "plan_creation_clarification_pending": True,
+                    "ui_prompt": _plan_creation_clarification_ui_prompt(),
+                },
+            }, meta_of
+
     stashed_explicit_goal_text: Optional[str] = None
     explicit_goal_memory_persist_guard: Dict[str, bool] = {"committed": False}
     if should_persist_explicit_goal_memory(user_message, response_directive):
@@ -2670,16 +2937,14 @@ def run_mobile_agent_turn(
         )
         return structured_pc, meta_pc
 
-    # V1.6 hotfix — look up the user's active-plan status once per turn
-    # and feed it to _is_plan_creation_turn so users with a live plan
-    # are never accidentally routed into intake by substring hints on
-    # phrases like "training plan".
-    has_active_plan = _user_has_active_plan(session, internal_user_id)
+    # V1.6 hotfix — ``has_active_plan`` was resolved earlier (before intent
+    # clarification) so we do not query the DB twice per turn.
     plan_creation_mode = _is_plan_creation_turn(
         response_directive.intent,
         user_message,
         thread_ctx,
         has_active_plan=has_active_plan,
+        force_after_clarification=force_plan_creation_after_clarification,
     )
     openai_tools = _filter_tools_for_turn(
         openai_tools_all, plan_creation_mode=plan_creation_mode

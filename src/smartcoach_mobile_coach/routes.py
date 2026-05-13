@@ -347,6 +347,16 @@ def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
         if v is True:
             out["apply_coach_suggested_goal"] = True
 
+    if "confirm_plan_creation_intent" in updates:
+        v = updates.get("confirm_plan_creation_intent")
+        if v is True:
+            out["confirm_plan_creation_intent"] = True
+
+    if "decline_plan_creation_intent" in updates:
+        v = updates.get("decline_plan_creation_intent")
+        if v is True:
+            out["decline_plan_creation_intent"] = True
+
     return out or None
 
 
@@ -362,6 +372,16 @@ def _apply_structured_intake_updates(
         return thread_ctx
     prior_state = thread_ctx.latest_plan_intake_state
     if not isinstance(prior_state, dict):
+        if updates.get("confirm_plan_creation_intent") is True:
+            return replace(
+                thread_ctx,
+                plan_creation_clarification_resolution="confirm",
+            )
+        if updates.get("decline_plan_creation_intent") is True:
+            return replace(
+                thread_ctx,
+                plan_creation_clarification_resolution="decline",
+            )
         return thread_ctx
     try:
         out = tool_update_plan_intake(

@@ -141,6 +141,10 @@ def apply_structured_updates(
         elif key == "apply_coach_suggested_goal":
             # Intake soft-reset only; flag is read from ``up`` in soft_reset (not on draft).
             pass
+        elif key == "confirm_plan_creation_intent":
+            pass
+        elif key == "decline_plan_creation_intent":
+            pass
         elif key == "runner_tradeoff_choice":
             choice = str(raw or "").strip().lower()
             if choice == "continue_tradeoff":

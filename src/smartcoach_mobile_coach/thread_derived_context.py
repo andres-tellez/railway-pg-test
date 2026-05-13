@@ -31,6 +31,12 @@ class DerivedThreadCoachContext:
     latest_plan_generation_result: Optional[Dict[str, Any]]
     """Latest deterministic plan generation result payload (if present)."""
 
+    plan_creation_clarification_pending: bool = False
+    """Latest assistant turn asked whether the user meant plan setup (accent/typo guard)."""
+
+    plan_creation_clarification_resolution: Optional[str] = None
+    """Structured chip resolution for that prompt: confirm | decline (this request only)."""
+
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
@@ -139,10 +145,23 @@ def derive_thread_coach_context(
         ):
             break
 
+    plan_creation_clarification_pending = False
+    for m in reversed(conversation_history):
+        if (m.get("role") or "").strip() != "assistant":
+            continue
+        parsed = _parse_structured_stored(m.get("content") or "")
+        if not isinstance(parsed, dict):
+            break
+        data = parsed.get("data")
+        if isinstance(data, dict) and data.get("plan_creation_clarification_pending"):
+            plan_creation_clarification_pending = True
+        break
+
     return DerivedThreadCoachContext(
         prior_run_summary_in_thread=any_summary,
         last_assistant_was_run_summary=last_assistant_was,
         last_structured_run_activity_id=last_aid,
         latest_plan_intake_state=latest_plan_intake_state,
         latest_plan_generation_result=latest_plan_generation_result,
+        plan_creation_clarification_pending=plan_creation_clarification_pending,
     )
