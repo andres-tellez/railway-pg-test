@@ -65,6 +65,10 @@ from src.coaching_intelligence.policy.policy_table import (
     sub3_very_low_mpw as _SUB3_VERY_LOW_MPW,
 )
 
+from src.coaching_intelligence.time_clock import (
+    parse_clock_seconds as _parse_clock_seconds,
+)
+
 
 def _json_safe_scalar(value: Any) -> Any:
     """Coerce date/datetime to ISO strings for API JSON payloads (readiness only)."""
@@ -174,25 +178,6 @@ def _safe_float(value: Any) -> Optional[float]:
 def _safe_int(value: Any) -> Optional[int]:
     try:
         return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _parse_clock_seconds(value: Any) -> Optional[int]:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    match = re.match(r"^\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\s*$", raw)
-    if not match:
-        return None
-    try:
-        if match.group(3) is not None:
-            return (
-                int(match.group(1)) * 3600
-                + int(match.group(2)) * 60
-                + int(match.group(3))
-            )
-        return int(match.group(1)) * 60 + int(match.group(2))
     except (TypeError, ValueError):
         return None
 

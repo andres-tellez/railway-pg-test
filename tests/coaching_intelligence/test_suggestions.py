@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from src.coaching_intelligence.contracts.deficits import DEFICITS_SCHEMA, Deficits
 from src.coaching_intelligence.policy.suggestions import (
-    _format_clock_seconds,
     _proposed_marathon_clock_after_pace_buffer,
     derive_suggestions,
 )
+from src.coaching_intelligence.time_clock import format_clock_seconds
 
 
 def test_format_clock_seconds():
-    assert _format_clock_seconds(3661) == "1:01:01"
-    assert _format_clock_seconds(61) == "1:01"
+    assert format_clock_seconds(3661) == "1:01:01"
+    assert format_clock_seconds(61) == "1:01"
 
 
 def test_proposed_marathon_clock_adds_pace_buffer_over_distance():

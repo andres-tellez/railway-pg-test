@@ -69,12 +69,10 @@ def test_compute_demand_score_decreases_with_slower_marathon_times():
         "5:30:00",
     ]
     prev = None
-    from src.coaching_intelligence.plan_generation_readiness import (
-        _parse_clock_seconds,
-    )
+    from src.coaching_intelligence.time_clock import parse_clock_seconds
 
     for clock in times:
-        secs = _parse_clock_seconds(clock)
+        secs = parse_clock_seconds(clock)
         assert secs is not None
         pace = float(secs) / marathon_distance_mi
         d = compute_demand_score(pace, "Marathon")

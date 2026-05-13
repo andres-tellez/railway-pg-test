@@ -6,17 +6,12 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from src.coaching_intelligence.contracts.deficits import Deficits
 from src.coaching_intelligence.contracts.suggestion import SUGGESTION_SCHEMA, Suggestion
+from src.coaching_intelligence.time_clock import (
+    format_clock_seconds,
+    parse_clock_seconds,
+)
 
 _MARATHON_MILES = 26.2
-
-
-def _format_clock_seconds(secs: int) -> str:
-    secs = max(0, int(secs))
-    h, rem = divmod(secs, 3600)
-    m, s = divmod(rem, 60)
-    if h:
-        return f"{h}:{m:02d}:{s:02d}"
-    return f"{m}:{s:02d}"
 
 
 def _proposed_marathon_clock_after_pace_buffer(
@@ -24,15 +19,11 @@ def _proposed_marathon_clock_after_pace_buffer(
     target_time: Any,
     pace_deficit_sec_per_mi: float,
 ) -> Optional[str]:
-    from src.coaching_intelligence.plan_generation_readiness import (
-        _parse_clock_seconds,
-    )
-
-    base = _parse_clock_seconds(target_time)
+    base = parse_clock_seconds(target_time)
     if base is None:
         return None
     add = int(round(float(pace_deficit_sec_per_mi) * _MARATHON_MILES))
-    return _format_clock_seconds(base + add)
+    return format_clock_seconds(base + add)
 
 
 _LABELS: Dict[str, str] = {
