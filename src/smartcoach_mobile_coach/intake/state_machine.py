@@ -106,16 +106,14 @@ def finalize_plan_intake_state(
         u_final = dict(state.get("ux") or {})
         if state.get("ready_to_generate"):
             msg_end = (source_user_message or "").strip()
-            if pif.user_confirms_plan_intake(msg_end):
-                u_final["intake_confirmed"] = True
             chip_ok = isinstance(up, dict) and pif._truthy(
                 up.get("plan_generation_confirmed")
             )
-            if u_final.get("intake_confirmed") and u_final.get(
-                "runner_review_delivered"
-            ):
-                if pif.user_requests_plan_generation(msg_end) or chip_ok:
-                    u_final["plan_generation_confirmed"] = True
+            plan_requested = pif.user_requests_plan_generation(msg_end) or chip_ok
+            if pif.user_confirms_plan_intake(msg_end) or plan_requested:
+                u_final["intake_confirmed"] = True
+            if plan_requested:
+                u_final["plan_generation_confirmed"] = True
         state["ux"] = u_final
     pif._sync_plan_creation_phase_and_legacy_flags(state)
     return state

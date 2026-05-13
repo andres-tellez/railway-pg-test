@@ -88,6 +88,23 @@ def test_plan_generation_phrase_after_review(monkeypatch, full_draft):
     assert s["ux"].get("plan_generation_confirmed") is True
 
 
+def test_create_plan_phrase_marks_intake_confirmed_even_without_yes(
+    monkeypatch, full_draft
+):
+    monkeypatch.setenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1", "1")
+    s = update_plan_intake_state(
+        {
+            "draft": dict(full_draft),
+            "ux": {},
+            "alignment": {},
+        },
+        updates={},
+        source_user_message="Create my plan",
+    )
+    assert s["ux"].get("intake_confirmed") is True
+    assert s["ux"].get("plan_generation_confirmed") is True
+
+
 def test_tradeoff_continue_unblocks_pending(monkeypatch):
     monkeypatch.setenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1", "1")
     out = update_plan_intake_state(

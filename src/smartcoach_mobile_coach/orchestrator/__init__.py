@@ -2516,6 +2516,33 @@ def run_mobile_agent_turn(
         if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict)
         else None
     )
+    if (
+        plan_creation_split_confirm_enabled()
+        and isinstance(prior_plan_state, dict)
+        and prior_plan_state.get("ready_to_generate")
+    ):
+        ux_prior = (
+            prior_plan_state.get("ux")
+            if isinstance(prior_plan_state.get("ux"), dict)
+            else {}
+        )
+        if ux_prior.get("intake_confirmed") and not ux_prior.get(
+            "runner_review_delivered"
+        ):
+            pis_review = dict(prior_plan_state)
+            _, runner_review_api_fast = _try_build_runner_review_bundle(
+                session,
+                str(internal_user_id),
+                pis_review,
+                anchor_local_date=anchor_local_date,
+            )
+            apply_review_to_plan_intake_ux_for_phase(
+                pis_review,
+                runner_review_api_fast,
+                intake_confirmed=True,
+            )
+            prior_plan_state = pis_review
+            thread_ctx = replace(thread_ctx, latest_plan_intake_state=pis_review)
     if should_plan_confirm_fastpath_fire(
         prior_plan_state,
         user_message,

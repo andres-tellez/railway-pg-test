@@ -2329,23 +2329,37 @@ def tool_generate_training_plan(
         }
 
     if not result.get("valid") or not result.get("validated_plan"):
+        violations = [
+            v for v in (result.get("violations") or []) if isinstance(v, dict)
+        ]
         logger.warning(
             "[generate_training_plan] validation_failed user=%s rules=%s",
             str(internal_user_id)[:8],
-            [
-                v.get("rule")
-                for v in (result.get("violations") or [])
-                if isinstance(v, dict)
-            ],
+            [v.get("rule") for v in violations],
         )
+        message = (
+            "Your plan couldn't be finalized automatically. "
+            "Try a small change to race date or training days, or try again in a moment."
+        )
+        if violations:
+            top = violations[0]
+            rule = str(top.get("rule") or "").strip()
+            detail = str(top.get("details") or "").strip()
+            suggestion = str(top.get("suggestion") or "").strip()
+            if rule == "unsafe_long_run_progression" and suggestion:
+                message = (
+                    "I couldn't finalize the plan because one long-run jump was unsafe. "
+                    f"{suggestion}."
+                )
+            elif detail:
+                message = detail
         out = {
             "error": "plan_validation_failed",
-            "message": (
-                "Your plan couldn't be finalized automatically. "
-                "Try a small change to race date or training days, or try again in a moment."
-            ),
+            "message": message,
             "plan_intake_state": current_state,
         }
+        if violations:
+            out["violations"] = violations
         gf = result.get("generation_failure")
         if gf:
             out["failure"] = gf
