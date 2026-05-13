@@ -73,7 +73,7 @@ These paths exist **on purpose** until all producers and tests always carry full
 | `intake_alignment._effective_ambition_stance` | If no tension codes in `ambition_attributions`, uses the `ambition_stance` argument | Callers that omit attribution list or pass empty list. |
 | `pre_generation_runner_assessment` | Still passes `ambition_stance=str(ambition.get("stance") or "")` | Required parameter + backward compatibility. |
 | `plan_intake_flow._recompute_alignment_branch` | Uses **only** ``alignment["ambition_attributions"]`` for attribution-first tension (no mining merged ``attributions``). | Persisted states without that key rely on **``ambition_stance``** inside ``evaluate_intake_alignment_state`` only. |
-| `pre_generation_runner_review` | Uses `ag.get("stance")` for copy | Narrative; not used for gating. |
+| `pre_generation_runner_review` | `_copy_lines_for_v1` uses **`_tension_plain_summary_from_ambition`** when `RULE_TENSION_AFTER_ALIGNMENT` and codes present; else **`stance`** for summary. | Narrative aligned with attribution-first policy. |
 | `agent_tools` alignment / brief | Still sets `ambition_stance` on alignment blob; **`posture_context` adds `ambition_attributions`**; `stance` in brief remains legacy snapshot. | Coach UX reads attributions first from prompt + brief. |
 
 ### Cleanup backlog (after implementation is stable — **planned removal order**)
@@ -88,10 +88,17 @@ Do **not** delete these until the **exit criteria** are met; otherwise productio
 | 4 | **Optional:** Deprecate then remove `ambition_stance` from client-facing alignment types / prompts; keep server-only snapshot if analytics still needs it. | **Done in repo** (2026-05-13): coach prompt leads with **ambition attributions**; `posture_context` includes **ambition_attributions**; mobile intake UI attention prefers attribution tension codes with stance fallback. `ambition_stance` retained on wire. |
 | 5 | **Optional hygiene:** extract shared clock parse/format for suggestions vs readiness. | **Done** — `src/coaching_intelligence/time_clock.py` (`parse_clock_seconds`, `format_clock_seconds`). |
 
+### Follow-on (post backlog Steps 1–5)
+
+| Item | Status |
+|------|--------|
+| Runner-review tension copy | Uses ambition **attributions** for `RULE_TENSION_AFTER_ALIGNMENT` when `STANCE_*` codes present (`pre_generation_runner_review._tension_plain_summary_from_ambition`). |
+| Mobile `proposed_value` | **Runner Analysis** card parses readiness **`suggestions`** and shows **Suggested inputs** with optional “try {clock}” (`runner-analysis-card.tsx`). |
+
 ### Drift risks to watch
 
 - Adding new tension or goal-context rules in **`evaluate_ambition_gap`** without corresponding consumers in **readiness** and **intake_alignment** (or vice versa).
 - New code that branches on **`stance` alone** instead of attributions + effective stance helper.
-- Client chips that ignore **`proposed_value`** on suggestions while copy promises a concrete time — UX mismatch, not a server bug.
+- **Apply chip actions** from `suggestions` (beyond display-only hint) — not wired; card is informational.
 
-*Last updated: 2026-05-13 — Step 4 shipped (attribution-first coach prompt + mobile attention); optional hard API deprecation of `ambition_stance` not done.*
+*Last updated: 2026-05-13 — Follow-on: runner-review attribution phrases + mobile suggestion `proposed_value` display.*

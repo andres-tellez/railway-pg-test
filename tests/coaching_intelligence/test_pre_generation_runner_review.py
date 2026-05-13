@@ -252,6 +252,50 @@ def test_as_api_dict_shape():
         assert key in d
 
 
+def test_tension_after_alignment_summary_prefers_attribution_phrase():
+    readiness = {
+        "decision": "defer",
+        "readiness_level": "stretch",
+        "required_changes": [],
+        "reason_codes": ["RULE_TENSION_AFTER_ALIGNMENT"],
+    }
+    assessment_api = {
+        "activity_summary": {
+            "activities_found": 4,
+            "avg_miles_per_week_approx": 18.0,
+        },
+        "intake_alignment_state": {
+            "generation_ready": True,
+            "unresolved_flags": [],
+        },
+        "ambition_gap": {
+            "stance": "HIGH_TENSION",
+            "baseline_band": "THIN",
+            "goal_demand": "TIME_TARGET",
+            "attributions": [
+                "RULE_BASELINE_BAND_THIN",
+                "RULE_GOAL_DEMAND_TIME_TARGET",
+                "STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE",
+            ],
+        },
+    }
+    plan_request = {
+        "primary_goal": "Target Time",
+        "race_distance": "Marathon",
+        "race_date": "2027-06-01",
+        "target_time": "3:30:00",
+        "training_days": ["Mon", "Wed", "Fri", "Sat"],
+    }
+    review = build_pre_generation_runner_review_v1(
+        assessment_api=assessment_api,
+        plan_request=plan_request,
+        plan_generation_readiness=readiness,
+    )
+    blob = " ".join(review.summary_lines).lower()
+    assert "high tension between your time goal" in blob
+    assert "thin training baseline" in blob
+
+
 def test_pre_generation_runner_review_system_section_non_empty():
     assessment_api = {
         "activity_summary": {"activities_found": 2, "avg_miles_per_week_approx": 25.0},

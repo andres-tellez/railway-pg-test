@@ -101,6 +101,19 @@ def _allowed_actions_for_status(status: str) -> List[str]:
     return ["confirm_generate_when_ready"]
 
 
+def _tension_plain_summary_from_ambition(ag: Dict[str, Any]) -> Optional[str]:
+    """User-facing paraphrase from ambition ``attributions``; prefer over raw ``stance``."""
+    raw = ag.get("attributions") or []
+    codes = {str(x).strip() for x in raw if x}
+    if "STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE" in codes:
+        return "high tension between your time goal and a thin training baseline"
+    if "STANCE_MANAGEABLE_TENSION_TIME_VS_MODERATE_BASELINE" in codes:
+        return (
+            "manageable tension between your time goal and a moderate training baseline"
+        )
+    return None
+
+
 def _copy_lines_for_v1(
     *,
     status: str,
@@ -124,6 +137,7 @@ def _copy_lines_for_v1(
     activities_found = int(act.get("activities_found") or 0)
     avg_mi = float(act.get("avg_miles_per_week_approx") or 0.0)
     stance = str(ag.get("stance") or "")
+    tension_plain = _tension_plain_summary_from_ambition(ag)
     primary_goal = str(plan_request.get("primary_goal") or "")
 
     summary_lines: List[str] = []
@@ -201,12 +215,21 @@ def _copy_lines_for_v1(
                 "Avoid: tradeoff, path, tension, commitment, coherence."
             )
         elif "RULE_TENSION_AFTER_ALIGNMENT" in rc:
-            summary_lines.append(
-                f"Stated goal and recent volume read as **{stance.replace('_', ' ').lower()}** "
-                f"(baseline band: {ag.get('baseline_band')})."
-                if stance
-                else "Stated goal and recent volume look misaligned for a comfortable build."
-            )
+            band = ag.get("baseline_band")
+            if tension_plain:
+                summary_lines.append(
+                    f"Stated goal and recent volume read as **{tension_plain}** "
+                    f"(baseline band: {band})."
+                )
+            elif stance:
+                summary_lines.append(
+                    f"Stated goal and recent volume read as **{stance.replace('_', ' ').lower()}** "
+                    f"(baseline band: {band})."
+                )
+            else:
+                summary_lines.append(
+                    "Stated goal and recent volume look misaligned for a comfortable build."
+                )
             concerns.append(
                 "The goal and recent weekly mileage don’t line up neatly—you’ll want to adjust expectations "
                 "or training volume before locking in a plan."
