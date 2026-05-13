@@ -11,6 +11,9 @@ from src.coaching_intelligence.plan_generation_readiness import (
     DECISION_DEFER,
     evaluate_plan_generation_readiness,
 )
+from tests.coaching_intelligence.ambition_gap_fixtures import (
+    synthetic_ambition_attributions,
+)
 
 
 def _race_date(weeks: int = 24) -> str:
@@ -41,6 +44,13 @@ def test_sub3_three_days_coach_payload_lists_facts_and_concerns_not_effort_contr
             "stance": "COHERENT",
             "baseline_band": "MODERATE",
             "goal_demand": "TIME_TARGET",
+            "thin_baseline_data": False,
+            "attributions": synthetic_ambition_attributions(
+                baseline_band="MODERATE",
+                goal_demand="TIME_TARGET",
+                thin_baseline_data=False,
+                longest_run_miles=12.0,
+            ),
         },
         "intake_alignment_state": {"generation_ready": True, "unresolved_flags": []},
     }

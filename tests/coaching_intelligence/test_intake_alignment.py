@@ -74,6 +74,44 @@ def test_generation_readiness_transitions_after_answers():
     assert "RULE_ALIGNMENT_POSTURE_INFERRED" in after_inferred["attributions"]
 
 
+def test_attributions_override_stance_for_high_tension():
+    out = evaluate_intake_alignment_state(
+        ambition_stance="COHERENT",
+        primary_goal="Target Time",
+        ambition_attributions=["STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE"],
+    )
+    assert out["pause_required"] is True
+    assert out["generation_ready"] is False
+    assert out["unresolved_flags"] == ["frequency_flexibility"]
+
+
+def test_attributions_manageable_tension_overrides_relaxed_stance():
+    out = evaluate_intake_alignment_state(
+        ambition_stance="COHERENT",
+        primary_goal="Target Time",
+        ambition_attributions=[
+            "STANCE_MANAGEABLE_TENSION_TIME_VS_MODERATE_BASELINE",
+        ],
+    )
+    assert out["pause_required"] is True
+    assert out["unresolved_flags"] == ["frequency_flexibility"]
+
+
+def test_attribution_high_tension_prefixed_over_manageable_codes_in_list():
+    out = evaluate_intake_alignment_state(
+        ambition_stance="MANAGEABLE_TENSION",
+        primary_goal="Target Time",
+        frequency_flexible=False,
+        posture_priority="durability",
+        ambition_attributions=[
+            "STANCE_MANAGEABLE_TENSION_TIME_VS_MODERATE_BASELINE",
+            "STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE",
+        ],
+    )
+    assert out["pause_required"] is True
+    assert out["unresolved_flags"] == ["timeline_flexibility"]
+
+
 def test_question_cap_enforcement_forces_resolved_state():
     out = evaluate_intake_alignment_state(
         ambition_stance="HIGH_TENSION",

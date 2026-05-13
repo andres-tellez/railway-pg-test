@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import uuid
 import warnings
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -2114,9 +2116,32 @@ def tool_generate_training_plan(
         }
 
     assessment_payload = assessment.as_api_dict()
+    trace_id = str(uuid.uuid4())
     readiness_payload = evaluate_plan_generation_readiness(
         plan_request=plan_request,
         assessment_api=assessment_payload,
+        trace_id=trace_id,
+    )
+    digest_raw = assessment_payload.get("plan_request_digest")
+    digest_for_hash = digest_raw if isinstance(digest_raw, dict) else {}
+    digest_sha256 = hashlib.sha256(
+        json.dumps(digest_for_hash, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+    logger.info(
+        "[readiness_gate] %s",
+        json.dumps(
+            {
+                "trace_id": trace_id,
+                "policy_version": readiness_payload.get("policy_version"),
+                "decision": readiness_payload.get("decision"),
+                "readiness_level": readiness_payload.get("readiness_level"),
+                "reason_codes": readiness_payload.get("reason_codes"),
+                "user_id": str(internal_user_id),
+                "plan_request_digest_sha256": digest_sha256,
+                "evidence_snapshot_id": readiness_payload.get("evidence_snapshot_id"),
+            },
+            default=str,
+        ),
     )
     if readiness_payload.get("decision") != "allow":
         return {
@@ -2148,6 +2173,7 @@ def tool_generate_training_plan(
         next_state["alignment"] = {
             "enabled": True,
             "ambition_stance": ambition.get("stance"),
+            "ambition_attributions": list(ambition.get("attributions") or []),
             "goal_demand": ambition.get("goal_demand"),
             "baseline_band": ambition.get("baseline_band"),
             "question_count": alignment_state.get("question_count"),

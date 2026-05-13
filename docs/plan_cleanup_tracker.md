@@ -1,6 +1,6 @@
 # Plan cleanup tracker
 
-Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orchestrator, Pass1, spine, coach/API consumers).
+Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orchestrator, Pass1, spine, coach/API consumers). **Ambition gap / readiness / intake alignment** inventory and post-migration cleanup gates are in § [Ambition gap, readiness, and intake alignment](#ambition-gap-readiness-and-intake-alignment-phases-23-and-44) below.
 
 ## Findings (short)
 
@@ -44,3 +44,54 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 - V2 plan generation is the source of truth.
 - Legacy components should not be used for new development.
 - Prefer **MV** for product-facing “current fitness” in plan flows; activity-list rollups are not used for V2 generation after L2 removal.
+
+---
+
+## Ambition gap, readiness, and intake alignment (phases 2.3 and 4.4)
+
+**Purpose:** Single place to record what is **canonical** vs **legacy/compatibility** for `ambition_gap`, `plan_generation_readiness`, and intake alignment — so future changes do not re-introduce `stance`-only branching or divergent tension logic.
+
+### Shipped (current implementation — what “done” means)
+
+| Area | Behavior |
+|------|----------|
+| **Canonical signal** | Prefer `ambition_gap["attributions"]` (especially `STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE`, `STANCE_MANAGEABLE_TENSION_TIME_VS_MODERATE_BASELINE`, goal/baseline `RULE_*` codes) for tension and related branching. |
+| **Intake alignment** | `evaluate_intake_alignment_state(..., ambition_attributions=...)` resolves effective tension from those codes when present; see `src/coaching_intelligence/intake_alignment.py`. |
+| **Wiring** | `pre_generation_runner_assessment` passes ambition attributions; `agent_tools` stores `ambition_attributions` on `alignment`; `plan_intake_flow._recompute_alignment_branch` prefers that list. |
+| **Readiness facts / digest** | Still emit `ambition_stance` for observability alongside attribution lists (snapshot). |
+| **Suggestions** | Pace-gap `adjust_goal` suggestion can set `proposed_value` (softened marathon clock from `target_time` + pace deficit × ~26.2 mi); see `src/coaching_intelligence/policy/suggestions.py`. |
+| **Documentation** | `src/coaching_intelligence/ambition_gap.py` module doc states that **`stance` is a legacy snapshot** for APIs/display and new logic should prefer **attributions**. |
+
+### Legacy / compatibility layer (explicit — **do not extend** without updating this table)
+
+These paths exist **on purpose** until all producers and tests always carry full attributions. **New product logic should not add more `stance`-first branches.**
+
+| Location | What is legacy | Why it remains |
+|----------|----------------|----------------|
+| `ambition_gap.evaluate_ambition_gap` | Still sets `stance` string | API contract, analytics, mobile/coach payloads; paired with attributions in normal production. |
+| `plan_generation_readiness._ReadinessBuilder` | `ambition_stance` property (observability in facts/digest only); **`ambition_time_goal_tension()` / `ambition_high_tension_thin_baseline()` use `attributions` only** (Step 2 done — no stance+band fallback). | Any hand-built API with empty `attributions` no longer gets tension rules from `stance` alone. |
+| `intake_alignment._effective_ambition_stance` | If no tension codes in `ambition_attributions`, uses the `ambition_stance` argument | Callers that omit attribution list or pass empty list. |
+| `pre_generation_runner_assessment` | Still passes `ambition_stance=str(ambition.get("stance") or "")` | Required parameter + backward compatibility. |
+| `plan_intake_flow._recompute_alignment_branch` | Fallback: derive ambition-like codes by **filtering** merged `attributions` when `ambition_attributions` absent | Older persisted `plan_intake_state` without `ambition_attributions` key. |
+| `pre_generation_runner_review` | Uses `ag.get("stance")` for copy | Narrative; not used for gating. |
+| `agent_tools` alignment / brief | Exposes `ambition_stance` and `posture_context["stance"]` | Coach UX and debugging. |
+
+### Cleanup backlog (after implementation is stable — **planned removal order**)
+
+Do **not** delete these until the **exit criteria** are met; otherwise production or fixtures will silently drift.
+
+| Step | Action | Exit criteria (minimum) |
+|------|--------|------------------------|
+| 1 | Audit **all** builders of `assessment_api` / `ambition_gap` (tests, fixtures, any cached JSON): ensure `attributions` always includes the same `STANCE_*` / `RULE_*` codes that `evaluate_ambition_gap` would emit for that scenario. **Backend tests:** shared helper `tests/coaching_intelligence/ambition_gap_fixtures.py` → `synthetic_ambition_attributions`; `_assessment` in `test_plan_generation_readiness.py` uses it. | No intentional empty `attributions` for meaningful ambition scenarios in **this** repo’s tests; scan any external fixtures / golden files separately. |
+| 2 | Remove **readiness** fallbacks in `ambition_time_goal_tension()` and `ambition_high_tension_thin_baseline()` that key only on `stance` + band (keep `ambition_stance` in **output** facts if still needed for dashboards). | **Done in repo** (2026-05-12): attributions-only for these two gates; staging soak still advised for non-repo clients. |
+| 3 | Tighten **intake** `ambition_attributions` contract: require non-optional list from server for alignment-enabled flows; narrow or delete merged-`attributions` filter fallback in `plan_intake_flow`. | All clients and persisted states include `ambition_attributions` where alignment is enabled. |
+| 4 | **Optional:** Deprecate then remove `ambition_stance` from client-facing alignment types / prompts; keep server-only snapshot if analytics still needs it. | Mobile and coach no longer branch on `ambition_stance`; docs updated. |
+| 5 | **Optional hygiene:** `suggestions._proposed_marathon_clock_after_pace_buffer` lazy-imports `_parse_clock_seconds` from `plan_generation_readiness`; extract shared clock parse/format to a tiny module to reduce coupling. | Single import site for clock strings; no circular imports. |
+
+### Drift risks to watch
+
+- Adding new tension or goal-context rules in **`evaluate_ambition_gap`** without corresponding consumers in **readiness** and **intake_alignment** (or vice versa).
+- New code that branches on **`stance` alone** instead of attributions + effective stance helper.
+- Client chips that ignore **`proposed_value`** on suggestions while copy promises a concrete time — UX mismatch, not a server bug.
+
+*Last updated: 2026-05-12 — Steps 1–2 for readiness tension gates (attributions-only); intake `ambition_stance` fallback remains (Step 3).*

@@ -8,6 +8,9 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     update_plan_intake_state,
     user_requests_plan_generation,
 )
+from tests.coaching_intelligence.ambition_gap_fixtures import (
+    synthetic_ambition_attributions,
+)
 
 
 @pytest.fixture
@@ -129,6 +132,13 @@ def test_classify_sub_three_three_days():
             "stance": "COHERENT",
             "baseline_band": "ESTABLISHED",
             "goal_demand": "TIME_TARGET",
+            "thin_baseline_data": False,
+            "attributions": synthetic_ambition_attributions(
+                baseline_band="ESTABLISHED",
+                goal_demand="TIME_TARGET",
+                thin_baseline_data=False,
+                longest_run_miles=18.0,
+            ),
         },
         "intake_alignment_state": {
             "generation_ready": True,
@@ -168,6 +178,13 @@ def test_classify_three_hours_flat_three_days_needs_user_decision():
             "stance": "COHERENT",
             "baseline_band": "ESTABLISHED",
             "goal_demand": "TIME_TARGET",
+            "thin_baseline_data": False,
+            "attributions": synthetic_ambition_attributions(
+                baseline_band="ESTABLISHED",
+                goal_demand="TIME_TARGET",
+                thin_baseline_data=False,
+                longest_run_miles=18.0,
+            ),
         },
         "intake_alignment_state": {
             "generation_ready": True,

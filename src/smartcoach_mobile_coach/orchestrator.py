@@ -23,11 +23,13 @@ when ``SMARTCOACH_SPLIT_DETAIL_FASTPATH`` is enabled. See ``docs/SMARTCOACH_SYST
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import re
 import time
+import uuid
 from datetime import date
 from dataclasses import replace
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -2016,24 +2018,6 @@ def _join_nonempty_system_sections(*sections: str) -> str:
     return "\n\n".join(s.strip() for s in sections if (s or "").strip())
 
 
-def _assessment_status_from_readiness(readiness_api: Dict[str, Any]) -> str:
-    decision = str(readiness_api.get("decision") or "").strip()
-    readiness_level = str(readiness_api.get("readiness_level") or "").strip()
-    required_changes = {
-        str(change)
-        for change in list(readiness_api.get("required_changes") or [])
-        if str(change).strip()
-    }
-    if decision == "allow":
-        return "ready_to_generate"
-    if (
-        readiness_level == "insufficient_data"
-        and "complete_alignment_questions" in required_changes
-    ):
-        return "needs_more_info"
-    return "needs_user_decision"
-
-
 def _try_build_runner_review_bundle(
     session: Session,
     internal_user_id: str,
@@ -2075,18 +2059,39 @@ def _try_build_runner_review_bundle(
             alignment_enabled=_intake_alignment_enabled(),
         )
         assessment_api = assessment.as_api_dict()
+        trace_id = str(uuid.uuid4())
         readiness_api = evaluate_plan_generation_readiness(
             plan_request=plan_request,
             assessment_api=assessment_api,
+            trace_id=trace_id,
+        )
+        digest_raw = assessment_api.get("plan_request_digest")
+        digest_for_hash = digest_raw if isinstance(digest_raw, dict) else {}
+        digest_sha256 = hashlib.sha256(
+            json.dumps(digest_for_hash, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+        logger.info(
+            "[readiness_gate] %s",
+            json.dumps(
+                {
+                    "trace_id": trace_id,
+                    "policy_version": readiness_api.get("policy_version"),
+                    "decision": readiness_api.get("decision"),
+                    "readiness_level": readiness_api.get("readiness_level"),
+                    "reason_codes": readiness_api.get("reason_codes"),
+                    "user_id": str(internal_user_id),
+                    "plan_request_digest_sha256": digest_sha256,
+                    "evidence_snapshot_id": readiness_api.get("evidence_snapshot_id"),
+                },
+                default=str,
+            ),
         )
         review = build_pre_generation_runner_review_v1(
             assessment_api=assessment_api,
             plan_request=plan_request,
+            plan_generation_readiness=readiness_api,
         )
         review_api = review.as_api_dict()
-        review_api["assessment_status"] = _assessment_status_from_readiness(
-            readiness_api
-        )
         review_api["plan_generation_readiness"] = readiness_api
         section = pre_generation_runner_review_system_section(review_api)
         return (section, review_api)

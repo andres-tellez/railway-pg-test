@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from sqlalchemy.orm import Session
 
+from src.coaching_intelligence.contracts.runner_evidence import RunnerEvidenceSummary
 from src.services.training_plan.data_collection_service import DataCollectionService
 
 
@@ -37,6 +38,15 @@ def _lookback_weeks_from_env() -> int:
     return max(4, min(w, 24))
 
 
+def _history_lookback_weeks_from_env() -> int:
+    raw = (os.getenv("SMARTCOACH_PLAN_INTAKE_HISTORY_WEEKS") or "12").strip()
+    try:
+        w = int(raw)
+    except ValueError:
+        w = 12
+    return max(6, min(w, 52))
+
+
 def _parse_activity_date(value: Any) -> Optional[datetime]:
     if value is None:
         return None
@@ -50,6 +60,151 @@ def _parse_activity_date(value: Any) -> Optional[datetime]:
             return datetime.strptime(raw[:10], "%Y-%m-%d")
         except ValueError:
             return None
+
+
+def _filter_activities_to_lookback(
+    activities: List[Dict[str, Any]],
+    *,
+    anchor_date: date,
+    lookback_weeks: int,
+) -> List[Dict[str, Any]]:
+    """Keep runs on or after ``anchor_date - lookback_weeks * 7 days``."""
+    if lookback_weeks <= 0:
+        return []
+    cutoff = anchor_date - timedelta(days=lookback_weeks * 7)
+    out: List[Dict[str, Any]] = []
+    for a in activities:
+        dt = _parse_activity_date(a.get("date"))
+        if dt is None:
+            continue
+        if dt.date() >= cutoff:
+            out.append(a)
+    return out
+
+
+def _weekly_mileage_history_for_calendar_weeks(
+    activities: List[Dict[str, Any]],
+    *,
+    anchor_date: date,
+    history_weeks: int,
+) -> tuple[List[Dict[str, Any]], int]:
+    """
+    ``history_weeks`` ISO weeks (Mon start), ending in the week that contains ``anchor_date``.
+    Returns (payload oldest-first, count of weeks with miles > 0).
+    """
+    this_monday = _monday_of_calendar_week(anchor_date)
+    rows: List[Dict[str, Any]] = []
+    active_weeks = 0
+    for k in range(history_weeks - 1, -1, -1):
+        week_start = this_monday - timedelta(weeks=k)
+        week_end = week_start + timedelta(days=7)
+        miles = 0.0
+        for a in activities:
+            dt = _parse_activity_date(a.get("date"))
+            if dt is None:
+                continue
+            d = dt.date()
+            if week_start <= d < week_end:
+                try:
+                    miles += float(a.get("distance") or 0.0)
+                except (TypeError, ValueError):
+                    pass
+        rounded = round(miles, 1)
+        rows.append({"week_start": week_start.isoformat(), "miles": rounded})
+        if rounded > 0:
+            active_weeks += 1
+    return rows, active_weeks
+
+
+_EVIDENCE_HISTORY_ONLY_KEYS = frozenset(
+    {
+        "weekly_mileage_history",
+        "consistency_weeks_active_in_history",
+        "history_lookback_weeks",
+    }
+)
+
+
+def strip_runner_evidence_to_activity_summary(
+    evidence_api: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Drop Wave 3 history-only keys so ``activity_summary`` matches pre-Wave 3 shape."""
+    return {
+        k: v
+        for k, v in evidence_api.items()
+        if k != "schema_version" and k not in _EVIDENCE_HISTORY_ONLY_KEYS
+    }
+
+
+def _compute_plan_intake_activity_summary_from_activities(
+    activities: List[Dict[str, Any]],
+    *,
+    lookback_weeks: int,
+    anchor_local_date: date,
+) -> Dict[str, Any]:
+    w = lookback_weeks
+    anchor = anchor_local_date
+    n = len(activities)
+    total_miles = 0.0
+    for a in activities:
+        try:
+            total_miles += float(a.get("distance") or 0.0)
+        except (TypeError, ValueError):
+            continue
+    avg_week = (total_miles / float(w)) if w else 0.0
+    longest_miles = 0.0
+    longest_date: Optional[str] = None
+    if activities:
+        best = max(
+            activities,
+            key=lambda x: float(x.get("distance") or 0.0),
+        )
+        try:
+            longest_miles = float(best.get("distance") or 0.0)
+        except (TypeError, ValueError):
+            longest_miles = 0.0
+        ld = best.get("date")
+        longest_date = str(ld) if ld else None
+    latest_date: Optional[str] = None
+    if activities:
+        d0 = activities[0].get("date")
+        latest_date = str(d0) if d0 else None
+    weekly_stats = _weekly_mileage_stats(activities, w)
+    effort_stats = _effort_control_summary(activities)
+    perf_lr_stats = _performance_and_long_run_signals(
+        activities, anchor_date=anchor, lookback_weeks=w
+    )
+    cal_stats = _calendar_week_volume_stats(activities, anchor_date=anchor)
+    completed_n = int(cal_stats.get("completed_calendar_weeks_count") or 0)
+    avg_primary = (
+        float(cal_stats.get("avg_miles_completed_calendar_weeks") or 0.0)
+        if completed_n > 0
+        else avg_week
+    )
+    if completed_n > 0:
+        weekly_stats["weekly_miles_min_active"] = float(
+            cal_stats.get("weekly_miles_min_completed") or 0.0
+        )
+        weekly_stats["weekly_miles_max_active"] = float(
+            cal_stats.get("weekly_miles_max_completed") or 0.0
+        )
+
+    return {
+        "lookback_weeks": w,
+        "activities_found": n,
+        "has_running_data": n > 0,
+        "total_miles_window": round(total_miles, 1),
+        "avg_miles_per_week_raw_window": round(avg_week, 1),
+        "avg_miles_per_week_approx": round(avg_primary, 1),
+        "longest_run_miles": round(longest_miles, 1) if longest_miles else 0.0,
+        "longest_run_date": longest_date,
+        "latest_run_date": latest_date,
+        "runs_per_week_approx": round(n / float(w), 1) if w else 0.0,
+        **cal_stats,
+        **weekly_stats,
+        **effort_stats,
+        **perf_lr_stats,
+    }
 
 
 def _monday_of_calendar_week(d: date) -> date:
@@ -345,68 +500,45 @@ def compute_plan_intake_activity_summary(
         session, str(internal_user_id), weeks=w
     )
     anchor = anchor_local_date if anchor_local_date is not None else date.today()
-    n = len(activities)
-    total_miles = 0.0
-    for a in activities:
-        try:
-            total_miles += float(a.get("distance") or 0.0)
-        except (TypeError, ValueError):
-            continue
-    avg_week = (total_miles / float(w)) if w else 0.0
-    longest_miles = 0.0
-    longest_date: Optional[str] = None
-    if activities:
-        best = max(
-            activities,
-            key=lambda x: float(x.get("distance") or 0.0),
-        )
-        try:
-            longest_miles = float(best.get("distance") or 0.0)
-        except (TypeError, ValueError):
-            longest_miles = 0.0
-        ld = best.get("date")
-        longest_date = str(ld) if ld else None
-    latest_date: Optional[str] = None
-    if activities:
-        d0 = activities[0].get("date")
-        latest_date = str(d0) if d0 else None
-    weekly_stats = _weekly_mileage_stats(activities, w)
-    effort_stats = _effort_control_summary(activities)
-    perf_lr_stats = _performance_and_long_run_signals(
-        activities, anchor_date=anchor, lookback_weeks=w
+    return _compute_plan_intake_activity_summary_from_activities(
+        activities, lookback_weeks=w, anchor_local_date=anchor
     )
-    cal_stats = _calendar_week_volume_stats(activities, anchor_date=anchor)
-    completed_n = int(cal_stats.get("completed_calendar_weeks_count") or 0)
-    # Primary coaching baseline: typical complete weeks only (excludes partial current week).
-    avg_primary = (
-        float(cal_stats.get("avg_miles_completed_calendar_weeks") or 0.0)
-        if completed_n > 0
-        else avg_week
-    )
-    if completed_n > 0:
-        weekly_stats["weekly_miles_min_active"] = float(
-            cal_stats.get("weekly_miles_min_completed") or 0.0
-        )
-        weekly_stats["weekly_miles_max_active"] = float(
-            cal_stats.get("weekly_miles_max_completed") or 0.0
-        )
 
-    return {
-        "lookback_weeks": w,
-        "activities_found": n,
-        "has_running_data": n > 0,
-        "total_miles_window": round(total_miles, 1),
-        "avg_miles_per_week_raw_window": round(avg_week, 1),
-        "avg_miles_per_week_approx": round(avg_primary, 1),
-        "longest_run_miles": round(longest_miles, 1) if longest_miles else 0.0,
-        "longest_run_date": longest_date,
-        "latest_run_date": latest_date,
-        "runs_per_week_approx": round(n / float(w), 1) if w else 0.0,
-        **cal_stats,
-        **weekly_stats,
-        **effort_stats,
-        **perf_lr_stats,
+
+def build_runner_evidence(
+    session: Session,
+    internal_user_id: str,
+    *,
+    anchor_local_date: Optional[date] = None,
+) -> RunnerEvidenceSummary:
+    """
+    Single fetch for max(recent, history) weeks; packs recent summary + 12w history
+    into ``RunnerEvidenceSummary`` (includes ``weekly_mileage_history`` and
+    ``consistency_weeks_active_in_history``).
+    """
+    recent_w = _lookback_weeks_from_env()
+    history_w = _history_lookback_weeks_from_env()
+    fetch_w = max(recent_w, history_w)
+    activities: List[Dict[str, Any]] = DataCollectionService.fetch_strava_activities(
+        session, str(internal_user_id), weeks=fetch_w
+    )
+    anchor = anchor_local_date if anchor_local_date is not None else date.today()
+    recent_activities = _filter_activities_to_lookback(
+        activities, anchor_date=anchor, lookback_weeks=recent_w
+    )
+    summary = _compute_plan_intake_activity_summary_from_activities(
+        recent_activities, lookback_weeks=recent_w, anchor_local_date=anchor
+    )
+    history_rows, consistency = _weekly_mileage_history_for_calendar_weeks(
+        activities, anchor_date=anchor, history_weeks=history_w
+    )
+    merged = {
+        **summary,
+        "weekly_mileage_history": history_rows,
+        "consistency_weeks_active_in_history": consistency,
+        "history_lookback_weeks": history_w,
     }
+    return RunnerEvidenceSummary.from_activity_summary(merged)
 
 
 def format_plan_intake_activity_context_block(summary: Dict[str, Any]) -> str:

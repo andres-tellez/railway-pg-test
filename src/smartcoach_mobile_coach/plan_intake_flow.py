@@ -156,9 +156,27 @@ def _recompute_alignment_branch(
         qc = len(asked)
     qc = max(0, min(3, qc))
 
+    ambition_attr = [
+        str(x)
+        for x in list(alignment.get("ambition_attributions") or [])
+        if isinstance(x, str)
+    ]
+    if not ambition_attr:
+        ambition_attr = [
+            str(x)
+            for x in list(alignment.get("attributions") or [])
+            if isinstance(x, str)
+            and (
+                x.startswith("STANCE_")
+                or x.startswith("RULE_GOAL_")
+                or x.startswith("RULE_BASELINE_")
+                or x.startswith("RULE_LONGEST_")
+            )
+        ]
     ast = evaluate_intake_alignment_state(
         ambition_stance=str(stance),
         primary_goal=str(draft.get("primary_goal") or ""),
+        ambition_attributions=ambition_attr,
         frequency_flexible=answers.get("frequency_flexible"),
         posture_priority=answers.get("posture_priority"),
         timeline_flexible=answers.get("timeline_flexible"),

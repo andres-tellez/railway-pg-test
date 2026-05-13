@@ -7,6 +7,9 @@ and stated goal intent. Produces discrete stances and explicit rule attributions
 Does NOT: compute training loads, weekly targets, long-run progression, or call planner code.
 
 Semantic hygiene (v1, intentionally coarse):
+- ``stance`` is a legacy snapshot for APIs and display. Prefer ``attributions`` (and
+  especially ``STANCE_*`` codes) for branching in readiness and alignment—do not add
+  new logic keyed only on ``stance``.
 - ``stance`` value ``COHERENT`` is overloaded: finish intent, non-time goal copy, and
   time-goal + established baseline all map here. Disambiguate using ``attributions``,
   not extra stance enums—avoid state-machine expansion in this phase.
@@ -21,10 +24,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-# --- Baseline bands (explicit, single place; not a tuning framework) ---
-# Aligns loosely with "low / moderate / established" habitual volume narratives.
-_MPW_THIN_MAX = 15.0
-_MPW_MODERATE_MAX = 30.0
+from src.coaching_intelligence.policy.policy_table import (
+    mpw_moderate_max,
+    mpw_thin_max,
+)
 
 
 def evaluate_ambition_gap(
@@ -58,10 +61,10 @@ def evaluate_ambition_gap(
         attributions.append("RULE_LONGEST_RUN_MISSING_OR_ZERO")
 
     # 1) Baseline band (ordered thresholds)
-    if weekly_mileage < _MPW_THIN_MAX:
+    if weekly_mileage < mpw_thin_max:
         baseline_band = "THIN"
         attributions.append("RULE_BASELINE_BAND_THIN")
-    elif weekly_mileage < _MPW_MODERATE_MAX:
+    elif weekly_mileage < mpw_moderate_max:
         baseline_band = "MODERATE"
         attributions.append("RULE_BASELINE_BAND_MODERATE")
     else:

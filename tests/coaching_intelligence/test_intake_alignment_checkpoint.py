@@ -2,8 +2,24 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from src.coaching_intelligence.contracts.runner_evidence import RunnerEvidenceSummary
 from src.coaching_intelligence import pre_generation_runner_assessment as pgra
 from src.smartcoach_mobile_coach import agent_tools
+
+
+def _stub_evidence(**fields):
+    merged = {
+        "lookback_weeks": 6,
+        "activities_found": int(fields.get("activities_found") or 0),
+        "has_running_data": int(fields.get("activities_found") or 0) > 0,
+        "total_miles_window": 0.0,
+        "avg_miles_per_week_raw_window": 0.0,
+        "weekly_mileage_history": [],
+        "consistency_weeks_active_in_history": 0,
+        "history_lookback_weeks": 12,
+        **fields,
+    }
+    return RunnerEvidenceSummary.from_activity_summary(merged)
 
 
 def _state() -> dict:
@@ -33,12 +49,12 @@ def test_generate_plan_pauses_for_high_tension_when_alignment_enabled(monkeypatc
     )
     monkeypatch.setattr(
         pgra,
-        "compute_plan_intake_activity_summary",
-        lambda **_kwargs: {
-            "avg_miles_per_week_approx": 10.0,
-            "longest_run_miles": 8.0,
-            "activities_found": 8,
-        },
+        "build_runner_evidence",
+        lambda *_a, **_k: _stub_evidence(
+            avg_miles_per_week_approx=10.0,
+            longest_run_miles=8.0,
+            activities_found=8,
+        ),
     )
     monkeypatch.setattr(
         pgra,
@@ -80,12 +96,20 @@ def test_generate_plan_coherent_path_still_invokes_planner(monkeypatch):
     )
     monkeypatch.setattr(
         pgra,
-        "compute_plan_intake_activity_summary",
-        lambda **_kwargs: {
-            "avg_miles_per_week_approx": 40.0,
-            "longest_run_miles": 16.0,
-            "activities_found": 16,
-        },
+        "build_runner_evidence",
+        lambda *_a, **_k: _stub_evidence(
+            avg_miles_per_week_approx=40.0,
+            longest_run_miles=16.0,
+            activities_found=16,
+            # Sub-3 competitive profile + missing pattern fields used to trigger
+            # RULE_PERFORMANCE_PACE_DATA_THIN / RULE_LONG_RUN_PATTERN_THIN and
+            # escalate stretch → high_risk (readiness defer) before the planner runs.
+            pace_reliability="high",
+            typical_easy_pace_sec_per_mi=480.0,
+            best_sustained_endurance_pace_sec_per_mi=430.0,
+            long_runs_ge_10_mi_count=4,
+            weeks_with_long_run_10plus=3,
+        ),
     )
     monkeypatch.setattr(
         pgra,
@@ -127,12 +151,12 @@ def test_feature_flag_off_preserves_legacy_generation_path(monkeypatch):
     )
     monkeypatch.setattr(
         pgra,
-        "compute_plan_intake_activity_summary",
-        lambda **_kwargs: {
-            "avg_miles_per_week_approx": 30.0,
-            "longest_run_miles": 10.0,
-            "activities_found": 10,
-        },
+        "build_runner_evidence",
+        lambda *_a, **_k: _stub_evidence(
+            avg_miles_per_week_approx=30.0,
+            longest_run_miles=10.0,
+            activities_found=10,
+        ),
     )
 
     def _ambition_gap_must_not_run(**_kwargs):
@@ -178,12 +202,12 @@ def test_high_tension_resolved_still_obeys_readiness_gate(monkeypatch):
     )
     monkeypatch.setattr(
         pgra,
-        "compute_plan_intake_activity_summary",
-        lambda **_kwargs: {
-            "avg_miles_per_week_approx": 10.0,
-            "longest_run_miles": 8.0,
-            "activities_found": 8,
-        },
+        "build_runner_evidence",
+        lambda *_a, **_k: _stub_evidence(
+            avg_miles_per_week_approx=10.0,
+            longest_run_miles=8.0,
+            activities_found=8,
+        ),
     )
     monkeypatch.setattr(
         pgra,

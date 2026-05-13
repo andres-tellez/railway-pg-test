@@ -33,6 +33,9 @@ from src.coaching_intelligence.plan_generation_readiness import (
     STATUS_WARN,
     evaluate_plan_generation_readiness,
 )
+from tests.coaching_intelligence.ambition_gap_fixtures import (
+    synthetic_ambition_attributions,
+)
 
 
 def _race_date(weeks: int = 24) -> str:
@@ -61,6 +64,7 @@ def _assessment(
     goal_demand: str = "TIME_TARGET",
     alignment_ready: bool = True,
     unresolved_flags: list[str] | None = None,
+    target_time_present: bool = True,
     **activity_extras: Any,
 ) -> dict:
     act: dict = {
@@ -71,6 +75,14 @@ def _assessment(
         "completed_calendar_weeks_count": 4 if activities_found > 0 else 0,
     }
     act.update(activity_extras)
+    thin = avg_mpw <= 0
+    attr = synthetic_ambition_attributions(
+        baseline_band=baseline_band,
+        goal_demand=goal_demand,
+        thin_baseline_data=thin,
+        longest_run_miles=float(longest),
+        target_time_present=target_time_present,
+    )
     return {
         "schema_version": "pre_generation_runner_assessment.v1",
         "activity_summary": act,
@@ -78,8 +90,8 @@ def _assessment(
             "stance": stance,
             "baseline_band": baseline_band,
             "goal_demand": goal_demand,
-            "thin_baseline_data": avg_mpw <= 0,
-            "attributions": [],
+            "thin_baseline_data": thin,
+            "attributions": attr,
         },
         "intake_alignment_state": {
             "generation_ready": alignment_ready,

@@ -14,6 +14,9 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     update_plan_intake_state,
     user_confirms_plan_intake,
 )
+from tests.coaching_intelligence.ambition_gap_fixtures import (
+    synthetic_ambition_attributions,
+)
 
 
 def test_plan_intake_missing_required_order_for_empty_draft():
@@ -84,9 +87,16 @@ def test_alignment_state_refreshes_after_frequency_structured_answer(monkeypatch
             "training_days": ["Mon", "Tue", "Sun"],
         },
     )
+    _ag_attr = synthetic_ambition_attributions(
+        baseline_band="THIN",
+        goal_demand="TIME_TARGET",
+        thin_baseline_data=False,
+        longest_run_miles=8.0,
+    )
     stale_alignment = {
         "enabled": True,
         "ambition_stance": "HIGH_TENSION",
+        "ambition_attributions": list(_ag_attr),
         "baseline_band": "THIN",
         "goal_demand": "TIME_TARGET",
         "answers": {},
@@ -103,7 +113,7 @@ def test_alignment_state_refreshes_after_frequency_structured_answer(monkeypatch
             "attributions": [],
             "question_count": 0,
         },
-        "attributions": [],
+        "attributions": list(_ag_attr),
     }
     base["alignment"] = stale_alignment
     out = update_plan_intake_state(

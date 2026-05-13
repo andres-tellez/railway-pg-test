@@ -34,14 +34,16 @@ from sqlalchemy.orm import Session
 from src.coaching_intelligence.ambition_gap import evaluate_ambition_gap
 from src.coaching_intelligence.intake_alignment import evaluate_intake_alignment_state
 from src.smartcoach_mobile_coach.plan_intake_activity_context import (
-    compute_plan_intake_activity_summary,
+    build_runner_evidence,
+    strip_runner_evidence_to_activity_summary,
 )
 
 
 SCHEMA_VERSION = "pre_generation_runner_assessment.v1"
 
 _PROVENANCE = [
-    "src.smartcoach_mobile_coach.plan_intake_activity_context.compute_plan_intake_activity_summary",
+    "build_runner_evidence / strip_runner_evidence_to_activity_summary "
+    "(src.smartcoach_mobile_coach.plan_intake_activity_context)",
     "src.coaching_intelligence.ambition_gap.evaluate_ambition_gap",
     "src.coaching_intelligence.intake_alignment.evaluate_intake_alignment_state",
     "src.services.coach.user_plan_memory_service (optional coach_memory stats only)",
@@ -115,8 +117,10 @@ class PreGenerationRunnerAssessmentV1:
     schema_version: str
     computed_at: str
     user_id: str
+    evidence_snapshot_id: str
     activity_summary: Dict[str, Any]
     plan_request_digest: Dict[str, Any]
+    runner_evidence: Dict[str, Any]
     ambition_gap: Optional[Dict[str, Any]]
     intake_alignment_state: Optional[Dict[str, Any]]
     coach_memory: Optional[Dict[str, Any]]
@@ -126,7 +130,9 @@ class PreGenerationRunnerAssessmentV1:
             "schema_version": self.schema_version,
             "computed_at": self.computed_at,
             "user_id": self.user_id,
+            "evidence_snapshot_id": self.evidence_snapshot_id,
             "activity_summary": self.activity_summary,
+            "runner_evidence": self.runner_evidence,
             "plan_request_digest": self.plan_request_digest,
             "provenance": list(_PROVENANCE),
         }
@@ -150,13 +156,14 @@ def build_pre_generation_runner_assessment(
     """
     Single place for activity summary + optional ambition/alignment evaluation.
 
-    When ``alignment_enabled`` is False, only ``activity_summary`` is populated for
-    analytics fields; ambition and intake alignment entries are omitted from the snapshot.
+    When ``alignment_enabled`` is False, only ``activity_summary`` / ``runner_evidence``
+    is populated for analytics fields; ambition and intake alignment entries are omitted
+    from the snapshot.
     """
-    summary = compute_plan_intake_activity_summary(
-        session=session,
-        internal_user_id=str(user_id),
-    )
+    evidence_snapshot_id = str(uuid.uuid4())
+    ev = build_runner_evidence(session, str(user_id))
+    ev_api = ev.to_api_dict()
+    summary = strip_runner_evidence_to_activity_summary(ev_api)
     digest = _plan_request_digest(plan_request)
     coach_memory = _coach_memory_stats(session, user_id)
 
@@ -176,6 +183,7 @@ def build_pre_generation_runner_assessment(
         alignment_state = evaluate_intake_alignment_state(
             ambition_stance=str(ambition.get("stance") or ""),
             primary_goal=str(plan_request.get("primary_goal") or ""),
+            ambition_attributions=list(ambition.get("attributions") or []),
             frequency_flexible=prior_answers.get("frequency_flexible"),
             posture_priority=prior_answers.get("posture_priority"),
             timeline_flexible=prior_answers.get("timeline_flexible"),
@@ -186,7 +194,9 @@ def build_pre_generation_runner_assessment(
         schema_version=SCHEMA_VERSION,
         computed_at=datetime.now(timezone.utc).isoformat(),
         user_id=str(user_id),
+        evidence_snapshot_id=evidence_snapshot_id,
         activity_summary=dict(summary),
+        runner_evidence=dict(ev_api),
         plan_request_digest=digest,
         ambition_gap=ambition,
         intake_alignment_state=alignment_state,

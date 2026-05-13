@@ -9,6 +9,9 @@ from src.coaching_intelligence.pre_generation_runner_review import (
     classify_assessment_status_v1,
     pre_generation_runner_review_system_section,
 )
+from tests.coaching_intelligence.ambition_gap_fixtures import (
+    synthetic_ambition_attributions,
+)
 
 
 def _marathon_target_time_plan(
@@ -34,6 +37,13 @@ def _coherent_marathon_target_time_assessment() -> dict:
             "stance": "COHERENT",
             "baseline_band": "ESTABLISHED",
             "goal_demand": "TIME_TARGET",
+            "thin_baseline_data": False,
+            "attributions": synthetic_ambition_attributions(
+                baseline_band="ESTABLISHED",
+                goal_demand="TIME_TARGET",
+                thin_baseline_data=False,
+                longest_run_miles=18.0,
+            ),
         },
         "intake_alignment_state": {
             "generation_ready": True,
@@ -46,6 +56,8 @@ def _base_plan_request() -> dict:
     return {
         "primary_goal": "Just Finish",
         "race_distance": "Marathon",
+        "race_date": "2027-06-01",
+        "training_days": ["Mon", "Wed", "Sat"],
     }
 
 
@@ -61,7 +73,15 @@ def test_classify_empty_activity_is_needs_user_decision():
         },
         "ambition_gap": {
             "stance": "COHERENT",
-            "thin_baseline_data": False,
+            "baseline_band": "THIN",
+            "goal_demand": "FINISH",
+            "thin_baseline_data": True,
+            "attributions": synthetic_ambition_attributions(
+                baseline_band="THIN",
+                goal_demand="FINISH",
+                thin_baseline_data=True,
+                longest_run_miles=0.0,
+            ),
         },
     }
     assert (
@@ -83,7 +103,18 @@ def test_classify_unresolved_alignment_flags_is_needs_more_info():
             "generation_ready": False,
             "unresolved_flags": ["frequency_flexibility"],
         },
-        "ambition_gap": {"stance": "MANAGEABLE_TENSION"},
+        "ambition_gap": {
+            "stance": "MANAGEABLE_TENSION",
+            "baseline_band": "MODERATE",
+            "goal_demand": "TIME_TARGET",
+            "thin_baseline_data": False,
+            "attributions": synthetic_ambition_attributions(
+                baseline_band="MODERATE",
+                goal_demand="TIME_TARGET",
+                thin_baseline_data=False,
+                longest_run_miles=10.0,
+            ),
+        },
     }
     assert (
         classify_assessment_status_v1(
@@ -164,16 +195,21 @@ def test_classify_coherent_path_ready_to_generate():
         },
         "ambition_gap": {
             "stance": "COHERENT",
+            "baseline_band": "MODERATE",
+            "goal_demand": "FINISH",
             "thin_baseline_data": False,
+            "attributions": synthetic_ambition_attributions(
+                baseline_band="MODERATE",
+                goal_demand="FINISH",
+                thin_baseline_data=False,
+                longest_run_miles=10.0,
+            ),
         },
     }
     assert (
         classify_assessment_status_v1(
             assessment_api=assessment_api,
-            plan_request={
-                "primary_goal": "Just Finish",
-                "race_distance": "Marathon",
-            },
+            plan_request=_base_plan_request(),
         )
         == STATUS_READY
     )
@@ -186,7 +222,18 @@ def test_as_api_dict_shape():
             "generation_ready": True,
             "unresolved_flags": [],
         },
-        "ambition_gap": {"stance": "COHERENT"},
+        "ambition_gap": {
+            "stance": "COHERENT",
+            "baseline_band": "MODERATE",
+            "goal_demand": "FINISH",
+            "thin_baseline_data": False,
+            "attributions": synthetic_ambition_attributions(
+                baseline_band="MODERATE",
+                goal_demand="FINISH",
+                thin_baseline_data=False,
+                longest_run_miles=8.0,
+            ),
+        },
     }
     review = build_pre_generation_runner_review_v1(
         assessment_api=assessment_api,
@@ -212,7 +259,18 @@ def test_pre_generation_runner_review_system_section_non_empty():
             "generation_ready": True,
             "unresolved_flags": [],
         },
-        "ambition_gap": {"stance": "COHERENT"},
+        "ambition_gap": {
+            "stance": "COHERENT",
+            "baseline_band": "MODERATE",
+            "goal_demand": "FINISH",
+            "thin_baseline_data": False,
+            "attributions": synthetic_ambition_attributions(
+                baseline_band="MODERATE",
+                goal_demand="FINISH",
+                thin_baseline_data=False,
+                longest_run_miles=8.0,
+            ),
+        },
     }
     review = build_pre_generation_runner_review_v1(
         assessment_api=assessment_api,

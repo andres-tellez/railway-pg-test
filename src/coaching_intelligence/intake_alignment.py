@@ -5,11 +5,14 @@ This module is intentionally narrow and read-only:
 - no planner imports
 - no load/volume computation
 - no hidden heuristics
+
+Legacy ``ambition_stance`` + compatibility rules vs attribution-first tension: see
+``docs/plan_cleanup_tracker.md`` (ambition / readiness section).
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 _POSTURE_VALUES = frozenset({"PERFORMANCE_LEANING", "BALANCED", "DURABILITY_FIRST"})
 
@@ -17,6 +20,29 @@ _POSTURE_VALUES = frozenset({"PERFORMANCE_LEANING", "BALANCED", "DURABILITY_FIRS
 _RESOLVABLE_UI_CATEGORIES = ("frequency_flexibility",)
 _OPTIONAL_CATEGORIES = ("timeline_flexibility",)
 _MAX_QUESTIONS = 3
+
+_STANCE_HIGH_TENSION_TIME_VS_THIN = "STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE"
+_STANCE_MANAGEABLE_TENSION_TIME_VS_MODERATE = (
+    "STANCE_MANAGEABLE_TENSION_TIME_VS_MODERATE_BASELINE"
+)
+
+
+def _effective_ambition_stance(
+    *,
+    ambition_stance: str,
+    ambition_attributions: Optional[Sequence[str]],
+) -> str:
+    """
+    Prefer ambition-gap attributions for tension when present so branching stays
+    consistent with readiness; fall back to legacy stance for older callers.
+    """
+    if ambition_attributions:
+        codes = {str(x).strip() for x in ambition_attributions if x}
+        if _STANCE_HIGH_TENSION_TIME_VS_THIN in codes:
+            return "HIGH_TENSION"
+        if _STANCE_MANAGEABLE_TENSION_TIME_VS_MODERATE in codes:
+            return "MANAGEABLE_TENSION"
+    return ambition_stance
 
 
 def _infer_posture_mvp(
@@ -72,6 +98,7 @@ def evaluate_intake_alignment_state(
     *,
     ambition_stance: str,
     primary_goal: Optional[str],
+    ambition_attributions: Optional[Sequence[str]] = None,
     frequency_flexible: Any = None,
     posture_priority: Any = None,
     timeline_flexible: Any = None,
@@ -91,7 +118,11 @@ def evaluate_intake_alignment_state(
     goal = (primary_goal or "").strip().lower()
     is_target_time_goal = goal == "target time"
 
-    pause_required = is_target_time_goal and ambition_stance in (
+    effective_stance = _effective_ambition_stance(
+        ambition_stance=ambition_stance,
+        ambition_attributions=ambition_attributions,
+    )
+    pause_required = is_target_time_goal and effective_stance in (
         "HIGH_TENSION",
         "MANAGEABLE_TENSION",
     )
@@ -117,7 +148,7 @@ def evaluate_intake_alignment_state(
             unresolved_flags.append("frequency_flexibility")
         # Posture is inferred once frequency is known — never block MVP on posture chips.
         if (
-            ambition_stance == "HIGH_TENSION"
+            effective_stance == "HIGH_TENSION"
             and freq_flexible is False
             and timeline is None
             and "frequency_flexibility" not in unresolved_flags

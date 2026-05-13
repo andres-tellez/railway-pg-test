@@ -19,7 +19,9 @@ and keeps **one** policy surface in this module.
 - **completion** — finish / no target time / first marathon or just-finish wording.
 - **moderate_performance** — PR, strong finish, or marathon target time **strictly slower than 3:30:00**.
 - **competitive_performance** — marathon **<= 3:30:00**, sub-3 branch, BQ-style intent, or
-  **HIGH_TENSION** with a time goal (aggressive vs baseline).
+  thin-baseline time-target tension (see ``STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE`` in
+  ambition ``attributions``; ``ambition_gap.stance`` is legacy for snapshots only).
+  Readiness gates on tension use attributions only — see ``docs/plan_cleanup_tracker.md``.
 """
 
 from __future__ import annotations
@@ -27,6 +29,41 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+
+from src.coaching_intelligence.policy.deficits import compute_deficits
+from src.coaching_intelligence.policy.demand import (
+    compute_demand_score,
+    interpolated_pace_gap_thresholds,
+    pace_missing_triggers_thin_data,
+)
+from src.coaching_intelligence.policy.suggestions import derive_suggestions
+from src.coaching_intelligence.policy.policy_table import (
+    POLICY_VERSION,
+    competitive_marathon_max_seconds as _COMPETITIVE_MARATHON_MAX_SECONDS,
+    competitive_perf_easy_gap_bad_sec,
+    competitive_perf_easy_gap_warn_sec,
+    competitive_perf_sustained_gap_bad_sec,
+    competitive_perf_sustained_gap_warn_sec,
+    completion_marathon_critical_weeks as _COMPLETION_MARATHON_CRITICAL_WEEKS,
+    completion_marathon_short_ramp_long_run_mi,
+    completion_marathon_short_ramp_mpw,
+    consistency_active_week_ratio_warn as _CONSISTENCY_ACTIVE_WEEK_RATIO_WARN,
+    consistency_lookback_min_weeks as _CONSISTENCY_LOOKBACK_MIN_WEEKS,
+    consistency_min_completed_weeks_for_spread as _CONSISTENCY_MIN_COMPLETED_WEEKS_FOR_SPREAD,
+    consistency_weekly_spread_mi_warn as _CONSISTENCY_WEEKLY_SPREAD_MI_WARN,
+    effort_control_min_runs as _EFFORT_CONTROL_MIN_RUNS,
+    longest_run_durability_floor_mi,
+    marathon_distance_mi as _MARATHON_DISTANCE_MI,
+    moderate_perf_easy_gap_warn_sec as _MODERATE_PERF_EASY_GAP_WARN_SEC,
+    moderate_perf_sustained_gap_warn_sec as _MODERATE_PERF_SUSTAINED_GAP_WARN_SEC,
+    required_plan_fields as _REQUIRED_PLAN_FIELDS,
+    short_timeline_weeks as _SHORT_TIMELINE_WEEKS,
+    sub3_adequate_long_run_miles as _SUB3_ADEQUATE_LONG_RUN_MILES,
+    sub3_established_min_mpw as _SUB3_ESTABLISHED_MIN_MPW,
+    sub3_seconds as _SUB3_SECONDS,
+    sub3_short_long_run_miles as _SUB3_SHORT_LONG_RUN_MILES,
+    sub3_very_low_mpw as _SUB3_VERY_LOW_MPW,
+)
 
 
 def _json_safe_scalar(value: Any) -> Any:
@@ -122,28 +159,6 @@ _DEVELOPMENTAL_MODERATE_MARATHON_RECOMMENDED_PATH: Dict[str, str] = {
         "Create the plan with a patience-first mindset — prioritize consistency and durable long runs."
     ),
 }
-
-_SUB3_SECONDS = 3 * 60 * 60
-# Marathon clock <= 3:30:00 inclusive → competitive; strictly slower → moderate.
-_COMPETITIVE_MARATHON_MAX_SECONDS = 3 * 3600 + 30 * 60  # 3:30:00
-_MARATHON_DISTANCE_MI = 26.2
-_SUB3_ESTABLISHED_MIN_MPW = 30.0
-_SUB3_ADEQUATE_LONG_RUN_MILES = 14.0
-_SUB3_VERY_LOW_MPW = 20.0
-_SUB3_SHORT_LONG_RUN_MILES = 10.0
-_SHORT_TIMELINE_WEEKS = 16.0
-_COMPLETION_MARATHON_CRITICAL_WEEKS = 8.0
-_CONSISTENCY_LOOKBACK_MIN_WEEKS = 4
-_CONSISTENCY_ACTIVE_WEEK_RATIO_WARN = 0.35
-_CONSISTENCY_WEEKLY_SPREAD_MI_WARN = 30.0
-_CONSISTENCY_MIN_COMPLETED_WEEKS_FOR_SPREAD = 3
-_EFFORT_CONTROL_MIN_RUNS = 4
-
-# Moderate marathon time goals — softer pace-vs-goal gates than competitive (sec/mi behind goal pace).
-_MODERATE_PERF_EASY_GAP_WARN_SEC = 50.0
-_MODERATE_PERF_SUSTAINED_GAP_WARN_SEC = 45.0
-
-_REQUIRED_PLAN_FIELDS = ("race_distance", "race_date", "primary_goal", "training_days")
 
 # Distinct from competitive ``RULE_PERFORMANCE_*`` — developmental WARN for moderate profile only.
 RULE_MODERATE_PERFORMANCE_PACE_GAP = "RULE_MODERATE_PERFORMANCE_PACE_GAP"
@@ -261,11 +276,21 @@ def _fmt_pace_min_mi(sec_per_mi: float) -> str:
 def _assessment_parts(
     assessment_api: Dict[str, Any],
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-    activity = assessment_api.get("activity_summary")
+    activity_raw = assessment_api.get("activity_summary")
+    activity = dict(activity_raw) if isinstance(activity_raw, dict) else {}
+    rev = assessment_api.get("runner_evidence")
+    if isinstance(rev, dict):
+        for k in (
+            "weekly_mileage_history",
+            "consistency_weeks_active_in_history",
+            "history_lookback_weeks",
+        ):
+            if k in rev:
+                activity[k] = rev[k]
     ambition = assessment_api.get("ambition_gap")
     alignment = assessment_api.get("intake_alignment_state")
     return (
-        activity if isinstance(activity, dict) else {},
+        activity,
         ambition if isinstance(ambition, dict) else {},
         alignment if isinstance(alignment, dict) else {},
     )
@@ -315,7 +340,30 @@ class _ReadinessBuilder:
 
     @property
     def ambition_stance(self) -> str:
+        """Legacy snapshot field from ``ambition_gap`` — prefer ``ambition_attribution_codes`` for branching."""
         return str(self.ambition.get("stance") or "").strip()
+
+    def ambition_attribution_codes(self) -> Set[str]:
+        raw = self.ambition.get("attributions") or []
+        return {str(x).strip() for x in raw if str(x).strip()}
+
+    def ambition_insufficient_goal_context(self) -> bool:
+        if self.goal_demand == "UNSPECIFIED":
+            return True
+        return "STANCE_INSUFFICIENT_GOAL_CONTEXT" in self.ambition_attribution_codes()
+
+    def ambition_time_goal_tension(self) -> bool:
+        s = self.ambition_attribution_codes()
+        return (
+            "STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE" in s
+            or "STANCE_MANAGEABLE_TENSION_TIME_VS_MODERATE_BASELINE" in s
+        )
+
+    def ambition_high_tension_thin_baseline(self) -> bool:
+        return (
+            "STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE"
+            in self.ambition_attribution_codes()
+        )
 
     @property
     def weeks_to_race(self) -> Optional[float]:
@@ -397,7 +445,7 @@ def _infer_goal_profile(builder: _ReadinessBuilder) -> str:
 
     Sub-3 (<= 3:00:00 marathon time goal) is always competitive and keeps the
     existing highest-demand evaluation branch. BQ wording, marathon <= 3:30, or
-    HIGH_TENSION on a time goal → competitive; else marathon time slower than
+    thin-baseline time-target tension (ambition attribution) → competitive; else marathon time slower than
     3:30 → moderate.
     """
     if builder.is_sub3_marathon:
@@ -415,7 +463,7 @@ def _infer_goal_profile(builder: _ReadinessBuilder) -> str:
         if _is_marathon(builder.plan_request):
             if _bq_marathon_intent(builder.plan_request):
                 return GOAL_PROFILE_COMPETITIVE_PERFORMANCE
-            if builder.ambition_stance == "HIGH_TENSION":
+            if builder.ambition_high_tension_thin_baseline():
                 return GOAL_PROFILE_COMPETITIVE_PERFORMANCE
             secs = _parse_clock_seconds(builder.plan_request.get("target_time"))
             if secs is not None and secs <= _COMPETITIVE_MARATHON_MAX_SECONDS:
@@ -456,66 +504,72 @@ def _category_applies_to_goal(
     return True
 
 
-def _apply_competitive_marathon_pace_rules(
+def _apply_marathon_pace_alignment(
     builder: _ReadinessBuilder,
     plan_request: Dict[str, Any],
     goal_pace: float,
+    demand_score: float,
+    goal_profile: str,
 ) -> None:
-    """Strict performance alignment — sub-3 / BQ-class competitive marathon time goals."""
+    """Interpolate competitive vs moderate pace gates using continuous ``demand_score`` (Wave 4)."""
+    _ = plan_request
     rel = str(builder.activity.get("pace_reliability") or "none")
+    if rel in ("none", "low"):
+        if pace_missing_triggers_thin_data(demand_score):
+            builder.add_reason("RULE_PERFORMANCE_PACE_DATA_THIN")
+            builder.add_limiting_factor("thin_pace_data_for_time_goal")
+        return
+
+    ew, eb, sw, sb = interpolated_pace_gap_thresholds(
+        demand_score,
+        moderate_easy_warn=_MODERATE_PERF_EASY_GAP_WARN_SEC,
+        moderate_sustained_warn=_MODERATE_PERF_SUSTAINED_GAP_WARN_SEC,
+        competitive_easy_warn=competitive_perf_easy_gap_warn_sec,
+        competitive_easy_bad=competitive_perf_easy_gap_bad_sec,
+        competitive_sustained_warn=competitive_perf_sustained_gap_warn_sec,
+        competitive_sustained_bad=competitive_perf_sustained_gap_bad_sec,
+    )
     easy = _safe_float(builder.activity.get("typical_easy_pace_sec_per_mi"))
     sustained = _safe_float(
         builder.activity.get("best_sustained_endurance_pace_sec_per_mi")
     )
-
-    if rel in ("none", "low"):
-        builder.add_reason("RULE_PERFORMANCE_PACE_DATA_THIN")
-        builder.add_limiting_factor("thin_pace_data_for_time_goal")
-        return
+    t = max(0.0, min(1.0, float(demand_score)))
+    merge_moderate_style = goal_profile == GOAL_PROFILE_MODERATE_PERFORMANCE or t <= 0.5
+    easy_bad_hit = False
+    sus_bad_hit = False
+    merged_dev = False
 
     if easy is not None:
         gap = easy - goal_pace
-        if gap > 115:
+        if gap > eb:
+            easy_bad_hit = True
             builder.add_reason("RULE_PERFORMANCE_LARGE_GAP_EASY_VS_GOAL_PACE")
             builder.add_limiting_factor(
                 "observed_easy_pace_far_from_goal_marathon_pace"
             )
             builder.require("adjust_goal")
-        elif gap > 72:
-            builder.add_reason("RULE_PERFORMANCE_MODERATE_GAP_EASY_VS_GOAL_PACE")
+        elif gap > ew:
+            if merge_moderate_style:
+                merged_dev = True
+            else:
+                builder.add_reason("RULE_PERFORMANCE_MODERATE_GAP_EASY_VS_GOAL_PACE")
 
     if sustained is not None:
         gap_s = sustained - goal_pace
-        if gap_s > 95:
+        if gap_s > sb:
+            sus_bad_hit = True
             builder.add_reason("RULE_PERFORMANCE_NO_SUSTAINED_PACE_NEAR_GOAL")
             builder.add_limiting_factor(
                 "sustained_run_pace_not_near_goal_marathon_pace"
             )
             builder.require("adjust_goal")
-        elif gap_s > 58:
-            builder.add_reason("RULE_PERFORMANCE_STRETCH_SUSTAINED_VS_GOAL")
+        elif gap_s > sw:
+            if merge_moderate_style:
+                merged_dev = True
+            else:
+                builder.add_reason("RULE_PERFORMANCE_STRETCH_SUSTAINED_VS_GOAL")
 
-
-def _apply_moderate_marathon_pace_rules(
-    builder: _ReadinessBuilder,
-    plan_request: Dict[str, Any],
-    goal_pace: float,
-) -> None:
-    """Developmental pace alignment for moderate marathon time goals — WARN only, no goal requirement."""
-    _ = plan_request
-    rel = str(builder.activity.get("pace_reliability") or "none")
-    if rel in ("none", "low"):
-        return
-    easy = _safe_float(builder.activity.get("typical_easy_pace_sec_per_mi"))
-    sustained = _safe_float(
-        builder.activity.get("best_sustained_endurance_pace_sec_per_mi")
-    )
-    easy_gap = (easy - goal_pace) if easy is not None else None
-    sustained_gap = (sustained - goal_pace) if sustained is not None else None
-    if (easy_gap is not None and easy_gap > _MODERATE_PERF_EASY_GAP_WARN_SEC) or (
-        sustained_gap is not None
-        and sustained_gap > _MODERATE_PERF_SUSTAINED_GAP_WARN_SEC
-    ):
+    if merged_dev and not easy_bad_hit and not sus_bad_hit:
         builder.add_reason(RULE_MODERATE_PERFORMANCE_PACE_GAP)
         builder.add_limiting_factor("moderate_time_goal_pace_still_developmental")
 
@@ -525,7 +579,7 @@ def _apply_marathon_performance_alignment_rules(
     goal_profile: str,
     plan_request: Dict[str, Any],
 ) -> None:
-    """Marathon target-time pace vs goal — competitive (strict) or moderate (developmental WARN)."""
+    """Marathon target-time pace vs goal — interpolated by goal demand (Wave 4)."""
     if goal_profile == GOAL_PROFILE_COMPLETION:
         return
     if not (_is_marathon(plan_request) and _is_target_time_goal(plan_request)):
@@ -533,10 +587,11 @@ def _apply_marathon_performance_alignment_rules(
     goal_pace = _marathon_goal_pace_sec_per_mi(plan_request)
     if goal_pace is None:
         return
-    if goal_profile == GOAL_PROFILE_COMPETITIVE_PERFORMANCE:
-        _apply_competitive_marathon_pace_rules(builder, plan_request, goal_pace)
-    elif goal_profile == GOAL_PROFILE_MODERATE_PERFORMANCE:
-        _apply_moderate_marathon_pace_rules(builder, plan_request, goal_pace)
+    rd = str(plan_request.get("race_distance") or "")
+    demand = compute_demand_score(goal_pace, rd)
+    _apply_marathon_pace_alignment(
+        builder, plan_request, goal_pace, demand, goal_profile
+    )
 
 
 def _moderate_marathon_compound_stress_count(
@@ -558,11 +613,11 @@ def _moderate_marathon_compound_stress_count(
         "RULE_CONSISTENCY_HIGH_WEEKLY_VARIANCE",
     }:
         n += 1
-    if 0 < builder.longest_run_miles < 8.0:
+    if 0 < builder.longest_run_miles < longest_run_durability_floor_mi:
         n += 1
     if 0 < builder.activities_found < 5:
         n += 1
-    if 0 < builder.avg_mpw < 20.0:
+    if 0 < builder.avg_mpw < _SUB3_VERY_LOW_MPW:
         n += 1
     return n
 
@@ -584,12 +639,15 @@ def _apply_long_run_quality_rules(
     weeks_lr = int(_safe_int(builder.activity.get("weeks_with_long_run_10plus")) or 0)
     trend = str(builder.activity.get("long_run_progression_trend") or "")
 
-    if builder.longest_run_miles >= 8.0 or builder.is_sub3_marathon:
+    if (
+        builder.longest_run_miles >= longest_run_durability_floor_mi
+        or builder.is_sub3_marathon
+    ):
         if n10 <= 1 and builder.activities_found >= 5:
             builder.add_reason("RULE_LONG_RUN_PATTERN_THIN")
         if weeks_lr <= 1 and lookback >= 6 and n10 >= 1:
             builder.add_reason("RULE_LONG_RUN_FREQUENCY_LOW")
-    if trend == "down" and builder.longest_run_miles >= 8.0:
+    if trend == "down" and builder.longest_run_miles >= longest_run_durability_floor_mi:
         builder.add_reason("RULE_LONG_RUN_RECENT_REGRESSION")
 
 
@@ -683,6 +741,8 @@ def _finalize_evaluated(
     readiness_level: str,
     goal_profile: str,
     decision: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    evidence_snapshot_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     final_level = _resolve_readiness_level_after_signals(
         builder, goal_profile, builder.plan_request, readiness_level
@@ -692,6 +752,8 @@ def _finalize_evaluated(
         readiness_level=final_level,
         goal_profile=goal_profile,
         decision=decision,
+        trace_id=trace_id,
+        evidence_snapshot_id=evidence_snapshot_id,
     )
 
 
@@ -915,6 +977,15 @@ def _input_digest(builder: _ReadinessBuilder, *, goal_profile: str) -> Dict[str,
     weeks = builder.weeks_to_race
     act = builder.activity if isinstance(builder.activity, dict) else {}
     gp_pace = _marathon_goal_pace_sec_per_mi(builder.plan_request)
+    demand_score = 0.0
+    if (
+        gp_pace is not None
+        and _is_marathon(builder.plan_request)
+        and _is_target_time_goal(builder.plan_request)
+    ):
+        demand_score = compute_demand_score(
+            gp_pace, str(builder.plan_request.get("race_distance") or "")
+        )
     return {
         "goal_profile": goal_profile,
         "primary_goal": builder.plan_request.get("primary_goal"),
@@ -930,6 +1001,7 @@ def _input_digest(builder: _ReadinessBuilder, *, goal_profile: str) -> Dict[str,
         "active_weeks": act.get("active_weeks"),
         "completed_calendar_weeks_count": act.get("completed_calendar_weeks_count"),
         "ambition_stance": builder.ambition_stance or None,
+        "ambition_attributions": sorted(builder.ambition_attribution_codes()),
         "baseline_band": builder.baseline_band or None,
         "goal_demand": builder.goal_demand or None,
         "alignment_generation_ready": builder.alignment.get("generation_ready"),
@@ -942,6 +1014,7 @@ def _input_digest(builder: _ReadinessBuilder, *, goal_profile: str) -> Dict[str,
         "goal_marathon_pace_sec_per_mi": (
             round(gp_pace, 1) if gp_pace is not None else None
         ),
+        "demand_score": round(demand_score, 4),
         "long_runs_ge_10_mi_count": act.get("long_runs_ge_10_mi_count"),
         "weeks_with_long_run_10plus": act.get("weeks_with_long_run_10plus"),
         "long_run_progression_trend": act.get("long_run_progression_trend"),
@@ -1133,10 +1206,10 @@ def _apply_fact_category_severity(
 
     if (
         builder.goal_demand == "UNSPECIFIED"
-        or builder.ambition_stance == "INSUFFICIENT_GOAL_CONTEXT"
+        or builder.ambition_insufficient_goal_context()
     ):
         _bump_cat(severities, CATEGORY_GOAL_DEMAND, _SEV_BAD)
-    elif builder.ambition_stance in ("HIGH_TENSION", "MANAGEABLE_TENSION"):
+    elif builder.ambition_time_goal_tension():
         _bump_cat(severities, CATEGORY_GOAL_DEMAND, _SEV_WARN)
 
     if builder.is_sub3_marathon:
@@ -1193,7 +1266,7 @@ def _apply_fact_category_severity(
         and _is_marathon(builder.plan_request)
         and _is_target_time_goal(builder.plan_request)
         and builder.longest_run_miles > 0
-        and builder.longest_run_miles < 8.0
+        and builder.longest_run_miles < longest_run_durability_floor_mi
     ):
         _bump_cat(severities, CATEGORY_LONG_RUN_DURABILITY, _SEV_WARN)
 
@@ -1244,12 +1317,14 @@ def _apply_fact_category_severity(
 
 
 def _facts_goal_demand(builder: _ReadinessBuilder, goal_profile: str) -> Dict[str, Any]:
+    attrs = sorted(builder.ambition_attribution_codes())
     return {
         "goal_profile": goal_profile,
         "primary_goal": builder.plan_request.get("primary_goal"),
         "target_time": builder.plan_request.get("target_time"),
         "goal_demand": builder.goal_demand or None,
         "ambition_stance": builder.ambition_stance or None,
+        "ambition_attributions": attrs,
     }
 
 
@@ -2645,7 +2720,7 @@ def build_runner_analysis_display(
         allowed_actions=actions,
     )
 
-    return {
+    out: Dict[str, Any] = {
         "schema_version": RUNNER_ANALYSIS_DISPLAY_SCHEMA,
         "coach_read": coach_read,
         "why_concerned": why,
@@ -2654,6 +2729,13 @@ def build_runner_analysis_display(
         "recommended_actions": actions,
         "goal_direction": goal_direction,
     }
+    deficits_raw = plan_generation_readiness.get("deficits")
+    if isinstance(deficits_raw, dict):
+        out["deficits"] = deficits_raw
+    sugg = plan_generation_readiness.get("suggestions")
+    if isinstance(sugg, list):
+        out["suggestions"] = sugg
+    return out
 
 
 def _finalize(
@@ -2662,6 +2744,8 @@ def _finalize(
     readiness_level: str,
     goal_profile: str,
     decision: Optional[str] = None,
+    trace_id: Optional[str] = None,
+    evidence_snapshot_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     builder.add_standard_findings()
     category_assessments = _build_category_assessments(
@@ -2708,6 +2792,26 @@ def _finalize(
         "allowed_user_actions": allowed_user_actions,
         "inputs_digest": inputs_digest,
     }
+    ds = float(inputs_digest.get("demand_score") or 0.0)
+    gp_eval = _marathon_goal_pace_sec_per_mi(builder.plan_request)
+    act_d = builder.activity if isinstance(builder.activity, dict) else {}
+    deficits_obj = compute_deficits(
+        act_d,
+        builder.plan_request,
+        demand_score=ds,
+        goal_marathon_pace_sec_per_mi=gp_eval,
+    )
+    suggestions_list = derive_suggestions(
+        deficits_obj, builder.plan_request, allowed_user_actions
+    )
+    core["demand_score"] = round(ds, 4)
+    core["deficits"] = deficits_obj.to_api_dict()
+    core["suggestions"] = [s.to_api_dict() for s in suggestions_list]
+    core["policy_version"] = str(POLICY_VERSION)
+    if trace_id:
+        core["trace_id"] = str(trace_id)
+    if evidence_snapshot_id:
+        core["evidence_snapshot_id"] = str(evidence_snapshot_id)
     core["coach_analysis_for_llm"] = build_coach_analysis_for_llm(core)
     core["runner_analysis_display"] = build_runner_analysis_display(core)
     return core
@@ -2717,6 +2821,8 @@ def evaluate_plan_generation_readiness(
     *,
     plan_request: Dict[str, Any],
     assessment_api: Dict[str, Any],
+    trace_id: Optional[str] = None,
+    evidence_snapshot_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Return the deterministic readiness decision for a requested plan.
@@ -2724,9 +2830,15 @@ def evaluate_plan_generation_readiness(
     The LLM may explain this result, but callers must not let the LLM override
     ``decision`` or ``allowed_user_actions``.
     """
+    param_eid = str(evidence_snapshot_id) if evidence_snapshot_id else None
     if not isinstance(plan_request, dict) or not isinstance(assessment_api, dict):
         plan = plan_request if isinstance(plan_request, dict) else {}
         assessment = assessment_api if isinstance(assessment_api, dict) else {}
+        eid = param_eid
+        if eid is None and isinstance(assessment, dict):
+            xr = assessment.get("evidence_snapshot_id")
+            if xr:
+                eid = str(xr)
         builder = _ReadinessBuilder(plan, assessment)
         builder.add_reason("RULE_INVALID_READINESS_INPUT")
         builder.add_limiting_factor("invalid_state")
@@ -2736,7 +2848,15 @@ def evaluate_plan_generation_readiness(
             readiness_level=LEVEL_INSUFFICIENT_DATA,
             decision=DECISION_BLOCK,
             goal_profile=GOAL_PROFILE_MODERATE_PERFORMANCE,
+            trace_id=trace_id,
+            evidence_snapshot_id=eid,
         )
+
+    resolved_evidence_snapshot_id = param_eid
+    if resolved_evidence_snapshot_id is None:
+        xr0 = assessment_api.get("evidence_snapshot_id")
+        if xr0:
+            resolved_evidence_snapshot_id = str(xr0)
 
     builder = _ReadinessBuilder(plan_request, assessment_api)
     goal_profile = _infer_goal_profile(builder)
@@ -2752,6 +2872,8 @@ def evaluate_plan_generation_readiness(
             readiness_level=LEVEL_INSUFFICIENT_DATA,
             decision=DECISION_BLOCK,
             goal_profile=goal_profile,
+            trace_id=trace_id,
+            evidence_snapshot_id=resolved_evidence_snapshot_id,
         )
 
     unresolved = [
@@ -2771,9 +2893,11 @@ def evaluate_plan_generation_readiness(
             builder,
             readiness_level=LEVEL_INSUFFICIENT_DATA,
             goal_profile=goal_profile,
+            trace_id=trace_id,
+            evidence_snapshot_id=resolved_evidence_snapshot_id,
         )
 
-    if builder.ambition_stance == "INSUFFICIENT_GOAL_CONTEXT":
+    if builder.ambition_insufficient_goal_context():
         builder.add_reason("RULE_INSUFFICIENT_GOAL_CONTEXT")
         builder.add_limiting_factor("insufficient_goal_context")
         builder.require("adjust_goal")
@@ -2781,6 +2905,8 @@ def evaluate_plan_generation_readiness(
             builder,
             readiness_level=LEVEL_INSUFFICIENT_DATA,
             goal_profile=goal_profile,
+            trace_id=trace_id,
+            evidence_snapshot_id=resolved_evidence_snapshot_id,
         )
 
     if builder.activities_found == 0:
@@ -2791,6 +2917,8 @@ def evaluate_plan_generation_readiness(
             builder,
             readiness_level=LEVEL_INSUFFICIENT_DATA,
             goal_profile=goal_profile,
+            trace_id=trace_id,
+            evidence_snapshot_id=resolved_evidence_snapshot_id,
         )
 
     _apply_marathon_performance_alignment_rules(builder, goal_profile, plan_request)
@@ -2816,6 +2944,8 @@ def evaluate_plan_generation_readiness(
                 builder,
                 readiness_level=LEVEL_CURRENTLY_UNREALISTIC,
                 goal_profile=goal_profile,
+                trace_id=trace_id,
+                evidence_snapshot_id=resolved_evidence_snapshot_id,
             )
         if n_days <= 3:
             builder.add_reason("RULE_SUB3_THREE_DAYS_HIGH_RISK")
@@ -2826,6 +2956,8 @@ def evaluate_plan_generation_readiness(
                 builder,
                 readiness_level=LEVEL_HIGH_RISK,
                 goal_profile=goal_profile,
+                trace_id=trace_id,
+                evidence_snapshot_id=resolved_evidence_snapshot_id,
             )
         if n_days == 4 and builder.baseline_band != "ESTABLISHED":
             builder.add_reason("RULE_SUB3_FOUR_DAYS_WEAK_BASELINE")
@@ -2836,6 +2968,8 @@ def evaluate_plan_generation_readiness(
                 builder,
                 readiness_level=LEVEL_HIGH_RISK,
                 goal_profile=goal_profile,
+                trace_id=trace_id,
+                evidence_snapshot_id=resolved_evidence_snapshot_id,
             )
         if short_timeline:
             builder.add_reason("RULE_SUB3_SHORT_TIMELINE")
@@ -2846,6 +2980,8 @@ def evaluate_plan_generation_readiness(
                 builder,
                 readiness_level=LEVEL_HIGH_RISK,
                 goal_profile=goal_profile,
+                trace_id=trace_id,
+                evidence_snapshot_id=resolved_evidence_snapshot_id,
             )
         if (
             builder.avg_mpw >= _SUB3_ESTABLISHED_MIN_MPW
@@ -2856,6 +2992,8 @@ def evaluate_plan_generation_readiness(
                 builder,
                 readiness_level=LEVEL_STRETCH,
                 goal_profile=goal_profile,
+                trace_id=trace_id,
+                evidence_snapshot_id=resolved_evidence_snapshot_id,
             )
 
         builder.add_reason("RULE_SUB3_BASELINE_NOT_ESTABLISHED")
@@ -2866,6 +3004,8 @@ def evaluate_plan_generation_readiness(
             builder,
             readiness_level=LEVEL_HIGH_RISK,
             goal_profile=goal_profile,
+            trace_id=trace_id,
+            evidence_snapshot_id=resolved_evidence_snapshot_id,
         )
 
     if goal_profile == GOAL_PROFILE_COMPLETION and _is_marathon(plan_request):
@@ -2878,12 +3018,14 @@ def evaluate_plan_generation_readiness(
                 builder,
                 readiness_level=LEVEL_HIGH_RISK,
                 goal_profile=goal_profile,
+                trace_id=trace_id,
+                evidence_snapshot_id=resolved_evidence_snapshot_id,
             )
         if (
             weeks is not None
             and weeks < _SHORT_TIMELINE_WEEKS
-            and builder.longest_run_miles < 6.0
-            and builder.avg_mpw < 18.0
+            and builder.longest_run_miles < completion_marathon_short_ramp_long_run_mi
+            and builder.avg_mpw < completion_marathon_short_ramp_mpw
         ):
             builder.add_reason("RULE_COMPLETION_MARATHON_SHORT_RAMP")
             builder.add_limiting_factor("completion_marathon_short_training_ramp")
@@ -2893,6 +3035,8 @@ def evaluate_plan_generation_readiness(
                 builder,
                 readiness_level=LEVEL_STRETCH,
                 goal_profile=goal_profile,
+                trace_id=trace_id,
+                evidence_snapshot_id=resolved_evidence_snapshot_id,
             )
 
     if (
@@ -2909,6 +3053,8 @@ def evaluate_plan_generation_readiness(
                 builder,
                 readiness_level=LEVEL_HIGH_RISK,
                 goal_profile=goal_profile,
+                trace_id=trace_id,
+                evidence_snapshot_id=resolved_evidence_snapshot_id,
             )
         if short_timeline:
             builder.add_reason("RULE_MARATHON_TIME_TARGET_SHORT_TIMELINE")
@@ -2918,15 +3064,19 @@ def evaluate_plan_generation_readiness(
                 builder,
                 readiness_level=LEVEL_HIGH_RISK,
                 goal_profile=goal_profile,
+                trace_id=trace_id,
+                evidence_snapshot_id=resolved_evidence_snapshot_id,
             )
 
-    if builder.ambition_stance in ("HIGH_TENSION", "MANAGEABLE_TENSION"):
+    if builder.ambition_time_goal_tension():
         builder.add_reason("RULE_TENSION_AFTER_ALIGNMENT")
         builder.add_limiting_factor("goal_training_tension")
         return _finalize_evaluated(
             builder,
             readiness_level=LEVEL_STRETCH,
             goal_profile=goal_profile,
+            trace_id=trace_id,
+            evidence_snapshot_id=resolved_evidence_snapshot_id,
         )
 
     builder.add_reason("RULE_DEFAULT_READY")
@@ -2934,4 +3084,6 @@ def evaluate_plan_generation_readiness(
         builder,
         readiness_level=LEVEL_READY,
         goal_profile=goal_profile,
+        trace_id=trace_id,
+        evidence_snapshot_id=resolved_evidence_snapshot_id,
     )
