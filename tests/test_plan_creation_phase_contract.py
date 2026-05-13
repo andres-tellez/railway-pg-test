@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from src.smartcoach_mobile_coach.orchestrator import (
-    _natural_plan_intake_fallback_question,
-)
 from src.smartcoach_mobile_coach.plan_creation_ui import (
     PHASE_AWAITING_INTAKE_CONFIRMATION,
     PHASE_AWAITING_PLAN_GENERATION_CONFIRMATION,
     PHASE_AWAITING_TRADEOFF_CHOICE,
     PHASE_COLLECTING_ADDITIONAL_TRAINING_DAY,
-    PHASE_COLLECTING_GOAL_ADJUSTMENT,
+    PHASE_COLLECTING_INTAKE,
     apply_review_to_plan_intake_ux_for_phase,
     compute_plan_creation_ui,
 )
@@ -121,11 +118,11 @@ def test_full_sub_three_add_tuesday_recap_then_create_chip(monkeypatch_split_con
     assert gen_ui.get("field_key") == "plan_intake.plan_generation_confirm"
 
 
-def test_adjust_goal_sets_goal_edit_pending_and_goal_adjustment_ui(
+def test_adjust_goal_restarts_full_intake_questionnaire(
     monkeypatch_split_confirm,
     monkeypatch_structured_core_v1,
 ):
-    """Choosing adjust_goal must enter goal-edit flow (not re-show tradeoff chips)."""
+    """Choosing adjust_goal resets intake so the athlete sees the full question flow again."""
     s0 = update_plan_intake_state(
         {"draft": dict(DRAFT_SUB3), "ux": {}, "alignment": {}},
         updates={},
@@ -152,16 +149,12 @@ def test_adjust_goal_sets_goal_edit_pending_and_goal_adjustment_ui(
         updates={"runner_tradeoff_choice": "adjust_goal"},
         source_user_message="",
     )
-    assert s2["ux"].get("runner_goal_edit_pending") is True
-    assert s2["ux"].get("runner_tradeoff_edit_focus") == "goal"
-    assert s2["ux"].get("plan_generation_confirmed") is None
-    assert s2["ux"]["plan_creation_phase"] == PHASE_COLLECTING_GOAL_ADJUSTMENT
+    assert s2["ux"].get("runner_goal_edit_pending") is not True
+    assert s2["ux"].get("runner_tradeoff_edit_focus") is None
+    assert s2["draft"] == {}
+    assert s2["missing_required"] and s2["missing_required"][0] == "race_distance"
+    assert s2["ux"]["plan_creation_phase"] == PHASE_COLLECTING_INTAKE
 
-    fb = _natural_plan_intake_fallback_question(s2)
-    assert "Got it." in fb
-    assert "goal" in fb.lower()
-
-    ga = compute_plan_creation_ui(s2)
-    assert ga is not None
-    assert ga.get("field_key") == "plan_intake.goal_adjustment"
-    assert "What goal do you want" in (ga.get("prompt") or "")
+    ui = compute_plan_creation_ui(s2)
+    assert ui is not None
+    assert ui.get("field_key") == "plan_intake.race_distance"

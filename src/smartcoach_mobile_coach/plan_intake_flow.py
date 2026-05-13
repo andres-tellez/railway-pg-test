@@ -1321,9 +1321,21 @@ def update_plan_intake_state(
     reset: bool = False,
     source_user_message: Optional[str] = None,
 ) -> Dict[str, Any]:
-    state = _coerce_state(None if reset else current_state)
+    up_in = updates if isinstance(updates, dict) else {}
+    up = dict(up_in)
+    effective_reset = reset
+    if str(up.get("runner_tradeoff_choice") or "").strip().lower() == "adjust_goal":
+        # New goal / tradeoff "adjust goal": restart from empty intake so the athlete
+        # goes through the same core + alignment questionnaire as first-time creation.
+        # Ignore companion updates on this turn to avoid skipping required prompts.
+        effective_reset = True
+        up = {}
+
+    state = _coerce_state(None if effective_reset else current_state)
     prior_digest = _material_draft_digest(
-        dict((current_state or {}).get("draft") or {}) if not reset else dict()
+        dict((current_state or {}).get("draft") or {})
+        if not effective_reset
+        else dict()
     )
     draft: Dict[str, Any] = dict(state.get("draft") or {})
     ux: Dict[str, Any] = dict(state.get("ux") or {})
@@ -1345,9 +1357,6 @@ def update_plan_intake_state(
             if isinstance(f, str) and f in draft:
                 draft.pop(f, None)
 
-    up = updates or {}
-    if not isinstance(up, dict):
-        up = {}
     prior_ux_snapshot = dict(ux)
 
     intake_structured.apply_structured_updates(
