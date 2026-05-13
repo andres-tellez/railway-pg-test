@@ -70,6 +70,31 @@ def test_build_core_structured_ui_prompt_race_distance_when_collecting(monkeypat
     )
 
 
+def test_build_core_structured_ui_prompt_target_time_includes_340_chip(monkeypatch):
+    """Coach often recommends ~3:40 — core intake chips must include it (matches goal_adjustment)."""
+    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "training_days": ["Mon", "Wed", "Sat"],
+        },
+    )
+    assert state["missing_required"][0] == "target_time"
+    prompt = build_core_structured_ui_prompt(state)
+    assert prompt is not None
+    assert prompt["field_key"] == "plan_intake.target_time"
+    by_label = {
+        str(o.get("label")): o
+        for o in (prompt.get("options") or [])
+        if isinstance(o, dict) and o.get("label")
+    }
+    assert "3:40" in by_label
+    assert by_label["3:40"].get("updates", {}).get("target_time") == "3:40:00"
+
+
 def test_structured_intake_core_v1_enabled_truthy(monkeypatch):
     monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "on")
     assert structured_intake_core_v1_enabled() is True
