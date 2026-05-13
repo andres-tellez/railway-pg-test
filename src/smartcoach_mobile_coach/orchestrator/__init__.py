@@ -108,6 +108,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     schedule_confirmation_system_section,
     structured_intake_core_v1_enabled,
     user_confirms_plan_intake,
+    user_requests_plan_generation,
 )
 from src.smartcoach_mobile_coach.plan_creation_ui import (
     apply_review_to_plan_intake_ux_for_phase,
@@ -1882,6 +1883,41 @@ def _plan_confirm_fastpath_enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def should_plan_confirm_fastpath_fire(
+    prior_plan_state: Optional[Dict[str, Any]],
+    user_message: str,
+    *,
+    eval_model_override: Optional[str] = None,
+) -> bool:
+    """Bypass the LLM and call ``generate_training_plan`` deterministically.
+
+    Triggers when intake is ready and one of:
+    - athlete confirms intake recap ("yes"-style),
+    - athlete explicitly asks to build ("create my plan" / chip user_message),
+    - ``ux.plan_generation_confirmed`` is already True (chip merge in the route).
+    """
+    if not _plan_confirm_fastpath_enabled():
+        return False
+    if eval_model_override:
+        return False
+    if not isinstance(prior_plan_state, dict) or not prior_plan_state.get(
+        "ready_to_generate"
+    ):
+        return False
+    ux = (
+        prior_plan_state.get("ux")
+        if isinstance(prior_plan_state.get("ux"), dict)
+        else {}
+    )
+    if bool(ux.get("plan_generation_confirmed")):
+        return True
+    if user_confirms_plan_intake(user_message):
+        return True
+    if user_requests_plan_generation(user_message):
+        return True
+    return False
+
+
 def _plan_intake_forced_merge_enabled() -> bool:
     """When the model skips ``update_plan_intake`` on a plan-creation turn, merge NL once server-side."""
     raw = (os.getenv("SMARTCOACH_PLAN_INTAKE_FORCED_MERGE") or "1").strip().lower()
@@ -2480,12 +2516,10 @@ def run_mobile_agent_turn(
         if isinstance(getattr(thread_ctx, "latest_plan_intake_state", None), dict)
         else None
     )
-    if (
-        _plan_confirm_fastpath_enabled()
-        and prior_plan_state
-        and prior_plan_state.get("ready_to_generate")
-        and user_confirms_plan_intake(user_message)
-        and not eval_model_override
+    if should_plan_confirm_fastpath_fire(
+        prior_plan_state,
+        user_message,
+        eval_model_override=eval_model_override,
     ):
         t_plan_fast = time.perf_counter()
         out = tool_generate_training_plan(
