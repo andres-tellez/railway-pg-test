@@ -5,6 +5,12 @@ Computes deterministic KPI bands, overall score, and deltas. Numeric truth
 is computed in SQL + Python; weekly rows store metrics for the mobile
 Insights charts (no LLM copy).
 
+Tempo / ``threshold`` run detection uses the same week window as easy runs
+but classifies ``threshold`` when easy_pct is low (not an easy day) and
+either (a) activity avg HR is above Z2 high, or (b) split-majority or
+post-warmup median split HR is above Z2 high — so mixed warmup + quality
+miles still count.
+
 ``get_latest_weekly_insight(..., slim=True)`` returns an orientation-only dict
 for the coach tool (week + ``overall_band``); REST uses ``slim=False`` (full).
 """
@@ -50,26 +56,21 @@ def weekly_insight_tool_slim_default_from_env() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+# Threshold / tempo classification (see _WEEK_KPIS_SQL):
+# - Legacy: activity avg HR strictly above Z2 ceiling (Strava aggregate).
+# - Primary fix: split-majority — enough laps with HR, and ≥ half of those laps
+#   above Z2 high, OR median HR on laps after split 1 above Z2 high (warmup lap).
+THRESHOLD_MIN_SPLITS_WITH_HR = 3
+THRESHOLD_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH = 0.5
+
 # ---------------------------------------------------------------------------
 # SQL
 # ---------------------------------------------------------------------------
 
 _WEEK_KPIS_SQL = """
-WITH classified_runs AS (
+WITH week_runs AS (
     SELECT
-        v.*,
-        CASE
-            WHEN v.is_easy_run THEN 'easy'
-            WHEN (
-                v.moving_time_seconds >= 1800
-                AND v.z2_high IS NOT NULL
-                AND v.easy_pct IS NOT NULL
-                AND v.easy_pct < 0.70
-                AND v.avg_hr IS NOT NULL
-                AND v.avg_hr > v.z2_high
-            ) THEN 'threshold'
-            ELSE NULL
-        END AS training_system
+        v.*
     FROM v_easy_runs v
     INNER JOIN public.activities a ON a.activity_id = v.activity_id
     WHERE v.user_id = :uid
@@ -77,6 +78,61 @@ WITH classified_runs AS (
       AND v.activity_date >= :ws
       AND v.activity_date <= :we
       AND v.activity_type = 'Run'
+),
+split_stats AS (
+    SELECT
+        wr.activity_id,
+        COUNT(s.split) FILTER (WHERE s.average_heartrate IS NOT NULL) AS n_hr_splits,
+        COUNT(s.split) FILTER (
+            WHERE wr.z2_high IS NOT NULL
+              AND s.average_heartrate IS NOT NULL
+              AND s.average_heartrate > wr.z2_high
+        ) AS n_above_ceiling
+    FROM week_runs wr
+    INNER JOIN splits s ON s.activity_id = wr.activity_id
+    GROUP BY wr.activity_id
+),
+split_median_after_warmup AS (
+    SELECT
+        wr.activity_id,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY s.average_heartrate) AS median_hr_after_split_1
+    FROM week_runs wr
+    INNER JOIN splits s ON s.activity_id = wr.activity_id
+    WHERE s.split > 1
+      AND s.average_heartrate IS NOT NULL
+    GROUP BY wr.activity_id
+),
+classified_runs AS (
+    SELECT
+        wr.*,
+        CASE
+            WHEN wr.is_easy_run THEN 'easy'
+            WHEN (
+                wr.moving_time_seconds >= 1800
+                AND wr.z2_high IS NOT NULL
+                AND wr.easy_pct IS NOT NULL
+                AND wr.easy_pct < 0.70
+                AND (
+                    (wr.avg_hr IS NOT NULL AND wr.avg_hr > wr.z2_high)
+                    OR (
+                        COALESCE(ss.n_hr_splits, 0) >= {min_splits_hr}
+                        AND (
+                            (ss.n_above_ceiling::numeric
+                                / NULLIF(ss.n_hr_splits, 0))
+                                >= {min_frac_above_z2}
+                            OR (
+                                mw.median_hr_after_split_1 IS NOT NULL
+                                AND mw.median_hr_after_split_1 > wr.z2_high
+                            )
+                        )
+                    )
+                )
+            ) THEN 'threshold'
+            ELSE NULL
+        END AS training_system
+    FROM week_runs wr
+    LEFT JOIN split_stats ss ON ss.activity_id = wr.activity_id
+    LEFT JOIN split_median_after_warmup mw ON mw.activity_id = wr.activity_id
 )
 SELECT
     COUNT(*) AS total_runs,
@@ -100,7 +156,10 @@ SELECT
         2
     ) AS avg_threshold_effort_stability
 FROM classified_runs
-"""
+""".format(
+    min_splits_hr=THRESHOLD_MIN_SPLITS_WITH_HR,
+    min_frac_above_z2=THRESHOLD_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
+)
 
 _USERS_WITH_EASY_RUNS_SQL = """
 WITH classified_runs AS (
