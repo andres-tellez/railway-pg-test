@@ -779,6 +779,29 @@ def run_full_ingestion_and_enrichment(
         sync_complete()
         maybe_mark_initial_import_complete()
         if user_id:
+            # Sync is marked complete even when enrichment stopped early (batch cap per
+            # chunk, per-activity failures). Coach readiness still requires zero pending
+            # detail rows in the canonical window — queue a follow-up so we drain the tail
+            # without the user reconnecting Strava. Must run *after* sync_complete so
+            # delete_retry_standalone does not wipe the newly scheduled row.
+            tail_pending = count_pending_detail_enrichment(
+                session, athlete_id, win.window_after_ts, win.before_ts
+            )
+            if tail_pending > 0:
+                logger.warning(
+                    "[Ingestion] %d run(s) in coach window still lack detail enrichment "
+                    "after sync completed; scheduling automatic follow-up",
+                    tail_pending,
+                )
+                try:
+                    schedule_strava_ingestion_retry(
+                        str(user_id), int(athlete_id), 120.0, 0
+                    )
+                except Exception:
+                    logger.warning(
+                        "schedule_strava_ingestion_retry (tail enrichment) failed",
+                        exc_info=True,
+                    )
             try:
                 from src.services.weekly_insight_post_ingestion_backfill import (
                     schedule_weekly_insights_after_strava_ingestion,

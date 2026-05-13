@@ -8,7 +8,7 @@ import logging
 import os
 import hashlib
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import and_, func, select, text
+from sqlalchemy import and_, func, or_, select, text
 
 from src.services.token_service import get_valid_token
 from src.db.dao.split_dao import upsert_splits
@@ -80,6 +80,42 @@ def _pending_detail_enrichment_where(athlete_id, after=None, before=None):
         )
         parts.append(Activity.start_date <= before_dt)
     return and_(*parts)
+
+
+def _pending_detail_missing_summary_where(athlete_id, after=None, before=None):
+    """
+    Runs still missing the Strava detail pass **and** missing list-level fields the
+    coach needs (see ``ActivityFetcher``): distance (raw or converted) and moving time.
+
+    Rows with summary data but ``detail_enriched_at IS NULL`` are not blocking: the
+    coach can answer from list-ingest columns; enrichment only adds streams/splits/zones.
+    """
+    no_distance = and_(Activity.distance.is_(None), Activity.conv_distance.is_(None))
+    parts = [
+        Activity.athlete_id == athlete_id,
+        Activity.type == "Run",
+        Activity.detail_enriched_at.is_(None),
+        or_(no_distance, Activity.moving_time.is_(None)),
+    ]
+    if after is not None:
+        after_dt = datetime.fromtimestamp(int(after), tz=timezone.utc).replace(
+            tzinfo=None
+        )
+        parts.append(Activity.start_date >= after_dt)
+    if before is not None:
+        before_dt = datetime.fromtimestamp(int(before), tz=timezone.utc).replace(
+            tzinfo=None
+        )
+        parts.append(Activity.start_date <= before_dt)
+    return and_(*parts)
+
+
+def count_pending_detail_missing_summary(session, athlete_id, after=None, before=None):
+    """Count Run rows in the window that block coach until list summary exists."""
+    stmt = select(func.count(Activity.activity_id)).where(
+        _pending_detail_missing_summary_where(athlete_id, after, before)
+    )
+    return int(session.scalar(stmt) or 0)
 
 
 def get_activities_to_enrich(session, athlete_id, limit, after=None, before=None):
