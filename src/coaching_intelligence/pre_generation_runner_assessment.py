@@ -152,6 +152,7 @@ def build_pre_generation_runner_assessment(
     plan_request: Dict[str, Any],
     plan_intake_state: Dict[str, Any],
     alignment_enabled: bool,
+    anchor_local_date: Optional[date] = None,
 ) -> PreGenerationRunnerAssessmentV1:
     """
     Single place for activity summary + optional ambition/alignment evaluation.
@@ -159,9 +160,14 @@ def build_pre_generation_runner_assessment(
     When ``alignment_enabled`` is False, only ``activity_summary`` / ``runner_evidence``
     is populated for analytics fields; ambition and intake alignment entries are omitted
     from the snapshot.
+
+    ``anchor_local_date`` is forwarded to ``build_runner_evidence`` when set so calendar-week
+    windows match an athlete-local "today" (device anchor); omit to use server date.
     """
     evidence_snapshot_id = str(uuid.uuid4())
-    ev = build_runner_evidence(session, str(user_id))
+    ev = build_runner_evidence(
+        session, str(user_id), anchor_local_date=anchor_local_date
+    )
     ev_api = ev.to_api_dict()
     summary = strip_runner_evidence_to_activity_summary(ev_api)
     digest = _plan_request_digest(plan_request)

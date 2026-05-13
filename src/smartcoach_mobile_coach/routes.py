@@ -226,6 +226,15 @@ def _coerce_last_activity_id(payload: dict) -> Optional[int]:
     return aid if aid > 0 else None
 
 
+def _coerce_readiness_trace_id(payload: dict) -> Optional[str]:
+    raw = payload.get("readiness_trace_id")
+    if raw is None:
+        raw = payload.get("readinessTraceId")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()[:200]
+    return None
+
+
 def _coerce_require_fresh_strava_data(payload: dict) -> bool:
     """True when client asks to gate until Strava coach-data-ready."""
     raw = payload.get("require_fresh_strava_data")
@@ -409,6 +418,8 @@ def agent_messages(conversation_id):
     message = data.get("message")
     if not isinstance(message, str) or not message.strip():
         return jsonify({"error": "Invalid or missing 'message'"}), 400
+
+    readiness_tid_for_log = _coerce_readiness_trace_id(data)
 
     user_id, err_resp, err_code = get_user_from_auth()
     if err_resp:
@@ -620,7 +631,7 @@ def agent_messages(conversation_id):
         logger.info(
             "[smartcoach_mobile_coach] ok correlation_id=%s user=%s conversation=%s "
             "loops=%s max_loops=%s truncated=%s cost=%.6f tokens=%s duration_ms=%d response_shape=%s "
-            "route_timings_ms=%s agent_timings_ms=%s",
+            "route_timings_ms=%s agent_timings_ms=%s readiness_trace_id=%s",
             correlation_id,
             uid_str,
             conversation_id,
@@ -635,6 +646,7 @@ def agent_messages(conversation_id):
             json.dumps(
                 meta.get("timings_ms") or {}, default=str, separators=(",", ":")
             ),
+            readiness_tid_for_log or "",
         )
 
         model_used = str(meta.get("model") or "")

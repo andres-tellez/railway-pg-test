@@ -297,7 +297,13 @@ def test_generate_plan_uses_shared_readiness_gate_helper(monkeypatch):
     gate_calls = {"count": 0}
 
     def _gate(
-        *, session, internal_user_id, plan_request, plan_intake_state, alignment_enabled
+        *,
+        session,
+        internal_user_id,
+        plan_request,
+        plan_intake_state,
+        alignment_enabled,
+        anchor_local_date=None,
     ):
         gate_calls["count"] += 1
         assert internal_user_id == "u-1"

@@ -142,14 +142,13 @@ def seed_test_data(test_db_session):
     """Seed tokens and activities with safe defaults."""
 
     if not test_db_session.query(Token).filter_by(athlete_id=1).first():
-        test_db_session.add(
-            Token(
-                athlete_id=1,
-                access_token="test_access_token",
-                refresh_token="test_refresh_token",
-                expires_at=int((datetime.utcnow() + timedelta(days=1)).timestamp()),
-            )
+        tok = Token(
+            athlete_id=1,
+            expires_at=int((datetime.utcnow() + timedelta(days=1)).timestamp()),
         )
+        tok.access_token = "test_access_token"
+        tok.refresh_token = "test_refresh_token"
+        test_db_session.add(tok)
 
     if (
         not test_db_session.query(Activity)

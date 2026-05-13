@@ -1969,12 +1969,22 @@ def _build_plan_generation_brief(
     return "\n".join(lines)
 
 
+def _parse_optional_anchor_date_str(raw: Optional[str]) -> Optional[date]:
+    if not raw or not str(raw).strip():
+        return None
+    try:
+        return date.fromisoformat(str(raw).strip()[:10])
+    except ValueError:
+        return None
+
+
 def tool_generate_training_plan(
     session: Session,
     internal_user_id: str,
     args: Dict[str, Any],
     *,
     current_state: Optional[Dict[str, Any]] = None,
+    anchor_local_date: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Deterministically generate and save plan once intake is complete and confirmed.
@@ -2096,6 +2106,7 @@ def tool_generate_training_plan(
             plan_request=plan_request,
             plan_intake_state=current_state,
             alignment_enabled=_intake_alignment_enabled(),
+            anchor_local_date=_parse_optional_anchor_date_str(anchor_local_date),
         )
     except Exception as e:
         logger.exception(
@@ -2698,6 +2709,7 @@ def execute_tool(
                 internal_user_id,
                 args,
                 current_state=plan_intake_state,
+                anchor_local_date=anchor_local_date,
             )
 
         return {"error": "unknown_tool", "message": f"Unknown tool: {name}"}

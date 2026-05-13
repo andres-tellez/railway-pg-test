@@ -9,6 +9,7 @@ import logging
 import os
 import re
 from dataclasses import replace
+from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -47,6 +48,17 @@ from src.smartcoach_mobile_coach.thread_derived_context import DerivedThreadCoac
 from . import phase_prompts
 
 logger = logging.getLogger("smartcoach_mobile_coach")
+
+
+def _anchor_date_from_device_context(
+    anchor_local_date: Optional[str],
+) -> Optional[date]:
+    if not anchor_local_date or not str(anchor_local_date).strip():
+        return None
+    try:
+        return date.fromisoformat(str(anchor_local_date).strip()[:10])
+    except ValueError:
+        return None
 
 
 def _plan_intake_phase_system_section(
@@ -217,6 +229,8 @@ def _try_build_runner_review_bundle(
     session: Session,
     internal_user_id: str,
     plan_intake_state: Dict[str, Any],
+    *,
+    anchor_local_date: Optional[str] = None,
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     """
     Build optional pre-generation runner review system section + API dict.
@@ -260,6 +274,7 @@ def _try_build_runner_review_bundle(
             plan_request=plan_request,
             plan_intake_state=plan_intake_state,
             alignment_enabled=_intake_alignment_enabled(),
+            anchor_local_date=_anchor_date_from_device_context(anchor_local_date),
         )
         assessment_api = gate_result.assessment_api
         readiness_api = gate_result.readiness_api

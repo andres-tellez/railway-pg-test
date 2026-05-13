@@ -64,7 +64,9 @@ def test_build_runner_analysis_display_snapshot_just_finish(
         "intake_alignment_state": {"generation_ready": True, "unresolved_flags": []},
     }
     readiness = evaluate_plan_generation_readiness(
-        plan_request=plan, assessment_api=assessment
+        plan_request=plan,
+        assessment_api=assessment,
+        trace_id="composers-display-snapshot",
     )
     got = build_runner_analysis_display(readiness)
     expected = {
@@ -116,6 +118,7 @@ def test_build_runner_analysis_display_snapshot_just_finish(
         },
         "schema_version": "runner_analysis_display.v2",
         "policy_version": POLICY_VERSION,
+        "trace_id": "composers-display-snapshot",
         "suggestions": [
             {
                 "chip_updates": {"action": "create_plan"},

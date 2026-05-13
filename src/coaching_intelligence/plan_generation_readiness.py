@@ -27,6 +27,7 @@ and keeps **one** policy surface in this module.
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -1592,8 +1593,7 @@ def _finalize(
     core["deficits"] = deficits_obj.to_api_dict()
     core["suggestions"] = [s.to_api_dict() for s in suggestions_list]
     core["policy_version"] = str(POLICY_VERSION)
-    if trace_id:
-        core["trace_id"] = str(trace_id)
+    core["trace_id"] = str(trace_id) if trace_id else str(uuid.uuid4())
     if evidence_snapshot_id:
         core["evidence_snapshot_id"] = str(evidence_snapshot_id)
     core["runner_analysis_display"] = build_runner_analysis_display(core)

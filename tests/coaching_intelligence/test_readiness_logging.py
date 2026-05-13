@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 from src.coaching_intelligence.plan_generation_readiness import (
     evaluate_plan_generation_readiness,
 )
@@ -65,12 +67,16 @@ def test_readiness_payload_echoes_trace_id_when_provided():
     assert out.get("policy_version") == POLICY_VERSION
 
 
-def test_readiness_payload_omits_trace_id_when_not_provided():
+def test_trace_id_present_in_readiness_payload():
+    """Every readiness evaluation carries a trace_id for log correlation."""
     out = evaluate_plan_generation_readiness(
         plan_request=_minimal_plan(),
         assessment_api=_minimal_assessment(),
     )
-    assert "trace_id" not in out
+    tid = out.get("trace_id")
+    assert isinstance(tid, str) and tid
+    assert uuid.UUID(tid)
+    assert out.get("policy_version") == POLICY_VERSION
 
 
 def test_readiness_payload_echoes_evidence_snapshot_id_from_assessment():

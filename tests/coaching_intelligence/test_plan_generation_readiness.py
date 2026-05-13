@@ -298,9 +298,11 @@ def test_policy_output_is_stable_for_same_inputs():
     assert evaluate_plan_generation_readiness(
         plan_request=plan,
         assessment_api=assessment,
+        trace_id="policy-stability-test",
     ) == evaluate_plan_generation_readiness(
         plan_request=plan,
         assessment_api=assessment,
+        trace_id="policy-stability-test",
     )
 
 

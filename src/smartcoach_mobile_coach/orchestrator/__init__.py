@@ -2493,6 +2493,7 @@ def run_mobile_agent_turn(
             str(internal_user_id),
             {"confirm": True},
             current_state=prior_plan_state,
+            anchor_local_date=anchor_local_date,
         )
         if out.get("ok"):
             timings_fast: Dict[str, Any] = {
@@ -2717,6 +2718,7 @@ def run_mobile_agent_turn(
             session,
             str(internal_user_id),
             plan_intake_ctx,
+            anchor_local_date=anchor_local_date,
         )
     if plan_creation_mode and not use_full_prompt_for_plan:
         system_content = _plan_creation_minimal_system_content(
@@ -3289,6 +3291,7 @@ def run_mobile_agent_turn(
                         session,
                         str(internal_user_id),
                         intake_state_from_tools,
+                        anchor_local_date=anchor_local_date,
                     )
                 messages[0]["content"] = _plan_creation_minimal_system_content(
                     plan_intake_ctx=intake_state_from_tools,
@@ -3469,6 +3472,7 @@ def run_mobile_agent_turn(
                         session,
                         str(internal_user_id),
                         pis_for_client,
+                        anchor_local_date=anchor_local_date,
                     )
                     if runner_review_api is not None:
                         structured_text["data"][
