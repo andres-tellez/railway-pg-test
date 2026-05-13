@@ -138,6 +138,9 @@ def apply_structured_updates(
                 ux.pop("training_days_count", None)
         elif key == "plan_generation_confirmed":
             pass
+        elif key == "apply_coach_suggested_goal":
+            # Intake soft-reset only; flag is read from ``up`` in soft_reset (not on draft).
+            pass
         elif key == "runner_tradeoff_choice":
             choice = str(raw or "").strip().lower()
             if choice == "continue_tradeoff":

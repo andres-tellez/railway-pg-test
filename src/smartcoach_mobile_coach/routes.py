@@ -283,7 +283,10 @@ def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
         ):
             out["alignment_posture_priority"] = v.strip().lower()
 
-    if structured_intake_core_v1_enabled():
+    _apply_suggested = (
+        isinstance(updates, dict) and updates.get("apply_coach_suggested_goal") is True
+    )
+    if structured_intake_core_v1_enabled() or _apply_suggested:
         if "race_distance" in updates:
             v = updates.get("race_distance")
             if isinstance(v, str) and v.strip():
@@ -338,6 +341,11 @@ def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
         v = updates.get("plan_generation_confirmed")
         if isinstance(v, bool):
             out["plan_generation_confirmed"] = v
+
+    if "apply_coach_suggested_goal" in updates:
+        v = updates.get("apply_coach_suggested_goal")
+        if v is True:
+            out["apply_coach_suggested_goal"] = True
 
     return out or None
 

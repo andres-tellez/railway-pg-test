@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from src.coaching_intelligence.contracts.deficits import Deficits
 from src.coaching_intelligence.contracts.suggestion import SUGGESTION_SCHEMA, Suggestion
 from src.coaching_intelligence.policy.demand import compute_demand_score
+from src.schemas.plan_schema import PrimaryGoal
 from src.coaching_intelligence.time_clock import (
     format_clock_seconds,
     parse_clock_seconds,
@@ -95,9 +96,13 @@ def realistic_target_from_deficits(
             f"{ideal_days} is better."
         ),
         "primary_action": {
-            "id": "adjust_goal",
+            "id": "apply_coach_suggested_goal",
             "label": f"Set goal around {proposed}",
-            "chip_updates": {"runner_tradeoff_choice": "adjust_goal"},
+            "chip_updates": {
+                "primary_goal": PrimaryGoal.TARGET_TIME.value,
+                "target_time": proposed,
+                "apply_coach_suggested_goal": True,
+            },
         },
     }
 

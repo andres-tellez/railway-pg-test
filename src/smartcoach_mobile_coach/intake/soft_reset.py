@@ -6,6 +6,14 @@ import os
 from typing import Any, Dict
 
 
+def _truthy_flag(raw: Any) -> bool:
+    if raw is True:
+        return True
+    if isinstance(raw, str):
+        return raw.strip().lower() in ("true", "1", "yes")
+    return False
+
+
 def _plan_creation_split_confirm_enabled() -> bool:
     raw = (
         (os.getenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1") or "1").strip().lower()
@@ -64,8 +72,11 @@ def maybe_reset_split_confirm_on_material_draft_change(
             prior_ux_snapshot.get("runner_goal_edit_pending")
             or prior_ux_snapshot.get("runner_tradeoff_edit_focus") == "goal"
         )
+        suggested_apply = isinstance(up, dict) and _truthy_flag(
+            up.get("apply_coach_suggested_goal")
+        )
         if not tradeoff_expand:
-            if goal_ux_touch and from_goal_edit_flow:
+            if goal_ux_touch and (from_goal_edit_flow or suggested_apply):
                 soft_reset_runner_review_after_goal_edit(ux)
             else:
                 clear_plan_confirmation_ux(ux)

@@ -8,6 +8,31 @@ from src.coaching_intelligence.policy.suggestions import (
 from src.coaching_intelligence.time_clock import format_clock_seconds
 
 
+def test_realistic_target_primary_action_commits_suggested_time_not_tradeoff_reset():
+    from src.coaching_intelligence.policy.suggestions import (
+        realistic_target_from_deficits,
+    )
+
+    deficits = Deficits(
+        schema_version=DEFICITS_SCHEMA,
+        pace_deficit_sec_per_mi=60.0,
+    )
+    plan = {
+        "race_distance": "Marathon",
+        "primary_goal": "Target Time",
+        "target_time": "3:15:00",
+    }
+    rt = realistic_target_from_deficits(deficits, plan, weeks_to_race=20.0)
+    assert rt is not None
+    pa = rt["primary_action"]
+    assert pa["id"] == "apply_coach_suggested_goal"
+    cu = pa["chip_updates"]
+    assert cu["primary_goal"] == "Target Time"
+    assert isinstance(cu["target_time"], str) and cu["target_time"]
+    assert cu["apply_coach_suggested_goal"] is True
+    assert "runner_tradeoff_choice" not in cu
+
+
 def test_format_clock_seconds():
     assert format_clock_seconds(3661) == "1:01:01"
     assert format_clock_seconds(61) == "1:01"

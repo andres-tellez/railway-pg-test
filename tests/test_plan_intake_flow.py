@@ -783,3 +783,35 @@ def test_ready_to_generate_false_until_alignment_resolved(monkeypatch):
     )
     assert s1["ready_to_generate"] is False
     assert s1["status"] == "collecting"
+
+
+def test_apply_coach_suggested_goal_updates_time_and_soft_resets_review(monkeypatch):
+    """Runner-analysis 'Set goal around X' applies time and re-runs review without wiping intake."""
+    monkeypatch.setenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1", "1")
+    base = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "target_time": "3:00:00",
+            "training_days": ["Mon", "Wed", "Sat"],
+        },
+    )
+    base["ux"]["intake_confirmed"] = True
+    base["ux"]["runner_review_delivered"] = True
+    base["ux"]["plan_generation_confirmed"] = True
+
+    nxt = update_plan_intake_state(
+        base,
+        updates={
+            "primary_goal": "Target Time",
+            "target_time": "3:40:00",
+            "apply_coach_suggested_goal": True,
+        },
+    )
+    assert nxt["draft"]["target_time"] == "3:40:00"
+    assert nxt["draft"]["race_distance"] == "Marathon"
+    assert nxt["ux"].get("intake_confirmed") is True
+    assert nxt["ux"].get("runner_review_delivered") is not True
+    assert nxt["ux"].get("plan_generation_confirmed") is not True
