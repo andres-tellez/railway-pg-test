@@ -86,6 +86,7 @@ from src.smartcoach_mobile_coach.orchestrator.plan_creation_branch import (
     PLAN_CREATION_SYSTEM_PROMPT_BASE,
     _device_anchor_system_section,
     _enforce_plan_creation_response_guardrails,
+    build_deterministic_plan_intake_chip_assistant_payload,
     _eager_merge_plan_intake_user_turn,
     _join_nonempty_system_sections,
     _natural_plan_intake_fallback_question,
@@ -2498,6 +2499,7 @@ def run_mobile_agent_turn(
     eval_model_override: Optional[str] = None,
     last_activity_id_hint: Optional[int] = None,
     thread_derived_context: Optional[DerivedThreadCoachContext] = None,
+    structured_intake_chip_turn: bool = False,
 ) -> Tuple[Union[str, Dict[str, Any]], Dict[str, Any]]:
     """
     Returns (assistant_reply, metadata with usage, cost, loops).
@@ -2511,6 +2513,9 @@ def run_mobile_agent_turn(
     thread_derived_context: optional context from **raw** stored message bodies (e.g. JSON
         assistant rows). Must be supplied when ``conversation_history`` is plain-text–only
         (see routes); otherwise ``plan_intake_state`` from prior turns is invisible here.
+    structured_intake_chip_turn: when True, routes merged ``structured_input`` into intake already
+        and the client sent ``structured_input_only``; skip NL eager-merge and return the
+        deterministic plan-intake assistant payload without calling OpenAI (if plan-creation mode).
     """
     service = get_openai_service()
     default_model = os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o")
@@ -2581,12 +2586,13 @@ def run_mobile_agent_turn(
         if thread_derived_context is not None
         else derive_thread_coach_context(conversation_history)
     )
-    thread_ctx = _eager_merge_plan_intake_user_turn(
-        session,
-        str(internal_user_id),
-        thread_ctx=thread_ctx,
-        user_message=user_message,
-    )
+    if not structured_intake_chip_turn:
+        thread_ctx = _eager_merge_plan_intake_user_turn(
+            session,
+            str(internal_user_id),
+            thread_ctx=thread_ctx,
+            user_message=user_message,
+        )
     turn_type = classify_turn(user_message, conversation_history)
     conversation_state = extract_conversation_state(conversation_history)
     response_directive = plan_response(
@@ -2946,6 +2952,74 @@ def run_mobile_agent_turn(
         has_active_plan=has_active_plan,
         force_after_clarification=force_plan_creation_after_clarification,
     )
+    if structured_intake_chip_turn and plan_creation_mode and not eval_model_override:
+        pis_chip = getattr(thread_ctx, "latest_plan_intake_state", None)
+        if isinstance(pis_chip, dict):
+            t_chip = time.perf_counter()
+            activity_summary_chip: Optional[Dict[str, Any]] = None
+            if _plan_intake_activity_context_enabled():
+                try:
+                    anchor_d = (
+                        parse_anchor_local_date_yyyy_mm_dd(anchor_local_date)
+                        or date.today()
+                    )
+                    activity_summary_chip = compute_plan_intake_activity_summary(
+                        session, str(internal_user_id), anchor_local_date=anchor_d
+                    )
+                except Exception:
+                    logger.warning(
+                        "[smartcoach_mobile_coach] plan_intake_activity_context_failed "
+                        "deterministic_chip_turn",
+                        exc_info=True,
+                    )
+                    activity_summary_chip = None
+            gpt_chip = build_deterministic_plan_intake_chip_assistant_payload(
+                session,
+                str(internal_user_id),
+                plan_intake_state=pis_chip,
+                anchor_local_date=anchor_local_date,
+                activity_summary=activity_summary_chip,
+            )
+            timings_chip = {
+                "deterministic_plan_intake_chip_ms": round(
+                    (time.perf_counter() - t_chip) * 1000, 2
+                ),
+                "agent_orchestrator_total_ms": round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                ),
+            }
+            meta_chip: Dict[str, Any] = {
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+                "cost": 0.0,
+                "loops": 0,
+                "max_loops": _max_agent_loops(),
+                "model": model,
+                "deterministic_plan_intake_chip_turn": True,
+                "timings_ms": timings_chip,
+                "dialogue": {
+                    "turn_type": response_directive.turn_type,
+                    "intent": response_directive.intent,
+                    "turn_count": conversation_state.turn_count,
+                    "last_topic": conversation_state.last_topic,
+                    "target_length": response_directive.target_length,
+                    "narration_mode": response_directive.narration_mode,
+                    "tool_strategy": response_directive.tool_strategy,
+                    "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                    "allow_full_recap": response_directive.allow_full_recap,
+                    "investigate_first": response_directive.investigate_first,
+                    "interaction_mode": response_directive.interaction_mode,
+                    "thread_derived": thread_ctx.as_dict(),
+                },
+            }
+            logger.info(
+                "[smartcoach_mobile_coach] response_shape=text_plan_data "
+                "deterministic_plan_intake_chip_turn=1"
+            )
+            return gpt_chip, meta_chip
     openai_tools = _filter_tools_for_turn(
         openai_tools_all, plan_creation_mode=plan_creation_mode
     )

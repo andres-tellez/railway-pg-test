@@ -32,13 +32,19 @@ from src.smartcoach_mobile_coach.plan_creation_ui import (
     PHASE_COLLECTING_ADDITIONAL_TRAINING_DAY,
     PHASE_COLLECTING_GOAL_ADJUSTMENT,
     PHASE_COLLECTING_TIMELINE_ADJUSTMENT,
+    apply_review_to_plan_intake_ux_for_phase,
     compute_plan_creation_ui,
+)
+from src.smartcoach_mobile_coach.plan_intake_activity_context import (
+    apply_plan_activity_preamble_to_assistant_markdown,
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     alignment_pause_coaching_facts_system_section,
     build_plan_request_from_state,
+    mark_plan_runner_understanding_shown,
     plan_creation_split_confirm_enabled,
     plan_intake_alignment_pause_active,
+    plan_runner_understanding_shown,
     schedule_confirmation_system_section,
     structured_intake_core_v1_enabled,
 )
@@ -684,3 +690,68 @@ def _plan_creation_system_section(
             ]
         )
     return "\n".join(lines)
+
+
+def build_deterministic_plan_intake_chip_assistant_payload(
+    session: Session,
+    internal_user_id: str,
+    *,
+    plan_intake_state: Dict[str, Any],
+    anchor_local_date: str,
+    activity_summary: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Build the same structured assistant JSON shape as the tool loop’s text-plan-data path,
+    without calling OpenAI. Used when the mobile client sends ``structured_input_only`` with
+    ``structured_input`` so chip taps stay on the deterministic intake state machine.
+    """
+    pis_merged: Dict[str, Any] = dict(plan_intake_state)
+    out_text = _natural_plan_intake_fallback_question(pis_merged)
+    out_text = _enforce_plan_creation_response_guardrails(
+        out_text,
+        plan_intake_state=pis_merged,
+    )
+    runner_understanding_shown = plan_runner_understanding_shown(pis_merged)
+    out_text_with_preamble = apply_plan_activity_preamble_to_assistant_markdown(
+        out_text,
+        plan_creation_mode=True,
+        activity_summary=activity_summary,
+        runner_understanding_already_shown=runner_understanding_shown,
+    )
+    if out_text_with_preamble != out_text:
+        pis_merged = mark_plan_runner_understanding_shown(pis_merged)
+    out_text = out_text_with_preamble
+
+    structured_text: Dict[str, Any] = {
+        "type": "text",
+        "content": out_text,
+        "data": {},
+    }
+    pis_for_client = dict(pis_merged)
+    _, runner_review_api = _try_build_runner_review_bundle(
+        session,
+        str(internal_user_id),
+        pis_for_client,
+        anchor_local_date=anchor_local_date,
+    )
+    if runner_review_api is not None:
+        structured_text["data"]["pre_generation_runner_review"] = runner_review_api
+    if plan_creation_split_confirm_enabled() and pis_for_client.get(
+        "ready_to_generate"
+    ):
+        apply_review_to_plan_intake_ux_for_phase(
+            pis_for_client,
+            runner_review_api,
+            intake_confirmed=bool(
+                (
+                    pis_for_client.get("ux")
+                    if isinstance(pis_for_client.get("ux"), dict)
+                    else {}
+                ).get("intake_confirmed")
+            ),
+        )
+    structured_text["data"]["plan_intake_state"] = pis_for_client
+    ui_prompt = _ui_prompt_from_plan_intake_state(pis_for_client)
+    if isinstance(ui_prompt, dict):
+        structured_text["data"]["ui_prompt"] = ui_prompt
+    return structured_text

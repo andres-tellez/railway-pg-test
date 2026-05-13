@@ -247,6 +247,17 @@ def _coerce_require_fresh_strava_data(payload: dict) -> bool:
     return False
 
 
+def _coerce_structured_input_only(payload: dict) -> bool:
+    raw = payload.get("structured_input_only")
+    if raw is None:
+        raw = payload.get("structuredInputOnly")
+    if raw is True:
+        return True
+    if isinstance(raw, str) and raw.strip().lower() in ("true", "1", "yes"):
+        return True
+    return False
+
+
 _VALID_STRUCTURED_PRIMARY_GOALS = frozenset({"Just Finish", "Target Time"})
 
 _VALID_STRUCTURED_RUNNER_TRADEOFF_CHOICES = frozenset(
@@ -533,6 +544,11 @@ def agent_messages(conversation_id):
         ]
         thread_ctx_raw = derive_thread_coach_context(raw_history)
         structured_updates = _coerce_structured_intake_updates(data)
+        structured_intake_chip_turn = (
+            _coerce_structured_input_only(data)
+            and structured_updates is not None
+            and bool(structured_updates)
+        )
         thread_ctx_for_turn = _apply_structured_intake_updates(
             session,
             uid_str,
@@ -570,6 +586,7 @@ def agent_messages(conversation_id):
                 eval_model_override=_coerce_eval_model_header(),
                 last_activity_id_hint=hint_activity_id,
                 thread_derived_context=thread_ctx_for_turn,
+                structured_intake_chip_turn=structured_intake_chip_turn,
             )
         except RateLimitExceededError as e:
             session.rollback()
