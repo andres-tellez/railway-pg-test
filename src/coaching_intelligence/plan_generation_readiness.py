@@ -40,7 +40,10 @@ from src.coaching_intelligence.policy.deficits import compute_deficits
 from src.coaching_intelligence.policy.feature_flags import (
     thin_pace_stretch_downgrade_enabled,
 )
-from src.coaching_intelligence.policy.suggestions import derive_suggestions
+from src.coaching_intelligence.policy.suggestions import (
+    derive_suggestions,
+    realistic_target_from_deficits,
+)
 from src.coaching_intelligence.contracts.runner_evidence import RunnerEvidenceSummary
 from src.coaching_intelligence.contracts.readiness_verdict import (
     READINESS_SUMMARY_SCHEMA,
@@ -1598,11 +1601,21 @@ def _finalize(
         weeks_to_race=builder.weeks_to_race,
     )
     suggestions_list = derive_suggestions(
-        deficits_obj, builder.plan_request, allowed_user_actions
+        deficits_obj,
+        builder.plan_request,
+        allowed_user_actions,
+        weeks_to_race=builder.weeks_to_race,
+    )
+    realistic_target = realistic_target_from_deficits(
+        deficits_obj,
+        builder.plan_request,
+        weeks_to_race=builder.weeks_to_race,
     )
     core["demand_score"] = round(ds, 4)
     core["deficits"] = deficits_obj.to_api_dict()
     core["suggestions"] = [s.to_api_dict() for s in suggestions_list]
+    if realistic_target is not None:
+        core["realistic_target"] = realistic_target
     core["policy_version"] = str(POLICY_VERSION)
     core["trace_id"] = str(trace_id) if trace_id else str(uuid.uuid4())
     if evidence_snapshot_id:

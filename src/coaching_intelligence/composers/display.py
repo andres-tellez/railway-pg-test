@@ -868,6 +868,44 @@ def _runner_analysis_chips_from_suggestions(suggestions: Any) -> List[Dict[str, 
     return out
 
 
+def _compact_coach_summary(
+    *,
+    realistic_target: Any,
+    coach_read: str,
+    why: Sequence[str],
+    deficits: Any,
+) -> Dict[str, Any]:
+    """One-screen summary for the card; details stay available below it."""
+    reasons: List[str] = []
+    if isinstance(deficits, dict):
+        pace = deficits.get("pace_deficit_sec_per_mi")
+        try:
+            pace_n = float(pace)
+        except (TypeError, ValueError):
+            pace_n = 0.0
+        if pace_n > 0:
+            reasons.append(
+                f"Goal pace is about {int(round(pace_n))} sec/mi beyond the pace evidence we have."
+            )
+    for row in why:
+        s = str(row).strip()
+        if s and s not in reasons:
+            reasons.append(s)
+        if len(reasons) >= 2:
+            break
+    headline = "Reasonable to plan forward."
+    if isinstance(realistic_target, dict):
+        rt = str(realistic_target.get("target_time") or "").strip()
+        if rt:
+            headline = f"Aim around {rt} this cycle."
+    return {
+        "schema_version": "runner_analysis_summary.v1",
+        "headline": headline,
+        "body": coach_read,
+        "reasons": reasons[:2],
+    }
+
+
 def build_runner_analysis_display(
     plan_generation_readiness: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -1013,21 +1051,32 @@ def build_runner_analysis_display(
 
     sugg_raw = plan_generation_readiness.get("suggestions")
     chips = _runner_analysis_chips_from_suggestions(sugg_raw)
+    realistic_target = plan_generation_readiness.get("realistic_target")
+    if not isinstance(realistic_target, dict):
+        realistic_target = None
+    deficits_raw = plan_generation_readiness.get("deficits")
 
     out: Dict[str, Any] = {
         "schema_version": RUNNER_ANALYSIS_DISPLAY_SCHEMA,
         "verdict": {"narrative": coach_read},
         "chips": chips,
         "coach_read": coach_read,
+        "coach_summary": _compact_coach_summary(
+            realistic_target=realistic_target,
+            coach_read=coach_read,
+            why=why,
+            deficits=deficits_raw,
+        ),
         "why_concerned": why,
         "facts": facts,
         "recommended_path": path_ui,
         "recommended_actions": actions,
         "goal_direction": goal_direction,
     }
-    deficits_raw = plan_generation_readiness.get("deficits")
     if isinstance(deficits_raw, dict):
         out["deficits"] = deficits_raw
+    if realistic_target is not None:
+        out["realistic_target"] = realistic_target
     if isinstance(sugg_raw, list):
         out["suggestions"] = sugg_raw
 

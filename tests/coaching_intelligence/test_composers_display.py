@@ -77,6 +77,15 @@ def test_build_runner_analysis_display_snapshot_just_finish(
             "Based on what we can see, you\u2019re **reasonable to plan forward** for this marathon "
             "(June 2030). (Finish-the-race focus)"
         ),
+        "coach_summary": {
+            "body": (
+                "Based on what we can see, you\u2019re **reasonable to plan forward** for this marathon "
+                "(June 2030). (Finish-the-race focus)"
+            ),
+            "headline": "Reasonable to plan forward.",
+            "reasons": [],
+            "schema_version": "runner_analysis_summary.v1",
+        },
         "deficits": {"schema_version": "deficits.v1"},
         "facts": [
             {"summary": "Marathon \u2014 Just Finish", "title": "Goal"},
