@@ -70,3 +70,36 @@ def test_readiness_verdict_payload_is_lossless_dict_wrap():
     }
     rv = ReadinessVerdictPayload.from_api_dict(payload)
     assert rv.to_api_dict() == payload
+
+
+def test_readiness_summary_contract_shape():
+    from src.coaching_intelligence.contracts.readiness_verdict import (
+        READINESS_SUMMARY_SCHEMA,
+    )
+    from src.coaching_intelligence.plan_generation_readiness import (
+        _build_readiness_summary,
+    )
+
+    core = {
+        "decision": "allow",
+        "readiness_level": "ready",
+        "goal_profile": "completion",
+        "confidence": 0.82,
+        "demand_score": 0.15,
+        "reason_codes": ["RULE_EXAMPLE"],
+        "allowed_user_actions": ["create_plan"],
+        "required_changes": [],
+        "policy_version": "policy_test",
+        "trace_id": "t1",
+        "runner_analysis_display": {
+            "schema_version": "runner_analysis_display.v2",
+            "verdict": {"narrative": "You're reasonable to plan forward."},
+            "coach_read": "You're reasonable to plan forward.",
+        },
+    }
+    s = _build_readiness_summary(core)
+    assert s["schema_version"] == READINESS_SUMMARY_SCHEMA
+    assert s["coach_verdict"] == "You're reasonable to plan forward."
+    assert s["runner_analysis_display_version"] == "runner_analysis_display.v2"
+    assert "category_assessments" not in s
+    assert "coach_analysis_for_llm" not in s

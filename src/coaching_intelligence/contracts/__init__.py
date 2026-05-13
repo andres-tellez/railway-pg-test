@@ -9,6 +9,7 @@ from src.coaching_intelligence.contracts.goal_profile import (
     GoalProfileModel,
 )
 from src.coaching_intelligence.contracts.readiness_verdict import (
+    READINESS_SUMMARY_SCHEMA,
     READINESS_VERDICT_SCHEMA,
     ReadinessVerdictPayload,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "Deficits",
     "GOAL_PROFILE_SCHEMA",
     "GoalProfileModel",
+    "READINESS_SUMMARY_SCHEMA",
     "READINESS_VERDICT_SCHEMA",
     "ReadinessVerdictPayload",
     "RUNNER_EVIDENCE_SCHEMA",

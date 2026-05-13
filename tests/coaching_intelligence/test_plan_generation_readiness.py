@@ -452,6 +452,9 @@ def test_coach_analysis_for_llm_matches_readiness_and_omits_non_applicable_categ
     assert disp.get("schema_version") == "runner_analysis_display.v2"
     assert isinstance(disp.get("verdict"), dict)
     assert isinstance(disp.get("chips"), list)
+    rs = out.get("readiness_summary") or {}
+    assert rs.get("schema_version") == "readiness_summary.v1"
+    assert "category_assessments" not in rs
     gd = disp.get("goal_direction")
     assert isinstance(gd, dict)
     assert gd.get("schema_version") == "goal_direction_display.v1"

@@ -37,6 +37,9 @@ from src.coaching_intelligence.policy.demand import (
     pace_missing_triggers_thin_data,
 )
 from src.coaching_intelligence.policy.suggestions import derive_suggestions
+from src.coaching_intelligence.contracts.readiness_verdict import (
+    READINESS_SUMMARY_SCHEMA,
+)
 from src.coaching_intelligence.policy.policy_table import (
     POLICY_VERSION,
     competitive_marathon_max_seconds as _COMPETITIVE_MARATHON_MAX_SECONDS,
@@ -2747,6 +2750,58 @@ def build_runner_analysis_display(
     return out
 
 
+def _build_readiness_summary(core: Dict[str, Any]) -> Dict[str, Any]:
+    """Narrow wire shape for list views, push notifications, and thin clients.
+
+    Omits category assessments, LLM coach blob, and full suggestions; use
+    ``runner_analysis_display`` for chips, facts, and path copy.
+    """
+    disp = core.get("runner_analysis_display")
+    coach_verdict = ""
+    display_version: Optional[str] = None
+    if isinstance(disp, dict) and not disp.get("error"):
+        display_version = str(disp.get("schema_version") or "").strip() or None
+        ver = disp.get("verdict")
+        if isinstance(ver, dict):
+            coach_verdict = str(ver.get("narrative") or "").strip()
+        if not coach_verdict:
+            coach_verdict = str(disp.get("coach_read") or "").strip()
+
+    out: Dict[str, Any] = {
+        "schema_version": READINESS_SUMMARY_SCHEMA,
+        "decision": str(core.get("decision") or "").strip(),
+        "readiness_level": str(core.get("readiness_level") or "").strip(),
+        "goal_profile": str(core.get("goal_profile") or "").strip(),
+        "confidence": core.get("confidence"),
+        "demand_score": core.get("demand_score"),
+        "reason_codes": [
+            str(x).strip() for x in (core.get("reason_codes") or []) if str(x).strip()
+        ],
+        "allowed_user_actions": [
+            str(x).strip()
+            for x in (core.get("allowed_user_actions") or [])
+            if str(x).strip()
+        ],
+        "required_changes": [
+            str(x).strip()
+            for x in (core.get("required_changes") or [])
+            if str(x).strip()
+        ],
+        "policy_version": str(core.get("policy_version") or "").strip(),
+    }
+    if coach_verdict:
+        out["coach_verdict"] = coach_verdict
+    if display_version:
+        out["runner_analysis_display_version"] = display_version
+    tid = core.get("trace_id")
+    if tid:
+        out["trace_id"] = str(tid)
+    eid = core.get("evidence_snapshot_id")
+    if eid:
+        out["evidence_snapshot_id"] = str(eid)
+    return out
+
+
 def _finalize(
     builder: _ReadinessBuilder,
     *,
@@ -2823,6 +2878,7 @@ def _finalize(
         core["evidence_snapshot_id"] = str(evidence_snapshot_id)
     core["coach_analysis_for_llm"] = build_coach_analysis_for_llm(core)
     core["runner_analysis_display"] = build_runner_analysis_display(core)
+    core["readiness_summary"] = _build_readiness_summary(core)
     return core
 
 

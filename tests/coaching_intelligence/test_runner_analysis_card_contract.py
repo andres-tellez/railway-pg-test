@@ -77,6 +77,11 @@ def test_sub3_three_days_coach_payload_lists_facts_and_concerns_not_effort_contr
     verdict = disp.get("verdict") or {}
     assert verdict.get("narrative") == disp.get("coach_read")
     assert isinstance(disp.get("chips"), list)
+    rs = out.get("readiness_summary") or {}
+    assert rs.get("schema_version") == "readiness_summary.v1"
+    assert rs.get("decision") == out.get("decision")
+    assert "category_assessments" not in rs
+    assert rs.get("coach_verdict") == disp.get("coach_read")
     gd = disp.get("goal_direction") or {}
     assert isinstance(gd, dict)
     assert gd.get("schema_version") == "goal_direction_display.v1"
