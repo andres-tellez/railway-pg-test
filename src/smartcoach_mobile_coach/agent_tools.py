@@ -2214,6 +2214,7 @@ def tool_generate_training_plan(
                 "posture_context": {
                     "current": alignment_state.get("posture_state"),
                     "stance": ambition.get("stance"),
+                    "ambition_attributions": list(ambition.get("attributions") or []),
                     "goal_demand": ambition.get("goal_demand"),
                 },
                 "response_style": {

@@ -265,6 +265,20 @@ def alignment_pause_coaching_facts_system_section(
         if isinstance(x, str)
     ]
     next_cat = cats[0] if cats else ""
+    raw_attr = al.get("ambition_attributions")
+    if isinstance(raw_attr, list):
+        ambition_attr_list = sorted(
+            {str(x).strip() for x in raw_attr if isinstance(x, str) and str(x).strip()}
+        )
+    else:
+        ambition_attr_list = []
+    attr_display = ", ".join(ambition_attr_list) if ambition_attr_list else "n/a"
+    legacy_stance = al.get("ambition_stance")
+    legacy_display = (
+        str(legacy_stance).strip()
+        if legacy_stance is not None and str(legacy_stance).strip()
+        else "n/a"
+    )
     tdays = draft.get("training_days")
     day_list = tdays if isinstance(tdays, list) else []
     day_count = len(day_list)
@@ -285,7 +299,8 @@ def alignment_pause_coaching_facts_system_section(
         "4. Then ask **one** question that matches the **inline chips** (do not invent a different question).\n"
         "\n"
         "Deterministic context (ground truth; translate into plain language—never echo raw key names or rule codes to the user):\n"
-        f"- **Ambition stance:** {al.get('ambition_stance')}\n"
+        f"- **Ambition attributions (primary tension signal; paraphrase, do not read codes aloud):** {attr_display}\n"
+        f"- **Legacy stance label (API snapshot only; prefer attributions if they disagree):** {legacy_display}\n"
         f"- **Baseline band (recent volume proxy):** {al.get('baseline_band')}\n"
         f"- **Goal demand:** {al.get('goal_demand')}\n"
         f"- **Primary goal (draft):** {draft.get('primary_goal')}\n"
@@ -294,7 +309,7 @@ def alignment_pause_coaching_facts_system_section(
         f"- **Next alignment topic (must match chips):** {next_cat or 'n/a'}\n"
         "\n"
         "If there is **no** activity snapshot block (thin data), say so briefly and lean on the deterministic "
-        "stance/band lines above—still connect goal and schedule before the chips.\n"
+        "attribution / band lines above—still connect goal and schedule before the chips.\n"
         "\n"
         "Keep coaching prose before the chips to **at most 5 short sentences** total (interpretation may need two); "
         "warm and specific; no filler openers (“Great!”, “I’m here to help”)."

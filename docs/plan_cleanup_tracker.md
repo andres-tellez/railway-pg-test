@@ -74,7 +74,7 @@ These paths exist **on purpose** until all producers and tests always carry full
 | `pre_generation_runner_assessment` | Still passes `ambition_stance=str(ambition.get("stance") or "")` | Required parameter + backward compatibility. |
 | `plan_intake_flow._recompute_alignment_branch` | Uses **only** ``alignment["ambition_attributions"]`` for attribution-first tension (no mining merged ``attributions``). | Persisted states without that key rely on **``ambition_stance``** inside ``evaluate_intake_alignment_state`` only. |
 | `pre_generation_runner_review` | Uses `ag.get("stance")` for copy | Narrative; not used for gating. |
-| `agent_tools` alignment / brief | Exposes `ambition_stance` and `posture_context["stance"]` | Coach UX and debugging. |
+| `agent_tools` alignment / brief | Still sets `ambition_stance` on alignment blob; **`posture_context` adds `ambition_attributions`**; `stance` in brief remains legacy snapshot. | Coach UX reads attributions first from prompt + brief. |
 
 ### Cleanup backlog (after implementation is stable — **planned removal order**)
 
@@ -85,7 +85,7 @@ Do **not** delete these until the **exit criteria** are met; otherwise productio
 | 1 | Audit **all** builders of `assessment_api` / `ambition_gap` (tests, fixtures, any cached JSON): ensure `attributions` always includes the same `STANCE_*` / `RULE_*` codes that `evaluate_ambition_gap` would emit for that scenario. **Backend tests:** shared helper `tests/coaching_intelligence/ambition_gap_fixtures.py` → `synthetic_ambition_attributions`; `_assessment` in `test_plan_generation_readiness.py` uses it. | No intentional empty `attributions` for meaningful ambition scenarios in **this** repo’s tests; scan any external fixtures / golden files separately. |
 | 2 | Remove **readiness** fallbacks in `ambition_time_goal_tension()` and `ambition_high_tension_thin_baseline()` that key only on `stance` + band (keep `ambition_stance` in **output** facts if still needed for dashboards). | **Done in repo** (2026-05-12): attributions-only for these two gates; staging soak still advised for non-repo clients. |
 | 3 | Tighten **intake** `ambition_attributions` contract: require non-optional list from server for alignment-enabled flows; narrow or delete merged-`attributions` filter fallback in `plan_intake_flow`. | **Done in repo** (2026-05-13): recompute uses `ambition_attributions` only; `agent_tools` continues to set it for new alignment blobs. |
-| 4 | **Optional:** Deprecate then remove `ambition_stance` from client-facing alignment types / prompts; keep server-only snapshot if analytics still needs it. | Mobile and coach no longer branch on `ambition_stance`; docs updated. |
+| 4 | **Optional:** Deprecate then remove `ambition_stance` from client-facing alignment types / prompts; keep server-only snapshot if analytics still needs it. | **Done in repo** (2026-05-13): coach prompt leads with **ambition attributions**; `posture_context` includes **ambition_attributions**; mobile intake UI attention prefers attribution tension codes with stance fallback. `ambition_stance` retained on wire. |
 | 5 | **Optional hygiene:** extract shared clock parse/format for suggestions vs readiness. | **Done** — `src/coaching_intelligence/time_clock.py` (`parse_clock_seconds`, `format_clock_seconds`). |
 
 ### Drift risks to watch
@@ -94,4 +94,4 @@ Do **not** delete these until the **exit criteria** are met; otherwise productio
 - New code that branches on **`stance` alone** instead of attributions + effective stance helper.
 - Client chips that ignore **`proposed_value`** on suggestions while copy promises a concrete time — UX mismatch, not a server bug.
 
-*Last updated: 2026-05-13 — Steps 1–3, 5 in tracker; Step 4 optional (client prompts) remains.*
+*Last updated: 2026-05-13 — Step 4 shipped (attribution-first coach prompt + mobile attention); optional hard API deprecation of `ambition_stance` not done.*
