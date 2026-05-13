@@ -95,10 +95,29 @@ Do **not** delete these until the **exit criteria** are met; otherwise productio
 | Runner-review tension copy | Uses ambition **attributions** for `RULE_TENSION_AFTER_ALIGNMENT` when `STANCE_*` codes present (`pre_generation_runner_review._tension_plain_summary_from_ambition`). |
 | Mobile `proposed_value` | **Runner Analysis** card parses readiness **`suggestions`** and shows **Suggested inputs** with optional “try {clock}” (`runner-analysis-card.tsx`). |
 
+### Refactor roadmap — Phase 2 / 3 checkpoint (readiness + evidence)
+
+**Phase 2 (consolidate readiness)** — *aligned with single-source policy:*
+
+| Item | Status |
+|------|--------|
+| 2.1 Review status from readiness only | **`assessment_status_from_readiness`**: `allow` → `ready_to_generate`; **`defer` + `insufficient_data`** → `needs_more_info`; else `needs_user_decision`. No `required_changes` sub-filter for “more info” vs “decision.” |
+| 2.1 Narrative | **`_copy_lines_for_v1`** tailors `needs_more_info` for alignment vs activity collection vs goal context; **`RULE_TENSION_AFTER_ALIGNMENT`** uses attribution phrase or baseline-band copy only (no legacy `stance` string in user-facing summary). |
+| 2.2 Orchestrator / tool | Runner review bundle uses **`build_pre_generation_runner_review_v1`**. **`agent_tools`** does not call **`classify_assessment_status_v1`**; it reads **`runner_review_assessment_status`** from UX state when gating. |
+| 2.3 Readiness vs ambition | **`_apply_fact_category_severity`** already keys goal-demand tension on **`ambition_time_goal_tension()`** (attributions). **`ambition_stance`** remains on digest/API for observability only. |
+
+**Phase 3 (runner evidence layer)** — *quick assessment:*
+
+| Item | Status |
+|------|--------|
+| 3.1–3.2 Evidence build + history window | **`build_runner_evidence`** in `plan_intake_activity_context.py`; **`runner_evidence`** on assessment API; history lookback via env (e.g. `SMARTCOACH_PLAN_INTAKE_HISTORY_WEEKS`). **Done.** |
+| 3.3 Typed path through readiness | **`_assessment_parts`** merges selected `runner_evidence` keys into the internal **`activity`** dict; readiness still uses **`builder.activity`** accessors — **optional future cleanup**: dedicated **`builder.evidence`** / fewer dict merges. |
+| 3.4 Evidence snapshot id | **`evidence_snapshot_id`** on readiness and assessments. **Done.** |
+
 ### Drift risks to watch
 
 - Adding new tension or goal-context rules in **`evaluate_ambition_gap`** without corresponding consumers in **readiness** and **intake_alignment** (or vice versa).
 - New code that branches on **`stance` alone** instead of attributions + effective stance helper.
 - **Apply chip actions** from `suggestions` (beyond display-only hint) — not wired; card is informational.
 
-*Last updated: 2026-05-13 — Follow-on: runner-review attribution phrases + mobile suggestion `proposed_value` display.*
+*Last updated: 2026-05-12 — Phase 2 status mapping + Phase 3 checkpoint; runner-review `needs_more_info` now includes all `insufficient_data` deferrals.*

@@ -15,13 +15,13 @@ No weekly insights, no scoring engine, no `run_v2` / planner inputs.
 
 ## Three statuses
 
-Exactly one of:
+Exactly one of (derived **only** from ``plan_generation_readiness.decision`` + ``readiness_level`` — see ``assessment_status_from_readiness``; no parallel classifiers):
 
 | Status | Meaning (coarse) |
 |--------|------------------|
-| `needs_more_info` | Required alignment answers are still missing (`intake_alignment_state.unresolved_flags` while not `generation_ready`), **or** ambition reports `INSUFFICIENT_GOAL_CONTEXT`. |
-| `needs_user_decision` | Tradeoff / thin-signal paths: e.g. **`activities_found == 0`** (always this status—not `needs_more_info`), goal–volume tension (`HIGH_TENSION` / `MANAGEABLE_TENSION`), `thin_baseline_data`, alignment not ready **without** unresolved flags, (when alignment evaluation is off) **Target Time** with low average weekly mileage, **and** minimal **goal-realism** rules: sub‑3 marathon (clock target **≤ 3:00:00**, including exactly **3:00:00**) with **≤3** or **4** non‑established training days, marathon **Target Time** with **THIN** baseline, short timeline to race, etc. (see `classify_assessment_status_v1` in `pre_generation_runner_review.py`). |
-| `ready_to_generate` | Else — coherent enough to proceed the **review narrative** (not the same as `plan_intake_state.ready_to_generate`). |
+| `ready_to_generate` | `decision == "allow"`. |
+| `needs_more_info` | `decision == "defer"` and `readiness_level == "insufficient_data"` — missing required fields, alignment, and/or activity coverage (e.g. zero activities, unresolved alignment, incomplete goal context). |
+| `needs_user_decision` | All other deferred/blocked readiness — tradeoffs, stretch goals, thin baseline vs aggressive target time, sub‑3 frequency rules, pace gaps, etc. Narrative branches on ``reason_codes`` inside ``_copy_lines_for_v1``, not on raw ambition ``stance``. |
 
 ## Split confirmation (plan creation)
 

@@ -61,7 +61,7 @@ def _base_plan_request() -> dict:
     }
 
 
-def test_classify_empty_activity_is_needs_user_decision():
+def test_classify_empty_activity_is_needs_more_info():
     assessment_api = {
         "activity_summary": {
             "activities_found": 0,
@@ -89,7 +89,7 @@ def test_classify_empty_activity_is_needs_user_decision():
             assessment_api=assessment_api,
             plan_request=_base_plan_request(),
         )
-        == STATUS_NEEDS_DECISION
+        == STATUS_NEEDS_INFO
     )
 
 
@@ -294,6 +294,50 @@ def test_tension_after_alignment_summary_prefers_attribution_phrase():
     blob = " ".join(review.summary_lines).lower()
     assert "high tension between your time goal" in blob
     assert "thin training baseline" in blob
+
+
+def test_tension_after_alignment_without_stance_codes_uses_baseline_band_copy():
+    """Narrative does not paraphrase legacy ``stance`` when ``STANCE_*`` absent."""
+    readiness = {
+        "decision": "defer",
+        "readiness_level": "stretch",
+        "required_changes": [],
+        "reason_codes": ["RULE_TENSION_AFTER_ALIGNMENT"],
+    }
+    assessment_api = {
+        "activity_summary": {
+            "activities_found": 4,
+            "avg_miles_per_week_approx": 18.0,
+        },
+        "intake_alignment_state": {
+            "generation_ready": True,
+            "unresolved_flags": [],
+        },
+        "ambition_gap": {
+            "stance": "HIGH_TENSION",
+            "baseline_band": "THIN",
+            "goal_demand": "TIME_TARGET",
+            "attributions": [
+                "RULE_BASELINE_BAND_THIN",
+                "RULE_GOAL_DEMAND_TIME_TARGET",
+            ],
+        },
+    }
+    plan_request = {
+        "primary_goal": "Target Time",
+        "race_distance": "Marathon",
+        "race_date": "2027-06-01",
+        "target_time": "3:30:00",
+        "training_days": ["Mon", "Wed", "Fri", "Sat"],
+    }
+    review = build_pre_generation_runner_review_v1(
+        assessment_api=assessment_api,
+        plan_request=plan_request,
+        plan_generation_readiness=readiness,
+    )
+    blob = " ".join(review.summary_lines).lower()
+    assert "stretched relative to baseline band" in blob
+    assert "high tension between your time goal" not in blob
 
 
 def test_pre_generation_runner_review_system_section_non_empty():

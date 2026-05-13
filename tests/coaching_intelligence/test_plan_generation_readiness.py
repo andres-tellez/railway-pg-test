@@ -323,6 +323,10 @@ def test_readiness_payload_json_serializable_when_plan_request_has_date_objects(
 
 
 def test_readiness_nested_in_response_shape_json_serializable():
+    from src.coaching_intelligence.pre_generation_runner_review import (
+        assessment_status_from_readiness,
+    )
+
     plan = _plan(race_date=date(2026, 10, 11))
     readiness = evaluate_plan_generation_readiness(
         plan_request=plan,
@@ -335,7 +339,7 @@ def test_readiness_nested_in_response_shape_json_serializable():
             "plan_intake_state": {"ux": {"plan_generation_readiness": readiness}},
             "pre_generation_runner_review": {
                 "plan_generation_readiness": readiness,
-                "assessment_status": "needs_user_decision",
+                "assessment_status": assessment_status_from_readiness(readiness),
             },
         },
     }

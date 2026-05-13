@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 from src.coaching_intelligence.plan_generation_readiness import (
+    LEVEL_INSUFFICIENT_DATA,
     evaluate_plan_generation_readiness,
 )
 
@@ -34,20 +35,19 @@ def assessment_status_from_readiness(readiness_api: Dict[str, Any]) -> str:
     Map ``plan_generation_readiness`` payload to runner-review ``assessment_status``.
 
     Single source of truth with orchestrator and plan-generation tool gating.
+
+    Rules (Phase 2 — readiness-only, no parallel classifiers):
+
+    - ``decision == "allow"`` → ``ready_to_generate``
+    - ``decision == "defer"`` and ``readiness_level == "insufficient_data"``
+      → ``needs_more_info`` (missing intake, alignment, or activity context)
+    - otherwise → ``needs_user_decision``
     """
     decision = str(readiness_api.get("decision") or "").strip()
     readiness_level = str(readiness_api.get("readiness_level") or "").strip()
-    required_changes = {
-        str(change)
-        for change in list(readiness_api.get("required_changes") or [])
-        if str(change).strip()
-    }
     if decision == "allow":
         return STATUS_READY
-    if (
-        readiness_level == "insufficient_data"
-        and "complete_alignment_questions" in required_changes
-    ):
+    if decision == "defer" and readiness_level == LEVEL_INSUFFICIENT_DATA:
         return STATUS_NEEDS_INFO
     return STATUS_NEEDS_DECISION
 
@@ -134,9 +134,13 @@ def _copy_lines_for_v1(
         else {}
     )
     rc = _reason_codes(plan_generation_readiness)
+    required_changes = {
+        str(change).strip()
+        for change in list(plan_generation_readiness.get("required_changes") or [])
+        if str(change).strip()
+    }
     activities_found = int(act.get("activities_found") or 0)
     avg_mi = float(act.get("avg_miles_per_week_approx") or 0.0)
-    stance = str(ag.get("stance") or "")
     tension_plain = _tension_plain_summary_from_ambition(ag)
     primary_goal = str(plan_request.get("primary_goal") or "")
 
@@ -151,15 +155,60 @@ def _copy_lines_for_v1(
                 "Alignment needs one more structured answer before generation "
                 f"(topics: {', '.join(unresolved)})."
             )
+            concerns.append(
+                "Required intake or alignment information is still missing."
+            )
+            nxt = (
+                "Ask for the missing alignment or intake detail, then re-run assessment "
+                "before generating."
+            )
+        elif (
+            "collect_more_activity_data" in required_changes
+            or "RULE_ACTIVITIES_FOUND_ZERO" in rc
+        ):
+            summary_lines.append(
+                "No recent running activities were found in the lookback window—"
+                "baseline signals are thin."
+            )
+            concerns.append(
+                "Sync more history or confirm training details so the read isn’t guessing."
+            )
+            nxt = (
+                "Say we have little recent run data to size the plan; keep it short. "
+                "They can sync activity or adjust intake. "
+                "Avoid: tradeoff, path, tension, commitment, coherence."
+            )
+        elif "complete_alignment_questions" in required_changes:
+            summary_lines.append(
+                "A few intake alignment answers are still needed before generation."
+            )
+            concerns.append("Complete the remaining alignment questions in the flow.")
+            nxt = (
+                "Prompt for the missing alignment answers; keep tone supportive. "
+                "Avoid: tradeoff, path, tension, commitment, coherence."
+            )
         elif "RULE_INSUFFICIENT_GOAL_CONTEXT" in rc:
             summary_lines.append(
                 "Goal context is incomplete relative to the stated training intent."
             )
-        concerns.append("Required intake or alignment information is still missing.")
-        nxt = (
-            "Ask for the missing alignment or intake detail, then re-run assessment "
-            "before generating."
-        )
+            concerns.append(
+                "Clarify the goal or key intake details so recommendations stay grounded."
+            )
+            nxt = (
+                "Ask a short clarifying question; keep tone supportive. "
+                "Avoid: tradeoff, path, tension, commitment, coherence."
+            )
+        else:
+            summary_lines.append(
+                "A bit more intake or training context is needed before generating."
+            )
+            concerns.append(
+                "Required fields, alignment, or activity coverage are still incomplete."
+            )
+            nxt = (
+                "Ask for the smallest missing detail; re-run assessment when it lands. "
+                "Avoid: tradeoff, path, tension, commitment, coherence."
+            )
 
     elif status == STATUS_NEEDS_DECISION:
         sub3_run_day_risk = rc & {
@@ -221,14 +270,9 @@ def _copy_lines_for_v1(
                     f"Stated goal and recent volume read as **{tension_plain}** "
                     f"(baseline band: {band})."
                 )
-            elif stance:
-                summary_lines.append(
-                    f"Stated goal and recent volume read as **{stance.replace('_', ' ').lower()}** "
-                    f"(baseline band: {band})."
-                )
             else:
                 summary_lines.append(
-                    "Stated goal and recent volume look misaligned for a comfortable build."
+                    f"Stated goal and recent volume look stretched relative to baseline band **{band}**."
                 )
             concerns.append(
                 "The goal and recent weekly mileage don’t line up neatly—you’ll want to adjust expectations "
