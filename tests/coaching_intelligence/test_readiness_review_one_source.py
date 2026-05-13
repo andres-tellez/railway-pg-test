@@ -7,11 +7,11 @@ from src.coaching_intelligence.plan_generation_readiness import (
 )
 from src.coaching_intelligence.pre_generation_runner_review import (
     STATUS_NEEDS_DECISION,
-    STATUS_NEEDS_INFO,
     STATUS_READY,
     assessment_status_from_readiness,
     build_pre_generation_runner_review_v1,
     classify_assessment_status_v1,
+    pre_generation_runner_review_system_section,
 )
 from tests.coaching_intelligence.ambition_gap_fixtures import (
     synthetic_ambition_attributions,
@@ -85,7 +85,7 @@ def test_build_review_assessment_status_matches_explicit_readiness():
     assert review.assessment_status == assessment_status_from_readiness(readiness)
 
 
-def test_alignment_unresolved_is_needs_more_info_via_readiness():
+def test_alignment_unresolved_classifies_as_needs_user_decision_via_readiness():
     assessment = {
         "activity_summary": {
             "activities_found": 4,
@@ -120,14 +120,40 @@ def test_alignment_unresolved_is_needs_more_info_via_readiness():
         plan_request=plan,
         assessment_api=assessment,
     )
-    assert assessment_status_from_readiness(readiness) == STATUS_NEEDS_INFO
+    assert assessment_status_from_readiness(readiness) == STATUS_NEEDS_DECISION
     assert (
         classify_assessment_status_v1(
             assessment_api=assessment,
             plan_request=plan,
         )
-        == STATUS_NEEDS_INFO
+        == STATUS_NEEDS_DECISION
     )
+
+
+def test_system_section_separates_ui_display_from_llm_coach_blob():
+    assessment = _assessment_coherent_established()
+    plan = {
+        "primary_goal": "Just Finish",
+        "race_distance": "Marathon",
+        "race_date": "2027-06-01",
+        "training_days": ["Mon", "Wed"],
+    }
+    readiness = evaluate_plan_generation_readiness(
+        plan_request=plan,
+        assessment_api=assessment,
+    )
+    review = build_pre_generation_runner_review_v1(
+        assessment_api=assessment,
+        plan_request=plan,
+        plan_generation_readiness=readiness,
+    )
+    api = review.as_api_dict()
+    api["plan_generation_readiness"] = readiness
+    section = pre_generation_runner_review_system_section(api)
+    assert "runner_analysis_display (USER / UI" in section
+    assert "coach_analysis_for_llm (LLM CONTEXT" in section
+    assert "mobile renders this" not in section.lower()
+    assert "tradeoff" not in section.lower()
 
 
 def test_coherent_just_finish_ready_matches():

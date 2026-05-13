@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from src.coaching_intelligence.plan_generation_readiness import (
+    evaluate_plan_generation_readiness,
+)
 from src.coaching_intelligence.pre_generation_runner_review import (
     SCHEMA_VERSION,
     STATUS_NEEDS_DECISION,
-    STATUS_NEEDS_INFO,
     STATUS_READY,
     build_pre_generation_runner_review_v1,
     classify_assessment_status_v1,
@@ -61,7 +63,7 @@ def _base_plan_request() -> dict:
     }
 
 
-def test_classify_empty_activity_is_needs_more_info():
+def test_classify_empty_activity_is_needs_user_decision_insufficient_data():
     assessment_api = {
         "activity_summary": {
             "activities_found": 0,
@@ -89,11 +91,11 @@ def test_classify_empty_activity_is_needs_more_info():
             assessment_api=assessment_api,
             plan_request=_base_plan_request(),
         )
-        == STATUS_NEEDS_INFO
+        == STATUS_NEEDS_DECISION
     )
 
 
-def test_classify_unresolved_alignment_flags_is_needs_more_info():
+def test_classify_unresolved_alignment_flags_is_needs_user_decision_with_alignment_action():
     assessment_api = {
         "activity_summary": {
             "activities_found": 4,
@@ -121,8 +123,13 @@ def test_classify_unresolved_alignment_flags_is_needs_more_info():
             assessment_api=assessment_api,
             plan_request=_base_plan_request(),
         )
-        == STATUS_NEEDS_INFO
+        == STATUS_NEEDS_DECISION
     )
+    readiness = evaluate_plan_generation_readiness(
+        plan_request=_base_plan_request(),
+        assessment_api=assessment_api,
+    )
+    assert "provide_alignment_answers" in readiness["allowed_user_actions"]
 
 
 def test_marathon_three_hours_three_days_review_names_structural_tradeoff():
@@ -292,7 +299,7 @@ def test_tension_after_alignment_summary_prefers_attribution_phrase():
         plan_generation_readiness=readiness,
     )
     blob = " ".join(review.summary_lines).lower()
-    assert "high tension between your time goal" in blob
+    assert "sharp mismatch between your time goal and a thin training baseline" in blob
     assert "thin training baseline" in blob
 
 
@@ -364,6 +371,14 @@ def test_pre_generation_runner_review_system_section_non_empty():
         assessment_api=assessment_api,
         plan_request=_base_plan_request(),
     )
-    section = pre_generation_runner_review_system_section(review.as_api_dict())
+    api = review.as_api_dict()
+    readiness = evaluate_plan_generation_readiness(
+        plan_request=_base_plan_request(),
+        assessment_api=assessment_api,
+    )
+    api["plan_generation_readiness"] = readiness
+    section = pre_generation_runner_review_system_section(api)
     assert "Pre-generation runner review" in section
     assert "assessment_status" in section
+    assert "runner_analysis_display (USER / UI" in section
+    assert "coach_analysis_for_llm (LLM CONTEXT" in section

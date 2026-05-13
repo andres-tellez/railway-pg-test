@@ -23,13 +23,11 @@ when ``SMARTCOACH_SPLIT_DETAIL_FASTPATH`` is enabled. See ``docs/SMARTCOACH_SYST
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
 import re
 import time
-import uuid
 from datetime import date
 from dataclasses import replace
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -40,12 +38,6 @@ from sqlalchemy import text
 from src.db.dao.user_profile_dao import get_user_profile
 from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
 from src.services.security.external_apis.openai_service import get_openai_service
-from src.coaching_intelligence.pre_generation_runner_assessment import (
-    build_pre_generation_runner_assessment,
-)
-from src.coaching_intelligence.plan_generation_readiness import (
-    evaluate_plan_generation_readiness,
-)
 from src.coaching_intelligence.pre_generation_runner_review import (
     build_pre_generation_runner_review_v1,
     pre_generation_runner_review_system_section,
@@ -88,6 +80,9 @@ from src.smartcoach_mobile_coach.plan_intake_activity_context import (
     compute_plan_intake_activity_summary,
     format_plan_intake_activity_context_block,
     parse_anchor_local_date_yyyy_mm_dd,
+)
+from src.smartcoach_mobile_coach.readiness_gate import (
+    get_or_compute_readiness_gate,
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     _human_missing_label,
@@ -2018,6 +2013,16 @@ def _join_nonempty_system_sections(*sections: str) -> str:
     return "\n\n".join(s.strip() for s in sections if (s or "").strip())
 
 
+def runner_review_required_before_generate() -> bool:
+    """When false, runner-review section waits for ``ready_to_generate`` even if intake is confirmed."""
+    raw = (
+        (os.getenv("SMARTCOACH_RUNNER_REVIEW_REQUIRED_BEFORE_GENERATE") or "1")
+        .strip()
+        .lower()
+    )
+    return raw not in ("0", "false", "no", "off")
+
+
 def _try_build_runner_review_bundle(
     session: Session,
     internal_user_id: str,
@@ -2026,15 +2031,18 @@ def _try_build_runner_review_bundle(
     """
     Build optional pre-generation runner review system section + API dict.
 
-    Returns ``("", None)`` when the feature is off, intake is not
-    ``ready_to_generate``, or assessment/plan_request construction fails.
+    Returns ``("", None)`` when the feature is off, split-confirm gates fail,
+    or assessment/plan_request construction fails. When split-confirm is on
+    and ``runner_review_required_before_generate()`` is true (default), the
+    bundle is built after ``intake_confirmed`` even if ``ready_to_generate``
+    is still pre-wired false — so Runner Analysis can render for LEVEL_READY
+    and other states that still carry a trust-building card.
+
     Failures are logged and never break the turn.
     """
     if not runner_review_feature_enabled():
         return ("", None)
-    if not isinstance(plan_intake_state, dict) or not plan_intake_state.get(
-        "ready_to_generate"
-    ):
+    if not isinstance(plan_intake_state, dict):
         return ("", None)
     if plan_creation_split_confirm_enabled():
         ux0 = (
@@ -2049,39 +2057,35 @@ def _try_build_runner_review_bundle(
             or ux0.get("runner_tradeoff_edit_focus") == "goal"
         ):
             return ("", None)
+        if not runner_review_required_before_generate():
+            if not plan_intake_state.get("ready_to_generate"):
+                return ("", None)
+    elif not plan_intake_state.get("ready_to_generate"):
+        return ("", None)
     try:
         plan_request = build_plan_request_from_state(plan_intake_state)
-        assessment = build_pre_generation_runner_assessment(
-            session,
-            str(internal_user_id),
+        gate_result = get_or_compute_readiness_gate(
+            session=session,
+            internal_user_id=str(internal_user_id),
             plan_request=plan_request,
             plan_intake_state=plan_intake_state,
             alignment_enabled=_intake_alignment_enabled(),
         )
-        assessment_api = assessment.as_api_dict()
-        trace_id = str(uuid.uuid4())
-        readiness_api = evaluate_plan_generation_readiness(
-            plan_request=plan_request,
-            assessment_api=assessment_api,
-            trace_id=trace_id,
-        )
-        digest_raw = assessment_api.get("plan_request_digest")
-        digest_for_hash = digest_raw if isinstance(digest_raw, dict) else {}
-        digest_sha256 = hashlib.sha256(
-            json.dumps(digest_for_hash, sort_keys=True, default=str).encode("utf-8")
-        ).hexdigest()
+        assessment_api = gate_result.assessment_api
+        readiness_api = gate_result.readiness_api
         logger.info(
             "[readiness_gate] %s",
             json.dumps(
                 {
-                    "trace_id": trace_id,
+                    "trace_id": readiness_api.get("trace_id"),
                     "policy_version": readiness_api.get("policy_version"),
                     "decision": readiness_api.get("decision"),
                     "readiness_level": readiness_api.get("readiness_level"),
                     "reason_codes": readiness_api.get("reason_codes"),
                     "user_id": str(internal_user_id),
-                    "plan_request_digest_sha256": digest_sha256,
+                    "plan_request_digest_sha256": gate_result.plan_request_digest_sha256,
                     "evidence_snapshot_id": readiness_api.get("evidence_snapshot_id"),
+                    "cache_status": gate_result.cache_status,
                 },
                 default=str,
             ),
@@ -2247,11 +2251,12 @@ def _plan_intake_phase_system_section(
                 return (
                     "## Runner assessment phase (structured UI)\n"
                     "- The app displays a **deterministic Runner Analysis card** from "
-                    "`plan_generation_readiness.coach_analysis_for_llm` (facts reviewed, concerns, "
-                    "recommended path, allowed actions). That card is the coaching authority.\n"
+                    "`plan_generation_readiness.runner_analysis_display` (user-facing facts, verdict, "
+                    "and actions). **`coach_analysis_for_llm`** is parallel **LLM context** inside the same "
+                    "object; treat the card payload as what the athlete sees.\n"
                     "- Do **not** repeat the full analysis, numbers, schedule, or action list in prose.\n"
                     "- Optional only: **at most two short sentences** of warmth or empathy — no new facts, "
-                    "metrics, categories, or recommendations beyond that payload.\n"
+                    "metrics, categories, or recommendations beyond those payloads.\n"
                     "- Do **not** call `generate_training_plan` in this phase.\n"
                 )
             phase = str(ux.get("plan_creation_phase") or "")
@@ -2272,12 +2277,11 @@ def _plan_intake_phase_system_section(
             if tradeoff_chips:
                 return (
                     "## Goal / schedule — choose next step\n"
-                    "- Runner Analysis in the app is driven by **`coach_analysis_for_llm`** inside "
-                    "`pre_generation_runner_review.plan_generation_readiness`. Treat it as authoritative; "
-                    "do **not** contradict it or revive legacy `summary_lines` / `concerns` if they differ.\n"
+                    "- Runner Analysis in the app is driven by **`runner_analysis_display`** inside "
+                    "`pre_generation_runner_review.plan_generation_readiness` (with **`coach_analysis_for_llm`** "
+                    "as LLM context in the same blob). Treat the display payload as authoritative for what the "
+                    "athlete sees; do **not** contradict it or revive legacy `summary_lines` / `concerns` if they differ.\n"
                     "- Brief prose optional only (warmth / clarity); chips carry the real choices.\n"
-                    "- User-facing wording: avoid **tradeoff**, **path**, **tension**, **commitment**, "
-                    "**coherence**.\n"
                     "- They pick **inline chips** below or edit intake in chat. Do **not** show "
                     "**Create my plan** until they choose an option (including **keep goal and schedule**) "
                     "or change material schedule/goal/race date.\n"
@@ -2485,10 +2489,10 @@ def _enforce_plan_creation_response_guardrails(
     Runs on **model-authored text only** — callers apply deterministic preambles *after*
     this step so activity-overview paragraphs are not counted toward the sentence cap.
 
-    Alignment pause turns may need an extra sentence (interpretation + tradeoff + rationale + question);
+    Alignment pause turns may need an extra sentence (interpretation + choices + rationale + question);
     those allow five sentences.
 
-    Runner Analysis / tradeoff turns skip the sentence cap — structured facts render in the client.
+    Runner Analysis / inline chip turns skip the sentence cap — structured facts render in the client.
 
     When still collecting (``ready_to_generate`` false), strip premature full-plan
     confirmation / generate language and fall back to the next deterministic question.

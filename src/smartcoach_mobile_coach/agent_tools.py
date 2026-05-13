@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
-import uuid
 import warnings
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -16,11 +14,7 @@ from sqlalchemy import func, text, update
 
 from src.db.dao.activity_dao import ActivityDAO
 from src.coaching_intelligence.pre_generation_runner_assessment import (
-    build_pre_generation_runner_assessment,
     extract_alignment_answer_bookkeeping,
-)
-from src.coaching_intelligence.plan_generation_readiness import (
-    evaluate_plan_generation_readiness,
 )
 from src.smartcoach_mobile_coach.config import INSIGHT_SCHEMA_VERSION
 from src.smartcoach_mobile_coach.db_helpers import (
@@ -40,6 +34,9 @@ from src.smartcoach_mobile_coach.plan_creation_ui import (
     PHASE_COLLECTING_ADDITIONAL_TRAINING_DAY,
     PHASE_GENERATED,
     sync_legacy_ux_from_phase,
+)
+from src.smartcoach_mobile_coach.readiness_gate import (
+    get_or_compute_readiness_gate,
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     PLAN_UX_STAGE_GENERATED,
@@ -2060,16 +2057,21 @@ def tool_generate_training_plan(
                 ),
                 "plan_intake_state": current_state,
             }
-        if ux_gate.get("runner_review_assessment_status") == "needs_more_info":
-            return {
-                "error": "runner_review_needs_more_info",
-                "tool": "generate_training_plan",
-                "message": (
-                    "Alignment or goal context is still incomplete — finish open items "
-                    "before generating."
-                ),
-                "plan_intake_state": current_state,
-            }
+        pg = ux_gate.get("plan_generation_readiness")
+        if isinstance(pg, dict):
+            dec = str(pg.get("decision") or "").strip()
+            lvl = str(pg.get("readiness_level") or "").strip()
+            if dec == "defer" and lvl == "insufficient_data":
+                # Error slug kept for mobile/tool clients (Phase 6: assessment_status is needs_user_decision).
+                return {
+                    "error": "runner_review_needs_more_info",
+                    "tool": "generate_training_plan",
+                    "message": (
+                        "Alignment or goal context is still incomplete — finish open items "
+                        "before generating."
+                    ),
+                    "plan_intake_state": current_state,
+                }
 
     activity_weeks_raw = args.get("activity_weeks", 12)
     try:
@@ -2088,9 +2090,9 @@ def tool_generate_training_plan(
         }
 
     try:
-        assessment = build_pre_generation_runner_assessment(
-            session,
-            str(internal_user_id),
+        gate_result = get_or_compute_readiness_gate(
+            session=session,
+            internal_user_id=str(internal_user_id),
             plan_request=plan_request,
             plan_intake_state=current_state,
             alignment_enabled=_intake_alignment_enabled(),
@@ -2115,30 +2117,21 @@ def tool_generate_training_plan(
             "plan_intake_state": current_state,
         }
 
-    assessment_payload = assessment.as_api_dict()
-    trace_id = str(uuid.uuid4())
-    readiness_payload = evaluate_plan_generation_readiness(
-        plan_request=plan_request,
-        assessment_api=assessment_payload,
-        trace_id=trace_id,
-    )
-    digest_raw = assessment_payload.get("plan_request_digest")
-    digest_for_hash = digest_raw if isinstance(digest_raw, dict) else {}
-    digest_sha256 = hashlib.sha256(
-        json.dumps(digest_for_hash, sort_keys=True, default=str).encode("utf-8")
-    ).hexdigest()
+    assessment_payload = gate_result.assessment_api
+    readiness_payload = gate_result.readiness_api
     logger.info(
         "[readiness_gate] %s",
         json.dumps(
             {
-                "trace_id": trace_id,
+                "trace_id": readiness_payload.get("trace_id"),
                 "policy_version": readiness_payload.get("policy_version"),
                 "decision": readiness_payload.get("decision"),
                 "readiness_level": readiness_payload.get("readiness_level"),
                 "reason_codes": readiness_payload.get("reason_codes"),
                 "user_id": str(internal_user_id),
-                "plan_request_digest_sha256": digest_sha256,
+                "plan_request_digest_sha256": gate_result.plan_request_digest_sha256,
                 "evidence_snapshot_id": readiness_payload.get("evidence_snapshot_id"),
+                "cache_status": gate_result.cache_status,
             },
             default=str,
         ),
@@ -2161,8 +2154,16 @@ def tool_generate_training_plan(
         }
 
     if _intake_alignment_enabled():
-        ambition = assessment.ambition_gap
-        alignment_state = assessment.intake_alignment_state
+        ambition = (
+            assessment_payload.get("ambition_gap")
+            if isinstance(assessment_payload.get("ambition_gap"), dict)
+            else None
+        )
+        alignment_state = (
+            assessment_payload.get("intake_alignment_state")
+            if isinstance(assessment_payload.get("intake_alignment_state"), dict)
+            else None
+        )
         assert ambition is not None and alignment_state is not None
 
         prior_answers, _question_count, asked_categories = (

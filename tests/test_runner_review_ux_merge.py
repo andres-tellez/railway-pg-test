@@ -11,6 +11,9 @@ from src.smartcoach_mobile_coach.plan_creation_ui import (
     sync_legacy_ux_from_phase,
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import update_plan_intake_state
+from tests.coaching_intelligence.ambition_gap_fixtures import (
+    synthetic_ambition_attributions,
+)
 
 
 def _marathon_draft() -> dict:
@@ -397,3 +400,137 @@ def test_currently_unrealistic_tradeoff_filters_continue(monkeypatch_split_confi
     option_ids = {o["id"] for o in tradeoff.get("options") or []}
     assert "rt_continue" not in option_ids
     assert option_ids == {"rt_expand", "rt_goal", "rt_time", "rt_base"}
+
+
+def test_runner_analysis_card_rendered_on_level_ready(
+    monkeypatch_split_confirm, monkeypatch
+):
+    """Phase 6.1: intake confirmed + split-confirm builds review even if ready_to_generate false."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("SMARTCOACH_PRE_GENERATION_RUNNER_REVIEW_V1", "1")
+
+    from src.coaching_intelligence.plan_generation_readiness import (
+        evaluate_plan_generation_readiness,
+    )
+    from src.smartcoach_mobile_coach.orchestrator import _try_build_runner_review_bundle
+
+    plan_request = {
+        "primary_goal": "Just Finish",
+        "race_distance": "Marathon",
+        "race_date": "2027-06-01",
+        "training_days": ["Mon", "Wed"],
+    }
+    assessment_api = {
+        "activity_summary": {
+            "activities_found": 8,
+            "avg_miles_per_week_approx": 32.0,
+            "lookback_weeks": 6,
+            "completed_calendar_weeks_count": 4,
+        },
+        "intake_alignment_state": {"generation_ready": True, "unresolved_flags": []},
+        "ambition_gap": {
+            "stance": "COHERENT",
+            "baseline_band": "MODERATE",
+            "goal_demand": "FINISH",
+            "thin_baseline_data": False,
+            "attributions": synthetic_ambition_attributions(
+                baseline_band="MODERATE",
+                goal_demand="FINISH",
+                thin_baseline_data=False,
+                longest_run_miles=10.0,
+            ),
+        },
+    }
+    readiness = evaluate_plan_generation_readiness(
+        plan_request=plan_request,
+        assessment_api=assessment_api,
+    )
+
+    def _fake_plan_req(_state):
+        return plan_request
+
+    def _fake_gate(**kwargs):
+        return SimpleNamespace(
+            assessment_api=assessment_api,
+            readiness_api=readiness,
+            plan_request_digest_sha256="test",
+            cache_status="test",
+        )
+
+    monkeypatch.setattr(
+        "src.smartcoach_mobile_coach.orchestrator.build_plan_request_from_state",
+        _fake_plan_req,
+    )
+    monkeypatch.setattr(
+        "src.smartcoach_mobile_coach.orchestrator.get_or_compute_readiness_gate",
+        _fake_gate,
+    )
+
+    plan_intake_state = {
+        "ready_to_generate": False,
+        "status": "collecting",
+        "ux": {"intake_confirmed": True},
+        "draft": {},
+        "missing_required": [],
+        "alignment": {},
+    }
+    section, api = _try_build_runner_review_bundle(
+        MagicMock(), "user-1", plan_intake_state
+    )
+    assert api is not None
+    assert "Pre-generation runner review" in section
+    assert api.get("assessment_status") == "ready_to_generate"
+
+
+def test_goal_adjustment_ui_offers_evidence_based_presets(monkeypatch):
+    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
+    from src.smartcoach_mobile_coach.plan_creation_ui import _goal_adjustment_ui_prompt
+
+    intake = {
+        "draft": {
+            "race_distance": "Marathon",
+            "primary_goal": "Target Time",
+            "target_time": "3:30:00",
+        },
+        "ux": {
+            "plan_generation_readiness": {
+                "suggestions": [
+                    {
+                        "schema_version": "suggestion.v1",
+                        "id": "adjust_goal",
+                        "label": "Soften goal",
+                        "proposed_value": "4:00:00",
+                        "chip_updates": {},
+                    },
+                ],
+            },
+        },
+    }
+    ga = _goal_adjustment_ui_prompt(intake)
+    assert ga is not None
+    opts = ga.get("options") or []
+    labels = [o.get("label") for o in opts]
+    assert "Finish strong (no time target)" in labels
+    assert "4:00" in labels
+    clocks = {
+        str(o.get("updates", {}).get("target_time"))
+        for o in opts
+        if o.get("id", "").startswith("ga_ev_")
+    }
+    assert "4:00:00" in clocks
+
+
+def test_intake_state_updates_visible_in_same_turn_runner_review():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    src = (root / "src" / "smartcoach_mobile_coach" / "orchestrator.py").read_text(
+        encoding="utf-8"
+    )
+    start = src.index("def run_mobile_agent_turn")
+    chunk = src[start:]
+    i_merge = chunk.find("_eager_merge_plan_intake_user_turn")
+    i_bundle = chunk.find("pre_generation_review_section_plan")
+    assert 0 < i_merge < i_bundle

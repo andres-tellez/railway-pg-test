@@ -2,11 +2,43 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any, Dict, Optional
 
 from src.coaching_intelligence.contracts.deficits import DEFICITS_SCHEMA, Deficits
 from src.coaching_intelligence.policy import policy_table as pt
 from src.coaching_intelligence.policy.demand import interpolated_pace_gap_thresholds
+
+
+def _weeks_until_race(plan_request: Dict[str, Any]) -> Optional[float]:
+    raw = plan_request.get("race_date")
+    if raw is None:
+        return None
+    if isinstance(raw, date) and not isinstance(raw, datetime):
+        race_day = raw
+    elif isinstance(raw, datetime):
+        race_day = raw.date()
+    else:
+        try:
+            race_day = datetime.strptime(str(raw)[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    days = (race_day - date.today()).days
+    if days <= 0:
+        return 0.0
+    return days / 7.0
+
+
+def _is_marathon(plan_request: Dict[str, Any]) -> bool:
+    raw = str(plan_request.get("race_distance") or "").strip().lower()
+    if "half" in raw:
+        return False
+    return "marathon" in raw
+
+
+def _is_target_time_goal(plan_request: Dict[str, Any]) -> bool:
+    goal = str(plan_request.get("primary_goal") or "").strip().lower()
+    return goal == "target time" or ("target" in goal and "time" in goal)
 
 
 def compute_deficits(
@@ -15,6 +47,7 @@ def compute_deficits(
     *,
     demand_score: float,
     goal_marathon_pace_sec_per_mi: Optional[float],
+    weeks_to_race: Optional[float] = None,
 ) -> Deficits:
     """
     Approximate shortfalls vs demand-scaled targets (diagnostics / UI — not a second policy engine).
@@ -65,11 +98,30 @@ def compute_deficits(
         if day_tgt > ntrain > 0:
             freq_def = float(day_tgt - ntrain)
 
+    time_def: Optional[float] = None
+    wtr = weeks_to_race
+    if wtr is None:
+        wtr = _weeks_until_race(plan_request)
+    if (
+        wtr is not None
+        and _is_marathon(plan_request)
+        and _is_target_time_goal(plan_request)
+    ):
+        wk_need = float(pt.marathon_min_weeks_before_race_low_demand) + float(
+            demand_score
+        ) * (
+            float(pt.marathon_min_weeks_before_race_high_demand)
+            - float(pt.marathon_min_weeks_before_race_low_demand)
+        )
+        short = wk_need - float(wtr)
+        if short > 0:
+            time_def = round(short, 1)
+
     return Deficits(
         schema_version=DEFICITS_SCHEMA,
         pace_deficit_sec_per_mi=pace_def,
         volume_deficit_mpw=vol_def,
         long_run_deficit_mi=lr_def,
-        time_deficit_weeks=None,
+        time_deficit_weeks=time_def,
         frequency_deficit_days=freq_def,
     )

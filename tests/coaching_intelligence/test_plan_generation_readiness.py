@@ -303,6 +303,21 @@ def test_policy_output_is_stable_for_same_inputs():
     )
 
 
+def test_runner_evidence_overrides_activity_summary_for_shared_keys():
+    """Phase 3.3: typed runner_evidence is canonical when the key is present."""
+    assessment = _assessment(avg_mpw=12.0, longest=8.0, activities_found=8)
+    assessment["runner_evidence"] = {
+        "schema_version": "runner_evidence.v1",
+        "avg_miles_per_week_approx": 45.0,
+    }
+    out = evaluate_plan_generation_readiness(
+        plan_request=_plan(),
+        assessment_api=assessment,
+    )
+    assert out["inputs_digest"]["avg_miles_per_week_approx"] == 45.0
+    assert out["inputs_digest"]["longest_run_miles"] == 8.0
+
+
 def test_readiness_payload_json_serializable_when_plan_request_has_date_objects():
     """Regression: agent-messages persists assistant payload via json.dumps."""
     plan = _plan(race_date=date(2026, 10, 11))

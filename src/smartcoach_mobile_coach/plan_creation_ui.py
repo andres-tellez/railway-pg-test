@@ -15,6 +15,10 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     structured_intake_core_v1_enabled,
 )
 from src.schemas.plan_schema import PrimaryGoal
+from src.coaching_intelligence.time_clock import (
+    format_clock_seconds,
+    parse_clock_seconds,
+)
 from src.utils.date_helpers import DAY_NAMES_ABBREV
 
 # --- Phase constants (v1; split-confirm path only) ---
@@ -51,6 +55,77 @@ _WEEKDAY_CHIP_LABELS = {
     "Sun": "Sunday",
 }
 
+_GOAL_ADJUST_MIN_SEC = 2 * 3600 + 45 * 60  # 2:45:00
+_GOAL_ADJUST_MAX_SEC = 6 * 3600  # 6:00:00
+
+
+def _short_marathon_clock_label(clock: str) -> str:
+    sec = parse_clock_seconds(clock)
+    if sec is None:
+        return clock.strip()
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}:{m:02d}"
+    return f"{m}:{s:02d}"
+
+
+def _round_clock_sec_to_5min(sec: int) -> int:
+    return int(round(sec / 300.0)) * 300
+
+
+def _goal_time_options_from_proposed_clock(proposed_clock: str) -> List[Dict[str, Any]]:
+    """Time-target chips bracketing policy ``adjust_goal.proposed_value`` (≈−10m / +15m)."""
+    center0 = parse_clock_seconds(proposed_clock)
+    if center0 is None:
+        return []
+    center = _round_clock_sec_to_5min(
+        max(_GOAL_ADJUST_MIN_SEC, min(_GOAL_ADJUST_MAX_SEC, center0))
+    )
+    faster = _round_clock_sec_to_5min(center - 600)
+    slower = _round_clock_sec_to_5min(center + 900)
+    faster = max(_GOAL_ADJUST_MIN_SEC, min(_GOAL_ADJUST_MAX_SEC, faster))
+    slower = max(_GOAL_ADJUST_MIN_SEC, min(_GOAL_ADJUST_MAX_SEC, slower))
+    ordered: List[tuple[int, str]] = []
+    seen: set[int] = set()
+    for cand in (faster, center, slower):
+        c = max(_GOAL_ADJUST_MIN_SEC, min(_GOAL_ADJUST_MAX_SEC, cand))
+        if c in seen:
+            continue
+        seen.add(c)
+        clock = format_clock_seconds(c)
+        label = _short_marathon_clock_label(clock)
+        ordered.append((c, label))
+    options: List[Dict[str, Any]] = []
+    for sec, label in ordered:
+        clock = format_clock_seconds(sec)
+        pid = f"ga_ev_{sec}"
+        options.append(
+            {
+                "id": pid,
+                "label": label,
+                "user_message": f"I'm aiming for about {label} (finish ~{clock}).",
+                "updates": {
+                    "primary_goal": PrimaryGoal.TARGET_TIME.value,
+                    "target_time": clock,
+                },
+            }
+        )
+    return options
+
+
+def _adjust_goal_proposed_clock_from_ux(ux: Dict[str, Any]) -> Optional[str]:
+    readiness = _plan_generation_readiness(ux)
+    for row in readiness.get("suggestions") or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("id") or "").strip() != "adjust_goal":
+            continue
+        pv = row.get("proposed_value")
+        if pv is not None and str(pv).strip():
+            return str(pv).strip()
+    return None
+
 
 def _plan_generation_readiness(ux: Dict[str, Any]) -> Dict[str, Any]:
     readiness = ux.get("plan_generation_readiness")
@@ -59,6 +134,13 @@ def _plan_generation_readiness(ux: Dict[str, Any]) -> Dict[str, Any]:
 
 def _readiness_decision(ux: Dict[str, Any]) -> str:
     return str(_plan_generation_readiness(ux).get("decision") or "").strip()
+
+
+def _readiness_level_is_insufficient_data(ux: Dict[str, Any]) -> bool:
+    return (
+        str(_plan_generation_readiness(ux).get("readiness_level") or "").strip()
+        == "insufficient_data"
+    )
 
 
 def _readiness_allowed_actions(ux: Dict[str, Any]) -> List[str]:
@@ -189,28 +271,42 @@ def _goal_adjustment_ui_prompt(
     rd = str(draft.get("race_distance") or "").lower()
     if "marathon" not in rd or "half" in rd:
         return None
-    presets: List[tuple[str, str, str]] = [
-        ("ga_tt300", "3:00", "3:00:00"),
-        ("ga_tt315", "3:15", "3:15:00"),
-        ("ga_tt330", "3:30", "3:30:00"),
-        ("ga_tt340", "3:40", "3:40:00"),
-        ("ga_tt345", "3:45", "3:45:00"),
-        ("ga_tt400", "4:00", "4:00:00"),
-        ("ga_tt430", "4:30", "4:30:00"),
-        ("ga_tt500", "5:00", "5:00:00"),
-    ]
-    time_options = [
-        {
-            "id": pid,
-            "label": label,
-            "user_message": f"I'm aiming for about {label} (finish ~{clock}).",
-            "updates": {
-                "primary_goal": PrimaryGoal.TARGET_TIME.value,
-                "target_time": clock,
-            },
-        }
-        for pid, label, clock in presets
-    ]
+    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    proposed = _adjust_goal_proposed_clock_from_ux(ux)
+    finish_opt: Dict[str, Any] = {
+        "id": "ga_finish",
+        "label": "Finish strong (no time target)",
+        "user_message": "I want to finish strong — no specific time goal.",
+        "updates": {
+            "primary_goal": PrimaryGoal.JUST_FINISH.value,
+            "target_time": None,
+        },
+    }
+    if proposed:
+        time_options = _goal_time_options_from_proposed_clock(proposed)
+    else:
+        presets: List[tuple[str, str, str]] = [
+            ("ga_tt300", "3:00", "3:00:00"),
+            ("ga_tt315", "3:15", "3:15:00"),
+            ("ga_tt330", "3:30", "3:30:00"),
+            ("ga_tt340", "3:40", "3:40:00"),
+            ("ga_tt345", "3:45", "3:45:00"),
+            ("ga_tt400", "4:00", "4:00:00"),
+            ("ga_tt430", "4:30", "4:30:00"),
+            ("ga_tt500", "5:00", "5:00:00"),
+        ]
+        time_options = [
+            {
+                "id": pid,
+                "label": label,
+                "user_message": f"I'm aiming for about {label} (finish ~{clock}).",
+                "updates": {
+                    "primary_goal": PrimaryGoal.TARGET_TIME.value,
+                    "target_time": clock,
+                },
+            }
+            for pid, label, clock in presets
+        ]
     return {
         "version": 1,
         "field_key": "plan_intake.goal_adjustment",
@@ -218,18 +314,7 @@ def _goal_adjustment_ui_prompt(
         "selection_mode": "single",
         "required": True,
         "prompt": "What goal do you want to use for this race instead?",
-        "options": [
-            {
-                "id": "ga_finish",
-                "label": "Finish strong (no time target)",
-                "user_message": "I want to finish strong — no specific time goal.",
-                "updates": {
-                    "primary_goal": PrimaryGoal.JUST_FINISH.value,
-                    "target_time": None,
-                },
-            },
-            *time_options,
-        ],
+        "options": [finish_opt, *time_options],
     }
 
 
@@ -380,7 +465,7 @@ def _plan_generation_confirm_ui_prompt(
         return None
     if ux.get("plan_generation_confirmed"):
         return None
-    if ux.get("runner_review_assessment_status") == "needs_more_info":
+    if _readiness_level_is_insufficient_data(ux):
         return None
     if not _readiness_allows_create_plan(ux):
         return None
@@ -464,7 +549,7 @@ def recompute_plan_creation_phase(state: Dict[str, Any]) -> None:
         state["ux"] = ux
         return
 
-    if ra == "needs_more_info":
+    if ra == "needs_user_decision" and _readiness_level_is_insufficient_data(ux):
         ux["plan_creation_phase"] = PHASE_COLLECTING_INTAKE
         state["ux"] = ux
         return
@@ -538,9 +623,9 @@ def apply_review_to_plan_intake_ux_for_phase(
         if ra == "needs_user_decision":
             if prev_ra == "ready_to_generate" and tradeoff_ok:
                 uxs["runner_tradeoff_resolved"] = False
-        elif ra == "needs_more_info":
-            if not tradeoff_ok:
-                uxs["runner_tradeoff_resolved"] = False
+            elif _readiness_level_is_insufficient_data(uxs):
+                if not tradeoff_ok:
+                    uxs["runner_tradeoff_resolved"] = False
     recompute_plan_creation_phase(state)
     sync_legacy_ux_from_phase(uxs, str(uxs.get("plan_creation_phase") or ""))
 

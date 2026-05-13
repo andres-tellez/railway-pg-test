@@ -13,15 +13,16 @@ The review is built **only** from:
 
 No weekly insights, no scoring engine, no `run_v2` / planner inputs.
 
-## Three statuses
+## Assessment statuses (v1)
 
-Exactly one of (derived **only** from ``plan_generation_readiness.decision`` + ``readiness_level`` — see ``assessment_status_from_readiness``; no parallel classifiers):
+Exactly one string is emitted as **`assessment_status`** (from ``assessment_status_from_readiness`` — **two values only** as of **Phase 6**):
 
-| Status | Meaning (coarse) |
-|--------|------------------|
-| `ready_to_generate` | `decision == "allow"`. |
-| `needs_more_info` | `decision == "defer"` and `readiness_level == "insufficient_data"` — missing required fields, alignment, and/or activity coverage (e.g. zero activities, unresolved alignment, incomplete goal context). |
-| `needs_user_decision` | All other deferred/blocked readiness — tradeoffs, stretch goals, thin baseline vs aggressive target time, sub‑3 frequency rules, pace gaps, etc. Narrative branches on ``reason_codes`` inside ``_copy_lines_for_v1``, not on raw ambition ``stance``. |
+| Status | When |
+|--------|------|
+| `ready_to_generate` | `plan_generation_readiness.decision == "allow"`. |
+| `needs_user_decision` | Any non-allow decision (defer/block). This includes **insufficient-data** cases (`decision == "defer"` and `readiness_level == "insufficient_data"` — missing fields, alignment, activity coverage). Tell those apart from tradeoff-style defers using **`plan_generation_readiness`** (`readiness_level`, **`allowed_user_actions`**, **`suggestions`**), not a separate status. Legacy clients may still see the string **`needs_more_info`** in old persisted UX; new payloads do not emit it as `assessment_status`. |
+
+Narrative inside **`_copy_lines_for_v1`** branches on **`readiness_is_insufficient_data`** vs other **`reason_codes`** for `needs_user_decision`, not on raw ambition **`stance`** alone.
 
 ## Split confirmation (plan creation)
 
@@ -40,10 +41,15 @@ When **`assessment_status`** is **`needs_user_decision`** and the phase is **`aw
 ## Feature flag (runner review payload)
 
 - **`SMARTCOACH_PRE_GENERATION_RUNNER_REVIEW_V1`** — default **on** (`1` if unset). Opt out with `0`, `false`, `no`, or `off`.
+- **`SMARTCOACH_RUNNER_REVIEW_REQUIRED_BEFORE_GENERATE`** — default **on**. When split-confirm is enabled, **off** restores the older rule: runner-review system/API waits for **`ready_to_generate`** even after **`intake_confirmed`**.
 
 ## Orchestrator behavior
 
-When plan-creation uses the **minimal** system prompt, intake is **`ready_to_generate`**, and (with split confirm on) **`ux.intake_confirmed`**, the orchestrator may attach:
+When plan-creation uses the **minimal** system prompt, split confirm is on, and **`ux.intake_confirmed`** is true (and goal-adjustment chip focus is not active), the orchestrator may build the runner-review bundle **even if `ready_to_generate` is still false** — so the Runner Analysis card can render in more readiness states (**Phase 6**). With **`SMARTCOACH_RUNNER_REVIEW_REQUIRED_BEFORE_GENERATE=0`**, the bundle again requires **`ready_to_generate`** under split-confirm.
+
+Without split confirm, the bundle still requires **`ready_to_generate`** as before.
+
+When built, the turn may attach:
 
 - Extra **system** markdown (`pre_generation_runner_review_system_section`) after the activity context block, and
 - **`data.pre_generation_runner_review`** on structured `text` responses alongside `plan_intake_state`.

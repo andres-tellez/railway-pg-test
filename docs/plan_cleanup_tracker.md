@@ -73,7 +73,7 @@ These paths exist **on purpose** until all producers and tests always carry full
 | `intake_alignment._effective_ambition_stance` | If no tension codes in `ambition_attributions`, uses the `ambition_stance` argument | Callers that omit attribution list or pass empty list. |
 | `pre_generation_runner_assessment` | Still passes `ambition_stance=str(ambition.get("stance") or "")` | Required parameter + backward compatibility. |
 | `plan_intake_flow._recompute_alignment_branch` | Uses **only** ``alignment["ambition_attributions"]`` for attribution-first tension (no mining merged ``attributions``). | Persisted states without that key rely on **``ambition_stance``** inside ``evaluate_intake_alignment_state`` only. |
-| `pre_generation_runner_review` | `_copy_lines_for_v1` uses **`_tension_plain_summary_from_ambition`** when `RULE_TENSION_AFTER_ALIGNMENT` and codes present; else **`stance`** for summary. | Narrative aligned with attribution-first policy. |
+| `pre_generation_runner_review` | `_copy_lines_for_v1` uses **`_alignment_plain_summary_from_ambition`** when `RULE_TENSION_AFTER_ALIGNMENT` and codes present; else **`stance`** for summary. | Narrative aligned with attribution-first policy. |
 | `agent_tools` alignment / brief | Still sets `ambition_stance` on alignment blob; **`posture_context` adds `ambition_attributions`**; `stance` in brief remains legacy snapshot. | Coach UX reads attributions first from prompt + brief. |
 
 ### Cleanup backlog (after implementation is stable — **planned removal order**)
@@ -92,7 +92,7 @@ Do **not** delete these until the **exit criteria** are met; otherwise productio
 
 | Item | Status |
 |------|--------|
-| Runner-review tension copy | Uses ambition **attributions** for `RULE_TENSION_AFTER_ALIGNMENT` when `STANCE_*` codes present (`pre_generation_runner_review._tension_plain_summary_from_ambition`). |
+| Runner-review tension copy | Uses ambition **attributions** for `RULE_TENSION_AFTER_ALIGNMENT` when `STANCE_*` codes present (`pre_generation_runner_review._alignment_plain_summary_from_ambition`). |
 | Mobile `proposed_value` | **Runner Analysis** card parses readiness **`suggestions`** and shows **Suggested inputs** with optional “try {clock}” (`runner-analysis-card.tsx`). |
 
 ### Refactor roadmap — Phase 2 / 3 checkpoint (readiness + evidence)
@@ -101,9 +101,9 @@ Do **not** delete these until the **exit criteria** are met; otherwise productio
 
 | Item | Status |
 |------|--------|
-| 2.1 Review status from readiness only | **`assessment_status_from_readiness`**: `allow` → `ready_to_generate`; **`defer` + `insufficient_data`** → `needs_more_info`; else `needs_user_decision`. No `required_changes` sub-filter for “more info” vs “decision.” |
-| 2.1 Narrative | **`_copy_lines_for_v1`** tailors `needs_more_info` for alignment vs activity collection vs goal context; **`RULE_TENSION_AFTER_ALIGNMENT`** uses attribution phrase or baseline-band copy only (no legacy `stance` string in user-facing summary). |
-| 2.2 Orchestrator / tool | Runner review bundle uses **`build_pre_generation_runner_review_v1`**. **`agent_tools`** does not call **`classify_assessment_status_v1`**; it reads **`runner_review_assessment_status`** from UX state when gating. |
+| 2.1 Review status from readiness only | **`assessment_status_from_readiness`**: `allow` → `ready_to_generate`; **anything else** → `needs_user_decision`. *Insufficient-data deferrals* (`defer` + `readiness_level == insufficient_data`) use the same `assessment_status`; distinguish them via **`plan_generation_readiness`** (`allowed_user_actions`, `suggestions`) — **Phase 6** removed parallel **`needs_more_info`**. |
+| 2.1 Narrative | **`_copy_lines_for_v1`** uses **`readiness_is_insufficient_data`** for alignment vs activity vs goal-context copy; other **`needs_user_decision`** paths branch on **`reason_codes`**. **`RULE_TENSION_AFTER_ALIGNMENT`** uses attribution phrase or baseline-band copy only (no legacy `stance` string in user-facing summary). |
+| 2.2 Orchestrator / tool | Runner review bundle uses **`build_pre_generation_runner_review_v1`**. **`generate_training_plan`** gates insufficient data via **`plan_generation_readiness`** (`defer` + `insufficient_data`); error slug **`runner_review_needs_more_info`** is unchanged for API compatibility. Other UX gates still read **`runner_review_assessment_status`**. |
 | 2.3 Readiness vs ambition | **`_apply_fact_category_severity`** already keys goal-demand tension on **`ambition_time_goal_tension()`** (attributions). **`ambition_stance`** remains on digest/API for observability only. |
 
 **Phase 3 (runner evidence layer)** — *quick assessment:*
@@ -111,7 +111,7 @@ Do **not** delete these until the **exit criteria** are met; otherwise productio
 | Item | Status |
 |------|--------|
 | 3.1–3.2 Evidence build + history window | **`build_runner_evidence`** in `plan_intake_activity_context.py`; **`runner_evidence`** on assessment API; history lookback via env (e.g. `SMARTCOACH_PLAN_INTAKE_HISTORY_WEEKS`). **Done.** |
-| 3.3 Typed path through readiness | **`_assessment_parts`** merges selected `runner_evidence` keys into the internal **`activity`** dict; readiness still uses **`builder.activity`** accessors — **optional future cleanup**: dedicated **`builder.evidence`** / fewer dict merges. |
+| 3.3 Typed path through readiness | **`_ReadinessBuilder`** holds **`RunnerEvidenceSummary`** as **`evidence`**; reads use **`activity_signal`** / **`activity_signals`** (evidence keys win; **`activity_summary`** merge remains the compatibility fill). **`_assessment_parts`** still shallow-merges history keys into **`activity`**. **Done.** |
 | 3.4 Evidence snapshot id | **`evidence_snapshot_id`** on readiness and assessments. **Done.** |
 
 ### Drift risks to watch
@@ -120,4 +120,4 @@ Do **not** delete these until the **exit criteria** are met; otherwise productio
 - New code that branches on **`stance` alone** instead of attributions + effective stance helper.
 - **Apply chip actions** from `suggestions` (beyond display-only hint) — not wired; card is informational.
 
-*Last updated: 2026-05-12 — Phase 2 status mapping + Phase 3 checkpoint; runner-review `needs_more_info` now includes all `insufficient_data` deferrals.*
+*Last updated: 2026-05-12 — Phase 2/3 checkpoint docs; **Phase 6 (2026-05-12):** runner-review `assessment_status` is only `ready_to_generate` \| `needs_user_decision` (insufficient data is the latter + readiness payload).*

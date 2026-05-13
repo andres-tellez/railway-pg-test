@@ -10,13 +10,10 @@ from __future__ import annotations
 from typing import Optional
 
 from src.coaching_intelligence.policy.policy_table import (
+    MARATHON_DEMAND_BANDS,
     competitive_marathon_max_seconds,
     marathon_distance_mi,
 )
-
-# Anchors: 2:50 (aggressive) → demand 1.0; 5:30 (very patient) → demand 0.0
-_MARATHON_SEC_FAST: float = 2 * 3600 + 50 * 60  # 2:50:00
-_MARATHON_SEC_SLOW: float = 5 * 3600 + 30 * 60  # 5:30:00
 
 
 def compute_demand_score(
@@ -42,13 +39,16 @@ def compute_demand_score(
     if "marathon" not in rd:
         return 0.0
 
-    p_fast = _MARATHON_SEC_FAST / marathon_distance_mi
-    p_slow = _MARATHON_SEC_SLOW / marathon_distance_mi
-    if pace >= p_slow:
+    marathon_clock = pace * marathon_distance_mi
+    bands = MARATHON_DEMAND_BANDS
+    if len(bands) < 2:
         return 0.0
-    if pace <= p_fast:
-        return 1.0
-    return (p_slow - pace) / (p_slow - p_fast)
+    (t0, d0), (t1, d1) = bands[0], bands[-1]
+    if marathon_clock <= t0:
+        return float(d0)
+    if marathon_clock >= t1:
+        return float(d1)
+    return float(d0 + (d1 - d0) * (marathon_clock - t0) / (t1 - t0))
 
 
 def interpolated_pace_gap_thresholds(

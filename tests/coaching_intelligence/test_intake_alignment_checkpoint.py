@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from src.coaching_intelligence.contracts.runner_evidence import RunnerEvidenceSummary
@@ -258,13 +259,13 @@ def test_pre_generation_assessment_failure_is_structured_and_skips_planner(monke
         lambda _s: _s["draft"],
     )
 
-    def _assessment_raises(*_args, **_kwargs):
+    def _gate_raises(**_kwargs):
         raise RuntimeError("simulated activity summary failure")
 
     monkeypatch.setattr(
         agent_tools,
-        "build_pre_generation_runner_assessment",
-        _assessment_raises,
+        "get_or_compute_readiness_gate",
+        _gate_raises,
     )
     run_mock = MagicMock()
     monkeypatch.setattr(agent_tools, "run_v2_plan_generation", run_mock)
@@ -286,6 +287,53 @@ def test_pre_generation_assessment_failure_is_structured_and_skips_planner(monke
     assert run_mock.called is False
 
 
+def test_generate_plan_uses_shared_readiness_gate_helper(monkeypatch):
+    monkeypatch.setattr(
+        agent_tools,
+        "build_plan_request_from_state",
+        lambda _s: _s["draft"],
+    )
+
+    gate_calls = {"count": 0}
+
+    def _gate(
+        *, session, internal_user_id, plan_request, plan_intake_state, alignment_enabled
+    ):
+        gate_calls["count"] += 1
+        assert internal_user_id == "u-1"
+        assert isinstance(plan_request, dict)
+        return SimpleNamespace(
+            assessment_api={"schema_version": "pre_generation_runner_assessment.v1"},
+            readiness_api={
+                "trace_id": "tr-shared",
+                "policy_version": "policy.v1.0",
+                "decision": "defer",
+                "readiness_level": "high_risk",
+                "reason_codes": ["RULE_SAMPLE"],
+                "evidence_snapshot_id": "ev-shared",
+            },
+            plan_request_digest_sha256="digest-shared",
+            cache_status="hit",
+        )
+
+    monkeypatch.setattr(agent_tools, "get_or_compute_readiness_gate", _gate)
+    run_mock = MagicMock()
+    monkeypatch.setattr(agent_tools, "run_v2_plan_generation", run_mock)
+
+    out = agent_tools.tool_generate_training_plan(
+        session=MagicMock(),
+        internal_user_id="u-1",
+        args={"confirm": True},
+        current_state=_state(),
+    )
+
+    assert gate_calls["count"] == 1
+    assert out["error"] == "plan_generation_readiness_deferred"
+    assert out["plan_generation_readiness"]["trace_id"] == "tr-shared"
+    assert out["plan_generation_readiness"]["evidence_snapshot_id"] == "ev-shared"
+    assert run_mock.called is False
+
+
 def test_execute_tool_returns_assessment_error_not_tool_execution_failed(monkeypatch):
     monkeypatch.setattr(
         agent_tools,
@@ -293,13 +341,13 @@ def test_execute_tool_returns_assessment_error_not_tool_execution_failed(monkeyp
         lambda _s: _s["draft"],
     )
 
-    def _assessment_raises(*_args, **_kwargs):
+    def _gate_raises(**_kwargs):
         raise ValueError("database unavailable")
 
     monkeypatch.setattr(
         agent_tools,
-        "build_pre_generation_runner_assessment",
-        _assessment_raises,
+        "get_or_compute_readiness_gate",
+        _gate_raises,
     )
 
     out = agent_tools.execute_tool(

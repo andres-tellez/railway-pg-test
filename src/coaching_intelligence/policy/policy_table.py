@@ -16,6 +16,19 @@ sub3_seconds: Final[int] = 3 * 60 * 60
 competitive_marathon_max_seconds: Final[int] = 3 * 3600 + 30 * 60  # 3:30:00
 marathon_distance_mi: Final[float] = 26.2
 
+# Piecewise-linear demand curve for marathon time goals (Phase 4).
+# Each tuple is (marathon_finish_clock_seconds, demand_score). Must be sorted
+# ascending by seconds (faster race = lower seconds). Demand decreases toward 0.0
+# as finish time slows (higher seconds).
+MARATHON_DEMAND_BANDS: Final[Tuple[Tuple[float, float], ...]] = (
+    (2 * 3600 + 50 * 60, 1.0),  # 2:50 → highest demand
+    (5 * 3600 + 30 * 60, 0.0),  # 5:30 → completion-oriented demand
+)
+
+# Minimum weeks before race recommended for marathon time-goal plans (interpolate by demand).
+marathon_min_weeks_before_race_low_demand: Final[float] = 10.0
+marathon_min_weeks_before_race_high_demand: Final[float] = 24.0
+
 # --- Sub-3 structural gates ---
 sub3_established_min_mpw: Final[float] = 30.0
 sub3_adequate_long_run_miles: Final[float] = 14.0
@@ -72,6 +85,9 @@ def snapshot_for_tests() -> dict[str, Any]:
         "sub3_seconds": sub3_seconds,
         "competitive_marathon_max_seconds": competitive_marathon_max_seconds,
         "marathon_distance_mi": marathon_distance_mi,
+        "MARATHON_DEMAND_BANDS": list(MARATHON_DEMAND_BANDS),
+        "marathon_min_weeks_before_race_low_demand": marathon_min_weeks_before_race_low_demand,
+        "marathon_min_weeks_before_race_high_demand": marathon_min_weeks_before_race_high_demand,
         "sub3_established_min_mpw": sub3_established_min_mpw,
         "sub3_adequate_long_run_miles": sub3_adequate_long_run_miles,
         "sub3_very_low_mpw": sub3_very_low_mpw,

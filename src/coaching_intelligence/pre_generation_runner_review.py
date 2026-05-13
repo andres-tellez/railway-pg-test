@@ -27,7 +27,6 @@ SCHEMA_VERSION = "pre_generation_runner_review.v1"
 
 STATUS_READY = "ready_to_generate"
 STATUS_NEEDS_DECISION = "needs_user_decision"
-STATUS_NEEDS_INFO = "needs_more_info"
 
 
 def assessment_status_from_readiness(readiness_api: Dict[str, Any]) -> str:
@@ -36,20 +35,23 @@ def assessment_status_from_readiness(readiness_api: Dict[str, Any]) -> str:
 
     Single source of truth with orchestrator and plan-generation tool gating.
 
-    Rules (Phase 2 — readiness-only, no parallel classifiers):
-
     - ``decision == "allow"`` → ``ready_to_generate``
-    - ``decision == "defer"`` and ``readiness_level == "insufficient_data"``
-      → ``needs_more_info`` (missing intake, alignment, or activity context)
-    - otherwise → ``needs_user_decision``
+    - otherwise → ``needs_user_decision`` (including ``insufficient_data`` defers;
+      use ``readiness_is_insufficient_data`` + ``allowed_user_actions`` / suggestions)
     """
     decision = str(readiness_api.get("decision") or "").strip()
-    readiness_level = str(readiness_api.get("readiness_level") or "").strip()
     if decision == "allow":
         return STATUS_READY
-    if decision == "defer" and readiness_level == LEVEL_INSUFFICIENT_DATA:
-        return STATUS_NEEDS_INFO
     return STATUS_NEEDS_DECISION
+
+
+def readiness_is_insufficient_data(readiness_api: Dict[str, Any]) -> bool:
+    """True when readiness defers for missing intake, alignment, or activity context."""
+    if not isinstance(readiness_api, dict):
+        return False
+    decision = str(readiness_api.get("decision") or "").strip()
+    readiness_level = str(readiness_api.get("readiness_level") or "").strip()
+    return decision == "defer" and readiness_level == LEVEL_INSUFFICIENT_DATA
 
 
 def _reason_codes(plan_generation_readiness: Dict[str, Any]) -> Set[str]:
@@ -89,8 +91,6 @@ def classify_assessment_status_v1(
 
 
 def _allowed_actions_for_status(status: str) -> List[str]:
-    if status == STATUS_NEEDS_INFO:
-        return ["provide_alignment_answers", "adjust_intake_via_update_plan_intake"]
     if status == STATUS_NEEDS_DECISION:
         return [
             "expand_running_days",
@@ -101,15 +101,26 @@ def _allowed_actions_for_status(status: str) -> List[str]:
     return ["confirm_generate_when_ready"]
 
 
-def _tension_plain_summary_from_ambition(ag: Dict[str, Any]) -> Optional[str]:
+def _allowed_user_actions_for_review(
+    *,
+    status: str,
+    plan_generation_readiness: Dict[str, Any],
+) -> List[str]:
+    raw = plan_generation_readiness.get("allowed_user_actions")
+    if isinstance(raw, list) and raw:
+        return [str(x).strip() for x in raw if str(x).strip()]
+    return _allowed_actions_for_status(status)
+
+
+def _alignment_plain_summary_from_ambition(ag: Dict[str, Any]) -> Optional[str]:
     """User-facing paraphrase from ambition ``attributions``; prefer over raw ``stance``."""
     raw = ag.get("attributions") or []
     codes = {str(x).strip() for x in raw if x}
     if "STANCE_HIGH_TENSION_TIME_VS_THIN_BASELINE" in codes:
-        return "high tension between your time goal and a thin training baseline"
+        return "a sharp mismatch between your time goal and a thin training baseline"
     if "STANCE_MANAGEABLE_TENSION_TIME_VS_MODERATE_BASELINE" in codes:
         return (
-            "manageable tension between your time goal and a moderate training baseline"
+            "a noticeable gap between your time goal and a moderate training baseline"
         )
     return None
 
@@ -141,14 +152,14 @@ def _copy_lines_for_v1(
     }
     activities_found = int(act.get("activities_found") or 0)
     avg_mi = float(act.get("avg_miles_per_week_approx") or 0.0)
-    tension_plain = _tension_plain_summary_from_ambition(ag)
+    alignment_plain = _alignment_plain_summary_from_ambition(ag)
     primary_goal = str(plan_request.get("primary_goal") or "")
 
     summary_lines: List[str] = []
     concerns: List[str] = []
     nxt = ""
 
-    if status == STATUS_NEEDS_INFO:
+    if readiness_is_insufficient_data(plan_generation_readiness):
         unresolved = [str(x) for x in list(ial.get("unresolved_flags") or []) if x]
         if unresolved:
             summary_lines.append(
@@ -175,18 +186,14 @@ def _copy_lines_for_v1(
             )
             nxt = (
                 "Say we have little recent run data to size the plan; keep it short. "
-                "They can sync activity or adjust intake. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
+                "They can sync activity or adjust intake."
             )
         elif "complete_alignment_questions" in required_changes:
             summary_lines.append(
                 "A few intake alignment answers are still needed before generation."
             )
             concerns.append("Complete the remaining alignment questions in the flow.")
-            nxt = (
-                "Prompt for the missing alignment answers; keep tone supportive. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
-            )
+            nxt = "Prompt for the missing alignment answers; keep tone supportive."
         elif "RULE_INSUFFICIENT_GOAL_CONTEXT" in rc:
             summary_lines.append(
                 "Goal context is incomplete relative to the stated training intent."
@@ -194,10 +201,7 @@ def _copy_lines_for_v1(
             concerns.append(
                 "Clarify the goal or key intake details so recommendations stay grounded."
             )
-            nxt = (
-                "Ask a short clarifying question; keep tone supportive. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
-            )
+            nxt = "Ask a short clarifying question; keep tone supportive."
         else:
             summary_lines.append(
                 "A bit more intake or training context is needed before generating."
@@ -206,8 +210,7 @@ def _copy_lines_for_v1(
                 "Required fields, alignment, or activity coverage are still incomplete."
             )
             nxt = (
-                "Ask for the smallest missing detail; re-run assessment when it lands. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
+                "Ask for the smallest missing detail; re-run assessment when it lands."
             )
 
     elif status == STATUS_NEEDS_DECISION:
@@ -236,8 +239,7 @@ def _copy_lines_for_v1(
             nxt = (
                 "2–4 short sentences: lead with goal + run days, then why it matters in plain running terms. "
                 "End with: you can pick an option below (or change details in chat). "
-                "Do not offer **Create my plan** until they choose. "
-                "Avoid the words: tradeoff, path, tension, commitment, coherence."
+                "Do not offer **Create my plan** until they choose."
             )
         elif "RULE_ACTIVITIES_FOUND_ZERO" in rc:
             summary_lines.append(
@@ -249,8 +251,7 @@ def _copy_lines_for_v1(
             )
             nxt = (
                 "Say we have little recent run data to size the plan; keep it short. "
-                "They can still pick an option or adjust intake. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
+                "They can still pick an option or adjust intake."
             )
         elif "RULE_INSUFFICIENT_GOAL_CONTEXT" in rc:
             summary_lines.append(
@@ -259,15 +260,12 @@ def _copy_lines_for_v1(
             concerns.append(
                 "Clarify the goal or key intake details so recommendations stay grounded."
             )
-            nxt = (
-                "Ask a short clarifying question; keep tone supportive. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
-            )
+            nxt = "Ask a short clarifying question; keep tone supportive."
         elif "RULE_TENSION_AFTER_ALIGNMENT" in rc:
             band = ag.get("baseline_band")
-            if tension_plain:
+            if alignment_plain:
                 summary_lines.append(
-                    f"Stated goal and recent volume read as **{tension_plain}** "
+                    f"Stated goal and recent volume read as **{alignment_plain}** "
                     f"(baseline band: {band})."
                 )
             else:
@@ -278,10 +276,7 @@ def _copy_lines_for_v1(
                 "The goal and recent weekly mileage don’t line up neatly—you’ll want to adjust expectations "
                 "or training volume before locking in a plan."
             )
-            nxt = (
-                "Explain mismatch in simple terms; point them to the options or intake edits. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
-            )
+            nxt = "Explain mismatch in simple terms; point them to the options or intake edits."
         elif rc & {
             "RULE_MARATHON_TIME_TARGET_THIN_BASELINE",
             "RULE_SUB3_BASELINE_NOT_ESTABLISHED",
@@ -294,10 +289,7 @@ def _copy_lines_for_v1(
                 "Building safely toward an aggressive goal usually needs more steady weekly volume "
                 "than we’re seeing in the window."
             )
-            nxt = (
-                "Name the gap briefly; suggest options below or adjusting goal/days. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
-            )
+            nxt = "Name the gap briefly; suggest options below or adjusting goal/days."
         elif rc & {
             "RULE_SUB3_SHORT_TIMELINE",
             "RULE_MARATHON_TIME_TARGET_SHORT_TIMELINE",
@@ -310,10 +302,7 @@ def _copy_lines_for_v1(
             concerns.append(
                 "You may need more runway, a softer goal, or a heavier training focus than the calendar allows."
             )
-            nxt = (
-                "Explain the time constraint briefly; offer timeline or goal adjustments. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
-            )
+            nxt = "Explain the time constraint briefly; offer timeline or goal adjustments."
         elif perf_risk:
             summary_lines.append(
                 "Recent easy and sustained paces look far from marathon goal pace for this target."
@@ -321,10 +310,7 @@ def _copy_lines_for_v1(
             concerns.append(
                 "Closing that gap safely usually takes time and different training emphasis than a short ramp."
             )
-            nxt = (
-                "Keep it factual and short; steer toward goal adjustment or building base first. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
-            )
+            nxt = "Keep it factual and short; steer toward goal adjustment or building base first."
         else:
             summary_lines.append(
                 "Goal and recent signals suggest pausing for a clear choice before generating."
@@ -332,10 +318,7 @@ def _copy_lines_for_v1(
             concerns.append(
                 "Either tweak goal or schedule, or confirm you’re okay proceeding as entered."
             )
-            nxt = (
-                "Keep it direct and short; use chips or chat to resolve—no vague asks to “accept” anything. "
-                "Avoid: tradeoff, path, tension, commitment, coherence."
-            )
+            nxt = "Keep it direct and short; use chips or chat to resolve—no vague asks to “accept” anything."
 
     else:
         summary_lines.append(
@@ -403,7 +386,10 @@ def build_pre_generation_runner_review_v1(
         summary_lines=summary_lines,
         concerns=concerns,
         recommended_next_step=nxt,
-        allowed_user_actions=_allowed_actions_for_status(status),
+        allowed_user_actions=_allowed_user_actions_for_review(
+            status=status,
+            plan_generation_readiness=readiness,
+        ),
     )
 
 
@@ -429,18 +415,31 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
     parts = [
         "## Pre-generation runner review (v1 — narrative hints; UI is authoritative)",
         f"- **assessment_status:** `{status}`",
-        "**Legacy summary_lines / concerns (optional tone only; if they conflict with `coach_analysis_for_llm`, ignore them):**",
+        "**Legacy summary_lines / concerns (optional tone only; if they conflict with embedded "
+        "`runner_analysis_display` / `coach_analysis_for_llm`, ignore them):**",
         bullets,
     ]
     if concern_blk:
         parts.extend(["**Legacy concerns:**", concern_blk])
     if readiness:
+        disp = readiness.get("runner_analysis_display")
+        disp = disp if isinstance(disp, dict) else {}
+        if disp:
+            parts.extend(
+                [
+                    "**runner_analysis_display (USER / UI — deterministic Runner Analysis card; what the client renders; do not contradict):**",
+                    "```json",
+                    json.dumps(disp, ensure_ascii=False, indent=2),
+                    "```",
+                ]
+            )
         coach = readiness.get("coach_analysis_for_llm")
         coach = coach if isinstance(coach, dict) else {}
         if coach:
             parts.extend(
                 [
-                    "**coach_analysis_for_llm (AUTHORITATIVE — facts, concerns, path, actions; mobile renders this in Runner Analysis. Paraphrase only with empathy; never add facts or categories beyond it):**",
+                    "**coach_analysis_for_llm (LLM CONTEXT — structured facts/concerns/actions for grounding chat; "
+                    "paraphrase with empathy only; never add facts or categories beyond it):**",
                     "```json",
                     json.dumps(coach, ensure_ascii=False, indent=2),
                     "```",
@@ -467,7 +466,8 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
             ]
             if applicable_cats:
                 parts.append(
-                    "**Category assessments (ok / warn / bad — applicable to this goal only; facts below supplement `coach_analysis_for_llm`):**"
+                    "**Category assessments (ok / warn / bad — applicable to this goal only; "
+                    "facts below supplement the readiness payloads above):**"
                 )
                 for row in applicable_cats:
                     cid = row.get("category_id")
@@ -497,14 +497,14 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
         )
     parts.extend(
         [
-            "- The **Runner Analysis card in the app** is built from `coach_analysis_for_llm`; do **not** "
+            "- **`plan_generation_readiness`** stays one nested object for clients (FE back-compat). "
+            "**UI copy** comes from `runner_analysis_display`; **LLM grounding** from `coach_analysis_for_llm`.",
+            "- The **Runner Analysis card** mirrors `runner_analysis_display`; do **not** "
             "recreate that content in long prose.",
-            "- Optional only: up to **two short sentences** of warmth; same facts and actions as the card.",
+            "- Optional only: up to **two short sentences** of warmth; align with the card’s facts and actions.",
             "- If `decision` is `defer` or `block`, do **not** imply the athlete is ready to generate a plan.",
-            "- Do **not** invent numbers or labels not present in `coach_analysis_for_llm` or applicable category "
-            "`facts_used` above.",
-            "- In user-facing wording, avoid: **tradeoff**, **path**, **tension**, **commitment**, "
-            "**coherence** (use plain running-coach language instead).",
+            "- Do **not** invent numbers or labels not present in `coach_analysis_for_llm`, "
+            "`runner_analysis_display`, or applicable category `facts_used` above.",
         ]
     )
     return "\n".join(parts).strip()

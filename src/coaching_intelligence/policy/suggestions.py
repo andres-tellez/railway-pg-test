@@ -12,6 +12,9 @@ from src.coaching_intelligence.time_clock import (
 )
 
 _MARATHON_MILES = 26.2
+_MIN_PROPOSED_MARATHON_SEC = 2 * 3600 + 45 * 60  # 2:45:00
+_MAX_PROPOSED_MARATHON_SEC = 6 * 3600  # 6:00:00
+_FIVE_MIN_SEC = 300
 
 
 def _proposed_marathon_clock_after_pace_buffer(
@@ -23,7 +26,16 @@ def _proposed_marathon_clock_after_pace_buffer(
     if base is None:
         return None
     add = int(round(float(pace_deficit_sec_per_mi) * _MARATHON_MILES))
-    return format_clock_seconds(base + add)
+    total = max(
+        _MIN_PROPOSED_MARATHON_SEC,
+        min(_MAX_PROPOSED_MARATHON_SEC, base + add),
+    )
+    rounded = int(round(total / float(_FIVE_MIN_SEC))) * _FIVE_MIN_SEC
+    rounded = max(
+        _MIN_PROPOSED_MARATHON_SEC,
+        min(_MAX_PROPOSED_MARATHON_SEC, rounded),
+    )
+    return format_clock_seconds(rounded)
 
 
 _LABELS: Dict[str, str] = {
