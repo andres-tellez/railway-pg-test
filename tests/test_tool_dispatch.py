@@ -510,7 +510,7 @@ def test_orchestrator_imports_and_calls_dispatcher_exactly_once() -> None:
     from src.smartcoach_mobile_coach import orchestrator
 
     assert orchestrator.dispatch_tool_batch is dispatch_tool_batch
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     # Exactly one dispatch_tool_batch(…) call from the agent loop.

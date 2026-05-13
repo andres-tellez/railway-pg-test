@@ -237,7 +237,7 @@ def test_orchestrator_source_wires_contract_into_non_plan_creation_branch() -> N
     # phase emphasis + future-week rules refine them).
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     assert src.count("plan_guidance_contract_section()") == 1
@@ -255,7 +255,7 @@ def test_orchestrator_does_not_wire_contract_into_plan_creation_branch() -> None
     # should not bloat that prompt.
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     plan_creation_base_idx = src.index("PLAN_CREATION_SYSTEM_PROMPT_BASE")

@@ -460,11 +460,11 @@ def test_runner_analysis_card_rendered_on_level_ready(
         )
 
     monkeypatch.setattr(
-        "src.smartcoach_mobile_coach.orchestrator.build_plan_request_from_state",
+        "src.smartcoach_mobile_coach.orchestrator.plan_creation_branch.build_plan_request_from_state",
         _fake_plan_req,
     )
     monkeypatch.setattr(
-        "src.smartcoach_mobile_coach.orchestrator.get_or_compute_readiness_gate",
+        "src.smartcoach_mobile_coach.orchestrator.plan_creation_branch.get_or_compute_readiness_gate",
         _fake_gate,
     )
 
@@ -526,9 +526,9 @@ def test_intake_state_updates_visible_in_same_turn_runner_review():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
-    src = (root / "src" / "smartcoach_mobile_coach" / "orchestrator.py").read_text(
-        encoding="utf-8"
-    )
+    src = (
+        root / "src" / "smartcoach_mobile_coach" / "orchestrator" / "__init__.py"
+    ).read_text(encoding="utf-8")
     start = src.index("def run_mobile_agent_turn")
     chunk = src[start:]
     i_merge = chunk.find("_eager_merge_plan_intake_user_turn")

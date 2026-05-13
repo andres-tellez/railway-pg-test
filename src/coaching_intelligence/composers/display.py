@@ -1030,4 +1030,12 @@ def build_runner_analysis_display(
         out["deficits"] = deficits_raw
     if isinstance(sugg_raw, list):
         out["suggestions"] = sugg_raw
+
+    pv = plan_generation_readiness.get("policy_version")
+    if pv is not None and str(pv).strip():
+        out["policy_version"] = str(pv)
+    tid = plan_generation_readiness.get("trace_id")
+    if tid is not None and str(tid).strip():
+        out["trace_id"] = str(tid)
+
     return out

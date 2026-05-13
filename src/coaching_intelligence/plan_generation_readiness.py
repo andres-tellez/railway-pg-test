@@ -122,13 +122,8 @@ from src.coaching_intelligence.readiness_constants import (
 )
 from src.coaching_intelligence.readiness_json import _json_safe_facts, _json_safe_scalar
 from src.coaching_intelligence.composers.display import (
-    RUNNER_ANALYSIS_DISPLAY_SCHEMA,
     _is_sub3_marathon_digest,
     build_runner_analysis_display,
-)
-from src.coaching_intelligence.composers.llm_payload import (
-    COACH_ANALYSIS_FOR_LLM_SCHEMA,
-    build_coach_analysis_for_llm,
 )
 
 SCHEMA_VERSION = "plan_generation_readiness.v2.2"
@@ -1601,7 +1596,6 @@ def _finalize(
         core["trace_id"] = str(trace_id)
     if evidence_snapshot_id:
         core["evidence_snapshot_id"] = str(evidence_snapshot_id)
-    core["coach_analysis_for_llm"] = build_coach_analysis_for_llm(core)
     core["runner_analysis_display"] = build_runner_analysis_display(core)
     core["readiness_summary"] = _build_readiness_summary(core)
     return core

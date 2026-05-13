@@ -151,7 +151,7 @@ def test_orchestrator_imports_contract_section() -> None:
 def test_orchestrator_source_wires_contract_after_phase_ux_and_before_tone() -> None:
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     assert src.count("plan_adjustment_contract_section()") == 1
@@ -165,7 +165,7 @@ def test_orchestrator_source_wires_contract_after_phase_ux_and_before_tone() -> 
 def test_orchestrator_does_not_wire_contract_into_plan_creation_branch() -> None:
     from pathlib import Path
 
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     plan_creation_base_idx = src.index("PLAN_CREATION_SYSTEM_PROMPT_BASE")

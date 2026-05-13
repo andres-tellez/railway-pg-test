@@ -4,6 +4,7 @@ import json
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from src.coaching_intelligence.composers.llm_payload import build_coach_analysis_for_llm
 from src.coaching_intelligence.plan_generation_readiness import (
     CATEGORY_CONSISTENCY,
     CATEGORY_DATA_CONFIDENCE,
@@ -445,8 +446,9 @@ def test_coach_analysis_for_llm_matches_readiness_and_omits_non_applicable_categ
             goal_demand="FINISH",
         ),
     )
-    coach = out.get("coach_analysis_for_llm")
+    coach = build_coach_analysis_for_llm(out)
     assert isinstance(coach, dict)
+    assert "coach_analysis_for_llm" not in out
     assert coach.get("schema_version") == "coach_analysis_for_llm.v1.1"
     assert coach["recommended_actions"] == out["allowed_user_actions"]
     assert coach["key_findings"] == out["key_findings"]
@@ -469,6 +471,7 @@ def test_coach_analysis_for_llm_matches_readiness_and_omits_non_applicable_categ
     disp = out.get("runner_analysis_display")
     assert isinstance(disp, dict)
     assert disp.get("schema_version") == "runner_analysis_display.v2"
+    assert "runner_analysis_display_v2" not in out
     assert isinstance(disp.get("verdict"), dict)
     assert isinstance(disp.get("chips"), list)
     rs = out.get("readiness_summary") or {}

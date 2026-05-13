@@ -317,7 +317,7 @@ def test_orchestrator_defines_gating_injector_helper() -> None:
 
 
 def test_orchestrator_source_wires_summary_after_tone_contract() -> None:
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     # Wired exactly once as a call (count == 2: 1 def + 1 call), and
@@ -347,7 +347,7 @@ def test_orchestrator_source_wires_summary_after_tone_contract() -> None:
 def test_orchestrator_source_does_not_wire_summary_into_plan_creation_branch() -> None:
     # Plan-creation turns already have their own restricted prompt
     # and do not benefit from cross-session summary context.
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     plan_creation_base_idx = src.index("PLAN_CREATION_SYSTEM_PROMPT_BASE")

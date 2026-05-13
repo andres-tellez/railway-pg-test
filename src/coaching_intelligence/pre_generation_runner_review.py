@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
+from src.coaching_intelligence.composers.llm_payload import build_coach_analysis_for_llm
 from src.coaching_intelligence.plan_generation_readiness import (
     LEVEL_INSUFFICIENT_DATA,
     evaluate_plan_generation_readiness,
@@ -416,7 +417,7 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
         "## Pre-generation runner review (v1 — narrative hints; UI is authoritative)",
         f"- **assessment_status:** `{status}`",
         "**Legacy summary_lines / concerns (optional tone only; if they conflict with embedded "
-        "`runner_analysis_display` / `coach_analysis_for_llm`, ignore them):**",
+        "`runner_analysis_display`, ignore them):**",
         bullets,
     ]
     if concern_blk:
@@ -433,9 +434,9 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
                     "```",
                 ]
             )
-        coach = readiness.get("coach_analysis_for_llm")
+        coach = build_coach_analysis_for_llm(readiness)
         coach = coach if isinstance(coach, dict) else {}
-        if coach:
+        if coach and not coach.get("error"):
             parts.extend(
                 [
                     "**coach_analysis_for_llm (LLM CONTEXT — structured facts/concerns/actions for grounding chat; "
@@ -497,8 +498,10 @@ def pre_generation_runner_review_system_section(review_api: Dict[str, Any]) -> s
         )
     parts.extend(
         [
-            "- **`plan_generation_readiness`** stays one nested object for clients (FE back-compat). "
-            "**UI copy** comes from `runner_analysis_display`; **LLM grounding** from `coach_analysis_for_llm`.",
+            "- **`plan_generation_readiness`** is the client-facing readiness object. "
+            "**UI copy** comes from `runner_analysis_display`; **LLM grounding** uses a "
+            "parallel `coach_analysis_for_llm` blob that the server derives for the model system "
+            "prompt (it is **not** included in the JSON sent to the app).",
             "- The **Runner Analysis card** mirrors `runner_analysis_display`; do **not** "
             "recreate that content in long prose.",
             "- Optional only: up to **two short sentences** of warmth; align with the card’s facts and actions.",

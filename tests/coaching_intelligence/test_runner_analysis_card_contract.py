@@ -1,9 +1,10 @@
-"""Contract: coach_analysis_for_llm shapes expected by Runner Analysis UI."""
+"""Contract: runner_analysis_display (v2) and LLM coach blob (derived, not on readiness wire)."""
 
 from __future__ import annotations
 
 import json
 
+from src.coaching_intelligence.composers.llm_payload import build_coach_analysis_for_llm
 from src.coaching_intelligence.plan_generation_readiness import (
     ACTION_ADD_RUNNING_DAY,
     ACTION_ADJUST_GOAL,
@@ -58,7 +59,7 @@ def test_sub3_three_days_coach_payload_lists_facts_and_concerns_not_effort_contr
         plan_request=plan_request, assessment_api=assessment_api
     )
     assert out["decision"] == DECISION_DEFER
-    coach = out["coach_analysis_for_llm"]
+    coach = build_coach_analysis_for_llm(out)
     assert coach["schema_version"].startswith("coach_analysis_for_llm.v1")
     labels = {r["label"] for r in coach["facts_reviewed"]}
     assert "Goal" in labels
@@ -74,6 +75,7 @@ def test_sub3_three_days_coach_payload_lists_facts_and_concerns_not_effort_contr
 
     disp = out["runner_analysis_display"]
     assert disp["schema_version"] == "runner_analysis_display.v2"
+    assert "runner_analysis_display_v2" not in out
     verdict = disp.get("verdict") or {}
     assert verdict.get("narrative") == disp.get("coach_read")
     assert isinstance(disp.get("chips"), list)

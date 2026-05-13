@@ -22,7 +22,7 @@ def _state(*, with_prior_readiness: bool = False) -> Dict[str, Any]:
             "policy_version": "policy.v1.0",
             "decision": "allow",
             "readiness_level": "ready",
-            "evidence_snapshot_id": "ev-prior",
+            "evidence_snapshot_id": "ev-001",
         }
     return {
         "draft": {
@@ -103,6 +103,9 @@ def test_get_or_compute_readiness_gate_cache_hit_reuses_snapshot(monkeypatch):
 def test_get_or_compute_readiness_gate_cache_expiry_recomputes(monkeypatch):
     readiness_gate._clear_readiness_gate_cache_for_tests()
     monkeypatch.setenv("SMARTCOACH_READINESS_GATE_CACHE_TTL_SEC", "5")
+
+    import src.smartcoach_mobile_coach.intake.readiness_cache as readiness_rc
+
     calls = {"build": 0, "eval": 0}
 
     def _build(*_args, **_kwargs):
@@ -130,7 +133,7 @@ def test_get_or_compute_readiness_gate_cache_expiry_recomputes(monkeypatch):
     def _mono() -> float:
         return now["value"]
 
-    monkeypatch.setattr(readiness_gate.time, "monotonic", _mono)
+    monkeypatch.setattr(readiness_rc.time, "monotonic", _mono)
     monkeypatch.setattr(
         readiness_gate, "build_pre_generation_runner_assessment", _build
     )

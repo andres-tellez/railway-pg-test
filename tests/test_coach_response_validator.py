@@ -461,7 +461,7 @@ def test_orchestrator_imports_validator() -> None:
 
 
 def test_orchestrator_source_calls_validator_exactly_once() -> None:
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     # Exactly one call site = single integration point, no duplicate
@@ -473,14 +473,14 @@ def test_orchestrator_source_guards_validator_with_env_flag() -> None:
     # §19 observability layer must be togglable off if it ever
     # generates noisy false positives in production; the env var
     # name is the documented contract.
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     assert "SMARTCOACH_RESPONSE_VALIDATOR_DISABLED" in src
 
 
 def test_orchestrator_source_attaches_report_to_meta_validator_key() -> None:
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     # Downstream dashboards read meta["validator"]; keep this name
@@ -491,7 +491,7 @@ def test_orchestrator_source_attaches_report_to_meta_validator_key() -> None:
 def test_orchestrator_source_defends_against_validator_exceptions() -> None:
     # A validator bug must never break a turn — wrapped in
     # try/except and logged as a warning, not propagated.
-    src = Path("src/smartcoach_mobile_coach/orchestrator.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/orchestrator/__init__.py").read_text(
         encoding="utf-8"
     )
     assert "response_validator_error" in src

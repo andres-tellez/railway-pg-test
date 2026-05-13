@@ -17,6 +17,11 @@ from typing import Any, Dict, List, Optional
 
 from dateutil import parser as date_parser
 
+from src.smartcoach_mobile_coach.intake import normalize as intake_normalize
+from src.smartcoach_mobile_coach.intake import parsers as intake_parsers
+from src.smartcoach_mobile_coach.intake import state_machine as intake_state_machine
+from src.smartcoach_mobile_coach.intake import structured_updates as intake_structured
+
 from src.coaching_intelligence.intake_alignment import evaluate_intake_alignment_state
 from src.schemas.plan_schema import PlanCreateSchema, PrimaryGoal
 from src.utils.date_helpers import DAY_NAMES_ABBREV
@@ -59,31 +64,6 @@ def _material_draft_digest(draft: Dict[str, Any]) -> tuple:
         td_norm,
         draft.get("long_run_day"),
     )
-
-
-def _clear_plan_confirmation_ux(ux: Dict[str, Any]) -> None:
-    ux.pop("intake_confirmed", None)
-    ux.pop("runner_review_delivered", None)
-    ux.pop("plan_generation_confirmed", None)
-    ux.pop("runner_tradeoff_pending", None)
-    ux.pop("runner_tradeoff_resolved", None)
-    ux.pop("runner_review_assessment_status", None)
-    ux.pop("plan_generation_readiness", None)
-    ux.pop("runner_tradeoff_edit_focus", None)
-    ux.pop("runner_add_day_pick_pending", None)
-    ux.pop("expansion_base_training_days", None)
-    ux.pop("plan_creation_phase", None)
-
-
-def _soft_reset_runner_review_after_goal_edit(ux: Dict[str, Any]) -> None:
-    """Keep intake confirmation; clear stale runner review consent after a material goal edit."""
-    ux.pop("plan_generation_confirmed", None)
-    ux.pop("runner_review_delivered", None)
-    ux.pop("runner_tradeoff_resolved", None)
-    ux.pop("runner_tradeoff_edit_focus", None)
-    ux.pop("runner_goal_edit_pending", None)
-    ux.pop("plan_generation_readiness", None)
-    ux.pop("plan_creation_phase", None)
 
 
 def _truthy(raw: Any) -> bool:
@@ -1370,317 +1350,42 @@ def update_plan_intake_state(
         up = {}
     prior_ux_snapshot = dict(ux)
 
-    for key, raw in up.items():
-        if key == "race_date":
-            nd = _parse_race_date_natural_language(raw)
-            if nd is None:
-                errors.append(
-                    "race_date must be a real calendar day "
-                    "(e.g. 2026-10-11 or October 11, 2026)."
-                )
-            else:
-                draft["race_date"] = nd
-        elif key == "race_distance":
-            if isinstance(raw, str) and raw.strip():
-                draft["race_distance"] = _normalize_race_distance_intake(raw)
-            else:
-                errors.append("race_distance must be a non-empty string.")
-        elif key == "race_name":
-            if raw is None:
-                draft.pop("race_name", None)
-            elif isinstance(raw, str):
-                draft["race_name"] = raw.strip()[:255]
-            else:
-                errors.append("race_name must be a string.")
-        elif key == "race_location":
-            if raw is None:
-                draft.pop("race_location", None)
-            elif isinstance(raw, str):
-                draft["race_location"] = raw.strip()[:255]
-            else:
-                errors.append("race_location must be a string.")
-        elif key == "primary_goal":
-            ng = _normalize_goal(raw)
-            if ng is None:
-                errors.append("primary_goal must be 'Just Finish' or 'Target Time'.")
-            else:
-                draft["primary_goal"] = ng
-        elif key == "target_time":
-            if raw is None:
-                draft.pop("target_time", None)
-            elif isinstance(raw, str) and raw.strip():
-                draft["target_time"] = _normalize_target_time_phrase(raw.strip())
-            else:
-                errors.append("target_time must be a non-empty string when provided.")
-        elif key == "training_days":
-            ndays = _normalize_training_days(raw)
-            if ndays is None:
-                day_count = _extract_training_days_count(raw)
-                if day_count is not None:
-                    ux["training_days_count"] = day_count
-                    draft.pop("training_days", None)
-                else:
-                    errors.append(
-                        "training_days must be weekdays or ranges (e.g. Monday through Saturday, "
-                        "weekdays), abbreviations, or comma-separated lists."
-                    )
-            else:
-                draft["training_days"] = ndays
-                ux.pop("training_days_count", None)
-        elif key == "long_run_day":
-            if raw is None or (isinstance(raw, str) and not raw.strip()):
-                draft.pop("long_run_day", None)
-            else:
-                nd = _normalize_day(raw)
-                if nd is None:
-                    errors.append("long_run_day must be a valid weekday.")
-                else:
-                    draft["long_run_day"] = nd
-        elif key in ("notes", "plan_name", "user_timezone"):
-            if raw is None:
-                draft.pop(key, None)
-            elif isinstance(raw, str):
-                draft[key] = raw.strip()
-            else:
-                errors.append(f"{key} must be a string.")
-        elif key == "alignment_frequency_flexible":
-            v = _normalize_alignment_bool(raw)
-            if v is None:
-                errors.append("alignment_frequency_flexible must be boolean-like.")
-            else:
-                alignment_answers["frequency_flexible"] = v
-        elif key == "alignment_posture_priority":
-            v = _normalize_alignment_posture(raw)
-            if v is None:
-                errors.append(
-                    "alignment_posture_priority must be one of performance, balanced, durability."
-                )
-            else:
-                alignment_answers["posture_priority"] = v
-        elif key == "alignment_timeline_flexible":
-            v = _normalize_alignment_bool(raw)
-            if v is None:
-                errors.append("alignment_timeline_flexible must be boolean-like.")
-            else:
-                alignment_answers["timeline_flexible"] = v
-        elif key == "alignment_question_asked_category":
-            if isinstance(raw, str) and raw.strip():
-                category = raw.strip()
-                asked = [
-                    str(x)
-                    for x in list(alignment.get("asked_categories") or [])
-                    if isinstance(x, str)
-                ]
-                asked.append(category)
-                alignment["asked_categories"] = asked
-                alignment["question_count"] = len(asked)
-            else:
-                errors.append(
-                    "alignment_question_asked_category must be a non-empty string."
-                )
-        elif key == "schedule_days_confirmed":
-            v = _normalize_alignment_bool(raw)
-            if v is None:
-                errors.append("schedule_days_confirmed must be boolean-like.")
-            elif v is True:
-                ux.pop("schedule_confirm_before_posture", None)
-            else:
-                ux.pop("schedule_confirm_before_posture", None)
-                ux["training_days_expansion_pending"] = True
-                draft.pop("training_days", None)
-                ux.pop("training_days_count", None)
-        elif key == "plan_generation_confirmed":
-            # Structured chip — validated after merge when split-confirm is enabled.
-            pass
-        elif key == "runner_tradeoff_choice":
-            choice = str(raw or "").strip().lower()
-            if choice == "continue_tradeoff":
-                ux["runner_tradeoff_resolved"] = True
-                ux.pop("runner_tradeoff_edit_focus", None)
-            elif choice == "expand_running_days":
-                # Original four-way choice is done; sub-flow collects the extra day.
-                ux["runner_tradeoff_resolved"] = True
-                ux.pop("runner_tradeoff_edit_focus", None)
-                ux["training_days_expansion_pending"] = True
-                ux["runner_add_day_pick_pending"] = True
-                if isinstance(prior_training_days_for_expansion, list):
-                    ux["expansion_base_training_days"] = list(
-                        prior_training_days_for_expansion
-                    )
-                draft.pop("training_days", None)
-                ux.pop("training_days_count", None)
-            elif choice == "adjust_goal":
-                ux["runner_tradeoff_edit_focus"] = "goal"
-                ux["runner_goal_edit_pending"] = True
-                ux.pop("plan_generation_confirmed", None)
-            elif choice == "adjust_timeline":
-                ux["runner_tradeoff_edit_focus"] = "timeline"
-            elif choice == "build_base_first":
-                ux["runner_tradeoff_edit_focus"] = "base"
+    intake_structured.apply_structured_updates(
+        up,
+        draft=draft,
+        ux=ux,
+        alignment=alignment,
+        alignment_answers=alignment_answers,
+        errors=errors,
+        prior_training_days_for_expansion=prior_training_days_for_expansion,
+    )
 
-    _fill_race_distance_from_named_event(draft)
-    _fill_race_name_from_user_text(draft, source_user_message)
-
-    # When the model omits `race_distance` but the user answered in plain language
-    # (e.g. "A marathon", "the full marathon"), infer from the latest message.
-    # Named-event fill above only sees race_name/location/plan_name; bare phrases
-    # like "a marathon" do not populate race_name (event-title regex needs a longer prefix).
     skip_nl_core = structured_intake_core_v1_enabled()
-    if not skip_nl_core:
-        rd_cur = draft.get("race_distance")
-        if not (isinstance(rd_cur, str) and rd_cur.strip()):
-            msg_rd = _try_infer_race_distance((source_user_message or "").strip())
-            if msg_rd:
-                draft["race_distance"] = msg_rd
-
-        _fill_race_date_from_user_message(draft, source_user_message)
-
-        _fill_primary_goal_from_user_message(draft, source_user_message)
-
-        _fill_goal_time_from_user_message(draft, source_user_message)
-
-        _fill_training_days_from_user_message(draft, ux, source_user_message)
-    msg_alignment_answers = _extract_alignment_answers_from_user_message(
-        source_user_message
+    intake_parsers.apply_natural_language_fills(
+        draft=draft,
+        ux=ux,
+        alignment_answers=alignment_answers,
+        prior_alignment_answers=prior_alignment_answers,
+        source_user_message=source_user_message,
+        skip_nl_core=skip_nl_core,
     )
-    if msg_alignment_answers:
-        # Explicit `updates` values win; source-message extraction fills gaps.
-        for key, value in msg_alignment_answers.items():
-            if key not in alignment_answers:
-                alignment_answers[key] = value
+    intake_normalize.validate_long_run_matches_training_days(draft, errors)
 
-    if (
-        alignment_answers.get("frequency_flexible") is True
-        and prior_alignment_answers.get("frequency_flexible") is not True
-    ):
-        # User agreed to add/adjust capacity — must re-pick concrete weekdays next.
-        ux["training_days_expansion_pending"] = True
-
-    if (
-        not skip_nl_core
-        and "training_days" not in draft
-        and "training_days_count" not in ux
-    ):
-        day_count = _extract_training_days_count(source_user_message)
-        if day_count is not None:
-            ux["training_days_count"] = day_count
-
-    if "training_days" in draft and draft.get("long_run_day"):
-        tdays = draft.get("training_days") or []
-        if draft["long_run_day"] not in tdays:
-            errors.append("long_run_day must be one of training_days.")
-
-    _auto_fill_long_run_day(draft)
-
-    if plan_creation_split_confirm_enabled():
-        if _material_draft_digest(draft) != prior_digest:
-            # ``expand_running_days`` intentionally clears ``training_days`` to re-collect
-            # one extra day — not a generic material edit; do not wipe split-confirm UX.
-            tradeoff_expand = (
-                isinstance(up, dict)
-                and str(up.get("runner_tradeoff_choice") or "").strip().lower()
-                == "expand_running_days"
-            )
-            goal_ux_touch = isinstance(up, dict) and (
-                "target_time" in up or "primary_goal" in up
-            )
-            from_goal_edit_flow = bool(
-                prior_ux_snapshot.get("runner_goal_edit_pending")
-                or prior_ux_snapshot.get("runner_tradeoff_edit_focus") == "goal"
-            )
-            if not tradeoff_expand:
-                if goal_ux_touch and from_goal_edit_flow:
-                    _soft_reset_runner_review_after_goal_edit(ux)
-                else:
-                    _clear_plan_confirmation_ux(ux)
-
-    # Cleared after user commits a new weekday set (structured `updates` or draft change).
-    if ux.get("training_days_expansion_pending"):
-        explicit_td = isinstance(up, dict) and "training_days" in up
-        cur_td = draft.get("training_days")
-        td_changed = False
-        if isinstance(cur_td, list):
-            if isinstance(prior_training_days_for_expansion, list):
-                td_changed = cur_td != prior_training_days_for_expansion
-            else:
-                td_changed = True
-        if explicit_td or td_changed:
-            ux.pop("training_days_expansion_pending", None)
-            ux.pop("runner_add_day_pick_pending", None)
-            ux.pop("expansion_base_training_days", None)
-
-    expansion_cleared_this_turn = prior_expansion_pending and not ux.get(
-        "training_days_expansion_pending"
-    )
-    if expansion_cleared_this_turn:
-        ux["schedule_confirm_before_posture"] = True
-
-    missing = _missing_required_fields(draft)
-    if ux.get("training_days_expansion_pending"):
-        if "training_days" not in missing:
-            missing = ["training_days"] + [m for m in missing if m != "training_days"]
-    ready_to_generate = len(missing) == 0 and len(errors) == 0
-    status = "ready_to_confirm" if not missing else "collecting"
-    ux["stage"] = _plan_ux_stage_for_state(
-        draft,
-        missing,
-        ready_to_generate=ready_to_generate,
+    return intake_state_machine.finalize_plan_intake_state(
+        draft=draft,
+        ux=ux,
+        errors=errors,
+        alignment=alignment,
+        alignment_answers=alignment_answers,
+        up=up,
+        prior_digest=prior_digest,
+        prior_ux_snapshot=prior_ux_snapshot,
+        prior_training_days_for_expansion=prior_training_days_for_expansion,
+        prior_expansion_pending=prior_expansion_pending,
         had_prior_draft=had_prior_draft,
         prior_ready_to_generate=prior_ready_to_generate,
+        source_user_message=source_user_message,
     )
-    state = {
-        "version": 1,
-        "status": status,
-        "draft": draft,
-        "ux": ux,
-        "missing_required": missing,
-        "missing_required_labels": [_human_missing_label(m) for m in missing],
-        "ready_to_generate": ready_to_generate,
-        "errors": errors,
-        "confirmation_summary": _confirmation_summary(draft),
-    }
-    merged_al: Optional[Dict[str, Any]] = None
-    if alignment_answers:
-        merged_al = {**alignment, "answers": alignment_answers}
-    elif alignment:
-        merged_al = dict(alignment)
-    if merged_al is not None:
-        state["alignment"] = _recompute_alignment_branch(merged_al, draft)
-    if _intake_alignment_feature_enabled():
-        al_out = state.get("alignment")
-        if isinstance(al_out, dict):
-            ast = al_out.get("state")
-            if (
-                isinstance(ast, dict)
-                and ast.get("pause_required")
-                and not ast.get("generation_ready")
-            ):
-                state["ready_to_generate"] = False
-                state["status"] = "collecting"
-                state["ux"]["stage"] = _plan_ux_stage_for_state(
-                    draft,
-                    state["missing_required"],
-                    ready_to_generate=False,
-                    had_prior_draft=had_prior_draft,
-                    prior_ready_to_generate=prior_ready_to_generate,
-                )
-    if plan_creation_split_confirm_enabled():
-        u_final = dict(state.get("ux") or {})
-        if state.get("ready_to_generate"):
-            msg_end = (source_user_message or "").strip()
-            if user_confirms_plan_intake(msg_end):
-                u_final["intake_confirmed"] = True
-            chip_ok = isinstance(up, dict) and _truthy(
-                up.get("plan_generation_confirmed")
-            )
-            if u_final.get("intake_confirmed") and u_final.get(
-                "runner_review_delivered"
-            ):
-                if user_requests_plan_generation(msg_end) or chip_ok:
-                    u_final["plan_generation_confirmed"] = True
-        state["ux"] = u_final
-    _sync_plan_creation_phase_and_legacy_flags(state)
-    return state
 
 
 def _sync_plan_creation_phase_and_legacy_flags(state: Dict[str, Any]) -> None:

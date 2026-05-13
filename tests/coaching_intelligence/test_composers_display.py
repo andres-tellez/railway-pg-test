@@ -10,6 +10,7 @@ from src.coaching_intelligence.composers.display import build_runner_analysis_di
 from src.coaching_intelligence.plan_generation_readiness import (
     evaluate_plan_generation_readiness,
 )
+from src.coaching_intelligence.policy.policy_table import POLICY_VERSION
 from tests.coaching_intelligence.ambition_gap_fixtures import (
     synthetic_ambition_attributions,
 )
@@ -114,6 +115,7 @@ def test_build_runner_analysis_display_snapshot_just_finish(
             "lead": "The requested plan is supported by the current profile."
         },
         "schema_version": "runner_analysis_display.v2",
+        "policy_version": POLICY_VERSION,
         "suggestions": [
             {
                 "chip_updates": {"action": "create_plan"},
