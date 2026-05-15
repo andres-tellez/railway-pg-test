@@ -7,12 +7,14 @@ Everything else falls back to the existing orchestrator / fastpath.
 
 Order of operations:
 
-1. **Hard deterministic short-circuits** — reuses :func:`infer_intent` so the
-   common phrases (e.g. "how was my run", "splits", "analyze my run") never
-   touch an extra LLM call.
-2. **LLM JSON router** — only when (a) the flag is ``llm`` *and* (b) the
+1. **Hard deterministic short-circuits** — positive phrases (e.g. "how was my run",
+   "splits") are checked *before* generic "weekly / this week" negatives so
+   messages like "How was my run this week?" still route to V2.
+2. Then :func:`infer_intent` for medium-confidence cases — common phrases often
+   never touch an extra LLM call.
+3. **LLM JSON router** — only when (a) the flag is ``llm`` *and* (b) the
    short-circuit was inconclusive. Cheap model, strict JSON, short prompt.
-3. **Safe fallback** — any classifier error → "not a run review" so the
+4. **Safe fallback** — any classifier error → "not a run review" so the
    orchestrator can continue normally.
 
 The classifier never fetches DB data or splits. Pure text in → JSON out.
@@ -149,14 +151,9 @@ def _heuristic_classify(user_message: str) -> ClassifierResult:
             reason_code="empty_message",
         )
 
-    if any(p in msg for p in _NON_REVIEW_HINTS):
-        return ClassifierResult(
-            is_run_review=False,
-            scope="other",
-            confidence="high",
-            reason_code="non_review_hint",
-        )
-
+    # Strong positives before negatives: `_NON_REVIEW_HINTS` includes broad
+    # substrings like "this week" that appear in legitimate run-review asks
+    # ("How was my run this week?").
     if any(p in msg for p in _REVIEW_PHRASES):
         scope = "splits_only" if any(s in msg for s in _SPLIT_HINTS) else "single_run"
         return ClassifierResult(
@@ -174,6 +171,14 @@ def _heuristic_classify(user_message: str) -> ClassifierResult:
             confidence="high",
             day_hint=_infer_day_hint(msg),
             reason_code="split_hint",
+        )
+
+    if any(p in msg for p in _NON_REVIEW_HINTS):
+        return ClassifierResult(
+            is_run_review=False,
+            scope="other",
+            confidence="high",
+            reason_code="non_review_hint",
         )
 
     inferred = infer_intent(user_message)
