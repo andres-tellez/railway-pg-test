@@ -65,6 +65,7 @@ def build_run_review_meta(
     dialogue: Dict[str, Any],
     sections_attached: bool,
     classifier_summary: Dict[str, Any],
+    coach_context_trace: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Compose the meta dict mirroring the legacy fastpath shape."""
     meta: Dict[str, Any] = {
@@ -83,6 +84,8 @@ def build_run_review_meta(
     }
     if sections_attached:
         meta["run_summary_sections"] = True
+    if isinstance(coach_context_trace, dict):
+        meta["coach_context_trace"] = coach_context_trace
     return meta
 
 
