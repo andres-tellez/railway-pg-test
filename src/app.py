@@ -110,7 +110,12 @@ def create_app(test_config=None):
             "X-SmartCoach-Client",
             "X-Request-ID",
         ],
-        expose_headers=["Content-Type", "Authorization"],
+        expose_headers=[
+            "Content-Type",
+            "Authorization",
+            "X-SmartCoach-Model-Used",
+            "X-SmartCoach-Run-Review-V2",
+        ],
     )
     print("[DEBUG] Raw CORS_ORIGINS from env:", repr(cors_origins), flush=True)
     print("[DEBUG] Allowed CORS origins:", origin_list, flush=True)
@@ -179,6 +184,20 @@ def create_app(test_config=None):
     app.register_blueprint(training_insights_bp)
     app.register_blueprint(internal_cron_bp)
     app.register_blueprint(analytics_bp)
+
+    # Run Review V2 — one line at startup so deploy logs show flag resolution.
+    from src.smartcoach_mobile_coach.run_review.config import (
+        load_config as _load_rr_cfg,
+    )
+
+    _rr = _load_rr_cfg()
+    _rr_raw = os.getenv("SMARTCOACH_RUN_REVIEW_V2")
+    print(
+        "[run_review_v2] startup "
+        f"effective_enabled={_rr.enabled} classifier_mode={_rr.classifier_mode} "
+        f"env_SMARTCOACH_RUN_REVIEW_V2_is_set={bool((_rr_raw or '').strip())}",
+        flush=True,
+    )
 
     # Log all registered routes for debugging
     print("[BLUEPRINT_REGISTRATION] All blueprints registered", flush=True)
