@@ -42,6 +42,13 @@ def test_heuristic_obvious_run_review_phrases() -> None:
     assert r.reason_code == "review_phrase"
 
 
+def test_heuristic_run_review_phrase_beats_this_week_hint() -> None:
+    """Broad weekly hints must not suppress explicit run-review wording."""
+    r = _heuristic_classify("How was my run this week?")
+    assert r.is_run_review is True
+    assert r.reason_code == "review_phrase"
+
+
 def test_heuristic_split_only_phrase() -> None:
     r = _heuristic_classify("Can you look at my splits from yesterday?")
     assert r.is_run_review is True
