@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from src.db.dao.user_profile_dao import get_user_profile
+from src.services.plan.active_plan import has_active_plan
 from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
 from src.services.security.external_apis.openai_service import get_openai_service
 from src.coaching_intelligence.pre_generation_runner_review import (
@@ -409,38 +410,8 @@ def _should_offer_plan_creation_clarification(
 
 
 def _user_has_active_plan(session: Session, user_id: str) -> bool:
-    """Cheap existence check — is there a row in `plans` with is_active=TRUE?
-
-    Returns False on any DB error (and rolls back) so a transient
-    failure falls back to the previous keyword-only behavior rather
-    than incorrectly pushing a user into intake.
-    """
-    if not user_id:
-        return False
-    try:
-        row = session.execute(
-            text(
-                "SELECT 1 FROM plans "
-                "WHERE user_id = CAST(:uid AS uuid) AND is_active = TRUE "
-                "LIMIT 1"
-            ),
-            {"uid": user_id},
-        ).first()
-    except Exception:
-        logger.debug(
-            "[smartcoach_mobile_coach] _user_has_active_plan query failed; "
-            "treating as no-plan",
-            exc_info=True,
-        )
-        try:
-            session.rollback()
-        except Exception:
-            logger.debug(
-                "[smartcoach_mobile_coach] _user_has_active_plan rollback failed",
-                exc_info=True,
-            )
-        return False
-    return row is not None
+    """Backward-compatible forwarder to the canonical plan service."""
+    return has_active_plan(session, user_id)
 
 
 def _is_plan_creation_turn(
