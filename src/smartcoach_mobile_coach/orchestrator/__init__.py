@@ -138,6 +138,12 @@ from src.smartcoach_mobile_coach.run_recap_fastpath import (
     wants_split_detail_fastpath,
 )
 from src.smartcoach_mobile_coach.run_recap_policy import decide_run_recap_fastpath
+from src.smartcoach_mobile_coach.run_review import (
+    RunReviewFallback,
+    RunReviewSkip,
+    handle_run_review_turn,
+    should_use_run_review_v2,
+)
 from src.smartcoach_mobile_coach.run_summary_sections import (
     enrich_run_summary_payload_with_sections,
 )
@@ -3253,6 +3259,85 @@ def run_mobile_agent_turn(
         else None
     )
     latest_plan_generation: Optional[Dict[str, Any]] = None
+
+    # --- Run Review V2 (SMARTCOACH_RUN_REVIEW_V2) ------------------------
+    # Single-completion focused review for "how was my run?"-style turns
+    # with proper workout-intent framing and splits when available. Falls
+    # back silently into the legacy fastpath / full agent loop on any
+    # failure, so legacy behavior is preserved when the flag is off.
+    use_v2, v2_classification, v2_cfg = should_use_run_review_v2(
+        user_message=user_message,
+        conversation_history=conversation_history,
+        internal_user_id=internal_user_id,
+        plan_creation_mode=plan_creation_mode,
+    )
+    if v2_cfg.enabled:
+        timings_ms["run_review_v2_gate"] = {
+            "use_v2": use_v2,
+            "classifier": (
+                v2_classification.as_log_dict()
+                if v2_classification is not None
+                else None
+            ),
+        }
+    if use_v2 and v2_classification is not None:
+        try:
+            v2_payload, v2_meta = handle_run_review_turn(
+                session=session,
+                internal_user_id=internal_user_id,
+                user_message=user_message,
+                conversation_history=conversation_history,
+                anchor_local_date=anchor_local_date,
+                base_system_content=system_content,
+                history_window=history_window,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_directive_dialogue={
+                    "turn_type": response_directive.turn_type,
+                    "intent": response_directive.intent,
+                    "turn_count": conversation_state.turn_count,
+                    "last_topic": conversation_state.last_topic,
+                    "target_length": response_directive.target_length,
+                    "narration_mode": response_directive.narration_mode,
+                    "tool_strategy": response_directive.tool_strategy,
+                    "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                    "allow_full_recap": response_directive.allow_full_recap,
+                    "investigate_first": response_directive.investigate_first,
+                    "interaction_mode": response_directive.interaction_mode,
+                    "thread_derived": thread_ctx.as_dict(),
+                },
+                activity_id_hint=last_activity_id_hint,
+                thread_activity_id=thread_ctx.last_structured_run_activity_id,
+                cfg=v2_cfg,
+                classifier_result=v2_classification,
+            )
+        except (RunReviewFallback, RunReviewSkip) as exc:
+            timings_ms["run_review_v2_outcome"] = {
+                "served": False,
+                "reason": str(exc) or exc.__class__.__name__,
+            }
+            logger.info(
+                "[run_review_v2] fallback reason=%s; continuing into legacy path",
+                str(exc) or exc.__class__.__name__,
+            )
+        else:
+            timings_ms["run_review_v2_outcome"] = {"served": True}
+            v2_meta["timings_ms"] = {
+                **(v2_meta.get("timings_ms") or {}),
+                **timings_ms,
+                "agent_orchestrator_total_ms": round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                ),
+            }
+            _maybe_run_explicit_goal_memory_fallback(
+                session,
+                internal_user_id,
+                stashed_explicit_goal_text,
+                messages,
+                explicit_goal_memory_persist_guard,
+            )
+            return v2_payload, v2_meta
 
     if plan_creation_mode:
         recap_decision = None

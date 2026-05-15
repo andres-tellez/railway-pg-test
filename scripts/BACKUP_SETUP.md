@@ -1,10 +1,14 @@
 # Database Backup Setup Guide
 
-This guide will help you set up automated database backups for the Smart Marathon Coach application.
+**Default for production (no B2/S3):** GitHub Actions runs `pg_dump` and stores the `.sql` as a **workflow artifact**. See **[ARTIFACT_BACKUPS.md](./ARTIFACT_BACKUPS.md)** (one secret: `DATABASE_URL`).
+
+---
+
+This guide also covers **optional** **AWS S3** (and local testing) if you choose external object storage instead of artifacts.
 
 ## Quick Start
 
-### 1. Set Up Cloud Storage (AWS S3)
+### 1. Set Up Cloud Storage (AWS S3) — optional
 
 **Option A: AWS S3 (Recommended - ~$0.25/month)**
 

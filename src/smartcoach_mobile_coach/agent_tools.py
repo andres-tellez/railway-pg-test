@@ -85,6 +85,26 @@ from src.utils.hr_zone_constants import (
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
+
+def _record_plan_generation_tool_event(
+    internal_user_id: str,
+    outcome: str,
+    properties: Optional[Dict[str, Any]] = None,
+) -> None:
+    try:
+        from src.services.product_analytics_service import record_product_event
+
+        record_product_event(
+            event_name="plan_generation_tool",
+            outcome=outcome,
+            user_id=str(internal_user_id),
+            source="server",
+            properties=properties,
+        )
+    except Exception:
+        logger.debug("plan_generation_tool analytics skipped", exc_info=True)
+
+
 _DEFAULT_KPI_WEEKS = 4
 _MAX_KPI_WEEKS = 52
 _INTAKE_ALIGNMENT_FEATURE_FLAG = "SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1"
@@ -2093,6 +2113,11 @@ def tool_generate_training_plan(
     try:
         plan_request = build_plan_request_from_state(current_state)
     except Exception as e:
+        _record_plan_generation_tool_event(
+            str(internal_user_id),
+            "failure",
+            {"stage": "invalid_plan_intake_state", "message": str(e)[:400]},
+        )
         return {
             "error": "invalid_plan_intake_state",
             "message": str(e),
@@ -2112,6 +2137,14 @@ def tool_generate_training_plan(
         logger.exception(
             "[generate_training_plan] pre_generation_runner_assessment failed user=%s",
             internal_user_id,
+        )
+        _record_plan_generation_tool_event(
+            str(internal_user_id),
+            "failure",
+            {
+                "stage": "pre_generation_runner_assessment",
+                "exception_type": type(e).__name__,
+            },
         )
         return {
             "error": "pre_generation_runner_assessment_failed",
@@ -2172,6 +2205,16 @@ def tool_generate_training_plan(
                 },
                 default=str,
             ),
+        )
+        _record_plan_generation_tool_event(
+            str(internal_user_id),
+            "blocked",
+            {
+                "stage": "plan_generation_readiness",
+                "decision": readiness_payload.get("decision"),
+                "readiness_level": readiness_payload.get("readiness_level"),
+                "trace_id": readiness_payload.get("trace_id"),
+            },
         )
         return {
             "error": (
@@ -2262,6 +2305,14 @@ def tool_generate_training_plan(
                 },
                 "suggested_next_question": _next_alignment_question(allowed_categories),
             }
+            _record_plan_generation_tool_event(
+                str(internal_user_id),
+                "blocked",
+                {
+                    "stage": "alignment_required",
+                    "trace_id": readiness_payload.get("trace_id"),
+                },
+            )
             return {
                 "error": "alignment_required",
                 "message": (
@@ -2317,6 +2368,11 @@ def tool_generate_training_plan(
                     )
     except Exception as e:
         logger.exception("Plan generation failed user=%s", internal_user_id)
+        _record_plan_generation_tool_event(
+            str(internal_user_id),
+            "failure",
+            {"stage": "plan_generation_exception", "exception_type": type(e).__name__},
+        )
         return {
             "error": "plan_generation_failed",
             "message": "Plan generation could not be completed.",
@@ -2363,6 +2419,15 @@ def tool_generate_training_plan(
         gf = result.get("generation_failure")
         if gf:
             out["failure"] = gf
+        _record_plan_generation_tool_event(
+            str(internal_user_id),
+            "failure",
+            {
+                "stage": "plan_validation_failed",
+                "rules": [v.get("rule") for v in violations][:12],
+                "trace_id": readiness_payload.get("trace_id"),
+            },
+        )
         return out
 
     validation_payload = {
@@ -2429,6 +2494,15 @@ def tool_generate_training_plan(
         next_ux["plan_creation_phase"] = PHASE_GENERATED
         sync_legacy_ux_from_phase(next_ux, PHASE_GENERATED)
     next_state["ux"] = next_ux
+    _record_plan_generation_tool_event(
+        str(internal_user_id),
+        "success",
+        {
+            "plan_id": int(plan_id),
+            "trace_id": readiness_payload.get("trace_id"),
+            "activity_weeks": activity_weeks,
+        },
+    )
     return {
         "ok": True,
         "plan_id": int(plan_id),

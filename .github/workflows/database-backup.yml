@@ -1,21 +1,30 @@
+# Postgres logical backup: pg_dump of **production** Postgres → GitHub Actions artifact (no B2/S3).
+#
+# The database being backed up is always **production** (e.g. Railway `db-prod`).
+#
+# Secrets (Actions):
+#   - PRODUCTION_DATABASE_URL (recommended — makes “prod only” explicit)
+#   - or DATABASE_URL as fallback if it is your **production** URL (never staging)
 name: Database Backup
 
 on:
   schedule:
-    # Run daily at 2:00 AM UTC
-    - cron: '0 2 * * *'
-  workflow_dispatch:  # Allow manual triggering
+    - cron: '0 2 * * *' # Daily 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   backup:
     runs-on: ubuntu-latest
-    
+    env:
+      # Single source for pg_dump: production only (explicit secret preferred).
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL || secrets.DATABASE_URL }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -24,32 +33,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Install Python dependencies
+      - name: Create production database backup
         run: |
-          python -m pip install --upgrade pip
-          pip install boto3 b2sdk
-
-      - name: Create database backup
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # B2 credentials (default)
-          B2_APPLICATION_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
-          B2_APPLICATION_KEY: ${{ secrets.B2_APPLICATION_KEY }}
-          B2_BUCKET_NAME: ${{ secrets.B2_BUCKET_NAME }}
-          BACKUP_STORAGE_TYPE: ${{ secrets.BACKUP_STORAGE_TYPE || 'b2' }}
-          # S3 credentials (optional, if using S3)
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
-          BACKUP_S3_REGION: ${{ secrets.BACKUP_S3_REGION || 'us-east-1' }}
-        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "❌ Set PRODUCTION_DATABASE_URL (recommended) or DATABASE_URL to your **production** Postgres URL."
+            echo "   GitHub → Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          mkdir -p backup-output
           python scripts/backup_database.py \
-            --storage ${{ secrets.BACKUP_STORAGE_TYPE || 'b2' }} \
-            --bucket ${{ secrets.B2_BUCKET_NAME || secrets.BACKUP_S3_BUCKET || 'smartcoach-backups' }}
+            --storage local \
+            --local-path backup-output \
+            --output-dir /tmp/pg_dump_workspace
 
-      - name: Backup status
-        if: failure()
-        run: |
-          echo "❌ Backup failed! Check logs above."
-          exit 1
-
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: postgres-backup-prod-${{ github.run_number }}-${{ github.run_id }}
+          path: backup-output/*.sql
+          if-no-files-found: error
+          retention-days: 90
