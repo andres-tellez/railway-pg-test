@@ -17,12 +17,21 @@ import os
 from dataclasses import dataclass
 
 
-_TRUE_VALUES = ("1", "true", "yes", "on")
-_FALSE_VALUES = ("0", "false", "no", "off")
+_TRUE_VALUES = (
+    "1",
+    "true",
+    "yes",
+    "on",
+    "y",
+    "enable",
+    "enabled",
+)
+_FALSE_VALUES = ("0", "false", "no", "off", "n", "f", "disable", "disabled")
 
 
 def _read_bool(env_name: str, default: bool) -> bool:
-    raw = (os.getenv(env_name) or "").strip().lower()
+    # Strip UTF-8 BOM / odd whitespace (some dashboards paste hidden chars).
+    raw = (os.getenv(env_name) or "").strip("\ufeff \t\r\n").lower()
     if raw in _TRUE_VALUES:
         return True
     if raw in _FALSE_VALUES:
