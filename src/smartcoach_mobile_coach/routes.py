@@ -45,8 +45,33 @@ from src.services.coach_strava_readiness_service import (
     evaluate_coach_strava_data_readiness,
 )
 from src.utils.response_utils import error_response
+from src.services.product_analytics_service import record_product_event, truncate_text
 
 logger = logging.getLogger("smartcoach_mobile_coach")
+
+
+def _record_coach_agent_turn(
+    *,
+    user_id: Optional[str],
+    correlation_id: str,
+    outcome: str,
+    http_status: int,
+    properties: Optional[dict] = None,
+) -> None:
+    props = dict(properties or {})
+    props["http_status"] = http_status
+    try:
+        record_product_event(
+            event_name="coach_agent_turn",
+            outcome=outcome,
+            user_id=user_id,
+            source="server",
+            correlation_id=correlation_id,
+            properties=props,
+        )
+    except Exception:
+        logger.debug("coach_agent_turn analytics skipped", exc_info=True)
+
 
 _EVAL_MODEL_ALLOWLIST = frozenset(
     {"gpt-4o", "gpt-4o-mini", "gpt-4o-2024-08-06"},
@@ -437,6 +462,13 @@ def agent_messages(conversation_id):
         logger.info(
             "[smartcoach_mobile_coach] agent disabled correlation_id=%s", correlation_id
         )
+        _record_coach_agent_turn(
+            user_id=None,
+            correlation_id=correlation_id,
+            outcome="failure",
+            http_status=503,
+            properties={"reason": "agent_disabled"},
+        )
         return (
             jsonify(
                 {
@@ -467,6 +499,13 @@ def agent_messages(conversation_id):
     uid_str = str(user_id)
     allowed, retry_after = can_make_agent_http_request(uid_str)
     if not allowed:
+        _record_coach_agent_turn(
+            user_id=uid_str,
+            correlation_id=correlation_id,
+            outcome="failure",
+            http_status=429,
+            properties={"reason": "http_rate_limited", "retry_after": retry_after},
+        )
         return (
             jsonify(
                 {
@@ -489,6 +528,13 @@ def agent_messages(conversation_id):
         )
         t_route1 = time.perf_counter()
         if not conversation:
+            _record_coach_agent_turn(
+                user_id=uid_str,
+                correlation_id=correlation_id,
+                outcome="failure",
+                http_status=404,
+                properties={"reason": "conversation_not_found"},
+            )
             return jsonify({"error": "Conversation not found"}), 404
 
         require_fresh = _coerce_require_fresh_strava_data(data)
@@ -506,6 +552,18 @@ def agent_messages(conversation_id):
                         uid_str,
                         readiness.pending_detail_enrichment,
                         readiness.sync_status,
+                    )
+                    _record_coach_agent_turn(
+                        user_id=uid_str,
+                        correlation_id=correlation_id,
+                        outcome="failure",
+                        http_status=425,
+                        properties={
+                            "reason": "strava_refresh_in_progress",
+                            "sync_status": readiness.sync_status,
+                            "pending_detail_enrichment": readiness.pending_detail_enrichment,
+                            "user_message_preview": truncate_text(message.strip(), 400),
+                        },
                     )
                     return (
                         jsonify(
@@ -590,6 +648,17 @@ def agent_messages(conversation_id):
             )
         except RateLimitExceededError as e:
             session.rollback()
+            _record_coach_agent_turn(
+                user_id=uid_str,
+                correlation_id=correlation_id,
+                outcome="failure",
+                http_status=429,
+                properties={
+                    "reason": "openai_rate_limited",
+                    "retry_after_seconds": int(e.retry_after),
+                    "user_message_preview": truncate_text(message.strip(), 400),
+                },
+            )
             return error_response(
                 message=f"Rate limit exceeded. Please try again in {int(e.retry_after)} seconds.",
                 status_code=429,
@@ -600,6 +669,16 @@ def agent_messages(conversation_id):
             )
         except CostLimitExceededError as e:
             session.rollback()
+            _record_coach_agent_turn(
+                user_id=uid_str,
+                correlation_id=correlation_id,
+                outcome="failure",
+                http_status=429,
+                properties={
+                    "reason": "openai_cost_limited",
+                    "user_message_preview": truncate_text(message.strip(), 400),
+                },
+            )
             return error_response(
                 message=e.message or "Daily cost limit exceeded.",
                 status_code=429,
@@ -701,6 +780,20 @@ def agent_messages(conversation_id):
 
         _log_agent_messages_response_audit(gpt_response)
 
+        _record_coach_agent_turn(
+            user_id=uid_str,
+            correlation_id=correlation_id,
+            outcome="success",
+            http_status=200,
+            properties={
+                "conversation_id": str(conversation_id),
+                "response_shape": response_shape,
+                "readiness_trace_id": readiness_tid_for_log or None,
+                "duration_ms": int(elapsed * 1000),
+                "user_message_preview": truncate_text(message.strip(), 400),
+            },
+        )
+
         return (
             jsonify(
                 {
@@ -729,6 +822,20 @@ def agent_messages(conversation_id):
             e,
         )
         session.rollback()
+        _record_coach_agent_turn(
+            user_id=locals().get("uid_str"),
+            correlation_id=correlation_id,
+            outcome="failure",
+            http_status=500,
+            properties={
+                "reason": "exception",
+                "error_type": type(e).__name__,
+                "user_message_preview": truncate_text(
+                    message.strip() if isinstance(message, str) else "",
+                    400,
+                ),
+            },
+        )
         return jsonify({"error": f"Failed to process agent message: {str(e)}"}), 500
     finally:
         session.close()

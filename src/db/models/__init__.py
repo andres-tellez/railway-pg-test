@@ -7,6 +7,7 @@ from src.db.models.plan_workouts import PlanWorkout
 from src.db.models.webhook_events import WebhookEvent
 from src.db.models.conversations import Conversation, ConversationMessage
 from src.db.models.auth_audit_log import AuthAuditLog  # Audit logging
+from src.db.models.product_analytics_event import ProductAnalyticsEvent
 from src.db.models.strava_sync_status import StravaSyncStatus
 from src.db.models.strava_ingestion_retry import StravaIngestionRetry
 from src.db.models.user_hr_zones import UserHrZones
