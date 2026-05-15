@@ -3271,15 +3271,22 @@ def run_mobile_agent_turn(
         internal_user_id=internal_user_id,
         plan_creation_mode=plan_creation_mode,
     )
-    if v2_cfg.enabled:
-        timings_ms["run_review_v2_gate"] = {
-            "use_v2": use_v2,
-            "classifier": (
-                v2_classification.as_log_dict()
-                if v2_classification is not None
-                else None
-            ),
-        }
+    # Always record the gate so prod logs / agent_timings_ms show whether the
+    # flag is on and whether the classifier agreed (even when the flag is off).
+    timings_ms["run_review_v2_gate"] = {
+        "flag_enabled": v2_cfg.enabled,
+        "use_v2": use_v2,
+        "plan_creation_mode": plan_creation_mode,
+        "classifier": (
+            v2_classification.as_log_dict() if v2_classification is not None else None
+        ),
+    }
+    logger.info(
+        "[run_review_v2] gate flag_enabled=%s use_v2=%s plan_creation_mode=%s",
+        v2_cfg.enabled,
+        use_v2,
+        plan_creation_mode,
+    )
     if use_v2 and v2_classification is not None:
         try:
             v2_payload, v2_meta = handle_run_review_turn(
