@@ -44,18 +44,31 @@ def test_gate_off_when_flag_disabled(monkeypatch) -> None:
         user_message="How was my run?",
         conversation_history=[],
         internal_user_id="u1",
-        plan_creation_mode=False,
     )
     assert use_v2 is False
 
 
-def test_gate_off_during_plan_creation(monkeypatch) -> None:
+def test_gate_allows_run_review_during_plan_creation_mode(monkeypatch) -> None:
+    """Intake threads force plan_creation_mode=True; explicit run reviews still use V2."""
     monkeypatch.setattr(entry_mod, "load_config", lambda: _cfg(True))
-    use_v2, _, _ = should_use_run_review_v2(
+    use_v2, classifier_result, _ = should_use_run_review_v2(
         user_message="How was my run?",
         conversation_history=[],
         internal_user_id="u1",
-        plan_creation_mode=True,
+    )
+    assert use_v2 is True
+    assert classifier_result is not None
+    assert classifier_result.is_run_review is True
+
+
+def test_gate_off_for_intake_style_answer_during_plan_creation_mode(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(entry_mod, "load_config", lambda: _cfg(True))
+    use_v2, _, _ = should_use_run_review_v2(
+        user_message="4",
+        conversation_history=[],
+        internal_user_id="u1",
     )
     assert use_v2 is False
 
@@ -66,7 +79,6 @@ def test_gate_on_for_classic_recap_question(monkeypatch) -> None:
         user_message="How was my run today?",
         conversation_history=[],
         internal_user_id="u1",
-        plan_creation_mode=False,
     )
     assert use_v2 is True
     assert cfg.enabled is True
@@ -80,7 +92,6 @@ def test_gate_off_for_plan_question(monkeypatch) -> None:
         user_message="Help me build a training plan",
         conversation_history=[],
         internal_user_id="u1",
-        plan_creation_mode=False,
     )
     assert use_v2 is False
     assert classifier_result is not None

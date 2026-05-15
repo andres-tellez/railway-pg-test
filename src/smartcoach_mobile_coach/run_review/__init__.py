@@ -17,9 +17,9 @@ Design rules (enforced by file boundaries, not lint):
    produced here. The prompt provides framing constraints only.
 3. Every failure raises :class:`RunReviewFallback` so the orchestrator can
    continue into the legacy fastpath / full tool loop without disruption.
-4. Nothing under ``run_review/`` is imported elsewhere; only this module
-   exports the public symbols. See ``orchestrator/__init__.py`` for the
-   single integration point.
+4. External code should depend only on this module's exports; internal
+   helpers stay under ``run_review/``. See ``orchestrator/__init__.py`` for
+   the single integration point.
 
 Feature flag: ``SMARTCOACH_RUN_REVIEW_V2`` (see :mod:`.config`).
 """
