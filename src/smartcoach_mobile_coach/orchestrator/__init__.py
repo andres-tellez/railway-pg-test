@@ -3269,7 +3269,6 @@ def run_mobile_agent_turn(
         user_message=user_message,
         conversation_history=conversation_history,
         internal_user_id=internal_user_id,
-        plan_creation_mode=plan_creation_mode,
     )
     # Always record the gate so prod logs / agent_timings_ms show whether the
     # flag is on and whether the classifier agreed (even when the flag is off).

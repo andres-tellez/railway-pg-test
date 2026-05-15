@@ -3,9 +3,8 @@ Run Review V2 public entry — the only thing the orchestrator imports.
 
 Two functions:
 
-- :func:`should_use_run_review_v2`: a *fast, side-effect-free* gate.
-  Returns ``False`` unless the feature flag is on and the classifier
-  agrees the turn is a completed-run review.
+- :func:`should_use_run_review_v2`: gate; returns ``True`` when the feature
+  flag is on **and** classification says the turn is a completed-run review.
 - :func:`handle_run_review_turn`: orchestrates the full V2 path
   (context build → prompt → single LLM call → envelope) and returns
   ``(structured_payload, meta)`` matching what the orchestrator already
@@ -14,6 +13,9 @@ Two functions:
 Any failure inside V2 raises :class:`RunReviewFallback`. The orchestrator
 should swallow that and continue into the legacy fastpath / full agent
 loop. We never raise out of ``should_use_run_review_v2``.
+
+``plan_creation_mode`` is logged in the orchestrator gate timings only; this
+gate relies on the classifier, not the thread-wide plan-intake flag.
 """
 
 from __future__ import annotations
@@ -54,18 +56,17 @@ def should_use_run_review_v2(
     user_message: str,
     conversation_history: List[Dict[str, str]],
     internal_user_id: str,
-    plan_creation_mode: bool,
     cfg: Optional[RunReviewConfig] = None,
 ) -> Tuple[bool, Optional[ClassifierResult], RunReviewConfig]:
     """
     Cheap gate. Returns ``(use_v2, classifier_result_or_None, cfg)``.
 
-    Plan-creation mode always wins — V2 stays out of the way there.
+    Threads with ``latest_plan_intake_state`` force ``plan_creation_mode=True``
+    in the orchestrator, but that must not block run-review classification;
+    this function always runs the classifier when the flag is on.
     """
     snapshot = cfg or load_config()
     if not snapshot.enabled:
-        return False, None, snapshot
-    if plan_creation_mode:
         return False, None, snapshot
     try:
         result = classify_user_message(
