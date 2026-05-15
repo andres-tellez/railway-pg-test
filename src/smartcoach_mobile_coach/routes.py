@@ -14,7 +14,7 @@ import time
 import uuid
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from flask import Blueprint, jsonify, request
 
@@ -48,6 +48,24 @@ from src.utils.response_utils import error_response
 from src.services.product_analytics_service import record_product_event, truncate_text
 
 logger = logging.getLogger("smartcoach_mobile_coach")
+
+
+def _run_review_v2_trace_header(meta: Dict[str, Any]) -> Optional[str]:
+    """Summarize Run Review V2 gate/outcome for observability (non-secret)."""
+    timings = meta.get("timings_ms") or {}
+    gate = timings.get("run_review_v2_gate")
+    if not isinstance(gate, dict):
+        return None
+    if not gate.get("flag_enabled"):
+        return "off"
+    if not gate.get("use_v2"):
+        return "skipped"
+    outcome = timings.get("run_review_v2_outcome") or {}
+    if outcome.get("served") is True:
+        return "served"
+    if outcome.get("served") is False:
+        return "fallback"
+    return "pending"
 
 
 def _record_coach_agent_turn(
@@ -777,6 +795,9 @@ def agent_messages(conversation_id):
         resp_headers = {}
         if model_used:
             resp_headers["X-SmartCoach-Model-Used"] = model_used
+        v2_trace = _run_review_v2_trace_header(meta)
+        if v2_trace:
+            resp_headers["X-SmartCoach-Run-Review-V2"] = v2_trace
 
         _log_agent_messages_response_audit(gpt_response)
 
