@@ -822,6 +822,7 @@ def agent_messages(conversation_id):
                     "response": gpt_response,
                     "message_id": str(user_msg.id),
                     "response_time": elapsed,
+                    "run_review_v2_trace": v2_trace,
                     "token_usage": {
                         "prompt_tokens": meta.get("usage", {}).get("prompt_tokens", 0),
                         "completion_tokens": meta.get("usage", {}).get(
