@@ -26,6 +26,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from src.smartcoach_mobile_coach.coach_context import (
+    build_snapshot,
+    coach_context_v1_enabled,
+    format_snapshot_for_system,
+)
 from src.smartcoach_mobile_coach.run_review.classifier import (
     ClassifierResult,
     classify_user_message,
@@ -126,6 +131,37 @@ def handle_run_review_turn(  # pylint: disable=too-many-arguments,too-many-local
         raise RunReviewSkip("classifier_says_not_run_review")
 
     timings: Dict[str, Any] = {}
+    coach_context_trace: Optional[Dict[str, Any]] = None
+    system_content_for_v2 = base_system_content or ""
+
+    if coach_context_v1_enabled():
+        t_cc0 = time.perf_counter()
+        try:
+            cc_result = build_snapshot(
+                session=session,
+                internal_user_id=str(internal_user_id),
+                tz="UTC",
+                anchor_local_date=anchor_local_date,
+                conversation_history=conversation_history,
+            )
+            cc_block = format_snapshot_for_system(cc_result.snapshot)
+            system_content_for_v2 = f"{system_content_for_v2}{cc_block}"
+            coach_context_trace = cc_result.trace
+        except Exception:
+            coach_context_trace = {
+                "built": False,
+                "enabled": True,
+                "reason": "build_failed",
+            }
+            logger.warning(
+                "[coach_context] build failed inside run_review_v2; continuing without snapshot",
+                exc_info=True,
+            )
+        timings["coach_context_build_ms"] = round(
+            (time.perf_counter() - t_cc0) * 1000, 2
+        )
+    else:
+        coach_context_trace = {"built": False, "enabled": False, "reason": "flag_off"}
 
     t_ctx0 = time.perf_counter()
     try:
@@ -161,7 +197,7 @@ def handle_run_review_turn(  # pylint: disable=too-many-arguments,too-many-local
     try:
         responder_out = generate_review(
             ctx=ctx,
-            base_system_content=base_system_content,
+            base_system_content=system_content_for_v2,
             conversation_history=conversation_history,
             user_message=user_message,
             history_window=history_window,
@@ -203,6 +239,7 @@ def handle_run_review_turn(  # pylint: disable=too-many-arguments,too-many-local
         dialogue=response_directive_dialogue,
         sections_attached=sections_attached,
         classifier_summary=classification.as_log_dict(),
+        coach_context_trace=coach_context_trace,
     )
 
     record_run_review_event(

@@ -38,6 +38,11 @@ def _cfg(enabled: bool, classifier_mode: str = "heuristic") -> RunReviewConfig:
     )
 
 
+@pytest.fixture(autouse=True)
+def _disable_coach_context_flag(monkeypatch):
+    monkeypatch.delenv("SMARTCOACH_COACH_CONTEXT_V1", raising=False)
+
+
 def test_gate_off_when_flag_disabled(monkeypatch) -> None:
     monkeypatch.setattr(entry_mod, "load_config", lambda: _cfg(False))
     use_v2, _, _ = should_use_run_review_v2(
