@@ -92,6 +92,14 @@ def login_callback():
             logger.warning(f"Token validation failed: {e}", exc_info=True)
             # Log failed login attempt
             log_login_failure(reason=f"token_validation_failed: {str(e)[:50]}")
+            from src.services.product_analytics_service import record_product_event
+
+            record_product_event(
+                event_name="auth0_token_login",
+                outcome="failure",
+                user_id=None,
+                properties={"reason": "invalid_token"},
+            )
             # Return generic error to client (don't leak validation details)
             return error_response(
                 "Invalid or expired token", status_code=401, error_code="INVALID_TOKEN"
@@ -126,6 +134,17 @@ def login_callback():
                 log_login_failure(
                     auth0_sub=auth0_sub, reason="user_id_resolution_failed"
                 )
+                from src.services.product_analytics_service import record_product_event
+
+                record_product_event(
+                    event_name="auth0_token_login",
+                    outcome="failure",
+                    user_id=None,
+                    properties={
+                        "auth0_sub": auth0_sub,
+                        "reason": "user_id_resolution_failed",
+                    },
+                )
                 return error
             else:
                 user_id = str(fallback_user_id)
@@ -136,6 +155,15 @@ def login_callback():
 
         # Log successful login
         log_login_success(user_id=user_id, auth0_sub=auth0_sub)
+
+        from src.services.product_analytics_service import record_product_event
+
+        record_product_event(
+            event_name="auth0_token_login",
+            outcome="success",
+            user_id=str(user_id),
+            properties={"auth0_sub": auth0_sub},
+        )
 
         frontend_redirect = (
             os.getenv("FRONTEND_REDIRECT") or "https://app.smartcoach.dev"

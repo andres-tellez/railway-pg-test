@@ -126,6 +126,32 @@ logger = logging.getLogger(__name__)
 # Automatic retries when Strava API headroom is too low (see rate-limit check below).
 MAX_SYNC_AUTO_RETRIES = 5
 
+
+def _record_ingestion_analytics_failure(
+    user_id, athlete_id, exc: BaseException
+) -> None:
+    from src.services.product_analytics_service import record_product_event
+
+    try:
+        aid = int(athlete_id) if athlete_id is not None else None
+    except Exception:
+        aid = None
+    try:
+        record_product_event(
+            event_name="strava_ingestion_run",
+            outcome="failure",
+            user_id=str(user_id) if user_id else None,
+            source="server",
+            properties={
+                "athlete_id": aid,
+                "error_type": type(exc).__name__,
+                "message": str(exc)[:500],
+            },
+        )
+    except Exception:
+        logger.debug("ingestion failure analytics skipped", exc_info=True)
+
+
 USER_MSG_HEADROOM_DEFERRED = (
     "Strava is extra busy right now, so we paused your run import on purpose — "
     "that avoids broken or partial data. SmartCoach will try again automatically in a few minutes. "
@@ -776,6 +802,27 @@ def run_full_ingestion_and_enrichment(
         update_last_sync_timestamp(session, athlete_id)
         sync_progress(95, "Finalizing sync")
         logger.info(f"Finished ingestion. Synced={inserted_count}, Enriched={enriched}")
+
+        had_initial_import = False
+        if user_id:
+            try:
+                from uuid import UUID
+
+                from src.db.models.user_identity import UserIdentity
+
+                uid_uuid = UUID(str(user_id))
+                u0 = (
+                    session.query(UserIdentity)
+                    .filter(UserIdentity.user_id == uid_uuid)
+                    .first()
+                )
+                had_initial_import = bool(u0 and u0.initial_strava_import_completed_at)
+            except Exception:
+                logger.debug(
+                    "had_initial_import probe failed",
+                    exc_info=True,
+                )
+
         sync_complete()
         maybe_mark_initial_import_complete()
         if user_id:
@@ -817,6 +864,42 @@ def run_full_ingestion_and_enrichment(
                     "schedule_weekly_insights_after_strava_ingestion failed",
                     exc_info=True,
                 )
+        if user_id:
+            try:
+                from uuid import UUID
+
+                from src.db.models.user_identity import UserIdentity
+                from src.services.product_analytics_service import record_product_event
+
+                uid_uuid = UUID(str(user_id))
+                u1 = (
+                    session.query(UserIdentity)
+                    .filter(UserIdentity.user_id == uid_uuid)
+                    .first()
+                )
+                initial_completed_now = bool(
+                    u1
+                    and u1.initial_strava_import_completed_at
+                    and not had_initial_import
+                )
+                record_product_event(
+                    event_name="strava_ingestion_run",
+                    outcome="success",
+                    user_id=str(user_id),
+                    source="server",
+                    properties={
+                        "athlete_id": int(athlete_id),
+                        "synced": int(inserted_count or 0),
+                        "enriched": int(enriched or 0),
+                        "force_full_sync": bool(force_full_sync),
+                        "initial_strava_import_just_completed": initial_completed_now,
+                    },
+                )
+            except Exception:
+                logger.warning(
+                    "product_analytics strava_ingestion_run failed",
+                    exc_info=True,
+                )
         return {"synced": inserted_count, "enriched": enriched}
 
     except (
@@ -827,6 +910,7 @@ def run_full_ingestion_and_enrichment(
         session.rollback()
         if user_id:
             delete_retry_standalone(str(user_id), int(athlete_id))
+        _record_ingestion_analytics_failure(user_id, athlete_id, e)
         if isinstance(e, StravaIngestionSyncError) and getattr(e, "reason", None) in (
             "rate_limit_retries_exhausted",
             "rate_limit_headroom_no_user",
@@ -842,6 +926,7 @@ def run_full_ingestion_and_enrichment(
         session.rollback()
         if user_id:
             delete_retry_standalone(str(user_id), int(athlete_id))
+        _record_ingestion_analytics_failure(user_id, athlete_id, e)
         logger.exception(f"Token error during ingestion: {e}")
         sync_error(f"Token error during sync: {e.message}", error_code="TOKEN_ERROR")
         raise StravaIngestionSyncError(
@@ -853,6 +938,7 @@ def run_full_ingestion_and_enrichment(
         session.rollback()
         if user_id:
             delete_retry_standalone(str(user_id), int(athlete_id))
+        _record_ingestion_analytics_failure(user_id, athlete_id, e)
         logger.exception(f"Ingestion failed: {e}")
         sync_error(f"Ingestion failed: {e}", error_code="INGESTION_ERROR")
         raise StravaIngestionSyncError(

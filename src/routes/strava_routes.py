@@ -307,6 +307,15 @@ def strava_callback_get():
     finally:
         db_session.close()
 
+    from src.services.product_analytics_service import record_product_event
+
+    record_product_event(
+        event_name="strava_oauth_link",
+        outcome="success",
+        user_id=str(user_id),
+        properties={"athlete_id": int(athlete_id), "transport": "get"},
+    )
+
     # Ingestion runs with a brand new session
     def ingestion_job(session, athlete_id, user_id):
         user_id_str = str(user_id) if user_id is not None else None
@@ -381,6 +390,18 @@ def strava_callback_post():
             provider="strava",
             details={"error": safe_message},
         )
+        from src.services.product_analytics_service import record_product_event
+
+        record_product_event(
+            event_name="strava_oauth_link",
+            outcome="failure",
+            user_id=None,
+            properties={
+                "auth0_sub": auth0_sub,
+                "error": safe_message[:400],
+                "exception": type(e).__name__,
+            },
+        )
         if isinstance(e, StravaAthleteAlreadyLinkedError):
             status_code = 409
         elif isinstance(e, (StravaOAuthError, StravaTokenError)):
@@ -402,7 +423,24 @@ def strava_callback_post():
             provider="strava",
             details={"error": str(e)},
         )
+        from src.services.product_analytics_service import record_product_event
+
+        record_product_event(
+            event_name="strava_oauth_link",
+            outcome="failure",
+            user_id=None,
+            properties={"auth0_sub": auth0_sub, "error": str(e)[:400]},
+        )
         return internal_error_response("Failed to process Strava callback", log_error=e)
+
+    from src.services.product_analytics_service import record_product_event
+
+    record_product_event(
+        event_name="strava_oauth_link",
+        outcome="success",
+        user_id=str(user_id),
+        properties={"athlete_id": int(athlete_id), "transport": "post"},
+    )
 
     # Ingestion runs in fresh session
     def ingestion_job(session, athlete_id, user_id):

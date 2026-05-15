@@ -46,6 +46,7 @@ def use_sqlite_for_tests():
     import src.db.models.session_summaries  # Phase F — session summaries
     import src.db.models.user_plan_memories  # Phase F — plan memories
     import src.db.models.coach_tools  # coach_tools table for execute_tool call_count updates
+    import src.db.models.product_analytics_event  # pilot product analytics
 
     test_engine = create_engine("sqlite:///:memory:", future=True)
 
