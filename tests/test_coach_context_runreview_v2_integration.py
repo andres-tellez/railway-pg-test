@@ -109,3 +109,4 @@ def test_runreview_v2_includes_snapshot_when_enabled(monkeypatch) -> None:
     assert "Coach Snapshot v1" in captured["base_system_content"]
     assert "BASE" in captured["base_system_content"]
     assert meta["coach_context_trace"]["built"] is True
+    assert meta["rubric_version"] == "run_review_rubric_v1"
