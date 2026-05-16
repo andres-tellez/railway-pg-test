@@ -180,6 +180,7 @@ def test_handle_run_review_turn_happy_path(monkeypatch) -> None:
     assert meta["run_review_v2_classifier"]["is_run_review"] is True
     assert meta["model"] == "gpt-4o"
     assert meta["usage"]["total_tokens"] == 130
+    assert meta["rubric_version"] == "run_review_rubric_v1"
     # The responder must have received the augmented system content.
     assert captured["base_system_content"] == "BASE SYSTEM"
     assert captured["ctx"].activity_id == 9001

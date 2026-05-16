@@ -15,24 +15,35 @@ The orchestrator already builds a long, carefully-tuned system prompt
 Strict rules we encode:
 
 - The model must not invent numbers not present in the JSON.
-- The model must not repeat the headline RunSummaryCard stats verbatim.
-- The model must use plain coaching language; never "red zone",
-  "overtraining", or "burnout" framing.
-- The model must close with one specific, actionable takeaway.
+- When the model cites session-level distance or HR, it must align with
+  ``run_facts`` and the RunSummary card.
 
 We add a single short example anchored on intent **shape only** ("tempo
 session"), not on numbers, so we do not give the LLM a script. The
 example is also marked as illustrative.
 
-This file produces strings — no LLM calls, no I/O.
+At import time this module loads ``rubric.md`` (coaching rubric text only;
+no verdict code).
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from src.smartcoach_mobile_coach.run_review.context import RunReviewContext
+
+RUN_REVIEW_RUBRIC_VERSION = "run_review_rubric_v1"
+
+_RUN_REVIEW_RUBRIC_PATH = Path(__file__).with_name("rubric.md")
+
+
+def _load_run_review_rubric_body() -> str:
+    return _RUN_REVIEW_RUBRIC_PATH.read_text(encoding="utf-8")
+
+
+_RUN_REVIEW_RUBRIC_TEXT = _load_run_review_rubric_body()
 
 
 _RUN_REVIEW_HEADER = "## Completed-run review (RunReview V2)"
@@ -46,9 +57,11 @@ _GENERAL_GUIDANCE = (
     "Rules for this turn:\n"
     "- Ground every number in the pre-loaded JSON below. Do **not** invent "
     "splits, paces, or HR values.\n"
-    "- Do **not** repeat the headline RunSummaryCard stats (distance, "
-    "duration, avg pace, avg/max HR). The mobile app already shows those "
-    "above your reply.\n"
+    "- Prefer not to restate every headline stat the RunSummary card already "
+    "shows; focus on interpretation. **If** you cite distance, average pace, "
+    "average HR, or max HR in prose, use **exactly** the values in "
+    "``run_facts`` (authoritative). Do not use lap/split extremes as "
+    "session-level avg or max HR.\n"
     "- Read the *right* evidence: when splits are present they are usually "
     "the key signal. Look for pace drift across miles, HR drift across "
     "miles, late fade, big pace swings, and whether intensity matched the "
@@ -165,6 +178,52 @@ def _intent_guidance_block(ctx: RunReviewContext) -> str:
     return "\n".join(blocks).strip()
 
 
+def build_run_facts_for_prompt(ctx: RunReviewContext) -> Dict[str, Any]:
+    """Session-level display metrics aligned with the RunSummary card.
+
+    Keys mirror the ``run_facts`` section in ``rubric.md``. Missing or
+    placeholder display values become JSON ``null``.
+    """
+    facts = ctx.facts if isinstance(ctx.facts, dict) else {}
+
+    def pick_display(*keys: str) -> Optional[str]:
+        for key in keys:
+            raw = facts.get(key)
+            if raw is None:
+                continue
+            text = str(raw).strip()
+            if not text or text in ("—", "-", "n/a", "N/A"):
+                continue
+            return text
+        return None
+
+    return {
+        "distance": pick_display("distance_display"),
+        "avg_pace": pick_display("avg_pace_display"),
+        "avg_hr": pick_display("avg_heart_rate_display"),
+        "max_hr": pick_display("max_heart_rate_display"),
+    }
+
+
+def _run_facts_block(ctx: RunReviewContext) -> str:
+    payload = build_run_facts_for_prompt(ctx)
+    intro = (
+        "## Authoritative `run_facts`\n\n"
+        "These fields match the RunSummary card. When you cite distance, "
+        "average pace, average heart rate, or max heart rate in prose, use "
+        "**only** these values. Splits/laps may explain progression; they "
+        "must not replace or contradict these session-level numbers.\n\n"
+        "```json\n"
+        f"{json.dumps(payload, default=str, indent=2)}\n"
+        "```"
+    )
+    return intro
+
+
+def _coaching_rubric_block() -> str:
+    return "## Coaching Evaluation Rubric\n\n" f"{_RUN_REVIEW_RUBRIC_TEXT.rstrip()}\n"
+
+
 def _splits_guidance_block(ctx: RunReviewContext) -> str:
     if not ctx.splits:
         return (
@@ -197,6 +256,7 @@ def build_run_review_system_appendix(ctx: RunReviewContext) -> str:
         "",
         _RUN_REVIEW_HEADER,
         _GENERAL_GUIDANCE,
+        _run_facts_block(ctx),
     ]
     intent_block = _intent_guidance_block(ctx)
     if intent_block:
@@ -206,6 +266,7 @@ def build_run_review_system_appendix(ctx: RunReviewContext) -> str:
     parts.append(
         _example_block_for_intent((ctx.workout_intent.planned_type or "").lower())
     )
+    parts.append(_coaching_rubric_block())
     parts.append("## Pre-loaded run context (compact JSON)")
     parts.append("```json")
     parts.append(json.dumps(compact, default=str))

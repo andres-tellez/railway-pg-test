@@ -824,6 +824,7 @@ def agent_messages(conversation_id):
                     "response_time": elapsed,
                     "run_review_v2_trace": v2_trace,
                     "coach_context_trace": meta.get("coach_context_trace"),
+                    "rubric_version": meta.get("rubric_version"),
                     "token_usage": {
                         "prompt_tokens": meta.get("usage", {}).get("prompt_tokens", 0),
                         "completion_tokens": meta.get("usage", {}).get(

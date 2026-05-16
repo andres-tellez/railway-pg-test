@@ -217,6 +217,11 @@ def test_appendix_frames_run_as_quality_session() -> None:
     appendix = build_run_review_system_appendix(ctx)
 
     assert "Completed-run review (RunReview V2)" in appendix
+    assert "## Coaching Evaluation Rubric" in appendix
+    assert "# Run Review Coaching Rubric v1" in appendix
+    assert "## Authoritative `run_facts`" in appendix
+    assert '"distance": "6.1 mi"' in appendix
+    assert '"max_hr": "159 bpm"' in appendix
     assert "quality session" in appendix.lower()
     # Must explicitly forbid easy-run framing for a tempo.
     assert 'do not tell the athlete to "dial back effort"' in appendix.lower()
