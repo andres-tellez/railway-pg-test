@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 
 from src.smartcoach_mobile_coach.run_review.context import RunReviewContext
+from src.smartcoach_mobile_coach.run_review.prompt import RUN_REVIEW_RUBRIC_VERSION
 from src.smartcoach_mobile_coach.run_summary_sections import (
     enrich_run_summary_payload_with_sections,
 )
@@ -81,6 +82,7 @@ def build_run_review_meta(
         "run_review_v2_classifier": classifier_summary,
         "timings_ms": timings_ms,
         "dialogue": dialogue,
+        "rubric_version": RUN_REVIEW_RUBRIC_VERSION,
     }
     if sections_attached:
         meta["run_summary_sections"] = True
