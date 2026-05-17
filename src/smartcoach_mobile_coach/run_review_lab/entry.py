@@ -75,6 +75,8 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
     user_message: str,
     conversation_history: List[Dict[str, str]],
     anchor_local_date: str,
+    client_timezone: Optional[str] = None,
+    thread_derived_context: Optional[DerivedThreadCoachContext] = None,
     base_system_content: str,
     history_window: int,
     model: str,
