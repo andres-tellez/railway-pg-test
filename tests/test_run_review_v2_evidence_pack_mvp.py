@@ -231,4 +231,24 @@ def test_evidence_pack_prompt_block_and_forbidden_keys() -> None:
     appendix = build_run_review_system_appendix(ctx)
     assert "## Evidence Pack (factual only)" in appendix
     assert "Use this pack as structured evidence." in appendix
-    assert "Do not merely restate the data" in appendix
+    assert "Use the evidence to find the story of the run" in appendix
+    assert "Do not summarize the RunSummary card" in appendix
+    assert "If ``similar_runs_count`` is small" in appendix
+    assert "Example shape (illustrative only, not a script)" not in appendix
+    assert "This looked like a clean easy run overall." not in appendix
+
+
+def test_long_run_with_evidence_pack_allows_4_to_8_sentences() -> None:
+    ctx = stub_context_for_test(
+        activity_id=9001,
+        anchor_local_date="2026-05-16",
+        facts={"execution_summary": {"planned": {"type": "long"}}},
+        evidence_pack={"version": "run_review_evidence_pack_v1_easy"},
+        scope="single_run",
+        is_easy_run=True,
+    )
+    appendix = build_run_review_system_appendix(ctx)
+    assert (
+        "Keep it concise: **4–8 sentences** are allowed for this long easy/Z2 run"
+        in appendix
+    )
