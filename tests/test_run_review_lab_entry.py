@@ -11,6 +11,7 @@ def _lab_cfg(enabled: bool) -> RunReviewLabConfig:
         max_response_tokens=900,
         responder_timeout_s=45.0,
         responder_model_override="",
+        isolated_system_enabled=False,
     )
 
 

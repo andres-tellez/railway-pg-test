@@ -859,6 +859,9 @@ def agent_messages(conversation_id):
                     "response_time": elapsed,
                     "run_review_v2_trace": v2_trace,
                     "run_review_lab_trace": lab_trace,
+                    "run_review_lab_isolated_system": meta.get(
+                        "run_review_lab_isolated_system"
+                    ),
                     "run_review_v2_fallback_reason": _run_review_v2_fallback_reason(
                         meta
                     ),

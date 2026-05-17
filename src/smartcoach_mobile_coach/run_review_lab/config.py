@@ -56,6 +56,7 @@ class RunReviewLabConfig:
     max_response_tokens: int
     responder_timeout_s: float
     responder_model_override: str
+    isolated_system_enabled: bool
 
 
 def load_config() -> RunReviewLabConfig:
@@ -68,4 +69,7 @@ def load_config() -> RunReviewLabConfig:
             _read_int("SMARTCOACH_RUN_REVIEW_LAB_RESPONDER_TIMEOUT_S", 45, 5, 120)
         ),
         responder_model_override=_read_str("SMARTCOACH_RUN_REVIEW_LAB_MODEL", ""),
+        isolated_system_enabled=_read_bool(
+            "SMARTCOACH_RUN_REVIEW_LAB_ISOLATED_SYSTEM", False
+        ),
     )
