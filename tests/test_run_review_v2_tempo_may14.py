@@ -223,7 +223,9 @@ def test_appendix_frames_run_as_quality_session() -> None:
     assert '"distance": "6.1 mi"' in appendix
     assert '"max_hr": "159 bpm"' in appendix
     assert "Use the evidence to find the story of the run" in appendix
-    assert "Do not merely restate the data" in appendix
+    assert "Do not summarize the RunSummary card" in appendix
+    assert "If ``similar_runs_count`` is small" in appendix
+    assert "Example shape (illustrative only, not a script)" not in appendix
     assert "quality session" in appendix.lower()
     # Must instruct grounding in pre-loaded JSON.
     assert "do **not** invent" in appendix.lower()
