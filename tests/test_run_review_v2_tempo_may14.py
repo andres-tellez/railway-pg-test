@@ -28,6 +28,10 @@ from src.smartcoach_mobile_coach.run_review.context_builder import (
     _build_workout_intent,
     stub_context_for_test,
 )
+from src.smartcoach_mobile_coach.coach_tone_contract import (
+    coach_tone_contract_section,
+    coach_turn_prose_shape_section,
+)
 from src.smartcoach_mobile_coach.run_review.prompt import (
     build_messages,
     build_run_review_system_appendix,
@@ -335,6 +339,38 @@ def test_build_messages_has_single_system_and_trailing_user() -> None:
     # Earlier turns are present in order.
     assert messages[1] == {"role": "user", "content": "hey"}
     assert messages[2] == {"role": "assistant", "content": "hi"}
+
+
+def test_build_messages_strips_global_tone_and_prose_shape_for_v2() -> None:
+    ctx = stub_context_for_test(
+        activity_id=9001,
+        anchor_local_date="2026-05-14",
+        facts=_may14_facts(),
+        training_kpis=_may14_training_kpis(),
+        zone_bounds=_may14_zone_bounds(),
+        splits_payload=_may14_splits(),
+        scope="single_run",
+    )
+    base_system = "\n\n".join(
+        [
+            "BASE SYSTEM",
+            coach_tone_contract_section(),
+            coach_turn_prose_shape_section(),
+        ]
+    )
+    messages = build_messages(
+        base_system_content=base_system,
+        ctx=ctx,
+        conversation_history=[],
+        user_message="how was my run?",
+        history_window=10,
+    )
+    system = messages[0]["content"]
+    assert "BASE SYSTEM" in system
+    assert "Completed-run review (RunReview V2)" in system
+    assert "## Coach tone contract (V1.6 §§19.6–19.8)" not in system
+    assert "## Coach turn prose shape (conceptual; mobile alignment)" not in system
+    assert "### §19.6 Action-oriented coaching" not in system
 
 
 def test_compact_payload_is_valid_json() -> None:
