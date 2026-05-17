@@ -68,6 +68,20 @@ def _run_review_v2_trace_header(meta: Dict[str, Any]) -> Optional[str]:
     return "pending"
 
 
+def _run_review_v2_fallback_reason(meta: Dict[str, Any]) -> Optional[str]:
+    """Return V2 fallback reason when available in timing metadata."""
+    timings = meta.get("timings_ms") or {}
+    outcome = timings.get("run_review_v2_outcome")
+    if not isinstance(outcome, dict):
+        return None
+    if outcome.get("served") is not False:
+        return None
+    reason = outcome.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        return None
+    return reason.strip()
+
+
 def _record_coach_agent_turn(
     *,
     user_id: Optional[str],
@@ -823,6 +837,9 @@ def agent_messages(conversation_id):
                     "message_id": str(user_msg.id),
                     "response_time": elapsed,
                     "run_review_v2_trace": v2_trace,
+                    "run_review_v2_fallback_reason": _run_review_v2_fallback_reason(
+                        meta
+                    ),
                     "coach_context_trace": meta.get("coach_context_trace"),
                     "rubric_version": meta.get("rubric_version"),
                     "evidence_pack_trace": meta.get("evidence_pack_trace"),
