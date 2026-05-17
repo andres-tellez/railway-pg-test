@@ -231,11 +231,15 @@ def test_evidence_pack_prompt_block_and_forbidden_keys() -> None:
     appendix = build_run_review_system_appendix(ctx)
     assert "## Evidence Pack (factual only)" in appendix
     assert "Use this pack as structured evidence." in appendix
+    assert "## Coaching Evaluation Rubric" in appendix
+    assert "## Authoritative `run_facts`" in appendix
     assert "Use the evidence to find the story of the run" in appendix
     assert "Do not summarize the RunSummary card" in appendix
     assert "If ``similar_runs_count`` is small" in appendix
     assert "Example shape (illustrative only, not a script)" not in appendix
     assert "This looked like a clean easy run overall." not in appendix
+    assert "Say so plainly when that's what the data shows." not in appendix
+    assert "For clean easy/long runs, do not stop at reassurance." in appendix
 
 
 def test_long_run_with_evidence_pack_allows_4_to_8_sentences() -> None:
