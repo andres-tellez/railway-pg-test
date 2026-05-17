@@ -15,7 +15,8 @@ The orchestrator already builds a long, carefully-tuned system prompt
 Strict rules we encode:
 
 - The model must not invent numbers not present in the JSON.
-- Do not open with a recap of the RunSummary card.
+- When the model cites session-level distance or HR, it must align with
+  ``run_facts`` and the RunSummary card.
 
 We add a single short example anchored on intent **shape only** ("tempo
 session"), not on numbers, so we do not give the LLM a script. The
@@ -61,11 +62,12 @@ _GENERAL_GUIDANCE = (
     "splits, paces, or HR values.\n"
     "- Use the evidence to find the story of the run. Explain what happened, "
     "why it likely happened, what is uncertain, and what the runner should learn.\n"
-    "- Do not open with a recap sentence. Do not summarize the RunSummary card "
-    "or restate headline stats.\n"
+    "- Do not summarize the RunSummary card or merely restate headline stats.\n"
     "- Do not force an insight if the evidence is ordinary.\n"
-    "- Do not cite distance, average pace, average HR, or max HR in prose; "
-    "those headline metrics are already visible on the card.\n"
+    "- Focus on interpretation. **If** you cite distance, average pace, "
+    "average HR, or max HR in prose, use **exactly** the values in "
+    "``run_facts`` (authoritative). Do not use lap/split extremes as "
+    "session-level avg or max HR.\n"
     "- For long easy/Z2 runs, consider distance/duration, HR control over time, "
     "splits shape, zone distribution, and whether the finish stayed controlled.\n"
     "- If ``similar_runs_count`` is small, say comparison evidence is limited and "
@@ -121,11 +123,30 @@ _UNPLANNED_GUIDANCE = (
 )
 
 
-def _output_contract_block() -> str:
+def _output_contract_block(ctx: RunReviewContext) -> str:
+    sentence_range = "**3–6 sentences**"
+    planned_type = (ctx.workout_intent.planned_type or "").strip().lower()
+    is_long_easy = planned_type in {"long", "long_run"}
+    if is_long_easy and isinstance(ctx.evidence_pack, dict):
+        sentence_range = (
+            "**4–8 sentences** are allowed for this long easy/Z2 run "
+            "because Evidence Pack context is present"
+        )
     return (
         "## Output format for this turn\n"
         "- Return Markdown prose only. No JSON, no code fences.\n"
+        "- Prose shape: *interpretation* → *evidence* → *one takeaway*.\n"
+        f"- Keep it concise: {sentence_range}.\n"
+        "- The takeaway sentence must be specific and tied to the evidence "
+        "you just cited (not a generic platitude).\n"
     )
+
+
+_NO_TOOLS_NOTE = (
+    "All evidence you need is already pre-loaded below. **Do not call any "
+    "tools** for this turn — the orchestrator is operating in a single-"
+    "completion review path."
+)
 
 
 def _intent_guidance_block(ctx: RunReviewContext) -> str:
@@ -138,6 +159,48 @@ def _intent_guidance_block(ctx: RunReviewContext) -> str:
     if (intent.plan_status or "").lower() == "unplanned":
         blocks.append(_UNPLANNED_GUIDANCE)
     return "\n".join(blocks).strip()
+
+
+def build_run_facts_for_prompt(ctx: RunReviewContext) -> Dict[str, Any]:
+    """Session-level display metrics aligned with the RunSummary card.
+
+    Keys mirror the ``run_facts`` section in ``rubric.md``. Missing or
+    placeholder display values become JSON ``null``.
+    """
+    facts = ctx.facts if isinstance(ctx.facts, dict) else {}
+
+    def pick_display(*keys: str) -> Optional[str]:
+        for key in keys:
+            raw = facts.get(key)
+            if raw is None:
+                continue
+            text = str(raw).strip()
+            if not text or text in ("—", "-", "n/a", "N/A"):
+                continue
+            return text
+        return None
+
+    return {
+        "distance": pick_display("distance_display"),
+        "avg_pace": pick_display("avg_pace_display"),
+        "avg_hr": pick_display("avg_heart_rate_display"),
+        "max_hr": pick_display("max_heart_rate_display"),
+    }
+
+
+def _run_facts_block(ctx: RunReviewContext) -> str:
+    payload = build_run_facts_for_prompt(ctx)
+    intro = (
+        "## Authoritative `run_facts`\n\n"
+        "These fields match the RunSummary card. When you cite distance, "
+        "average pace, average heart rate, or max heart rate in prose, use "
+        "**only** these values. Splits/laps may explain progression; they "
+        "must not replace or contradict these session-level numbers.\n\n"
+        "```json\n"
+        f"{json.dumps(payload, default=str, indent=2)}\n"
+        "```"
+    )
+    return intro
 
 
 def _evidence_pack_block(ctx: RunReviewContext) -> Optional[str]:
@@ -193,16 +256,18 @@ def build_run_review_system_appendix(ctx: RunReviewContext) -> str:
     evidence_block = _evidence_pack_block(ctx)
     if evidence_block:
         parts.append(evidence_block)
+    parts.append(_run_facts_block(ctx))
     intent_block = _intent_guidance_block(ctx)
     if intent_block:
         parts.append(intent_block)
     parts.append(_splits_guidance_block(ctx))
-    parts.append(_output_contract_block())
+    parts.append(_output_contract_block(ctx))
     parts.append(_coaching_rubric_block())
     parts.append("## Pre-loaded run context (compact JSON)")
     parts.append("```json")
     parts.append(json.dumps(compact, default=str))
     parts.append("```")
+    parts.append(_NO_TOOLS_NOTE)
     return "\n".join(parts)
 
 
