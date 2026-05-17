@@ -68,6 +68,24 @@ def _run_review_v2_trace_header(meta: Dict[str, Any]) -> Optional[str]:
     return "pending"
 
 
+def _run_review_lab_trace_header(meta: Dict[str, Any]) -> Optional[str]:
+    """Summarize Run Review Lab gate/outcome for observability (non-secret)."""
+    timings = meta.get("timings_ms") or {}
+    gate = timings.get("run_review_lab_gate")
+    if not isinstance(gate, dict):
+        return None
+    if not gate.get("flag_enabled"):
+        return "off"
+    if not gate.get("use_lab"):
+        return "skipped"
+    outcome = timings.get("run_review_lab_outcome") or {}
+    if outcome.get("served") is True:
+        return "served"
+    if outcome.get("served") is False:
+        return "fallback"
+    return "pending"
+
+
 def _run_review_v2_fallback_reason(meta: Dict[str, Any]) -> Optional[str]:
     """Return V2 fallback reason when available in timing metadata."""
     timings = meta.get("timings_ms") or {}
@@ -812,6 +830,9 @@ def agent_messages(conversation_id):
         v2_trace = _run_review_v2_trace_header(meta)
         if v2_trace:
             resp_headers["X-SmartCoach-Run-Review-V2"] = v2_trace
+        lab_trace = _run_review_lab_trace_header(meta)
+        if lab_trace:
+            resp_headers["X-SmartCoach-Run-Review-Lab"] = lab_trace
 
         _log_agent_messages_response_audit(gpt_response)
 
@@ -837,6 +858,7 @@ def agent_messages(conversation_id):
                     "message_id": str(user_msg.id),
                     "response_time": elapsed,
                     "run_review_v2_trace": v2_trace,
+                    "run_review_lab_trace": lab_trace,
                     "run_review_v2_fallback_reason": _run_review_v2_fallback_reason(
                         meta
                     ),
