@@ -33,6 +33,7 @@ from src.smartcoach_mobile_coach.run_review.context import (
     RunReviewContext,
     WorkoutIntent,
 )
+from src.smartcoach_mobile_coach.run_review.evidence_pack import build_evidence_pack
 from src.smartcoach_mobile_coach.run_review.errors import RunReviewFallback
 
 logger = logging.getLogger("smartcoach_mobile_coach")
@@ -220,6 +221,34 @@ def build_context(
         splits_payload = _fetch_splits(session, internal_user_id, activity_id)
 
     intent = _build_workout_intent(facts)
+    evidence_pack: Optional[Dict[str, Any]] = None
+    evidence_pack_trace: Optional[Dict[str, Any]] = None
+    if cfg.evidence_pack_enabled:
+        try:
+            evidence_pack, evidence_pack_trace = build_evidence_pack(
+                session=session,
+                internal_user_id=internal_user_id,
+                activity_id=activity_id,
+                anchor_local_date=local_date,
+                facts=facts,
+                workout_intent=intent,
+                is_easy_run=(
+                    bool(summary.get("is_easy_run"))
+                    if summary.get("is_easy_run") is not None
+                    else None
+                ),
+            )
+        except Exception:  # pragma: no cover - defensive
+            logger.warning(
+                "[run_review.context_builder] evidence_pack build failed; degrading",
+                exc_info=True,
+            )
+            evidence_pack = None
+            evidence_pack_trace = {
+                "enabled": True,
+                "present": False,
+                "reason": "build_failed",
+            }
 
     ctx = RunReviewContext(
         activity_id=activity_id,
@@ -250,6 +279,8 @@ def build_context(
             if isinstance(summary.get("user_hr_profile"), dict)
             else None
         ),
+        evidence_pack=evidence_pack,
+        evidence_pack_trace=evidence_pack_trace,
         resolved_via=resolved_via,
         scope=classifier.scope or "single_run",
     )
@@ -267,6 +298,8 @@ def stub_context_for_test(  # pragma: no cover - helper for unit tests
     scope: str = "single_run",
     is_easy_run: Optional[bool] = None,
     hr_profile: Optional[Dict[str, Any]] = None,
+    evidence_pack: Optional[Dict[str, Any]] = None,
+    evidence_pack_trace: Optional[Dict[str, Any]] = None,
 ) -> RunReviewContext:
     """Build a context object without DB access. For unit tests only."""
     intent = _build_workout_intent(facts)
@@ -285,6 +318,8 @@ def stub_context_for_test(  # pragma: no cover - helper for unit tests
         splits_truncated=bool((splits_payload or {}).get("splits_truncated", False)),
         splits_count=len(rows),
         hr_profile=hr_profile,
+        evidence_pack=evidence_pack,
+        evidence_pack_trace=evidence_pack_trace,
         resolved_via="test_stub",
         scope=scope,
     )

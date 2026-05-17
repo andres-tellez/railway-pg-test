@@ -69,6 +69,7 @@ class RunReviewConfig:
     responder_timeout_s: float
     responder_model_override: str  # empty string = use orchestrator default
     classifier_model: str
+    evidence_pack_enabled: bool
 
 
 def load_config() -> RunReviewConfig:
@@ -95,5 +96,8 @@ def load_config() -> RunReviewConfig:
         responder_model_override=_read_str("SMARTCOACH_RUN_REVIEW_V2_MODEL", ""),
         classifier_model=_read_str(
             "SMARTCOACH_RUN_REVIEW_V2_CLASSIFIER_MODEL", "gpt-4o-mini"
+        ),
+        evidence_pack_enabled=_read_bool(
+            "SMARTCOACH_RUN_REVIEW_EVIDENCE_PACK_V1", False
         ),
     )

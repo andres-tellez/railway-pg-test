@@ -27,6 +27,7 @@ def _cfg(fetch_splits: bool = True) -> RunReviewConfig:
         responder_timeout_s=30.0,
         responder_model_override="",
         classifier_model="gpt-4o-mini",
+        evidence_pack_enabled=False,
     )
 
 
@@ -252,3 +253,44 @@ def test_workout_intent_unplanned(monkeypatch) -> None:
     assert ctx.workout_intent.violated_rest_day is True
     assert ctx.workout_intent.is_quality_session is False
     assert ctx.workout_intent.is_easy_or_long is False
+
+
+def test_build_context_attaches_evidence_pack_when_enabled(monkeypatch) -> None:
+    summary = {
+        "facts": {
+            "distance_display": "5.00 mi",
+            "avg_pace_display": "9:30/mi",
+            "avg_heart_rate_display": "132 bpm",
+            "max_heart_rate_display": "143 bpm",
+            "execution_summary": {
+                "plan_status": "executed",
+                "planned": {"type": "easy", "miles": 5.0},
+                "actual": {"type": "easy"},
+            },
+        },
+        "is_easy_run": True,
+    }
+    _patch_tools(monkeypatch, summary=summary)
+    monkeypatch.setattr(
+        cb_mod,
+        "build_evidence_pack",
+        lambda **_kw: (
+            {
+                "version": "run_review_evidence_pack_v1_easy",
+                "similar_runs": {"rows": []},
+            },
+            {"present": True, "size_chars": 123},
+        ),
+    )
+    cfg = _cfg(fetch_splits=False)
+    cfg = RunReviewConfig(**{**cfg.__dict__, "evidence_pack_enabled": True})
+    ctx = build_context(
+        session=None,
+        internal_user_id="u1",
+        anchor_local_date="2026-05-14",
+        classifier=_classifier(),
+        cfg=cfg,
+    )
+    assert ctx.evidence_pack is not None
+    assert ctx.evidence_pack_trace is not None
+    assert ctx.evidence_pack_trace["present"] is True
