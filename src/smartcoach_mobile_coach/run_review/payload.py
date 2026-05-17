@@ -83,6 +83,7 @@ def build_run_review_meta(
         "timings_ms": timings_ms,
         "dialogue": dialogue,
         "rubric_version": RUN_REVIEW_RUBRIC_VERSION,
+        "evidence_pack_trace": ctx.evidence_pack_trace,
     }
     if sections_attached:
         meta["run_summary_sections"] = True
