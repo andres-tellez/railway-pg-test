@@ -145,6 +145,10 @@ from src.smartcoach_mobile_coach.run_review import (
     handle_run_review_turn,
     should_use_run_review_v2,
 )
+from src.smartcoach_mobile_coach.run_review_lab import (
+    handle_run_review_lab_turn,
+    should_use_run_review_lab,
+)
 from src.smartcoach_mobile_coach.run_summary_sections import (
     enrich_run_summary_payload_with_sections,
 )
@@ -3230,6 +3234,86 @@ def run_mobile_agent_turn(
         else None
     )
     latest_plan_generation: Optional[Dict[str, Any]] = None
+
+    # --- Run Review Lab (SMARTCOACH_RUN_REVIEW_LAB) ----------------------
+    # Minimal prompt-scaffolding experiment: same data pipeline, less
+    # deterministic prose/rubric contract. Falls back to V2/legacy on any
+    # failure.
+    use_lab, lab_classification, lab_cfg = should_use_run_review_lab(
+        user_message=user_message,
+        conversation_history=conversation_history,
+        internal_user_id=internal_user_id,
+    )
+    timings_ms["run_review_lab_gate"] = {
+        "flag_enabled": lab_cfg.enabled,
+        "use_lab": use_lab,
+        "classifier": (
+            lab_classification.as_log_dict() if lab_classification is not None else None
+        ),
+    }
+    logger.info(
+        "[run_review_lab] gate flag_enabled=%s use_lab=%s",
+        lab_cfg.enabled,
+        use_lab,
+    )
+    if use_lab and lab_classification is not None:
+        try:
+            lab_payload, lab_meta = handle_run_review_lab_turn(
+                session=session,
+                internal_user_id=internal_user_id,
+                user_message=user_message,
+                conversation_history=conversation_history,
+                anchor_local_date=anchor_local_date,
+                base_system_content=system_content,
+                history_window=history_window,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_directive_dialogue={
+                    "turn_type": response_directive.turn_type,
+                    "intent": response_directive.intent,
+                    "turn_count": conversation_state.turn_count,
+                    "last_topic": conversation_state.last_topic,
+                    "target_length": response_directive.target_length,
+                    "narration_mode": response_directive.narration_mode,
+                    "tool_strategy": response_directive.tool_strategy,
+                    "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
+                    "allow_full_recap": response_directive.allow_full_recap,
+                    "investigate_first": response_directive.investigate_first,
+                    "interaction_mode": response_directive.interaction_mode,
+                    "thread_derived": thread_ctx.as_dict(),
+                },
+                activity_id_hint=last_activity_id_hint,
+                thread_activity_id=thread_ctx.last_structured_run_activity_id,
+                cfg=lab_cfg,
+                classifier_result=lab_classification,
+            )
+        except (RunReviewFallback, RunReviewSkip) as exc:
+            timings_ms["run_review_lab_outcome"] = {
+                "served": False,
+                "reason": str(exc) or exc.__class__.__name__,
+            }
+            logger.info(
+                "[run_review_lab] fallback reason=%s; continuing into V2/legacy path",
+                str(exc) or exc.__class__.__name__,
+            )
+        else:
+            timings_ms["run_review_lab_outcome"] = {"served": True}
+            lab_meta["timings_ms"] = {
+                **(lab_meta.get("timings_ms") or {}),
+                **timings_ms,
+                "agent_orchestrator_total_ms": round(
+                    (time.perf_counter() - t_agent0) * 1000, 2
+                ),
+            }
+            _maybe_run_explicit_goal_memory_fallback(
+                session,
+                internal_user_id,
+                stashed_explicit_goal_text,
+                messages,
+                explicit_goal_memory_persist_guard,
+            )
+            return lab_payload, lab_meta
 
     # --- Run Review V2 (SMARTCOACH_RUN_REVIEW_V2) ------------------------
     # Single-completion focused review for "how was my run?"-style turns
