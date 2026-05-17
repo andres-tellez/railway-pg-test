@@ -22,6 +22,8 @@ def test_lab_appendix_includes_data_blocks_without_v2_contract() -> None:
     assert '"coach_snapshot"' in appendix
     assert "## Output format for this turn" not in appendix
     assert "## Coaching Evaluation Rubric" not in appendix
+    assert "plain-spoken" in appendix
+    assert "last week" in appendix
 
 
 def test_lab_appendix_omits_card_recap_fields_from_json() -> None:
