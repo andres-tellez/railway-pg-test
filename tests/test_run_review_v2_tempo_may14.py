@@ -176,7 +176,7 @@ def test_workout_intent_recognized_as_tempo() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_compact_llm_payload_strips_hr_drift_fields_but_keeps_other_kpis() -> None:
+def test_compact_llm_payload_omits_card_recap_fields() -> None:
     ctx = stub_context_for_test(
         activity_id=9001,
         anchor_local_date="2026-05-14",
@@ -194,14 +194,26 @@ def test_compact_llm_payload_strips_hr_drift_fields_but_keeps_other_kpis() -> No
     wi = compact["workout_intent"]
     assert wi["planned_type"] == "tempo"
     assert wi["is_quality_session"] is True
+    facts = compact["facts"]
+    assert "distance_display" not in facts
+    assert "avg_pace_display" not in facts
+    assert "avg_heart_rate_display" not in facts
+    assert "max_heart_rate_display" not in facts
+
     tk = compact["training_kpis"]
     assert "hr_drift_pct" not in tk
     assert "hr_drift_band" not in tk
     assert "hr_drift_summary_display" not in tk
-    assert tk["early_hr"] == 144
+    assert "early_hr" not in tk
+    assert "late_hr" not in tk
+    assert "peak_split_hr" not in tk
+    assert "z2_band_pct_display" not in tk
+    assert "easy_pct_display" not in tk
+    assert tk["pace_spread_sec_per_mi"] == 41
     assert compact["zone_bounds"]["z3_high_bpm"] == 155
     full = full_compact_payload_for_test(ctx)
     assert full["training_kpis"]["hr_drift_band"] == "yellow"
+    assert full["facts"]["distance_display"] == "6.1 mi"
     # Splits are the key evidence for tempo execution — must be present.
     assert compact["splits_count"] == 6
     assert isinstance(compact["splits"]["splits"], list)
@@ -230,9 +242,6 @@ def test_appendix_frames_run_as_quality_session() -> None:
     assert "Completed-run review (RunReview V2)" in appendix
     assert "## Coaching Evaluation Rubric" in appendix
     assert "# Run Review Coaching Rubric v1" in appendix
-    assert "## Authoritative `run_facts`" in appendix
-    assert '"distance": "6.1 mi"' in appendix
-    assert '"max_hr": "159 bpm"' in appendix
     assert "Use the evidence to find the story of the run" in appendix
     assert "Do not summarize the RunSummary card" in appendix
     assert "If ``similar_runs_count`` is small" in appendix
@@ -242,11 +251,15 @@ def test_appendix_frames_run_as_quality_session() -> None:
     assert "do **not** invent" in appendix.lower()
     # Tells the model not to call tools — this is a one-shot completion.
     assert "do not call any tools" in appendix.lower()
-    # HR drift chip fields are omitted from embedded training_kpis JSON.
+    # Card recap fields are omitted from embedded LLM context.
+    assert '"distance_display": "6.1 mi"' not in appendix
+    assert '"avg_pace_display": "8:43/mi"' not in appendix
+    assert '"avg_heart_rate_display": "151 bpm"' not in appendix
+    assert '"max_heart_rate_display": "159 bpm"' not in appendix
     assert '"hr_drift_pct"' not in appendix
     assert '"hr_drift_band"' not in appendix
     assert '"hr_drift_summary_display"' not in appendix
-    assert '"early_hr"' in appendix
+    assert '"early_hr"' not in appendix
 
 
 def test_appendix_avoids_scare_words() -> None:

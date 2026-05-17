@@ -73,10 +73,8 @@ _GENERAL_GUIDANCE = (
     "plan/intent fit, phase, and takeaways. Cite other numbers from the JSON "
     "only when they add a non-obvious point.\n"
     "- Do not force an insight if the evidence is ordinary.\n"
-    "- Focus on interpretation. **If** you cite distance, average pace, "
-    "average HR, or max HR in prose, use **exactly** the values in "
-    "``run_facts`` (authoritative). Do not use lap/split extremes as "
-    "session-level avg or max HR.\n"
+    "- Focus on interpretation. Cite numbers sparingly, and only from the "
+    "pre-loaded JSON below.\n"
     "- For long easy/Z2 runs, consider distance/duration, HR control over time, "
     "splits shape, zone distribution, and whether the finish stayed controlled.\n"
     "- If ``similar_runs_count`` is small, say comparison evidence is limited and "
@@ -175,48 +173,6 @@ def _intent_guidance_block(ctx: RunReviewContext) -> str:
     return "\n".join(blocks).strip()
 
 
-def build_run_facts_for_prompt(ctx: RunReviewContext) -> Dict[str, Any]:
-    """Session-level display metrics aligned with the RunSummary card.
-
-    Keys mirror the ``run_facts`` section in ``rubric.md``. Missing or
-    placeholder display values become JSON ``null``.
-    """
-    facts = ctx.facts if isinstance(ctx.facts, dict) else {}
-
-    def pick_display(*keys: str) -> Optional[str]:
-        for key in keys:
-            raw = facts.get(key)
-            if raw is None:
-                continue
-            text = str(raw).strip()
-            if not text or text in ("—", "-", "n/a", "N/A"):
-                continue
-            return text
-        return None
-
-    return {
-        "distance": pick_display("distance_display"),
-        "avg_pace": pick_display("avg_pace_display"),
-        "avg_hr": pick_display("avg_heart_rate_display"),
-        "max_hr": pick_display("max_heart_rate_display"),
-    }
-
-
-def _run_facts_block(ctx: RunReviewContext) -> str:
-    payload = build_run_facts_for_prompt(ctx)
-    intro = (
-        "## Authoritative `run_facts`\n\n"
-        "These fields match the RunSummary card. When you cite distance, "
-        "average pace, average heart rate, or max heart rate in prose, use "
-        "**only** these values. Splits/laps may explain progression; they "
-        "must not replace or contradict these session-level numbers.\n\n"
-        "```json\n"
-        f"{json.dumps(payload, default=str, indent=2)}\n"
-        "```"
-    )
-    return intro
-
-
 def _evidence_pack_block(ctx: RunReviewContext) -> Optional[str]:
     if not isinstance(ctx.evidence_pack, dict):
         return None
@@ -270,7 +226,6 @@ def build_run_review_system_appendix(ctx: RunReviewContext) -> str:
     evidence_block = _evidence_pack_block(ctx)
     if evidence_block:
         parts.append(evidence_block)
-    parts.append(_run_facts_block(ctx))
     intent_block = _intent_guidance_block(ctx)
     if intent_block:
         parts.append(intent_block)
