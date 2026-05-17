@@ -57,23 +57,28 @@ _GENERAL_GUIDANCE = (
     "splits, paces, or HR values.\n"
     "- Use the evidence to find the story of the run. Explain what happened, "
     "why it likely happened, what is uncertain, and what the runner should learn.\n"
-    "- Do not merely restate the data. Do not force an insight if the evidence "
-    "is ordinary.\n"
-    "- Prefer not to restate every headline stat the RunSummary card already "
-    "shows; focus on interpretation. **If** you cite distance, average pace, "
+    "- Do not summarize the RunSummary card or merely restate headline stats.\n"
+    "- Do not force an insight if the evidence is ordinary.\n"
+    "- Focus on interpretation. **If** you cite distance, average pace, "
     "average HR, or max HR in prose, use **exactly** the values in "
     "``run_facts`` (authoritative). Do not use lap/split extremes as "
     "session-level avg or max HR.\n"
+    "- For long easy/Z2 runs, consider distance/duration, HR control over time, "
+    "splits shape, zone distribution, and whether the finish stayed controlled.\n"
+    "- If ``similar_runs_count`` is small, say comparison evidence is limited and "
+    "anchor your read on this run's splits, zones, and plan intent instead.\n"
     "- Use splits and HR progression only when they meaningfully explain the run.\n"
     "- Use comparisons to recent similar runs only when they add insight.\n"
+    '- Avoid generic takeaways like "keep pace steady" unless splits clearly show '
+    "pacing is the main issue.\n"
+    "- Give one useful lesson the runner could not get from the card alone.\n"
     '- Use plain coaching language. Never use scare words like "red zone", '
     '"overtraining", or "burnout". Never describe a tempo or quality '
     "session as if it were an easy run.\n"
     "- If a metric is missing from the JSON (e.g. HR drift, zone bounds), "
     "do not cite it. Say what is unknown instead of inventing a cause.\n"
-    "- Keep the reply tight: **3–6 sentences** of prose. End with **one** "
-    "specific takeaway sentence the athlete can apply next time. "
-    "No bullet lists unless the user explicitly asked for splits.\n"
+    "- Keep the reply tight. No bullet lists unless the user explicitly asked "
+    "for splits.\n"
 )
 
 
@@ -111,13 +116,23 @@ _UNPLANNED_GUIDANCE = (
 )
 
 
-_OUTPUT_CONTRACT = (
-    "## Output format for this turn\n"
-    "- Return Markdown prose only. No JSON, no code fences.\n"
-    "- Prose shape: *interpretation* → *evidence* → *one takeaway*.\n"
-    "- The takeaway sentence must be specific and tied to the evidence "
-    "you just cited (not a generic platitude).\n"
-)
+def _output_contract_block(ctx: RunReviewContext) -> str:
+    sentence_range = "**3–6 sentences**"
+    planned_type = (ctx.workout_intent.planned_type or "").strip().lower()
+    is_long_easy = planned_type in {"long", "long_run"}
+    if is_long_easy and isinstance(ctx.evidence_pack, dict):
+        sentence_range = (
+            "**4–8 sentences** are allowed for this long easy/Z2 run "
+            "because Evidence Pack context is present"
+        )
+    return (
+        "## Output format for this turn\n"
+        "- Return Markdown prose only. No JSON, no code fences.\n"
+        "- Prose shape: *interpretation* → *evidence* → *one takeaway*.\n"
+        f"- Keep it concise: {sentence_range}.\n"
+        "- The takeaway sentence must be specific and tied to the evidence "
+        "you just cited (not a generic platitude).\n"
+    )
 
 
 _NO_TOOLS_NOTE = (
@@ -125,45 +140,6 @@ _NO_TOOLS_NOTE = (
     "tools** for this turn — the orchestrator is operating in a single-"
     "completion review path."
 )
-
-
-def _example_block_for_intent(intent_type: str) -> str:
-    """Tiny illustrative example showing *shape only*. No numbers."""
-    if intent_type in (
-        "tempo",
-        "threshold",
-        "interval",
-        "intervals",
-        "speed",
-        "progression",
-        "race",
-    ):
-        return (
-            "Example shape (illustrative only, not a script):\n"
-            "> This was a productive [intent] session. The middle miles held "
-            "steady at the intended effort, and HR responded the way you'd "
-            "want. The late drop in pace with HR still elevated is the part "
-            "to watch — that's a late-fade signal, not a sign the whole run "
-            "was too hard. Next time, start the working portion a touch more "
-            "controlled so you finish smoother.\n"
-        )
-    if intent_type in ("easy", "recovery", "long", "long_run"):
-        return (
-            "Example shape (illustrative only, not a script):\n"
-            "> This looked like a clean easy run overall. Pace stayed even "
-            "and HR drifted only slightly across the miles, which is what "
-            "you want from an aerobic day. One thing to watch is the gap "
-            "between early and late HR — if it widens on a similar run, "
-            "consider easing the start by a few seconds per mile.\n"
-        )
-    return (
-        "Example shape (illustrative only, not a script):\n"
-        "> This run shows steady early effort and a faster finish. The "
-        "evidence to point at is the split-by-split pace shape, not the "
-        "averages already on the card. One thing to take into the next run "
-        "is being clearer about its intent — was this meant to be easy, or "
-        "a controlled progression?\n"
-    )
 
 
 def _intent_guidance_block(ctx: RunReviewContext) -> str:
@@ -278,10 +254,7 @@ def build_run_review_system_appendix(ctx: RunReviewContext) -> str:
     if intent_block:
         parts.append(intent_block)
     parts.append(_splits_guidance_block(ctx))
-    parts.append(_OUTPUT_CONTRACT)
-    parts.append(
-        _example_block_for_intent((ctx.workout_intent.planned_type or "").lower())
-    )
+    parts.append(_output_contract_block(ctx))
     parts.append(_coaching_rubric_block())
     parts.append("## Pre-loaded run context (compact JSON)")
     parts.append("```json")
