@@ -29,9 +29,14 @@ no verdict code).
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.smartcoach_mobile_coach.coach_tone_contract import (
+    COACH_TONE_CONTRACT_BLOCK,
+    COACH_TURN_PROSE_SHAPE_BLOCK,
+)
 from src.smartcoach_mobile_coach.run_review.context import RunReviewContext
 
 RUN_REVIEW_RUBRIC_VERSION = "run_review_rubric_v1"
@@ -103,8 +108,10 @@ _EASY_OR_LONG_GUIDANCE = (
     "- The right question is whether effort stayed *aerobic*. HR creeping "
     "above Z2 across the run, or pace getting faster while HR climbs, "
     "suggests the run drifted harder than intended.\n"
-    "- A clean easy run will usually show steady pace, low-to-mid Z2 HR, "
-    "and minor HR drift. Say so plainly when that's what the data shows.\n"
+    "- For clean easy/long runs, do not stop at reassurance. Use splits, zone "
+    "distribution, duration, plan intent, and Evidence Pack context to explain "
+    "what made the run controlled, what is uncertain, and what the runner "
+    "should learn.\n"
 )
 
 
@@ -279,9 +286,8 @@ def build_messages(
     system message (base + V2 appendix), trailing conversation history
     clamped to ``history_window``, and the current user turn last.
     """
-    augmented_system = (base_system_content or "") + build_run_review_system_appendix(
-        ctx
-    )
+    base_for_v2 = _strip_global_contracts_for_run_review_v2(base_system_content or "")
+    augmented_system = base_for_v2 + build_run_review_system_appendix(ctx)
     messages: List[Dict[str, str]] = [{"role": "system", "content": augmented_system}]
     if conversation_history:
         for m in conversation_history[-history_window:]:
@@ -312,3 +318,19 @@ def compact_payload_for_test(  # pragma: no cover - test helper
 ) -> Dict[str, Any]:
     """Return the dict that gets embedded as JSON in the appendix."""
     return ctx.to_compact_dict()
+
+
+def _strip_global_contracts_for_run_review_v2(base_system_content: str) -> str:
+    """Remove global prose/tone contracts so V2 controls its own style.
+
+    This runs only in RunReview V2 message assembly and leaves non-V2 paths
+    unchanged.
+    """
+    text = str(base_system_content or "")
+    for block in (COACH_TONE_CONTRACT_BLOCK, COACH_TURN_PROSE_SHAPE_BLOCK):
+        if block and block in text:
+            text = text.replace(block, "")
+    text = re.sub(r"\n{3,}", "\n\n", text).rstrip()
+    if text:
+        text += "\n\n"
+    return text
