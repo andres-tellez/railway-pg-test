@@ -140,6 +140,17 @@ def _infer_day_hint(text_l: str) -> Optional[str]:
     return None
 
 
+def _day_hint_for_run_review(text_l: str) -> str:
+    """
+    Calendar hints from the message; when none match, assume the most recent
+    completed run. Without this, V2 would anchor on the device-local calendar
+    day for vague asks like "How was my run?" and miss late-evening runs that
+    fall on the previous date.
+    """
+    hint = _infer_day_hint(text_l)
+    return hint if hint is not None else "last_run"
+
+
 def _heuristic_classify(user_message: str) -> ClassifierResult:
     """Return a deterministic classification when the message is unambiguous."""
     msg = _normalize(user_message)
@@ -160,7 +171,7 @@ def _heuristic_classify(user_message: str) -> ClassifierResult:
             is_run_review=True,
             scope=scope,
             confidence="high",
-            day_hint=_infer_day_hint(msg),
+            day_hint=_day_hint_for_run_review(msg),
             reason_code="review_phrase",
         )
 
@@ -169,7 +180,7 @@ def _heuristic_classify(user_message: str) -> ClassifierResult:
             is_run_review=True,
             scope="splits_only",
             confidence="high",
-            day_hint=_infer_day_hint(msg),
+            day_hint=_day_hint_for_run_review(msg),
             reason_code="split_hint",
         )
 
@@ -187,7 +198,7 @@ def _heuristic_classify(user_message: str) -> ClassifierResult:
             is_run_review=True,
             scope="single_run",
             confidence="medium",
-            day_hint=_infer_day_hint(msg),
+            day_hint=_day_hint_for_run_review(msg),
             reason_code="infer_intent_run_analysis",
         )
     if inferred == INTENT_SPLIT_DETAIL:
@@ -195,7 +206,7 @@ def _heuristic_classify(user_message: str) -> ClassifierResult:
             is_run_review=True,
             scope="splits_only",
             confidence="medium",
-            day_hint=_infer_day_hint(msg),
+            day_hint=_day_hint_for_run_review(msg),
             reason_code="infer_intent_split_detail",
         )
 

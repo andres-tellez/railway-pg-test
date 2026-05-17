@@ -48,6 +48,15 @@ def test_heuristic_run_review_phrase_beats_this_week_hint() -> None:
     r = _heuristic_classify("How was my run this week?")
     assert r.is_run_review is True
     assert r.reason_code == "review_phrase"
+    assert r.day_hint == "last_run"
+
+
+def test_heuristic_vague_run_review_defaults_to_last_run() -> None:
+    """No calendar wording → most recent run, not client anchor date."""
+    r = _heuristic_classify("How was my run?")
+    assert r.is_run_review is True
+    assert r.day_hint == "last_run"
+    assert r.reason_code == "review_phrase"
 
 
 def test_heuristic_split_only_phrase() -> None:
