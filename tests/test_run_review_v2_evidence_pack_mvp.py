@@ -256,3 +256,20 @@ def test_long_run_with_evidence_pack_allows_4_to_8_sentences() -> None:
         "Keep it concise: **4–8 sentences** are allowed for this long easy/Z2 run"
         in appendix
     )
+
+
+def test_output_contract_uses_conditional_prose_shape() -> None:
+    ctx = stub_context_for_test(
+        activity_id=9001,
+        anchor_local_date="2026-05-16",
+        facts={"execution_summary": {"planned": {"type": "easy"}}},
+        scope="single_run",
+        is_easy_run=True,
+    )
+    appendix = build_run_review_system_appendix(ctx)
+    assert (
+        "Default prose shape: *interpretation* → *evidence* → *one takeaway*."
+        in appendix
+    )
+    assert "answer directly first, then support with evidence and nuance." in appendix
+    assert "If the user explicitly asked for splits" in appendix

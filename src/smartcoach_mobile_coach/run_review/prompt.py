@@ -135,7 +135,12 @@ def _output_contract_block(ctx: RunReviewContext) -> str:
     return (
         "## Output format for this turn\n"
         "- Return Markdown prose only. No JSON, no code fences.\n"
-        "- Prose shape: *interpretation* → *evidence* → *one takeaway*.\n"
+        "- Default prose shape: *interpretation* → *evidence* → *one takeaway*.\n"
+        '- If the user asked a direct question (for example, "Was that bad?" or '
+        '"Was my HR too high?"), answer directly first, then support with evidence '
+        "and nuance.\n"
+        "- If the user explicitly asked for splits, you may lead with split pattern "
+        "evidence before the takeaway.\n"
         f"- Keep it concise: {sentence_range}.\n"
         "- The takeaway sentence must be specific and tied to the evidence "
         "you just cited (not a generic platitude).\n"
