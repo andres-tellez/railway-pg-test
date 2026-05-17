@@ -10,8 +10,9 @@ Design notes:
 
 - ``facts``, ``training_kpis``, ``zone_bounds``, ``splits`` mirror the
   shapes returned by the existing agent tools (no remapping). For LLM
-  prompts, ``to_compact_dict(for_llm=True)`` drops only HR drift chip
-  keys from ``training_kpis`` (see ``_LLM_OMIT_TRAINING_KPI_KEYS``).
+  prompts, ``to_compact_dict(for_llm=True)`` drops RunSummary-card recap
+  keys from ``facts`` and ``training_kpis`` so coaching prose starts with
+  interpretation instead of repeating headline metrics.
 - ``workout_intent`` is a *derived* hint, **not** a verdict. It's a
   lightweight read from ``facts.execution_summary.planned.type`` so the
   model can frame its read correctly (tempo vs easy vs long etc.). The
@@ -30,11 +31,35 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 
-# Shallow-removed from ``training_kpis`` when serializing for the LLM so the
-# coach does not repeat RunSummary drift % / band chip content; mobile payload
-# still receives the full dict via :func:`run_review.payload.build_payload_data`.
+# Removed from ``facts`` for LLM serialization to avoid repeating values that
+# are already visible on the RunSummary card.
+_LLM_OMIT_FACT_KEYS = frozenset(
+    {
+        "distance_display",
+        "moving_time_display",
+        "duration_display",
+        "avg_pace_display",
+        "avg_heart_rate_display",
+        "max_heart_rate_display",
+    }
+)
+
+# Removed from ``training_kpis`` for LLM serialization to reduce card recap
+# phrasing. Mobile payload still receives the full dict via
+# :func:`run_review.payload.build_payload_data`.
 _LLM_OMIT_TRAINING_KPI_KEYS = frozenset(
-    {"hr_drift_pct", "hr_drift_band", "hr_drift_summary_display"}
+    {
+        "hr_drift_pct",
+        "hr_drift_band",
+        "hr_drift_summary_display",
+        "easy_pct",
+        "z2_band_pct",
+        "easy_pct_display",
+        "z2_band_pct_display",
+        "early_hr",
+        "late_hr",
+        "peak_split_hr",
+    }
 )
 
 _KNOWN_WORKOUT_TYPES = (
@@ -117,17 +142,25 @@ class RunReviewContext:
     def to_compact_dict(self, *, for_llm: bool = False) -> Dict[str, Any]:
         """Serialize for embedding inside the system prompt (LLM payload).
 
-        When ``for_llm`` is True, ``training_kpis`` is included except
-        ``hr_drift_pct``, ``hr_drift_band``, and ``hr_drift_summary_display``
-        (RunSummary drift chip). ``zone_bounds`` and ``hr_drift_band_zones``
-        are unchanged. The full ``training_kpis`` remains on the mobile
-        ``data`` payload via :func:`run_review.payload.build_payload_data`.
+        When ``for_llm`` is True, we omit RunSummary-card recap fields:
+        display-level ``facts`` (distance/time/pace/avg+max HR) and selected
+        ``training_kpis`` (drift chip fields, zone-percent displays, early/late
+        HR). ``zone_bounds`` and ``hr_drift_band_zones`` remain available for
+        qualitative coaching. The full raw ``facts``/``training_kpis`` remain
+        on the mobile ``data`` payload via
+        :func:`run_review.payload.build_payload_data`.
         """
+        facts_for_llm = self.facts
+        if for_llm and isinstance(self.facts, dict):
+            facts_for_llm = {
+                k: v for k, v in self.facts.items() if k not in _LLM_OMIT_FACT_KEYS
+            }
+
         out: Dict[str, Any] = {
             "activity_id": self.activity_id,
             "anchor_local_date": self.anchor_local_date,
             "scope": self.scope,
-            "facts": self.facts,
+            "facts": facts_for_llm,
             "workout_intent": self.workout_intent.to_prompt_dict(),
         }
         if self.training_kpis is not None:
