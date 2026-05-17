@@ -63,6 +63,15 @@ _GENERAL_GUIDANCE = (
     "- Use the evidence to find the story of the run. Explain what happened, "
     "why it likely happened, what is uncertain, and what the runner should learn.\n"
     "- Do not summarize the RunSummary card or merely restate headline stats.\n"
+    "- **Anti-recap (card is already on-screen):** Do **not** open with a "
+    "paragraph that only restates session distance, duration, average pace, "
+    "average/max HR, or time-in-zone percentages the athlete already sees on "
+    "the RunSummary card. **HR drift % and drift band** are shown on the card "
+    "but are **not** in the JSON below—do **not** invent or quote them; if the "
+    "topic matters, coach qualitatively without those numbers. Start with "
+    "interpretation: comparisons (e.g. Evidence Pack vs a similar run), "
+    "plan/intent fit, phase, and takeaways. Cite other numbers from the JSON "
+    "only when they add a non-obvious point.\n"
     "- Do not force an insight if the evidence is ordinary.\n"
     "- Focus on interpretation. **If** you cite distance, average pace, "
     "average HR, or max HR in prose, use **exactly** the values in "
@@ -80,8 +89,8 @@ _GENERAL_GUIDANCE = (
     '- Use plain coaching language. Never use scare words like "red zone", '
     '"overtraining", or "burnout". Never describe a tempo or quality '
     "session as if it were an easy run.\n"
-    "- If a metric is missing from the JSON (e.g. HR drift, zone bounds), "
-    "do not cite it. Say what is unknown instead of inventing a cause.\n"
+    "- If a metric is missing from the JSON, do not cite it. Say what is unknown "
+    "instead of inventing a cause.\n"
     "- Keep the reply tight. No bullet lists unless the user explicitly asked "
     "for splits.\n"
 )
@@ -252,7 +261,7 @@ def build_run_review_system_appendix(ctx: RunReviewContext) -> str:
 
     Includes a single embedded JSON code block with the compact context.
     """
-    compact = ctx.to_compact_dict()
+    compact = ctx.to_compact_dict(for_llm=True)
     parts: List[str] = [
         "",
         _RUN_REVIEW_HEADER,
@@ -321,8 +330,15 @@ def appendix_for_test(ctx: RunReviewContext) -> str:  # pragma: no cover - test 
 def compact_payload_for_test(  # pragma: no cover - test helper
     ctx: RunReviewContext,
 ) -> Dict[str, Any]:
-    """Return the dict that gets embedded as JSON in the appendix."""
-    return ctx.to_compact_dict()
+    """Return the dict embedded as JSON in the V2 appendix (LLM-facing)."""
+    return ctx.to_compact_dict(for_llm=True)
+
+
+def full_compact_payload_for_test(  # pragma: no cover - test helper
+    ctx: RunReviewContext,
+) -> Dict[str, Any]:
+    """Full context serialization including execution KPIs (not sent to the LLM)."""
+    return ctx.to_compact_dict(for_llm=False)
 
 
 def _strip_global_contracts_for_run_review_v2(base_system_content: str) -> str:

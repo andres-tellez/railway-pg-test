@@ -9,8 +9,9 @@ arbitrary tool output.
 Design notes:
 
 - ``facts``, ``training_kpis``, ``zone_bounds``, ``splits`` mirror the
-  shapes returned by the existing agent tools (no remapping). The LLM
-  prompt is what makes them legible — we don't editorialize here.
+  shapes returned by the existing agent tools (no remapping). For LLM
+  prompts, ``to_compact_dict(for_llm=True)`` drops only HR drift chip
+  keys from ``training_kpis`` (see ``_LLM_OMIT_TRAINING_KPI_KEYS``).
 - ``workout_intent`` is a *derived* hint, **not** a verdict. It's a
   lightweight read from ``facts.execution_summary.planned.type`` so the
   model can frame its read correctly (tempo vs easy vs long etc.). The
@@ -28,6 +29,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+
+# Shallow-removed from ``training_kpis`` when serializing for the LLM so the
+# coach does not repeat RunSummary drift % / band chip content; mobile payload
+# still receives the full dict via :func:`run_review.payload.build_payload_data`.
+_LLM_OMIT_TRAINING_KPI_KEYS = frozenset(
+    {"hr_drift_pct", "hr_drift_band", "hr_drift_summary_display"}
+)
 
 _KNOWN_WORKOUT_TYPES = (
     "easy",
@@ -106,8 +114,15 @@ class RunReviewContext:
     resolved_via: str = ""  # "find_runs_by_date" | "most_recent_run" | "hint"
     scope: str = "single_run"  # propagates from classifier
 
-    def to_compact_dict(self) -> Dict[str, Any]:
-        """Serialize for embedding inside the system prompt (LLM payload)."""
+    def to_compact_dict(self, *, for_llm: bool = False) -> Dict[str, Any]:
+        """Serialize for embedding inside the system prompt (LLM payload).
+
+        When ``for_llm`` is True, ``training_kpis`` is included except
+        ``hr_drift_pct``, ``hr_drift_band``, and ``hr_drift_summary_display``
+        (RunSummary drift chip). ``zone_bounds`` and ``hr_drift_band_zones``
+        are unchanged. The full ``training_kpis`` remains on the mobile
+        ``data`` payload via :func:`run_review.payload.build_payload_data`.
+        """
         out: Dict[str, Any] = {
             "activity_id": self.activity_id,
             "anchor_local_date": self.anchor_local_date,
@@ -116,7 +131,16 @@ class RunReviewContext:
             "workout_intent": self.workout_intent.to_prompt_dict(),
         }
         if self.training_kpis is not None:
-            out["training_kpis"] = self.training_kpis
+            if for_llm:
+                slim = {
+                    k: v
+                    for k, v in self.training_kpis.items()
+                    if k not in _LLM_OMIT_TRAINING_KPI_KEYS
+                }
+                if slim:
+                    out["training_kpis"] = slim
+            else:
+                out["training_kpis"] = self.training_kpis
         if self.zone_bounds is not None:
             out["zone_bounds"] = self.zone_bounds
         if self.hr_drift_band_zones is not None:
