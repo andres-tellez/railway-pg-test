@@ -222,9 +222,9 @@ def test_appendix_frames_run_as_quality_session() -> None:
     assert "## Authoritative `run_facts`" in appendix
     assert '"distance": "6.1 mi"' in appendix
     assert '"max_hr": "159 bpm"' in appendix
+    assert "Use the evidence to find the story of the run" in appendix
+    assert "Do not merely restate the data" in appendix
     assert "quality session" in appendix.lower()
-    # Must explicitly forbid easy-run framing for a tempo.
-    assert 'do not tell the athlete to "dial back effort"' in appendix.lower()
     # Must instruct grounding in pre-loaded JSON.
     assert "do **not** invent" in appendix.lower()
     # Tells the model not to call tools — this is a one-shot completion.

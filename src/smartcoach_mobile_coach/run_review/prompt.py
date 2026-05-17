@@ -51,26 +51,26 @@ _RUN_REVIEW_HEADER = "## Completed-run review (RunReview V2)"
 
 _GENERAL_GUIDANCE = (
     "You are reviewing **one specific completed run** for this athlete. "
-    "Coach them like a thoughtful, experienced running coach: identify "
-    "what the run was *meant* to be, judge how it actually went vs that "
-    "intent, then leave them with one clear, actionable takeaway.\n\n"
+    "Coach them like a thoughtful, experienced running coach.\n\n"
     "Rules for this turn:\n"
     "- Ground every number in the pre-loaded JSON below. Do **not** invent "
     "splits, paces, or HR values.\n"
+    "- Use the evidence to find the story of the run. Explain what happened, "
+    "why it likely happened, what is uncertain, and what the runner should learn.\n"
+    "- Do not merely restate the data. Do not force an insight if the evidence "
+    "is ordinary.\n"
     "- Prefer not to restate every headline stat the RunSummary card already "
     "shows; focus on interpretation. **If** you cite distance, average pace, "
     "average HR, or max HR in prose, use **exactly** the values in "
     "``run_facts`` (authoritative). Do not use lap/split extremes as "
     "session-level avg or max HR.\n"
-    "- Read the *right* evidence: when splits are present they are usually "
-    "the key signal. Look for pace drift across miles, HR drift across "
-    "miles, late fade, big pace swings, and whether intensity matched the "
-    "intent.\n"
+    "- Use splits and HR progression only when they meaningfully explain the run.\n"
+    "- Use comparisons to recent similar runs only when they add insight.\n"
     '- Use plain coaching language. Never use scare words like "red zone", '
     '"overtraining", or "burnout". Never describe a tempo or quality '
     "session as if it were an easy run.\n"
     "- If a metric is missing from the JSON (e.g. HR drift, zone bounds), "
-    "do not cite it. Make a qualitative read or skip that point.\n"
+    "do not cite it. Say what is unknown instead of inventing a cause.\n"
     "- Keep the reply tight: **3–6 sentences** of prose. End with **one** "
     "specific takeaway sentence the athlete can apply next time. "
     "No bullet lists unless the user explicitly asked for splits.\n"
@@ -220,6 +220,19 @@ def _run_facts_block(ctx: RunReviewContext) -> str:
     return intro
 
 
+def _evidence_pack_block(ctx: RunReviewContext) -> Optional[str]:
+    if not isinstance(ctx.evidence_pack, dict):
+        return None
+    return (
+        "## Evidence Pack (factual only)\n\n"
+        "Use this pack as structured evidence. It contains facts and simple arithmetic; "
+        "it does not contain coaching verdict labels.\n\n"
+        "```json\n"
+        f"{json.dumps(ctx.evidence_pack, default=str, indent=2)}\n"
+        "```"
+    )
+
+
 def _coaching_rubric_block() -> str:
     return "## Coaching Evaluation Rubric\n\n" f"{_RUN_REVIEW_RUBRIC_TEXT.rstrip()}\n"
 
@@ -256,8 +269,11 @@ def build_run_review_system_appendix(ctx: RunReviewContext) -> str:
         "",
         _RUN_REVIEW_HEADER,
         _GENERAL_GUIDANCE,
-        _run_facts_block(ctx),
     ]
+    evidence_block = _evidence_pack_block(ctx)
+    if evidence_block:
+        parts.append(evidence_block)
+    parts.append(_run_facts_block(ctx))
     intent_block = _intent_guidance_block(ctx)
     if intent_block:
         parts.append(intent_block)

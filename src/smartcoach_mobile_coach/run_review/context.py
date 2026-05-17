@@ -99,6 +99,8 @@ class RunReviewContext:
     splits_truncated: bool = False
     splits_count: int = 0
     hr_profile: Optional[Dict[str, Any]] = None
+    evidence_pack: Optional[Dict[str, Any]] = None
+    evidence_pack_trace: Optional[Dict[str, Any]] = None
     week_volume: Optional[Dict[str, Any]] = None
     comparison_sessions: Optional[List[Dict[str, Any]]] = None
     resolved_via: str = ""  # "find_runs_by_date" | "most_recent_run" | "hint"
@@ -123,6 +125,8 @@ class RunReviewContext:
             out["is_easy_run"] = self.is_easy_run
         if self.hr_profile is not None:
             out["hr_profile"] = self.hr_profile
+        if self.evidence_pack is not None:
+            out["evidence_pack"] = self.evidence_pack
         if self.splits is not None:
             out["splits"] = self.splits
             out["splits_truncated"] = self.splits_truncated

@@ -35,6 +35,7 @@ def _cfg(enabled: bool, classifier_mode: str = "heuristic") -> RunReviewConfig:
         responder_timeout_s=30.0,
         responder_model_override="",
         classifier_model="gpt-4o-mini",
+        evidence_pack_enabled=False,
     )
 
 
