@@ -223,21 +223,18 @@ def test_appendix_frames_run_as_quality_session() -> None:
     assert "Completed-run review (RunReview V2)" in appendix
     assert "## Coaching Evaluation Rubric" in appendix
     assert "# Run Review Coaching Rubric v1" in appendix
-    assert "## Authoritative `run_facts`" not in appendix
+    assert "## Authoritative `run_facts`" in appendix
+    assert '"distance": "6.1 mi"' in appendix
+    assert '"max_hr": "159 bpm"' in appendix
     assert "Use the evidence to find the story of the run" in appendix
-    assert "Do not open with a recap sentence." in appendix
-    assert (
-        "Do not cite distance, average pace, average HR, or max HR in prose" in appendix
-    )
+    assert "Do not summarize the RunSummary card" in appendix
     assert "If ``similar_runs_count`` is small" in appendix
     assert "Example shape (illustrative only, not a script)" not in appendix
     assert "quality session" in appendix.lower()
     # Must instruct grounding in pre-loaded JSON.
     assert "do **not** invent" in appendix.lower()
-    assert "do not call any tools" not in appendix.lower()
-    assert (
-        "Prose shape: *interpretation* → *evidence* → *one takeaway*." not in appendix
-    )
+    # Tells the model not to call tools — this is a one-shot completion.
+    assert "do not call any tools" in appendix.lower()
 
 
 def test_appendix_avoids_scare_words() -> None:
