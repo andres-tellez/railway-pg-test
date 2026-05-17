@@ -31,6 +31,10 @@ from src.smartcoach_mobile_coach.run_review_lab.config import (
     load_config,
 )
 from src.smartcoach_mobile_coach.run_review_lab.responder import generate_review
+from src.smartcoach_mobile_coach.experiments.run_review_lab_isolated_system import (
+    build_isolated_lab_system_prefix,
+)
+from src.smartcoach_mobile_coach.thread_derived_context import DerivedThreadCoachContext
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
@@ -159,10 +163,21 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
         (time.perf_counter() - t_ctx0) * 1000, 2
     )
 
+    if lab_cfg.isolated_system_enabled:
+        effective_base = build_isolated_lab_system_prefix(
+            anchor_local_date=anchor_local_date,
+            client_timezone=client_timezone,
+            session=session,
+            internal_user_id=str(internal_user_id),
+            thread_ctx=thread_derived_context,
+        )
+    else:
+        effective_base = base_system_content or ""
+
     responder_out = generate_review(
         ctx=ctx,
         coach_snapshot=coach_snapshot,
-        base_system_content=base_system_content or "",
+        base_system_content=effective_base,
         conversation_history=conversation_history,
         user_message=user_message,
         history_window=history_window,
@@ -190,6 +205,7 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
         "run_review_lab_path": ctx.resolved_via,
         "run_review_lab_scope": ctx.scope,
         "run_review_lab_activity_id": ctx.activity_id,
+        "run_review_lab_isolated_system": lab_cfg.isolated_system_enabled,
         "run_review_v2_classifier": classification.as_log_dict(),
         "timings_ms": timings,
         "dialogue": response_directive_dialogue,
@@ -207,6 +223,7 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
         user_message=user_message,
         properties={
             "mode": "lab",
+            "isolated_system": lab_cfg.isolated_system_enabled,
             "activity_id": ctx.activity_id,
             "resolved_via": ctx.resolved_via,
             "scope": ctx.scope,

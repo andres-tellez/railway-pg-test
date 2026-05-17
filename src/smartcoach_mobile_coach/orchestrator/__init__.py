@@ -3247,6 +3247,7 @@ def run_mobile_agent_turn(
     timings_ms["run_review_lab_gate"] = {
         "flag_enabled": lab_cfg.enabled,
         "use_lab": use_lab,
+        "isolated_system": lab_cfg.isolated_system_enabled,
         "classifier": (
             lab_classification.as_log_dict() if lab_classification is not None else None
         ),
@@ -3264,6 +3265,8 @@ def run_mobile_agent_turn(
                 user_message=user_message,
                 conversation_history=conversation_history,
                 anchor_local_date=anchor_local_date,
+                client_timezone=client_timezone,
+                thread_derived_context=thread_ctx,
                 base_system_content=system_content,
                 history_window=history_window,
                 model=model,
