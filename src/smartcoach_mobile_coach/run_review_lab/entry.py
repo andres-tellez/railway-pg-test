@@ -12,6 +12,7 @@ from src.smartcoach_mobile_coach.coach_context import (
     build_snapshot,
     coach_context_v1_enabled,
 )
+from src.smartcoach_mobile_coach.dialogue_manager import INTENT_SPLIT_DETAIL
 from src.smartcoach_mobile_coach.run_review.classifier import (
     ClassifierResult,
     classify_user_message,
@@ -38,7 +39,40 @@ from src.smartcoach_mobile_coach.thread_derived_context import DerivedThreadCoac
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
-RUN_REVIEW_LAB_VERSION = "run_review_lab_minimal_v1"
+RUN_REVIEW_LAB_VERSION = "run_review_lab_minimal_v2"
+
+
+def _classification_for_split_detail_intent() -> ClassifierResult:
+    return ClassifierResult(
+        is_run_review=True,
+        scope="splits_only",
+        confidence="medium",
+        day_hint="last_run",
+        source="dialogue_intent",
+        reason_code="split_detail_intent",
+    )
+
+
+def _apply_split_intent_scope(
+    classification: ClassifierResult,
+    dialogue_intent: str,
+) -> ClassifierResult:
+    if (dialogue_intent or "").strip() != INTENT_SPLIT_DETAIL:
+        return classification
+    if classification.scope == "splits_only":
+        return classification
+    return ClassifierResult(
+        is_run_review=classification.is_run_review,
+        scope="splits_only",
+        confidence=classification.confidence,
+        day_hint=classification.day_hint,
+        source=classification.source,
+        reason_code=(
+            classification.reason_code + "+split_intent_scope"
+            if classification.reason_code
+            else "split_intent_scope"
+        ),
+    )
 
 
 def should_use_run_review_lab(
@@ -46,9 +80,13 @@ def should_use_run_review_lab(
     user_message: str,
     conversation_history: List[Dict[str, str]],
     internal_user_id: str,
+    dialogue_intent: str = "",
     cfg: Optional[RunReviewLabConfig] = None,
 ) -> Tuple[bool, Optional[ClassifierResult], RunReviewLabConfig]:
     snapshot = cfg or load_config()
+    if snapshot.force_off:
+        logger.info("[run_review_lab.entry] force_off enabled; gate=False")
+        return False, None, snapshot
     if not snapshot.enabled:
         return False, None, snapshot
     rr_cfg = load_run_review_config()
@@ -65,7 +103,16 @@ def should_use_run_review_lab(
             exc_info=True,
         )
         return False, None, snapshot
-    return result.is_run_review, result, snapshot
+
+    intent = (dialogue_intent or "").strip()
+    if result.is_run_review:
+        routed = _apply_split_intent_scope(result, intent)
+        return True, routed, snapshot
+
+    if snapshot.splits_enabled and intent == INTENT_SPLIT_DETAIL:
+        return True, _classification_for_split_detail_intent(), snapshot
+
+    return False, result, snapshot
 
 
 def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-locals
@@ -103,6 +150,8 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
         )
     if not classification.is_run_review:
         raise RunReviewSkip("classifier_says_not_run_review")
+
+    lab_scope = (classification.scope or "single_run").strip()
 
     timings: Dict[str, Any] = {}
     coach_context_trace: Optional[Dict[str, Any]] = None
@@ -205,7 +254,8 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
         "run_review_v2": False,
         "run_review_lab": True,
         "run_review_lab_path": ctx.resolved_via,
-        "run_review_lab_scope": ctx.scope,
+        "run_review_lab_scope": lab_scope,
+        "run_review_lab_prompt_scope": lab_scope,
         "run_review_lab_activity_id": ctx.activity_id,
         "run_review_lab_isolated_system": lab_cfg.isolated_system_enabled,
         "run_review_v2_classifier": classification.as_log_dict(),

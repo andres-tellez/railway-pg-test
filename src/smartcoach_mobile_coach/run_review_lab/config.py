@@ -53,6 +53,8 @@ class RunReviewLabConfig:
     """Snapshot of lab-mode settings."""
 
     enabled: bool
+    force_off: bool
+    splits_enabled: bool
     max_response_tokens: int
     responder_timeout_s: float
     responder_model_override: str
@@ -61,7 +63,9 @@ class RunReviewLabConfig:
 
 def load_config() -> RunReviewLabConfig:
     return RunReviewLabConfig(
-        enabled=_read_bool("SMARTCOACH_RUN_REVIEW_LAB", False),
+        enabled=_read_bool("SMARTCOACH_RUN_REVIEW_LAB", True),
+        force_off=_read_bool("SMARTCOACH_RUN_REVIEW_LAB_FORCE_OFF", False),
+        splits_enabled=_read_bool("SMARTCOACH_RUN_REVIEW_LAB_SPLITS", True),
         max_response_tokens=_read_int(
             "SMARTCOACH_RUN_REVIEW_LAB_MAX_TOKENS", 900, 128, 2200
         ),

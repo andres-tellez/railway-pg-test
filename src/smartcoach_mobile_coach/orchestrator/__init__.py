@@ -2013,6 +2013,12 @@ def _plan_intake_activity_context_enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
+def _legacy_run_paths_enabled() -> bool:
+    """Enable deprecated V2/fastpath run paths for rollback only."""
+    raw = (os.getenv("SMARTCOACH_RUN_REVIEW_LEGACY_PATHS") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
 def _experiment_response_directive_stub(directive: ResponseDirective) -> str:
     """
     Tiny stand-in for response_directive_section() when
@@ -3227,6 +3233,7 @@ def run_mobile_agent_turn(
     loops = 0
     tool_result_cache: Dict[tuple, Dict[str, Any]] = {}
     max_loops = _max_agent_loops()
+    legacy_run_paths_enabled = _legacy_run_paths_enabled()
     latest_run_summary: Optional[Dict[str, Any]] = None
     latest_plan_intake_state: Optional[Dict[str, Any]] = (
         thread_ctx.latest_plan_intake_state
@@ -3243,10 +3250,23 @@ def run_mobile_agent_turn(
         user_message=user_message,
         conversation_history=conversation_history,
         internal_user_id=internal_user_id,
+        dialogue_intent=response_directive.intent,
     )
+    lab_route = None
+    if use_lab and lab_classification is not None:
+        if lab_classification.reason_code == "split_detail_intent":
+            lab_route = "split_intent"
+        elif lab_classification.scope == "splits_only":
+            lab_route = "classifier_splits"
+        else:
+            lab_route = "classifier"
     timings_ms["run_review_lab_gate"] = {
         "flag_enabled": lab_cfg.enabled,
+        "force_off": bool(getattr(lab_cfg, "force_off", False)),
+        "splits_enabled": lab_cfg.splits_enabled,
         "use_lab": use_lab,
+        "lab_route": lab_route,
+        "dialogue_intent": response_directive.intent,
         "isolated_system": lab_cfg.isolated_system_enabled,
         "classifier": (
             lab_classification.as_log_dict() if lab_classification is not None else None
@@ -3297,7 +3317,7 @@ def run_mobile_agent_turn(
                 "reason": str(exc) or exc.__class__.__name__,
             }
             logger.info(
-                "[run_review_lab] fallback reason=%s; continuing into V2/legacy path",
+                "[run_review_lab] fallback reason=%s; continuing into fallback paths",
                 str(exc) or exc.__class__.__name__,
             )
         else:
@@ -3318,90 +3338,28 @@ def run_mobile_agent_turn(
             )
             return lab_payload, lab_meta
 
-    # --- Run Review V2 (SMARTCOACH_RUN_REVIEW_V2) ------------------------
-    # Single-completion focused review for "how was my run?"-style turns
-    # with proper workout-intent framing and splits when available. Falls
-    # back silently into the legacy fastpath / full agent loop on any
-    # failure, so legacy behavior is preserved when the flag is off.
-    use_v2, v2_classification, v2_cfg = should_use_run_review_v2(
-        user_message=user_message,
-        conversation_history=conversation_history,
-        internal_user_id=internal_user_id,
-    )
-    # Always record the gate so prod logs / agent_timings_ms show whether the
-    # flag is on and whether the classifier agreed (even when the flag is off).
+    # V2 is deprecated in favor of Run Review Lab.
     timings_ms["run_review_v2_gate"] = {
-        "flag_enabled": v2_cfg.enabled,
-        "use_v2": use_v2,
+        "deprecated": True,
+        "legacy_paths_enabled": legacy_run_paths_enabled,
+        "use_v2": False,
         "plan_creation_mode": plan_creation_mode,
-        "classifier": (
-            v2_classification.as_log_dict() if v2_classification is not None else None
-        ),
     }
-    logger.info(
-        "[run_review_v2] gate flag_enabled=%s use_v2=%s plan_creation_mode=%s",
-        v2_cfg.enabled,
-        use_v2,
-        plan_creation_mode,
-    )
-    if use_v2 and v2_classification is not None:
-        try:
-            v2_payload, v2_meta = handle_run_review_turn(
-                session=session,
-                internal_user_id=internal_user_id,
-                user_message=user_message,
-                conversation_history=conversation_history,
-                anchor_local_date=anchor_local_date,
-                base_system_content=system_content,
-                history_window=history_window,
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                response_directive_dialogue={
-                    "turn_type": response_directive.turn_type,
-                    "intent": response_directive.intent,
-                    "turn_count": conversation_state.turn_count,
-                    "last_topic": conversation_state.last_topic,
-                    "target_length": response_directive.target_length,
-                    "narration_mode": response_directive.narration_mode,
-                    "tool_strategy": response_directive.tool_strategy,
-                    "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
-                    "allow_full_recap": response_directive.allow_full_recap,
-                    "investigate_first": response_directive.investigate_first,
-                    "interaction_mode": response_directive.interaction_mode,
-                    "thread_derived": thread_ctx.as_dict(),
-                },
-                activity_id_hint=last_activity_id_hint,
-                thread_activity_id=thread_ctx.last_structured_run_activity_id,
-                cfg=v2_cfg,
-                classifier_result=v2_classification,
-            )
-        except (RunReviewFallback, RunReviewSkip) as exc:
-            timings_ms["run_review_v2_outcome"] = {
-                "served": False,
-                "reason": str(exc) or exc.__class__.__name__,
-            }
-            logger.info(
-                "[run_review_v2] fallback reason=%s; continuing into legacy path",
-                str(exc) or exc.__class__.__name__,
-            )
-        else:
-            timings_ms["run_review_v2_outcome"] = {"served": True}
-            v2_meta["timings_ms"] = {
-                **(v2_meta.get("timings_ms") or {}),
-                **timings_ms,
-                "agent_orchestrator_total_ms": round(
-                    (time.perf_counter() - t_agent0) * 1000, 2
-                ),
-            }
-            _maybe_run_explicit_goal_memory_fallback(
-                session,
-                internal_user_id,
-                stashed_explicit_goal_text,
-                messages,
-                explicit_goal_memory_persist_guard,
-            )
-            return v2_payload, v2_meta
+    if legacy_run_paths_enabled:
+        logger.warning(
+            "[run_review_v2] deprecated path re-enabled by SMARTCOACH_RUN_REVIEW_LEGACY_PATHS"
+        )
+
+    recap_shadow_decision = None
+    if not plan_creation_mode:
+        recap_shadow_decision = decide_run_recap_fastpath(
+            user_message, conversation_history, anchor_local_date
+        )
+        timings_ms["run_recap_fastpath_shadow_gate"] = {
+            "eligible": recap_shadow_decision.eligible,
+            "reason_code": recap_shadow_decision.reason_code,
+            "prior_user_turns": recap_shadow_decision.prior_user_turn_count,
+        }
 
     if plan_creation_mode:
         recap_decision = None
@@ -3410,10 +3368,20 @@ def run_mobile_agent_turn(
             "reason_code": "disabled_for_plan_creation_mode",
             "prior_user_turns": 0,
         }
+    elif not legacy_run_paths_enabled:
+        recap_decision = None
+        timings_ms["run_recap_fastpath_gate"] = {
+            "eligible": False,
+            "reason_code": "deprecated_use_run_review_lab",
+            "prior_user_turns": 0,
+            "shadow_eligible": (
+                bool(recap_shadow_decision.eligible)
+                if recap_shadow_decision is not None
+                else False
+            ),
+        }
     else:
-        recap_decision = decide_run_recap_fastpath(
-            user_message, conversation_history, anchor_local_date
-        )
+        recap_decision = recap_shadow_decision
         timings_ms["run_recap_fastpath_gate"] = {
             "eligible": recap_decision.eligible,
             "reason_code": recap_decision.reason_code,
@@ -3612,10 +3580,17 @@ def run_mobile_agent_turn(
                 "[coach_fastpath] empty model text or invalid summary; using full agent loop"
             )
 
+    split_shadow_eligible = bool(
+        (not plan_creation_mode)
+        and wants_split_detail_fastpath(response_directive.intent)
+    )
+    timings_ms["split_fastpath_shadow_gate"] = {
+        "eligible": split_shadow_eligible,
+        "intent": response_directive.intent,
+    }
+
     split_prefetch: Optional[Dict[str, Any]] = None
-    if (not plan_creation_mode) and wants_split_detail_fastpath(
-        response_directive.intent
-    ):
+    if legacy_run_paths_enabled and (not plan_creation_mode) and split_shadow_eligible:
         _sp0 = time.perf_counter()
         split_prefetch = prefetch_split_detail(
             session,

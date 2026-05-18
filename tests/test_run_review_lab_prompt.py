@@ -66,3 +66,32 @@ def test_lab_appendix_omits_card_recap_fields_from_json() -> None:
     assert '"hr_drift_pct"' not in appendix
     assert '"hr_drift_band"' not in appendix
     assert "kpi-band://" not in appendix
+
+
+def test_lab_splits_appendix_focuses_on_split_rows() -> None:
+    ctx = stub_context_for_test(
+        activity_id=42,
+        anchor_local_date="2026-05-17",
+        facts={"execution_summary": {"planned": {"type": "easy"}}},
+        splits_payload={
+            "splits": [
+                {
+                    "segment_label": "Mile 1",
+                    "avg_pace_display": "9:30/mi",
+                    "avg_heart_rate_display": "132 bpm",
+                }
+            ],
+            "splits_count": 1,
+            "splits_truncated": False,
+        },
+        scope="splits_only",
+    )
+    appendix = build_run_review_lab_appendix(
+        ctx=ctx,
+        coach_snapshot=None,
+        scope="splits_only",
+    )
+    assert "## Run splits (lab mode)" in appendix
+    assert "avg_heart_rate_display" in appendix
+    assert "splits_truncated" in appendix
+    assert "Do not recap the RunSummary card" not in appendix
