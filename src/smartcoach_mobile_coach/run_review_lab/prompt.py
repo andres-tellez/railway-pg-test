@@ -51,11 +51,26 @@ def _splits_only_instructions() -> str:
     )
 
 
+def _splits_coaching_only_instructions() -> str:
+    return (
+        "This turn is **split detail** on a run already in the thread.\n\n"
+        "The server will show the athlete an **exact per-lap table** (distance, moving "
+        "time, pace, HR) from stored data. **Your reply must NOT list per-lap numbers** "
+        "(no mile-by-mile table, no pace/HR/distance digits, no lap times).\n\n"
+        "Write **2–4 short sentences** of coaching only: patterns and takeaways in "
+        "plain language (e.g. HR crept up, pace held steady, strong finish). You may "
+        "refer to early vs late miles **without quoting stats**. Respect "
+        "`splits_truncated` in the JSON—do not describe omitted middle laps.\n\n"
+        "**Do not** repeat RunSummary card headlines or invent numbers."
+    )
+
+
 def build_run_review_lab_appendix(
     *,
     ctx: RunReviewContext,
     coach_snapshot: Optional[Dict[str, Any]],
     scope: Optional[str] = None,
+    splits_coaching_only: bool = False,
 ) -> str:
     effective_scope = (scope or ctx.scope or "single_run").strip()
     payload: Dict[str, Any] = {"run_context": ctx.to_compact_dict(for_llm=True)}
@@ -63,7 +78,11 @@ def build_run_review_lab_appendix(
         payload["coach_snapshot"] = coach_snapshot
     if effective_scope == "splits_only":
         heading = "## Run splits (lab mode)"
-        body = _splits_only_instructions()
+        body = (
+            _splits_coaching_only_instructions()
+            if splits_coaching_only
+            else _splits_only_instructions()
+        )
     else:
         heading = "## Run review (lab mode)"
         body = _single_run_instructions()
@@ -86,11 +105,13 @@ def build_messages(
     conversation_history: List[Dict[str, str]],
     user_message: str,
     history_window: int,
+    splits_coaching_only: bool = False,
 ) -> List[Dict[str, str]]:
     augmented_system = (base_system_content or "") + build_run_review_lab_appendix(
         ctx=ctx,
         coach_snapshot=coach_snapshot,
         scope=ctx.scope,
+        splits_coaching_only=splits_coaching_only,
     )
     messages: List[Dict[str, str]] = [{"role": "system", "content": augmented_system}]
     if conversation_history:

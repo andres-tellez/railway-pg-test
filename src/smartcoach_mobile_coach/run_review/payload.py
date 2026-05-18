@@ -38,6 +38,8 @@ def build_payload_data(ctx: RunReviewContext) -> Dict[str, Any]:
         data["is_easy_run"] = ctx.is_easy_run
     if ctx.hr_profile is not None:
         data["user_hr_profile"] = ctx.hr_profile
+    if isinstance(ctx.splits, dict) and ctx.splits.get("splits"):
+        data["splits"] = ctx.splits
     return data
 
 
