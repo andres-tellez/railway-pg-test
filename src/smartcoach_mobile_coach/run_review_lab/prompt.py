@@ -13,18 +13,8 @@ from typing import Any, Dict, List, Optional
 from src.smartcoach_mobile_coach.run_review.context import RunReviewContext
 
 
-def build_run_review_lab_appendix(
-    *,
-    ctx: RunReviewContext,
-    coach_snapshot: Optional[Dict[str, Any]],
-) -> str:
-    payload: Dict[str, Any] = {"run_context": ctx.to_compact_dict(for_llm=True)}
-    if isinstance(coach_snapshot, dict):
-        payload["coach_snapshot"] = coach_snapshot
+def _single_run_instructions() -> str:
     return (
-        "\n## Run review (lab mode)\n"
-        "Use the JSON below as the source of truth for this run. "
-        "Do not invent numbers; if data is missing, say what is unknown.\n\n"
         "Tone and style:\n"
         "- Talk like a **real coach** 1:1—warm, plain-spoken, encouraging. "
         "Use **you** and simple words (*kept it easy*, *stayed controlled*, "
@@ -41,7 +31,47 @@ def build_run_review_lab_appendix(
         "chip). Those card-level fields are intentionally reduced in the JSON below; "
         "do **not** invent or re-state them. Prefer: Evidence Pack / similar-run "
         "comparisons, **planned intent** fit, phase or plan context from "
-        "`coach_snapshot`, and a concise takeaway.\n\n"
+        "`coach_snapshot`, and a concise takeaway."
+    )
+
+
+def _splits_only_instructions() -> str:
+    return (
+        "This turn is **split / per-mile detail** on the run already in thread.\n\n"
+        "Tone and style:\n"
+        "- Warm, plain-spoken coach voice—answer what they asked about laps/miles.\n"
+        "- **Compact:** about **60–110 words** unless they asked for every mile listed.\n"
+        "- Use a short bullet or numbered list when listing multiple split rows.\n\n"
+        "**Splits are the focus.** Use `run_context.splits` rows as source of truth. "
+        "Quote **`avg_heart_rate_display`**, **`avg_pace_display`**, and "
+        "`segment_label` **exactly** as shown. Respect **`splits_truncated`**: only "
+        "discuss returned laps; do not invent middle miles.\n\n"
+        "**Do not** repeat a full session recap or RunSummary card headlines unless "
+        "the user explicitly asked for recap context."
+    )
+
+
+def build_run_review_lab_appendix(
+    *,
+    ctx: RunReviewContext,
+    coach_snapshot: Optional[Dict[str, Any]],
+    scope: Optional[str] = None,
+) -> str:
+    effective_scope = (scope or ctx.scope or "single_run").strip()
+    payload: Dict[str, Any] = {"run_context": ctx.to_compact_dict(for_llm=True)}
+    if isinstance(coach_snapshot, dict):
+        payload["coach_snapshot"] = coach_snapshot
+    if effective_scope == "splits_only":
+        heading = "## Run splits (lab mode)"
+        body = _splits_only_instructions()
+    else:
+        heading = "## Run review (lab mode)"
+        body = _single_run_instructions()
+    return (
+        f"\n{heading}\n"
+        "Use the JSON below as the source of truth for this run. "
+        "Do not invent numbers; if data is missing, say what is unknown.\n\n"
+        f"{body}\n\n"
         "```json\n"
         f"{json.dumps(payload, default=str)}\n"
         "```"
@@ -60,6 +90,7 @@ def build_messages(
     augmented_system = (base_system_content or "") + build_run_review_lab_appendix(
         ctx=ctx,
         coach_snapshot=coach_snapshot,
+        scope=ctx.scope,
     )
     messages: List[Dict[str, str]] = [{"role": "system", "content": augmented_system}]
     if conversation_history:
