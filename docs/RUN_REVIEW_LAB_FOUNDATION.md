@@ -56,3 +56,8 @@ intent `split_detail` enter Lab even if the classifier says "not run review".
 Lab uses scope `splits_only`, fetches splits via `context_builder`, and uses a
 split-focused prompt appendix. Telemetry: `run_review_lab_gate.lab_route` is
 `split_intent`, `classifier_splits`, or `classifier`.
+
+For `splits_only`, per-lap **distance, time, pace, and HR** in the user-visible
+reply are rendered **deterministically** from `tool_get_run_splits` rows
+(`run_review_lab/splits_content.py`). The LLM adds **qualitative coaching only**
+(no per-lap number table). Meta flag: `run_review_lab_splits_deterministic`.

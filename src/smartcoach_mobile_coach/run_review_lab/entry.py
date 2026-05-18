@@ -31,7 +31,14 @@ from src.smartcoach_mobile_coach.run_review_lab.config import (
     RunReviewLabConfig,
     load_config,
 )
-from src.smartcoach_mobile_coach.run_review_lab.responder import generate_review
+from src.smartcoach_mobile_coach.run_review_lab.responder import (
+    generate_review,
+    generate_splits_coaching,
+)
+from src.smartcoach_mobile_coach.run_review_lab.splits_content import (
+    compose_splits_turn_content,
+    render_deterministic_splits_block,
+)
 from src.smartcoach_mobile_coach.experiments.run_review_lab_isolated_system import (
     build_isolated_lab_system_prefix,
 )
@@ -225,24 +232,46 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
     else:
         effective_base = base_system_content or ""
 
-    responder_out = generate_review(
-        ctx=ctx,
-        coach_snapshot=coach_snapshot,
-        base_system_content=effective_base,
-        conversation_history=conversation_history,
-        user_message=user_message,
-        history_window=history_window,
-        internal_user_id=internal_user_id,
-        cfg=lab_cfg,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    splits_deterministic = False
+    if lab_scope == "splits_only":
+        splits_block = render_deterministic_splits_block(ctx)
+        if not splits_block:
+            raise RunReviewFallback("splits_only_missing_split_rows")
+        responder_out = generate_splits_coaching(
+            ctx=ctx,
+            coach_snapshot=coach_snapshot,
+            base_system_content=effective_base,
+            conversation_history=conversation_history,
+            user_message=user_message,
+            history_window=history_window,
+            internal_user_id=internal_user_id,
+            cfg=lab_cfg,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        final_content = compose_splits_turn_content(splits_block, responder_out.content)
+        splits_deterministic = True
+    else:
+        responder_out = generate_review(
+            ctx=ctx,
+            coach_snapshot=coach_snapshot,
+            base_system_content=effective_base,
+            conversation_history=conversation_history,
+            user_message=user_message,
+            history_window=history_window,
+            internal_user_id=internal_user_id,
+            cfg=lab_cfg,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        final_content = responder_out.content
     timings.update(responder_out.timings_ms)
 
     structured, sections_attached = build_run_review_envelope(
         ctx=ctx,
-        content=responder_out.content,
+        content=final_content,
     )
 
     meta: Dict[str, Any] = {
@@ -258,6 +287,7 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
         "run_review_lab_prompt_scope": lab_scope,
         "run_review_lab_activity_id": ctx.activity_id,
         "run_review_lab_isolated_system": lab_cfg.isolated_system_enabled,
+        "run_review_lab_splits_deterministic": splits_deterministic,
         "run_review_v2_classifier": classification.as_log_dict(),
         "timings_ms": timings,
         "dialogue": response_directive_dialogue,
@@ -282,6 +312,7 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
             "classifier": classification.as_log_dict(),
             "splits_attached": ctx.splits is not None,
             "splits_count": ctx.splits_count,
+            "splits_deterministic": splits_deterministic,
             "sections_attached": sections_attached,
             "timings_ms": timings,
             "usage": responder_out.usage,
