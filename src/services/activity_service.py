@@ -234,12 +234,12 @@ def enrich_one_activity(
     fetch_streams: bool = True,
     persist_splits: bool = True,
 ):
-    """Enrich a single activity: summary fields, HR zones, and optionally streams + mile splits.
+    """Enrich a single activity: summary fields, HR zones, and optional splits.
 
-    Stream fetch and split upserts run only when both ``fetch_streams`` and ``persist_splits``
-    are true. Callers should pass ``persist_splits`` from
-    ``persist_splits_for_user`` (which folds in ``ENABLE_SPLITS``). Activity row
-    updates do not require splits or streams.
+    Split rows prefer Strava ``GET /activities/{id}`` payloads: ``splits_standard``
+    (statute-mile segments, matches strava.com imperial laps) then ``splits_metric``.
+    Stream fetch and ``build_mile_splits`` run only when Strava omits both arrays
+    and ``fetch_streams`` / ``persist_splits`` allow synthetic mile splits.
     """
     try:
         client = StravaClient(access_token)
@@ -273,9 +273,16 @@ def enrich_one_activity(
             zones_data = client.get_hr_zones(activity_id)
             streams = {}
 
-            # Fetch streams only for mile/lap splits (not for HR zone calculation).
-            # HR zones come from Strava's zones API only.
-            if fetch_streams and persist_splits:
+            strava_split_rows = build_splits_from_strava_activity(
+                activity_id, activity_json
+            )
+            if strava_split_rows:
+                log.info(
+                    "Using Strava activity splits (%d rows) for activity %s",
+                    len(strava_split_rows),
+                    activity_id,
+                )
+            elif fetch_streams and persist_splits:
                 streams = client.get_streams(
                     activity_id,
                     keys=["distance", "time", "velocity_smooth", "heartrate"],
@@ -339,8 +346,8 @@ def enrich_one_activity(
         )
 
         splits = []
-        if fetch_streams and persist_splits:
-            splits = build_mile_splits(activity_id, streams)
+        if persist_splits:
+            splits = strava_split_rows or build_mile_splits(activity_id, streams)
             if splits:
                 upsert_splits(session, splits)
                 log.info("Synced %d splits for activity %s", len(splits), activity_id)
@@ -717,6 +724,112 @@ def calculate_hr_zones_from_streams(
         f"(max_hr={max_heartrate:.0f} bpm)"
     )
     return zone_percentages
+
+
+def _coerce_split_int(val, default=None):
+    if val is None:
+        return default
+    try:
+        return int(round(float(val)))
+    except (TypeError, ValueError):
+        return default
+
+
+def build_splits_from_strava_activity(activity_id: int, activity_json: dict) -> list:
+    """
+    Map Strava ``GET /activities/{id}`` embedded split arrays into rows for
+    :func:`src.db.dao.split_dao.upsert_splits`.
+
+    Prefer ``splits_standard`` (statute-mile segments) so stored laps align with
+    the Strava website for imperial split views; fall back to ``splits_metric``.
+    Returns an empty list when Strava did not include split arrays.
+    """
+    if not isinstance(activity_json, dict):
+        return []
+
+    std = activity_json.get("splits_standard")
+    metric = activity_json.get("splits_metric")
+    chosen = None
+    if isinstance(std, list) and len(std) > 0:
+        chosen = std
+    elif isinstance(metric, list) and len(metric) > 0:
+        chosen = metric
+
+    if not chosen:
+        return []
+
+    out = []
+    for idx, sp in enumerate(chosen, start=1):
+        if not isinstance(sp, dict):
+            continue
+
+        lap_index = _coerce_split_int(sp.get("lap_index"), None)
+        if lap_index is None:
+            lap_index = _coerce_split_int(sp.get("split"), idx)
+
+        distance_raw = sp.get("distance")
+        try:
+            distance_f = float(distance_raw) if distance_raw is not None else None
+        except (TypeError, ValueError):
+            distance_f = None
+        if distance_f is None:
+            continue
+
+        moving_time = _coerce_split_int(sp.get("moving_time"), 0) or 0
+        elapsed_raw = _coerce_split_int(sp.get("elapsed_time"), None)
+        elapsed_time = elapsed_raw if elapsed_raw is not None else moving_time
+
+        avg_spd_raw = sp.get("average_speed")
+        try:
+            average_speed = float(avg_spd_raw) if avg_spd_raw is not None else None
+        except (TypeError, ValueError):
+            average_speed = None
+        if average_speed is None and distance_f > 0 and moving_time > 0:
+            average_speed = distance_f / float(moving_time)
+        if average_speed is None:
+            average_speed = 0.0
+
+        max_spd_raw = sp.get("max_speed")
+        try:
+            max_speed = float(max_spd_raw) if max_spd_raw is not None else None
+        except (TypeError, ValueError):
+            max_speed = None
+
+        avg_hr_raw = sp.get("average_heartrate")
+        try:
+            average_heartrate = float(avg_hr_raw) if avg_hr_raw is not None else None
+        except (TypeError, ValueError):
+            average_heartrate = None
+
+        split_ord = _coerce_split_int(sp.get("split"), lap_index)
+
+        si = sp.get("start_index")
+        ei = sp.get("end_index")
+        start_index = _coerce_split_int(si, None) if si is not None else None
+        end_index = _coerce_split_int(ei, None) if ei is not None else None
+
+        pace_zone = _coerce_split_int(sp.get("pace_zone"), None)
+
+        if distance_f <= 0 and moving_time <= 0 and elapsed_time <= 0:
+            continue
+
+        out.append(
+            {
+                "activity_id": int(activity_id),
+                "lap_index": int(lap_index),
+                "distance": distance_f,
+                "elapsed_time": int(elapsed_time),
+                "moving_time": int(moving_time),
+                "average_speed": average_speed,
+                "max_speed": max_speed,
+                "start_index": start_index,
+                "end_index": end_index,
+                "split": split_ord,
+                "average_heartrate": average_heartrate,
+                "pace_zone": pace_zone,
+            }
+        )
+    return out
 
 
 def build_mile_splits(activity_id, streams):
