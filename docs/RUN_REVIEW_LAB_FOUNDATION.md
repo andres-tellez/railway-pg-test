@@ -61,3 +61,10 @@ For `splits_only`, per-lap **distance, time, pace, and HR** in the user-visible
 reply are rendered **deterministically** from `tool_get_run_splits` rows
 (`run_review_lab/splits_content.py`). The LLM adds **qualitative coaching only**
 (no per-lap number table). Meta flag: `run_review_lab_splits_deterministic`.
+
+## Strava split ingestion
+
+Activity detail (`GET /activities/{id}`) includes `splits_standard` and
+`splits_metric`. Enrichment persists those arrays into the `splits` table
+(preferred over stream-derived miles) so lap tables match strava.com. Activities
+already ingested keep prior rows until **re-enrichment** runs for that activity.

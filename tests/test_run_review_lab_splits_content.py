@@ -14,7 +14,7 @@ def _ctx_with_splits(*, truncated: bool = False) -> object:
     rows = [
         {
             "lap_index": 1,
-            "segment_label": "mile 1 (lap 1)",
+            "segment_label": "Lap 1",
             "distance_display": "1.00 mi",
             "moving_time_display": "9:48",
             "avg_pace_display": "9:48/mi",
@@ -22,7 +22,7 @@ def _ctx_with_splits(*, truncated: bool = False) -> object:
         },
         {
             "lap_index": 2,
-            "segment_label": "mile 2 (lap 2)",
+            "segment_label": "Lap 2",
             "distance_display": "1.00 mi",
             "moving_time_display": "9:45",
             "avg_pace_display": "9:45/mi",
@@ -48,11 +48,11 @@ def test_render_deterministic_splits_uses_display_fields() -> None:
     ctx = _ctx_with_splits()
     block = render_deterministic_splits_block(ctx)
     assert block is not None
-    assert "mile 1 (lap 1)" in block
+    assert "Lap 1" in block
     assert "**Moving Time:** 9:48" in block
     assert "**Average Heart Rate:** 127 bpm" in block
     assert "**Average Pace:** 9:48/mi" in block
-    assert "mile 2 (lap 2)" in block
+    assert "Lap 2" in block
     assert "9:45" in block
     assert "138 bpm" in block
 
@@ -66,7 +66,7 @@ def test_render_deterministic_splits_truncation_note() -> None:
 
 def test_compose_splits_turn_content_orders_block_then_coaching() -> None:
     out = compose_splits_turn_content(
-        "Here are your splits for the run:\n\n1. mile 1:",
+        "Here are your splits for the run:\n\n1. Lap 1:",
         "Nice steady effort today.",
     )
     assert out.startswith("Here are your splits")

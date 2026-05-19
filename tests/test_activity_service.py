@@ -207,6 +207,109 @@ def test_build_mile_splits_correctness():
     assert splits[-1]["lap_index"] == len(splits)
 
 
+def test_build_splits_from_strava_prefers_splits_standard():
+    activity_json = {
+        "splits_standard": [
+            {
+                "lap_index": 1,
+                "distance": 1609.34,
+                "moving_time": 546,
+                "elapsed_time": 546,
+                "average_speed": 2.95,
+                "split": 1,
+                "average_heartrate": 129.0,
+            }
+        ],
+        "splits_metric": [
+            {
+                "lap_index": 99,
+                "distance": 1000,
+                "moving_time": 300,
+                "elapsed_time": 310,
+                "average_speed": 3.33,
+                "split": 1,
+            }
+        ],
+    }
+    rows = svc.build_splits_from_strava_activity(42, activity_json)
+    assert len(rows) == 1
+    assert rows[0]["lap_index"] == 1
+    assert rows[0]["moving_time"] == 546
+    assert rows[0]["average_heartrate"] == pytest.approx(129.0)
+
+
+def test_build_splits_from_strava_fallback_metric_only():
+    activity_json = {
+        "splits_metric": [
+            {
+                "lap_index": 1,
+                "distance": 1000,
+                "moving_time": 295,
+                "elapsed_time": 300,
+                "average_speed": 3.33,
+                "split": 1,
+                "average_heartrate": 145,
+            }
+        ],
+    }
+    rows = svc.build_splits_from_strava_activity(7, activity_json)
+    assert len(rows) == 1
+    assert rows[0]["distance"] == pytest.approx(1000.0)
+    assert rows[0]["moving_time"] == 295
+
+
+def test_build_splits_from_strava_empty():
+    assert svc.build_splits_from_strava_activity(1, {}) == []
+    assert svc.build_splits_from_strava_activity(1, {"foo": "bar"}) == []
+
+
+@patch("src.services.activity_service.StravaClient")
+@patch(
+    "src.services.activity_service.extract_hr_zone_percentages",
+    return_value=[10, 20, 30, 25, 15],
+)
+@patch("src.services.activity_service.upsert_splits")
+def test_enrich_one_activity_skips_streams_when_strava_splits_present(
+    mock_upsert,
+    mock_extract_zones,
+    MockClient,
+    mock_session,
+    dummy_zones_data,
+):
+    mock_client = MockClient.return_value
+    activity = {
+        "id": 123,
+        "name": "Run",
+        "distance": 5000,
+        "moving_time": 1800,
+        "elapsed_time": 2000,
+        "average_speed": 3.5,
+        "max_speed": 5.0,
+        "type": "Run",
+        "suffer_score": 50,
+        "average_heartrate": 140,
+        "max_heartrate": 170,
+        "calories": 400,
+        "splits_standard": [
+            {
+                "lap_index": 1,
+                "distance": 1609.34,
+                "moving_time": 600,
+                "elapsed_time": 600,
+                "average_speed": 2.68,
+                "split": 1,
+            }
+        ],
+    }
+    mock_client.get_activity.return_value = activity
+    mock_client.get_hr_zones.return_value = dummy_zones_data
+
+    result = svc.enrich_one_activity(mock_session, "fake-token", 123)
+    assert result is True
+    mock_client.get_streams.assert_not_called()
+    mock_upsert.assert_called_once()
+
+
 @patch("src.services.activity_service.ActivityDAO.upsert_activities")
 @patch("src.services.activity_service.ActivityIngestionService.fetch_all_activities")
 @patch("src.services.activity_service.StravaClient.get_activities")

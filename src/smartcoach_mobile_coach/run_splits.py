@@ -98,24 +98,31 @@ def tool_get_run_splits(
     splits_out: List[Dict[str, Any]] = []
     for sp in rows:
         dist_mi: Optional[float] = None
-        if sp.conv_distance is not None:
+        if sp.distance is not None:
             try:
-                dist_mi = float(sp.conv_distance)
+                dist_mi = distance_miles_from_meters(float(sp.distance))
             except (TypeError, ValueError):
                 dist_mi = None
         if dist_mi is None or dist_mi <= 0:
-            dist_mi = distance_miles_from_meters(sp.distance)
-        mt = int(sp.moving_time or 0)
-        p_sec = pace_sec_per_mi(mt, dist_mi)
-
-        mile_label = sp.split
-        if mile_label is not None:
+            dist_mi = None
+        if dist_mi is None or dist_mi <= 0:
             try:
-                segment_label = f"mile {int(mile_label)} (lap {sp.lap_index})"
+                cd = float(sp.conv_distance)
+                dist_mi = cd if cd > 0 else None
             except (TypeError, ValueError):
-                segment_label = f"lap {sp.lap_index}"
-        else:
-            segment_label = f"lap {sp.lap_index}"
+                dist_mi = None
+        mt = int(sp.moving_time or 0)
+        p_sec = pace_sec_per_mi(mt, dist_mi) if dist_mi and dist_mi > 0 else None
+        if p_sec is None and sp.average_speed is not None:
+            try:
+                mps = float(sp.average_speed)
+                if mps > 0:
+                    # Strava-style m/s → sec/mi
+                    p_sec = 1609.344 / mps
+            except (TypeError, ValueError):
+                pass
+
+        segment_label = f"Lap {int(sp.lap_index)}"
 
         splits_out.append(
             {
@@ -135,10 +142,9 @@ def tool_get_run_splits(
     max_rows = max_splits_rows_for_coach()
     capped, truncated, total_laps = cap_split_rows_for_coach(splits_out, max_rows)
     scope_parts = [
-        "Each row is one stored lap/split from Strava ingestion. "
-        "Distance and segment_label reflect device lap boundaries (often ~1 mi, not guaranteed). "
-        "Use these rows for mile-by-mile or lap-by-lap pace and average HR; "
-        "session-level drift and KPIs remain on get_run_summary.training_kpis.",
+        "Each row is one lap/split segment matching Strava activity split data when available "
+        "(otherwise stream-derived miles). Distance is meters per segment; use displayed pace/HR "
+        "for coaching copy.",
     ]
     if truncated:
         scope_parts.append(

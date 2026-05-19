@@ -5,11 +5,11 @@ from src.db.dao.split_dao import upsert_splits
 from src.db.models.splits import Split
 
 
-def test_upsert_splits_idempotency(sqlalchemy_session):
+def test_upsert_splits_idempotency(test_db_session):
     # Insert parent activity
     activity_id = 55555
-    sqlalchemy_session.add(Activity(activity_id=activity_id, athlete_id=1))
-    sqlalchemy_session.commit()
+    test_db_session.add(Activity(activity_id=activity_id, athlete_id=1))
+    test_db_session.commit()
 
     splits = [
         {
@@ -27,14 +27,14 @@ def test_upsert_splits_idempotency(sqlalchemy_session):
     ]
 
     # First insert
-    inserted = upsert_splits(sqlalchemy_session, splits)
+    inserted = upsert_splits(test_db_session, splits)
     assert inserted == 1
 
     # Second insert (should conflict-update, not duplicate)
-    inserted_again = upsert_splits(sqlalchemy_session, splits)
+    inserted_again = upsert_splits(test_db_session, splits)
     assert inserted_again == 1
 
     # Verify only 1 row exists
-    rows = sqlalchemy_session.query(Split).filter_by(activity_id=activity_id).all()
+    rows = test_db_session.query(Split).filter_by(activity_id=activity_id).all()
     assert len(rows) == 1
     assert isinstance(rows[0].split, int)

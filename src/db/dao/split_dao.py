@@ -48,9 +48,9 @@ def upsert_splits(session, splits: list) -> int:
                 "elapsed_time": s["elapsed_time"],
                 "moving_time": s["moving_time"],
                 "average_speed": s["average_speed"],
-                "max_speed": s["max_speed"],
-                "start_index": s["start_index"],
-                "end_index": s["end_index"],
+                "max_speed": s.get("max_speed"),
+                "start_index": s.get("start_index"),
+                "end_index": s.get("end_index"),
                 "split": split_value,
                 "average_heartrate": s.get("average_heartrate"),
                 "pace_zone": s.get("pace_zone"),
@@ -60,11 +60,6 @@ def upsert_splits(session, splits: list) -> int:
                 "conv_elapsed_time": enriched.get("conv_elapsed_time"),
             }
         )
-
-    # 🔍 Debug output to verify types
-    print(
-        f"[DAO DEBUG] split values: {[row['split'] for row in converted]} | types: {[type(row['split']) for row in converted]}"
-    )
 
     stmt = insert(Split).values(converted)
 
