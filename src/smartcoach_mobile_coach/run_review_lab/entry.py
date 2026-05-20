@@ -25,7 +25,11 @@ from src.smartcoach_mobile_coach.run_review.errors import (
     RunReviewFallback,
     RunReviewSkip,
 )
-from src.smartcoach_mobile_coach.run_review.payload import build_run_review_envelope
+from src.smartcoach_mobile_coach.run_review.payload import (
+    RUN_SUMMARY_LAYOUT_INLINE,
+    RUN_SUMMARY_LAYOUT_RECAP,
+    build_run_review_envelope,
+)
 from src.smartcoach_mobile_coach.run_review.telemetry import record_run_review_event
 from src.smartcoach_mobile_coach.run_review_lab.config import (
     RunReviewLabConfig,
@@ -272,6 +276,11 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
     structured, sections_attached = build_run_review_envelope(
         ctx=ctx,
         content=final_content,
+        run_summary_layout=(
+            RUN_SUMMARY_LAYOUT_INLINE
+            if lab_scope == "splits_only"
+            else RUN_SUMMARY_LAYOUT_RECAP
+        ),
     )
 
     meta: Dict[str, Any] = {

@@ -62,6 +62,11 @@ reply are rendered **deterministically** from `tool_get_run_splits` rows
 (`run_review_lab/splits_content.py`). The LLM adds **qualitative coaching only**
 (no per-lap number table). Meta flag: `run_review_lab_splits_deterministic`.
 
+Structured replies stay `type: run_summary` for thread `activity_id` parsing. For
+`splits_only`, the envelope may include `run_summary_layout: inline`, which
+tells the mobile client to render **Markdown only** (no metrics recap card).
+Omitting the field means the default recap card + insight layout.
+
 ## Strava split ingestion
 
 Activity detail (`GET /activities/{id}`) includes `splits_standard` and

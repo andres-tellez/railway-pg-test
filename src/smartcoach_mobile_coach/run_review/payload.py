@@ -1,21 +1,27 @@
 """
-Shape the final mobile-facing payload for a Run Review V2 turn.
+Shape the final mobile-facing payload for a Run Review turn.
 
-We preserve the existing ``type: "run_summary"`` envelope used by the
-legacy fastpath so the mobile RunSummaryCard keeps rendering unchanged.
-The only difference is the prose ``content`` — and metadata flags so we
-can observe V2 turns in logs / analytics.
+We preserve ``type: "run_summary"`` so thread-derived ``activity_id`` and the
+RunSummaryCard contract stay stable. ``run_summary_layout`` selects client chrome:
+
+- Omit or ``recap``: metrics card + insight (default).
+- ``inline``: Markdown-only body (e.g. lab ``splits_only``).
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Literal, Optional, Tuple
 
 from src.smartcoach_mobile_coach.run_review.context import RunReviewContext
 from src.smartcoach_mobile_coach.run_review.prompt import RUN_REVIEW_RUBRIC_VERSION
 from src.smartcoach_mobile_coach.run_summary_sections import (
     enrich_run_summary_payload_with_sections,
 )
+
+# Client presentation for ``type: run_summary`` — omit on wire when ``recap`` (default).
+RunSummaryLayout = Literal["recap", "inline"]
+RUN_SUMMARY_LAYOUT_RECAP: RunSummaryLayout = "recap"
+RUN_SUMMARY_LAYOUT_INLINE: RunSummaryLayout = "inline"
 
 
 def build_payload_data(ctx: RunReviewContext) -> Dict[str, Any]:
@@ -47,13 +53,29 @@ def build_run_review_envelope(
     *,
     ctx: RunReviewContext,
     content: str,
+    run_summary_layout: RunSummaryLayout = RUN_SUMMARY_LAYOUT_RECAP,
 ) -> Tuple[Dict[str, Any], bool]:
-    """Return ``(structured_payload, sections_attached_bool)``."""
+    """Return ``(structured_payload, sections_attached_bool)``.
+
+    ``run_summary_layout`` controls mobile chrome without changing ``type``:
+
+    - ``recap`` (default): metrics card + insight bubble (historical behavior).
+    - ``inline``: prose/splits Markdown only — used for lab ``splits_only`` turns.
+
+    ``type`` stays ``run_summary`` so thread-derived ``activity_id`` parsing is unchanged.
+    """
+    layout = (
+        run_summary_layout
+        if run_summary_layout in (RUN_SUMMARY_LAYOUT_RECAP, RUN_SUMMARY_LAYOUT_INLINE)
+        else RUN_SUMMARY_LAYOUT_RECAP
+    )
     structured: Dict[str, Any] = {
         "type": "run_summary",
         "content": (content or "").strip(),
         "data": build_payload_data(ctx),
     }
+    if layout != RUN_SUMMARY_LAYOUT_RECAP:
+        structured["run_summary_layout"] = layout
     structured, sections_attached = enrich_run_summary_payload_with_sections(structured)
     return structured, sections_attached
 
