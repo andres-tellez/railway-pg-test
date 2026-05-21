@@ -14,5 +14,10 @@ from src.db.models.user_hr_zones import UserHrZones
 from src.db.models.coach_tools import CoachTool
 from src.db.models.user_coach_preferences import UserCoachPreferences
 from src.db.models.weekly_training_insights import WeeklyTrainingInsight
+from src.db.models.memory.coach_interactions import CoachInteraction
+from src.db.models.memory.session_summaries import SessionSummary
+from src.db.models.memory.user_open_threads import UserOpenThread
+from src.db.models.memory.user_plan_memories import UserPlanMemory
+from src.db.models.memory.user_state_observations import UserStateObservation
 
 # Add other models in the proper order if needed (e.g. tokens, activities)

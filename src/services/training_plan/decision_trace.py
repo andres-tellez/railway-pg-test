@@ -6,7 +6,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
-from src.services.coach.user_plan_memory_service import (
+from src.smartcoach_mobile_coach.memory.plan_memory_store import (
     infer_long_run_day_from_memory_hints,
 )
 from src.smartcoach_mobile_coach.plan_intake_flow import _normalize_training_days

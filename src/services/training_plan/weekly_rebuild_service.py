@@ -87,7 +87,7 @@ class WeeklyRebuildService:
         try:
             from uuid import UUID as _UUID
 
-            from src.services.coach.user_plan_memory_service import (
+            from src.smartcoach_mobile_coach.memory.plan_memory_store import (
                 coach_memory_hints_for_plan_generation,
             )
 

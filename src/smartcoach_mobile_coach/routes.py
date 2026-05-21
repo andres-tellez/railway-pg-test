@@ -100,6 +100,76 @@ def _run_review_v2_fallback_reason(meta: Dict[str, Any]) -> Optional[str]:
     return reason.strip()
 
 
+def _extract_run_summary_activity_id(payload: Any) -> Optional[int]:
+    """Best-effort activity_id extraction from structured run_summary payload."""
+    if not isinstance(payload, dict):
+        return None
+    if str(payload.get("type") or "").strip().lower() != "run_summary":
+        return None
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return None
+    facts = data.get("facts")
+    if not isinstance(facts, dict):
+        return None
+    raw = facts.get("activity_id")
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
+
+
+def _apply_card_once_layout_override(
+    *,
+    session,
+    user_id: str,
+    conversation_id: uuid.UUID,
+    payload: Any,
+) -> tuple[Any, bool, Optional[int]]:
+    """
+    Enforce card-once UX for repeated same-run recap.
+
+    Returns: (possibly-mutated payload, should_mark_interaction, activity_id).
+    """
+    activity_id = _extract_run_summary_activity_id(payload)
+    if activity_id is None:
+        return payload, False, None
+    if not isinstance(payload, dict):
+        return payload, False, None
+    from src.smartcoach_mobile_coach.memory import (
+        build_memory_service,
+        load_memory_config,
+    )
+    from src.smartcoach_mobile_coach.memory.domain.vocab import InteractionFlag
+
+    cfg = load_memory_config()
+    if not cfg.enabled:
+        return payload, False, activity_id
+    try:
+        memory_service = build_memory_service(session, cfg)
+        user_uuid = uuid.UUID(str(user_id))
+    except Exception:
+        return payload, False, activity_id
+
+    key = str(activity_id)
+    try:
+        already_recapped = memory_service.has_interaction(
+            user_id=user_uuid,
+            conversation_id=uuid.UUID(str(conversation_id)),
+            flag=InteractionFlag.RECAPPED_RUN,
+            key=key,
+        )
+    except Exception:
+        already_recapped = False
+
+    if already_recapped:
+        payload = dict(payload)
+        payload["run_summary_layout"] = "inline"
+        return payload, False, activity_id
+    return payload, True, activity_id
+
+
 def _record_coach_agent_turn(
     *,
     user_id: Optional[str],
@@ -736,6 +806,17 @@ def agent_messages(conversation_id):
                 details={"limit_type": "daily_cost"},
             )
 
+        should_mark_recapped_run = False
+        recapped_run_activity_id: Optional[int] = None
+        gpt_response, should_mark_recapped_run, recapped_run_activity_id = (
+            _apply_card_once_layout_override(
+                session=session,
+                user_id=uid_str,
+                conversation_id=uuid.UUID(str(conversation_id)),
+                payload=gpt_response,
+            )
+        )
+
         assistant_content = (
             json.dumps(gpt_response, separators=(",", ":"))
             if isinstance(gpt_response, dict)
@@ -748,33 +829,79 @@ def agent_messages(conversation_id):
             content=assistant_content,
         )
         session.add(assistant_msg)
+        if should_mark_recapped_run and recapped_run_activity_id is not None:
+            try:
+                from src.smartcoach_mobile_coach.memory import (
+                    build_memory_service,
+                    load_memory_config,
+                )
+                from src.smartcoach_mobile_coach.memory.domain.vocab import (
+                    InteractionFlag,
+                )
+
+                mcfg = load_memory_config()
+                if mcfg.enabled:
+                    build_memory_service(session, mcfg).mark_interaction(
+                        user_id=uuid.UUID(str(uid_str)),
+                        conversation_id=uuid.UUID(str(conversation_id)),
+                        flag=InteractionFlag.RECAPPED_RUN,
+                        key=str(recapped_run_activity_id),
+                    )
+            except Exception:
+                logger.warning(
+                    "[memory] failed to mark RECAPPED_RUN interaction",
+                    exc_info=True,
+                )
         conversation.updated_at = datetime.utcnow()
         session.commit()
         t_route6 = time.perf_counter()
 
-        # Phase F 3F.1 — Layer B session summary (separate session; failures never affect UX).
+        # Phase F / Memory V2 summary persistence (separate session; failures never affect UX).
         try:
             from src.db.db_session import SessionLocal
-            from src.services.coach.session_summary_write import (
+            from src.smartcoach_mobile_coach.memory.session_summary_write import (
                 maybe_write_session_summary_after_turn,
             )
+            from src.smartcoach_mobile_coach.memory.policies.summarizer import (
+                collect_tool_names_from_agent_meta,
+            )
             from src.smartcoach_mobile_coach import user_context_cache
+            from src.smartcoach_mobile_coach.memory import (
+                build_memory_service,
+                load_memory_config,
+            )
 
             w_session = SessionLocal()
             try:
-                maybe_write_session_summary_after_turn(
-                    w_session,
-                    internal_user_id=uid_str,
-                    conversation_id=uuid.UUID(str(conversation_id)),
-                    user_message=message.strip(),
-                    assistant_reply=gpt_response,
-                    meta=meta,
-                )
-                w_session.commit()
+                memory_cfg = load_memory_config()
+                if memory_cfg.enabled and memory_cfg.summary_writer_enabled:
+                    memory_service = build_memory_service(w_session, memory_cfg)
+                    memory_service.write_session_summary(
+                        user_id=uuid.UUID(str(uid_str)),
+                        conversation_id=uuid.UUID(str(conversation_id)),
+                        user_message=message.strip(),
+                        assistant_reply=(
+                            gpt_response
+                            if isinstance(gpt_response, dict)
+                            else str(gpt_response)
+                        ),
+                        tool_names=collect_tool_names_from_agent_meta(meta),
+                    )
+                    w_session.commit()
+                elif not memory_cfg.enabled:
+                    maybe_write_session_summary_after_turn(
+                        w_session,
+                        internal_user_id=uid_str,
+                        conversation_id=uuid.UUID(str(conversation_id)),
+                        user_message=message.strip(),
+                        assistant_reply=gpt_response,
+                        meta=meta,
+                    )
+                    w_session.commit()
                 user_context_cache.invalidate_user_context(uid_str)
             except Exception:
                 logger.warning(
-                    "[smartcoach_mobile_coach] session_summary_write failed",
+                    "[smartcoach_mobile_coach] session summary persist failed",
                     exc_info=True,
                 )
                 try:
@@ -785,7 +912,7 @@ def agent_messages(conversation_id):
                 w_session.close()
         except Exception:
             logger.debug(
-                "[smartcoach_mobile_coach] session_summary_write bootstrap skipped",
+                "[smartcoach_mobile_coach] session summary bootstrap skipped",
                 exc_info=True,
             )
 

@@ -46,7 +46,7 @@ _PROVENANCE = [
     "(src.smartcoach_mobile_coach.plan_intake_activity_context)",
     "src.coaching_intelligence.ambition_gap.evaluate_ambition_gap",
     "src.coaching_intelligence.intake_alignment.evaluate_intake_alignment_state",
-    "src.services.coach.user_plan_memory_service (optional coach_memory stats only)",
+    "src.smartcoach_mobile_coach.memory.plan_memory_store (optional coach_memory stats only)",
 ]
 
 
@@ -97,7 +97,7 @@ def _plan_request_digest(plan_request: Dict[str, Any]) -> Dict[str, Any]:
 def _coach_memory_stats(session: Session, user_id: str) -> Optional[Dict[str, Any]]:
     try:
         uid_u = uuid.UUID(str(user_id))
-        from src.services.coach.user_plan_memory_service import (
+        from src.smartcoach_mobile_coach.memory.plan_memory_store import (
             coach_memory_entries_for_plan_generation,
             coach_memory_hints_for_plan_generation,
         )

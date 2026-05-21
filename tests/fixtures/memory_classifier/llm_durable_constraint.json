@@ -1,0 +1,7 @@
+{
+  "memory_kind": "durable",
+  "durable_type": "constraint",
+  "confidence": 0.92,
+  "cost": 0.00013,
+  "model": "gpt-4o-mini"
+}

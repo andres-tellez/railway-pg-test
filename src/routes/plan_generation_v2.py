@@ -43,7 +43,7 @@ def run_v2_plan_generation(
         # Phase G — surface memory inputs, but resolve long_run_day in one shared place.
         try:
             uid_u = uuid_mod.UUID(str(user_id))
-            from src.services.coach.user_plan_memory_service import (
+            from src.smartcoach_mobile_coach.memory.plan_memory_store import (
                 coach_memory_entries_for_plan_generation,
                 coach_memory_hints_for_plan_generation,
             )

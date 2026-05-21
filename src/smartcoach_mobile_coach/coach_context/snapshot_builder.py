@@ -31,7 +31,9 @@ from src.smartcoach_mobile_coach.coach_context.athlete_profile import (
     build_athlete_slice,
 )
 from src.smartcoach_mobile_coach.coach_context.budget import apply_budget
-from src.smartcoach_mobile_coach.coach_context.memory_context import build_memory_slice
+from src.smartcoach_mobile_coach.memory.coach_snapshot_memory_slice import (
+    build_memory_slice,
+)
 from src.smartcoach_mobile_coach.coach_context.plan_context import build_plan_slice
 from src.smartcoach_mobile_coach.coach_context.schemas import (
     CoachSnapshot,

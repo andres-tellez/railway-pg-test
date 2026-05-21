@@ -8,7 +8,7 @@ from src.routes.plan_generation_v2 import (
     build_standard_draft_payload,
     run_v2_plan_generation,
 )
-from src.services.coach.user_plan_memory_service import (
+from src.smartcoach_mobile_coach.memory.plan_memory_store import (
     MEMORY_SOURCE_COACH_TOOL,
     append_plan_memory,
     coach_memory_entries_for_plan_generation,

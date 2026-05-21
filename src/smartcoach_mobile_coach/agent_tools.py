@@ -1414,7 +1414,7 @@ def tool_remember_plan_preference(
 
     from datetime import datetime, timezone
 
-    from src.services.coach.user_plan_memory_service import (
+    from src.smartcoach_mobile_coach.memory.plan_memory_store import (
         MEMORY_SOURCE_COACH_TOOL,
         append_plan_memory,
     )

@@ -29,9 +29,10 @@ import os
 import re
 import time
 import unicodedata
-from datetime import date
+from datetime import date, datetime, timezone
 from dataclasses import replace
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -71,10 +72,15 @@ from src.smartcoach_mobile_coach.plan_guidance_contract import (
 from src.smartcoach_mobile_coach.plan_vs_actual_contract import (
     plan_vs_actual_contract_section,
 )
-from src.smartcoach_mobile_coach.session_summary_read import (
+from src.smartcoach_mobile_coach.memory.session_summary_read import (
     has_prior_assistant_message,
     read_most_recent_session_summary,
     session_summary_section,
+)
+from src.smartcoach_mobile_coach.memory import (
+    Scope as MemoryScope,
+    build_memory_service,
+    load_memory_config,
 )
 from src.smartcoach_mobile_coach.tool_dispatch import dispatch_tool_batch
 from src.smartcoach_mobile_coach.plan_intake_activity_context import (
@@ -2242,8 +2248,56 @@ def _prior_session_summary_section(
         return ""
     if not internal_user_id:
         return ""
+
+    # Legacy baseline (always available) for fallback and optional parity logging.
     summary = read_most_recent_session_summary(session, internal_user_id)
-    return session_summary_section(summary)
+    legacy_section = session_summary_section(summary)
+
+    cfg = load_memory_config()
+    if not cfg.enabled:
+        return legacy_section
+
+    try:
+        user_uuid = UUID(str(internal_user_id))
+    except (TypeError, ValueError):
+        return legacy_section
+
+    try:
+        memory_service = build_memory_service(session, cfg)
+        view = memory_service.get_view(
+            MemoryScope(
+                user_id=user_uuid,
+                now=datetime.now(timezone.utc),
+                conversation_id=None,
+                local_date=None,
+                opening_turn=True,
+                activity_id=None,
+            )
+        )
+        memory_section = memory_service.render_prompt_section(view)
+        if cfg.shadow_mode:
+            _log_memory_parity(
+                legacy_section=legacy_section, memory_section=memory_section
+            )
+        return memory_section or legacy_section
+    except Exception:
+        logger.warning(
+            "[memory] opening-turn read failed; falling back to legacy session_summary_read",
+            exc_info=True,
+        )
+        return legacy_section
+
+
+def _log_memory_parity(*, legacy_section: str, memory_section: str) -> None:
+    legacy = (legacy_section or "").strip()
+    memory = (memory_section or "").strip()
+    match = legacy == memory
+    logger.info(
+        "[api] memory_parity: %s chars_v1=%s chars_v2=%s",
+        "match" if match else "drift",
+        len(legacy),
+        len(memory),
+    )
 
 
 def _user_context_opening_nudge_section(
@@ -2406,11 +2460,15 @@ def persist_explicit_goal_plan_memory(
         return
     import uuid as _uuid
 
-    from src.services.coach.user_plan_memory_service import (
-        MEMORY_SOURCE_COACH_TOOL,
-        append_plan_memory,
-    )
     from src.smartcoach_mobile_coach import user_context_cache
+    from src.smartcoach_mobile_coach.memory import (
+        Observation,
+        Source,
+        build_memory_service,
+        load_memory_config,
+    )
+    from src.smartcoach_mobile_coach.memory.domain.types import Provenance
+    from src.smartcoach_mobile_coach.memory.domain.vocab import MemoryKind
 
     try:
         user_uuid = _uuid.UUID(str(internal_user_id))
@@ -2420,18 +2478,48 @@ def persist_explicit_goal_plan_memory(
         )
         return
 
-    row, deduplicated = append_plan_memory(
-        session,
-        user_uuid,
-        text,
-        source=MEMORY_SOURCE_COACH_TOOL,
-        memory_type="goal",
-    )
-    if row is None:
-        logger.warning(
-            "[explicit_goal_memory] persist skipped: append_plan_memory no row"
+    memory_cfg = load_memory_config()
+    deduplicated = False
+    if memory_cfg.enabled:
+        result = build_memory_service(session, memory_cfg).record(
+            Observation(
+                user_id=user_uuid,
+                text=text,
+                kind=MemoryKind.DURABLE,
+                provenance=Provenance(
+                    source=Source.COACH_TOOL,
+                    captured_at=datetime.now(timezone.utc),
+                    conversation_id=None,
+                ),
+                hints={"durable_type": "goal", "path": "explicit_goal_fallback"},
+            )
         )
-        return
+        if result.action == "rejected":
+            logger.warning(
+                "[explicit_goal_memory] persist skipped: memory_service rejected (%s)",
+                result.reason,
+            )
+            return
+        deduplicated = result.action == "deduped"
+    else:
+        from src.smartcoach_mobile_coach.memory.plan_memory_store import (
+            MEMORY_SOURCE_COACH_TOOL,
+            append_plan_memory,
+        )
+
+        row, dedup = append_plan_memory(
+            session,
+            user_uuid,
+            text,
+            source=MEMORY_SOURCE_COACH_TOOL,
+            memory_type="goal",
+        )
+        if row is None:
+            logger.warning(
+                "[explicit_goal_memory] persist skipped: append_plan_memory no row"
+            )
+            return
+        deduplicated = dedup
 
     try:
         session.commit()

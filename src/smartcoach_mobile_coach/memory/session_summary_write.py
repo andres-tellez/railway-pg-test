@@ -11,15 +11,15 @@ from typing import Any, Dict, List, Optional, Union
 
 from sqlalchemy.orm import Session
 
-from src.db.models.session_summaries import SessionSummary
-from src.services.coach.user_plan_memory_service import (
-    MEMORY_SOURCE_SESSION_SUMMARY,
-    append_plan_memory,
-)
+from src.db.models.memory.session_summaries import SessionSummary
 from src.services.security.external_apis.openai_service import (
     CostLimitExceededError,
     RateLimitExceededError,
     get_openai_service,
+)
+from src.smartcoach_mobile_coach.memory.plan_memory_store import (
+    MEMORY_SOURCE_SESSION_SUMMARY,
+    append_plan_memory,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,6 @@ _GENERIC_CHAFF = (
     "well done",
 )
 
-# Require at least one training-relevant token (filters one-off chit-chat).
 _SIGNAL_RE = re.compile(
     r"\b(prefer|rather|only|can't|cannot|must|avoid|never|schedule|week|training|"
     r"long run|days per|injury|goal|marathon|half|easy|tempo|pace|mile|miles|rest|"
@@ -56,7 +55,6 @@ _SIGNAL_RE = re.compile(
 
 
 def worth_persisting_extracted_plan_memory(text: str) -> bool:
-    """True when a summarizer-extracted line is stable enough to store as Layer C."""
     t = (text or "").strip()
     if len(t) < _MIN_EXTRACTED_MEMORY_LEN:
         return False
@@ -69,7 +67,6 @@ def worth_persisting_extracted_plan_memory(text: str) -> bool:
 
 
 def filter_plan_memory_extractions(candidates: List[str]) -> List[str]:
-    """Drop vague / one-off lines before Layer C insert."""
     out: List[str] = []
     for raw in candidates:
         if not isinstance(raw, str):
@@ -94,7 +91,6 @@ def _summary_model() -> str:
 
 
 def extract_assistant_plain_text(assistant_reply: Union[str, Dict[str, Any]]) -> str:
-    """Match mobile structured envelopes to a single plain string for summarization."""
     if isinstance(assistant_reply, str):
         return assistant_reply.strip()
     if not isinstance(assistant_reply, dict):
@@ -106,7 +102,6 @@ def extract_assistant_plain_text(assistant_reply: Union[str, Dict[str, Any]]) ->
 
 
 def collect_tool_names_from_agent_meta(meta: Optional[Dict[str, Any]]) -> List[str]:
-    """Stable order-preserving list of tool names invoked this turn (from orchestrator meta)."""
     if not isinstance(meta, dict):
         return []
     timings = meta.get("timings_ms")
@@ -218,10 +213,6 @@ def maybe_write_session_summary_after_turn(
     assistant_reply: Union[str, Dict[str, Any]],
     meta: Optional[Dict[str, Any]],
 ) -> None:
-    """Best-effort Layer B write; never raises to callers.
-
-    Runs only when ``SMARTCOACH_SESSION_SUMMARY_WRITER_ENABLED`` is truthy.
-    """
     if not _writer_enabled():
         return
     try:
