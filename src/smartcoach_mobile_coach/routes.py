@@ -135,8 +135,6 @@ def _apply_card_once_layout_override(
     from src.smartcoach_mobile_coach.memory.domain.vocab import InteractionFlag
 
     cfg = load_memory_config()
-    if not cfg.enabled:
-        return payload, False, activity_id
     try:
         memory_service = build_memory_service(session, cfg)
         user_uuid = uuid.UUID(str(user_id))
@@ -831,13 +829,12 @@ def agent_messages(conversation_id):
                 )
 
                 mcfg = load_memory_config()
-                if mcfg.enabled:
-                    build_memory_service(session, mcfg).mark_interaction(
-                        user_id=uuid.UUID(str(uid_str)),
-                        conversation_id=uuid.UUID(str(conversation_id)),
-                        flag=InteractionFlag.RECAPPED_RUN,
-                        key=str(recapped_run_activity_id),
-                    )
+                build_memory_service(session, mcfg).mark_interaction(
+                    user_id=uuid.UUID(str(uid_str)),
+                    conversation_id=uuid.UUID(str(conversation_id)),
+                    flag=InteractionFlag.RECAPPED_RUN,
+                    key=str(recapped_run_activity_id),
+                )
             except Exception:
                 logger.warning(
                     "[memory] failed to mark RECAPPED_RUN interaction",
@@ -850,9 +847,6 @@ def agent_messages(conversation_id):
         # Phase F / Memory V2 summary persistence (separate session; failures never affect UX).
         try:
             from src.db.db_session import SessionLocal
-            from src.smartcoach_mobile_coach.memory.session_summary_write import (
-                maybe_write_session_summary_after_turn,
-            )
             from src.smartcoach_mobile_coach.memory.policies.summarizer import (
                 collect_tool_names_from_agent_meta,
             )
@@ -865,7 +859,7 @@ def agent_messages(conversation_id):
             w_session = SessionLocal()
             try:
                 memory_cfg = load_memory_config()
-                if memory_cfg.enabled and memory_cfg.summary_writer_enabled:
+                if memory_cfg.summary_writer_enabled:
                     memory_service = build_memory_service(w_session, memory_cfg)
                     memory_service.write_session_summary(
                         user_id=uuid.UUID(str(uid_str)),
@@ -877,16 +871,6 @@ def agent_messages(conversation_id):
                             else str(gpt_response)
                         ),
                         tool_names=collect_tool_names_from_agent_meta(meta),
-                    )
-                    w_session.commit()
-                elif not memory_cfg.enabled:
-                    maybe_write_session_summary_after_turn(
-                        w_session,
-                        internal_user_id=uid_str,
-                        conversation_id=uuid.UUID(str(conversation_id)),
-                        user_message=message.strip(),
-                        assistant_reply=gpt_response,
-                        meta=meta,
                     )
                     w_session.commit()
                 user_context_cache.invalidate_user_context(uid_str)
