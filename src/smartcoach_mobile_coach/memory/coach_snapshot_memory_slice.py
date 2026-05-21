@@ -1,19 +1,4 @@
-"""
-Purpose:
-- Build compact memory slice for CoachSnapshot.
-
-Responsibilities:
-- Project short memory snippets from canonical user_context payload.
-- Include session summary excerpt only for opening turns.
-
-Non-goals:
-- No memory writes.
-- No free-form summarization pipelines.
-
-Guardrails:
-- Allowed imports/calls: only payload passed in by snapshot builder.
-- Must not import orchestrator or DB models.
-"""
+"""Build compact memory slice for CoachSnapshot."""
 
 from __future__ import annotations
 
@@ -64,7 +49,6 @@ def build_memory_slice(
     user_context_payload: Dict[str, Any],
     opening_turn: bool,
 ) -> Optional[MemorySlice]:
-    """Build compact memory slice."""
     plan_memories = _compact_plan_memories(user_context_payload.get("plan_memories"))
     session_excerpt = _session_excerpt(
         user_context_payload.get("session_summary"), opening_turn

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy.orm import Session
 
-from src.db.models.user_plan_memories import (
+from src.db.models.memory.user_plan_memories import (
     MEMORY_SOURCE_COACH_TOOL,
     MEMORY_SOURCE_SESSION_SUMMARY,
     UserPlanMemory,
@@ -22,7 +22,6 @@ _MAX_HINT_CHARS = 600
 _MAX_MEMORIES_PER_USER = 20
 _DEDUPE_SIMILARITY_THRESHOLD = 0.85
 
-# Selection order for get_user_context (lower = earlier in list).
 _VALID_MEMORY_TYPES = frozenset(
     {
         "long_run_day",
@@ -152,7 +151,6 @@ def _find_semantic_duplicate(
 
 
 def _evict_oldest_if_at_cap(session: Session, user_id: uuid.UUID) -> None:
-    """Keep at most ``_MAX_MEMORIES_PER_USER - 1`` rows so one insert stays at cap."""
     while True:
         cnt = (
             session.query(UserPlanMemory)
@@ -181,11 +179,6 @@ def append_plan_memory(
     source: str,
     memory_type: Optional[str] = None,
 ) -> Tuple[Optional[UserPlanMemory], bool]:
-    """Insert one memory row when not a near-duplicate.
-
-    Returns ``(row, deduplicated)`` where ``deduplicated`` is True when an
-    existing row matched at similarity >= threshold (no insert).
-    """
     text = _normalize_memory_text(memory_text)
     if text is None:
         return None, False
@@ -230,7 +223,6 @@ def _memory_sort_key(row: UserPlanMemory) -> Tuple[int, float]:
 def _load_memories_for_selection(
     session: Session, user_id: uuid.UUID
 ) -> List[UserPlanMemory]:
-    """All rows for user (bounded) for prioritization."""
     cap = max(_MAX_MEMORIES_PER_USER, _MAX_CONTEXT_MEMORIES) + 5
     rows = (
         session.query(UserPlanMemory)
@@ -246,7 +238,6 @@ def _load_memories_for_selection(
 def memories_for_user_context(
     session: Session, user_id: uuid.UUID
 ) -> List[Dict[str, Any]]:
-    """Wire shape for ``get_user_context`` — max 8, type-priority then recency."""
     rows = _load_memories_for_selection(session, user_id)[:_MAX_CONTEXT_MEMORIES]
     out: List[Dict[str, Any]] = []
     for r in rows:
@@ -274,7 +265,6 @@ def coach_memory_hints_for_plan_generation(
     session: Session,
     user_id: uuid.UUID,
 ) -> List[str]:
-    """Short strings — same priority order as context, then take five."""
     rows = _load_memories_for_selection(session, user_id)[:5]
     hints: List[str] = []
     total = 0
@@ -295,7 +285,6 @@ def coach_memory_entries_for_plan_generation(
     session: Session,
     user_id: uuid.UUID,
 ) -> List[Dict[str, Any]]:
-    """Structured memory rows aligned with plan-generation hint priority."""
     rows = _load_memories_for_selection(session, user_id)[:5]
     out: List[Dict[str, Any]] = []
     for r in rows:
@@ -331,7 +320,6 @@ def infer_long_run_day_from_memory_hints(
     hints: Sequence[str],
     training_days: Sequence[str],
 ) -> Optional[str]:
-    """If memories clearly prefer a weekday for long runs, map into ``training_days``."""
     if not hints or not training_days:
         return None
     blob = " ".join(hints).lower()

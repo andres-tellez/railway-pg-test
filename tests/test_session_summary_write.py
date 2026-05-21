@@ -8,8 +8,8 @@ import uuid
 import pytest
 
 from src.db.models.user_identity import UserIdentity
-from src.db.models.user_plan_memories import UserPlanMemory
-from src.services.coach.session_summary_write import (
+from src.db.models.memory.user_plan_memories import UserPlanMemory
+from src.smartcoach_mobile_coach.memory.session_summary_write import (
     collect_tool_names_from_agent_meta,
     extract_assistant_plain_text,
     filter_plan_memory_extractions,
@@ -80,7 +80,7 @@ def test_maybe_write_skipped_when_disabled(test_db_session, uid, monkeypatch):
         meta={},
     )
     test_db_session.commit()
-    from src.db.models.session_summaries import SessionSummary
+    from src.db.models.memory.session_summaries import SessionSummary
 
     assert test_db_session.query(SessionSummary).count() == 0
 
@@ -107,7 +107,7 @@ def test_maybe_write_persists_when_enabled(test_db_session, uid, monkeypatch):
             )
 
     monkeypatch.setattr(
-        "src.services.coach.session_summary_write.get_openai_service",
+        "src.smartcoach_mobile_coach.memory.session_summary_write.get_openai_service",
         lambda: _FakeSvc(),
     )
 
@@ -126,7 +126,7 @@ def test_maybe_write_persists_when_enabled(test_db_session, uid, monkeypatch):
     )
     test_db_session.commit()
 
-    from src.db.models.session_summaries import SessionSummary
+    from src.db.models.memory.session_summaries import SessionSummary
 
     rows = test_db_session.query(SessionSummary).filter_by(user_id=uid).all()
     assert len(rows) == 1
@@ -159,7 +159,7 @@ def test_maybe_write_filters_trivial_plan_memories(test_db_session, uid, monkeyp
             )
 
     monkeypatch.setattr(
-        "src.services.coach.session_summary_write.get_openai_service",
+        "src.smartcoach_mobile_coach.memory.session_summary_write.get_openai_service",
         lambda: _FakeSvc(),
     )
 

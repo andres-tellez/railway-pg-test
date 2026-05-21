@@ -7,8 +7,8 @@ import uuid
 import pytest
 
 from src.db.models.user_identity import UserIdentity
-from src.db.models.user_plan_memories import UserPlanMemory
-from src.services.coach.user_plan_memory_service import (
+from src.db.models.memory.user_plan_memories import UserPlanMemory
+from src.smartcoach_mobile_coach.memory.plan_memory_store import (
     MEMORY_SOURCE_COACH_TOOL,
     append_plan_memory,
     coach_memory_hints_for_plan_generation,

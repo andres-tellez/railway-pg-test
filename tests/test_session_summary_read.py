@@ -30,8 +30,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.smartcoach_mobile_coach import session_summary_read
-from src.smartcoach_mobile_coach.session_summary_read import (
+from src.smartcoach_mobile_coach.memory import session_summary_read
+from src.smartcoach_mobile_coach.memory.session_summary_read import (
     SESSION_SUMMARY_READER_VERSION,
     has_prior_assistant_message,
     read_most_recent_session_summary,
@@ -69,7 +69,7 @@ def test_read_path_module_does_not_perform_writes() -> None:
     We assert this textually so an accidental write-helper addition
     fails the contract tests loudly.
     """
-    src = Path("src/smartcoach_mobile_coach/session_summary_read.py").read_text(
+    src = Path("src/smartcoach_mobile_coach/memory/session_summary_read.py").read_text(
         encoding="utf-8"
     )
     # Guard against accidental write statements. We match on SQL
@@ -177,7 +177,7 @@ def test_reader_queries_only_session_summaries_table_3c11_privacy() -> None:
     the property textually.
     """
     src_lower = (
-        Path("src/smartcoach_mobile_coach/session_summary_read.py")
+        Path("src/smartcoach_mobile_coach/memory/session_summary_read.py")
         .read_text(encoding="utf-8")
         .lower()
     )
@@ -187,9 +187,9 @@ def test_reader_queries_only_session_summaries_table_3c11_privacy() -> None:
     # message store) — curated summaries only.
     assert "conversation_messages" not in src_lower
     # Re-verify the helper name does appear (in has_prior_assistant_message).
-    src_raw = Path("src/smartcoach_mobile_coach/session_summary_read.py").read_text(
-        encoding="utf-8"
-    )
+    src_raw = Path(
+        "src/smartcoach_mobile_coach/memory/session_summary_read.py"
+    ).read_text(encoding="utf-8")
     assert "def has_prior_assistant_message(" in src_raw
 
 

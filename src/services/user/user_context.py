@@ -71,10 +71,12 @@ from src.db.models.plan_workouts import PlanWorkout
 from src.db.models.plans import Plan
 from src.db.models.user_athletes import UserAthleteLink
 from src.db.models.user_coach_preferences import UserCoachPreferences
-from src.db.models.session_summaries import SessionSummary
+from src.db.models.memory.session_summaries import SessionSummary
 from src.db.models.user_identity import UserIdentity
 from src.db.models.user_profile import UserProfile
-from src.services.coach.user_plan_memory_service import memories_for_user_context
+from src.smartcoach_mobile_coach.memory.plan_memory_store import (
+    memories_for_user_context,
+)
 from src.services.baseline.baseline_status import (
     BaselineStatus,
     compute_baseline_status_for_athlete,
