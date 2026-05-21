@@ -34,8 +34,6 @@ def _read_bool(env_name: str, default: bool) -> bool:
 class MemoryConfig:
     """Configuration snapshot for Memory module behavior."""
 
-    enabled: bool
-    shadow_mode: bool
     classifier_enabled: bool
     classifier_timeout_s: float
     summary_writer_enabled: bool
@@ -44,8 +42,6 @@ class MemoryConfig:
 def load_memory_config() -> MemoryConfig:
     """
     Return a conservative config snapshot.
-
-    Phase 1 intentionally defaults memory wiring to off.
     """
     timeout_raw = (os.getenv("SMARTCOACH_MEMORY_CLASSIFIER_TIMEOUT_S") or "").strip()
     try:
@@ -54,8 +50,6 @@ def load_memory_config() -> MemoryConfig:
         timeout_s = 1.5
 
     return MemoryConfig(
-        enabled=_read_bool("SMARTCOACH_MEMORY_V2", False),
-        shadow_mode=_read_bool("SMARTCOACH_MEMORY_V2_SHADOW", False),
         classifier_enabled=_read_bool("SMARTCOACH_MEMORY_V2_LLM_CLASSIFIER", True),
         classifier_timeout_s=max(0.1, timeout_s),
         summary_writer_enabled=_read_bool(

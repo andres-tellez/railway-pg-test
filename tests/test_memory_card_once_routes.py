@@ -3,14 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
 
 from src.smartcoach_mobile_coach.routes import _apply_card_once_layout_override
-
-
-@dataclass
-class _Cfg:
-    enabled: bool
 
 
 class _MemoryServiceStub:
@@ -43,10 +37,6 @@ def _payload(activity_id: int) -> dict:
 
 def test_card_once_forces_inline_when_marker_exists(monkeypatch):
     monkeypatch.setattr(
-        "src.smartcoach_mobile_coach.memory.load_memory_config",
-        lambda: _Cfg(enabled=True),
-    )
-    monkeypatch.setattr(
         "src.smartcoach_mobile_coach.memory.build_memory_service",
         lambda session, cfg: _MemoryServiceStub(has_marker=True),
     )
@@ -63,10 +53,6 @@ def test_card_once_forces_inline_when_marker_exists(monkeypatch):
 
 def test_card_once_marks_when_activity_id_only_on_data(monkeypatch):
     monkeypatch.setattr(
-        "src.smartcoach_mobile_coach.memory.load_memory_config",
-        lambda: _Cfg(enabled=True),
-    )
-    monkeypatch.setattr(
         "src.smartcoach_mobile_coach.memory.build_memory_service",
         lambda session, cfg: _MemoryServiceStub(has_marker=False),
     )
@@ -81,10 +67,6 @@ def test_card_once_marks_when_activity_id_only_on_data(monkeypatch):
 
 
 def test_card_once_marks_first_recap_when_no_marker(monkeypatch):
-    monkeypatch.setattr(
-        "src.smartcoach_mobile_coach.memory.load_memory_config",
-        lambda: _Cfg(enabled=True),
-    )
     monkeypatch.setattr(
         "src.smartcoach_mobile_coach.memory.build_memory_service",
         lambda session, cfg: _MemoryServiceStub(has_marker=False),
