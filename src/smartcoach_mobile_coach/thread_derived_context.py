@@ -61,6 +61,16 @@ def _parse_run_summary_stored(content: str) -> Optional[Dict[str, Any]]:
     return obj
 
 
+def activity_id_from_run_summary_envelope(payload: Dict[str, Any]) -> Optional[int]:
+    """
+    Canonical activity key for persisted ``run_summary`` assistant payloads.
+
+    Resolution order mirrors what we store from Run Review (``data.activity_id``)
+    and legacy shapes (facts / comparison nests).
+    """
+    return _activity_id_from_run_summary(payload)
+
+
 def _activity_id_from_run_summary(obj: Dict[str, Any]) -> Optional[int]:
     data = obj.get("data")
     if not isinstance(data, dict):

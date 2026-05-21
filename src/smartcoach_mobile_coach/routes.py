@@ -38,6 +38,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
 )
 from src.smartcoach_mobile_coach.thread_derived_context import (
     DerivedThreadCoachContext,
+    activity_id_from_run_summary_envelope,
     derive_thread_coach_context,
 )
 from src.utils.date_helpers import DAY_NAMES_ABBREV
@@ -106,18 +107,8 @@ def _extract_run_summary_activity_id(payload: Any) -> Optional[int]:
         return None
     if str(payload.get("type") or "").strip().lower() != "run_summary":
         return None
-    data = payload.get("data")
-    if not isinstance(data, dict):
-        return None
-    facts = data.get("facts")
-    if not isinstance(facts, dict):
-        return None
-    raw = facts.get("activity_id")
-    try:
-        val = int(raw)
-    except (TypeError, ValueError):
-        return None
-    return val if val > 0 else None
+    aid = activity_id_from_run_summary_envelope(payload)
+    return aid if aid is not None and aid > 0 else None
 
 
 def _apply_card_once_layout_override(
