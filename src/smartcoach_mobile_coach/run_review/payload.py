@@ -34,6 +34,9 @@ def build_payload_data(ctx: RunReviewContext) -> Dict[str, Any]:
     data: Dict[str, Any] = {
         "facts": ctx.facts,
     }
+    # Wire-level id for RunSummaryCard + card-once (tool facts omit nested id).
+    if ctx.activity_id and int(ctx.activity_id) > 0:
+        data["activity_id"] = int(ctx.activity_id)
     if ctx.training_kpis is not None:
         data["training_kpis"] = ctx.training_kpis
     if ctx.zone_bounds is not None:
