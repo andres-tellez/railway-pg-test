@@ -33,9 +33,6 @@ def save_user_profile(session: Session, profile_data: dict):
         existing_profile.hrmax_calculated_at = profile_data.get("hrmax_calculated_at")
         existing_profile.hrmax_confidence = profile_data.get("hrmax_confidence")
         existing_profile.hrmax_activity_count = profile_data.get("hrmax_activity_count")
-        existing_profile.last_hrmax_activity_id = profile_data.get(
-            "last_hrmax_activity_id"
-        )
         existing_profile.unit_system = profile_data.get("unit_system")
 
         session.commit()
@@ -57,7 +54,6 @@ def save_user_profile(session: Session, profile_data: dict):
         hrmax_calculated_at=profile_data.get("hrmax_calculated_at"),
         hrmax_confidence=profile_data.get("hrmax_confidence"),
         hrmax_activity_count=profile_data.get("hrmax_activity_count"),
-        last_hrmax_activity_id=profile_data.get("last_hrmax_activity_id"),
         unit_system=profile_data.get("unit_system", "imperial"),
     )
     session.add(new_profile)
@@ -90,7 +86,6 @@ def get_user_profile(session: Session, user_id: str) -> dict:
         "hrmax_calculated_at",
         "hrmax_confidence",
         "hrmax_activity_count",
-        "last_hrmax_activity_id",
         "unit_system",
     ]:
         if hasattr(profile, key):

@@ -161,7 +161,6 @@ class HRMaxResolutionService:
         profile_data["hrmax_calculated_at"] = None
         profile_data["hrmax_confidence"] = None
         profile_data["hrmax_activity_count"] = None
-        profile_data["last_hrmax_activity_id"] = None
         return profile_data
 
     @staticmethod
