@@ -17,8 +17,7 @@ class UserIdentity(Base):
     name = Column(String, nullable=True)
     picture = Column(String, nullable=True)
 
-    # Set when first full Strava sync + enrichment pipeline reports coach_data_ready;
-    # until then, mile splits / streams are not persisted (see persist_splits_for_user).
+    # Set when first full Strava sync + enrichment pipeline reports coach_data_ready.
     initial_strava_import_completed_at = Column(DateTime(timezone=True), nullable=True)
 
     # ✅ ensure default + update on change
