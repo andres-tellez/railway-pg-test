@@ -43,19 +43,16 @@ def persist_splits_for_user(session, user_id: Union[str, uuid.UUID, None]) -> bo
     """
     True when splits/streams should be fetched and persisted for this user.
 
-    Uses config.ENABLE_SPLITS as global kill switch and requires
-    ``initial_strava_import_completed_at`` on the user's row (NULL during first
-    onboarding). If ``user_id`` is omitted, only ``ENABLE_SPLITS`` applies.
+    Controlled only by ``config.ENABLE_SPLITS`` (including the first Strava
+    ingestion after OAuth). ``session`` and ``user_id`` are kept for call-site
+    compatibility and any future per-user overrides.
+
+    ``initial_strava_import_completed_at`` remains a separate product/telemetry
+    marker (see ``mark_initial_strava_import_complete``); it does not gate split
+    persistence.
     """
-    if not config.ENABLE_SPLITS:
-        return False
-    uid = _normalize_user_id(user_id)
-    if uid is None:
-        return True
-    row = session.query(UserIdentity).filter(UserIdentity.user_id == uid).first()
-    if row is None:
-        return True
-    return row.initial_strava_import_completed_at is not None
+    _ = session, user_id
+    return bool(config.ENABLE_SPLITS)
 
 
 def mark_initial_strava_import_complete(
