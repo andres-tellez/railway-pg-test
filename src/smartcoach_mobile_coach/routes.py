@@ -51,17 +51,17 @@ from src.services.product_analytics_service import record_product_event, truncat
 logger = logging.getLogger("smartcoach_mobile_coach")
 
 
-def _run_review_v2_trace_header(meta: Dict[str, Any]) -> Optional[str]:
-    """Summarize Run Review V2 gate/outcome for observability (non-secret)."""
+def _coach_response_trace_header(meta: Dict[str, Any]) -> Optional[str]:
+    """Summarize coach_response gate/outcome for observability (non-secret)."""
     timings = meta.get("timings_ms") or {}
-    gate = timings.get("run_review_v2_gate")
+    gate = timings.get("coach_response_gate")
     if not isinstance(gate, dict):
         return None
     if not gate.get("flag_enabled"):
         return "off"
-    if not gate.get("use_v2"):
+    if not gate.get("use_coach_response"):
         return "skipped"
-    outcome = timings.get("run_review_v2_outcome") or {}
+    outcome = timings.get("coach_response_outcome") or {}
     if outcome.get("served") is True:
         return "served"
     if outcome.get("served") is False:
@@ -69,28 +69,10 @@ def _run_review_v2_trace_header(meta: Dict[str, Any]) -> Optional[str]:
     return "pending"
 
 
-def _run_review_lab_trace_header(meta: Dict[str, Any]) -> Optional[str]:
-    """Summarize Run Review Lab gate/outcome for observability (non-secret)."""
+def _coach_response_fallback_reason(meta: Dict[str, Any]) -> Optional[str]:
+    """Return coach_response fallback reason when available in timing metadata."""
     timings = meta.get("timings_ms") or {}
-    gate = timings.get("run_review_lab_gate")
-    if not isinstance(gate, dict):
-        return None
-    if not gate.get("flag_enabled"):
-        return "off"
-    if not gate.get("use_lab"):
-        return "skipped"
-    outcome = timings.get("run_review_lab_outcome") or {}
-    if outcome.get("served") is True:
-        return "served"
-    if outcome.get("served") is False:
-        return "fallback"
-    return "pending"
-
-
-def _run_review_v2_fallback_reason(meta: Dict[str, Any]) -> Optional[str]:
-    """Return V2 fallback reason when available in timing metadata."""
-    timings = meta.get("timings_ms") or {}
-    outcome = timings.get("run_review_v2_outcome")
+    outcome = timings.get("coach_response_outcome")
     if not isinstance(outcome, dict):
         return None
     if outcome.get("served") is not False:
@@ -929,12 +911,9 @@ def agent_messages(conversation_id):
         resp_headers = {}
         if model_used:
             resp_headers["X-SmartCoach-Model-Used"] = model_used
-        v2_trace = _run_review_v2_trace_header(meta)
-        if v2_trace:
-            resp_headers["X-SmartCoach-Run-Review-V2"] = v2_trace
-        lab_trace = _run_review_lab_trace_header(meta)
-        if lab_trace:
-            resp_headers["X-SmartCoach-Run-Review-Lab"] = lab_trace
+        coach_response_trace = _coach_response_trace_header(meta)
+        if coach_response_trace:
+            resp_headers["X-SmartCoach-Coach-Response"] = coach_response_trace
 
         _log_agent_messages_response_audit(gpt_response)
 
@@ -959,12 +938,8 @@ def agent_messages(conversation_id):
                     "response": gpt_response,
                     "message_id": str(user_msg.id),
                     "response_time": elapsed,
-                    "run_review_v2_trace": v2_trace,
-                    "run_review_lab_trace": lab_trace,
-                    "run_review_lab_isolated_system": meta.get(
-                        "run_review_lab_isolated_system"
-                    ),
-                    "run_review_v2_fallback_reason": _run_review_v2_fallback_reason(
+                    "coach_response_trace": coach_response_trace,
+                    "coach_response_fallback_reason": _coach_response_fallback_reason(
                         meta
                     ),
                     "coach_context_trace": meta.get("coach_context_trace"),

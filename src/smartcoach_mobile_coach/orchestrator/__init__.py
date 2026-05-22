@@ -7,18 +7,6 @@ If `search_runs`, `aggregate_runs_in_range`, `get_training_kpis`, or
 (enabled list), built-in definitions are injected so tools still work without re-seeding.
 
 Max loops default 8; override with env SMARTCOACH_AGENT_MAX_LOOPS (clamped 2–15).
-
-Opening "how was my run?"–style turns can use ``run_recap_fastpath`` (single
-``chat_completion`` without tools) when ``SMARTCOACH_RUN_RECAP_FASTPATH`` is enabled.
-Gating lives in ``run_recap_policy`` (first user turn + phrase match); metadata includes
-``run_recap_fastpath_gate``. Empty first completion may trigger one retry
-(``SMARTCOACH_RUN_RECAP_FASTPATH_RETRY``) before the full tool loop.
-The LLM appendix uses **facts-only** compact JSON by default
-(``SMARTCOACH_RUN_RECAP_PREFETCH_SLIM``); full ``get_run_summary`` is still returned for the card.
-
-Split-detail turns (intent ``split_detail``) can use ``prefetch_split_detail`` +
-``system_appendix_for_split_prefetch`` (single ``chat_completion`` without tools)
-when ``SMARTCOACH_SPLIT_DETAIL_FASTPATH`` is enabled. See ``docs/SMARTCOACH_SYSTEM_SPEC_V1.md`` and ``docs/API_DOCUMENTATION.md``.
 """
 
 from __future__ import annotations
@@ -133,25 +121,11 @@ from src.smartcoach_mobile_coach.dialogue_manager import (
     plan_response,
     response_directive_section,
 )
-from src.smartcoach_mobile_coach.run_recap_fastpath import (
-    RUN_RECAP_FASTPATH_RETRY_APPENDIX,
-    prefetch_opening_anchor_run_recap,
-    prefetch_split_detail,
-    run_recap_fastpath_retry_on_empty_enabled,
-    system_appendix_for_prefetch,
-    system_appendix_for_split_prefetch,
-    wants_split_detail_fastpath,
-)
-from src.smartcoach_mobile_coach.run_recap_policy import decide_run_recap_fastpath
-from src.smartcoach_mobile_coach.run_review import (
-    RunReviewFallback,
-    RunReviewSkip,
-    handle_run_review_turn,
-    should_use_run_review_v2,
-)
-from src.smartcoach_mobile_coach.run_review_lab import (
-    handle_run_review_lab_turn,
-    should_use_run_review_lab,
+from src.smartcoach_mobile_coach.coach_response import (
+    CoachResponseFallback,
+    CoachResponseSkip,
+    handle_coach_response_turn,
+    should_use_coach_response,
 )
 from src.smartcoach_mobile_coach.run_summary_sections import (
     enrich_run_summary_payload_with_sections,
@@ -2017,12 +1991,6 @@ def _plan_intake_activity_context_enabled() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
-def _legacy_run_paths_enabled() -> bool:
-    """Enable deprecated V2/fastpath run paths for rollback only."""
-    raw = (os.getenv("SMARTCOACH_RUN_REVIEW_LEGACY_PATHS") or "1").strip().lower()
-    return raw not in ("0", "false", "no", "off")
-
-
 def _experiment_response_directive_stub(directive: ResponseDirective) -> str:
     """
     Tiny stand-in for response_directive_section() when
@@ -3268,7 +3236,6 @@ def run_mobile_agent_turn(
     loops = 0
     tool_result_cache: Dict[tuple, Dict[str, Any]] = {}
     max_loops = _max_agent_loops()
-    legacy_run_paths_enabled = _legacy_run_paths_enabled()
     latest_run_summary: Optional[Dict[str, Any]] = None
     latest_plan_intake_state: Optional[Dict[str, Any]] = (
         thread_ctx.latest_plan_intake_state
@@ -3277,44 +3244,40 @@ def run_mobile_agent_turn(
     )
     latest_plan_generation: Optional[Dict[str, Any]] = None
 
-    # --- Run Review Lab (SMARTCOACH_RUN_REVIEW_LAB) ----------------------
-    # Minimal prompt-scaffolding experiment: same data pipeline, less
-    # deterministic prose/rubric contract. Falls back to V2/legacy on any
-    # failure.
-    use_lab, lab_classification, lab_cfg = should_use_run_review_lab(
+    # --- Coach response isolated path -------------------------------------
+    use_coach_response, coach_classification, coach_cfg = should_use_coach_response(
         user_message=user_message,
         conversation_history=conversation_history,
         internal_user_id=internal_user_id,
         dialogue_intent=response_directive.intent,
     )
-    lab_route = None
-    if use_lab and lab_classification is not None:
-        if lab_classification.reason_code == "split_detail_intent":
-            lab_route = "split_intent"
-        elif lab_classification.scope == "splits_only":
-            lab_route = "classifier_splits"
+    coach_route = None
+    if use_coach_response and coach_classification is not None:
+        if coach_classification.reason_code == "split_detail_intent":
+            coach_route = "split_intent"
+        elif coach_classification.scope == "splits_only":
+            coach_route = "classifier_splits"
         else:
-            lab_route = "classifier"
-    timings_ms["run_review_lab_gate"] = {
-        "flag_enabled": lab_cfg.enabled,
-        "force_off": bool(getattr(lab_cfg, "force_off", False)),
-        "splits_enabled": lab_cfg.splits_enabled,
-        "use_lab": use_lab,
-        "lab_route": lab_route,
+            coach_route = "classifier"
+    timings_ms["coach_response_gate"] = {
+        "flag_enabled": coach_cfg.enabled,
+        "use_coach_response": use_coach_response,
+        "route": coach_route,
         "dialogue_intent": response_directive.intent,
-        "isolated_system": lab_cfg.isolated_system_enabled,
         "classifier": (
-            lab_classification.as_log_dict() if lab_classification is not None else None
+            coach_classification.as_log_dict()
+            if coach_classification is not None
+            else None
         ),
     }
     logger.info(
-        "[run_review_lab] gate flag_enabled=%s use_lab=%s",
-        lab_cfg.enabled,
-        use_lab,
+        "[coach_response] gate flag_enabled=%s use_coach_response=%s",
+        coach_cfg.enabled,
+        use_coach_response,
     )
-    if use_lab and lab_classification is not None:
+    if use_coach_response and coach_classification is not None:
         try:
-            lab_payload, lab_meta = handle_run_review_lab_turn(
+            coach_payload, coach_meta = handle_coach_response_turn(
                 session=session,
                 internal_user_id=internal_user_id,
                 user_message=user_message,
@@ -3343,22 +3306,22 @@ def run_mobile_agent_turn(
                 },
                 activity_id_hint=last_activity_id_hint,
                 thread_activity_id=thread_ctx.last_structured_run_activity_id,
-                cfg=lab_cfg,
-                classifier_result=lab_classification,
+                cfg=coach_cfg,
+                classifier_result=coach_classification,
             )
-        except (RunReviewFallback, RunReviewSkip) as exc:
-            timings_ms["run_review_lab_outcome"] = {
+        except (CoachResponseFallback, CoachResponseSkip) as exc:
+            timings_ms["coach_response_outcome"] = {
                 "served": False,
                 "reason": str(exc) or exc.__class__.__name__,
             }
             logger.info(
-                "[run_review_lab] fallback reason=%s; continuing into fallback paths",
+                "[coach_response] fallback reason=%s; continuing into fallback paths",
                 str(exc) or exc.__class__.__name__,
             )
         else:
-            timings_ms["run_review_lab_outcome"] = {"served": True}
-            lab_meta["timings_ms"] = {
-                **(lab_meta.get("timings_ms") or {}),
+            timings_ms["coach_response_outcome"] = {"served": True}
+            coach_meta["timings_ms"] = {
+                **(coach_meta.get("timings_ms") or {}),
                 **timings_ms,
                 "agent_orchestrator_total_ms": round(
                     (time.perf_counter() - t_agent0) * 1000, 2
@@ -3371,369 +3334,7 @@ def run_mobile_agent_turn(
                 messages,
                 explicit_goal_memory_persist_guard,
             )
-            return lab_payload, lab_meta
-
-    # V2 is deprecated in favor of Run Review Lab.
-    timings_ms["run_review_v2_gate"] = {
-        "deprecated": True,
-        "legacy_paths_enabled": legacy_run_paths_enabled,
-        "use_v2": False,
-        "plan_creation_mode": plan_creation_mode,
-    }
-    if legacy_run_paths_enabled:
-        logger.warning(
-            "[run_review_v2] deprecated path re-enabled by SMARTCOACH_RUN_REVIEW_LEGACY_PATHS"
-        )
-
-    recap_shadow_decision = None
-    if not plan_creation_mode:
-        recap_shadow_decision = decide_run_recap_fastpath(
-            user_message, conversation_history, anchor_local_date
-        )
-        timings_ms["run_recap_fastpath_shadow_gate"] = {
-            "eligible": recap_shadow_decision.eligible,
-            "reason_code": recap_shadow_decision.reason_code,
-            "prior_user_turns": recap_shadow_decision.prior_user_turn_count,
-        }
-
-    if plan_creation_mode:
-        recap_decision = None
-        timings_ms["run_recap_fastpath_gate"] = {
-            "eligible": False,
-            "reason_code": "disabled_for_plan_creation_mode",
-            "prior_user_turns": 0,
-        }
-    elif not legacy_run_paths_enabled:
-        recap_decision = None
-        timings_ms["run_recap_fastpath_gate"] = {
-            "eligible": False,
-            "reason_code": "deprecated_use_run_review_lab",
-            "prior_user_turns": 0,
-            "shadow_eligible": (
-                bool(recap_shadow_decision.eligible)
-                if recap_shadow_decision is not None
-                else False
-            ),
-        }
-    else:
-        recap_decision = recap_shadow_decision
-        timings_ms["run_recap_fastpath_gate"] = {
-            "eligible": recap_decision.eligible,
-            "reason_code": recap_decision.reason_code,
-            "prior_user_turns": recap_decision.prior_user_turn_count,
-        }
-
-    prefetch: Optional[Dict[str, Any]] = None
-    if recap_decision is not None and recap_decision.eligible:
-        if recap_decision.use_most_recent_run:
-            _tp0 = time.perf_counter()
-            prefetch = prefetch_opening_anchor_run_recap(
-                session,
-                internal_user_id,
-                anchor_local_date,
-                use_most_recent_run=True,
-            )
-            timings_ms["fastpath_prefetch_ms"] = round(
-                (time.perf_counter() - _tp0) * 1000, 2
-            )
-            recap_run_local_date = (
-                (prefetch or {}).get("find_runs_by_date") or {}
-            ).get("local_date") or ""
-            recap_run_local_date = str(recap_run_local_date).strip()[:10]
-            prose_anchor_day = "latest"
-        else:
-            recap_run_local_date = (
-                recap_decision.prefetch_local_date or anchor_local_date
-            ).strip()[:10]
-            if recap_decision.reason_code == "eligible_yesterday":
-                prose_anchor_day = "yesterday"
-            else:
-                prose_anchor_day = "today"
-            _tp0 = time.perf_counter()
-            prefetch = prefetch_opening_anchor_run_recap(
-                session, internal_user_id, recap_run_local_date
-            )
-            timings_ms["fastpath_prefetch_ms"] = round(
-                (time.perf_counter() - _tp0) * 1000, 2
-            )
-        if prefetch:
-            logger.info(
-                "[coach_fastpath] run_recap_opening user=%s… activity_id=%s gate=%s comparisons=%s week_volume=%s",
-                str(internal_user_id)[:8],
-                prefetch["activity_id"],
-                recap_decision.reason_code,
-                len(prefetch.get("comparison_for_llm") or []),
-                1 if prefetch.get("week_volume_for_llm") else 0,
-            )
-
-    if prefetch:
-        augmented_system = system_content + system_appendix_for_prefetch(
-            prefetch,
-            recap_run_local_date,
-            prose_anchor_day=prose_anchor_day,
-        )
-        cc_messages: List[Dict[str, str]] = [
-            {"role": "system", "content": augmented_system}
-        ]
-        for m in conversation_history[-history_window:]:
-            if m.get("role") in ("user", "assistant") and m.get("content"):
-                cc_messages.append(
-                    {
-                        "role": str(m["role"]),
-                        "content": str(m.get("content", "")).strip(),
-                    }
-                )
-        cc_messages.append({"role": "user", "content": user_message.strip()})
-        try:
-            _t_llm0 = time.perf_counter()
-            _fp_cap = int(
-                os.getenv("SMARTCOACH_RUN_RECAP_FASTPATH_MAX_TOKENS", "768") or "0"
-            )
-            _fp_max_tokens = min(max_tokens, _fp_cap) if _fp_cap > 0 else max_tokens
-            cc_result = service.chat_completion(
-                messages=cc_messages,
-                user_id=str(internal_user_id),
-                model=model,
-                temperature=temperature,
-                max_tokens=_fp_max_tokens,
-                timeout=timeout,
-            )
-            timings_ms["fastpath_llm_ms"] = round(
-                (time.perf_counter() - _t_llm0) * 1000, 2
-            )
-        except Exception:
-            logger.exception(
-                "[coach_fastpath] chat_completion failed; using full agent loop"
-            )
-        else:
-            text_fp = (cc_result.content or "").strip()
-            ok_payload = _valid_run_summary_tool_payload(prefetch["get_run_summary"])
-            completions_for_usage: List[Any] = [cc_result]
-
-            if (
-                not text_fp
-                and run_recap_fastpath_retry_on_empty_enabled()
-                and ok_payload is not None
-            ):
-                augmented_retry = augmented_system + RUN_RECAP_FASTPATH_RETRY_APPENDIX
-                cc_retry: List[Dict[str, str]] = [
-                    {"role": "system", "content": augmented_retry}
-                ]
-                for m in conversation_history[-history_window:]:
-                    if m.get("role") in ("user", "assistant") and m.get("content"):
-                        cc_retry.append(
-                            {
-                                "role": str(m["role"]),
-                                "content": str(m.get("content", "")).strip(),
-                            }
-                        )
-                cc_retry.append({"role": "user", "content": user_message.strip()})
-                try:
-                    _t_r0 = time.perf_counter()
-                    cc_result_retry = service.chat_completion(
-                        messages=cc_retry,
-                        user_id=str(internal_user_id),
-                        model=model,
-                        temperature=min(temperature, 0.35),
-                        max_tokens=_fp_max_tokens,
-                        timeout=timeout,
-                    )
-                    timings_ms["fastpath_retry_llm_ms"] = round(
-                        (time.perf_counter() - _t_r0) * 1000, 2
-                    )
-                    completions_for_usage.append(cc_result_retry)
-                    text_fp = (cc_result_retry.content or "").strip()
-                    logger.info(
-                        "[coach_fastpath] run_recap_empty_retry user=%s… len=%s",
-                        str(internal_user_id)[:8],
-                        len(text_fp),
-                    )
-                except Exception:
-                    logger.exception(
-                        "[coach_fastpath] retry chat_completion failed; using full agent loop"
-                    )
-
-            if text_fp and ok_payload is not None:
-                for res in completions_for_usage:
-                    for k in total_usage:
-                        total_usage[k] += res.usage.get(k, 0)
-                    total_cost += res.cost
-                loops = 1
-                timings_ms["agent_loop_rounds"] = []
-                timings_ms["agent_orchestrator_total_ms"] = round(
-                    (time.perf_counter() - t_agent0) * 1000, 2
-                )
-                meta_fp: Dict[str, Any] = {
-                    "usage": total_usage,
-                    "cost": total_cost,
-                    "loops": loops,
-                    "max_loops": max_loops,
-                    "model": model,
-                    "run_recap_fastpath": True,
-                    "timings_ms": timings_ms,
-                    "dialogue": {
-                        "turn_type": response_directive.turn_type,
-                        "intent": response_directive.intent,
-                        "turn_count": conversation_state.turn_count,
-                        "last_topic": conversation_state.last_topic,
-                        "target_length": response_directive.target_length,
-                        "narration_mode": response_directive.narration_mode,
-                        "tool_strategy": response_directive.tool_strategy,
-                        "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
-                        "allow_full_recap": response_directive.allow_full_recap,
-                        "investigate_first": response_directive.investigate_first,
-                        "interaction_mode": response_directive.interaction_mode,
-                        "thread_derived": thread_ctx.as_dict(),
-                    },
-                }
-                structured_fp = {
-                    "type": "run_summary",
-                    "content": text_fp,
-                    "data": ok_payload,
-                }
-                structured_fp, sections_fp = enrich_run_summary_payload_with_sections(
-                    structured_fp
-                )
-                if sections_fp:
-                    meta_fp["run_summary_sections"] = True
-                logger.info(
-                    "[smartcoach_mobile_coach] response_shape=run_summary "
-                    "loops=%s fastpath=1 content_len=%s timings_ms=%s",
-                    loops,
-                    len(structured_fp.get("content") or ""),
-                    timings_ms,
-                )
-                _maybe_run_explicit_goal_memory_fallback(
-                    session,
-                    internal_user_id,
-                    stashed_explicit_goal_text,
-                    messages,
-                    explicit_goal_memory_persist_guard,
-                )
-                return structured_fp, meta_fp
-            logger.warning(
-                "[coach_fastpath] empty model text or invalid summary; using full agent loop"
-            )
-
-    split_shadow_eligible = bool(
-        (not plan_creation_mode)
-        and wants_split_detail_fastpath(response_directive.intent)
-    )
-    timings_ms["split_fastpath_shadow_gate"] = {
-        "eligible": split_shadow_eligible,
-        "intent": response_directive.intent,
-    }
-
-    split_prefetch: Optional[Dict[str, Any]] = None
-    if legacy_run_paths_enabled and (not plan_creation_mode) and split_shadow_eligible:
-        _sp0 = time.perf_counter()
-        split_prefetch = prefetch_split_detail(
-            session,
-            internal_user_id,
-            anchor_local_date,
-            last_activity_id_hint=last_activity_id_hint,
-            thread_activity_id=thread_ctx.last_structured_run_activity_id,
-        )
-        timings_ms["split_fastpath_prefetch_ms"] = round(
-            (time.perf_counter() - _sp0) * 1000, 2
-        )
-        if split_prefetch:
-            logger.info(
-                "[coach_fastpath] split_detail user=%s… activity_id=%s source=%s",
-                str(internal_user_id)[:8],
-                split_prefetch.get("activity_id"),
-                split_prefetch.get("resolved_from"),
-            )
-
-    if split_prefetch:
-        augmented_system = system_content + system_appendix_for_split_prefetch(
-            split_prefetch, anchor_local_date
-        )
-        cc_messages: List[Dict[str, str]] = [
-            {"role": "system", "content": augmented_system}
-        ]
-        for m in conversation_history[-history_window:]:
-            if m.get("role") in ("user", "assistant") and m.get("content"):
-                cc_messages.append(
-                    {
-                        "role": str(m["role"]),
-                        "content": str(m.get("content", "")).strip(),
-                    }
-                )
-        cc_messages.append({"role": "user", "content": user_message.strip()})
-        try:
-            _t_sllm0 = time.perf_counter()
-            _sp_cap = int(
-                os.getenv("SMARTCOACH_SPLIT_DETAIL_FASTPATH_MAX_TOKENS", "1024") or "0"
-            )
-            _sp_max_tokens = min(max_tokens, _sp_cap) if _sp_cap > 0 else max_tokens
-            cc_result = service.chat_completion(
-                messages=cc_messages,
-                user_id=str(internal_user_id),
-                model=model,
-                temperature=temperature,
-                max_tokens=_sp_max_tokens,
-                timeout=timeout,
-            )
-            timings_ms["split_fastpath_llm_ms"] = round(
-                (time.perf_counter() - _t_sllm0) * 1000, 2
-            )
-        except Exception:
-            logger.exception(
-                "[coach_fastpath] split_detail chat_completion failed; using full agent loop"
-            )
-        else:
-            text_fp = (cc_result.content or "").strip()
-            if text_fp:
-                for k in total_usage:
-                    total_usage[k] = cc_result.usage.get(k, 0)
-                total_cost = cc_result.cost
-                loops = 1
-                timings_ms["agent_loop_rounds"] = []
-                timings_ms["agent_orchestrator_total_ms"] = round(
-                    (time.perf_counter() - t_agent0) * 1000, 2
-                )
-                meta_fp: Dict[str, Any] = {
-                    "usage": total_usage,
-                    "cost": total_cost,
-                    "loops": loops,
-                    "max_loops": max_loops,
-                    "model": model,
-                    "split_detail_fastpath": True,
-                    "timings_ms": timings_ms,
-                    "dialogue": {
-                        "turn_type": response_directive.turn_type,
-                        "intent": response_directive.intent,
-                        "turn_count": conversation_state.turn_count,
-                        "last_topic": conversation_state.last_topic,
-                        "target_length": response_directive.target_length,
-                        "narration_mode": response_directive.narration_mode,
-                        "tool_strategy": response_directive.tool_strategy,
-                        "avoid_repeating_metrics": response_directive.avoid_repeating_metrics,
-                        "allow_full_recap": response_directive.allow_full_recap,
-                        "investigate_first": response_directive.investigate_first,
-                        "interaction_mode": response_directive.interaction_mode,
-                        "thread_derived": thread_ctx.as_dict(),
-                    },
-                }
-                logger.info(
-                    "[smartcoach_mobile_coach] response_shape=text "
-                    "loops=%s split_fastpath=1 content_len=%s timings_ms=%s",
-                    loops,
-                    len(text_fp),
-                    timings_ms,
-                )
-                _maybe_run_explicit_goal_memory_fallback(
-                    session,
-                    internal_user_id,
-                    stashed_explicit_goal_text,
-                    messages,
-                    explicit_goal_memory_persist_guard,
-                )
-                return text_fp, meta_fp
-            logger.warning(
-                "[coach_fastpath] split_detail empty model text; using full agent loop"
-            )
+            return coach_payload, coach_meta
 
     turn_had_plan_intake_update = False
     for _ in range(max_loops):

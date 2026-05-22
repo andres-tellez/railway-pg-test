@@ -1,4 +1,4 @@
-"""Run Review V2 telemetry — best-effort, never raises."""
+"""Coach response telemetry — best-effort, never raises."""
 
 from __future__ import annotations
 
@@ -10,27 +10,23 @@ from src.services.product_analytics_service import record_product_event, truncat
 logger = logging.getLogger("smartcoach_mobile_coach")
 
 
-def record_run_review_event(
+def record_coach_response_event(
     *,
     user_id: Optional[str],
     outcome: str,
     user_message: str,
     properties: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Emit one ``coach_run_review`` product analytics event.
-
-    ``outcome`` is a short string like ``"served"``, ``"fallback"``, ``"skip"``.
-    The user message is truncated so we never persist long bodies.
-    """
+    """Emit one ``coach_response_v1`` product analytics event."""
     props: Dict[str, Any] = dict(properties or {})
     props.setdefault("user_message_preview", truncate_text(user_message, 240))
     try:
         record_product_event(
-            event_name="coach_run_review",
+            event_name="coach_response_v1",
             outcome=outcome,
             user_id=user_id,
             source="server",
             properties=props,
         )
     except Exception:
-        logger.debug("coach_run_review analytics skipped", exc_info=True)
+        logger.debug("coach_response_v1 analytics skipped", exc_info=True)

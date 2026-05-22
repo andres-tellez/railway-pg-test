@@ -114,7 +114,7 @@ def create_app(test_config=None):
             "Content-Type",
             "Authorization",
             "X-SmartCoach-Model-Used",
-            "X-SmartCoach-Run-Review-V2",
+            "X-SmartCoach-Coach-Response",
         ],
     )
     print("[DEBUG] Raw CORS_ORIGINS from env:", repr(cors_origins), flush=True)
@@ -185,17 +185,17 @@ def create_app(test_config=None):
     app.register_blueprint(internal_cron_bp)
     app.register_blueprint(analytics_bp)
 
-    # Run Review V2 — one line at startup so deploy logs show flag resolution.
-    from src.smartcoach_mobile_coach.run_review.config import (
-        load_config as _load_rr_cfg,
+    # Coach response v1 — one line at startup so deploy logs show flag resolution.
+    from src.smartcoach_mobile_coach.coach_response.config import (
+        load_coach_response_config as _load_coach_response_cfg,
     )
 
-    _rr = _load_rr_cfg()
-    _rr_raw = os.getenv("SMARTCOACH_RUN_REVIEW_V2")
+    _cr = _load_coach_response_cfg()
+    _cr_raw = os.getenv("SMARTCOACH_COACH_RESPONSE_V1")
     print(
-        "[run_review_v2] startup "
-        f"effective_enabled={_rr.enabled} classifier_mode={_rr.classifier_mode} "
-        f"env_SMARTCOACH_RUN_REVIEW_V2_is_set={bool((_rr_raw or '').strip())}",
+        "[coach_response_v1] startup "
+        f"effective_enabled={_cr.enabled} classifier_mode={_cr.classifier_mode} "
+        f"env_SMARTCOACH_COACH_RESPONSE_V1_is_set={bool((_cr_raw or '').strip())}",
         flush=True,
     )
 
