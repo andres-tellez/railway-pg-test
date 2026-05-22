@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from src.smartcoach_mobile_coach.agent_tools import (
-    _build_plan_generation_brief,
-    _plan_baseline_from_validation,
-    _plan_overview_from_validation,
+from src.smartcoach_mobile_coach.plan_generation.explanation import (
+    build_plan_generation_brief,
+    plan_baseline_from_validation,
+    plan_overview_from_validation,
 )
 
 
@@ -50,7 +50,7 @@ def test_plan_overview_extracts_phases_and_peaks():
         "workouts": [],
     }
 
-    out = _plan_overview_from_validation(validation_result, plan_request, saved)
+    out = plan_overview_from_validation(validation_result, plan_request, saved)
 
     assert out["plan_start_date"] == "2026-06-08"
     assert out["total_weeks"] == 4
@@ -92,7 +92,7 @@ def test_plan_baseline_uses_pass1_rationale():
             "recommended_weeks": 18,
         }
     }
-    out = _plan_baseline_from_validation(validation_result, activity_weeks=12)
+    out = plan_baseline_from_validation(validation_result, activity_weeks=12)
 
     assert out["source"] == "materialized_view"
     assert out["lookback_weeks_requested"] == 12
@@ -138,7 +138,7 @@ def test_plan_generation_brief_includes_preview_and_plan_tab_handoff():
             ]
         },
     }
-    out = _build_plan_generation_brief("Marathon", "2026-10-11", payload)
+    out = build_plan_generation_brief("Marathon", "2026-10-11", payload)
 
     assert "Your Marathon plan is saved for 2026-10-11." in out
     assert "**Week 1 starts:** Mon., June 8th" in out
