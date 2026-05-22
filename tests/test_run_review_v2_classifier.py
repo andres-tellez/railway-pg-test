@@ -1,4 +1,4 @@
-"""Unit tests for the Run Review V2 classifier.
+"""Unit tests for the coach_response classifier.
 
 These exercise the **deterministic** path only — no LLM is called.
 The LLM-router branch is covered separately by the entry test that
@@ -9,16 +9,16 @@ patches the OpenAI service.
 
 from __future__ import annotations
 
-from src.smartcoach_mobile_coach.run_review.classifier import (
+from src.smartcoach_mobile_coach.coach_response.classifier import (
     ClassifierResult,
     _heuristic_classify,
     classify_user_message,
 )
-from src.smartcoach_mobile_coach.run_review.config import RunReviewConfig
+from src.smartcoach_mobile_coach.coach_response.config import CoachResponseConfig
 
 
-def _cfg(classifier_mode: str = "heuristic") -> RunReviewConfig:
-    return RunReviewConfig(
+def _cfg(classifier_mode: str = "heuristic") -> CoachResponseConfig:
+    return CoachResponseConfig(
         enabled=True,
         classifier_mode=classifier_mode,
         fetch_splits=True,
@@ -101,7 +101,7 @@ def test_classify_user_message_skips_llm_on_high_confidence_yes(monkeypatch) -> 
         raise AssertionError("should not be called on high-confidence heuristic yes")
 
     monkeypatch.setattr(
-        "src.smartcoach_mobile_coach.run_review.classifier._llm_classify", _fake_llm
+        "src.smartcoach_mobile_coach.coach_response.classifier._llm_classify", _fake_llm
     )
     r = classify_user_message(
         user_message="How was my run today?",
@@ -119,7 +119,7 @@ def test_classify_user_message_skips_llm_on_high_confidence_no(monkeypatch) -> N
         raise AssertionError("should not be called on high-confidence heuristic no")
 
     monkeypatch.setattr(
-        "src.smartcoach_mobile_coach.run_review.classifier._llm_classify", _fake_llm
+        "src.smartcoach_mobile_coach.coach_response.classifier._llm_classify", _fake_llm
     )
     r = classify_user_message(
         user_message="Help me build a plan",
@@ -135,7 +135,7 @@ def test_classify_user_message_falls_back_when_llm_returns_none(monkeypatch) -> 
         return None
 
     monkeypatch.setattr(
-        "src.smartcoach_mobile_coach.run_review.classifier._llm_classify", _fake_llm
+        "src.smartcoach_mobile_coach.coach_response.classifier._llm_classify", _fake_llm
     )
     r = classify_user_message(
         user_message="was that ok?",  # short referential, low confidence
@@ -158,7 +158,7 @@ def test_classify_user_message_respects_llm_decision(monkeypatch) -> None:
         reason_code="llm_classified",
     )
     monkeypatch.setattr(
-        "src.smartcoach_mobile_coach.run_review.classifier._llm_classify",
+        "src.smartcoach_mobile_coach.coach_response.classifier._llm_classify",
         lambda **kwargs: fake,
     )
     r = classify_user_message(
@@ -177,7 +177,7 @@ def test_classify_user_message_heuristic_mode_never_calls_llm(monkeypatch) -> No
         raise AssertionError("LLM router should not run in heuristic mode")
 
     monkeypatch.setattr(
-        "src.smartcoach_mobile_coach.run_review.classifier._llm_classify", _fake_llm
+        "src.smartcoach_mobile_coach.coach_response.classifier._llm_classify", _fake_llm
     )
     r = classify_user_message(
         user_message="hmm not sure about that one",

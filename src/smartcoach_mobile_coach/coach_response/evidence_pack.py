@@ -1,8 +1,8 @@
 """
-Run Review V2 Evidence Pack (MVP: easy/Z2 only).
+Coach response evidence pack (MVP: easy/Z2 only).
 
-This module prepares compact factual evidence for the RunReview V2 prompt.
-It intentionally avoids coaching verdict labels and interpretation signals.
+This module prepares compact factual evidence for coach response turns.
+It intentionally avoids deterministic coaching verdict labels.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from src.db.models.activities import Activity
 from src.services.recent_run_rollup import compute_recent_run_rollup_for_user
 from src.services.scoring.zone_compliance import zone_distribution_from_activity
 from src.services.user.user_context import build_user_context_payload
+from src.smartcoach_mobile_coach.coach_response.context import WorkoutIntent
 from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
 from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
@@ -29,10 +30,9 @@ from src.smartcoach_mobile_coach.run_metrics import (
     distance_miles_from_meters,
     pace_sec_per_mi,
 )
-from src.smartcoach_mobile_coach.run_review.context import WorkoutIntent
 from src.smartcoach_mobile_coach.training_kpi_service import get_training_progress
 
-EVIDENCE_PACK_VERSION = "run_review_evidence_pack_v1_easy"
+EVIDENCE_PACK_VERSION = "coach_response_evidence_pack_v1_easy"
 SIMILAR_MAX_ROWS = 5
 SIMILAR_LOOKBACK_DAYS = 56
 EVIDENCE_PACK_MAX_CHARS = 1800
@@ -319,11 +319,7 @@ def build_evidence_pack(
     workout_intent: WorkoutIntent,
     is_easy_run: Optional[bool],
 ) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
-    """
-    Build evidence pack for easy/Z2 Run Review turns.
-
-    Returns ``(pack_or_none, trace_dict)``.
-    """
+    """Build evidence pack for easy/Z2 coach-response turns."""
     trace: Dict[str, Any] = {
         "enabled": True,
         "version": EVIDENCE_PACK_VERSION,

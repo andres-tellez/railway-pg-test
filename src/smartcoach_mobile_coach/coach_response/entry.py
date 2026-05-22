@@ -1,4 +1,4 @@
-"""Run Review Lab entrypoint: minimal prompt, same data pipeline."""
+"""Coach response entrypoint: single-call, fact-bundle driven."""
 
 from __future__ import annotations
 
@@ -12,45 +12,33 @@ from src.smartcoach_mobile_coach.coach_context import (
     build_snapshot,
     coach_context_v1_enabled,
 )
-from src.smartcoach_mobile_coach.dialogue_manager import INTENT_SPLIT_DETAIL
-from src.smartcoach_mobile_coach.run_review.classifier import (
+from src.smartcoach_mobile_coach.coach_response.classifier import (
     ClassifierResult,
     classify_user_message,
 )
-from src.smartcoach_mobile_coach.run_review.config import (
-    load_config as load_run_review_config,
+from src.smartcoach_mobile_coach.coach_response.config import (
+    CoachResponseConfig,
+    load_coach_response_config,
 )
-from src.smartcoach_mobile_coach.run_review.context_builder import build_context
-from src.smartcoach_mobile_coach.run_review.errors import (
-    RunReviewFallback,
-    RunReviewSkip,
-)
-from src.smartcoach_mobile_coach.run_review.payload import (
+from src.smartcoach_mobile_coach.coach_response.context_builder import build_context
+from src.smartcoach_mobile_coach.coach_response.envelope import (
     RUN_SUMMARY_LAYOUT_INLINE,
     RUN_SUMMARY_LAYOUT_RECAP,
-    build_run_review_envelope,
+    build_coach_response_envelope,
+    build_coach_response_meta,
 )
-from src.smartcoach_mobile_coach.run_review.telemetry import record_run_review_event
-from src.smartcoach_mobile_coach.run_review_lab.config import (
-    RunReviewLabConfig,
-    load_config,
+from src.smartcoach_mobile_coach.coach_response.errors import (
+    CoachResponseFallback,
+    CoachResponseSkip,
 )
-from src.smartcoach_mobile_coach.run_review_lab.responder import (
-    generate_review,
-    generate_splits_coaching,
-)
-from src.smartcoach_mobile_coach.run_review_lab.splits_content import (
-    compose_splits_turn_content,
-    render_deterministic_splits_block,
-)
-from src.smartcoach_mobile_coach.experiments.run_review_lab_isolated_system import (
-    build_isolated_lab_system_prefix,
+from src.smartcoach_mobile_coach.coach_response.responder import generate_review
+from src.smartcoach_mobile_coach.dialogue_manager import INTENT_SPLIT_DETAIL
+from src.smartcoach_mobile_coach.coach_response.telemetry import (
+    record_coach_response_event,
 )
 from src.smartcoach_mobile_coach.thread_derived_context import DerivedThreadCoachContext
 
 logger = logging.getLogger("smartcoach_mobile_coach")
-
-RUN_REVIEW_LAB_VERSION = "run_review_lab_minimal_v2"
 
 
 def _classification_for_split_detail_intent() -> ClassifierResult:
@@ -86,47 +74,40 @@ def _apply_split_intent_scope(
     )
 
 
-def should_use_run_review_lab(
+def should_use_coach_response(
     *,
     user_message: str,
     conversation_history: List[Dict[str, str]],
     internal_user_id: str,
     dialogue_intent: str = "",
-    cfg: Optional[RunReviewLabConfig] = None,
-) -> Tuple[bool, Optional[ClassifierResult], RunReviewLabConfig]:
-    snapshot = cfg or load_config()
-    if snapshot.force_off:
-        logger.info("[run_review_lab.entry] force_off enabled; gate=False")
-        return False, None, snapshot
+    cfg: Optional[CoachResponseConfig] = None,
+) -> Tuple[bool, Optional[ClassifierResult], CoachResponseConfig]:
+    snapshot = cfg or load_coach_response_config()
     if not snapshot.enabled:
         return False, None, snapshot
-    rr_cfg = load_run_review_config()
     try:
         result = classify_user_message(
             user_message=user_message,
             conversation_history=conversation_history,
             internal_user_id=internal_user_id,
-            cfg=rr_cfg,
+            cfg=snapshot,
         )
-    except Exception:  # pragma: no cover - defensive
+    except Exception:
         logger.warning(
-            "[run_review_lab.entry] classifier_threw_unexpectedly; gate=False",
+            "[coach_response.entry] classifier_threw_unexpectedly; gate=False",
             exc_info=True,
         )
         return False, None, snapshot
-
     intent = (dialogue_intent or "").strip()
     if result.is_run_review:
         routed = _apply_split_intent_scope(result, intent)
         return True, routed, snapshot
-
-    if snapshot.splits_enabled and intent == INTENT_SPLIT_DETAIL:
+    if intent == INTENT_SPLIT_DETAIL:
         return True, _classification_for_split_detail_intent(), snapshot
-
     return False, result, snapshot
 
 
-def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-locals
+def handle_coach_response_turn(  # pylint: disable=too-many-arguments,too-many-locals
     *,
     session: Session,
     internal_user_id: str,
@@ -143,27 +124,24 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
     response_directive_dialogue: Dict[str, Any],
     activity_id_hint: Optional[int] = None,
     thread_activity_id: Optional[int] = None,
-    cfg: Optional[RunReviewLabConfig] = None,
+    cfg: Optional[CoachResponseConfig] = None,
     classifier_result: Optional[ClassifierResult] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    lab_cfg = cfg or load_config()
-    if not lab_cfg.enabled:
-        raise RunReviewFallback("run_review_lab_flag_disabled")
-
-    rr_cfg = load_run_review_config()
+    del client_timezone, thread_derived_context
+    response_cfg = cfg or load_coach_response_config()
+    if not response_cfg.enabled:
+        raise CoachResponseFallback("coach_response_flag_disabled")
     classification = classifier_result
     if classification is None:
         classification = classify_user_message(
             user_message=user_message,
             conversation_history=conversation_history,
             internal_user_id=internal_user_id,
-            cfg=rr_cfg,
+            cfg=response_cfg,
         )
     if not classification.is_run_review:
-        raise RunReviewSkip("classifier_says_not_run_review")
-
-    lab_scope = (classification.scope or "single_run").strip()
-
+        raise CoachResponseSkip("classifier_says_not_run_review")
+    response_scope = (classification.scope or "single_run").strip()
     timings: Dict[str, Any] = {}
     coach_context_trace: Optional[Dict[str, Any]] = None
     coach_snapshot: Optional[Dict[str, Any]] = None
@@ -186,7 +164,7 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
                 "reason": "build_failed",
             }
             logger.warning(
-                "[coach_context] build failed inside run_review_lab; continuing without snapshot",
+                "[coach_context] build failed inside coach_response; continuing without snapshot",
                 exc_info=True,
             )
     else:
@@ -200,20 +178,20 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
             internal_user_id=internal_user_id,
             anchor_local_date=anchor_local_date,
             classifier=classification,
-            cfg=rr_cfg,
+            cfg=response_cfg,
             activity_id_hint=activity_id_hint,
             thread_activity_id=thread_activity_id,
         )
-    except RunReviewFallback as exc:
-        timings["run_review_lab_context_ms"] = round(
+    except CoachResponseFallback as exc:
+        timings["coach_response_context_ms"] = round(
             (time.perf_counter() - t_ctx0) * 1000, 2
         )
-        record_run_review_event(
+        record_coach_response_event(
             user_id=str(internal_user_id),
             outcome="fallback",
             user_message=user_message,
             properties={
-                "mode": "lab",
+                "mode": "coach_response_v1",
                 "stage": "context_build",
                 "reason": str(exc) or exc.__class__.__name__,
                 "classifier": classification.as_log_dict(),
@@ -221,107 +199,82 @@ def handle_run_review_lab_turn(  # pylint: disable=too-many-arguments,too-many-l
             },
         )
         raise
-    timings["run_review_lab_context_ms"] = round(
+    timings["coach_response_context_ms"] = round(
         (time.perf_counter() - t_ctx0) * 1000, 2
     )
 
-    if lab_cfg.isolated_system_enabled:
-        effective_base = build_isolated_lab_system_prefix(
-            anchor_local_date=anchor_local_date,
-            client_timezone=client_timezone,
-            session=session,
-            internal_user_id=str(internal_user_id),
-            thread_ctx=thread_derived_context,
+    if response_scope == "splits_only":
+        from src.smartcoach_mobile_coach.coach_response.splits_content import (
+            compose_splits_turn_content,
+            render_deterministic_splits_block,
         )
-    else:
-        effective_base = base_system_content or ""
 
-    splits_deterministic = False
-    if lab_scope == "splits_only":
         splits_block = render_deterministic_splits_block(ctx)
         if not splits_block:
-            raise RunReviewFallback("splits_only_missing_split_rows")
-        responder_out = generate_splits_coaching(
+            raise CoachResponseFallback("splits_only_missing_split_rows")
+        responder_out = generate_review(
             ctx=ctx,
             coach_snapshot=coach_snapshot,
-            base_system_content=effective_base,
+            base_system_content=base_system_content,
             conversation_history=conversation_history,
             user_message=user_message,
             history_window=history_window,
             internal_user_id=internal_user_id,
-            cfg=lab_cfg,
+            cfg=response_cfg,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
+            splits_coaching_only=True,
         )
         final_content = compose_splits_turn_content(splits_block, responder_out.content)
-        splits_deterministic = True
     else:
         responder_out = generate_review(
             ctx=ctx,
             coach_snapshot=coach_snapshot,
-            base_system_content=effective_base,
+            base_system_content=base_system_content,
             conversation_history=conversation_history,
             user_message=user_message,
             history_window=history_window,
             internal_user_id=internal_user_id,
-            cfg=lab_cfg,
+            cfg=response_cfg,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
         )
         final_content = responder_out.content
     timings.update(responder_out.timings_ms)
-
-    structured, sections_attached = build_run_review_envelope(
+    structured, sections_attached = build_coach_response_envelope(
         ctx=ctx,
         content=final_content,
         run_summary_layout=(
             RUN_SUMMARY_LAYOUT_INLINE
-            if lab_scope == "splits_only"
+            if response_scope == "splits_only"
             else RUN_SUMMARY_LAYOUT_RECAP
         ),
     )
-
-    meta: Dict[str, Any] = {
-        "usage": responder_out.usage,
-        "cost": responder_out.cost,
-        "loops": 1,
-        "max_loops": 1,
-        "model": responder_out.model,
-        "run_review_v2": False,
-        "run_review_lab": True,
-        "run_review_lab_path": ctx.resolved_via,
-        "run_review_lab_scope": lab_scope,
-        "run_review_lab_prompt_scope": lab_scope,
-        "run_review_lab_activity_id": ctx.activity_id,
-        "run_review_lab_isolated_system": lab_cfg.isolated_system_enabled,
-        "run_review_lab_splits_deterministic": splits_deterministic,
-        "run_review_v2_classifier": classification.as_log_dict(),
-        "timings_ms": timings,
-        "dialogue": response_directive_dialogue,
-        "rubric_version": RUN_REVIEW_LAB_VERSION,
-        "evidence_pack_trace": ctx.evidence_pack_trace,
-    }
-    if sections_attached:
-        meta["run_summary_sections"] = True
-    if isinstance(coach_context_trace, dict):
-        meta["coach_context_trace"] = coach_context_trace
-
-    record_run_review_event(
+    meta = build_coach_response_meta(
+        ctx=ctx,
+        usage=responder_out.usage,
+        cost=responder_out.cost,
+        model=responder_out.model,
+        timings_ms=timings,
+        dialogue=response_directive_dialogue,
+        sections_attached=sections_attached,
+        classifier_summary=classification.as_log_dict(),
+        coach_context_trace=coach_context_trace,
+    )
+    record_coach_response_event(
         user_id=str(internal_user_id),
         outcome="served",
         user_message=user_message,
         properties={
-            "mode": "lab",
-            "isolated_system": lab_cfg.isolated_system_enabled,
+            "mode": "coach_response_v1",
             "activity_id": ctx.activity_id,
             "resolved_via": ctx.resolved_via,
             "scope": ctx.scope,
             "classifier": classification.as_log_dict(),
             "splits_attached": ctx.splits is not None,
             "splits_count": ctx.splits_count,
-            "splits_deterministic": splits_deterministic,
             "sections_attached": sections_attached,
             "timings_ms": timings,
             "usage": responder_out.usage,
