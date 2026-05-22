@@ -55,6 +55,7 @@ from src.services.training_plan.recalculate_hr_zones_service import (
     recalculate_hr_zones_for_plan,
 )
 from src.db.models.plans import Plan
+from src.utils.user_profile_age_group import age_group_band_from_birth_year
 
 user_profile_bp = Blueprint("user_profile", __name__, url_prefix="/api")
 
@@ -126,6 +127,9 @@ def submit_user_profile():
         if "ageGroup" in user_dict:
             user_dict["age_group"] = user_dict.pop("ageGroup")
 
+        if "birthYear" in user_dict:
+            user_dict["birth_year"] = user_dict.pop("birthYear")
+
         # Map unitSystem to unit_system (camelCase -> snake_case)
         if "unitSystem" in user_dict:
             user_dict["unit_system"] = user_dict.pop("unitSystem")
@@ -161,6 +165,11 @@ def submit_user_profile():
 
             merged: Dict[str, Any] = {**old_profile, **user_dict}
             merged["user_id"] = str(internal_user_id)
+
+            if merged.get("birth_year") is not None:
+                merged["age_group"] = age_group_band_from_birth_year(
+                    int(merged["birth_year"])
+                )
 
             old_resting_hr = old_profile.get("resting_hr")
             new_resting_hr = merged.get("resting_hr")

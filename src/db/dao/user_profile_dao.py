@@ -18,6 +18,7 @@ def save_user_profile(session: Session, profile_data: dict):
 
     if existing_profile:
         existing_profile.age_group = age_group_value
+        existing_profile.birth_year = profile_data.get("birth_year")
         existing_profile.height_feet = profile_data.get("height_feet")
         existing_profile.height_inches = profile_data.get("height_inches")
         existing_profile.weight = profile_data.get("weight")
@@ -43,6 +44,7 @@ def save_user_profile(session: Session, profile_data: dict):
     new_profile = UserProfile(
         user_id=user_id,
         age_group=age_group_value,
+        birth_year=profile_data.get("birth_year"),
         height_feet=profile_data.get("height_feet"),
         height_inches=profile_data.get("height_inches"),
         weight=profile_data.get("weight"),
@@ -75,6 +77,7 @@ def get_user_profile(session: Session, user_id: str) -> dict:
     for key in [
         "user_id",
         "age_group",
+        "birth_year",
         "height_feet",
         "height_inches",
         "weight",
