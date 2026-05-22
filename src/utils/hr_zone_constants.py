@@ -21,7 +21,8 @@ No magic numbers should appear in service files - all constants must be here.
 
 from __future__ import annotations
 
-from typing import Optional
+from datetime import date
+from typing import Optional, Tuple, Union
 
 # Legacy: Strava-style zones (max HR percentage-based)
 # Keep for backward compatibility
@@ -70,7 +71,19 @@ HRMAX_ESTIMATION = {
     "HRMAX_PEAK_THRESHOLD": 2,  # bpm increase to trigger recalculation
     "AGE_FORMULA_BASE": 220,  # Standard "220 - age" formula for rough estimation
     "DEFAULT_FALLBACK_MAX_HR": 190,  # Conservative default when can't estimate from age or activities
+    # Manual max HR rails vs birth_year (Tanaka predictor + margin).
+    #
+    # Tanaka et al. J Am Coll Cardiol 2001;37:153-156: HRmax ≈ 208 − 0.7×age for healthy adults
+    # (narrower population mean than Fox 220−age). Individual variation remains large; accept a
+    # ±MANUAL_HRMAX_MARGIN window, clamped to HRMAX_MIN / HRMAX_MAX for Karvonen + auto estimator.
+    "TANAKA_HRMAX_INTERCEPT": 208.0,
+    "TANAKA_HRMAX_AGE_COEFFICIENT": 0.7,
+    "MANUAL_HRMAX_MARGIN_BPM": 35,
 }
+
+# Loose API guard only; onboarding route merges profile and applies manual_max_hr_bpm_bounds.
+MANUAL_HR_SCHEMA_COARSE_MIN = 60
+MANUAL_HR_SCHEMA_COARSE_MAX = 250
 
 # Short coach-facing copy keyed by get_hr_calibration_status() reason_code.
 HR_CALIBRATION_REASON_USER_HINTS: dict[str, str] = {
@@ -93,14 +106,48 @@ HR_CALIBRATION_REASON_USER_HINTS: dict[str, str] = {
         "fastest fix."
     ),
     "MANUAL_OUT_OF_RANGE": (
-        "The max HR on file is outside the allowed range (120–220 bpm). Update it in your "
-        "profile to match your watch or Strava settings."
+        "The max HR on file is outside the allowed range for your age. Update birth year "
+        "and manual max HR in your profile—or use values from your watch / Strava."
     ),
     "UNKNOWN_UNCALIBRATED": (
         "Max HR is not available for personalized zones yet. Log more runs with HR—including "
         "some harder efforts—or enter max HR manually in your profile."
     ),
 }
+
+
+def manual_max_hr_bpm_bounds(
+    birth_year: Optional[Union[int, float]],
+    today: Optional[date] = None,
+) -> Tuple[int, int]:
+    """
+    Inclusive ``[low, high]`` for validating *manual* ``max_hr_manual``.
+
+    Uses Tanaka-equation midpoint ± margin when ``birth_year`` is known; otherwise the legacy
+    flat ``HRMAX_MIN`` .. ``HRMAX_MAX`` envelope (typically 120–220).
+    """
+    legacy_lo = int(HRMAX_ESTIMATION["HRMAX_MIN"])
+    legacy_hi = int(HRMAX_ESTIMATION["HRMAX_MAX"])
+    if birth_year is None:
+        return legacy_lo, legacy_hi
+    try:
+        by_int = int(birth_year)
+    except (TypeError, ValueError):
+        return legacy_lo, legacy_hi
+
+    anchor = today or date.today()
+    age = anchor.year - by_int
+    age = max(13, min(110, age))
+
+    intercept = float(HRMAX_ESTIMATION["TANAKA_HRMAX_INTERCEPT"])
+    coeff = float(HRMAX_ESTIMATION["TANAKA_HRMAX_AGE_COEFFICIENT"])
+    margin = int(HRMAX_ESTIMATION["MANUAL_HRMAX_MARGIN_BPM"])
+    predicted = round(intercept - coeff * age)
+    lo = max(legacy_lo, predicted - margin)
+    hi = min(legacy_hi, predicted + margin)
+    if lo > hi:
+        return legacy_lo, legacy_hi
+    return lo, hi
 
 
 def hr_calibration_reason_user_hint(reason_code: Optional[str]) -> str:
