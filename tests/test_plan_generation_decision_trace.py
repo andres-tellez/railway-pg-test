@@ -4,7 +4,7 @@ import copy
 import uuid
 
 from src.db.models.user_identity import UserIdentity
-from src.routes.plan_generation_v2 import (
+from src.smartcoach_mobile_coach.plan_generation import (
     build_standard_draft_payload,
     run_v2_plan_generation,
 )
@@ -284,7 +284,7 @@ def test_run_v2_plan_generation_memory_mode_changes_long_run_day(
     )
 
     monkeypatch.setattr(
-        "src.routes.plan_generation_v2.get_user_profile",
+        "src.smartcoach_mobile_coach.plan_generation.facade.get_user_profile",
         lambda _session, _user_id: {"unit_system": "imperial"},
     )
     captured_requests = []
@@ -369,7 +369,7 @@ def test_run_v2_plan_generation_memory_mode_changes_training_days(
     test_db_session.commit()
 
     monkeypatch.setattr(
-        "src.routes.plan_generation_v2.get_user_profile",
+        "src.smartcoach_mobile_coach.plan_generation.facade.get_user_profile",
         lambda _session, _user_id: {"unit_system": "imperial"},
     )
 

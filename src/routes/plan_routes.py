@@ -23,7 +23,7 @@ from src.utils.run_type_constants import (
     normalize_run_type_key,
 )
 from src.services.plan.weekly_plan import build_weekly_plan_payload
-from src.routes.plan_generation_v2 import (
+from src.smartcoach_mobile_coach.plan_generation import (
     run_v2_plan_generation,
     build_standard_draft_payload,
 )
