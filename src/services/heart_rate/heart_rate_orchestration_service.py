@@ -142,6 +142,18 @@ class HeartRateZoneOrchestrationService:
             "Cleared unreliable max_hr_auto",
             extra={"user_id": user_id},
         )
+        try:
+            from src.services.heart_rate.zone_population_service import (
+                refresh_user_zones,
+            )
+
+            refresh_user_zones(session, str(user_id))
+        except Exception as e:
+            logger.warning(
+                "refresh_user_zones after clearing max_hr_auto failed: %s",
+                e,
+                extra={"user_id": user_id},
+            )
         return True
 
     @staticmethod
