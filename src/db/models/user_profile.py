@@ -8,7 +8,6 @@ from sqlalchemy import (
     Float,
     Text,
     DateTime,
-    BigInteger,
 )
 from sqlalchemy.dialects.postgresql import ENUM as PGEnum, ARRAY as PGArray
 from sqlalchemy.types import TypeDecorator
@@ -161,9 +160,6 @@ class UserProfile(Base):
     hrmax_activity_count = Column(
         Integer, nullable=True
     )  # Number of activities used for estimation
-    last_hrmax_activity_id = Column(
-        BigInteger, nullable=True
-    )  # Last activity ID processed for HRmax calculation
 
     # Display Preferences
     unit_system = Column(
