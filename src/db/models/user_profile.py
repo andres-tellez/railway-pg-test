@@ -137,6 +137,7 @@ class UserProfile(Base):
     age_group = Column(
         String, nullable=False
     )  # Changed from enum to string to store user-friendly ranges like "30-39"
+    birth_year = Column(Integer, nullable=True)
     height_feet = Column(Integer, nullable=False)
     height_inches = Column(Integer, nullable=False)
     weight = Column(Float)

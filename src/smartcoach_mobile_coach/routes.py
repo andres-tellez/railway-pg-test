@@ -27,6 +27,11 @@ from src.services.security.external_apis.openai_service import (
     RateLimitExceededError,
 )
 from src.smartcoach_mobile_coach.config import SMARTCOACH_MOBILE_AGENT_ENABLED
+from src.smartcoach_mobile_coach.profile_structured_patch import (
+    PatchBirthYearApplied,
+    coerce_structured_patch_user_profile_birth_year,
+    maybe_apply_patch_user_profile_birth_year,
+)
 from src.smartcoach_mobile_coach.http_rate_limit import (
     can_make_agent_http_request,
     record_agent_http_request,
@@ -627,6 +632,121 @@ def agent_messages(conversation_id):
                 properties={"reason": "conversation_not_found"},
             )
             return jsonify({"error": "Conversation not found"}), 404
+
+        birth_patch_year: Optional[int] = None
+        if _coerce_structured_input_only(data):
+            birth_patch_year = coerce_structured_patch_user_profile_birth_year(data)
+
+        if birth_patch_year is not None:
+            record_agent_http_request(uid_str)
+            prior_for_patch = (
+                session.query(ConversationMessage)
+                .filter_by(conversation_id=conversation_id)
+                .order_by(ConversationMessage.created_at.asc())
+                .all()
+            )
+            patch_out = maybe_apply_patch_user_profile_birth_year(
+                session,
+                internal_user_id=uid_str,
+                birth_year=birth_patch_year,
+                conversation=conversation,
+                message_body=message.strip(),
+                prior_messages_count=len(prior_for_patch),
+            )
+            if not isinstance(patch_out, PatchBirthYearApplied):
+                _record_coach_agent_turn(
+                    user_id=uid_str,
+                    correlation_id=correlation_id,
+                    outcome="failure",
+                    http_status=int(patch_out.get("status") or 400),
+                    properties={
+                        "reason": "patch_user_profile_birth_year_failed",
+                        "error": patch_out.get("error"),
+                    },
+                )
+                session.rollback()
+                detail = patch_out.get("detail") or "Could not save profile."
+                return (
+                    jsonify({"error": patch_out.get("error"), "message": detail}),
+                    int(patch_out.get("status") or 400),
+                )
+
+            user_msg_saved = patch_out.user_message
+            gpt_patch = patch_out.assistant_payload
+            try:
+                from src.smartcoach_mobile_coach import user_context_cache
+
+                user_context_cache.invalidate_user_context(uid_str)
+            except Exception:
+                logger.debug(
+                    "[smartcoach_mobile_coach] invalidate_user_context after birth_year patch",
+                    exc_info=True,
+                )
+            session.commit()
+            t_patch_done = time.perf_counter()
+            elapsed_patch = time.time() - start
+            meta_patch: Dict[str, Any] = {
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0,
+                },
+                "cost": 0.0,
+                "loops": 0,
+                "max_loops": 0,
+                "model": os.getenv("OPENAI_CONVERSATION_MODEL", "gpt-4o"),
+                "timings_ms": {
+                    "patch_user_profile_birth_year_ms": round(
+                        (t_patch_done - t_route0) * 1000, 2
+                    ),
+                },
+            }
+            coach_response_trace = _coach_response_trace_header(meta_patch)
+            resp_headers_patch: Dict[str, str] = {}
+            model_used_patch = str(meta_patch.get("model") or "")
+            if model_used_patch:
+                resp_headers_patch["X-SmartCoach-Model-Used"] = model_used_patch
+            if coach_response_trace:
+                resp_headers_patch["X-SmartCoach-Coach-Response"] = coach_response_trace
+
+            _log_agent_messages_response_audit(gpt_patch)
+            _record_coach_agent_turn(
+                user_id=uid_str,
+                correlation_id=correlation_id,
+                outcome="success",
+                http_status=200,
+                properties={
+                    "conversation_id": str(conversation_id),
+                    "response_shape": str(gpt_patch.get("type") or "text"),
+                    "readiness_trace_id": readiness_tid_for_log or None,
+                    "duration_ms": int(elapsed_patch * 1000),
+                    "user_message_preview": truncate_text(message.strip(), 400),
+                    "patch_user_profile_birth_year_turn": True,
+                },
+            )
+            return (
+                jsonify(
+                    {
+                        "message": "Message sent successfully",
+                        "response": gpt_patch,
+                        "message_id": str(user_msg_saved.id),
+                        "response_time": elapsed_patch,
+                        "coach_response_trace": coach_response_trace,
+                        "coach_response_fallback_reason": None,
+                        "coach_context_trace": meta_patch.get("coach_context_trace"),
+                        "rubric_version": meta_patch.get("rubric_version"),
+                        "evidence_pack_trace": meta_patch.get("evidence_pack_trace"),
+                        "token_usage": {
+                            "prompt_tokens": 0,
+                            "completion_tokens": 0,
+                            "total_tokens": 0,
+                            "model": model_used_patch,
+                        },
+                    }
+                ),
+                200,
+                resp_headers_patch,
+            )
 
         require_fresh = _coerce_require_fresh_strava_data(data)
         if require_fresh:
