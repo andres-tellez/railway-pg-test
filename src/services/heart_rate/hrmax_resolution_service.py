@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional, Tuple
 from src.utils.hr_zone_constants import (
     HRMAX_ESTIMATION,
     hr_calibration_reason_user_hint,
+    manual_max_hr_bpm_bounds,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,8 @@ class HRMaxResolutionService:
         if has_manual:
             try:
                 manual_is_valid = HRMaxResolutionService._validate_user_override(
-                    int(profile.get("max_hr_manual"))
+                    int(profile.get("max_hr_manual")),
+                    profile.get("birth_year"),
                 )
             except (TypeError, ValueError):
                 manual_is_valid = False
@@ -115,7 +117,8 @@ class HRMaxResolutionService:
 
         if active == "manual":
             if manual is not None and HRMaxResolutionService._validate_user_override(
-                int(manual)
+                int(manual),
+                profile.get("birth_year"),
             ):
                 return int(manual)
             if auto is not None:
@@ -126,14 +129,16 @@ class HRMaxResolutionService:
             if auto is not None:
                 return int(auto)
             if manual is not None and HRMaxResolutionService._validate_user_override(
-                int(manual)
+                int(manual),
+                profile.get("birth_year"),
             ):
                 return int(manual)
             return None
 
         # Unset active: prefer validated manual, else auto
         if manual is not None and HRMaxResolutionService._validate_user_override(
-            int(manual)
+            int(manual),
+            profile.get("birth_year"),
         ):
             return int(manual)
         if auto is not None:
@@ -141,8 +146,13 @@ class HRMaxResolutionService:
         return None
 
     @staticmethod
-    def _validate_user_override(max_hr: int) -> bool:
-        return HRMAX_ESTIMATION["HRMAX_MIN"] <= max_hr <= HRMAX_ESTIMATION["HRMAX_MAX"]
+    def _validate_user_override(
+        max_hr: int,
+        birth_year: Any = None,
+    ) -> bool:
+        """True if manual max HR fits age-adjusted rails (Tanaka ± margin when birth_year set)."""
+        lo, hi = manual_max_hr_bpm_bounds(birth_year)
+        return lo <= max_hr <= hi
 
     @staticmethod
     def clear_auto_hrmax_fields(profile_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -176,7 +186,8 @@ class HRMaxResolutionService:
             except (TypeError, ValueError):
                 m_int = None
             if m_int is not None and HRMaxResolutionService._validate_user_override(
-                m_int
+                m_int,
+                profile.get("birth_year"),
             ):
                 gap = HRMAX_ESTIMATION["HRMAX_AUTO_MAX_GAP_VS_MANUAL"]
                 if abs(int(estimate_bpm) - m_int) > gap:
@@ -201,7 +212,10 @@ class HRMaxResolutionService:
             m_int = int(manual)
         except (TypeError, ValueError):
             return False
-        if not HRMaxResolutionService._validate_user_override(m_int):
+        if not HRMaxResolutionService._validate_user_override(
+            m_int,
+            profile.get("birth_year"),
+        ):
             return False
         gap = HRMAX_ESTIMATION["HRMAX_AUTO_MAX_GAP_VS_MANUAL"]
         return abs(int(auto) - m_int) > gap
@@ -270,11 +284,12 @@ class HRMaxResolutionService:
         profile_data: Dict[str, Any], new_max_hr: int
     ) -> Dict[str, Any]:
         """Validate and store user-entered max HR."""
-        if not HRMaxResolutionService._validate_user_override(new_max_hr):
+        birth_y = profile_data.get("birth_year")
+        if not HRMaxResolutionService._validate_user_override(new_max_hr, birth_y):
+            lo, hi = manual_max_hr_bpm_bounds(birth_y)
             raise ValueError(
-                f"Invalid manual HRmax: {new_max_hr} "
-                f"(must be {HRMAX_ESTIMATION['HRMAX_MIN']}-"
-                f"{HRMAX_ESTIMATION['HRMAX_MAX']})"
+                f"Invalid manual HRmax: {new_max_hr} bpm "
+                f"(allowed {lo}-{hi} bpm for manual entry)."
             )
         profile_data["max_hr_manual"] = new_max_hr
         return profile_data

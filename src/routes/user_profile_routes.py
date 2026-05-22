@@ -56,6 +56,7 @@ from src.services.training_plan.recalculate_hr_zones_service import (
 )
 from src.db.models.plans import Plan
 from src.utils.user_profile_age_group import age_group_band_from_birth_year
+from src.utils.hr_zone_constants import manual_max_hr_bpm_bounds
 
 user_profile_bp = Blueprint("user_profile", __name__, url_prefix="/api")
 
@@ -170,6 +171,38 @@ def submit_user_profile():
                 merged["age_group"] = age_group_band_from_birth_year(
                     int(merged["birth_year"])
                 )
+
+            if merged.get("max_hr_manual") is not None:
+                try:
+                    mh_int = int(merged["max_hr_manual"])
+                except (TypeError, ValueError):
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": "max_hr_manual must be an integer",
+                            }
+                        ),
+                        400,
+                    )
+                lo, hi = manual_max_hr_bpm_bounds(merged.get("birth_year"))
+                if mh_int < lo or mh_int > hi:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": (
+                                    f"Max HR must be between {lo} and {hi} bpm"
+                                    + (
+                                        " for your age (add birth year under Profile for narrower guidance)."
+                                        if merged.get("birth_year") is None
+                                        else " for your age."
+                                    )
+                                ),
+                            }
+                        ),
+                        400,
+                    )
 
             old_resting_hr = old_profile.get("resting_hr")
             new_resting_hr = merged.get("resting_hr")
