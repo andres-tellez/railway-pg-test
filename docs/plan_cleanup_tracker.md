@@ -16,7 +16,7 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 
 | Artifact | Location | Classification | Action | Safe? | Status |
 |----------|----------|----------------|--------|-------|--------|
-| V2 pipeline (orchestrator, Pass1 LR-first, Pass3/4, MV Step 1) | `v2/plan_generation_orchestrator_v2.py`, `v2/marathon/pass1_longrun_first_v2.py`, `routes/plan_generation_v2.py` | ACTIVE | Keep | NO | TODO |
+| V2 pipeline (orchestrator, Pass1 LR-first, Pass3/4, MV Step 1) | `v2/plan_generation_orchestrator_v2.py`, `v2/marathon/pass1_longrun_first_v2.py`, `smartcoach_mobile_coach/plan_generation/facade.py` | ACTIVE | Keep | NO | TODO |
 | Long-run spine + curve validation | `v2/shared_v2/long_run_spine_v2.py`, `v2/shared_v2/long_run_curve_validation.py` | ACTIVE | Keep | NO | TODO |
 | Weekly totals from long runs | `v2/marathon/weekly_total_calculator_v2.py` | ACTIVE | Keep | NO | TODO |
 | Adaptive marathon peak LR | `v2/marathon/adaptive_marathon_peak.py` | ACTIVE | Keep | NO | TODO |

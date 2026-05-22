@@ -17,7 +17,7 @@ Between totals and validation, the orchestrator **places workouts** (`Pass3Worko
 
 ## HTTP entry points
 
-Both **`POST /api/plan/draft`** and **`POST /api/plan/create`** call `run_v2_plan_generation` in `src/routes/plan_generation_v2.py`, which constructs `PlanGenerationOrchestratorV2` and invokes `generate_longrun_first`. Draft responses are shaped with `build_standard_draft_payload`; create persists via `PlanStorageService` when validation passes (`src/routes/plan_routes.py`).
+Both **`POST /api/plan/draft`** and **`POST /api/plan/create`** call `run_v2_plan_generation` from `src/smartcoach_mobile_coach/plan_generation/facade.py`, which constructs `PlanGenerationOrchestratorV2` and invokes `generate_longrun_first`. Draft responses are shaped with `build_standard_draft_payload` in `src/smartcoach_mobile_coach/plan_generation/draft_payload.py`; create persists via `PlanStorageService` when validation passes (`src/routes/plan_routes.py`).
 
 ## What this doc intentionally omits
 
