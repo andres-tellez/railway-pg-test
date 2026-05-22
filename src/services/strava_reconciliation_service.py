@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Full sync, reconciliation, and sync-health use this many full ISO weeks back
 # from the current week start (Monday 00:00 UTC) for the `after` timestamp.
-STRAVA_INGEST_LOOKBACK_WEEKS = 3
+STRAVA_INGEST_LOOKBACK_WEEKS = 2
 
 MAX_MISSING_IDS_PREVIEW = 50
 RECONCILE_RATE_BUFFER = 8
@@ -52,7 +52,7 @@ class StravaSixWeekWindow(NamedTuple):
 
 
 def compute_strava_six_week_window() -> StravaSixWeekWindow:
-    """UTC week-aligned ingest window: Monday 00:00 UTC − 3 weeks through now_utc."""
+    """UTC week-aligned ingest window: Monday 00:00 UTC − 2 weeks through now_utc."""
     now_utc = datetime.now(timezone.utc)
     today_utc = now_utc.date()
     days_since_monday = today_utc.weekday()  # Monday = 0 (ISO)
