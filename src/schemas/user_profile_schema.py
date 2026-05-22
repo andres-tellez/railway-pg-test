@@ -1,5 +1,6 @@
+from datetime import date
 from typing import Optional, Literal
-from pydantic import BaseModel, Field, model_validator, StrictInt
+from pydantic import BaseModel, Field, field_validator, model_validator, StrictInt
 
 
 class Height(BaseModel):
@@ -14,6 +15,9 @@ class UserProfileSchema(BaseModel):
     ageGroup: Optional[str] = (
         None  # Changed from enum to string to store user-friendly ranges like "30-39"
     )
+    birthYear: Optional[int] = Field(
+        None, description="Calendar year of birth for HR guidance cues"
+    )
     height: Optional[Height] = None
     weight: Optional[int] = None
     max_hr: Optional[int] = Field(
@@ -26,6 +30,16 @@ class UserProfileSchema(BaseModel):
     restingHr: Optional[int] = Field(
         None, ge=35, le=110, description="Resting heart rate in bpm"
     )  # Resting heart rate in bpm
+
+    @field_validator("birthYear")
+    @classmethod
+    def birth_year_bounds(cls, v: Optional[int]) -> Optional[int]:
+        if v is None:
+            return v
+        y = date.today().year
+        if v < 1920 or v > y - 13:
+            raise ValueError(f"birthYear must be between 1920 and {y - 13}")
+        return v
 
     @model_validator(mode="after")
     def legacy_max_hr_to_manual(self) -> "UserProfileSchema":
