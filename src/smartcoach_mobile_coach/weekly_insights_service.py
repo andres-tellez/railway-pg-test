@@ -45,7 +45,7 @@ logger = logging.getLogger("smartcoach_mobile_coach")
 # include_kpi_detail=true. REST `/api/training-insights/weekly` always uses slim=False.
 WEEKLY_INSIGHT_ORIENTATION_NOTE = (
     "Orientation-only: week range + overall_band. Do not invent HR drift %, Z2 pace, "
-    "efficiency, deltas, or zone thresholds. Call get_weekly_training_insight again with "
+    "easy average HR, efficiency, deltas, or zone thresholds. Call get_weekly_training_insight again with "
     "include_kpi_detail=true (or use get_training_kpis) when the user asks for KPI numbers "
     "or band definitions."
 )
@@ -244,7 +244,7 @@ def _compute_overall_band(
     prior_overall: Optional[str],
 ) -> str:
     """
-    Worst-of-three with 2-week persistence:
+    Worst-of KPI trend / absolute bands with 2-week persistence:
     - all green → green
     - any red (single week) → yellow (softened)
     - same KPI red for 2+ consecutive weeks → red
@@ -408,8 +408,8 @@ def _fetch_prior_insight(
 ) -> Optional[Dict[str, Any]]:
     row = session.execute(
         text(
-            "SELECT hr_drift_pct, z2_pace_min_per_mi, efficiency, "
-            "hr_drift_band, z2_pace_band, efficiency_band, overall_band, "
+            "SELECT hr_drift_pct, z2_pace_min_per_mi, efficiency, easy_avg_hr, "
+            "hr_drift_band, z2_pace_band, efficiency_band, easy_avg_hr_band, overall_band, "
             "kpi_snapshot "
             "FROM weekly_training_insights "
             "WHERE user_id = CAST(:uid AS uuid) AND week_start < :ws "
@@ -440,9 +440,11 @@ def _fetch_prior_insight(
         "hr_drift_pct": row.hr_drift_pct,
         "z2_pace_min_per_mi": row.z2_pace_min_per_mi,
         "efficiency": row.efficiency,
+        "easy_avg_hr": getattr(row, "easy_avg_hr", None),
         "hr_drift_band": row.hr_drift_band,
         "z2_pace_band": row.z2_pace_band,
         "efficiency_band": row.efficiency_band,
+        "easy_avg_hr_band": getattr(row, "easy_avg_hr_band", None),
         "overall_band": row.overall_band,
         "threshold_effort_stability": threshold_prior,
         "threshold_effort_stability_band": threshold_prior_band,
@@ -458,11 +460,13 @@ def _compute_easy_system_pipeline(
     prior_drift = prior["hr_drift_pct"] if prior else None
     prior_pace = prior["z2_pace_min_per_mi"] if prior else None
     prior_eff = prior["efficiency"] if prior else None
+    prior_easy_hr = prior.get("easy_avg_hr") if prior else None
 
     drift_band = _hr_drift_band(kpis.get("hr_drift_pct"))
     pace_band = _trend_band(
         kpis.get("z2_pace_min_per_mi"), prior_pace, lower_is_better=True
     )
+    easy_hr_band = _trend_band(kpis.get("avg_hr"), prior_easy_hr, lower_is_better=True)
     eff_band = aerobic_efficiency_band_from_value(kpis.get("efficiency"))
 
     prior_bands = None
@@ -470,11 +474,12 @@ def _compute_easy_system_pipeline(
         prior_bands = {
             "hr_drift": prior.get("hr_drift_band"),
             "z2_pace": prior.get("z2_pace_band"),
+            "easy_avg_hr": prior.get("easy_avg_hr_band"),
             "efficiency": prior.get("efficiency_band"),
         }
 
     overall = _compute_overall_band(
-        [drift_band, pace_band, eff_band],
+        [drift_band, pace_band, easy_hr_band, eff_band],
         prior_bands,
         prior.get("overall_band") if prior else None,
     )
@@ -482,10 +487,16 @@ def _compute_easy_system_pipeline(
     deltas = {
         "hr_drift_delta": _compute_delta(kpis.get("hr_drift_pct"), prior_drift),
         "z2_pace_delta": _compute_delta(kpis.get("z2_pace_min_per_mi"), prior_pace),
+        "easy_avg_hr_delta": _compute_delta(kpis.get("avg_hr"), prior_easy_hr),
         "efficiency_delta": _compute_delta(kpis.get("efficiency"), prior_eff),
     }
 
-    bands = {"hr_drift": drift_band, "z2_pace": pace_band, "efficiency": eff_band}
+    bands = {
+        "hr_drift": drift_band,
+        "z2_pace": pace_band,
+        "easy_avg_hr": easy_hr_band,
+        "efficiency": eff_band,
+    }
 
     return {
         "system": TrainingSystem.EASY.value,
@@ -558,11 +569,13 @@ def _compute_system_pipeline(
             "bands": {
                 "hr_drift": None,
                 "z2_pace": None,
+                "easy_avg_hr": None,
                 "efficiency": None,
             },
             "deltas": {
                 "hr_drift_delta": None,
                 "z2_pace_delta": None,
+                "easy_avg_hr_delta": None,
                 "efficiency_delta": None,
             },
             "overall_band": None,
@@ -661,13 +674,14 @@ def generate_weekly_insight(
     overall = easy_system["overall_band"]
     drift_band = bands["hr_drift"]
     pace_band = bands["z2_pace"]
+    easy_hr_band = bands["easy_avg_hr"]
     eff_band = bands["efficiency"]
 
     summary_text: Optional[str] = None
     action_text: Optional[str] = None
 
     snapshot = {
-        "kpis": {k: v for k, v in kpis.items() if k != "avg_hr"},
+        "kpis": kpis,
         "bands": bands,
         "deltas": deltas,
         "overall_band": overall,
@@ -680,17 +694,19 @@ def generate_weekly_insight(
             """
             INSERT INTO weekly_training_insights (
                 user_id, week_start, week_end,
-                hr_drift_pct, z2_pace_min_per_mi, efficiency,
-                hr_drift_band, z2_pace_band, efficiency_band, overall_band,
-                hr_drift_delta, z2_pace_delta, efficiency_delta,
+                hr_drift_pct, z2_pace_min_per_mi, efficiency, easy_avg_hr,
+                hr_drift_band, z2_pace_band, efficiency_band, easy_avg_hr_band,
+                overall_band,
+                hr_drift_delta, z2_pace_delta, efficiency_delta, easy_avg_hr_delta,
                 easy_run_count, total_run_count,
                 summary_text, action_text,
                 kpi_snapshot, generated_at
             ) VALUES (
                 CAST(:uid AS uuid), :ws, :we,
-                :drift, :pace, :eff,
-                :drift_band, :pace_band, :eff_band, :overall,
-                :d_drift, :d_pace, :d_eff,
+                :drift, :pace, :eff, :easy_hr,
+                :drift_band, :pace_band, :eff_band, :easy_hr_band,
+                :overall,
+                :d_drift, :d_pace, :d_eff, :d_easy_hr,
                 :easy_cnt, :total_cnt,
                 :summary, :action,
                 :snapshot, now()
@@ -700,13 +716,16 @@ def generate_weekly_insight(
                 hr_drift_pct = EXCLUDED.hr_drift_pct,
                 z2_pace_min_per_mi = EXCLUDED.z2_pace_min_per_mi,
                 efficiency = EXCLUDED.efficiency,
+                easy_avg_hr = EXCLUDED.easy_avg_hr,
                 hr_drift_band = EXCLUDED.hr_drift_band,
                 z2_pace_band = EXCLUDED.z2_pace_band,
                 efficiency_band = EXCLUDED.efficiency_band,
+                easy_avg_hr_band = EXCLUDED.easy_avg_hr_band,
                 overall_band = EXCLUDED.overall_band,
                 hr_drift_delta = EXCLUDED.hr_drift_delta,
                 z2_pace_delta = EXCLUDED.z2_pace_delta,
                 efficiency_delta = EXCLUDED.efficiency_delta,
+                easy_avg_hr_delta = EXCLUDED.easy_avg_hr_delta,
                 easy_run_count = EXCLUDED.easy_run_count,
                 total_run_count = EXCLUDED.total_run_count,
                 summary_text = EXCLUDED.summary_text,
@@ -722,13 +741,16 @@ def generate_weekly_insight(
             "drift": kpis.get("hr_drift_pct"),
             "pace": kpis.get("z2_pace_min_per_mi"),
             "eff": kpis.get("efficiency"),
+            "easy_hr": kpis.get("avg_hr"),
             "drift_band": drift_band,
             "pace_band": pace_band,
             "eff_band": eff_band,
+            "easy_hr_band": easy_hr_band,
             "overall": overall,
             "d_drift": deltas["hr_drift_delta"],
             "d_pace": deltas["z2_pace_delta"],
             "d_eff": deltas["efficiency_delta"],
+            "d_easy_hr": deltas["easy_avg_hr_delta"],
             "easy_cnt": kpis["easy_run_count"],
             "total_cnt": kpis["total_run_count"],
             "summary": summary_text,
@@ -819,6 +841,20 @@ def get_latest_weekly_insight(
         sign = "+" if row.efficiency_delta > 0 else ""
         eff_delta_display = f"{sign}{row.efficiency_delta}"
 
+    easy_hr_display = "—"
+    easy_hr = getattr(row, "easy_avg_hr", None)
+    if easy_hr is not None:
+        easy_hr_display = str(round(float(easy_hr)))
+
+    easy_hr_delta_display = None
+    easy_hr_d = getattr(row, "easy_avg_hr_delta", None)
+    if easy_hr_d is not None:
+        d = round(float(easy_hr_d))
+        sign = "+" if d > 0 else ""
+        easy_hr_delta_display = f"{sign}{d} bpm"
+
+    easy_hr_band = getattr(row, "easy_avg_hr_band", None)
+
     kpis_payload = [
         {
             "name": "hr_drift",
@@ -837,6 +873,14 @@ def get_latest_weekly_insight(
             "value_display": pace_display,
             "band": row.z2_pace_band,
             "delta_display": pace_delta_display,
+        },
+        {
+            "name": "easy_avg_hr",
+            "label": "Avg HR",
+            "value": float(easy_hr) if easy_hr is not None else None,
+            "value_display": easy_hr_display,
+            "band": easy_hr_band,
+            "delta_display": easy_hr_delta_display,
         },
         {
             "name": "efficiency",
@@ -922,7 +966,8 @@ def get_weekly_insight_history(
         text(
             "SELECT week_start, hr_drift_pct, hr_drift_band, "
             "z2_pace_min_per_mi, z2_pace_band, "
-            "efficiency, efficiency_band "
+            "efficiency, efficiency_band, "
+            "easy_avg_hr, easy_avg_hr_band "
             "FROM weekly_training_insights "
             "WHERE user_id = CAST(:uid AS uuid) "
             "  AND week_start >= :ws_min "
@@ -950,6 +995,8 @@ def get_weekly_insight_history(
                     "band": None,
                     "z2_pace_min_per_mi": None,
                     "z2_pace_band": None,
+                    "easy_avg_hr": None,
+                    "easy_avg_hr_band": None,
                     "efficiency": None,
                     "efficiency_band": None,
                 }
@@ -959,6 +1006,7 @@ def get_weekly_insight_history(
         band = r.hr_drift_band or _hr_drift_band(val)
         pace = r.z2_pace_min_per_mi
         efficiency = r.efficiency
+        eh = getattr(r, "easy_avg_hr", None)
         eff_float = float(efficiency) if efficiency is not None else None
         eff_band = (
             aerobic_efficiency_band_from_value(eff_float)
@@ -972,6 +1020,8 @@ def get_weekly_insight_history(
                 "band": band,
                 "z2_pace_min_per_mi": float(pace) if pace is not None else None,
                 "z2_pace_band": r.z2_pace_band,
+                "easy_avg_hr": float(eh) if eh is not None else None,
+                "easy_avg_hr_band": getattr(r, "easy_avg_hr_band", None),
                 "efficiency": eff_float,
                 "efficiency_band": eff_band,
             }
@@ -1006,6 +1056,8 @@ def get_weekly_insight_history(
                     "band": None,
                     "z2_pace_min_per_mi": None,
                     "z2_pace_band": None,
+                    "easy_avg_hr": None,
+                    "easy_avg_hr_band": None,
                     "efficiency": None,
                     "efficiency_band": None,
                 }
@@ -1028,6 +1080,8 @@ def get_weekly_insight_history(
                 "band": th_band,
                 "z2_pace_min_per_mi": pace,
                 "z2_pace_band": pace_band,
+                "easy_avg_hr": None,
+                "easy_avg_hr_band": None,
                 "efficiency": None,
                 "efficiency_band": None,
             }

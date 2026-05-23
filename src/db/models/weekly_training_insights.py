@@ -25,6 +25,10 @@ class WeeklyTrainingInsight(Base):
     z2_pace_delta = Column(Float)
     efficiency_delta = Column(Float)
 
+    easy_avg_hr = Column(Float)
+    easy_avg_hr_band = Column(String(10))
+    easy_avg_hr_delta = Column(Float)
+
     easy_run_count = Column(Integer, nullable=False, server_default="0")
     total_run_count = Column(Integer, nullable=False, server_default="0")
 
