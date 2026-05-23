@@ -62,7 +62,10 @@ def test_get_latest_weekly_insight_full_includes_kpis():
         efficiency_band="green",
         hr_drift_delta=-0.5,
         z2_pace_delta=-0.01,
+        easy_avg_hr=142.0,
         efficiency_delta=0.1,
+        easy_avg_hr_band="green",
+        easy_avg_hr_delta=-1.5,
         easy_run_count=3,
         total_run_count=5,
         summary_text=None,
@@ -77,7 +80,7 @@ def test_get_latest_weekly_insight_full_includes_kpis():
     )
     assert out["has_insight"] is True
     assert out["insight_detail_level"] == "full"
-    assert len(out["kpis"]) == 3
+    assert len(out["kpis"]) == 4
     assert "hr_drift_band_zones" in out
 
 
