@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS weekly_training_insights (
     z2_pace_delta         DOUBLE PRECISION,
     efficiency_delta       DOUBLE PRECISION,
 
+    easy_avg_hr           DOUBLE PRECISION,
+    easy_avg_hr_band      VARCHAR(10),
+    easy_avg_hr_delta    DOUBLE PRECISION,
+
     easy_run_count        INTEGER NOT NULL DEFAULT 0,
     total_run_count       INTEGER NOT NULL DEFAULT 0,
 
