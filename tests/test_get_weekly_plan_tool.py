@@ -107,7 +107,7 @@ def seeded_plan(test_db_session):
             workout_type="Easy Run",
             description=f"Easy miles week {i}",
             miles=5.0,
-            intensity="E",
+            intensity="z2",
             run_type_key="easy",
             phase="Base",
         )

@@ -149,8 +149,10 @@ def main() -> int:
                 {"uid": uid_str},
             )
             session.execute(
-                text("DELETE FROM user_hr_zones WHERE user_id = :uid_text"),
-                {"uid_text": uid_str},
+                text(
+                    "DELETE FROM runner_zone_profiles WHERE user_id = CAST(:uid AS uuid)"
+                ),
+                {"uid": uid_str},
             )
 
         # Core: API-facing status
@@ -193,7 +195,7 @@ def main() -> int:
         print(f"  user_profile del:  {deleted_profile}")
         if args.api_only:
             print(
-                "  (--api-only: skipped conversations / weekly insights / coach prefs / hr zones)"
+                "  (--api-only: skipped conversations / weekly insights / coach prefs / runner profile zones)"
             )
         if args.keep_profile:
             print("  (--keep-profile: user_profile unchanged)")

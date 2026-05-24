@@ -76,7 +76,7 @@ _PHASE_MIN_QUALITY = {"Base": 0, "Build": 1, "Peak": 1, "Taper": 0}
 _PHASE_MAX_QUALITY = {"Base": 0, "Build": 2, "Peak": 2, "Taper": 1}
 
 _QUALITY_WORKOUT_TOKENS = ("tempo", "threshold", "interval", "hill", "fartlek")
-_QUALITY_INTENSITY_TOKENS = {"T", "S", "M"}
+_QUALITY_INTENSITY_TOKENS = {"z3", "z4", "m"}
 
 
 @dataclass
@@ -137,7 +137,7 @@ def _is_long_run(workout: PlanWorkout) -> bool:
 def _is_quality_workout(workout: PlanWorkout) -> bool:
     if _is_long_run(workout):
         return False
-    intensity = (workout.intensity or "").strip().upper()
+    intensity = (workout.intensity or "").strip().lower()
     if intensity in _QUALITY_INTENSITY_TOKENS:
         return True
     label = (workout.workout_type or "").strip().lower()
@@ -360,7 +360,7 @@ def _db_fields_for_added_run(
             "workout_type": "Tempo",
             "description": "Tempo workout (coach adjustment)",
             "miles": miles,
-            "intensity": "T",
+            "intensity": "z4",
             # Legacy constraint: plan_workouts.run_type_key does not admit
             # "tempo", so quality additions map to the existing
             # medium-long / quality bucket on the DB row.
@@ -375,7 +375,7 @@ def _db_fields_for_added_run(
             "workout_type": "Long Run",
             "description": "Long run (coach adjustment)",
             "miles": miles,
-            "intensity": "E",
+            "intensity": "z2",
             "run_type_key": "long",
             "phase": _resolve_phase(ctx.workouts),
             "allow_quality": False,
@@ -387,7 +387,7 @@ def _db_fields_for_added_run(
             "workout_type": "Recovery Run",
             "description": "Recovery run (coach adjustment)",
             "miles": miles,
-            "intensity": "E",
+            "intensity": "z2",
             "run_type_key": "easy",
             "phase": _resolve_phase(ctx.workouts),
             "allow_quality": False,
@@ -398,7 +398,7 @@ def _db_fields_for_added_run(
         "workout_type": "Easy Run",
         "description": "Easy run (coach adjustment)",
         "miles": miles,
-        "intensity": "E",
+        "intensity": "z2",
         "run_type_key": "easy",
         "phase": _resolve_phase(ctx.workouts),
         "allow_quality": False,
@@ -583,7 +583,7 @@ def _apply_adjust_intensity(
         workout = eligible[0]
         workout.workout_type = "Tempo"
         workout.description = "Tempo workout (coach adjustment)"
-        workout.intensity = "T"
+        workout.intensity = "z4"
         workout.run_type_key = "endurance"
         workout.allow_quality = True
         return (
@@ -631,7 +631,7 @@ def _apply_adjust_intensity(
     for workout in to_convert:
         workout.workout_type = "Easy Run"
         workout.description = "Easy run (coach adjustment from quality)"
-        workout.intensity = "E"
+        workout.intensity = "z2"
         workout.run_type_key = "easy"
         workout.allow_quality = False
 

@@ -14,9 +14,9 @@ from src.services.plan.planned_workout_weekly_wire import (
 def test_planned_pace_display_string_band_from_pace_ranges():
     w = SimpleNamespace(
         miles=5.0,
-        intensity="E",
+        intensity="z2",
         run_type_key="easy",
-        pace_ranges={"E": [480, 510]},
+        pace_ranges={"z2": [480, 510]},
     )
     s = planned_pace_display_string(w)
     assert s == "8:00-8:30/mi"
@@ -25,9 +25,9 @@ def test_planned_pace_display_string_band_from_pace_ranges():
 def test_build_planned_weekly_wire_includes_target_pace_display_when_ranges():
     w = SimpleNamespace(
         miles=5.0,
-        intensity="E",
+        intensity="z2",
         run_type_key="easy",
-        pace_ranges={"E": [480, 480]},
+        pace_ranges={"z2": [480, 480]},
     )
     wire = build_planned_weekly_wire(
         w, canonical_run_type_key="easy", target_hr="Z2 (120-150 bpm)"
@@ -45,9 +45,9 @@ def test_merge_planned_wire_overwrites_execution_planned_and_display():
     wire = build_planned_weekly_wire(
         SimpleNamespace(
             miles=6.0,
-            intensity="S",
+            intensity="z3",
             run_type_key="steady",
-            pace_ranges={"S": [420, 450]},
+            pace_ranges={"z3": [420, 450]},
         ),
         canonical_run_type_key="steady",
         target_hr=None,

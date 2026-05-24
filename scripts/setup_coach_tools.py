@@ -206,7 +206,7 @@ SEED_TOOLS = [
                 "include_hr_profile": {
                     "type": "boolean",
                     "description": (
-                        "If true (default), attach user_hr_profile from user_hr_zones when configured. "
+                        "If true (default), attach user_hr_profile from runner_zone_profiles when configured. "
                         "If false, omit (e.g. user only asked about pace, not zones)."
                     ),
                 },

@@ -252,14 +252,14 @@ def submit_user_profile():
                     )
 
                 try:
-                    from src.services.heart_rate.zone_population_service import (
-                        refresh_user_zones,
+                    from src.smartcoach_mobile_coach.runner_profile import (
+                        refresh_runner_profile,
                     )
 
-                    refresh_user_zones(session, str(internal_user_id))
+                    refresh_runner_profile(session, str(internal_user_id))
                 except Exception as e:
                     current_app.logger.warning(
-                        f"Could not refresh user_hr_zones after HR data update: {e}"
+                        f"Could not refresh runner_zone_profiles after HR data update: {e}"
                     )
         finally:
             session.close()

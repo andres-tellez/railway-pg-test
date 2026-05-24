@@ -35,7 +35,7 @@ def _seed_active_plan_with_workout(session, *, user_id: uuid.UUID, workout_date:
         workout_type="Easy Run",
         description="Keep it easy",
         miles=6.0,
-        intensity="E",
+        intensity="z2",
         run_type_key="easy",
     )
     session.add(workout)

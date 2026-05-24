@@ -55,7 +55,7 @@ FIELD_SOURCES: Dict[str, str] = {
     "athlete.baseline_status": "services.user.user_context.baseline_status",
     "athlete.unit_system": "services.user.user_context.preferences.unit_system",
     "athlete.hr_calibration_status": "services.heart_rate.hrmax_resolution_service",
-    "athlete.zones_compact": "db.user_hr_zones",
+    "athlete.zones_compact": "db.runner_zone_profiles",
     "trends.mileage_4w": "smartcoach_mobile_coach.training_kpi_service.get_training_progress",
     "memory.plan_memories": "services.user.user_context.plan_memories",
     "memory.session_summary_excerpt": "services.user.user_context.session_summary",

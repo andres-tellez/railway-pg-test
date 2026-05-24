@@ -386,7 +386,7 @@ def run_weekly_rebuild(metrics_refresh_success: bool, metrics_message: str):
                         plan_id=plan.id,
                         week_num=upcoming_week_num,
                         previous_week_logs=previous_week_logs,
-                        initial_seed=None,  # Will regenerate from plan
+                        initial_pace_zones=None,  # Will regenerate from runner profile data
                     )
                     rebuild_elapsed = time.time() - rebuild_start
                     logger.info(

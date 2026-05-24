@@ -9,7 +9,10 @@ from src.db.models.plans import Plan
 from src.services.training_plan.adaptive_adjustment_service import (
     AdaptiveAdjustmentService,
 )
-from src.services.training_plan.pace import PaceSeed
+from src.smartcoach_mobile_coach.runner_profile.models import (
+    PaceZoneBand,
+    PaceZoneComputation,
+)
 from src.services.training_plan.trend_analysis_service import TrendAnalysisResult
 from src.services.training_plan.week_analysis_service import (
     WeekAnalysisResult,
@@ -38,15 +41,14 @@ def _make_trends() -> TrendAnalysisResult:
     )
 
 
-def _make_seed() -> PaceSeed:
-    return PaceSeed(
-        E_min=560.0,
-        E_max=620.0,
-        S_min=520.0,
-        S_max=560.0,
-        M=500.0,
-        T_min=440.0,
-        T_max=470.0,
+def _make_pace_zones() -> PaceZoneComputation:
+    return PaceZoneComputation(
+        pace_z2=PaceZoneBand(low_sec=560, high_sec=620, display="9:20-10:20/mi"),
+        pace_z3=PaceZoneBand(low_sec=520, high_sec=560, display="8:40-9:20/mi"),
+        pace_z4=PaceZoneBand(low_sec=440, high_sec=470, display="7:20-7:50/mi"),
+        pace_source="test",
+        pace_computed_at=datetime.now(timezone.utc),
+        marathon_sec=500,
         week1_long_cap=8.0,
     )
 
@@ -94,7 +96,7 @@ def test_calculate_avg_zone_compliance_by_type(test_db_session):
         workout_type="Easy Run",
         description="Easy miles",
         miles=5.0,
-        intensity="E",
+        intensity="z2",
         run_type_key="easy",
     )
     long_workout = PlanWorkout(
@@ -103,7 +105,7 @@ def test_calculate_avg_zone_compliance_by_type(test_db_session):
         workout_type="Long Run",
         description="Long aerobic run",
         miles=10.0,
-        intensity="E",
+        intensity="z2",
         run_type_key="long",
     )
     test_db_session.add_all([easy_workout, long_workout])
@@ -161,7 +163,7 @@ def test_calculate_adjustment_applies_zone_compliance_guardrail():
     decision = AdaptiveAdjustmentService.calculate_adjustment(
         analysis=_make_analysis({"easy": 55.0}),
         trends=_make_trends(),
-        current_seed=_make_seed(),
+        current_pace_zones=_make_pace_zones(),
         phase="Build",
         weeks_remaining=10,
     )
@@ -177,7 +179,7 @@ def test_calculate_adjustment_skips_guardrail_when_easy_compliance_is_good():
     decision = AdaptiveAdjustmentService.calculate_adjustment(
         analysis=_make_analysis({"easy": 75.0}),
         trends=_make_trends(),
-        current_seed=_make_seed(),
+        current_pace_zones=_make_pace_zones(),
         phase="Build",
         weeks_remaining=10,
     )

@@ -78,9 +78,10 @@ class TestRunnerStateBuilder:
         # Mock workout with pace_ranges
         mock_workout_with_pace = Mock()
         mock_workout_with_pace.pace_ranges = {
-            "E": [600.0, 645.0],  # 10:00-10:45/mile
-            "M": [570.0],  # 9:30/mile
-            "T": [540.0, 555.0],  # 9:00-9:15/mile
+            "z2": [600.0, 645.0],  # 10:00-10:45/mile
+            "z3": [585.0, 600.0],
+            "m": [570.0],  # 9:30/mile
+            "z4": [540.0, 555.0],  # 9:00-9:15/mile
         }
         mock_session.query.return_value.filter_by.return_value.filter.return_value.order_by.return_value.first.return_value = (
             mock_workout_with_pace

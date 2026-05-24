@@ -11,10 +11,6 @@ from src.db.models.plan_workouts import PlanWorkout
 from src.db.dao.user_profile_dao import get_user_profile
 from src.db.dao.plan_workouts_dao import update_workout
 from src.services.training_plan.plan_storage_service import PlanStorageService
-from src.services.heart_rate import (
-    KarvonenZoneService,
-    HRMaxResolutionService,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -82,9 +78,11 @@ def recalculate_hr_zones_for_plan(session: Session, plan_id: int) -> dict:
                 run_type_key = workout.run_type_key
 
             # Calculate new HR zone
-            # Try Karvonen zones first if available, fallback to standard method
             new_target_hr = PlanStorageService._calculate_hr_zone(
-                run_type_key, user_profile
+                run_type_key,
+                user_profile,
+                session=session,
+                user_id=str(plan.user_id),
             )
 
             # Update workout

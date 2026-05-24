@@ -50,7 +50,7 @@ def use_sqlite_for_tests():
     import src.db.models.memory.coach_interactions  # Memory V2
     import src.db.models.coach_tools  # coach_tools table for execute_tool call_count updates
     import src.db.models.product_analytics_event  # pilot product analytics
-    import src.db.models.user_hr_zones  # Insights / v_easy_runs
+    import src.db.models.runner_zone_profiles  # Runner profile zones
     import src.db.models.weekly_training_insights  # mobile Insights precompute
     import src.db.models.strava_sync_status  # coach Strava readiness
 

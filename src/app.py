@@ -82,6 +82,7 @@ from src.routes.heart_rate_routes import heart_rate_bp
 from src.routes.training_insights_routes import training_insights_bp
 from src.routes.internal_cron_routes import internal_cron_bp
 from src.routes.analytics_routes import analytics_bp
+from src.routes.runner_profile_routes import runner_profile_bp
 from src.utils.logging_bootstrap import configure_smartcoach_logging
 
 
@@ -184,6 +185,7 @@ def create_app(test_config=None):
     app.register_blueprint(training_insights_bp)
     app.register_blueprint(internal_cron_bp)
     app.register_blueprint(analytics_bp)
+    app.register_blueprint(runner_profile_bp)
 
     # Coach response v1 — one line at startup so deploy logs show flag resolution.
     from src.smartcoach_mobile_coach.coach_response.config import (

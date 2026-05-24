@@ -246,7 +246,7 @@ class WeeklyTotalsAdapter:
 
 
 class Pass3Adapter:
-    """Distribution through pre–Pass4 plan dict (Pass3 + race week + dates + cleanse + pace seed)."""
+    """Distribution through pre–Pass4 plan dict (Pass3 + race week + dates + cleanse + pace zones)."""
 
     def __init__(self, orchestrator: PlanGenerationOrchestratorV2) -> None:
         self._orch = orchestrator
@@ -262,8 +262,6 @@ class Pass3Adapter:
         plan_length_weeks = context.plan_length_weeks
         gen_config = context.gen_config
         weeks_with_totals = context.weekly_totals
-        lr_output = context.pass1_output
-
         race_date = plan_request.get("race_date")
         start_date = plan_request.get("start_date")
         user_tz = resolve_timezone(plan_request)
@@ -321,11 +319,12 @@ class Pass3Adapter:
         # Post-race cleanse: Remove any workout scheduled for the day after race
         weeks_out = self._orch._remove_post_race_workouts(weeks_out, race_date)
 
-        # Pace seed (performance-based calculation from recent run data)
-        pace_seed = self._orch._derive_pace_seed(
-            lr_output, plan_request, weeks_out, user_id=str(user_id), session=session
+        # Pace zones (runner_profile source of truth for V2 + Pass4)
+        pace_zones = self._orch._derive_pace_zones(
+            user_id=str(user_id),
+            session=session,
         )
-        context.pace_seed = pace_seed
+        context.pace_zones = pace_zones
 
         # Step 7: Add workout details (paces, intervals, notes)
         plan_with_details = {
@@ -345,13 +344,13 @@ class Pass4Adapter:
 
     def execute(self, context: PlanContext) -> PlanContext:
         plan_with_details = context.workout_distribution
-        pace_seed = context.pace_seed
+        pace_zones = context.pace_zones
         mode = getattr(context, "adapter_mode", "prefill")
         week_logs: Dict[int, List] = getattr(context, "adapter_week_logs", None) or {}
 
         plan_with_details = self._orch.pass4.add_details_to_plan(
             plan=plan_with_details,
-            seed=pace_seed,
+            pace_zones=pace_zones,
             mode=mode,
             week_logs=week_logs,
         )
