@@ -5,7 +5,6 @@ Centralizes all hardcoded values for workout detailing:
 - Warmup/Cool-down distances by run type
 - Strides configuration
 - Marathon finish rules
-- Intensity mapping
 - Phase definitions
 
 This enables behavior changes without editing code.
@@ -65,16 +64,6 @@ MARATHON_FINISH = {
     "min_lr_mi": 16.0,  # Minimum long run distance to trigger M-finish
     "finish_fraction": 0.25,  # Fraction of total distance for M-finish
     "min_finish_mi": 2.0,  # Minimum miles for M-finish segment
-}
-
-# ============================================================================
-# INTENSITY MAPPING
-# ============================================================================
-INTENSITY_MAP = {
-    "easy": "E",
-    "steady": "S",
-    "endurance": "S",  # Endurance uses steady pace
-    "long": "E",  # Will remain E unless segments include M-finish
 }
 
 # ============================================================================

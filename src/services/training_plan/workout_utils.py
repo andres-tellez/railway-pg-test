@@ -266,33 +266,33 @@ def extract_main_segment(segments: Any) -> Optional[Dict[str, Any]]:
 
 def get_workout_pace_label_key(workout_type: str) -> str:
     """
-    Map workout type to pace_labels key (E, S, M, T).
+    Map workout type to pace_labels key (z2, z3, m, z4).
 
     Args:
         workout_type: Workout type string (e.g., "easy", "steady", "long")
 
     Returns:
-        Pace label key: "E", "S", "M", or "T"
+        Pace label key: "z2", "z3", "m", or "z4"
     """
     if not workout_type:
-        return "E"
+        return "z2"
 
     workout_type_lower = workout_type.lower()
 
     if "easy" in workout_type_lower or "recovery" in workout_type_lower:
-        return "E"
+        return "z2"
     elif "steady" in workout_type_lower or "aerobic" in workout_type_lower:
-        return "S"
+        return "z3"
     elif "endurance" in workout_type_lower or "medium" in workout_type_lower:
-        return "S"  # Endurance uses S zone
+        return "z3"
     elif "long" in workout_type_lower:
-        return "E"  # Long runs usually E zone
+        return "z2"
     elif "tempo" in workout_type_lower or "threshold" in workout_type_lower:
-        return "T"
+        return "z4"
     elif "marathon" in workout_type_lower:
-        return "M"
+        return "m"
     else:
-        return "E"  # Default to Easy
+        return "z2"
 
 
 def extract_pace_zone_from_workout(workout_data: Dict[str, Any]) -> str:
@@ -301,7 +301,7 @@ def extract_pace_zone_from_workout(workout_data: Dict[str, Any]) -> str:
 
     Strategy (in priority order):
     1. Direct target_zone field
-    2. pace_labels[workout_type_key] (E/S/M/T based on workout type)
+    2. pace_labels[workout_type_key] (z2/z3/m/z4 based on workout type)
     3. Main segment's target pace range
 
     Args:
@@ -319,14 +319,14 @@ def extract_pace_zone_from_workout(workout_data: Dict[str, Any]) -> str:
     workout_type = workout_data.get("type", "")
     pace_labels = workout_data.get("pace_labels", {})
     if pace_labels:
-        # ✅ Use correct keys: "E", "S", "M", "T" (not "primary"/"secondary")
+        # Canonical keys: z2/z3/m/z4
         label_key = get_workout_pace_label_key(workout_type)
         pace_str = pace_labels.get(label_key, "")
         if pace_str:
             return pace_str
 
         # Fallback: try other common zones in order
-        for key in ["E", "S", "M", "T"]:
+        for key in ["z2", "z3", "m", "z4"]:
             if key in pace_labels and pace_labels[key]:
                 return pace_labels[key]
 

@@ -23,3 +23,5 @@ repos:
         types: [python]
         args: ["--disable=import-error", "--exit-zero"]
         exclude: ^migrations/env\.py$
+        env:
+          PYTHONUTF8: "1"

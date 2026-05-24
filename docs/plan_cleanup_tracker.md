@@ -27,7 +27,7 @@ Lightweight record of plan-generation legacy vs V2. Source: codebase audit (orch
 | Constraints, race-date validation, scenario adjustments | `v2/plan_constraints_service.py`, `v2/race_date_validation_service.py`, `v2/scenario_adjustments_service.py` | ACTIVE | Keep | NO | TODO |
 | PlanValidationServiceV2 | `v2/plan_validation_service_v2.py` | ACTIVE | Keep | NO | TODO |
 | `calculate_weekly_mileage_from_workouts` | `workout_utils.py` | ACTIVE | Keep | NO | TODO |
-| `get_initial_pace_seed` | `pace/calculator.py` | ACTIVE | Keep | NO | TODO |
+| Pace zones (generation / rebuild / API) | `smartcoach_mobile_coach/runner_profile/pace_builder.py`, `models.PaceZoneComputation` | ACTIVE | Keep | NO | DONE |
 | Decision trace (weekday / LR day strings) | `decision_trace.py` | ACTIVE | Keep | NO | TODO |
 | Pass1 `_validate_weeks` (removed) | `v2/marathon/pass1_longrun_first_v2.py` | SHADOW | Removed | YES | DONE |
 | Pass1WeeksSelector (v1) | `pass1_weeks_selector.py` (removed) | LEGACY | Removed | YES | DONE |

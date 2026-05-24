@@ -280,29 +280,38 @@ class RunnerStateBuilder:
 
             pace_ranges = workout.pace_ranges
 
-            # Format pace zones from DB structure: {"E": [min_sec, max_sec], ...}
-            formatted = {}
+            # Format pace zones from DB: { z2,z3,z4: [min_sec,max_sec], m: [...] }
+            formatted: Dict[str, str] = {}
 
-            # Easy pace
-            if "E" in pace_ranges and len(pace_ranges["E"]) == 2:
-                min_sec, max_sec = pace_ranges["E"]
-                formatted["easy"] = pace_range_to_str(float(min_sec), float(max_sec))
+            def _seconds_pair(raw: Any) -> tuple[float, float] | None:
+                if raw is None:
+                    return None
+                if isinstance(raw, (int, float)):
+                    s = float(raw)
+                    return s, s
+                if isinstance(raw, list):
+                    if len(raw) >= 2:
+                        return float(raw[0]), float(raw[1])
+                    if len(raw) == 1:
+                        s = float(raw[0])
+                        return s, s
+                return None
 
-            # Marathon pace (single value)
-            if "M" in pace_ranges:
-                if isinstance(pace_ranges["M"], list) and len(pace_ranges["M"]) >= 1:
-                    m_pace = float(pace_ranges["M"][0])
-                    formatted["marathon"] = pace_range_to_str(m_pace, m_pace)
-                elif isinstance(pace_ranges["M"], (int, float)):
-                    m_pace = float(pace_ranges["M"])
-                    formatted["marathon"] = pace_range_to_str(m_pace, m_pace)
+            z2 = _seconds_pair(pace_ranges.get("z2"))
+            if z2 is not None:
+                formatted["easy"] = pace_range_to_str(z2[0], z2[1])
 
-            # Threshold pace
-            if "T" in pace_ranges and len(pace_ranges["T"]) == 2:
-                min_sec, max_sec = pace_ranges["T"]
-                formatted["threshold"] = pace_range_to_str(
-                    float(min_sec), float(max_sec)
-                )
+            z3 = _seconds_pair(pace_ranges.get("z3"))
+            if z3 is not None:
+                formatted["steady"] = pace_range_to_str(z3[0], z3[1])
+
+            zm = _seconds_pair(pace_ranges.get("m"))
+            if zm is not None:
+                formatted["marathon"] = pace_range_to_str(zm[0], zm[1])
+
+            z4 = _seconds_pair(pace_ranges.get("z4"))
+            if z4 is not None:
+                formatted["threshold"] = pace_range_to_str(z4[0], z4[1])
 
             return formatted
 

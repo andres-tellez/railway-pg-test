@@ -18,7 +18,7 @@ import uuid
 import difflib
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -285,18 +285,19 @@ def _fixed_pace_seed(
     strategies: Any = None,
     **kwargs: Any,
 ) -> Any:
-    from src.services.training_plan.pace.models import PaceSeed
+    from src.smartcoach_mobile_coach.runner_profile.models import (
+        PaceZoneBand,
+        PaceZoneComputation,
+    )
 
-    wl = float(week1_long or 8.0)
-    return PaceSeed(
-        E_min=630.0,
-        E_max=690.0,
-        S_min=610.0,
-        S_max=625.0,
-        M=600.0,
-        T_min=570.0,
-        T_max=580.0,
-        week1_long_cap=max(8.0, wl),
+    return PaceZoneComputation(
+        pace_z2=PaceZoneBand(low_sec=630, high_sec=690, display="10:30-11:30/mi"),
+        pace_z3=PaceZoneBand(low_sec=610, high_sec=625, display="10:10-10:25/mi"),
+        pace_z4=PaceZoneBand(low_sec=570, high_sec=580, display="9:30-9:40/mi"),
+        pace_source="test",
+        pace_computed_at=datetime.now().astimezone(),
+        marathon_sec=600,
+        week1_long_cap=max(8.0, float(week1_long or 8.0)),
     )
 
 
@@ -408,8 +409,8 @@ def _apply_determinism_patches(
     )
 
     monkeypatch.setattr(
-        "src.services.training_plan.v2.plan_generation_orchestrator_v2.get_initial_pace_seed",
-        _fixed_pace_seed,
+        "src.services.training_plan.v2.plan_generation_orchestrator_v2.get_runner_pace_zones_for_plan_generation",
+        lambda *args, **kwargs: _fixed_pace_seed(*args, **kwargs),
     )
 
 

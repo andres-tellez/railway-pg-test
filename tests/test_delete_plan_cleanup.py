@@ -57,7 +57,7 @@ def test_delete_plan_clears_metrics_decision_log_phase_goals_and_activity_scorin
                 "workout_type": "Easy",
                 "description": "Run",
                 "miles": 5.0,
-                "intensity": "E",
+                "intensity": "z2",
             },
         ],
     )

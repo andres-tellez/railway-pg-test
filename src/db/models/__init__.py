@@ -10,7 +10,7 @@ from src.db.models.auth_audit_log import AuthAuditLog  # Audit logging
 from src.db.models.product_analytics_event import ProductAnalyticsEvent
 from src.db.models.strava_sync_status import StravaSyncStatus
 from src.db.models.strava_ingestion_retry import StravaIngestionRetry
-from src.db.models.user_hr_zones import UserHrZones
+from src.db.models.runner_zone_profiles import RunnerZoneProfile
 from src.db.models.coach_tools import CoachTool
 from src.db.models.user_coach_preferences import UserCoachPreferences
 from src.db.models.weekly_training_insights import WeeklyTrainingInsight

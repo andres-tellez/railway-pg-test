@@ -22,40 +22,44 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from src.db.models.plan_workouts import PlanWorkout
+from src.smartcoach_mobile_coach.runner_profile import (
+    get_runner_pace_zone_key_for_run_type,
+)
 from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_pace_sec_per_mi,
 )
 
-_PACE_KEYS = frozenset({"E", "S", "M", "T"})
+_PACE_KEYS = frozenset({"z2", "z3", "m", "z4"})
 
 
 def _intensity_band_key(w: PlanWorkout) -> str:
-    raw = (getattr(w, "intensity", None) or "").strip().upper()
-    if raw and raw[0] in _PACE_KEYS:
-        return raw[0]
-    rtk = (getattr(w, "run_type_key", None) or "").strip().lower()
-    if rtk == "steady":
-        return "S"
-    return "E"
+    raw = (getattr(w, "intensity", None) or "").strip().lower()
+    if raw in _PACE_KEYS:
+        return raw
+    return get_runner_pace_zone_key_for_run_type(getattr(w, "run_type_key", None) or "")
 
 
 def _pace_band_seconds(w: PlanWorkout) -> Optional[tuple[int, int]]:
     pr = getattr(w, "pace_ranges", None)
     if not isinstance(pr, dict) or not pr:
         return None
-    letter = _intensity_band_key(w)
-    raw = pr.get(letter)
-    if raw is None and letter != "E":
-        raw = pr.get("E")
+    zone_key = _intensity_band_key(w)
+    raw = pr.get(zone_key)
+    if raw is None and zone_key != "z2":
+        raw = pr.get("z2")
     if raw is None:
         return None
     if isinstance(raw, (int, float)):
         sec = int(raw)
         return sec, sec
-    if isinstance(raw, list) and len(raw) >= 2:
-        lo, hi = int(raw[0]), int(raw[1])
-        return lo, hi
+    if isinstance(raw, list):
+        if len(raw) >= 2:
+            lo, hi = int(raw[0]), int(raw[1])
+            return lo, hi
+        if len(raw) == 1:
+            sec = int(raw[0])
+            return sec, sec
     return None
 
 

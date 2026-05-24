@@ -616,7 +616,12 @@ def build_weekly_plan_payload(
         canonical = _resolve_run_type_key(w)
         target_hr = w.target_hr
         if not target_hr and PlanStorageService is not None:
-            target_hr = PlanStorageService._calculate_hr_zone(canonical, user_profile)
+            target_hr = PlanStorageService._calculate_hr_zone(
+                canonical,
+                user_profile,
+                session=session,
+                user_id=str(user_id),
+            )
 
         if temporality == WeekTemporality.FUTURE:
             days.append(_build_future_week_day_entry(w, canonical, target_hr))

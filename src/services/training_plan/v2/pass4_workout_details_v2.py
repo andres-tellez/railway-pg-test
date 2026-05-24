@@ -7,7 +7,7 @@ Purpose:
 
 Integration:
     Called after Pass 3 (workout distribution) to add detailed segments.
-    Uses PaceSeed from pace module to determine pace zones.
+    Uses runner-profile pace zones to determine pace targets.
 
 Unit Invariant:
     All pace targets are in seconds per mile (sec/mi) as integers.
@@ -54,7 +54,7 @@ TYPE_DISPLAY = {
     ENDURANCE: "Endurance (Medium-Long)",  # Keep legacy display name
     LONG: WORKOUT_DEFINITIONS["long_run"]["description"],
 }
-from src.services.training_plan.pace import PaceSeed
+from src.smartcoach_mobile_coach.runner_profile.models import PaceZoneComputation
 from src.services.training_plan.v2.shared_v2.workout_detail_rules import (
     PHASE,
     WU_CD_MI,
@@ -84,60 +84,115 @@ def _fmt_range_dict(min_sec: float, max_sec: float) -> dict:
     return {"low": _sec(min_sec), "high": _sec(max_sec)}
 
 
+def _pace_labels(pace_zones: PaceZoneComputation) -> Dict[str, str]:
+    """Canonical pace labels keyed by runner-profile zones (z2, z3, m, z4)."""
+    z2 = pace_range_to_str(
+        pace_zones.pace_z2.low_sec,
+        pace_zones.pace_z2.high_sec,
+    )
+    z3 = pace_range_to_str(
+        pace_zones.pace_z3.low_sec,
+        pace_zones.pace_z3.high_sec,
+    )
+    m = pace_range_to_str(pace_zones.marathon_sec, pace_zones.marathon_sec)
+    z4 = pace_range_to_str(
+        pace_zones.pace_z4.low_sec,
+        pace_zones.pace_z4.high_sec,
+    )
+    return {
+        "z2": z2,
+        "z3": z3,
+        "m": m,
+        "z4": z4,
+    }
+
+
+def _z2_low(pace_zones: PaceZoneComputation) -> int:
+    return int(pace_zones.pace_z2.low_sec)
+
+
+def _z2_high(pace_zones: PaceZoneComputation) -> int:
+    return int(pace_zones.pace_z2.high_sec)
+
+
+def _z3_low(pace_zones: PaceZoneComputation) -> int:
+    return int(pace_zones.pace_z3.low_sec)
+
+
+def _z3_high(pace_zones: PaceZoneComputation) -> int:
+    return int(pace_zones.pace_z3.high_sec)
+
+
+def _z4_low(pace_zones: PaceZoneComputation) -> int:
+    return int(pace_zones.pace_z4.low_sec)
+
+
+def _z4_high(pace_zones: PaceZoneComputation) -> int:
+    return int(pace_zones.pace_z4.high_sec)
+
+
+def _m_pace(pace_zones: PaceZoneComputation) -> int:
+    return int(pace_zones.marathon_sec)
+
+
 # _fmt_range_str removed - now using pace_range_to_str from workout_utils
 
 
-def _wu_step(mi: float, E_min: float, E_max: float) -> dict:
+def _wu_step(mi: float, easy_min: float, easy_max: float) -> dict:
     """Create warm-up step."""
     return {
         "name": "Warm-up",
         "durationType": "DISTANCE",
         "value": mi,
-        "target": _fmt_range_dict(E_min, E_max),
+        "target": _fmt_range_dict(easy_min, easy_max),
         "intensity": "EASY",
     }
 
 
-def _cd_step(mi: float, E_min: float, E_max: float) -> dict:
+def _cd_step(mi: float, easy_min: float, easy_max: float) -> dict:
     """Create cool-down step."""
     return {
         "name": "Cool-down",
         "durationType": "DISTANCE",
         "value": mi,
-        "target": _fmt_range_dict(E_min, E_max),
+        "target": _fmt_range_dict(easy_min, easy_max),
         "intensity": "EASY",
     }
 
 
-def _rest_step(mi: float, E_min: float, E_max: float) -> dict:
+def _rest_step(mi: float, easy_min: float, easy_max: float) -> dict:
     """Create rest/recovery step between intervals."""
     return {
         "name": "Rest",
         "durationType": "DISTANCE",
         "value": mi,
-        "target": _fmt_range_dict(E_min, E_max),
+        "target": _fmt_range_dict(easy_min, easy_max),
         "intensity": "EASY",
     }
 
 
-def _interval_step(interval_num: int, mi: float, T_min: float, T_max: float) -> dict:
+def _interval_step(
+    interval_num: int, mi: float, threshold_min: float, threshold_max: float
+) -> dict:
     """Create threshold interval step."""
     return {
         "name": f"Interval {interval_num}",
         "durationType": "DISTANCE",
         "value": mi,
-        "target": _fmt_range_dict(T_min, T_max),
+        "target": _fmt_range_dict(threshold_min, threshold_max),
         "intensity": "THRESHOLD",
     }
 
 
-def _tempo_block_step(block_num: int, mi: float, S_min: float, S_max: float) -> dict:
+def _tempo_block_step(
+    block_num: int, mi: float, steady_min: float, steady_max: float
+) -> dict:
     """Create tempo block step."""
     return {
         "name": f"Tempo Block {block_num}",
         "durationType": "DISTANCE",
         "value": mi,
-        "target": _fmt_range_dict(S_min, S_max),
+        "target": _fmt_range_dict(steady_min, steady_max),
         "intensity": "STEADY",
     }
 
@@ -150,7 +205,7 @@ def _tempo_block_step(block_num: int, mi: float, S_min: float, S_max: float) -> 
 def _validate_and_adjust_segments(
     steps: List[dict],
     target_miles: float,
-    seed: PaceSeed,
+    pace_zones: PaceZoneComputation,
 ) -> List[dict]:
     """
     Validate that segment total matches target miles and adjust if needed.
@@ -163,7 +218,7 @@ def _validate_and_adjust_segments(
     Args:
         steps: List of segment dicts with 'value' field (miles)
         target_miles: Expected total workout distance
-        seed: PaceSeed for creating adjustment segments
+        pace_zones: runner-profile pace zones for creating adjustment segments
 
     Returns:
         Adjusted list of segments
@@ -226,7 +281,7 @@ def _validate_and_adjust_segments(
 
 def _detail_easy_fallback(
     distance_mi: float,
-    seed: PaceSeed,
+    pace_zones: PaceZoneComputation,
     cue_text: str,
 ) -> Dict[str, Any]:
     """
@@ -239,7 +294,7 @@ def _detail_easy_fallback(
 
     Args:
         distance_mi: Total workout distance
-        seed: PaceSeed with pace zones
+        pace_zones: runner-profile pace zones
         cue_text: Custom cue explaining the downgrade
 
     Returns:
@@ -250,7 +305,7 @@ def _detail_easy_fallback(
             "name": "Easy Run",
             "durationType": "DISTANCE",
             "value": distance_mi,
-            "target": _fmt_range_dict(seed.E_min, seed.E_max),
+            "target": _fmt_range_dict(_z2_low(pace_zones), _z2_high(pace_zones)),
             "intensity": "EASY",
         }
     ]
@@ -263,12 +318,7 @@ def _detail_easy_fallback(
             "notes": cue_text,
         },
         "cues": cue_text,
-        "pace_labels": {
-            "E": pace_range_to_str(seed.E_min, seed.E_max),
-            "S": pace_range_to_str(seed.S_min, seed.S_max),
-            "M": pace_range_to_str(seed.M, seed.M),
-            "T": pace_range_to_str(seed.T_min, seed.T_max),
-        },
+        "pace_labels": _pace_labels(pace_zones),
         "quality_insert": None,
     }
 
@@ -276,7 +326,7 @@ def _detail_easy_fallback(
 def _detail_tempo(
     distance_mi: float,
     phase: str,
-    seed: PaceSeed,
+    pace_zones: PaceZoneComputation,
     allow_quality: bool,
 ) -> Dict[str, Any]:
     """
@@ -293,7 +343,7 @@ def _detail_tempo(
     Args:
         distance_mi: Total workout distance
         phase: Training phase
-        seed: PaceSeed with pace zones
+        pace_zones: runner-profile pace zones
         allow_quality: Whether quality elements are allowed
 
     Returns:
@@ -336,7 +386,7 @@ def _detail_tempo(
     easy_mi = max(0.0, available_for_tempo - tempo_mi)
 
     # Build steps
-    steps.append(_wu_step(wu_mi, seed.E_min, seed.E_max))
+    steps.append(_wu_step(wu_mi, _z2_low(pace_zones), _z2_high(pace_zones)))
 
     if tempo_mi > 0:
         steps.append(
@@ -344,7 +394,7 @@ def _detail_tempo(
                 "name": "Tempo",
                 "durationType": "DISTANCE",
                 "value": tempo_mi,
-                "target": _fmt_range_dict(seed.T_min, seed.T_max),
+                "target": _fmt_range_dict(_z4_low(pace_zones), _z4_high(pace_zones)),
                 "intensity": "TEMPO",
             }
         )
@@ -356,12 +406,12 @@ def _detail_tempo(
                 "name": "Easy",
                 "durationType": "DISTANCE",
                 "value": easy_mi,
-                "target": _fmt_range_dict(seed.E_min, seed.E_max),
+                "target": _fmt_range_dict(_z2_low(pace_zones), _z2_high(pace_zones)),
                 "intensity": "EASY",
             }
         )
 
-    steps.append(_cd_step(cd_mi, seed.E_min, seed.E_max))
+    steps.append(_cd_step(cd_mi, _z2_low(pace_zones), _z2_high(pace_zones)))
 
     # Phase-specific cues
     if phase == "Base":
@@ -385,7 +435,7 @@ def _detail_tempo(
             )
 
     # Validate and adjust segment totals
-    steps = _validate_and_adjust_segments(steps, distance_mi, seed)
+    steps = _validate_and_adjust_segments(steps, distance_mi, pace_zones)
 
     cues_str = " ".join(cues)
     return {
@@ -396,12 +446,7 @@ def _detail_tempo(
             "notes": cues_str,
         },
         "cues": cues_str,
-        "pace_labels": {
-            "E": pace_range_to_str(seed.E_min, seed.E_max),
-            "S": pace_range_to_str(seed.S_min, seed.S_max),
-            "M": pace_range_to_str(seed.M, seed.M),
-            "T": pace_range_to_str(seed.T_min, seed.T_max),
-        },
+        "pace_labels": _pace_labels(pace_zones),
         "quality_insert": quality_insert,
     }
 
@@ -409,7 +454,7 @@ def _detail_tempo(
 def _detail_intervals(
     distance_mi: float,
     phase: str,
-    seed: PaceSeed,
+    pace_zones: PaceZoneComputation,
     allow_quality: bool,
 ) -> Dict[str, Any]:
     """
@@ -425,7 +470,7 @@ def _detail_intervals(
     Args:
         distance_mi: Total workout distance
         phase: Training phase
-        seed: PaceSeed with pace zones
+        pace_zones: runner-profile pace zones
         allow_quality: Whether quality elements are allowed
 
     Returns:
@@ -452,7 +497,7 @@ def _detail_intervals(
         interval_mi = 1.0  # 1 mile
 
     # Build steps
-    steps.append(_wu_step(wu_mi, seed.E_min, seed.E_max))
+    steps.append(_wu_step(wu_mi, _z2_low(pace_zones), _z2_high(pace_zones)))
 
     total_interval_mi = 0.0
     for i in range(1, reps + 1):
@@ -463,7 +508,7 @@ def _detail_intervals(
                 "durationType": "DISTANCE",
                 "value": interval_mi,
                 "target": _fmt_range_dict(
-                    seed.T_min - 15, seed.T_min
+                    _z4_low(pace_zones) - 15, _z4_low(pace_zones)
                 ),  # Slightly faster than T
                 "intensity": "INTERVAL",
             }
@@ -477,12 +522,14 @@ def _detail_intervals(
                     "name": "Recovery",
                     "durationType": "DISTANCE",
                     "value": recovery_mi,
-                    "target": _fmt_range_dict(seed.E_min, seed.E_max),
+                    "target": _fmt_range_dict(
+                        _z2_low(pace_zones), _z2_high(pace_zones)
+                    ),
                     "intensity": "RECOVERY",
                 }
             )
 
-    steps.append(_cd_step(cd_mi, seed.E_min, seed.E_max))
+    steps.append(_cd_step(cd_mi, _z2_low(pace_zones), _z2_high(pace_zones)))
 
     quality_insert = {"type": "intervals", "reps": reps, "interval_mi": interval_mi}
 
@@ -496,7 +543,7 @@ def _detail_intervals(
         cues.append("These are race-sharpening intervals. Stay relaxed and powerful.")
 
     # Validate and adjust segment totals
-    steps = _validate_and_adjust_segments(steps, distance_mi, seed)
+    steps = _validate_and_adjust_segments(steps, distance_mi, pace_zones)
 
     cues_str = " ".join(cues)
     return {
@@ -507,12 +554,7 @@ def _detail_intervals(
             "notes": cues_str,
         },
         "cues": cues_str,
-        "pace_labels": {
-            "E": pace_range_to_str(seed.E_min, seed.E_max),
-            "S": pace_range_to_str(seed.S_min, seed.S_max),
-            "M": pace_range_to_str(seed.M, seed.M),
-            "T": pace_range_to_str(seed.T_min, seed.T_max),
-        },
+        "pace_labels": _pace_labels(pace_zones),
         "quality_insert": quality_insert,
     }
 
@@ -520,7 +562,7 @@ def _detail_intervals(
 def _detail_hills(
     distance_mi: float,
     phase: str,
-    seed: PaceSeed,
+    pace_zones: PaceZoneComputation,
     allow_quality: bool,
 ) -> Dict[str, Any]:
     """
@@ -537,7 +579,7 @@ def _detail_hills(
     Args:
         distance_mi: Total workout distance
         phase: Training phase
-        seed: PaceSeed with pace zones
+        pace_zones: runner-profile pace zones
         allow_quality: Whether quality elements are allowed
 
     Returns:
@@ -550,7 +592,7 @@ def _detail_hills(
         # Downgrade to easy run - hills are unsafe during taper
         return _detail_easy_fallback(
             distance_mi,
-            seed,
+            pace_zones,
             "Easy run (hills removed for taper). Keep legs fresh for race day.",
         )
 
@@ -599,7 +641,7 @@ def _detail_hills(
     hill_mi = 0.15  # ~60-90 seconds uphill
     recovery_mi = 0.15  # Jog down
 
-    steps.append(_wu_step(wu_mi, seed.E_min, seed.E_max))
+    steps.append(_wu_step(wu_mi, _z2_low(pace_zones), _z2_high(pace_zones)))
 
     for i in range(1, reps + 1):
         steps.append(
@@ -607,7 +649,9 @@ def _detail_hills(
                 "name": f"Hill {i}",
                 "durationType": "DISTANCE",
                 "value": hill_mi,
-                "target": _fmt_range_dict(seed.T_min - 30, seed.T_min),  # Hard effort
+                "target": _fmt_range_dict(
+                    _z4_low(pace_zones) - 30, _z4_low(pace_zones)
+                ),  # Hard effort
                 "intensity": "HARD",
             }
         )
@@ -618,13 +662,13 @@ def _detail_hills(
                     "durationType": "DISTANCE",
                     "value": recovery_mi,
                     "target": _fmt_range_dict(
-                        seed.E_min + 30, seed.E_max + 30
+                        _z2_low(pace_zones) + 30, _z2_high(pace_zones) + 30
                     ),  # Very easy
                     "intensity": "RECOVERY",
                 }
             )
 
-    steps.append(_cd_step(cd_mi, seed.E_min, seed.E_max))
+    steps.append(_cd_step(cd_mi, _z2_low(pace_zones), _z2_high(pace_zones)))
 
     quality_insert = {"type": "hills", "reps": reps, "phase": phase}
 
@@ -648,7 +692,7 @@ def _detail_hills(
     cues.append("Focus on driving knees and pumping arms. Stay relaxed in shoulders.")
 
     # Validate and adjust segment totals
-    steps = _validate_and_adjust_segments(steps, distance_mi, seed)
+    steps = _validate_and_adjust_segments(steps, distance_mi, pace_zones)
 
     cues_str = " ".join(cues)
     return {
@@ -659,12 +703,7 @@ def _detail_hills(
             "notes": cues_str,
         },
         "cues": cues_str,
-        "pace_labels": {
-            "E": pace_range_to_str(seed.E_min, seed.E_max),
-            "S": pace_range_to_str(seed.S_min, seed.S_max),
-            "M": pace_range_to_str(seed.M, seed.M),
-            "T": pace_range_to_str(seed.T_min, seed.T_max),
-        },
+        "pace_labels": _pace_labels(pace_zones),
         "quality_insert": quality_insert,
     }
 
@@ -678,7 +717,7 @@ def _detail_run(
     run_type: str,
     distance_mi: float,
     phase: str,
-    seed: PaceSeed,
+    pace_zones: PaceZoneComputation,
     allow_quality: bool,
     is_cutback: bool = False,
 ) -> Dict[str, Any]:
@@ -697,7 +736,7 @@ def _detail_run(
         run_type: Workout type from taxonomy (e.g., "easy", "tempo", "intervals")
         distance_mi: Total distance in miles
         phase: Training phase (Base, Build, Peak, Taper)
-        seed: PaceSeed with pace zones
+        pace_zones: runner-profile pace zones
         allow_quality: Whether to allow quality elements (T-block, M-finish)
         is_cutback: Whether this is a cutback/recovery week
 
@@ -705,7 +744,7 @@ def _detail_run(
         Dict with:
             - segments: Spec-compliant segments object with units/targetType/steps/notes
             - cues: String with workout cues/guidance
-            - pace_labels: Dict of pace labels (E, S, M, T) for display
+            - pace_labels: Dict of pace labels (z2, z3, m, z4) for display
             - quality_insert: Optional quality insert metadata
     """
     # =========================================================================
@@ -725,7 +764,7 @@ def _detail_run(
     if archetype in HARD_ARCHETYPES and distance_mi < MIN_HARD_WORKOUT_MILES:
         return _detail_easy_fallback(
             distance_mi,
-            seed,
+            pace_zones,
             f"Easy run (workout too short for {run_type}). "
             f"Hard workouts need at least {MIN_HARD_WORKOUT_MILES} miles for safe structure.",
         )
@@ -738,7 +777,7 @@ def _detail_run(
     if is_cutback and archetype in HARD_ARCHETYPES:
         return _detail_easy_fallback(
             distance_mi,
-            seed,
+            pace_zones,
             "Easy recovery run (cutback week). Focus on rest and recovery.",
         )
 
@@ -746,13 +785,13 @@ def _detail_run(
     # ROUTE TO APPROPRIATE GENERATOR
     # =========================================================================
     if archetype == ARCHETYPE_TEMPO:
-        return _detail_tempo(distance_mi, phase, seed, allow_quality)
+        return _detail_tempo(distance_mi, phase, pace_zones, allow_quality)
 
     if archetype == ARCHETYPE_INTERVALS:
-        return _detail_intervals(distance_mi, phase, seed, allow_quality)
+        return _detail_intervals(distance_mi, phase, pace_zones, allow_quality)
 
     if archetype == ARCHETYPE_HILLS:
-        return _detail_hills(distance_mi, phase, seed, allow_quality)
+        return _detail_hills(distance_mi, phase, pace_zones, allow_quality)
 
     # =========================================================================
     # LEGACY GENERATORS - For EASY, STEADY, ENDURANCE, LONG
@@ -775,7 +814,7 @@ def _detail_run(
                 "name": "Easy",
                 "durationType": "DISTANCE",
                 "value": distance_mi,  # Use full distance (no WU/CD subtraction)
-                "target": _fmt_range_dict(seed.E_min, seed.E_max),
+                "target": _fmt_range_dict(_z2_low(pace_zones), _z2_high(pace_zones)),
                 "intensity": "EASY",
             }
         ]
@@ -816,20 +855,27 @@ def _detail_run(
             )
 
             # Build steps: warm-up, intervals with rest, cooldown
-            steps = [_wu_step(wu_mi, seed.E_min, seed.E_max)]
+            steps = [_wu_step(wu_mi, _z2_low(pace_zones), _z2_high(pace_zones))]
 
             # Add intervals with rest between
             for i in range(1, interval_config["reps"] + 1):
                 steps.append(
                     _interval_step(
-                        i, interval_config["interval_mi"], seed.T_min, seed.T_max
+                        i,
+                        interval_config["interval_mi"],
+                        _z4_low(pace_zones),
+                        _z4_high(pace_zones),
                     )
                 )
                 if (
                     i < interval_config["reps"]
                 ):  # Rest between intervals (not after last)
                     steps.append(
-                        _rest_step(interval_config["rest_mi"], seed.E_min, seed.E_max)
+                        _rest_step(
+                            interval_config["rest_mi"],
+                            _z2_low(pace_zones),
+                            _z2_high(pace_zones),
+                        )
                     )
 
             # Add any remaining steady distance if needed
@@ -839,12 +885,14 @@ def _detail_run(
                         "name": "Steady",
                         "durationType": "DISTANCE",
                         "value": remaining_mi,
-                        "target": _fmt_range_dict(seed.S_min, seed.S_max),
+                        "target": _fmt_range_dict(
+                            _z3_low(pace_zones), _z3_high(pace_zones)
+                        ),
                         "intensity": "STEADY",
                     }
                 )
 
-            steps.append(_cd_step(cd_mi, seed.E_min, seed.E_max))
+            steps.append(_cd_step(cd_mi, _z2_low(pace_zones), _z2_high(pace_zones)))
 
             cues.append(
                 f"Threshold intervals: {interval_config['reps']}×{interval_config['interval_mi']:.2f}mi "
@@ -854,15 +902,17 @@ def _detail_run(
             # Continuous steady run (Base phase or when quality not allowed)
             main_mi = max(0.0, distance_mi - (wu_mi + cd_mi))
             steps = [
-                _wu_step(wu_mi, seed.E_min, seed.E_max),
+                _wu_step(wu_mi, _z2_low(pace_zones), _z2_high(pace_zones)),
                 {
                     "name": "Steady",
                     "durationType": "DISTANCE",
                     "value": main_mi,
-                    "target": _fmt_range_dict(seed.S_min, seed.S_max),
+                    "target": _fmt_range_dict(
+                        _z3_low(pace_zones), _z3_high(pace_zones)
+                    ),
                     "intensity": "STEADY",
                 },
-                _cd_step(cd_mi, seed.E_min, seed.E_max),
+                _cd_step(cd_mi, _z2_low(pace_zones), _z2_high(pace_zones)),
             ]
             cues.append("Controlled effort; steady, not hard.")
 
@@ -879,15 +929,15 @@ def _detail_run(
     elif archetype == ARCHETYPE_ENDURANCE or run_type == ENDURANCE:
         main_mi = max(0.0, distance_mi - (wu_mi + cd_mi))
         steps = [
-            _wu_step(wu_mi, seed.E_min, seed.E_max),
+            _wu_step(wu_mi, _z2_low(pace_zones), _z2_high(pace_zones)),
             {
                 "name": "Endurance",
                 "durationType": "DISTANCE",
                 "value": main_mi,
-                "target": _fmt_range_dict(seed.S_min, seed.S_max),
+                "target": _fmt_range_dict(_z3_low(pace_zones), _z3_high(pace_zones)),
                 "intensity": "STEADY",
             },
-            _cd_step(cd_mi, seed.E_min, seed.E_max),
+            _cd_step(cd_mi, _z2_low(pace_zones), _z2_high(pace_zones)),
         ]
         cues.append("Medium-long run; builds fatigue tolerance.")
 
@@ -908,8 +958,10 @@ def _detail_run(
         # - Peak: Easy pace (E) + optional M-finish segments
         # - Taper: Easy pace (E)
         use_steady_pace = phase == PHASE["BUILD"] and not m_finish_enabled
-        long_pace_min = seed.S_min if use_steady_pace else seed.E_min
-        long_pace_max = seed.S_max if use_steady_pace else seed.E_max
+        long_pace_min = _z3_low(pace_zones) if use_steady_pace else _z2_low(pace_zones)
+        long_pace_max = (
+            _z3_high(pace_zones) if use_steady_pace else _z2_high(pace_zones)
+        )
         long_intensity = "STEADY" if use_steady_pace else "EASY"
         long_name = "Long Steady" if use_steady_pace else "Long Easy"
 
@@ -924,14 +976,19 @@ def _detail_run(
                     "name": "Long Easy",
                     "durationType": "DISTANCE",
                     "value": easy_part,
-                    "target": _fmt_range_dict(seed.E_min, seed.E_max),
+                    "target": _fmt_range_dict(
+                        _z2_low(pace_zones), _z2_high(pace_zones)
+                    ),
                     "intensity": "EASY",
                 },
                 {
                     "name": "Marathon finish",
                     "durationType": "DISTANCE",
                     "value": finish_mi,
-                    "target": {"low": _sec(seed.M), "high": _sec(seed.M)},
+                    "target": {
+                        "low": _sec(_m_pace(pace_zones)),
+                        "high": _sec(_m_pace(pace_zones)),
+                    },
                     "intensity": "MARATHON",
                 },
             ]
@@ -967,7 +1024,7 @@ def _detail_run(
                 "name": "Run",
                 "durationType": "DISTANCE",
                 "value": distance_mi,
-                "target": _fmt_range_dict(seed.E_min, seed.E_max),
+                "target": _fmt_range_dict(_z2_low(pace_zones), _z2_high(pace_zones)),
                 "intensity": "EASY",
             }
         ]
@@ -988,12 +1045,7 @@ def _detail_run(
     return {
         "segments": segments_obj,
         "cues": cues_str,
-        "pace_labels": {
-            "E": pace_range_to_str(seed.E_min, seed.E_max),
-            "S": pace_range_to_str(seed.S_min, seed.S_max),
-            "M": pace_range_to_str(seed.M, seed.M),
-            "T": pace_range_to_str(seed.T_min, seed.T_max),
-        },
+        "pace_labels": _pace_labels(pace_zones),
         "quality_insert": quality_insert,
     }
 
@@ -1007,7 +1059,7 @@ class Pass4WorkoutDetails:
     def add_details_to_plan(
         self,
         plan: Dict[str, Any],
-        seed: PaceSeed,
+        pace_zones: PaceZoneComputation,
         mode: str = "prefill",
         week_logs: Dict[int, List] = None,
     ) -> Dict[str, Any]:
@@ -1016,7 +1068,7 @@ class Pass4WorkoutDetails:
 
         Args:
             plan: Plan dict with 'weeks' array (from Pass 3) and 'race_date'
-            seed: Initial PaceSeed (adjusted per week in rolling mode)
+            pace_zones: Initial runner-profile pace zones (adjusted per week in rolling mode)
             mode: "prefill" (all weeks) or "rolling" (current week only)
             week_logs: Optional dict mapping week_num -> List[WeekLogRun] for adjustments
 
@@ -1082,7 +1134,7 @@ class Pass4WorkoutDetails:
                         "will detail all weeks (fallback to prefill behavior)"
                     )
 
-        current_seed = seed
+        current_pace_zones = pace_zones
         adjusted_seed = False
 
         for week in weeks:
@@ -1102,17 +1154,17 @@ class Pass4WorkoutDetails:
                     )
                     continue
 
-            # Adjust seed based on previous week logs (rolling mode)
+            # Adjust pace zones based on previous week logs (rolling mode)
             if week_num > 1 and week_logs.get(week_num - 1):
-                from .weekly_adjuster import adjust_seed_from_week
+                from .weekly_adjuster import adjust_pace_zones_from_week
 
                 prev_week_log = week_logs[week_num - 1]
-                current_seed, disable_quality = adjust_seed_from_week(
-                    current_seed, prev_week_log
+                current_pace_zones, disable_quality = adjust_pace_zones_from_week(
+                    current_pace_zones, prev_week_log
                 )
                 adjusted_seed = True
                 self.logger.info(
-                    f"Week {week_num}: Adjusted pace seed from previous week logs "
+                    f"Week {week_num}: Adjusted pace zones from previous week logs "
                     f"(disable_quality={disable_quality})"
                 )
             else:
@@ -1125,16 +1177,13 @@ class Pass4WorkoutDetails:
             # Check if this is a cutback week (from Step 6)
             is_cutback = week.get("is_cutback", False)
 
-            # ✅ Store seed in week metadata for storage service
-            week["_pace_seed"] = {
-                "E_min": current_seed.E_min,
-                "E_max": current_seed.E_max,
-                "S_min": current_seed.S_min,
-                "S_max": current_seed.S_max,
-                "M": current_seed.M,
-                "T_min": current_seed.T_min,
-                "T_max": current_seed.T_max,
-                "week1_long_cap": current_seed.week1_long_cap,
+            # Store canonical zone-key metadata for downstream plan storage consumers.
+            week["_pace_zones"] = {
+                "z2": [_z2_low(current_pace_zones), _z2_high(current_pace_zones)],
+                "z3": [_z3_low(current_pace_zones), _z3_high(current_pace_zones)],
+                "z4": [_z4_low(current_pace_zones), _z4_high(current_pace_zones)],
+                "m": [_m_pace(current_pace_zones), _m_pace(current_pace_zones)],
+                "week1_long_cap": float(current_pace_zones.week1_long_cap),
             }
 
             # Add details to each workout in the week
@@ -1155,7 +1204,7 @@ class Pass4WorkoutDetails:
                     run_type,
                     distance_mi,
                     phase,
-                    current_seed,
+                    current_pace_zones,
                     allow_quality,
                     is_cutback=is_cutback,
                 )
@@ -1174,14 +1223,14 @@ class Pass4WorkoutDetails:
                 )
 
         if adjusted_seed:
-            self.logger.info("Pace seed adjusted based on week logs")
+            self.logger.info("Pace zones adjusted based on week logs")
 
         return plan
 
     def add_details_to_week(
         self,
         week: Dict[str, Any],
-        seed: PaceSeed,
+        pace_zones: PaceZoneComputation,
         allow_quality: bool = False,
     ) -> Dict[str, Any]:
         """
@@ -1189,7 +1238,7 @@ class Pass4WorkoutDetails:
 
         Args:
             week: Week dict with workouts
-            seed: Current PaceSeed (may be adjusted)
+            pace_zones: Current runner-profile pace zones (may be adjusted)
             allow_quality: Whether quality elements are allowed
 
         Returns:
@@ -1199,16 +1248,13 @@ class Pass4WorkoutDetails:
         workouts = week.get("workouts", [])
         is_cutback = week.get("is_cutback", False)
 
-        # Store seed in week metadata
-        week["_pace_seed"] = {
-            "E_min": seed.E_min,
-            "E_max": seed.E_max,
-            "S_min": seed.S_min,
-            "S_max": seed.S_max,
-            "M": seed.M,
-            "T_min": seed.T_min,
-            "T_max": seed.T_max,
-            "week1_long_cap": seed.week1_long_cap,
+        # Store canonical zone-key metadata
+        week["_pace_zones"] = {
+            "z2": [_z2_low(pace_zones), _z2_high(pace_zones)],
+            "z3": [_z3_low(pace_zones), _z3_high(pace_zones)],
+            "z4": [_z4_low(pace_zones), _z4_high(pace_zones)],
+            "m": [_m_pace(pace_zones), _m_pace(pace_zones)],
+            "week1_long_cap": float(pace_zones.week1_long_cap),
         }
 
         for workout in workouts:
@@ -1221,7 +1267,12 @@ class Pass4WorkoutDetails:
                 continue
 
             details = _detail_run(
-                run_type, distance_mi, phase, seed, allow_quality, is_cutback=is_cutback
+                run_type,
+                distance_mi,
+                phase,
+                pace_zones,
+                allow_quality,
+                is_cutback=is_cutback,
             )
             workout["segments"] = details["segments"]
             workout["cues"] = details["cues"]
@@ -1229,24 +1280,3 @@ class Pass4WorkoutDetails:
             workout["quality_insert"] = details["quality_insert"]
 
         return week
-
-
-if __name__ == "__main__":
-    # Quick test
-    from src.services.training_plan.pace import PaceSeed
-
-    # Create test seed
-    seed = PaceSeed(
-        E_min=600.0,
-        E_max=690.0,
-        S_min=570.0,
-        S_max=630.0,
-        M=540.0,
-        T_min=510.0,
-        T_max=520.0,
-        week1_long_cap=8.0,
-    )
-
-    # Test detail generation
-    details = _detail_run(EASY, 4.0, "Base", seed, False)
-    print(f"Easy run details: {details}")

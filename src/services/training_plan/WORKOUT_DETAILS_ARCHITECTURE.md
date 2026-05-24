@@ -29,7 +29,7 @@ This document describes the architecture for adding detailed workout segments, p
 - Uses direct SQL queries to `activities` table (fast, efficient)
 - Called by Pass 4 and weekly rebuild service to initialize pace zones
 
-**Output:** `PaceSeed` dataclass with all pace zones in seconds per mile.
+**Output:** `PaceZoneComputation` with canonical pace bands (`z2`, `z3`, `m`, `z4`).
 
 ---
 
@@ -46,7 +46,7 @@ This document describes the architecture for adding detailed workout segments, p
 **Integration:**
 
 - Called in rolling mode when rebuilding upcoming weeks
-- Takes previous week's logs (`List[WeekLogRun]`) and adjusts `PaceSeed`
+- Takes previous week's logs (`List[WeekLogRun]`) and adjusts pace zones.
 
 **Future Enhancement:**
 
@@ -139,7 +139,10 @@ result = orchestrator.generate_longrun_first(
 )
 
 # Later: rebuild Week 2 based on Week 1 logs
-from src.services.training_plan.weekly_adjuster import adjust_seed_from_week, WeekLogRun
+from src.services.training_plan.weekly_adjuster import (
+    adjust_pace_zones_from_week,
+    WeekLogRun,
+)
 from src.services.training_plan.v2/pass4_workout_details_v2 import Pass4WorkoutDetails
 
 week1_logs = [
@@ -148,7 +151,9 @@ week1_logs = [
     WeekLogRun(run_type="long", planned_mi=8.0, done_mi=8.0, rpe=3),
 ]
 
-adjusted_seed, disable_quality = adjust_seed_from_week(initial_seed, week1_logs)
+adjusted_pace_zones, disable_quality = adjust_pace_zones_from_week(
+    initial_pace_zones, week1_logs
+)
 pass4 = Pass4WorkoutDetails()
 week2_with_details = pass4.add_details_to_week(
     week=week2,
@@ -175,10 +180,10 @@ week2_with_details = pass4.add_details_to_week(
   ],
   "cues": "Conversational effort; keep it relaxed. Optional: 4×20s relaxed strides with 40s easy jog.",
   "pace_labels": {
-    "E": "10:00–10:45/mi",
-    "S": "9:30–10:00/mi",
-    "M": "9:00/mi",
-    "T": "8:30–8:40/mi"
+    "z2": "10:00–10:45/mi",
+    "z3": "9:30–10:00/mi",
+    "m": "9:00/mi",
+    "z4": "8:30–8:40/mi"
   }
 }
 ```

@@ -244,7 +244,10 @@ def get_current_plan():
             # target_hr is authoritative and must not be overridden here.
             if not target_hr:
                 target_hr = PlanStorageService._calculate_hr_zone(
-                    run_type_key, user_profile
+                    run_type_key,
+                    user_profile,
+                    session=session,
+                    user_id=str(user_id),
                 )
 
             workouts_data.append(
@@ -809,7 +812,7 @@ def rebuild_week_route(plan_id, week_num):
                 plan_id=plan_id,
                 week_num=week_num,
                 previous_week_logs=previous_week_logs,
-                initial_seed=None,  # Will regenerate from plan
+                initial_pace_zones=None,  # Will regenerate from runner profile data
             )
 
             session.commit()

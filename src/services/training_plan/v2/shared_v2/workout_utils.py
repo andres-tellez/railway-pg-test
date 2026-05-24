@@ -121,21 +121,21 @@ def extract_main_segment(segments: Any) -> Optional[Dict[str, Any]]:
 
 def get_workout_pace_label_key(workout_type: str) -> str:
     if not workout_type:
-        return "E"
+        return "z2"
     workout_type_lower = workout_type.lower()
     if "easy" in workout_type_lower or "recovery" in workout_type_lower:
-        return "E"
+        return "z2"
     if "steady" in workout_type_lower or "aerobic" in workout_type_lower:
-        return "S"
+        return "z3"
     if "endurance" in workout_type_lower or "medium" in workout_type_lower:
-        return "S"
+        return "z3"
     if "long" in workout_type_lower:
-        return "E"
+        return "z2"
     if "tempo" in workout_type_lower or "threshold" in workout_type_lower:
-        return "T"
+        return "z4"
     if "marathon" in workout_type_lower:
-        return "M"
-    return "E"
+        return "m"
+    return "z2"
 
 
 def extract_pace_zone_from_workout(workout_data: Dict[str, Any]) -> str:
@@ -149,7 +149,7 @@ def extract_pace_zone_from_workout(workout_data: Dict[str, Any]) -> str:
         pace_str = pace_labels.get(label_key, "")
         if pace_str:
             return pace_str
-        for key in ["E", "S", "M", "T"]:
+        for key in ["z2", "z3", "m", "z4"]:
             if key in pace_labels and pace_labels[key]:
                 return pace_labels[key]
     main_segment = extract_main_segment(workout_data.get("segments"))

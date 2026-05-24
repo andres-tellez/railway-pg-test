@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from src.services.training_plan.decision_trace import DecisionReason
-    from src.services.training_plan.pace import PaceSeed
+    from src.smartcoach_mobile_coach.runner_profile.models import PaceZoneComputation
 
 
 @dataclass
@@ -30,7 +30,7 @@ class PlanContext:
     validation: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
     decision_trace: Optional[List[Dict[str, Any]]] = None
-    pace_seed: Optional[PaceSeed] = None
+    pace_zones: Optional[PaceZoneComputation] = None
     training_days_reason: Optional[DecisionReason] = None
     long_run_day_reason: Optional[DecisionReason] = None
     enable_debug_trace: bool = False

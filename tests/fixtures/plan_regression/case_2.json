@@ -1028,22 +1028,149 @@
         ]
       },
       {
-        "_pace_seed": {
-          "E_max": 690.0,
-          "E_min": 630.0,
-          "M": 600.0,
-          "S_max": 625.0,
-          "S_min": 610.0,
-          "T_max": 580.0,
-          "T_min": 570.0,
-          "week1_long_cap": 14.0
-        },
         "is_cutback": false,
         "long_run_miles": 12.5,
         "phase": "Build",
         "week_label": "2026-05-04",
         "week_number": 18,
         "week_start_date": "2026-05-04",
+        "weekly_mileage": 30.5,
+        "workouts": [
+          {
+            "day": "Tue",
+            "distance_miles": 8.0,
+            "intensity": "hard",
+            "is_quality": true,
+            "label": "Tempo",
+            "miles": 8.0,
+            "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
+            "type": "tempo",
+            "workout_description": "Sustained effort at lactate threshold pace",
+            "workout_type": "Tempo"
+          },
+          {
+            "day": "Thu",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          },
+          {
+            "day": "Sat",
+            "distance_miles": 12.5,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Long",
+            "miles": 13.0,
+            "pace_guidance": "Easy",
+            "type": "long_run",
+            "workout_description": "Steady easy long run for aerobic endurance",
+            "workout_type": "Long"
+          },
+          {
+            "day": "Sun",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          }
+        ]
+      },
+      {
+        "is_cutback": false,
+        "long_run_miles": 12.5,
+        "phase": "Build",
+        "week_label": "2026-05-11",
+        "week_number": 19,
+        "week_start_date": "2026-05-11",
+        "weekly_mileage": 30.5,
+        "workouts": [
+          {
+            "day": "Tue",
+            "distance_miles": 8.0,
+            "intensity": "hard",
+            "is_quality": true,
+            "label": "Tempo",
+            "miles": 8.0,
+            "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
+            "type": "tempo",
+            "workout_description": "Sustained effort at lactate threshold pace",
+            "workout_type": "Tempo"
+          },
+          {
+            "day": "Thu",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          },
+          {
+            "day": "Sat",
+            "distance_miles": 12.5,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Long",
+            "miles": 13.0,
+            "pace_guidance": "Easy",
+            "type": "long_run",
+            "workout_description": "Steady easy long run for aerobic endurance",
+            "workout_type": "Long"
+          },
+          {
+            "day": "Sun",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          }
+        ]
+      },
+      {
+        "_pace_zones": {
+          "m": [
+            600,
+            600
+          ],
+          "week1_long_cap": 8.0,
+          "z2": [
+            630,
+            690
+          ],
+          "z3": [
+            610,
+            625
+          ],
+          "z4": [
+            570,
+            580
+          ]
+        },
+        "is_cutback": false,
+        "long_run_miles": 12.5,
+        "phase": "Build",
+        "week_label": "2026-05-18",
+        "week_number": 20,
+        "week_start_date": "2026-05-18",
         "weekly_mileage": 30.5,
         "workouts": [
           {
@@ -1056,10 +1183,10 @@
             "miles": 8.0,
             "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
             "pace_labels": {
-              "E": "10:30\u201411:30/mi",
-              "M": "10:00/mi",
-              "S": "10:10\u201410:25/mi",
-              "T": "9:30\u20149:40/mi"
+              "m": "10:00/mi",
+              "z2": "10:30\u201411:30/mi",
+              "z3": "10:10\u201410:25/mi",
+              "z4": "9:30\u20149:40/mi"
             },
             "quality_insert": {
               "miles": 3.5,
@@ -1127,10 +1254,10 @@
             "miles": 5.0,
             "pace_guidance": "Easy",
             "pace_labels": {
-              "E": "10:30\u201411:30/mi",
-              "M": "10:00/mi",
-              "S": "10:10\u201410:25/mi",
-              "T": "9:30\u20149:40/mi"
+              "m": "10:00/mi",
+              "z2": "10:30\u201411:30/mi",
+              "z3": "10:10\u201410:25/mi",
+              "z4": "9:30\u20149:40/mi"
             },
             "quality_insert": null,
             "segments": {
@@ -1164,10 +1291,10 @@
             "miles": 13.0,
             "pace_guidance": "Easy",
             "pace_labels": {
-              "E": "10:30\u201411:30/mi",
-              "M": "10:00/mi",
-              "S": "10:10\u201410:25/mi",
-              "T": "9:30\u20149:40/mi"
+              "m": "10:00/mi",
+              "z2": "10:30\u201411:30/mi",
+              "z3": "10:10\u201410:25/mi",
+              "z4": "9:30\u20149:40/mi"
             },
             "quality_insert": null,
             "segments": {
@@ -1201,10 +1328,10 @@
             "miles": 5.0,
             "pace_guidance": "Easy",
             "pace_labels": {
-              "E": "10:30\u201411:30/mi",
-              "M": "10:00/mi",
-              "S": "10:10\u201410:25/mi",
-              "T": "9:30\u20149:40/mi"
+              "m": "10:00/mi",
+              "z2": "10:30\u201411:30/mi",
+              "z3": "10:10\u201410:25/mi",
+              "z4": "9:30\u20149:40/mi"
             },
             "quality_insert": null,
             "segments": {
@@ -1224,124 +1351,6 @@
               "targetType": "PACE",
               "units": "mi"
             },
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          }
-        ]
-      },
-      {
-        "is_cutback": false,
-        "long_run_miles": 12.5,
-        "phase": "Build",
-        "week_label": "2026-05-11",
-        "week_number": 19,
-        "week_start_date": "2026-05-11",
-        "weekly_mileage": 30.5,
-        "workouts": [
-          {
-            "day": "Tue",
-            "distance_miles": 8.0,
-            "intensity": "hard",
-            "is_quality": true,
-            "label": "Tempo",
-            "miles": 8.0,
-            "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
-            "type": "tempo",
-            "workout_description": "Sustained effort at lactate threshold pace",
-            "workout_type": "Tempo"
-          },
-          {
-            "day": "Thu",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          },
-          {
-            "day": "Sat",
-            "distance_miles": 12.5,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Long",
-            "miles": 13.0,
-            "pace_guidance": "Easy",
-            "type": "long_run",
-            "workout_description": "Steady easy long run for aerobic endurance",
-            "workout_type": "Long"
-          },
-          {
-            "day": "Sun",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          }
-        ]
-      },
-      {
-        "is_cutback": false,
-        "long_run_miles": 12.5,
-        "phase": "Build",
-        "week_label": "2026-05-18",
-        "week_number": 20,
-        "week_start_date": "2026-05-18",
-        "weekly_mileage": 30.5,
-        "workouts": [
-          {
-            "day": "Tue",
-            "distance_miles": 8.0,
-            "intensity": "hard",
-            "is_quality": true,
-            "label": "Tempo",
-            "miles": 8.0,
-            "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
-            "type": "tempo",
-            "workout_description": "Sustained effort at lactate threshold pace",
-            "workout_type": "Tempo"
-          },
-          {
-            "day": "Thu",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          },
-          {
-            "day": "Sat",
-            "distance_miles": 12.5,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Long",
-            "miles": 13.0,
-            "pace_guidance": "Easy",
-            "type": "long_run",
-            "workout_description": "Steady easy long run for aerobic endurance",
-            "workout_type": "Long"
-          },
-          {
-            "day": "Sun",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
             "type": "easy",
             "workout_description": "Easy aerobic run for recovery and base building",
             "workout_type": "Easy"
@@ -3641,22 +3650,149 @@
         ]
       },
       {
-        "_pace_seed": {
-          "E_max": 690.0,
-          "E_min": 630.0,
-          "M": 600.0,
-          "S_max": 625.0,
-          "S_min": 610.0,
-          "T_max": 580.0,
-          "T_min": 570.0,
-          "week1_long_cap": 14.0
-        },
         "is_cutback": false,
         "long_run_miles": 12.5,
         "phase": "Build",
         "week_label": "2026-05-04",
         "week_number": 18,
         "week_start_date": "2026-05-04",
+        "weekly_mileage": 30.5,
+        "workouts": [
+          {
+            "day": "Tue",
+            "distance_miles": 8.0,
+            "intensity": "hard",
+            "is_quality": true,
+            "label": "Tempo",
+            "miles": 8.0,
+            "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
+            "type": "tempo",
+            "workout_description": "Sustained effort at lactate threshold pace",
+            "workout_type": "Tempo"
+          },
+          {
+            "day": "Thu",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          },
+          {
+            "day": "Sat",
+            "distance_miles": 12.5,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Long",
+            "miles": 13.0,
+            "pace_guidance": "Easy",
+            "type": "long_run",
+            "workout_description": "Steady easy long run for aerobic endurance",
+            "workout_type": "Long"
+          },
+          {
+            "day": "Sun",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          }
+        ]
+      },
+      {
+        "is_cutback": false,
+        "long_run_miles": 12.5,
+        "phase": "Build",
+        "week_label": "2026-05-11",
+        "week_number": 19,
+        "week_start_date": "2026-05-11",
+        "weekly_mileage": 30.5,
+        "workouts": [
+          {
+            "day": "Tue",
+            "distance_miles": 8.0,
+            "intensity": "hard",
+            "is_quality": true,
+            "label": "Tempo",
+            "miles": 8.0,
+            "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
+            "type": "tempo",
+            "workout_description": "Sustained effort at lactate threshold pace",
+            "workout_type": "Tempo"
+          },
+          {
+            "day": "Thu",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          },
+          {
+            "day": "Sat",
+            "distance_miles": 12.5,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Long",
+            "miles": 13.0,
+            "pace_guidance": "Easy",
+            "type": "long_run",
+            "workout_description": "Steady easy long run for aerobic endurance",
+            "workout_type": "Long"
+          },
+          {
+            "day": "Sun",
+            "distance_miles": 5.0,
+            "intensity": "easy",
+            "is_quality": false,
+            "label": "Easy",
+            "miles": 5.0,
+            "pace_guidance": "Easy",
+            "type": "easy",
+            "workout_description": "Easy aerobic run for recovery and base building",
+            "workout_type": "Easy"
+          }
+        ]
+      },
+      {
+        "_pace_zones": {
+          "m": [
+            600,
+            600
+          ],
+          "week1_long_cap": 8.0,
+          "z2": [
+            630,
+            690
+          ],
+          "z3": [
+            610,
+            625
+          ],
+          "z4": [
+            570,
+            580
+          ]
+        },
+        "is_cutback": false,
+        "long_run_miles": 12.5,
+        "phase": "Build",
+        "week_label": "2026-05-18",
+        "week_number": 20,
+        "week_start_date": "2026-05-18",
         "weekly_mileage": 30.5,
         "workouts": [
           {
@@ -3669,10 +3805,10 @@
             "miles": 8.0,
             "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
             "pace_labels": {
-              "E": "10:30\u201411:30/mi",
-              "M": "10:00/mi",
-              "S": "10:10\u201410:25/mi",
-              "T": "9:30\u20149:40/mi"
+              "m": "10:00/mi",
+              "z2": "10:30\u201411:30/mi",
+              "z3": "10:10\u201410:25/mi",
+              "z4": "9:30\u20149:40/mi"
             },
             "quality_insert": {
               "miles": 3.5,
@@ -3740,10 +3876,10 @@
             "miles": 5.0,
             "pace_guidance": "Easy",
             "pace_labels": {
-              "E": "10:30\u201411:30/mi",
-              "M": "10:00/mi",
-              "S": "10:10\u201410:25/mi",
-              "T": "9:30\u20149:40/mi"
+              "m": "10:00/mi",
+              "z2": "10:30\u201411:30/mi",
+              "z3": "10:10\u201410:25/mi",
+              "z4": "9:30\u20149:40/mi"
             },
             "quality_insert": null,
             "segments": {
@@ -3777,10 +3913,10 @@
             "miles": 13.0,
             "pace_guidance": "Easy",
             "pace_labels": {
-              "E": "10:30\u201411:30/mi",
-              "M": "10:00/mi",
-              "S": "10:10\u201410:25/mi",
-              "T": "9:30\u20149:40/mi"
+              "m": "10:00/mi",
+              "z2": "10:30\u201411:30/mi",
+              "z3": "10:10\u201410:25/mi",
+              "z4": "9:30\u20149:40/mi"
             },
             "quality_insert": null,
             "segments": {
@@ -3814,10 +3950,10 @@
             "miles": 5.0,
             "pace_guidance": "Easy",
             "pace_labels": {
-              "E": "10:30\u201411:30/mi",
-              "M": "10:00/mi",
-              "S": "10:10\u201410:25/mi",
-              "T": "9:30\u20149:40/mi"
+              "m": "10:00/mi",
+              "z2": "10:30\u201411:30/mi",
+              "z3": "10:10\u201410:25/mi",
+              "z4": "9:30\u20149:40/mi"
             },
             "quality_insert": null,
             "segments": {
@@ -3837,124 +3973,6 @@
               "targetType": "PACE",
               "units": "mi"
             },
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          }
-        ]
-      },
-      {
-        "is_cutback": false,
-        "long_run_miles": 12.5,
-        "phase": "Build",
-        "week_label": "2026-05-11",
-        "week_number": 19,
-        "week_start_date": "2026-05-11",
-        "weekly_mileage": 30.5,
-        "workouts": [
-          {
-            "day": "Tue",
-            "distance_miles": 8.0,
-            "intensity": "hard",
-            "is_quality": true,
-            "label": "Tempo",
-            "miles": 8.0,
-            "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
-            "type": "tempo",
-            "workout_description": "Sustained effort at lactate threshold pace",
-            "workout_type": "Tempo"
-          },
-          {
-            "day": "Thu",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          },
-          {
-            "day": "Sat",
-            "distance_miles": 12.5,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Long",
-            "miles": 13.0,
-            "pace_guidance": "Easy",
-            "type": "long_run",
-            "workout_description": "Steady easy long run for aerobic endurance",
-            "workout_type": "Long"
-          },
-          {
-            "day": "Sun",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          }
-        ]
-      },
-      {
-        "is_cutback": false,
-        "long_run_miles": 12.5,
-        "phase": "Build",
-        "week_label": "2026-05-18",
-        "week_number": 20,
-        "week_start_date": "2026-05-18",
-        "weekly_mileage": 30.5,
-        "workouts": [
-          {
-            "day": "Tue",
-            "distance_miles": 8.0,
-            "intensity": "hard",
-            "is_quality": true,
-            "label": "Tempo",
-            "miles": 8.0,
-            "pace_guidance": "Tempo (comfortably hard, can speak in short phrases)",
-            "type": "tempo",
-            "workout_description": "Sustained effort at lactate threshold pace",
-            "workout_type": "Tempo"
-          },
-          {
-            "day": "Thu",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
-            "type": "easy",
-            "workout_description": "Easy aerobic run for recovery and base building",
-            "workout_type": "Easy"
-          },
-          {
-            "day": "Sat",
-            "distance_miles": 12.5,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Long",
-            "miles": 13.0,
-            "pace_guidance": "Easy",
-            "type": "long_run",
-            "workout_description": "Steady easy long run for aerobic endurance",
-            "workout_type": "Long"
-          },
-          {
-            "day": "Sun",
-            "distance_miles": 5.0,
-            "intensity": "easy",
-            "is_quality": false,
-            "label": "Easy",
-            "miles": 5.0,
-            "pace_guidance": "Easy",
             "type": "easy",
             "workout_description": "Easy aerobic run for recovery and base building",
             "workout_type": "Easy"

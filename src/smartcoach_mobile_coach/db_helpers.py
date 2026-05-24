@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Dict, Optional
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Session
 
-from src.db.models.user_hr_zones import UserHrZones
+from src.db.models.runner_zone_profiles import RunnerZoneProfile
 
 
 def get_primary_athlete_id(session: Session, internal_user_id: str) -> Optional[int]:
@@ -30,11 +31,19 @@ def fetch_user_hr_profile_for_coach(
     session: Session, internal_user_id: str
 ) -> Optional[Dict[str, Any]]:
     """
-    Load stored HR zones + max/resting HR used to compute them (user_hr_zones).
+    Load stored HR zones + max/resting HR used to compute them (runner_zone_profiles).
     Returned shape is JSON-serializable for get_run_summary / agent tools.
     """
     uid = str(internal_user_id).strip()
-    row = session.query(UserHrZones).filter(UserHrZones.user_id == uid).first()
+    try:
+        uid_uuid = uuid.UUID(uid)
+    except ValueError:
+        return None
+    row = (
+        session.query(RunnerZoneProfile)
+        .filter(RunnerZoneProfile.user_id == uid_uuid)
+        .first()
+    )
     if row is None:
         return None
 
@@ -44,15 +53,15 @@ def fetch_user_hr_profile_for_coach(
         return float(val)
 
     return {
-        "method": row.method,
+        "method": row.zone_method,
         "hrmax_used_bpm": _f(row.hrmax_used),
         "resting_hr_used_bpm": _f(row.resting_hr_used),
         "zones_bpm": {
-            "z1": {"low": _f(row.z1_low), "high": _f(row.z1_high)},
-            "z2": {"low": _f(row.z2_low), "high": _f(row.z2_high)},
-            "z3": {"low": _f(row.z3_low), "high": _f(row.z3_high)},
-            "z4": {"low": _f(row.z4_low), "high": _f(row.z4_high)},
-            "z5": {"low": _f(row.z5_low), "high": _f(row.z5_high)},
+            "z1": {"low": _f(row.hr_z1_low), "high": _f(row.hr_z1_high)},
+            "z2": {"low": _f(row.hr_z2_low), "high": _f(row.hr_z2_high)},
+            "z3": {"low": _f(row.hr_z3_low), "high": _f(row.hr_z3_high)},
+            "z4": {"low": _f(row.hr_z4_low), "high": _f(row.hr_z4_high)},
+            "z5": {"low": _f(row.hr_z5_low), "high": _f(row.hr_z5_high)},
         },
         "computed_at": row.computed_at.isoformat() if row.computed_at else None,
     }

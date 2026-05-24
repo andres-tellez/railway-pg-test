@@ -30,7 +30,7 @@ import logging
 
 from .week_analysis_service import WeekAnalysisResult
 from .trend_analysis_service import TrendAnalysisResult
-from src.services.training_plan.pace import PaceSeed
+from src.smartcoach_mobile_coach.runner_profile.models import PaceZoneComputation
 from src.utils.adaptive_constants import (
     AdaptiveConfig,
     PhaseRules,
@@ -85,7 +85,7 @@ class AdaptiveAdjustmentService:
     def calculate_adjustment(
         analysis: WeekAnalysisResult,
         trends: TrendAnalysisResult,
-        current_seed: PaceSeed,
+        current_pace_zones: PaceZoneComputation,
         phase: str,
         weeks_remaining: int,
     ) -> AdjustmentDecision:
@@ -106,7 +106,7 @@ class AdaptiveAdjustmentService:
         Args:
             analysis: Current week's analysis
             trends: Multi-week trend analysis
-            current_seed: Current pace seed
+            current_pace_zones: Current runner-profile pace zones
             phase: Training phase ("Base", "Build", "Peak", "Taper")
             weeks_remaining: Weeks until race
 

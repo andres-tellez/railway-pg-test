@@ -25,7 +25,7 @@ Last Updated: January 2026
 
 import logging
 from uuid import UUID
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta, date
 from sqlalchemy.orm import Session
 
@@ -35,15 +35,18 @@ from src.db.dao.user_profile_dao import get_user_profile
 from src.db.models.plans import Plan
 from src.utils.run_type_constants import RUN_TYPE_LONG
 from src.services.training_plan.workout_detail_rules import (
-    INTENSITY_MAP,
     FOCUS_TAGS,
     SEGMENT_SUM_TOLERANCE,
     QUALITY_ENABLED_PHASES,
-    PHASE,
 )
-from src.services.training_plan.pace import PaceSeed
 from src.services.training_plan.workout_types import TYPE_DISPLAY
 from src.services.training_plan.workout_utils import pace_range_to_str
+from src.smartcoach_mobile_coach.runner_profile import (
+    get_runner_pace_band_for_run_type,
+    get_runner_pace_zone_key_for_run_type,
+    get_runner_zone_string_for_run_type,
+    runner_pace_ranges_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +167,12 @@ class PlanStorageService:
 
             # Convert weeks/workouts to dated workout records
             workouts_to_insert = PlanStorageService._convert_workouts_to_db_format(
-                plan_id, plan_data, race_date, user_profile
+                plan_id,
+                plan_data,
+                race_date,
+                user_profile,
+                session=session,
+                user_id=user_id,
             )
 
             if workouts_to_insert:
@@ -180,6 +188,20 @@ class PlanStorageService:
             except Exception as e:
                 print("DB COMMIT ERROR:", repr(e))
                 raise
+
+            try:
+                from src.smartcoach_mobile_coach.runner_profile import (
+                    refresh_runner_profile,
+                )
+
+                refresh_runner_profile(session, user_id)
+            except Exception as e:
+                logger.warning(
+                    "runner_zone_profiles refresh failed after plan save (plan_id=%s): %s",
+                    plan_id,
+                    e,
+                )
+
             logger.info(f"Successfully saved plan {plan_id} for user {user_id}")
 
             return plan_id
@@ -195,6 +217,8 @@ class PlanStorageService:
         plan_data: Dict[str, Any],
         race_date: date,
         user_profile: Dict[str, Any] = None,
+        session: Optional[Session] = None,
+        user_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Convert plan weeks/workouts structure to dated workout records.
@@ -265,34 +289,6 @@ class PlanStorageService:
                     "quality_insert": workout.get("quality_insert"),
                 }
 
-                # Extract seed from week metadata (stored by Pass4)
-                seed_dict = week.get("_pace_seed")
-                if not seed_dict:
-                    logger.warning(
-                        f"Week {week_num}: No pace seed metadata, using defaults"
-                    )
-                    seed_dict = {
-                        "E_min": 600.0,
-                        "E_max": 690.0,
-                        "S_min": 570.0,
-                        "S_max": 630.0,
-                        "M": 540.0,
-                        "T_min": 510.0,
-                        "T_max": 520.0,
-                        "week1_long_cap": 8.0,
-                    }
-
-                seed = PaceSeed(
-                    E_min=seed_dict["E_min"],
-                    E_max=seed_dict["E_max"],
-                    S_min=seed_dict["S_min"],
-                    S_max=seed_dict["S_max"],
-                    M=seed_dict["M"],
-                    T_min=seed_dict["T_min"],
-                    T_max=seed_dict["T_max"],
-                    week1_long_cap=seed_dict.get("week1_long_cap", 8.0),
-                )
-
                 # Build run dict
                 run = {
                     "type": run_type_key,
@@ -308,9 +304,10 @@ class PlanStorageService:
                     date=workout_date,
                     phase=phase,
                     run=run,
-                    seed=seed,
                     details=details,
                     user_profile=user_profile,
+                    session=session,
+                    user_id=user_id,
                 )
 
                 # Validate before adding
@@ -351,13 +348,18 @@ class PlanStorageService:
 
     @staticmethod
     def _calculate_hr_zone(
-        run_type_key: str, user_profile: Dict[str, Any] = None
+        run_type_key: str,
+        user_profile: Dict[str, Any] = None,
+        *,
+        session: Optional[Session] = None,
+        user_id: Optional[str] = None,
     ) -> str:
         """
-        Calculate HR zone string (e.g., "Z2 (120-150 bpm)") from workout type.
+        DEPRECATED:
+            New reads should consume central runner zone profile data.
+            This helper remains for legacy plan row generation compatibility.
 
-        Uses Karvonen zones if available (when resting_hr is present),
-        otherwise falls back to standard % max HR zones.
+        Calculate HR zone display from runner_zone_profiles SoT.
 
         Args:
             run_type_key: Workout type key (easy, steady, long, etc.)
@@ -366,90 +368,23 @@ class PlanStorageService:
         Returns:
             HR zone string like "Z2 (120-150 bpm)" or empty string if can't calculate
         """
-        # Map workout type to HR zone based on training philosophy
-        # Reference: workout_types.py - INTENSITY_ZONE definitions
-        # EASY: "E" -> Z1-Z2 (recovery/easy aerobic)
-        # STEADY: "E/steady" -> Z2 (aerobic steady, not hard)
-        # ENDURANCE: "E→steady" -> Z2 (easy transitioning to steady)
-        # LONG: "E" -> Z2 (easy aerobic)
-        # THRESHOLD/TEMPO: -> Z3 (threshold pace)
-        # VO2/INTERVALS: -> Z4 (hard intervals)
-        run_type_lower = run_type_key.lower()
-        if run_type_lower in ["threshold", "tempo"]:
-            zone_key = "Z3"  # Threshold pace
-        elif run_type_lower in ["vo2", "intervals", "repetitions", "race"]:
-            zone_key = "Z4"  # VO2 max intervals
-        elif run_type_lower in ["steady"]:
-            zone_key = "Z3"  # Steady-state/threshold - comfortably hard effort
-        elif run_type_lower in ["long", "endurance"]:
-            zone_key = "Z2"  # Easy/steady aerobic
-        else:  # easy, recovery, or default
-            zone_key = "Z2"  # Easy aerobic
-
-        if not user_profile:
-            # Fallback to default
-            max_hr = 190
-            from src.utils.hr_zone_constants import STRAVA_HR_ZONES
-
-            hr_zones = STRAVA_HR_ZONES
-            hr_lo, hr_hi = hr_zones[zone_key]
-            hr_min = int(hr_lo * max_hr)
-            hr_max = int(hr_hi * max_hr)
-            return f"{zone_key} ({hr_min}–{hr_max} bpm)"
-
-        # Try Karvonen zones first if available
-        resting_hr = user_profile.get("resting_hr")
-        max_hr = None
-
-        # Get effective max HR using resolution service
-        from src.services.heart_rate import HRMaxResolutionService
-
-        effective_max_hr = HRMaxResolutionService.get_effective_max_hr(user_profile)
-
-        # If no effective max HR, try to estimate from age or use default
-        if effective_max_hr is None:
-            # Try to estimate from age_group
-            age_group = user_profile.get("age_group", "")
-            if age_group:
-                try:
-                    if "-" in str(age_group):
-                        age_range = str(age_group).split("-")
-                        age = (int(age_range[0]) + int(age_range[1])) // 2
-                    else:
-                        age = int(str(age_group).replace("+", "").split("-")[0])
-                    max_hr = 220 - age
-                except (ValueError, IndexError):
-                    pass
-
-        if not effective_max_hr and not max_hr:
-            max_hr = 190  # Conservative default
-        elif effective_max_hr:
-            max_hr = effective_max_hr
-
-        # Use Karvonen zones if resting_hr is available
-        if resting_hr and max_hr:
-            try:
-                from src.services.heart_rate import KarvonenZoneService
-
-                zones_result = KarvonenZoneService.calculate_zones(max_hr, resting_hr)
-                if zones_result.success and zones_result.zones:
-                    hr_min, hr_max = zones_result.zones[zone_key]
-                    return f"{zone_key} ({int(hr_min)}–{int(hr_max)} bpm)"
-            except Exception as e:
-                # Fallback to standard zones if Karvonen calculation fails
-                logger.debug(
-                    f"Karvonen zone calculation failed, using standard zones: {e}"
-                )
-
-        # Fallback to standard % max HR zones
-        from src.utils.hr_zone_constants import STRAVA_HR_ZONES
-
-        hr_zones = STRAVA_HR_ZONES
-        hr_lo, hr_hi = hr_zones[zone_key]
-        hr_min = int(hr_lo * max_hr)
-        hr_max = int(hr_hi * max_hr)
-
-        return f"{zone_key} ({hr_min}–{hr_max} bpm)"
+        if session is None or user_id is None:
+            # Strict SoT mode: no local derivation.
+            return ""
+        try:
+            return get_runner_zone_string_for_run_type(
+                session,
+                str(user_id),
+                run_type_key,
+                force_refresh=False,
+            )
+        except Exception as exc:
+            logger.warning(
+                "runner profile zone lookup failed for target_hr (%s): %s",
+                user_id,
+                exc,
+            )
+            return ""
 
     @staticmethod
     def _workout_to_row(
@@ -457,9 +392,10 @@ class PlanStorageService:
         date: date,
         phase: str,
         run: dict,
-        seed: PaceSeed,
         details: dict,
         user_profile: Dict[str, Any] = None,
+        session: Optional[Session] = None,
+        user_id: Optional[str] = None,
     ) -> dict:
         """
         Convert workout data to database row format.
@@ -473,37 +409,50 @@ class PlanStorageService:
             main.get("target", {})
         )
 
-        # Determine intensity from config
-        intensity = INTENSITY_MAP.get(run_type_key, "E")
+        intensity = get_runner_pace_zone_key_for_run_type(
+            run_type_key,
+            has_marathon_finish=(
+                run_type_key == RUN_TYPE_LONG
+                and PlanStorageService._has_marathon_finish(segments)
+            ),
+        )
 
-        # Phase-aware Long run intensity:
-        # - Base: Easy pace (E)
-        # - Build: Steady pace (S) - slightly faster than Easy
-        # - Peak: Easy pace (E) + optional M-finish segments (M)
-        # - Taper: Easy pace (E)
-        if run_type_key == RUN_TYPE_LONG:
-            if PlanStorageService._has_marathon_finish(segments):
-                intensity = "M"  # Long run with M finish (Peak phase) - overrides Build
-            elif phase == PHASE["BUILD"]:
-                intensity = "S"  # Long runs use Steady pace in Build phase
-            else:
-                intensity = (
-                    "E"  # Base, Peak (without M-finish), and Taper use Easy pace
+        pace_ranges: dict[str, list[int]] = {}
+        if session is not None and user_id is not None:
+            try:
+                from src.smartcoach_mobile_coach.runner_profile import (
+                    get_runner_profile,
                 )
 
-        # Build pace_ranges from seed (integer seconds)
-        pace_ranges = {
-            "E": [int(seed.E_min), int(seed.E_max)],
-            "S": [int(seed.S_min), int(seed.S_max)],
-            "M": [int(seed.M), int(seed.M)],
-            "T": [int(seed.T_min), int(seed.T_max)],
-        }
+                profile = get_runner_profile(session, str(user_id))
+                pace_ranges = runner_pace_ranges_payload(profile)
+                pace_band = get_runner_pace_band_for_run_type(
+                    session,
+                    str(user_id),
+                    run_type_key,
+                    force_refresh=False,
+                )
+                if pace_band is not None:
+                    target_zone = pace_range_to_str(
+                        float(pace_band[0]), float(pace_band[1])
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "runner profile pace lookup failed for workout row (%s): %s",
+                    user_id,
+                    exc,
+                )
 
         # Get workout label
         workout_label = run.get("label") or TYPE_DISPLAY.get(run_type_key, "Easy Run")
 
         # Calculate HR zone
-        target_hr = PlanStorageService._calculate_hr_zone(run_type_key, user_profile)
+        target_hr = PlanStorageService._calculate_hr_zone(
+            run_type_key,
+            user_profile,
+            session=session,
+            user_id=user_id,
+        )
 
         return {
             "plan_id": plan_id,
