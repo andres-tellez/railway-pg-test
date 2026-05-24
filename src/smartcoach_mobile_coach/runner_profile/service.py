@@ -28,6 +28,13 @@ from src.smartcoach_mobile_coach.runner_profile.persistence import (
 logger = logging.getLogger(__name__)
 
 
+def _profile_needs_pace_repair(profile: RunnerZoneProfileData) -> bool:
+    """HR-only rows (legacy backfills) must refresh so Z2-Z4 pace bands are persisted."""
+    if not profile.calibrated or profile.hr_z2 is None:
+        return False
+    return profile.pace_z2 is None
+
+
 def _uncalibrated_profile(user_id: str) -> RunnerZoneProfileData:
     return RunnerZoneProfileData(
         user_id=user_id,
@@ -52,10 +59,12 @@ def _uncalibrated_profile(user_id: str) -> RunnerZoneProfileData:
 def get_runner_profile(session: Session, user_id: str) -> RunnerZoneProfileData:
     try:
         row = read_runner_zone_profile(session, user_id)
-        if row is not None:
-            return row
-        # Lazy backfill: compute on first read if absent.
-        return refresh_runner_profile(session, user_id)
+        if row is None:
+            # Lazy backfill: compute on first read if absent.
+            return refresh_runner_profile(session, user_id)
+        if _profile_needs_pace_repair(row):
+            return refresh_runner_profile(session, user_id)
+        return row
     except SQLAlchemyError:
         logger.exception("Failed reading runner zone profile for user %s", user_id)
         return _uncalibrated_profile(user_id)
