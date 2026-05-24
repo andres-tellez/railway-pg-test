@@ -118,7 +118,7 @@ def seeded_plan(test_db_session):
             workout_type="Easy Run",
             description="Easy miles",
             miles=easy_mi,
-            intensity="E",
+            intensity="z2",
             run_type_key="easy",
             phase=phase,
         )
@@ -128,7 +128,7 @@ def seeded_plan(test_db_session):
             workout_type="Long Run",
             description="Weekend long",
             miles=long_mi,
-            intensity="E",
+            intensity="z2",
             run_type_key="long",
             phase=phase,
         )

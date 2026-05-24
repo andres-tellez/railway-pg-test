@@ -66,7 +66,7 @@ def _seed_week_plan_and_activity(session, *, workout_date: date):
         workout_type="Easy Run",
         description="Easy miles",
         miles=5.0,
-        intensity="E",
+        intensity="z2",
         run_type_key="easy",
     )
     session.add(workout)
@@ -228,7 +228,7 @@ def test_current_week_emits_phase_kpi_priority_block(
             workout_type="Easy Run",
             description="Easy",
             miles=5.0,
-            intensity="E",
+            intensity="z2",
             run_type_key="easy",
             phase="Base",
         )
@@ -240,7 +240,7 @@ def test_current_week_emits_phase_kpi_priority_block(
             workout_type="Tempo",
             description="Tempo",
             miles=6.0,
-            intensity="T",
+            intensity="z4",
             run_type_key="endurance",
             phase="Build",
         )
@@ -252,7 +252,7 @@ def test_current_week_emits_phase_kpi_priority_block(
             workout_type="Long",
             description="Long",
             miles=10.0,
-            intensity="E",
+            intensity="z2",
             run_type_key="long",
             phase="Build",
         )
@@ -317,7 +317,7 @@ def test_current_week_phase_kpi_priority_tie_goes_to_later_phase(
                 workout_type=f"W{i}",
                 description=f"W{i}",
                 miles=4.0,
-                intensity="E",
+                intensity="z2",
                 run_type_key="easy",
                 phase=ph,
             )
@@ -364,7 +364,7 @@ def test_current_week_phase_kpi_priority_null_on_empty_week(
             workout_type="Easy",
             description="Far away",
             miles=3.0,
-            intensity="E",
+            intensity="z2",
             run_type_key="easy",
             phase="Base",
         )
@@ -414,7 +414,7 @@ def test_current_week_adherence_missed_long_run_medium_band(
             workout_type="Easy Run",
             description="Easy",
             miles=4.0,
-            intensity="E",
+            intensity="z2",
             run_type_key="easy",
         )
     )
@@ -424,7 +424,7 @@ def test_current_week_adherence_missed_long_run_medium_band(
         workout_type="Long Run",
         description="Long",
         miles=12.0,
-        intensity="E",
+        intensity="z2",
         run_type_key="long",
     )
     plan_routes_db.add(missed_long)
@@ -505,7 +505,7 @@ def test_current_week_adherence_empty_week_returns_nulls(
             workout_type="Easy",
             description="Far away",
             miles=3.0,
-            intensity="E",
+            intensity="z2",
             run_type_key="easy",
         )
     )
@@ -562,7 +562,7 @@ def test_current_week_day_level_plan_status_no_activity(
             workout_type="Easy Run",
             description="Easy miles",
             miles=5.0,
-            intensity="E",
+            intensity="z2",
             run_type_key="easy",
         )
     )
@@ -634,7 +634,7 @@ def test_current_week_uses_canonical_normalization_for_legacy_rows(
             workout_type="Long Run",
             description="Legacy endurance",
             miles=12.0,
-            intensity="E",
+            intensity="z2",
             run_type_key="endurance",
             # Intentionally stored under a zone that wouldn't match a
             # recomputation for "long" (Z2) — proves the GET path doesn't
@@ -664,17 +664,16 @@ def test_current_week_uses_canonical_normalization_for_legacy_rows(
     )
 
 
-def test_current_week_fallback_computes_target_hr_when_missing(
+def test_current_week_missing_target_hr_does_not_use_legacy_math(
     client,
     auth_header,
     plan_routes_db,
     monkeypatch,
 ):
     """
-    V1.6 Pre-Phase A 0.D: stored ``target_hr`` is authoritative, but when
-    a row truly lacks one (legacy rows predating ``target_hr`` persistence)
-    the GET path may compute it ONCE from the canonical run_type_key. No
-    text-matching inference; no zone revalidation.
+    Stored ``target_hr`` is authoritative. In strict SoT mode, when a row lacks
+    target_hr and no canonical profile read succeeds, API should return empty
+    target_hr rather than re-deriving via legacy local math.
     """
     workout_date = date(2026, 4, 22)
     plan_routes_db.add(UserAthleteLink(user_id=str(DEFAULT_USER_ID), athlete_id=99903))
@@ -694,7 +693,7 @@ def test_current_week_fallback_computes_target_hr_when_missing(
             workout_type="Easy Run",
             description="Easy, no HR stored",
             miles=4.0,
-            intensity="E",
+            intensity="z2",
             run_type_key="easy",
             target_hr=None,
         )
@@ -710,8 +709,7 @@ def test_current_week_fallback_computes_target_hr_when_missing(
     assert resp.status_code == 200
     day = json.loads(resp.data)["days"][0]
     assert day["run_type_key"] == "easy"
-    assert day["target_hr"], "fallback must compute target_hr when stored value missing"
-    assert "Z" in day["target_hr"], "fallback must return a canonical Z[1-5] zone label"
+    assert day["target_hr"] == ""
 
 
 def test_current_week_date_aligned_run_without_match_still_emits_execution(
@@ -747,7 +745,7 @@ def test_current_week_date_aligned_run_without_match_still_emits_execution(
         workout_type="Easy Run",
         description="Easy miles",
         miles=5.0,
-        intensity="E",
+        intensity="z2",
         run_type_key="easy",
     )
     session.add(workout)
@@ -817,7 +815,7 @@ def test_current_week_empty_when_no_workouts_in_range(
             workout_type="Easy",
             description="Far away",
             miles=3.0,
-            intensity="E",
+            intensity="z2",
             run_type_key="easy",
         )
     )

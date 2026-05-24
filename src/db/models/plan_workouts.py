@@ -37,7 +37,7 @@ class PlanWorkout(Base):
     pace_ranges = sa.Column(
         SqliteJSONB(),
         nullable=True,
-        comment="Pace ranges: {E:[sec,sec], S:[...], M:[...], T:[...]}",
+        comment="Pace ranges: {z2:[sec,sec], z3:[...], z4:[...], m:[...]}",
     )
     allow_quality = sa.Column(
         sa.Boolean, nullable=True, comment="Whether quality elements allowed"

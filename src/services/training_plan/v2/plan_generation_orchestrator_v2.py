@@ -53,9 +53,9 @@ from src.services.training_plan.v2.shared_v2.long_run_curve_validation import (
 )
 
 # Recovery week insertion removed - spine generator now handles all progression naturally
-from src.services.training_plan.pace import (
-    get_initial_pace_seed,
-    PaceSeed,
+from src.smartcoach_mobile_coach.runner_profile.models import PaceZoneComputation
+from src.smartcoach_mobile_coach.runner_profile.service import (
+    get_runner_pace_zones_for_plan_generation,
 )
 from src.services.training_plan.v2.shared_v2.pass1_weeks_selector_v2 import (
     Pass1WeeksSelector as Pass1WeeksSelectorV2,
@@ -840,27 +840,17 @@ class PlanGenerationOrchestratorV2:
             day, rounded_miles, note=note, shakeout=bool(spec.get("shakeout"))
         )
 
-    def _derive_pace_seed(
+    def _derive_pace_zones(
         self,
-        lr_output: Dict[str, Any],
-        plan_request: Dict[str, Any],
-        weeks_out: List[Dict[str, Any]],
         user_id: str,
         session: Session,
-    ) -> PaceSeed:
-        """Create an initial pace seed using performance-based calculation from recent run data."""
-        week1 = weeks_out[0] if weeks_out else {}
-        week1_total = float(week1.get("weekly_mileage", 0) or 0)
-        week1_long = float(week1.get("long_run_miles", 0) or 0)
-
-        # Calculate pace seed using performance-based calculation or calibration
-        seed = get_initial_pace_seed(
+    ) -> PaceZoneComputation:
+        """Create initial pace zones from runner-profile source of truth."""
+        return get_runner_pace_zones_for_plan_generation(
             session=session,
             user_id=user_id,
-            week1_long=week1_long,
-            lookback_weeks=6,
+            force_refresh=False,
         )
-        return seed
 
     def _self_correct_spine(
         self,

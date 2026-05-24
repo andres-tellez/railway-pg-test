@@ -30,7 +30,13 @@ from .adaptive_adjustment_service import AdaptiveAdjustmentService
 from .weekly_metrics_service import WeeklyMetricsService
 
 # Existing services
-from src.services.training_plan.pace import PaceSeed, get_initial_pace_seed
+from src.smartcoach_mobile_coach.runner_profile.models import (
+    PaceZoneBand,
+    PaceZoneComputation,
+)
+from src.smartcoach_mobile_coach.runner_profile.service import (
+    get_runner_pace_zones_for_plan_generation,
+)
 
 # Use the refactored v2 workout detail service for rebuilds
 from src.services.training_plan.v2.pass4_workout_details_v2 import (
@@ -44,9 +50,73 @@ from src.db.models.plans import Plan
 from src.db.models.plan_workouts import PlanWorkout
 from src.db.dao.plan_workouts_dao import get_workouts_for_week, update_workout
 from src.db.dao.user_profile_dao import get_user_profile
+from src.smartcoach_mobile_coach.runner_profile import (
+    get_runner_pace_zone_key_for_run_type,
+)
 from src.utils.date_helpers import date_to_day_name, get_week_start_for_date
 
 logger = logging.getLogger(__name__)
+
+
+def _has_marathon_finish_segment(segments: Any) -> bool:
+    if not isinstance(segments, dict):
+        return False
+    for step in segments.get("steps", []):
+        if not isinstance(step, dict):
+            continue
+        name = str(step.get("name", "")).lower()
+        intensity = str(step.get("intensity", "")).upper()
+        if name.startswith("marathon") or intensity == "MARATHON":
+            return True
+    return False
+
+
+def _pace_ranges_from_zones(pace_zones: PaceZoneComputation) -> dict[str, list[int]]:
+    return {
+        "z2": [int(pace_zones.pace_z2.low_sec), int(pace_zones.pace_z2.high_sec)],
+        "z3": [int(pace_zones.pace_z3.low_sec), int(pace_zones.pace_z3.high_sec)],
+        "z4": [int(pace_zones.pace_z4.low_sec), int(pace_zones.pace_z4.high_sec)],
+        "m": [int(pace_zones.marathon_sec), int(pace_zones.marathon_sec)],
+    }
+
+
+def _pace_band_for_run_type(
+    pace_zones: PaceZoneComputation, run_type_key: str
+) -> tuple[int, int]:
+    run_type_lower = str(run_type_key or "").lower()
+    if run_type_lower in {"threshold", "tempo", "steady"}:
+        band = pace_zones.pace_z3
+        return int(band.low_sec), int(band.high_sec)
+    if run_type_lower in {"vo2", "intervals", "repetitions", "race"}:
+        band = pace_zones.pace_z4
+        return int(band.low_sec), int(band.high_sec)
+    band = pace_zones.pace_z2
+    return int(band.low_sec), int(band.high_sec)
+
+
+def _shift_band(band: PaceZoneBand, delta_sec: float) -> PaceZoneBand:
+    low_sec = int(round(band.low_sec + delta_sec))
+    high_sec = int(round(band.high_sec + delta_sec))
+    if low_sec < 0:
+        low_sec = 0
+    if high_sec < low_sec:
+        high_sec = low_sec
+    return PaceZoneBand(low_sec=low_sec, high_sec=high_sec, display=band.display)
+
+
+def _shift_pace_zones(
+    pace_zones: PaceZoneComputation,
+    delta_sec: float,
+) -> PaceZoneComputation:
+    return PaceZoneComputation(
+        pace_z2=_shift_band(pace_zones.pace_z2, delta_sec),
+        pace_z3=_shift_band(pace_zones.pace_z3, delta_sec),
+        pace_z4=_shift_band(pace_zones.pace_z4, delta_sec),
+        pace_source=pace_zones.pace_source,
+        pace_computed_at=pace_zones.pace_computed_at,
+        marathon_sec=max(0, int(round(pace_zones.marathon_sec + delta_sec))),
+        week1_long_cap=pace_zones.week1_long_cap,
+    )
 
 
 class WeeklyRebuildService:
@@ -58,7 +128,7 @@ class WeeklyRebuildService:
         plan_id: int,
         week_num: int,
         previous_week_logs: Optional[List] = None,
-        initial_seed: Optional[PaceSeed] = None,
+        initial_pace_zones: Optional[PaceZoneComputation] = None,
         skip_adaptive_adjustments: bool = False,
     ) -> Dict[str, Any]:
         """
@@ -69,8 +139,8 @@ class WeeklyRebuildService:
             plan_id: Plan ID
             week_num: Week number (1-based)
             previous_week_logs: Optional logs from previous week for adjustments
-            initial_seed: Optional initial pace seed (if not provided, regenerates)
-            skip_adaptive_adjustments: If True, use initial_seed directly without adaptive adjustments
+            initial_pace_zones: Optional initial pace zones (if not provided, regenerates)
+            skip_adaptive_adjustments: If True, use initial_pace_zones directly without adaptive adjustments
                                       (useful for admin tools to force new paces)
 
         Returns:
@@ -136,36 +206,15 @@ class WeeklyRebuildService:
         week_start = min(w.date for w in week_workouts)
         week_end = max(w.date for w in week_workouts)
 
-        # Get or generate initial pace seed using performance-based calculation
-        # The new SQL-based approach is fast and always uses recent run data
-        if initial_seed is None:
-            logger.info(
-                f"[Rebuild] Calculating initial pace seed using performance-based method..."
-            )
-
-            # Get week1_long from first week's long run
-            first_week_workouts = (
-                all_workouts[:7] if len(all_workouts) >= 7 else all_workouts
-            )
-            week1_long = max(
-                (
-                    w.miles
-                    for w in first_week_workouts
-                    if w.workout_type in ("Long Run", "long")
-                ),
-                default=8.0,
-            )
-
-            # Use new performance-based calculation (SQL-based, fast)
-            initial_seed = get_initial_pace_seed(
+        # Get or generate initial pace zones via runner_profile gateway
+        if initial_pace_zones is None:
+            logger.info("[Rebuild] Resolving initial pace zones from runner_profile...")
+            initial_pace_zones = get_runner_pace_zones_for_plan_generation(
                 session=session,
                 user_id=str(plan.user_id),
-                week1_long=week1_long,
-                lookback_weeks=6,
+                force_refresh=True,
             )
-            logger.info(
-                f"[Rebuild] Initial pace seed generated using performance-based method"
-            )
+            logger.info("[Rebuild] Initial pace zones resolved")
 
         # ========================================================================
         # ADAPTIVE PIPELINE: 5-Stage Analysis and Adjustment
@@ -202,12 +251,12 @@ class WeeklyRebuildService:
                     f"[Adaptive Pipeline] Created {len(previous_week_logs)} week log entries"
                 )
 
-        # Lean aggregate-based seed nudge (matcher-independent)
+        # Lean aggregate-based pace-zone nudge (matcher-independent)
         try:
             if (
                 previous_week_logs
                 and previous_week_workouts
-                and initial_seed is not None
+                and initial_pace_zones is not None
             ):
                 from .data_collection_service import DataCollectionService
                 from .pacing_config import CONFIG
@@ -240,13 +289,13 @@ class WeeklyRebuildService:
                     lr_min_mi=CONFIG.lr_min_qualifying_mi,
                 )
 
-                current_seed = initial_seed
+                current_pace_zones = initial_pace_zones
                 easy_med = aggs.get("weekly_easyish_median_sec")
                 # Optionally include LR if it was executed aerobically (within easy band)
                 lr_pace = aggs.get("weekly_lr_pace_sec")
                 if lr_pace is not None:
-                    e_min = current_seed.E_min
-                    e_max = current_seed.E_max
+                    e_min = float(current_pace_zones.pace_z2.low_sec)
+                    e_max = float(current_pace_zones.pace_z2.high_sec)
                     if e_min <= float(lr_pace) <= e_max:
                         if easy_med:
                             easy_med = (float(easy_med) + float(lr_pace)) / 2.0
@@ -254,7 +303,10 @@ class WeeklyRebuildService:
                             easy_med = float(lr_pace)
 
                 if easy_med:
-                    seed_center = (current_seed.E_min + current_seed.E_max) / 2.0
+                    seed_center = (
+                        float(current_pace_zones.pace_z2.low_sec)
+                        + float(current_pace_zones.pace_z2.high_sec)
+                    ) / 2.0
                     diff = float(easy_med) - float(seed_center)
                     if abs(diff) > CONFIG.easy_diff_trigger_sec:
                         # Clamp to weekly cap
@@ -264,21 +316,14 @@ class WeeklyRebuildService:
                         )
                         logger.info(
                             f"[Adaptive Pipeline] Aggregate-based pace nudge: "
-                            f"weekly_median_effective={easy_med:.1f}s/mi, seed_center={seed_center:.1f}s/mi, "
+                            f"weekly_median_effective={easy_med:.1f}s/mi, zone_center={seed_center:.1f}s/mi, "
                             f"delta={delta:.1f}s"
                         )
-                        current_seed = PaceSeed(
-                            E_min=current_seed.E_min + delta,
-                            E_max=current_seed.E_max + delta,
-                            S_min=current_seed.S_min + delta,
-                            S_max=current_seed.S_max + delta,
-                            M=current_seed.M + delta,
-                            T_min=current_seed.T_min + delta,
-                            T_max=current_seed.T_max + delta,
-                            week1_long_cap=current_seed.week1_long_cap,
+                        current_pace_zones = _shift_pace_zones(
+                            current_pace_zones, delta
                         )
-                        # Update initial_seed so downstream stages use the nudged seed
-                        initial_seed = current_seed
+                        # Update initial zones so downstream stages use the nudged values
+                        initial_pace_zones = current_pace_zones
         except Exception as e:
             logger.warning(
                 f"[Adaptive Pipeline] Skipping aggregate-based nudge due to error: {e}"
@@ -288,22 +333,21 @@ class WeeklyRebuildService:
         analysis = None
         trends = None
         decision = None
-        current_seed = initial_seed
+        current_pace_zones = initial_pace_zones
         disable_quality = False
 
-        # If skip_adaptive_adjustments is True, use the provided seed directly without adjustments
+        # If skip_adaptive_adjustments is True, use the provided zones directly without adjustments
         # This allows admin tools to force new paces regardless of previous week performance
         if skip_adaptive_adjustments:
-            if current_seed is None:
+            if current_pace_zones is None:
                 logger.error(
-                    f"[Rebuild] CRITICAL: skip_adaptive_adjustments=True but initial_seed is None!"
+                    "[Rebuild] CRITICAL: skip_adaptive_adjustments=True but initial_pace_zones is None!"
                 )
                 raise ValueError(
-                    "Cannot skip adaptive adjustments without initial_seed"
+                    "Cannot skip adaptive adjustments without initial_pace_zones"
                 )
             logger.info(
-                f"[Rebuild] Using explicitly provided pace seed (skipping adaptive adjustments per request): "
-                f"E={current_seed.E_min}-{current_seed.E_max}s/mi, M={current_seed.M}s/mi"
+                "[Rebuild] Using explicitly provided pace zones (skipping adaptive adjustments per request)"
             )
 
         if (
@@ -369,7 +413,7 @@ class WeeklyRebuildService:
                 decision = AdaptiveAdjustmentService.calculate_adjustment(
                     analysis=analysis,
                     trends=trends,
-                    current_seed=initial_seed,
+                    current_pace_zones=initial_pace_zones,
                     phase=phase,
                     weeks_remaining=weeks_remaining,
                 )
@@ -379,8 +423,10 @@ class WeeklyRebuildService:
                     f"pace_adjustment={decision.pace_adjustment_sec}s"
                 )
 
-                # Apply adjustments to pace seed
-                current_seed = _apply_decision_to_seed(initial_seed, decision)
+                # Apply adjustments to pace zones
+                current_pace_zones = _apply_decision_to_pace_zones(
+                    initial_pace_zones, decision
+                )
                 disable_quality = decision.disable_quality_workouts
 
                 # STAGE 5: Persist metrics and decisions
@@ -419,10 +465,10 @@ class WeeklyRebuildService:
                 # Fallback to original behavior if pipeline fails
                 logger.warning("Falling back to simple adjustment logic")
                 if previous_week_logs:
-                    from .weekly_adjuster import adjust_seed_from_week
+                    from .weekly_adjuster import adjust_pace_zones_from_week
 
-                    current_seed, disable_quality = adjust_seed_from_week(
-                        initial_seed, previous_week_logs
+                    current_pace_zones, disable_quality = adjust_pace_zones_from_week(
+                        initial_pace_zones, previous_week_logs
                     )
 
         # Convert workouts to plan format
@@ -452,7 +498,7 @@ class WeeklyRebuildService:
 
         week_with_details = pass4.add_details_to_week(
             week=week_plan,
-            seed=current_seed,
+            pace_zones=current_pace_zones,
             allow_quality=allow_quality,
         )
         pass4_elapsed = time.time() - pass4_start
@@ -494,7 +540,10 @@ class WeeklyRebuildService:
             # Extract values for update
             segments = workout_data.get("segments")
             cues = workout_data.get("cues", "")
-            new_intensity = workout_data.get("type", db_workout.workout_type)
+            new_intensity = get_runner_pace_zone_key_for_run_type(
+                db_workout.run_type_key or workout_data.get("type", ""),
+                has_marathon_finish=_has_marathon_finish_segment(segments),
+            )
 
             # Detect changes using centralized comparison service
             changes = WorkoutComparisonService.detect_changes(db_workout, workout_data)
@@ -531,59 +580,38 @@ class WeeklyRebuildService:
                 "target_hr": new_target_hr or None,  # Save target HR if available
             }
 
-            # Keep pace_ranges in sync with the active seed so table and UI match
-            if current_seed is None:
+            # Keep pace_ranges in sync with active pace zones so table and UI match
+            if current_pace_zones is None:
                 logger.warning(
-                    f"[Rebuild] Cannot set pace_ranges: current_seed is None for workout {db_workout.id} "
+                    f"[Rebuild] Cannot set pace_ranges: current_pace_zones is None for workout {db_workout.id} "
                     f"({db_workout.date}, {db_workout.workout_type})"
                 )
             else:
                 try:
-                    update_data["pace_ranges"] = {
-                        "E": [float(current_seed.E_min), float(current_seed.E_max)],
-                        "S": [float(current_seed.S_min), float(current_seed.S_max)],
-                        "M": [float(current_seed.M), float(current_seed.M)],
-                        "T": [float(current_seed.T_min), float(current_seed.T_max)],
-                    }
-
-                    # ALWAYS set target_zone from current_seed to keep in sync with pace_ranges
-                    # This ensures frontend sees updated pace even if extract_pace_zone_from_workout fails
-                    from .workout_utils import (
-                        get_workout_pace_label_key,
-                        pace_range_to_str,
+                    update_data["pace_ranges"] = _pace_ranges_from_zones(
+                        current_pace_zones
                     )
 
-                    pace_key = get_workout_pace_label_key(db_workout.workout_type or "")
+                    # ALWAYS set target_zone from pace zones to keep in sync with pace_ranges
+                    from .workout_utils import pace_range_to_str
 
-                    if pace_key == "E":
-                        target_zone_str = pace_range_to_str(
-                            current_seed.E_min, current_seed.E_max
-                        )
-                    elif pace_key == "S":
-                        target_zone_str = pace_range_to_str(
-                            current_seed.S_min, current_seed.S_max
-                        )
-                    elif pace_key == "M":
-                        target_zone_str = pace_range_to_str(
-                            current_seed.M, current_seed.M
-                        )
-                    elif pace_key == "T":
-                        target_zone_str = pace_range_to_str(
-                            current_seed.T_min, current_seed.T_max
-                        )
-                    else:
-                        # Default to Easy
-                        target_zone_str = pace_range_to_str(
-                            current_seed.E_min, current_seed.E_max
-                        )
+                    band_low, band_high = _pace_band_for_run_type(
+                        current_pace_zones,
+                        db_workout.run_type_key or "",
+                    )
+                    target_zone_str = pace_range_to_str(
+                        float(band_low), float(band_high)
+                    )
 
-                    # Override target_zone with value from seed (single source of truth)
+                    # Override target_zone with value from pace zones (single source of truth)
                     update_data["target_zone"] = target_zone_str
 
                     logger.info(
                         f"[Rebuild] Set pace_ranges and target_zone for workout {db_workout.id} ({db_workout.date}): "
-                        f"E={current_seed.E_min:.1f}-{current_seed.E_max:.1f}s/mi, "
-                        f"target_zone={target_zone_str} (from {pace_key} zone)"
+                        f"z2={update_data['pace_ranges'].get('z2')} "
+                        f"z3={update_data['pace_ranges'].get('z3')} "
+                        f"z4={update_data['pace_ranges'].get('z4')}, "
+                        f"target_zone={target_zone_str}"
                     )
                 except Exception as e:
                     # Log the actual error instead of silently failing
@@ -749,40 +777,36 @@ class WeeklyRebuildService:
             else:
                 run_type_key = "easy"  # default
 
-        return PlanStorageService._calculate_hr_zone(run_type_key, user_profile)
+        return PlanStorageService._calculate_hr_zone(
+            run_type_key,
+            user_profile,
+            session=session,
+            user_id=user_id,
+        )
 
 
-def _apply_decision_to_seed(
-    seed: PaceSeed,
+def _apply_decision_to_pace_zones(
+    pace_zones: PaceZoneComputation,
     decision: "AdjustmentDecision",
-) -> PaceSeed:
+) -> PaceZoneComputation:
     """
-    Apply adjustment decision to pace seed.
+    Apply adjustment decision to pace zones.
 
     Adjusts all pace zones by the pace_adjustment_sec amount.
     Volume adjustments are handled separately in workout generation.
 
     Args:
-        seed: Current pace seed
+        pace_zones: Current pace zones
         decision: Adjustment decision
 
     Returns:
-        Adjusted pace seed
+        Adjusted pace zones
     """
     if decision.pace_adjustment_sec == 0:
-        return seed
+        return pace_zones
 
     # Apply pace adjustment to all zones
-    return PaceSeed(
-        E_min=seed.E_min + decision.pace_adjustment_sec,
-        E_max=seed.E_max + decision.pace_adjustment_sec,
-        S_min=seed.S_min + decision.pace_adjustment_sec,
-        S_max=seed.S_max + decision.pace_adjustment_sec,
-        M=seed.M + decision.pace_adjustment_sec,
-        T_min=seed.T_min + decision.pace_adjustment_sec,
-        T_max=seed.T_max + decision.pace_adjustment_sec,
-        week1_long_cap=seed.week1_long_cap,
-    )
+    return _shift_pace_zones(pace_zones, decision.pace_adjustment_sec)
 
 
 def _find_week_workouts(

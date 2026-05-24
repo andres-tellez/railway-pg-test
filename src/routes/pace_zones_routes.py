@@ -24,8 +24,7 @@ Response:
 Dependencies:
 -------------
 - requires_auth: JWT authentication decorator
-- get_initial_pace_seed: Pace calculation service
-- get_active_plan: Plan DAO (optional, for week1_long)
+- get_runner_profile: Runner profile service
 
 Author: SmartCoach Development Team
 Last Updated: December 2025
@@ -34,8 +33,7 @@ Last Updated: December 2025
 from flask import Blueprint, jsonify, g
 from src.db.db_session import get_session
 from src.utils.auth0_jwt import requires_auth
-from src.services.training_plan.pace import get_initial_pace_seed
-from src.db.dao.plans_dao import get_active_plan
+from src.smartcoach_mobile_coach.runner_profile import get_runner_profile
 from datetime import datetime
 from src.utils.logger import get_logger
 
@@ -63,45 +61,47 @@ def get_pace_zones():
 
         session = get_session()
         try:
-            # Try to get week1_long from active plan if available
-            week1_long = None
-            plan = get_active_plan(session, user_id)
-            if plan and plan.workouts:
-                # Find first week's long run
-                first_week_workouts = sorted(plan.workouts, key=lambda w: w.date)[:7]
-                long_runs = [
-                    w.miles
-                    for w in first_week_workouts
-                    if w.workout_type in ("Long Run", "long") and w.miles
-                ]
-                if long_runs:
-                    week1_long = max(long_runs)
-
-            # Calculate pace zones
-            pace_seed = get_initial_pace_seed(
-                session=session,
-                user_id=user_id,
-                week1_long=week1_long,
-                lookback_weeks=6,  # Default 6 weeks
-            )
+            profile = get_runner_profile(session, user_id)
+            if not profile.calibrated or not profile.pace_z2:
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": "Runner profile pace zones unavailable",
+                        }
+                    ),
+                    404,
+                )
 
             # Format response
             response = {
                 "easy": {
-                    "min": round(pace_seed.E_min, 1),
-                    "max": round(pace_seed.E_max, 1),
+                    "min": round(profile.pace_z2.low_sec, 1),
+                    "max": round(profile.pace_z2.high_sec, 1),
                 },
                 "steady": {
-                    "min": round(pace_seed.S_min, 1),
-                    "max": round(pace_seed.S_max, 1),
+                    "min": (
+                        round(profile.pace_z3.low_sec, 1) if profile.pace_z3 else None
+                    ),
+                    "max": (
+                        round(profile.pace_z3.high_sec, 1) if profile.pace_z3 else None
+                    ),
                 },
-                "marathon": {"pace": round(pace_seed.M, 1)},
+                "marathon": {
+                    "pace": (
+                        round(profile.pace_z4.low_sec, 1) if profile.pace_z4 else None
+                    )
+                },
                 "threshold": {
-                    "min": round(pace_seed.T_min, 1),
-                    "max": round(pace_seed.T_max, 1),
+                    "min": (
+                        round(profile.pace_z4.low_sec, 1) if profile.pace_z4 else None
+                    ),
+                    "max": (
+                        round(profile.pace_z4.high_sec, 1) if profile.pace_z4 else None
+                    ),
                 },
                 "updatedAt": datetime.utcnow().isoformat() + "Z",
-                "source": "6-week lookback",
+                "source": profile.pace_source or "runner_profile",
             }
 
             logger.info(

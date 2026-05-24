@@ -768,312 +768,90 @@ def test_pace_calculation():
 
     try:
         from flask import g
-        from src.services.training_plan.pace import get_initial_pace_seed
+        from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
+        from src.smartcoach_mobile_coach.runner_profile.service import (
+            get_runner_pace_zones_for_plan_generation,
+        )
 
         data = request.get_json() or {}
-        user_id = data.get("user_id")
-
-        # Use authenticated user if no user_id provided
+        user_id = data.get("user_id") or getattr(g, "user_id", None)
         if not user_id:
-            user_id = getattr(g, "user_id", None)
-            if not user_id:
-                return (
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": "user_id required (or must be authenticated)",
-                        }
-                    ),
-                    400,
-                )
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "user_id required (or must be authenticated)",
+                    }
+                ),
+                400,
+            )
 
         user_id = str(user_id)
-        week1_long = data.get("week1_long", 8.0)
-        lookback_weeks = data.get("lookback_weeks", 6)
-
-        logger.info(
-            f"🧪 [Test Pace Calculation] Calculating for user_id={user_id}, "
-            f"week1_long={week1_long}, lookback_weeks={lookback_weeks}"
-        )
+        lookback_weeks = int(data.get("lookback_weeks", 6))
 
         session = get_session()
         try:
-            # Calculate pace seed
-            seed = get_initial_pace_seed(
+            pace_zones = get_runner_pace_zones_for_plan_generation(
                 session=session,
                 user_id=user_id,
-                week1_long=week1_long,
+                force_refresh=True,
                 lookback_weeks=lookback_weeks,
             )
-
-            # Check calculation method used
-            from src.db.models.activities import Activity
-            from sqlalchemy import text
-            from datetime import datetime, timedelta
-
-            cutoff = datetime.now() - timedelta(weeks=6)
-            # Check if we have enough runs for performance-based calculation
-            count_query = text(
-                """
-                SELECT COUNT(*) as run_count
-                FROM activities
-                WHERE user_id = :user_id
-                  AND type = 'Run'
-                  AND start_date >= :cutoff
-                  AND conv_distance >= 2.0
-                  AND moving_time IS NOT NULL
-                  AND moving_time > 0
-                  AND conv_distance > 0
-                  AND (moving_time::float / conv_distance) BETWEEN 360 AND 1200
-            """
-            )
-
-            run_count = session.execute(
-                count_query, {"user_id": user_id, "cutoff": cutoff}
-            ).scalar()
-
             calculation_method = (
-                "Performance-Based" if run_count >= 6 else "Calibration"
+                "Calibration"
+                if pace_zones.pace_source == "calibration"
+                else "Performance-Based"
             )
-
-            # Format pace zones for display
-            def sec_to_pace(sec):
-                """Convert seconds per mile to mm:ss/mile format."""
-                minutes = int(sec // 60)
-                seconds = int(sec % 60)
-                return f"{minutes}:{seconds:02d}/mi"
 
             result = {
                 "status": "success",
                 "user_id": user_id,
                 "calculation_method": calculation_method,
-                "runs_used": run_count if run_count >= 6 else 0,
                 "lookback_weeks": lookback_weeks,
                 "pace_zones": {
-                    "Easy": {
-                        "min": sec_to_pace(seed.E_min),
-                        "max": sec_to_pace(seed.E_max),
-                        "min_sec": round(seed.E_min, 1),
-                        "max_sec": round(seed.E_max, 1),
+                    "z2": {
+                        "min_sec": int(pace_zones.pace_z2.low_sec),
+                        "max_sec": int(pace_zones.pace_z2.high_sec),
+                        "min": format_pace_sec_per_mi(
+                            float(pace_zones.pace_z2.low_sec)
+                        ),
+                        "max": format_pace_sec_per_mi(
+                            float(pace_zones.pace_z2.high_sec)
+                        ),
                     },
-                    "Steady": {
-                        "min": sec_to_pace(seed.S_min),
-                        "max": sec_to_pace(seed.S_max),
-                        "min_sec": round(seed.S_min, 1),
-                        "max_sec": round(seed.S_max, 1),
+                    "z3": {
+                        "min_sec": int(pace_zones.pace_z3.low_sec),
+                        "max_sec": int(pace_zones.pace_z3.high_sec),
+                        "min": format_pace_sec_per_mi(
+                            float(pace_zones.pace_z3.low_sec)
+                        ),
+                        "max": format_pace_sec_per_mi(
+                            float(pace_zones.pace_z3.high_sec)
+                        ),
                     },
-                    "Marathon": {
-                        "pace": sec_to_pace(seed.M),
-                        "sec": round(seed.M, 1),
+                    "m": {
+                        "sec": int(pace_zones.marathon_sec),
+                        "pace": format_pace_sec_per_mi(float(pace_zones.marathon_sec)),
                     },
-                    "Threshold": {
-                        "min": sec_to_pace(seed.T_min),
-                        "max": sec_to_pace(seed.T_max),
-                        "min_sec": round(seed.T_min, 1),
-                        "max_sec": round(seed.T_max, 1),
+                    "z4": {
+                        "min_sec": int(pace_zones.pace_z4.low_sec),
+                        "max_sec": int(pace_zones.pace_z4.high_sec),
+                        "min": format_pace_sec_per_mi(
+                            float(pace_zones.pace_z4.low_sec)
+                        ),
+                        "max": format_pace_sec_per_mi(
+                            float(pace_zones.pace_z4.high_sec)
+                        ),
                     },
                 },
-                "week1_long_cap": round(seed.week1_long_cap, 1),
+                "week1_long_cap": round(float(pace_zones.week1_long_cap), 1),
             }
-
-            logger.info(
-                f"✅ [Test Pace Calculation] Success: method={calculation_method}, "
-                f"marathon_pace={sec_to_pace(seed.M)}"
-            )
-
             return jsonify(result), 200
-
         finally:
             session.close()
 
     except Exception as e:
         logger.exception(f"❌ [Test Pace Calculation] Failed: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@admin_bp.route("/test-median-easy-pace-debug", methods=["POST"])
-@requires_auth
-def test_median_easy_pace_debug():
-    """
-    Debug endpoint - shows all data used in median easy pace calculation.
-
-    This endpoint helps verify the SQL calculation is correct by showing:
-    - All runs used in the calculation
-    - SQL median vs manual Python median (for comparison)
-    - Min, max, avg paces
-    - Individual run details
-
-    Request body (JSON):
-        - user_id (str, optional): User UUID to test. If not provided, uses authenticated user.
-        - lookback_weeks (int, optional): Weeks of history to analyze (default: 6)
-
-    Returns:
-        JSON response with detailed calculation data for verification.
-    """
-    logger.info("🧪 [Test Median Easy Pace Debug] Request received")
-
-    try:
-        from flask import g
-        from sqlalchemy import text
-        from datetime import datetime, timedelta
-
-        data = request.get_json() or {}
-        user_id = data.get("user_id")
-
-        # Use authenticated user if no user_id provided
-        if not user_id:
-            user_id = getattr(g, "user_id", None)
-            if not user_id:
-                return (
-                    jsonify(
-                        {
-                            "status": "error",
-                            "message": "user_id required (or must be authenticated)",
-                        }
-                    ),
-                    400,
-                )
-
-        user_id = str(user_id)
-        lookback_weeks = data.get("lookback_weeks", 6)
-
-        logger.info(
-            f"🧪 [Test Median Easy Pace Debug] Calculating for user_id={user_id}, "
-            f"lookback_weeks={lookback_weeks}"
-        )
-
-        session = get_session()
-        try:
-            cutoff = datetime.now() - timedelta(weeks=lookback_weeks)
-
-            # Get all valid runs with their paces
-            query = text(
-                """
-                SELECT
-                    activity_id,
-                    start_date,
-                    conv_distance,
-                    moving_time,
-                    moving_time::float / conv_distance AS pace_sec_per_mile
-                FROM activities
-                WHERE user_id = :user_id
-                  AND type = 'Run'
-                  AND start_date >= :cutoff
-                  AND conv_distance >= 2.0
-                  AND moving_time IS NOT NULL
-                  AND moving_time > 0
-                  AND conv_distance > 0
-                  AND (moving_time::float / conv_distance) BETWEEN 360 AND 1200
-                ORDER BY pace_sec_per_mile
-            """
-            )
-
-            results = session.execute(
-                query, {"user_id": user_id, "cutoff": cutoff}
-            ).fetchall()
-
-            if len(results) < 6:
-                return jsonify(
-                    {
-                        "status": "insufficient_data",
-                        "run_count": len(results),
-                        "message": "Need at least 6 runs (2+ miles) in last 6 weeks",
-                        "cutoff_date": cutoff.isoformat(),
-                    }
-                )
-
-            # Calculate median manually for comparison
-            paces = [float(r.pace_sec_per_mile) for r in results]
-            sorted_paces = sorted(paces)
-            median_index = len(sorted_paces) // 2
-            if len(sorted_paces) % 2 == 1:
-                manual_median = sorted_paces[median_index]
-            else:
-                manual_median = (
-                    sorted_paces[median_index - 1] + sorted_paces[median_index]
-                ) / 2
-
-            # SQL median
-            median_query = text(
-                """
-                WITH valid_runs AS (
-                    SELECT moving_time::float / conv_distance AS pace_sec_per_mile
-                    FROM activities
-                    WHERE user_id = :user_id
-                      AND type = 'Run'
-                      AND start_date >= :cutoff
-                      AND conv_distance >= 2.0
-                      AND moving_time IS NOT NULL
-                      AND moving_time > 0
-                      AND conv_distance > 0
-                      AND (moving_time::float / conv_distance) BETWEEN 360 AND 1200
-                )
-                SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY pace_sec_per_mile) AS median_pace
-                FROM valid_runs
-            """
-            )
-
-            sql_median = session.execute(
-                median_query, {"user_id": user_id, "cutoff": cutoff}
-            ).scalar()
-
-            # Format pace for display
-            def sec_to_pace(sec):
-                """Convert seconds per mile to mm:ss/mile format."""
-                minutes = int(sec // 60)
-                seconds = int(sec % 60)
-                return f"{minutes}:{seconds:02d}/mi"
-
-            return jsonify(
-                {
-                    "status": "success",
-                    "user_id": user_id,
-                    "lookback_weeks": lookback_weeks,
-                    "cutoff_date": cutoff.isoformat(),
-                    "run_count": len(results),
-                    "sql_median_sec": (
-                        round(float(sql_median), 1) if sql_median else None
-                    ),
-                    "sql_median_formatted": (
-                        sec_to_pace(sql_median) if sql_median else None
-                    ),
-                    "manual_median_sec": round(manual_median, 1),
-                    "manual_median_formatted": sec_to_pace(manual_median),
-                    "min_pace_sec": round(float(min(paces)), 1),
-                    "min_pace_formatted": sec_to_pace(min(paces)),
-                    "max_pace_sec": round(float(max(paces)), 1),
-                    "max_pace_formatted": sec_to_pace(max(paces)),
-                    "avg_pace_sec": round(float(sum(paces) / len(paces)), 1),
-                    "avg_pace_formatted": sec_to_pace(sum(paces) / len(paces)),
-                    "match": (
-                        abs(float(sql_median) - manual_median) < 0.1
-                        if sql_median
-                        else False
-                    ),
-                    "difference_sec": (
-                        round(abs(float(sql_median) - manual_median), 2)
-                        if sql_median
-                        else None
-                    ),
-                    "all_paces_sec": [round(p, 1) for p in sorted_paces],
-                    "runs": [
-                        {
-                            "activity_id": r.activity_id,
-                            "date": r.start_date.isoformat() if r.start_date else None,
-                            "distance_mi": round(float(r.conv_distance), 2),
-                            "moving_time_sec": r.moving_time,
-                            "pace_sec_per_mile": round(float(r.pace_sec_per_mile), 1),
-                            "pace_formatted": sec_to_pace(r.pace_sec_per_mile),
-                        }
-                        for r in results
-                    ],
-                }
-            )
-        finally:
-            session.close()
-
-    except Exception as e:
-        logger.exception(f"❌ [Test Median Easy Pace Debug] Exception: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -1101,7 +879,9 @@ def update_current_week_pace():
         from flask import g
         from src.db.dao.plans_dao import get_active_plan
         from src.db.models.plans import Plan
-        from src.services.training_plan.pace import get_initial_pace_seed
+        from src.smartcoach_mobile_coach.runner_profile.service import (
+            get_runner_pace_zones_for_plan_generation,
+        )
         from src.services.training_plan.weekly_rebuild_service import (
             WeeklyRebuildService,
         )
@@ -1205,36 +985,22 @@ def update_current_week_pace():
                 f"🔄 [Update Current Week Pace] Current week_num={week_num} (week starting {current_week_monday})"
             )
 
-            # 3. Calculate new pace seed using performance-based method
+            # 3. Calculate new pace zones using runner-profile method
             logger.info(
                 f"🔄 [Update Current Week Pace] Calculating new pace zones "
                 f"(lookback_weeks={lookback_weeks})..."
             )
-
-            # Get week1_long from plan if available, otherwise default
-            week1_long = 8.0
-            if plan.workouts:
-                # Find first week's long run
-                first_week_workouts = sorted(plan.workouts, key=lambda w: w.date)[:7]
-                long_runs = [
-                    w.miles
-                    for w in first_week_workouts
-                    if w.workout_type in ("Long Run", "long") and w.miles
-                ]
-                if long_runs:
-                    week1_long = max(long_runs)
-
-            new_pace_seed = get_initial_pace_seed(
+            new_pace_zones = get_runner_pace_zones_for_plan_generation(
                 session=session,
                 user_id=user_id,
-                week1_long=week1_long,
+                force_refresh=True,
                 lookback_weeks=lookback_weeks,
             )
 
             logger.info(
                 f"✅ [Update Current Week Pace] New pace zones calculated: "
-                f"Easy={new_pace_seed.E_min:.1f}-{new_pace_seed.E_max:.1f}s/mi, "
-                f"Marathon={new_pace_seed.M:.1f}s/mi"
+                f"z2={new_pace_zones.pace_z2.low_sec:.1f}-{new_pace_zones.pace_z2.high_sec:.1f}s/mi, "
+                f"m={new_pace_zones.marathon_sec:.1f}s/mi"
             )
 
             # 4. Fetch previous week logs (if available) for adjustments
@@ -1257,7 +1023,7 @@ def update_current_week_pace():
                     )
                     previous_week_logs = None
 
-            # 5. Rebuild week with new pace seed
+            # 5. Rebuild week with new pace zones
             logger.info(
                 f"🔄 [Update Current Week Pace] Rebuilding week {week_num} with new paces..."
             )
@@ -1267,8 +1033,8 @@ def update_current_week_pace():
                 plan_id=plan.id,
                 week_num=week_num,
                 previous_week_logs=previous_week_logs,
-                initial_seed=new_pace_seed,
-                skip_adaptive_adjustments=True,  # Force the new pace seed without adjustments
+                initial_pace_zones=new_pace_zones,
+                skip_adaptive_adjustments=True,  # Force the new pace zones without adjustments
             )
 
             # 6. Commit changes
@@ -1329,30 +1095,30 @@ def update_current_week_pace():
                         "week_num": week_num,
                         "lookback_weeks": lookback_weeks,
                         "pace_zones": {
-                            "Easy": {
-                                "min": sec_to_pace(new_pace_seed.E_min),
-                                "max": sec_to_pace(new_pace_seed.E_max),
-                                "min_sec": round(new_pace_seed.E_min, 1),
-                                "max_sec": round(new_pace_seed.E_max, 1),
+                            "z2": {
+                                "min": sec_to_pace(new_pace_zones.pace_z2.low_sec),
+                                "max": sec_to_pace(new_pace_zones.pace_z2.high_sec),
+                                "min_sec": round(new_pace_zones.pace_z2.low_sec, 1),
+                                "max_sec": round(new_pace_zones.pace_z2.high_sec, 1),
                             },
-                            "Steady": {
-                                "min": sec_to_pace(new_pace_seed.S_min),
-                                "max": sec_to_pace(new_pace_seed.S_max),
-                                "min_sec": round(new_pace_seed.S_min, 1),
-                                "max_sec": round(new_pace_seed.S_max, 1),
+                            "z3": {
+                                "min": sec_to_pace(new_pace_zones.pace_z3.low_sec),
+                                "max": sec_to_pace(new_pace_zones.pace_z3.high_sec),
+                                "min_sec": round(new_pace_zones.pace_z3.low_sec, 1),
+                                "max_sec": round(new_pace_zones.pace_z3.high_sec, 1),
                             },
-                            "Marathon": {
-                                "pace": sec_to_pace(new_pace_seed.M),
-                                "sec": round(new_pace_seed.M, 1),
+                            "m": {
+                                "pace": sec_to_pace(new_pace_zones.marathon_sec),
+                                "sec": round(new_pace_zones.marathon_sec, 1),
                             },
-                            "Threshold": {
-                                "min": sec_to_pace(new_pace_seed.T_min),
-                                "max": sec_to_pace(new_pace_seed.T_max),
-                                "min_sec": round(new_pace_seed.T_min, 1),
-                                "max_sec": round(new_pace_seed.T_max, 1),
+                            "z4": {
+                                "min": sec_to_pace(new_pace_zones.pace_z4.low_sec),
+                                "max": sec_to_pace(new_pace_zones.pace_z4.high_sec),
+                                "min_sec": round(new_pace_zones.pace_z4.low_sec, 1),
+                                "max_sec": round(new_pace_zones.pace_z4.high_sec, 1),
                             },
                         },
-                        "week1_long_cap": round(new_pace_seed.week1_long_cap, 1),
+                        "week1_long_cap": round(new_pace_zones.week1_long_cap, 1),
                         "rebuild_result": {
                             "updated_workouts": len(
                                 rebuild_result.get("updated_workouts", [])

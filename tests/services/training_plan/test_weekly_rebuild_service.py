@@ -6,7 +6,7 @@ previous week's completion data and rebuilds workout details.
 """
 
 import pytest
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 from unittest.mock import Mock, patch
 
 from src.services.training_plan.weekly_rebuild_service import (
@@ -16,7 +16,10 @@ from src.services.training_plan.weekly_rebuild_service import (
     _determine_phase,
 )
 from src.services.training_plan.weekly_adjuster import WeekLogRun
-from src.services.training_plan.pace import PaceSeed
+from src.smartcoach_mobile_coach.runner_profile.models import (
+    PaceZoneBand,
+    PaceZoneComputation,
+)
 
 
 class TestWeeklyRebuildService:
@@ -108,16 +111,17 @@ class TestWeeklyRebuildService:
 
     def test_pace_adjustment_from_week_logs(self):
         """Test that pace adjustments are applied based on week logs."""
-        from src.services.training_plan.weekly_adjuster import adjust_seed_from_week
+        from src.services.training_plan.weekly_adjuster import (
+            adjust_pace_zones_from_week,
+        )
 
-        initial_seed = PaceSeed(
-            E_min=600.0,
-            E_max=690.0,
-            S_min=570.0,
-            S_max=630.0,
-            M=540.0,
-            T_min=510.0,
-            T_max=520.0,
+        initial_pace_zones = PaceZoneComputation(
+            pace_z2=PaceZoneBand(low_sec=600, high_sec=690, display="10:00-11:30/mi"),
+            pace_z3=PaceZoneBand(low_sec=570, high_sec=630, display="9:30-10:30/mi"),
+            pace_z4=PaceZoneBand(low_sec=510, high_sec=520, display="8:30-8:40/mi"),
+            pace_source="test",
+            pace_computed_at=datetime.now(timezone.utc),
+            marathon_sec=540,
             week1_long_cap=8.0,
         )
 
@@ -131,28 +135,33 @@ class TestWeeklyRebuildService:
             ),
         ]
 
-        adjusted_seed, disable_quality = adjust_seed_from_week(initial_seed, week_logs)
+        adjusted_pace_zones, disable_quality = adjust_pace_zones_from_week(
+            initial_pace_zones, week_logs
+        )
 
         # Verify paces slowed down
-        assert adjusted_seed.E_min > initial_seed.E_min
-        assert adjusted_seed.E_max > initial_seed.E_max
-        assert adjusted_seed.M > initial_seed.M
+        assert adjusted_pace_zones.pace_z2.low_sec > initial_pace_zones.pace_z2.low_sec
+        assert (
+            adjusted_pace_zones.pace_z2.high_sec > initial_pace_zones.pace_z2.high_sec
+        )
+        assert adjusted_pace_zones.marathon_sec > initial_pace_zones.marathon_sec
 
         # Verify quality disabled
         assert disable_quality is True
 
     def test_pace_adjustment_excellent_recovery(self):
         """Test pace adjustment when recovery is excellent (RPE <= 2)."""
-        from src.services.training_plan.weekly_adjuster import adjust_seed_from_week
+        from src.services.training_plan.weekly_adjuster import (
+            adjust_pace_zones_from_week,
+        )
 
-        initial_seed = PaceSeed(
-            E_min=600.0,
-            E_max=690.0,
-            S_min=570.0,
-            S_max=630.0,
-            M=540.0,
-            T_min=510.0,
-            T_max=520.0,
+        initial_pace_zones = PaceZoneComputation(
+            pace_z2=PaceZoneBand(low_sec=600, high_sec=690, display="10:00-11:30/mi"),
+            pace_z3=PaceZoneBand(low_sec=570, high_sec=630, display="9:30-10:30/mi"),
+            pace_z4=PaceZoneBand(low_sec=510, high_sec=520, display="8:30-8:40/mi"),
+            pace_source="test",
+            pace_computed_at=datetime.now(timezone.utc),
+            marathon_sec=540,
             week1_long_cap=8.0,
         )
 
@@ -166,25 +175,30 @@ class TestWeeklyRebuildService:
             ),
         ]
 
-        adjusted_seed, disable_quality = adjust_seed_from_week(initial_seed, week_logs)
+        adjusted_pace_zones, disable_quality = adjust_pace_zones_from_week(
+            initial_pace_zones, week_logs
+        )
 
         # Verify paces sped up slightly
-        assert adjusted_seed.E_min < initial_seed.E_min
-        assert adjusted_seed.E_max < initial_seed.E_max
-        assert adjusted_seed.M < initial_seed.M
+        assert adjusted_pace_zones.pace_z2.low_sec < initial_pace_zones.pace_z2.low_sec
+        assert (
+            adjusted_pace_zones.pace_z2.high_sec < initial_pace_zones.pace_z2.high_sec
+        )
+        assert adjusted_pace_zones.marathon_sec < initial_pace_zones.marathon_sec
 
     def test_pace_adjustment_high_rpe(self):
         """Test pace adjustment when RPE is high (>= 5)."""
-        from src.services.training_plan.weekly_adjuster import adjust_seed_from_week
+        from src.services.training_plan.weekly_adjuster import (
+            adjust_pace_zones_from_week,
+        )
 
-        initial_seed = PaceSeed(
-            E_min=600.0,
-            E_max=690.0,
-            S_min=570.0,
-            S_max=630.0,
-            M=540.0,
-            T_min=510.0,
-            T_max=520.0,
+        initial_pace_zones = PaceZoneComputation(
+            pace_z2=PaceZoneBand(low_sec=600, high_sec=690, display="10:00-11:30/mi"),
+            pace_z3=PaceZoneBand(low_sec=570, high_sec=630, display="9:30-10:30/mi"),
+            pace_z4=PaceZoneBand(low_sec=510, high_sec=520, display="8:30-8:40/mi"),
+            pace_source="test",
+            pace_computed_at=datetime.now(timezone.utc),
+            marathon_sec=540,
             week1_long_cap=8.0,
         )
 
@@ -198,12 +212,16 @@ class TestWeeklyRebuildService:
             ),
         ]
 
-        adjusted_seed, disable_quality = adjust_seed_from_week(initial_seed, week_logs)
+        adjusted_pace_zones, disable_quality = adjust_pace_zones_from_week(
+            initial_pace_zones, week_logs
+        )
 
         # Verify paces slowed down
-        assert adjusted_seed.E_min > initial_seed.E_min
-        assert adjusted_seed.E_max > initial_seed.E_max
-        assert adjusted_seed.M > initial_seed.M
+        assert adjusted_pace_zones.pace_z2.low_sec > initial_pace_zones.pace_z2.low_sec
+        assert (
+            adjusted_pace_zones.pace_z2.high_sec > initial_pace_zones.pace_z2.high_sec
+        )
+        assert adjusted_pace_zones.marathon_sec > initial_pace_zones.marathon_sec
 
         # Verify quality disabled
         assert disable_quality is True

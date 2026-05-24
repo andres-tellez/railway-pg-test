@@ -22,7 +22,7 @@ from src.db.models.user_identity import UserIdentity
 from src.db.models.user_auth_providers import UserAuthProvider
 from src.db.models.weekly_training_insights import WeeklyTrainingInsight
 from src.db.models.user_coach_preferences import UserCoachPreferences
-from src.db.models.user_hr_zones import UserHrZones
+from src.db.models.runner_zone_profiles import RunnerZoneProfile
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ def delete_all_user_account_data(
         "auth_providers": 0,
         "weekly_training_insights": 0,
         "user_coach_preferences": 0,
-        "user_hr_zones": 0,
+        "runner_zone_profiles": 0,
     }
 
     deletions["weekly_training_insights"] = (
@@ -58,8 +58,8 @@ def delete_all_user_account_data(
     deletions["user_coach_preferences"] = (
         session.query(UserCoachPreferences).filter_by(user_id=uid_uuid).delete()
     )
-    deletions["user_hr_zones"] = (
-        session.query(UserHrZones).filter_by(user_id=uid_str).delete()
+    deletions["runner_zone_profiles"] = (
+        session.query(RunnerZoneProfile).filter_by(user_id=uid_uuid).delete()
     )
 
     # Splits reference activities; production FK may not CASCADE — delete splits first.

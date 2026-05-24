@@ -65,18 +65,18 @@ def seeded_plan(test_db_session):
         )
 
     # Prior week baseline total = 25.0
-    _add(date(2026, 4, 15), "Easy Run", 4.0, "E", "easy")
-    _add(date(2026, 4, 16), "Easy Run", 4.0, "E", "easy")
-    _add(date(2026, 4, 17), "Tempo", 5.0, "T", "endurance")
-    _add(date(2026, 4, 18), "Easy Run", 4.0, "E", "easy")
-    _add(date(2026, 4, 19), "Long Run", 8.0, "E", "long")
+    _add(date(2026, 4, 15), "Easy Run", 4.0, "z2", "easy")
+    _add(date(2026, 4, 16), "Easy Run", 4.0, "z2", "easy")
+    _add(date(2026, 4, 17), "Tempo", 5.0, "z4", "endurance")
+    _add(date(2026, 4, 18), "Easy Run", 4.0, "z2", "easy")
+    _add(date(2026, 4, 19), "Long Run", 8.0, "z2", "long")
 
     # Current week total = 25.0, one quality run, Sunday empty.
-    _add(date(2026, 4, 21), "Easy Run", 4.0, "E", "easy")
-    _add(date(2026, 4, 22), "Easy Run", 4.0, "E", "easy")
-    _add(date(2026, 4, 23), "Tempo", 5.0, "T", "endurance")
-    _add(date(2026, 4, 24), "Easy Run", 4.0, "E", "easy")
-    _add(date(2026, 4, 25), "Long Run", 8.0, "E", "long")
+    _add(date(2026, 4, 21), "Easy Run", 4.0, "z2", "easy")
+    _add(date(2026, 4, 22), "Easy Run", 4.0, "z2", "easy")
+    _add(date(2026, 4, 23), "Tempo", 5.0, "z4", "endurance")
+    _add(date(2026, 4, 24), "Easy Run", 4.0, "z2", "easy")
+    _add(date(2026, 4, 25), "Long Run", 8.0, "z2", "long")
 
     session.flush()
     return plan
@@ -147,7 +147,7 @@ def test_adjust_intensity_increase_is_capped_to_plus_one(test_db_session, seeded
     quality_rows = [
         row
         for row in current_rows
-        if row.intensity == "T" and "tempo" in row.workout_type.lower()
+        if row.intensity == "z4" and "tempo" in row.workout_type.lower()
     ]
     assert len(quality_rows) == 2
 

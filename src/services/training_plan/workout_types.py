@@ -107,18 +107,6 @@ PACE_GUIDANCE = {
     LONG: "Easy",
 }
 
-# ============================================================================
-# INTENSITY ZONES (for future phase-aware adjustments)
-# ============================================================================
-# Base intensity zones that can be adjusted by phase (Base/Build/Peak/Taper)
-# Example: ENDURANCE might become "E→steady" in Build, "E" in Base
-INTENSITY_ZONE = {
-    EASY: "E",
-    STEADY: "E/steady",
-    ENDURANCE: "E→steady",
-    LONG: "E (optionally finish at M pace in peak phase)",
-}
-
 
 # ============================================================================
 # CONFIG VALIDATION
@@ -152,10 +140,6 @@ def _validate_config() -> None:
     assert set(PACE_GUIDANCE.keys()) == required_keys, (
         f"PACE_GUIDANCE missing keys: " f"{required_keys - set(PACE_GUIDANCE.keys())}"
     )
-    assert set(INTENSITY_ZONE.keys()) == required_keys, (
-        f"INTENSITY_ZONE missing keys: " f"{required_keys - set(INTENSITY_ZONE.keys())}"
-    )
-
     # Validate ROLE_RANK_ORDER
     assert ROLE_RANK_ORDER == [ENDURANCE, STEADY, EASY], (
         f"ROLE_RANK_ORDER must be [ENDURANCE, STEADY, EASY], " f"got {ROLE_RANK_ORDER}"

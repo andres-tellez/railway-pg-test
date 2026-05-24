@@ -12,17 +12,18 @@ Non-goals:
 - No plan/trend/memory computations.
 
 Guardrails:
-- Allowed imports/calls: user_profile + user_hr_zones models and HR services.
+- Allowed imports/calls: user_profile + runner_zone_profiles models and HR services.
 - Must not import orchestrator or run-review modules.
 """
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from src.db.models.user_hr_zones import UserHrZones
+from src.db.models.runner_zone_profiles import RunnerZoneProfile
 from src.db.models.user_profile import UserProfile
 from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
 from src.smartcoach_mobile_coach.coach_context.schemas import AthleteSlice
@@ -68,18 +69,22 @@ def _load_zones_compact(
 ) -> Optional[Dict[str, int]]:
     if not calibrated:
         return None
+    try:
+        uid_uuid = uuid.UUID(str(internal_user_id))
+    except ValueError:
+        return None
     row = (
-        session.query(UserHrZones)
-        .filter(UserHrZones.user_id == str(internal_user_id))
+        session.query(RunnerZoneProfile)
+        .filter(RunnerZoneProfile.user_id == uid_uuid)
         .one_or_none()
     )
     if row is None:
         return None
     out: Dict[str, int] = {}
     for label, value in (
-        ("z2_bpm", row.z2_high or row.z2_low),
-        ("z3_bpm", row.z3_high or row.z3_low),
-        ("z4_bpm", row.z4_high or row.z4_low),
+        ("z2_bpm", row.hr_z2_high or row.hr_z2_low),
+        ("z3_bpm", row.hr_z3_high or row.hr_z3_low),
+        ("z4_bpm", row.hr_z4_high or row.hr_z4_low),
     ):
         try:
             if value is not None:
