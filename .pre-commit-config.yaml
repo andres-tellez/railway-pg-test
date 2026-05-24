@@ -17,11 +17,9 @@ repos:
     hooks:
       - id: pylint
         name: pylint
-        entry: pylint
+        entry: python
         language: system
         require_serial: true
         types: [python]
-        args: ["--disable=import-error", "--exit-zero"]
+        args: ["-X", "utf8", "-m", "pylint", "--disable=import-error", "--exit-zero"]
         exclude: ^migrations/env\.py$
-        env:
-          PYTHONUTF8: "1"
