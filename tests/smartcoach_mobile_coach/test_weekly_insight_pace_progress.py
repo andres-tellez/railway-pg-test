@@ -175,3 +175,4 @@ def test_weekly_history_pace_zones_match_pace_progress(
     easy_points = out["weekly_data"]
     assert len(easy_points) == 1
     assert easy_points[0]["easy_pace_progress_band"] is not None
+    assert "z2_pace_band" not in easy_points[0]
