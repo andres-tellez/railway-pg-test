@@ -17,7 +17,7 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.easy import
     classify_easy_pace_progress,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
-    compute_pace_progress_easy_corridor,
+    compute_pace_progress_target_easy_pace,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.fusion import (
     fuse_gyor_hr_priority,
@@ -43,10 +43,10 @@ def _reference():
     )
 
 
-def _pace_progress_corridor():
-    corridor = compute_pace_progress_easy_corridor("3:40:00")
-    assert corridor is not None
-    return corridor
+def _pace_progress_target():
+    target = compute_pace_progress_target_easy_pace("3:40:00")
+    assert target is not None
+    return target
 
 
 def test_fast_pace_stays_green_when_hr_is_easy():
@@ -134,66 +134,55 @@ def test_fusion_hr_priority_v1_direct_cases():
     )
 
 
-def test_pace_progress_faster_than_goal_is_ahead():
-    corridor = _pace_progress_corridor()
-    # Faster than pace-progress fast edge.
+def test_pace_progress_faster_than_target_is_green():
+    target = _pace_progress_target()
     assert (
         classify_easy_pace_progress(
-            pace_sec_per_mi=float(corridor.low_sec) - 10.0,
-            pace_progress_corridor=corridor,
-        )
-        == "ahead"
-    )
-
-
-def test_pace_progress_inside_corridor_is_green():
-    corridor = _pace_progress_corridor()
-    mid = (float(corridor.low_sec) + float(corridor.high_sec)) / 2.0
-    assert (
-        classify_easy_pace_progress(
-            pace_sec_per_mi=mid,
-            pace_progress_corridor=corridor,
+            pace_sec_per_mi=float(target.low_sec) - 10.0,
+            target_easy_pace=target,
         )
         == "green"
     )
 
 
-def test_pace_progress_slow_tiers_vs_goal():
-    corridor = _pace_progress_corridor()
-    hi = float(corridor.high_sec)
+def test_pace_progress_at_target_is_green():
+    target = _pace_progress_target()
     assert (
         classify_easy_pace_progress(
-            pace_sec_per_mi=hi + 10.0, pace_progress_corridor=corridor
+            pace_sec_per_mi=float(target.low_sec),
+            target_easy_pace=target,
         )
+        == "green"
+    )
+
+
+def test_pace_progress_slow_tiers_vs_target():
+    target = _pace_progress_target()
+    t = float(target.low_sec)
+    assert (
+        classify_easy_pace_progress(pace_sec_per_mi=t + 10.0, target_easy_pace=target)
         == "yellow"
     )
     assert (
-        classify_easy_pace_progress(
-            pace_sec_per_mi=hi + 25.0, pace_progress_corridor=corridor
-        )
+        classify_easy_pace_progress(pace_sec_per_mi=t + 25.0, target_easy_pace=target)
         == "orange"
     )
     assert (
-        classify_easy_pace_progress(
-            pace_sec_per_mi=hi + 50.0, pace_progress_corridor=corridor
-        )
+        classify_easy_pace_progress(pace_sec_per_mi=t + 50.0, target_easy_pace=target)
         == "red"
     )
 
 
-def test_easy_pace_progress_zones_separate_ahead_and_target():
-    corridor = _pace_progress_corridor()
-    z = build_easy_pace_progress_zones_chart(corridor)
+def test_easy_pace_progress_zones_single_target_model():
+    target = _pace_progress_target()
+    z = build_easy_pace_progress_zones_chart(target)
     colors = [x["color"] for x in z]
-    assert colors[0] == "ahead"
-    assert "green" in colors
+    assert colors[0] == "green"
     assert colors.count("green") == 1
     assert "yellow" in colors
     assert "red" in colors
     green = next(x for x in z if x["color"] == "green")
-    ahead = next(x for x in z if x["color"] == "ahead")
-    assert float(ahead["max"]) == float(green["min"])
-    assert float(green["max"]) == float(corridor.high_sec) / 60.0
+    assert float(green["max"]) == float(target.low_sec) / 60.0
 
 
 def test_training_pace_recommendations_includes_easy_gyor():
@@ -223,8 +212,8 @@ def test_training_pace_recommendations_includes_easy_gyor():
     assert recs is not None
     assert recs.easy_gyor is not None
     assert recs.easy_gyor.policy == "hr_priority_v1"
-    assert len(recs.easy_gyor.pace_zones_chart) >= 5
-    assert recs.easy_gyor.pace_progress_easy_corridor is not None
+    assert len(recs.easy_gyor.pace_zones_chart) >= 4
+    assert recs.easy_gyor.pace_progress_target_easy_pace is not None
     assert (
         recs.easy_gyor.goal_aligned_easy_pace.low_sec
         == recs.goal_aligned_easy_pace.low_sec
@@ -232,9 +221,9 @@ def test_training_pace_recommendations_includes_easy_gyor():
     green = next(z for z in recs.easy_gyor.pace_zones_chart if z["color"] == "green")
     assert (
         float(green["max"])
-        == float(recs.easy_gyor.pace_progress_easy_corridor.high_sec) / 60.0
+        == float(recs.easy_gyor.pace_progress_target_easy_pace.low_sec) / 60.0
     )
     assert (
-        recs.easy_gyor.pace_progress_easy_corridor.high_sec
-        < recs.goal_aligned_easy_pace.high_sec
+        recs.easy_gyor.pace_progress_target_easy_pace.low_sec
+        == recs.goal_aligned_easy_pace.low_sec
     )
