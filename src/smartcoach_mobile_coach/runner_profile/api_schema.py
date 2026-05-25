@@ -7,6 +7,12 @@ from src.smartcoach_mobile_coach.runner_profile.models import (
     PaceZoneBand,
     RunnerZoneProfileData,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models import (
+    EasyGyorReference,
+)
+from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
+    TrainingPaceRecommendations,
+)
 
 # Canonical copy for Insights › Easy banner (emitted whenever Z2 HR + Z2 pace are present).
 INSIGHTS_EASY_BANNER_SUBTITLE = (
@@ -31,7 +37,52 @@ def _pace_band_payload(band: Optional[PaceZoneBand]) -> Optional[dict[str, Any]]
     }
 
 
-def runner_zone_profile_payload(profile: RunnerZoneProfileData) -> dict[str, Any]:
+def _easy_gyor_payload(ref: Optional[EasyGyorReference]) -> Optional[dict[str, Any]]:
+    if ref is None:
+        return None
+    return {
+        "policy": ref.policy,
+        "hr_target_z2": _hr_band_payload(ref.hr_target_z2),
+        "goal_aligned_easy_pace": _pace_band_payload(ref.goal_aligned_easy_pace),
+        "pace_zones_chart": [
+            {
+                "color": str(zone["color"]),
+                "min": float(zone["min"]),
+                "max": float(zone["max"]),
+            }
+            for zone in ref.pace_zones_chart
+        ],
+    }
+
+
+def _training_pace_recommendations_payload(
+    recs: Optional[TrainingPaceRecommendations],
+) -> Optional[dict[str, Any]]:
+    if recs is None:
+        return None
+    return {
+        "phase": recs.phase,
+        "phase_source": recs.phase_source,
+        "phase_week_start": recs.phase_week_start,
+        "source_target_time": recs.source_target_time,
+        "activity_easy_pace": _pace_band_payload(recs.activity_easy_pace),
+        "activity_z3_pace": _pace_band_payload(recs.activity_z3_pace),
+        "activity_z4_pace": _pace_band_payload(recs.activity_z4_pace),
+        "goal_aligned_easy_pace": _pace_band_payload(recs.goal_aligned_easy_pace),
+        "goal_aligned_z3_pace": _pace_band_payload(recs.goal_aligned_z3_pace),
+        "goal_aligned_z4_pace": _pace_band_payload(recs.goal_aligned_z4_pace),
+        "goal_aligned_marathon_pace": _pace_band_payload(
+            recs.goal_aligned_marathon_pace
+        ),
+        "easy_gyor": _easy_gyor_payload(recs.easy_gyor),
+    }
+
+
+def runner_zone_profile_payload(
+    profile: RunnerZoneProfileData,
+    *,
+    training_pace_recommendations: Optional[TrainingPaceRecommendations] = None,
+) -> dict[str, Any]:
     pace_zones: dict[str, Any] = {}
     for key_name, pace_band in (
         ("z2", profile.pace_z2),
@@ -70,4 +121,7 @@ def runner_zone_profile_payload(profile: RunnerZoneProfileData) -> dict[str, Any
             profile.pace_computed_at.isoformat() if profile.pace_computed_at else None
         ),
         "insights_easy_banner": insights_easy_banner,
+        "training_pace_recommendations": _training_pace_recommendations_payload(
+            training_pace_recommendations
+        ),
     }

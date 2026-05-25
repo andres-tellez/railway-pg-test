@@ -113,6 +113,30 @@ def get_active_plan(session: Session, user_id: str) -> Plan | None:
     return session.query(Plan).filter_by(user_id=uid, is_active=True).first()
 
 
+def get_active_or_most_recent_plan(session: Session, user_id: str) -> Plan | None:
+    """
+    Plan row used across weekly-plan / recommendations when an active flag exists.
+
+    Prefers ``is_active=True`` (newest among actives); otherwise falls back to the
+    most recently created plan — mirroring :func:`src.services.plan.weekly_plan.build_weekly_plan_payload`.
+    """
+    uid = _plan_user_id_key(user_id)
+    active = (
+        session.query(Plan)
+        .filter(Plan.user_id == uid, Plan.is_active.is_(True))
+        .order_by(Plan.created_at.desc())
+        .first()
+    )
+    if active is not None:
+        return active
+    return (
+        session.query(Plan)
+        .filter(Plan.user_id == uid)
+        .order_by(Plan.created_at.desc())
+        .first()
+    )
+
+
 def set_plan_active(session: Session, plan_id: int, user_id: str) -> bool:
     """Set a specific plan as active and deactivate all others for the user."""
     # First, verify the plan belongs to the user

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from src.db.models.plans import Plan
 from src.smartcoach_mobile_coach.runner_profile.hr_builder import compute_hr_zones
 from src.smartcoach_mobile_coach.runner_profile.models import (
     HrZoneBand,
@@ -23,6 +24,16 @@ from src.smartcoach_mobile_coach.runner_profile.persistence import (
     delete_runner_zone_profile,
     read_runner_zone_profile,
     upsert_runner_zone_profile,
+)
+from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
+    TrainingPaceRecommendations,
+)
+from src.smartcoach_mobile_coach.runner_profile.recommendations.training_pace_recommendations import (
+    build_training_pace_recommendations,
+)
+from src.smartcoach_mobile_coach.runner_profile.recommendations.training_phase_resolver import (
+    TrainingPhaseResolution,
+    resolve_current_training_phase,
 )
 
 logger = logging.getLogger(__name__)
@@ -303,3 +314,40 @@ def get_runner_zone_string_for_run_type(
     if band is None:
         return ""
     return f"{zone_key.upper()} ({int(band.low)}–{int(band.high)} bpm)"
+
+
+def get_runner_training_pace_recommendations(
+    session: Session,
+    user_id: str,
+    *,
+    target_time: str | None,
+    plan: Plan | None = None,
+    phase_resolution: TrainingPhaseResolution | None = None,
+    profile: RunnerZoneProfileData | None = None,
+    force_refresh: bool = False,
+) -> TrainingPaceRecommendations | None:
+    """
+    Build composite pace recommendations from activity-derived and goal-aligned pace.
+
+    This function intentionally lives under runner_profile so recommendation rules can
+    later expand with HR recommendation logic in the same architecture.
+    """
+    profile_data = profile
+    if profile_data is None:
+        profile_data = (
+            refresh_runner_profile(session, user_id)
+            if force_refresh
+            else get_runner_profile(session, user_id)
+        )
+    resolved = phase_resolution or resolve_current_training_phase(
+        session, user_id, plan=plan
+    )
+    return build_training_pace_recommendations(
+        profile=profile_data,
+        target_time=target_time,
+        phase=resolved.phase,
+        phase_source=resolved.source,
+        phase_week_start=(
+            resolved.week_start.isoformat() if resolved.week_start is not None else None
+        ),
+    )
