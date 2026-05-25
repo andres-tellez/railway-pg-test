@@ -26,6 +26,7 @@ class WeeklyTrainingInsight(Base):
     efficiency_delta = Column(Float)
 
     easy_avg_hr = Column(Float)
+    # hr_progress band vs calibrated Z2 (same semantics as easy_hr_progress_band on history).
     easy_avg_hr_band = Column(String(10))
     easy_avg_hr_delta = Column(Float)
 
