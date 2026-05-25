@@ -31,7 +31,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from src.db.dao.plans_dao import get_active_or_most_recent_plan
-from src.smartcoach_mobile_coach.runner_profile.models import PaceZoneBand
+from src.smartcoach_mobile_coach.runner_profile.models import HrZoneBand, PaceZoneBand
+from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_easy import (
+    HrProgressChartZone,
+    classify_easy_hr_progress,
+    hr_progress_zones_chart_api_payload,
+)
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
     PaceProgressChartZone,
     classify_easy_pace_progress,
@@ -78,9 +83,58 @@ def _empty_easy_history_point(label: str) -> Dict[str, Any]:
         "easy_avg_hr": None,
         "easy_avg_hr_band": None,
         "easy_pace_progress_band": None,
+        "easy_hr_progress_band": None,
         "efficiency": None,
         "efficiency_band": None,
     }
+
+
+def _hr_zones_chart_payload(
+    zones_chart: tuple[HrProgressChartZone, ...],
+) -> List[Dict[str, Any]]:
+    zones: List[Dict[str, Any]] = []
+    for zone in hr_progress_zones_chart_api_payload(zones_chart):
+        lo = _coerce_finite_float(zone.get("min"))
+        hi = _coerce_finite_float(zone.get("max"))
+        if lo is None or hi is None:
+            continue
+        zones.append({"color": str(zone["color"]), "min": lo, "max": hi})
+    return zones
+
+
+def _resolve_easy_hr_progress(
+    session: Session, user_id: str
+) -> Tuple[Optional[HrZoneBand], List[Dict[str, Any]]]:
+    """HR-progress target and chart zones from training pace recommendations."""
+    plan_row = get_active_or_most_recent_plan(session, user_id)
+    target_time = plan_row.target_time if plan_row is not None else None
+    profile = get_runner_profile(session, user_id)
+    recs = get_runner_training_pace_recommendations(
+        session,
+        user_id,
+        target_time=target_time,
+        plan=plan_row,
+        profile=profile,
+    )
+    if recs is None or recs.hr_progress is None:
+        return None, []
+
+    hp = recs.hr_progress
+    return hp.target_hr_z2, _hr_zones_chart_payload(hp.hr_zones_chart)
+
+
+def _attach_easy_hr_progress_band(
+    point: Dict[str, Any],
+    *,
+    target_hr_z2: Optional[HrZoneBand],
+) -> Dict[str, Any]:
+    """Set hr-progress band on a weekly history point (vs calibrated Z2)."""
+    avg_hr = _coerce_finite_float(point.get("easy_avg_hr"))
+    point["easy_hr_progress_band"] = classify_easy_hr_progress(
+        avg_hr_bpm=avg_hr,
+        target_hr_z2=target_hr_z2,
+    )
+    return point
 
 
 def _pace_zones_chart_payload(
@@ -1094,6 +1148,7 @@ def get_weekly_insight_history(
 
     # Easy pace chart: single target pace-progress bands (HR-free).
     target_easy_pace: Optional[PaceZoneBand] = None
+    pace_zones: List[Dict[str, Any]] = []
     try:
         target_easy_pace, pace_zones = _resolve_easy_pace_progress(session, user_id)
     except Exception:
@@ -1103,6 +1158,19 @@ def get_weekly_insight_history(
         )
         target_easy_pace = None
         pace_zones = []
+
+    # Easy HR chart: Z2 envelope from hr_progress authority.
+    target_hr_z2: Optional[HrZoneBand] = None
+    hr_zones: List[Dict[str, Any]] = []
+    try:
+        target_hr_z2, hr_zones = _resolve_easy_hr_progress(session, user_id)
+    except Exception:
+        logger.exception(
+            "Failed to resolve easy HR refs for weekly insight history (user_id=%s)",
+            user_id,
+        )
+        target_hr_z2 = None
+        hr_zones = []
 
     data_points: List[Dict[str, Any]] = []
     for ws, _we in week_windows:
@@ -1136,20 +1204,25 @@ def get_weekly_insight_history(
             "efficiency_band": eff_band,
         }
         try:
+            point_payload = _attach_easy_pace_progress_band(
+                point_payload,
+                target_easy_pace=target_easy_pace,
+            )
             data_points.append(
-                _attach_easy_pace_progress_band(
+                _attach_easy_hr_progress_band(
                     point_payload,
-                    target_easy_pace=target_easy_pace,
+                    target_hr_z2=target_hr_z2,
                 )
             )
         except Exception:
             logger.exception(
-                "Failed to attach easy pace bands for weekly history "
+                "Failed to attach easy pace/HR bands for weekly history "
                 "(user_id=%s, week=%s)",
                 user_id,
                 ws,
             )
             point_payload["easy_pace_progress_band"] = None
+            point_payload["easy_hr_progress_band"] = None
             data_points.append(point_payload)
 
     if not any(p.get("value") is not None for p in data_points):
@@ -1199,6 +1272,7 @@ def get_weekly_insight_history(
                     "easy_avg_hr": None,
                     "easy_avg_hr_band": None,
                     "easy_pace_progress_band": None,
+                    "easy_hr_progress_band": None,
                     "efficiency": None,
                     "efficiency_band": None,
                 }
@@ -1223,12 +1297,14 @@ def get_weekly_insight_history(
         "zones": zones,
         "efficiency_zones": eff_zones,
         "pace_zones": pace_zones,
+        "hr_zones": hr_zones,
         "systems": {
             TrainingSystem.EASY.value: {
                 "weekly_data": data_points,
                 "zones": zones,
                 "efficiency_zones": eff_zones,
                 "pace_zones": pace_zones,
+                "hr_zones": hr_zones,
             },
             TrainingSystem.THRESHOLD.value: {"weekly_data": threshold_points},
         },
