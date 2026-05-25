@@ -7,7 +7,6 @@ from src.smartcoach_mobile_coach.runner_profile.models import HrZoneBand, PaceZo
 
 GyorBand = Literal["green", "yellow", "orange", "red"]
 EasyPaceProgressBand = GyorBand
-PaceProgressChartColor = GyorBand
 GyorPaceDirection = Literal["inside", "fast", "slow"]
 GyorBandChartZone = dict[str, float | str]
 
@@ -23,8 +22,8 @@ class EasyGyorReference:
     """Static easy targets: HR Z2 band + goal easy pace.
 
     ``pace_zones_chart`` follows **pace-progress** semantics on the Insights app
-    (single target easy pace, slow-side Y/O/R). :func:`classify_easy_gyor`
-    still applies HR-first fusion when used elsewhere.
+    (single target easy pace, slow-side Y/O/R). :func:`classify_easy_gyor` is
+    HR-fused easy classification (full easy band + Z2 HR); not used on the pace chart.
     """
 
     policy: str

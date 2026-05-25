@@ -38,7 +38,7 @@ def classify_pace_position(
     config: GyorPacePositionConfig | None = None,
 ) -> GyorPacePosition | None:
     """
-    Map pace (sec/mi) to GYOR band and direction vs goal-aligned easy corridor.
+    Map pace (sec/mi) to GYOR band and direction vs goal-aligned easy band.
 
     Too-slow easy pace is capped at yellow (never orange/red).
     """
