@@ -11,7 +11,7 @@ HrProgressChartZone = dict[str, float | str]
 
 @dataclass(frozen=True)
 class EasyHrProgressReference:
-    """Insights Avg HR chart authority (Z2 target + chart zones)."""
+    """Insights Avg HR chart authority (Z2 cap + chart zones)."""
 
     target_hr_z2: HrZoneBand
     target_display: str
@@ -21,22 +21,32 @@ class EasyHrProgressReference:
 @dataclass(frozen=True)
 class HrProgressEasyConfig:
     """
-    Z2 envelope for Insights Avg HR chart.
+    Single-cap easy HR for Insights Avg HR chart (mirrors pace_progress).
 
-    Green = inside calibrated Z2. Yellow / orange / red = progressively
-    farther outside Z2 (symmetric above high and below low).
-    Chart axis caps are rendering-only.
+    Target cap is ``hr_z2.high``. Green = at or below cap; slow-side tiers are
+    measured above that cap. Chart axis caps are rendering-only.
     """
 
-    yellow_gap_bpm: float = 5.0
-    orange_gap_bpm: float = 12.0
+    yellow_gap_bpm: float = 3.0
+    orange_gap_bpm: float = 7.0
     chart_axis_cap_bpm: float = 18.0
 
 
 DEFAULT_HR_PROGRESS_EASY_CONFIG = HrProgressEasyConfig()
 
 
+def target_hr_cap_bpm(hr_z2: HrZoneBand) -> float:
+    """Single-target HR cap for Insights Avg HR (``hr_z2.high``)."""
+    return float(hr_z2.high)
+
+
 def format_hr_z2_target_display(band: HrZoneBand) -> str:
+    """Cap display for chart footnote / banner (e.g. ``≤143 bpm``)."""
+    return f"≤{int(band.high)} bpm"
+
+
+def format_hr_z2_range_display(band: HrZoneBand) -> str:
+    """Full calibrated Z2 range for help copy (e.g. ``120–145 bpm``)."""
     return f"{int(band.low)}–{int(band.high)} bpm"
 
 
@@ -45,7 +55,7 @@ def build_easy_hr_progress_reference(
     *,
     config: HrProgressEasyConfig | None = None,
 ) -> EasyHrProgressReference:
-    """Build Z2 target + chart zones from calibrated profile Z2."""
+    """Build Z2 cap + chart zones from calibrated profile Z2."""
     cfg = config or DEFAULT_HR_PROGRESS_EASY_CONFIG
     zones = build_easy_hr_progress_zones_chart(hr_z2, config=cfg)
     return EasyHrProgressReference(
@@ -77,33 +87,28 @@ def build_easy_hr_progress_zones_chart(
     """
     HR-progress chart bands in **bpm** (lower on chart = lower HR).
 
-    - **green**: Z2 low → Z2 high (in easy HR envelope)
-    - **yellow / orange / red**: progressively outside Z2
+    - **green**: chart low cap → Z2 high cap (at or below target cap)
+    - **yellow / orange / red**: progressively higher above Z2 high cap
     """
     cfg = config or DEFAULT_HR_PROGRESS_EASY_CONFIG
-    z_lo = float(hr_z2.low)
-    z_hi = float(hr_z2.high)
+    cap = target_hr_cap_bpm(hr_z2)
     y_gap = cfg.yellow_gap_bpm
     o_gap = cfg.orange_gap_bpm
-    cap = cfg.chart_axis_cap_bpm
 
-    axis_lo = max(0.0, z_lo - o_gap - cap)
-    axis_hi = z_hi + o_gap + cap
+    chart_lo = max(0.0, cap - cfg.chart_axis_cap_bpm)
+    chart_hi = cap + o_gap + cfg.chart_axis_cap_bpm
 
     zones: list[HrProgressChartZone] = []
-    zones.append({"color": "green", "min": z_lo, "max": z_hi})
+    zones.append({"color": "green", "min": chart_lo, "max": cap})
 
-    tier_specs: list[tuple[str, float, float]] = [
-        ("yellow", z_lo - y_gap, z_lo),
-        ("yellow", z_hi, z_hi + y_gap),
-        ("orange", z_lo - o_gap, z_lo - y_gap),
-        ("orange", z_hi + y_gap, z_hi + o_gap),
-        ("red", axis_lo, z_lo - o_gap),
-        ("red", z_hi + o_gap, axis_hi),
+    tier_edges = [
+        ("yellow", cap, cap + y_gap),
+        ("orange", cap + y_gap, cap + o_gap),
+        ("red", cap + o_gap, chart_hi),
     ]
-    for color, lo, hi in tier_specs:
-        lo_c = max(lo, axis_lo)
-        hi_c = min(hi, axis_hi)
+    for color, lo, hi in tier_edges:
+        lo_c = max(lo, cap)
+        hi_c = min(hi, chart_hi)
         if hi_c > lo_c:
             zones.append({"color": color, "min": lo_c, "max": hi_c})
 
@@ -116,7 +121,12 @@ def classify_easy_hr_progress(
     target_hr_z2: HrZoneBand | None,
     config: HrProgressEasyConfig | None = None,
 ) -> HrProgressBand | None:
-    """Classify weekly average easy HR vs calibrated Z2 envelope."""
+    """
+    Classify weekly average easy HR vs Z2 high cap only (**HR-only**, no pace).
+
+    Green = at or below cap; yellow/orange/red = progressively above cap.
+    Below-Z2-low avg HR is green (not penalized).
+    """
     if avg_hr_bpm is None or target_hr_z2 is None:
         return None
     cfg = config or DEFAULT_HR_PROGRESS_EASY_CONFIG
@@ -125,12 +135,11 @@ def classify_easy_hr_progress(
     except (TypeError, ValueError):
         return None
 
-    z_lo = float(target_hr_z2.low)
-    z_hi = float(target_hr_z2.high)
-    if z_lo <= hr <= z_hi:
+    cap = target_hr_cap_bpm(target_hr_z2)
+    if hr <= cap:
         return "green"
 
-    gap = (hr - z_hi) if hr > z_hi else (z_lo - hr)
+    gap = hr - cap
     if gap <= cfg.yellow_gap_bpm:
         return "yellow"
     if gap <= cfg.orange_gap_bpm:
