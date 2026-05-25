@@ -36,7 +36,7 @@ class TrainingPaceRecommendations:
 
     ``pace_progress`` is the Insights Avg Pace chart authority (HR-free).
     ``goal_aligned_easy_pace`` is the full goal easy envelope (+55…+85).
-    ``easy_gyor`` is HR-fused easy GYOR when Z2 HR is calibrated.
+    ``easy_gyor`` is Z2 HR target metadata when calibrated (not used for pace chart).
     """
 
     phase: str

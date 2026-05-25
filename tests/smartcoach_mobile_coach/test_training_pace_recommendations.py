@@ -44,7 +44,7 @@ def test_goal_aligned_pace_bands_from_target_time():
     assert 588 <= bands.easy.high_sec <= 590
 
 
-def test_easy_gyor_anchors_to_goal_aligned_easy_pace():
+def test_easy_gyor_includes_hr_reference_when_calibrated():
     recs = build_training_pace_recommendations(
         profile=_sample_profile(),
         target_time="3:40:00",
@@ -53,25 +53,14 @@ def test_easy_gyor_anchors_to_goal_aligned_easy_pace():
     assert recs is not None
     assert recs.goal_aligned_easy_pace is not None
     assert recs.easy_gyor is not None
-    assert (
-        recs.easy_gyor.goal_aligned_easy_pace.low_sec
-        == recs.goal_aligned_easy_pace.low_sec
-    )
-    assert (
-        recs.easy_gyor.goal_aligned_easy_pace.high_sec
-        == recs.goal_aligned_easy_pace.high_sec
-    )
-    assert recs.easy_gyor.pace_progress_target_easy_pace is not None
-    assert (
-        recs.easy_gyor.pace_progress_target_easy_pace.low_sec
-        == recs.goal_aligned_easy_pace.low_sec
-    )
+    assert recs.easy_gyor.policy == "hr_priority_v1"
+    assert recs.easy_gyor.hr_target_z2.low == 120
+    assert recs.easy_gyor.hr_target_z2.high == 145
     assert recs.pace_progress is not None
     assert (
         recs.pace_progress.target_easy_pace.low_sec
         == recs.goal_aligned_easy_pace.low_sec
     )
-    assert recs.easy_gyor.pace_zones_chart == recs.pace_progress.pace_zones_chart
 
 
 def test_no_easy_gyor_without_target_time():
