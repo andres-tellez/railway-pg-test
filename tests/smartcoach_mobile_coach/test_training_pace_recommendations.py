@@ -61,6 +61,11 @@ def test_easy_gyor_anchors_to_goal_aligned_easy_pace():
         recs.easy_gyor.goal_aligned_easy_pace.high_sec
         == recs.goal_aligned_easy_pace.high_sec
     )
+    assert recs.easy_gyor.pace_progress_easy_corridor is not None
+    assert (
+        recs.easy_gyor.pace_progress_easy_corridor.high_sec
+        < recs.goal_aligned_easy_pace.high_sec
+    )
 
 
 def test_no_easy_gyor_without_target_time():
