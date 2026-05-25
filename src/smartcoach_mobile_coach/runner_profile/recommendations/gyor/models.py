@@ -18,7 +18,12 @@ class GyorPacePosition:
 
 @dataclass(frozen=True)
 class EasyGyorReference:
-    """Static easy GYOR targets derived from runner profile recommendations."""
+    """Static easy targets: HR Z2 band + goal easy pace.
+
+    ``pace_zones_chart`` follows **pace-progress** semantics on the Insights app
+    (green includes ahead-and-on-target toward goal easy; slow-side Y/O/R tiers).
+    :func:`classify_easy_gyor` still applies HR-first fusion when used.
+    """
 
     policy: str
     hr_target_z2: HrZoneBand
