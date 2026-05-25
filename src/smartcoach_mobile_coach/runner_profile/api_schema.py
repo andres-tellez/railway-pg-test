@@ -13,6 +13,10 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models impo
 from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
     TrainingPaceRecommendations,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_easy import (
+    EasyHrProgressReference,
+    hr_progress_zones_chart_api_payload,
+)
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
     EasyPaceProgressReference,
     pace_progress_zones_chart_api_payload,
@@ -38,6 +42,19 @@ def _pace_band_payload(band: Optional[PaceZoneBand]) -> Optional[dict[str, Any]]
         "low_sec": int(band.low_sec),
         "high_sec": int(band.high_sec),
         "display": band.display,
+    }
+
+
+def _hr_progress_payload(
+    ref: Optional[EasyHrProgressReference],
+) -> Optional[dict[str, Any]]:
+    """Insights Avg HR chart authority (Z2 target + Y/O/R zones)."""
+    if ref is None:
+        return None
+    return {
+        "target_hr_z2": _hr_band_payload(ref.target_hr_z2),
+        "target_display": ref.target_display,
+        "hr_zones_chart": hr_progress_zones_chart_api_payload(ref.hr_zones_chart),
     }
 
 
@@ -88,6 +105,7 @@ def _training_pace_recommendations_payload(
         ),
         # Insights Avg Pace chart: single target + zones (present whenever goal easy exists).
         "pace_progress": _pace_progress_payload(recs.pace_progress),
+        "hr_progress": _hr_progress_payload(recs.hr_progress),
         "easy_gyor": _easy_gyor_payload(recs.easy_gyor),
     }
 
