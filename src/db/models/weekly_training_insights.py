@@ -17,6 +17,7 @@ class WeeklyTrainingInsight(Base):
     efficiency = Column(Float)
 
     hr_drift_band = Column(String(10))
+    # pace_progress band vs goal easy pace (same semantics as easy_pace_progress_band on history).
     z2_pace_band = Column(String(10))
     efficiency_band = Column(String(10))
     overall_band = Column(String(10), nullable=False)
