@@ -44,8 +44,8 @@ def _easy_gyor_payload(ref: Optional[EasyGyorReference]) -> Optional[dict[str, A
         "policy": ref.policy,
         "hr_target_z2": _hr_band_payload(ref.hr_target_z2),
         "goal_aligned_easy_pace": _pace_band_payload(ref.goal_aligned_easy_pace),
-        "pace_progress_easy_corridor": _pace_band_payload(
-            ref.pace_progress_easy_corridor
+        "pace_progress_target_easy_pace": _pace_band_payload(
+            ref.pace_progress_target_easy_pace
         ),
         "pace_zones_chart": [
             {
