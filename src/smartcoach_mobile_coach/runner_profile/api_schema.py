@@ -48,7 +48,7 @@ def _pace_band_payload(band: Optional[PaceZoneBand]) -> Optional[dict[str, Any]]
 def _hr_progress_payload(
     ref: Optional[EasyHrProgressReference],
 ) -> Optional[dict[str, Any]]:
-    """Insights Avg HR chart authority (Z2 target + Y/O/R zones)."""
+    """Insights Avg HR chart authority (Z2 high cap + Y/O/R zones)."""
     if ref is None:
         return None
     return {
