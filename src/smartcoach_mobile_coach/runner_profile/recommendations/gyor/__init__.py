@@ -1,7 +1,6 @@
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.easy import (
     build_easy_gyor_reference,
     build_easy_pace_progress_zones_chart,
-    build_easy_pace_zones_chart,
     classify_easy_gyor,
     classify_easy_pace_progress,
 )
@@ -14,6 +13,7 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.hr_position
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models import (
     EasyGyorClassification,
     EasyGyorReference,
+    EasyPaceProgressBand,
     GyorBand,
     GyorPaceDirection,
     GyorPacePosition,
@@ -25,12 +25,12 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.pace_positi
 __all__ = [
     "EasyGyorClassification",
     "EasyGyorReference",
+    "EasyPaceProgressBand",
     "GyorBand",
     "GyorPaceDirection",
     "GyorPacePosition",
     "build_easy_gyor_reference",
     "build_easy_pace_progress_zones_chart",
-    "build_easy_pace_zones_chart",
     "classify_easy_gyor",
     "classify_easy_pace_progress",
     "classify_hr_position",

@@ -40,6 +40,9 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.easy import
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models import (
     EasyGyorReference,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
+    compute_pace_progress_easy_corridor,
+)
 from src.smartcoach_mobile_coach.runner_profile.service import (
     get_runner_profile,
     get_runner_training_pace_recommendations,
@@ -91,8 +94,8 @@ def _resolve_easy_pace_refs(
     session: Session, user_id: str
 ) -> Tuple[Optional[PaceZoneBand], Optional[EasyGyorReference]]:
     """
-    Goal-aligned easy band (for pace-progress chart) and optional full GYOR ref
-    (HR + goal; still used for legacy fused band on history points).
+    Pace-progress corridor (tighter than goal envelope) and optional full GYOR ref
+    (HR + broad goal easy; legacy fused band on history points).
     """
     profile = get_runner_profile(session, user_id)
     plan_row = get_active_or_most_recent_plan(session, user_id)
@@ -106,16 +109,19 @@ def _resolve_easy_pace_refs(
     )
     if recs is None:
         return None, None
-    return recs.goal_aligned_easy_pace, recs.easy_gyor
+    corridor = compute_pace_progress_easy_corridor(target_time)
+    if corridor is None and recs.easy_gyor is not None:
+        corridor = recs.easy_gyor.pace_progress_easy_corridor
+    return corridor, recs.easy_gyor
 
 
 def _easy_pace_progress_zones_payload(
-    goal_easy: Optional[PaceZoneBand],
+    pace_progress_corridor: Optional[PaceZoneBand],
 ) -> List[Dict[str, Any]]:
-    if goal_easy is None:
+    if pace_progress_corridor is None:
         return []
     zones: List[Dict[str, Any]] = []
-    for zone in build_easy_pace_progress_zones_chart(goal_easy):
+    for zone in build_easy_pace_progress_zones_chart(pace_progress_corridor):
         lo = _coerce_finite_float(zone.get("min"))
         hi = _coerce_finite_float(zone.get("max"))
         if lo is None or hi is None:
@@ -127,7 +133,7 @@ def _easy_pace_progress_zones_payload(
 def _attach_easy_pace_history_bands(
     point: Dict[str, Any],
     *,
-    goal_easy: Optional[PaceZoneBand],
+    pace_progress_corridor: Optional[PaceZoneBand],
     easy_gyor_ref: Optional[EasyGyorReference],
 ) -> Dict[str, Any]:
     """Set pace-progress (goal-only) and optional HR-fused GYOR band on a history point."""
@@ -135,7 +141,7 @@ def _attach_easy_pace_history_bands(
     pace_sec = pace_pm * 60.0 if pace_pm is not None else None
     point["easy_pace_progress_band"] = classify_easy_pace_progress(
         pace_sec_per_mi=pace_sec,
-        goal_aligned_easy_pace=goal_easy,
+        pace_progress_corridor=pace_progress_corridor,
     )
     if easy_gyor_ref is None:
         point["easy_pace_goal_gyor_band"] = None
@@ -1113,17 +1119,19 @@ def get_weekly_insight_history(
 
     # Easy pace chart: goal-relative progress bands (HR-free). Full GYOR ref is
     # optional and only used for legacy fused band on history points.
-    goal_easy_band: Optional[PaceZoneBand] = None
+    pace_progress_corridor: Optional[PaceZoneBand] = None
     easy_gyor_ref: Optional[EasyGyorReference] = None
     try:
-        goal_easy_band, easy_gyor_ref = _resolve_easy_pace_refs(session, user_id)
-        pace_zones = _easy_pace_progress_zones_payload(goal_easy_band)
+        pace_progress_corridor, easy_gyor_ref = _resolve_easy_pace_refs(
+            session, user_id
+        )
+        pace_zones = _easy_pace_progress_zones_payload(pace_progress_corridor)
     except Exception:
         logger.exception(
             "Failed to resolve easy pace refs for weekly insight history (user_id=%s)",
             user_id,
         )
-        goal_easy_band = None
+        pace_progress_corridor = None
         easy_gyor_ref = None
         pace_zones = []
 
@@ -1162,7 +1170,7 @@ def get_weekly_insight_history(
             data_points.append(
                 _attach_easy_pace_history_bands(
                     point_payload,
-                    goal_easy=goal_easy_band,
+                    pace_progress_corridor=pace_progress_corridor,
                     easy_gyor_ref=easy_gyor_ref,
                 )
             )
@@ -1227,7 +1235,7 @@ def get_weekly_insight_history(
                         "efficiency": None,
                         "efficiency_band": None,
                     },
-                    goal_easy=None,
+                    pace_progress_corridor=None,
                     easy_gyor_ref=None,
                 )
             )
