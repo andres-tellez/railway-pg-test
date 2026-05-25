@@ -125,9 +125,13 @@ def runner_zone_profile_payload(
         if band_payload is not None:
             pace_zones[key_name] = band_payload
 
-    # Banner copy rides with the profile so mobile never treats weekly plan strips as HR/Z2 authority.
+    # Banner subtitle when both Insights chart authorities are available (hr_progress + pace_progress).
     insights_easy_banner = None
-    if profile.calibrated and profile.hr_z2 is not None and profile.pace_z2 is not None:
+    if (
+        training_pace_recommendations is not None
+        and training_pace_recommendations.hr_progress is not None
+        and training_pace_recommendations.pace_progress is not None
+    ):
         insights_easy_banner = {"subtitle": INSIGHTS_EASY_BANNER_SUBTITLE}
 
     return {
