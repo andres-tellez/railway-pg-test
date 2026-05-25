@@ -31,17 +31,17 @@ def _parse_target_time_to_total_seconds(target_time: str | None) -> Optional[flo
 @dataclass(frozen=True)
 class PaceProgressEasyConfig:
     """
-    Tighter easy corridor for Insights pace-progress chart vs broad goal envelope.
+    Single-target easy pace for Insights pace-progress chart (HR-free).
 
-    Offsets are seconds/mi above marathon goal pace (same anchor as goal-aligned bands).
-    Slow-side GYOR gaps are measured past ``pace_progress_easy_slow_offset_sec``.
+    ``target_easy_pace_sec = marathon_pace_sec + easy_target_offset_sec``.
+    Slow-side GYOR gaps are measured past that target.
+    Chart axis caps are rendering-only.
     """
 
     marathon_distance_mi: float = 26.21876
-    pace_progress_easy_fast_offset_sec: float = 45.0
-    pace_progress_easy_slow_offset_sec: float = 75.0
-    yellow_slow_gap_sec: float = 15.0
-    orange_slow_gap_sec: float = 35.0
+    easy_target_offset_sec: float = 55.0
+    yellow_gap_sec: float = 15.0
+    orange_gap_sec: float = 35.0
     chart_fast_axis_cap_min_per_mi: float = 2.0
     chart_slow_axis_cap_min_per_mi: float = 2.0
 
@@ -49,44 +49,35 @@ class PaceProgressEasyConfig:
 DEFAULT_PACE_PROGRESS_EASY_CONFIG = PaceProgressEasyConfig()
 
 
-def _format_band_display(low_sec: int, high_sec: int) -> str:
+def _format_target_display(target_sec: int) -> str:
     from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
 
-    lo = format_pace_sec_per_mi(float(low_sec))
-    hi = format_pace_sec_per_mi(float(high_sec))
-    if low_sec == high_sec or lo == hi:
-        return lo
-    lo_mmss = lo.removesuffix("/mi") if lo.endswith("/mi") else lo
-    hi_mmss = hi.removesuffix("/mi") if hi.endswith("/mi") else hi
-    return f"{lo_mmss}–{hi_mmss}/mi"
+    return format_pace_sec_per_mi(float(target_sec))
 
 
-def _build_corridor_band(low_sec: float, high_sec: float) -> PaceZoneBand:
-    low_i = int(round(low_sec))
-    high_i = int(round(high_sec))
-    return PaceZoneBand(
-        low_sec=low_i,
-        high_sec=high_i,
-        display=_format_band_display(low_i, high_i),
-    )
+def target_easy_pace_sec(band: PaceZoneBand) -> float:
+    """Single-target pace band stores the same value in ``low_sec`` and ``high_sec``."""
+    return float(band.low_sec)
 
 
-def compute_pace_progress_easy_corridor(
+def compute_pace_progress_target_easy_pace(
     target_time: str | None,
     *,
     config: PaceProgressEasyConfig = DEFAULT_PACE_PROGRESS_EASY_CONFIG,
 ) -> PaceZoneBand | None:
     """
-    Derive pace-progress target corridor from marathon ``target_time``.
+    Derive pace-progress target easy pace from marathon ``target_time``.
 
-    ``low_sec`` = faster edge; ``high_sec`` = slower edge (sec/mi).
+    Returns a degenerate ``PaceZoneBand`` (``low_sec == high_sec``).
     """
     total_sec = _parse_target_time_to_total_seconds(target_time)
     if total_sec is None or config.marathon_distance_mi <= 0.0:
         return None
 
     marathon_sec = float(total_sec) / float(config.marathon_distance_mi)
-    return _build_corridor_band(
-        marathon_sec + config.pace_progress_easy_fast_offset_sec,
-        marathon_sec + config.pace_progress_easy_slow_offset_sec,
+    target_i = int(round(marathon_sec + config.easy_target_offset_sec))
+    return PaceZoneBand(
+        low_sec=target_i,
+        high_sec=target_i,
+        display=_format_target_display(target_i),
     )
