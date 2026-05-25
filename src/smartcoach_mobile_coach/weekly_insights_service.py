@@ -1194,7 +1194,7 @@ def get_weekly_insight_history(
         target_easy_pace = None
         pace_zones = []
 
-    # Easy HR chart: Z2 envelope from hr_progress authority.
+    # Easy HR chart: Z2 high cap from hr_progress authority.
     target_hr_z2: Optional[HrZoneBand] = None
     hr_zones: List[Dict[str, Any]] = []
     try:

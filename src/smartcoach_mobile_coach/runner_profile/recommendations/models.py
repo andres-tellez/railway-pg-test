@@ -38,7 +38,7 @@ class TrainingPaceRecommendations:
     Composite pace recommendation payload with source transparency.
 
     ``pace_progress`` is the Insights Avg Pace chart authority (HR-free).
-    ``hr_progress`` is the Insights Avg HR chart authority (Z2 envelope).
+    ``hr_progress`` is the Insights Avg HR chart authority (Z2 high cap).
     ``goal_aligned_easy_pace`` is the full goal easy envelope (+55…+85).
     ``easy_gyor`` is Z2 HR target metadata when calibrated (not used for charts).
     """

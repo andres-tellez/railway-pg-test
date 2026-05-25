@@ -109,7 +109,7 @@ def test_payload_includes_training_pace_recommendations_when_provided():
     assert len(tp["pace_progress"]["pace_zones_chart"]) >= 4
     assert tp["hr_progress"] is not None
     assert tp["hr_progress"]["target_hr_z2"] == {"low": 120, "high": 145}
-    assert tp["hr_progress"]["target_display"] == "120–145 bpm"
+    assert tp["hr_progress"]["target_display"] == "≤145 bpm"
     assert len(tp["hr_progress"]["hr_zones_chart"]) >= 4
 
     banner = payload.get("insights_easy_banner")
