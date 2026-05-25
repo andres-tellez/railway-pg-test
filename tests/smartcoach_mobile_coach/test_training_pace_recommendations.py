@@ -108,3 +108,34 @@ def test_pace_progress_without_hr_calibration():
         == recs.goal_aligned_easy_pace.low_sec
     )
     assert len(recs.pace_progress.pace_zones_chart) >= 4
+
+
+def test_hr_progress_without_marathon_goal():
+    profile = RunnerZoneProfileData(
+        user_id="u",
+        calibrated=True,
+        computed_at=datetime.now(timezone.utc),
+        hrmax_used=185,
+        resting_hr_used=50,
+        zone_method="karvonen",
+        hr_z1=HrZoneBand(100, 115),
+        hr_z2=HrZoneBand(120, 145),
+        hr_z3=HrZoneBand(146, 160),
+        hr_z4=HrZoneBand(161, 175),
+        hr_z5=HrZoneBand(176, 185),
+        pace_z2=None,
+        pace_z3=None,
+        pace_z4=None,
+        pace_source=None,
+        pace_computed_at=None,
+    )
+    recs = build_training_pace_recommendations(
+        profile=profile,
+        target_time=None,
+        phase="Base",
+    )
+    assert recs is not None
+    assert recs.pace_progress is None
+    assert recs.hr_progress is not None
+    assert recs.hr_progress.target_hr_z2.low == 120
+    assert len(recs.hr_progress.hr_zones_chart) >= 4
