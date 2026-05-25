@@ -79,12 +79,19 @@ def _empty_easy_history_point(label: str) -> Dict[str, Any]:
         "value": None,
         "band": None,
         "z2_pace_min_per_mi": None,
-        "z2_pace_band": None,
         "easy_avg_hr": None,
         "easy_pace_progress_band": None,
         "easy_hr_progress_band": None,
         "efficiency": None,
         "efficiency_band": None,
+    }
+
+
+def _empty_threshold_history_point(label: str) -> Dict[str, Any]:
+    """Threshold series reuses ``z2_pace_*`` fields for tempo pace trend bands."""
+    return {
+        **_empty_easy_history_point(label),
+        "z2_pace_band": None,
     }
 
 
@@ -603,6 +610,7 @@ def _compute_easy_system_pipeline(
     prior: Optional[Dict[str, Any]],
     *,
     target_hr_z2: Optional[HrZoneBand] = None,
+    target_easy_pace: Optional[PaceZoneBand] = None,
 ) -> Dict[str, Any]:
     prior_drift = prior["hr_drift_pct"] if prior else None
     prior_pace = prior["z2_pace_min_per_mi"] if prior else None
@@ -610,8 +618,12 @@ def _compute_easy_system_pipeline(
     prior_easy_hr = prior.get("easy_avg_hr") if prior else None
 
     drift_band = _hr_drift_band(kpis.get("hr_drift_pct"))
-    pace_band = _trend_band(
-        kpis.get("z2_pace_min_per_mi"), prior_pace, lower_is_better=True
+    pace_min_raw = kpis.get("z2_pace_min_per_mi")
+    pace_pm = _coerce_finite_float(pace_min_raw) if pace_min_raw is not None else None
+    pace_sec = pace_pm * 60.0 if pace_pm is not None else None
+    pace_band = classify_easy_pace_progress(
+        pace_sec_per_mi=pace_sec,
+        target_easy_pace=target_easy_pace,
     )
     avg_hr_raw = kpis.get("avg_hr")
     avg_hr_bpm = _coerce_finite_float(avg_hr_raw) if avg_hr_raw is not None else None
@@ -703,6 +715,7 @@ def _compute_system_pipeline(
     prior: Optional[Dict[str, Any]],
     *,
     target_hr_z2: Optional[HrZoneBand] = None,
+    target_easy_pace: Optional[PaceZoneBand] = None,
 ) -> Dict[str, Any]:
     """
     Central signal computation pipeline keyed by training system.
@@ -712,7 +725,10 @@ def _compute_system_pipeline(
     easy_kpis = kpis_by_system[TrainingSystem.EASY]
     if easy_kpis.get("easy_run_count", 0) > 0:
         systems[TrainingSystem.EASY.value] = _compute_easy_system_pipeline(
-            easy_kpis, prior, target_hr_z2=target_hr_z2
+            easy_kpis,
+            prior,
+            target_hr_z2=target_hr_z2,
+            target_easy_pace=target_easy_pace,
         )
     else:
         systems[TrainingSystem.EASY.value] = {
@@ -824,8 +840,12 @@ def generate_weekly_insight(
     target_hr_z2 = (
         profile.hr_z2 if profile.calibrated and profile.hr_z2 is not None else None
     )
+    target_easy_pace, _ = _resolve_easy_pace_progress(session, user_id)
     pipeline = _compute_system_pipeline(
-        kpis_by_system, prior, target_hr_z2=target_hr_z2
+        kpis_by_system,
+        prior,
+        target_hr_z2=target_hr_z2,
+        target_easy_pace=target_easy_pace,
     )
     easy_system = pipeline["systems"][TrainingSystem.EASY.value]
     kpis = easy_system["kpis"]
@@ -833,7 +853,7 @@ def generate_weekly_insight(
     deltas = easy_system["deltas"]
     overall = easy_system["overall_band"]
     drift_band = bands["hr_drift"]
-    pace_band = bands["z2_pace"]
+    pace_band = bands["z2_pace"]  # pace_progress band (stored as z2_pace_band)
     easy_hr_band = bands["easy_avg_hr"]  # hr_progress band (stored as easy_avg_hr_band)
     eff_band = bands["efficiency"]
 
@@ -1212,7 +1232,6 @@ def get_weekly_insight_history(
             "value": val,
             "band": band,
             "z2_pace_min_per_mi": pace,
-            "z2_pace_band": r.z2_pace_band,
             "easy_avg_hr": _coerce_finite_float(eh),
             "efficiency": eff_float,
             "efficiency_band": eff_band,
@@ -1263,7 +1282,7 @@ def get_weekly_insight_history(
                     stab = _coerce_finite_float(raw_s)
             if stab is None:
                 threshold_points.append(
-                    _empty_easy_history_point(f"{ws.month}/{ws.day}")
+                    _empty_threshold_history_point(f"{ws.month}/{ws.day}")
                 )
                 continue
             pace: Optional[float] = None
@@ -1300,7 +1319,7 @@ def get_weekly_insight_history(
             user_id,
         )
         threshold_points = [
-            _empty_easy_history_point(f"{ws.month}/{ws.day}")
+            _empty_threshold_history_point(f"{ws.month}/{ws.day}")
             for ws, _we in week_windows
         ]
 
