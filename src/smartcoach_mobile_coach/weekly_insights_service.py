@@ -81,7 +81,6 @@ def _empty_easy_history_point(label: str) -> Dict[str, Any]:
         "z2_pace_min_per_mi": None,
         "z2_pace_band": None,
         "easy_avg_hr": None,
-        "easy_avg_hr_band": None,
         "easy_pace_progress_band": None,
         "easy_hr_progress_band": None,
         "efficiency": None,
@@ -1124,7 +1123,7 @@ def get_weekly_insight_history(
                 "SELECT week_start, hr_drift_pct, hr_drift_band, "
                 "z2_pace_min_per_mi, z2_pace_band, "
                 "efficiency, efficiency_band, "
-                "easy_avg_hr, easy_avg_hr_band "
+                "easy_avg_hr "
                 "FROM weekly_training_insights "
                 "WHERE user_id = CAST(:uid AS uuid) "
                 "  AND week_start >= :ws_min "
@@ -1199,7 +1198,6 @@ def get_weekly_insight_history(
             "z2_pace_min_per_mi": pace,
             "z2_pace_band": r.z2_pace_band,
             "easy_avg_hr": _coerce_finite_float(eh),
-            "easy_avg_hr_band": getattr(r, "easy_avg_hr_band", None),
             "efficiency": eff_float,
             "efficiency_band": eff_band,
         }
@@ -1270,7 +1268,6 @@ def get_weekly_insight_history(
                     "z2_pace_min_per_mi": pace,
                     "z2_pace_band": pace_band,
                     "easy_avg_hr": None,
-                    "easy_avg_hr_band": None,
                     "easy_pace_progress_band": None,
                     "easy_hr_progress_band": None,
                     "efficiency": None,
