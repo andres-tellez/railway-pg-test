@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from datetime import date, timedelta
 from enum import Enum
@@ -26,6 +27,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from sqlalchemy import Integer, bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from src.db.dao.plans_dao import get_active_or_most_recent_plan
@@ -40,6 +42,7 @@ from src.smartcoach_mobile_coach.runner_profile.service import (
     get_runner_training_pace_recommendations,
 )
 from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
+from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
 from src.utils.hr_zone_constants import (
     aerobic_efficiency_band_from_value,
     aerobic_efficiency_band_zones_chart,
@@ -50,6 +53,19 @@ from src.utils.hr_zone_constants import (
 )
 
 logger = logging.getLogger("smartcoach_mobile_coach")
+
+
+def _coerce_finite_float(value: Any) -> float | None:
+    """JSON cannot represent NaN/Inf; drop non-finite values for API payloads."""
+    if value is None:
+        return None
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(x):
+        return None
+    return x
 
 
 def _empty_easy_history_point(label: str) -> Dict[str, Any]:
@@ -90,14 +106,14 @@ def _easy_pace_zones_chart_payload(
 ) -> List[Dict[str, Any]]:
     if reference is None:
         return []
-    return [
-        {
-            "color": str(zone["color"]),
-            "min": float(zone["min"]),
-            "max": float(zone["max"]),
-        }
-        for zone in reference.pace_zones_chart
-    ]
+    zones: List[Dict[str, Any]] = []
+    for zone in reference.pace_zones_chart:
+        lo = _coerce_finite_float(zone.get("min"))
+        hi = _coerce_finite_float(zone.get("max"))
+        if lo is None or hi is None:
+            continue
+        zones.append({"color": str(zone["color"]), "min": lo, "max": hi})
+    return zones
 
 
 def _attach_easy_pace_goal_gyor_band(
@@ -110,10 +126,11 @@ def _attach_easy_pace_goal_gyor_band(
         return point
     pace_min = point.get("z2_pace_min_per_mi")
     hr = point.get("easy_avg_hr")
-    pace_sec = float(pace_min) * 60.0 if pace_min is not None else None
+    pace_pm = _coerce_finite_float(pace_min)
+    pace_sec = pace_pm * 60.0 if pace_pm is not None else None
     classification = classify_easy_gyor(
         pace_sec_per_mi=pace_sec,
-        avg_hr_bpm=float(hr) if hr is not None else None,
+        avg_hr_bpm=_coerce_finite_float(hr),
         reference=reference,
     )
     point["easy_pace_goal_gyor_band"] = (
@@ -1025,7 +1042,18 @@ def get_weekly_insight_history(
     """
     weeks = max(1, min(weeks, 12))
 
-    athlete_id = get_primary_athlete_id(session, str(user_id))
+    try:
+        athlete_id = get_primary_athlete_id(session, str(user_id))
+    except SQLAlchemyError:
+        logger.exception(
+            "get_primary_athlete_id failed for weekly insight history (user_id=%s)",
+            user_id,
+        )
+        return {
+            "has_history": False,
+            "message": "Could not resolve linked Strava athlete.",
+            "systems": {},
+        }
     if athlete_id is None:
         return {
             "has_history": False,
@@ -1043,23 +1071,29 @@ def get_weekly_insight_history(
     ]
     oldest_monday = cal_week_start - timedelta(weeks=weeks - 1)
 
-    rows = session.execute(
-        text(
-            "SELECT week_start, hr_drift_pct, hr_drift_band, "
-            "z2_pace_min_per_mi, z2_pace_band, "
-            "efficiency, efficiency_band, "
-            "easy_avg_hr, easy_avg_hr_band "
-            "FROM weekly_training_insights "
-            "WHERE user_id = CAST(:uid AS uuid) "
-            "  AND week_start >= :ws_min "
-            "  AND week_start <= :ws_max "
-        ),
-        {
-            "uid": user_id,
-            "ws_min": str(oldest_monday),
-            "ws_max": str(cal_week_start),
-        },
-    ).fetchall()
+    try:
+        rows = session.execute(
+            text(
+                "SELECT week_start, hr_drift_pct, hr_drift_band, "
+                "z2_pace_min_per_mi, z2_pace_band, "
+                "efficiency, efficiency_band, "
+                "easy_avg_hr, easy_avg_hr_band "
+                "FROM weekly_training_insights "
+                "WHERE user_id = CAST(:uid AS uuid) "
+                "  AND week_start >= :ws_min "
+                "  AND week_start <= :ws_max "
+            ),
+            {
+                "uid": user_id,
+                "ws_min": str(oldest_monday),
+                "ws_max": str(cal_week_start),
+            },
+        ).fetchall()
+    except SQLAlchemyError:
+        logger.exception(
+            "weekly_training_insights history query failed (user_id=%s)", user_id
+        )
+        rows = []
 
     by_week_start: Dict[date, Any] = {}
     for r in rows:
@@ -1085,33 +1119,44 @@ def get_weekly_insight_history(
         if r is None or r.hr_drift_pct is None:
             data_points.append(_empty_easy_history_point(f"{ws.month}/{ws.day}"))
             continue
-        val = float(r.hr_drift_pct)
+        val = _coerce_finite_float(r.hr_drift_pct)
+        if val is None:
+            data_points.append(_empty_easy_history_point(f"{ws.month}/{ws.day}"))
+            continue
         band = r.hr_drift_band or _hr_drift_band(val)
-        pace = r.z2_pace_min_per_mi
+        pace = _coerce_finite_float(r.z2_pace_min_per_mi)
         efficiency = r.efficiency
         eh = getattr(r, "easy_avg_hr", None)
-        eff_float = float(efficiency) if efficiency is not None else None
+        eff_float = _coerce_finite_float(efficiency)
         eff_band = (
             aerobic_efficiency_band_from_value(eff_float)
             if eff_float is not None
             else None
         )
-        data_points.append(
-            _attach_easy_pace_goal_gyor_band(
-                {
-                    "label": f"{ws.month}/{ws.day}",
-                    "value": val,
-                    "band": band,
-                    "z2_pace_min_per_mi": float(pace) if pace is not None else None,
-                    "z2_pace_band": r.z2_pace_band,
-                    "easy_avg_hr": float(eh) if eh is not None else None,
-                    "easy_avg_hr_band": getattr(r, "easy_avg_hr_band", None),
-                    "efficiency": eff_float,
-                    "efficiency_band": eff_band,
-                },
-                reference=easy_gyor_ref,
+        point_payload: Dict[str, Any] = {
+            "label": f"{ws.month}/{ws.day}",
+            "value": val,
+            "band": band,
+            "z2_pace_min_per_mi": pace,
+            "z2_pace_band": r.z2_pace_band,
+            "easy_avg_hr": _coerce_finite_float(eh),
+            "easy_avg_hr_band": getattr(r, "easy_avg_hr_band", None),
+            "efficiency": eff_float,
+            "efficiency_band": eff_band,
+        }
+        try:
+            data_points.append(
+                _attach_easy_pace_goal_gyor_band(point_payload, reference=easy_gyor_ref)
             )
-        )
+        except Exception:
+            logger.exception(
+                "Failed to attach easy GYOR band for weekly history "
+                "(user_id=%s, week=%s)",
+                user_id,
+                ws,
+            )
+            point_payload["easy_pace_goal_gyor_band"] = None
+            data_points.append(point_payload)
 
     if not any(p.get("value") is not None for p in data_points):
         return {
@@ -1134,7 +1179,7 @@ def get_weekly_insight_history(
             if int(wk.get("threshold_run_count") or 0) > 0:
                 raw_s = wk.get("effort_stability_min_per_mi")
                 if raw_s is not None:
-                    stab = float(raw_s)
+                    stab = _coerce_finite_float(raw_s)
             if stab is None:
                 threshold_points.append(
                     _empty_easy_history_point(f"{ws.month}/{ws.day}")
@@ -1143,7 +1188,7 @@ def get_weekly_insight_history(
             pace: Optional[float] = None
             raw_p = wk.get("threshold_pace_min_per_mi")
             if raw_p is not None:
-                pace = float(raw_p)
+                pace = _coerce_finite_float(raw_p)
             th_band = _trend_band(stab, prev_threshold_stability, lower_is_better=True)
             pace_band = (
                 _trend_band(pace, prev_threshold_pace, lower_is_better=True)
