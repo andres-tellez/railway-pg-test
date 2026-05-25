@@ -52,7 +52,7 @@ def _pace_progress_target():
 def test_fast_pace_stays_green_when_hr_is_easy():
     ref = _reference()
     assert ref is not None
-    # 8:45/mi is faster than ~9:18–9:48 goal corridor; HR in Z2.
+    # 8:45/mi is faster than ~9:18–9:48 goal easy band; HR in Z2.
     result = classify_easy_gyor(
         pace_sec_per_mi=525.0,
         avg_hr_bpm=132.0,

@@ -39,6 +39,7 @@ class PaceProgressEasyConfig:
     """
 
     marathon_distance_mi: float = 26.21876
+    # Aligns with GoalAlignedPaceConfig.easy_min_offset (fast edge of goal easy band).
     easy_target_offset_sec: float = 55.0
     yellow_gap_sec: float = 15.0
     orange_gap_sec: float = 35.0
