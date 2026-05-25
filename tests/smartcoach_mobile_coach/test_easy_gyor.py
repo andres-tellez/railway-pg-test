@@ -12,7 +12,9 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.goal_aligned_pac
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.easy import (
     build_easy_gyor_reference,
+    build_easy_pace_progress_zones_chart,
     classify_easy_gyor,
+    classify_easy_pace_progress,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.fusion import (
     fuse_gyor_hr_priority,
@@ -122,6 +124,53 @@ def test_fusion_hr_priority_v1_direct_cases():
     )
 
 
+def test_pace_progress_faster_than_goal_is_green_not_hr():
+    bands = compute_goal_aligned_pace_bands("3:40:00")
+    assert bands is not None
+    # 8:45/mi = 525 s/mi — faster than goal corridor.
+    assert (
+        classify_easy_pace_progress(
+            pace_sec_per_mi=525.0,
+            goal_aligned_easy_pace=bands.easy,
+        )
+        == "green"
+    )
+
+
+def test_pace_progress_slow_tiers_vs_goal():
+    bands = compute_goal_aligned_pace_bands("3:40:00")
+    assert bands is not None
+    hi = float(bands.easy.high_sec)
+    assert (
+        classify_easy_pace_progress(
+            pace_sec_per_mi=hi + 5.0, goal_aligned_easy_pace=bands.easy
+        )
+        == "yellow"
+    )
+    assert (
+        classify_easy_pace_progress(
+            pace_sec_per_mi=hi + 20.0, goal_aligned_easy_pace=bands.easy
+        )
+        == "orange"
+    )
+    assert (
+        classify_easy_pace_progress(
+            pace_sec_per_mi=hi + 50.0, goal_aligned_easy_pace=bands.easy
+        )
+        == "red"
+    )
+
+
+def test_easy_pace_progress_zones_no_fast_side_penalty_stripes():
+    bands = compute_goal_aligned_pace_bands("3:40:00")
+    assert bands is not None
+    z = build_easy_pace_progress_zones_chart(bands.easy)
+    assert z[0]["color"] == "green"
+    colors = [x["color"] for x in z]
+    assert "red" not in colors[:1]
+    assert colors.count("green") == 1
+
+
 def test_training_pace_recommendations_includes_easy_gyor():
     profile = RunnerZoneProfileData(
         user_id="u",
@@ -149,7 +198,7 @@ def test_training_pace_recommendations_includes_easy_gyor():
     assert recs is not None
     assert recs.easy_gyor is not None
     assert recs.easy_gyor.policy == "hr_priority_v1"
-    assert len(recs.easy_gyor.pace_zones_chart) >= 3
+    assert len(recs.easy_gyor.pace_zones_chart) >= 4
     assert (
         recs.easy_gyor.goal_aligned_easy_pace.low_sec
         == recs.goal_aligned_easy_pace.low_sec
