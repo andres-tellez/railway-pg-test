@@ -14,12 +14,16 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.hr_position
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models import (
     EasyGyorClassification,
     EasyGyorReference,
-    GyorBand,
+    EasyPaceProgressBand,
     GyorBandChartZone,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.pace_position import (
-    _band_for_outside_distance,
     classify_pace_position,
+)
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
+    DEFAULT_PACE_PROGRESS_EASY_CONFIG,
+    PaceProgressEasyConfig,
+    compute_pace_progress_easy_corridor,
 )
 
 
@@ -27,69 +31,69 @@ def build_easy_gyor_reference(
     *,
     hr_target_z2: HrZoneBand | None,
     goal_aligned_easy_pace: PaceZoneBand | None,
+    target_time: str | None = None,
     config: EasyGyorConfig | None = None,
+    pace_progress_config: PaceProgressEasyConfig | None = None,
 ) -> EasyGyorReference | None:
     """Build static easy GYOR reference from marathon goal easy pace + Z2 HR target."""
     if hr_target_z2 is None or goal_aligned_easy_pace is None:
         return None
     cfg = config or DEFAULT_EASY_GYOR_CONFIG
+    pp_cfg = pace_progress_config or DEFAULT_PACE_PROGRESS_EASY_CONFIG
+    corridor = compute_pace_progress_easy_corridor(target_time, config=pp_cfg)
+    pace_zones = (
+        build_easy_pace_progress_zones_chart(corridor, config=pp_cfg)
+        if corridor is not None
+        else ()
+    )
     return EasyGyorReference(
         policy=cfg.fusion.name,
         hr_target_z2=hr_target_z2,
         goal_aligned_easy_pace=goal_aligned_easy_pace,
-        pace_zones_chart=build_easy_pace_progress_zones_chart(
-            goal_aligned_easy_pace,
-            config=cfg,
-        ),
+        pace_progress_easy_corridor=corridor,
+        pace_zones_chart=pace_zones,
     )
 
 
 def build_easy_pace_progress_zones_chart(
-    goal_aligned_easy_pace: PaceZoneBand,
+    pace_progress_corridor: PaceZoneBand,
     *,
-    config: EasyGyorConfig | None = None,
+    config: PaceProgressEasyConfig | None = None,
 ) -> tuple[GyorBandChartZone, ...]:
     """
     Pace-progress chart bands (HR-free).
 
-    ``min``/``max`` are decimal **minutes/mile** on the chart (lower min/mi = faster).
+    ``min``/``max`` are decimal **minutes/mile** (lower min/mi = faster).
 
-    Green covers from the chart fast-side cap through the goal-aligned easy corridor
-    (**ahead** and **within** range). Faster-than-goal stays green (no punitive
-    fast-tier stripes). Slow-side yellow/orange/red use the same offsets as pace
-    position config (distance past the corridor's slower edge).
+    - **ahead**: chart fast cap → target fast edge (faster than pace-progress corridor)
+    - **green**: target fast → target slow (pace-progress easy corridor)
+    - **yellow / orange / red**: progressively slower past target slow edge
     """
-    cfg = config or DEFAULT_EASY_GYOR_CONFIG
-    pace_cfg = cfg.pace
-    green_lo_sec = float(goal_aligned_easy_pace.low_sec)
-    green_hi_sec = float(goal_aligned_easy_pace.high_sec)
-    green_lo = green_lo_sec / 60.0
-    green_hi = green_hi_sec / 60.0
+    cfg = config or DEFAULT_PACE_PROGRESS_EASY_CONFIG
+    target_fast = float(pace_progress_corridor.low_sec) / 60.0
+    target_slow = float(pace_progress_corridor.high_sec) / 60.0
 
-    y_m = pace_cfg.yellow_outside_sec / 60.0
-    o_m = pace_cfg.orange_outside_sec / 60.0
-    r_m = pace_cfg.red_outside_sec / 60.0
+    y_m = cfg.yellow_slow_gap_sec / 60.0
+    o_m = cfg.orange_slow_gap_sec / 60.0
 
-    cap_fast = max(0.0, green_lo - cfg.chart_fast_axis_cap_min_per_mi)
-    cap_slow = green_hi + cfg.chart_slow_axis_cap_min_per_mi
+    cap_fast = max(0.0, target_fast - cfg.chart_fast_axis_cap_min_per_mi)
+    cap_slow = target_slow + cfg.chart_slow_axis_cap_min_per_mi
 
-    zones: list[GyorBandChartZone] = [
-        {"color": "green", "min": cap_fast, "max": green_hi},
-    ]
+    zones: list[GyorBandChartZone] = []
+    if cap_fast < target_fast - 1e-9:
+        zones.append({"color": "ahead", "min": cap_fast, "max": target_fast})
+    zones.append({"color": "green", "min": target_fast, "max": target_slow})
+
     tier_edges = [
-        ("yellow", green_hi, green_hi + y_m),
-        ("orange", green_hi + y_m, green_hi + o_m),
-        ("red", green_hi + o_m, green_hi + r_m),
+        ("yellow", target_slow, target_slow + y_m),
+        ("orange", target_slow + y_m, target_slow + o_m),
+        ("red", target_slow + o_m, cap_slow),
     ]
     for color, lo, hi in tier_edges:
-        lo_c = max(lo, green_hi)
+        lo_c = max(lo, target_slow)
         hi_c = min(hi, cap_slow)
         if hi_c > lo_c:
             zones.append({"color": color, "min": lo_c, "max": hi_c})
-
-    last = zones[-1]
-    if len(zones) > 1 and last["color"] != "green" and float(last["max"]) < cap_slow:
-        zones[-1] = {**last, "max": cap_slow}
 
     return tuple(zones)
 
@@ -97,84 +101,36 @@ def build_easy_pace_progress_zones_chart(
 def classify_easy_pace_progress(
     *,
     pace_sec_per_mi: float | None,
-    goal_aligned_easy_pace: PaceZoneBand | None,
-    config: EasyGyorConfig | None = None,
-) -> GyorBand | None:
+    pace_progress_corridor: PaceZoneBand | None,
+    config: PaceProgressEasyConfig | None = None,
+) -> EasyPaceProgressBand | None:
     """
-    Pace vs goal-aligned easy corridor only (**no HR**).
+    Pace vs pace-progress easy corridor only (**no HR**).
 
-    Faster than or within the corridor → ``green``. Slower tiers use the same
-    distance thresholds as :func:`build_easy_pace_progress_zones_chart` (outside
-    the slower edge).
+    Ahead = faster than ``low_sec``; green = inside corridor; slow tiers past
+    ``high_sec`` use pace-progress gap thresholds.
     """
-    if pace_sec_per_mi is None or goal_aligned_easy_pace is None:
+    if pace_sec_per_mi is None or pace_progress_corridor is None:
         return None
-    cfg_pace = (config or DEFAULT_EASY_GYOR_CONFIG).pace
+    cfg = config or DEFAULT_PACE_PROGRESS_EASY_CONFIG
     try:
         pace = float(pace_sec_per_mi)
     except (TypeError, ValueError):
         return None
-    hi = float(goal_aligned_easy_pace.high_sec)
-    if pace <= hi:
+
+    target_fast = float(pace_progress_corridor.low_sec)
+    target_slow = float(pace_progress_corridor.high_sec)
+    if pace < target_fast:
+        return "ahead"
+    if pace <= target_slow:
         return "green"
-    return _band_for_outside_distance(pace - hi, config=cfg_pace)
 
-
-def build_easy_pace_zones_chart(
-    goal_aligned_easy_pace: PaceZoneBand,
-    *,
-    config: EasyGyorConfig | None = None,
-) -> tuple[GyorBandChartZone, ...]:
-    """
-    Y-axis bands for the easy pace chart (min/mi; lower = faster).
-
-    Green corridor matches goal-aligned easy pace; faster/slower regions use
-    pace-position thresholds.
-    """
-    cfg = config or DEFAULT_EASY_GYOR_CONFIG
-    pace_cfg = cfg.pace
-    green_lo = float(goal_aligned_easy_pace.low_sec) / 60.0
-    green_hi = float(goal_aligned_easy_pace.high_sec) / 60.0
-
-    yellow_fast = pace_cfg.yellow_outside_sec / 60.0
-    orange_fast = pace_cfg.orange_outside_sec / 60.0
-    red_fast = pace_cfg.red_outside_sec / 60.0
-    yellow_slow = pace_cfg.yellow_outside_sec / 60.0
-
-    zones: list[GyorBandChartZone] = []
-
-    red_fast_min = max(0.0, green_lo - red_fast)
-    orange_fast_min = max(0.0, green_lo - orange_fast)
-    yellow_fast_min = max(0.0, green_lo - yellow_fast)
-
-    if red_fast_min < orange_fast_min:
-        zones.append({"color": "red", "min": red_fast_min, "max": orange_fast_min})
-    if orange_fast_min < yellow_fast_min:
-        zones.append(
-            {"color": "orange", "min": orange_fast_min, "max": yellow_fast_min}
-        )
-    if yellow_fast_min < green_lo:
-        zones.append({"color": "yellow", "min": yellow_fast_min, "max": green_lo})
-
-    zones.append({"color": "green", "min": green_lo, "max": green_hi})
-
-    slow_yellow_max = green_hi + yellow_slow
-    if green_hi < slow_yellow_max:
-        zones.append({"color": "yellow", "min": green_hi, "max": slow_yellow_max})
-
-    cap_fast = max(0.0, green_lo - cfg.chart_fast_axis_cap_min_per_mi)
-    cap_slow = green_hi + cfg.chart_slow_axis_cap_min_per_mi
-    if zones:
-        first = zones[0]
-        if first["color"] != "green" and float(first["min"]) > cap_fast:
-            first = {**first, "min": cap_fast}
-            zones[0] = first
-        last = zones[-1]
-        if last["color"] != "green" and float(last["max"]) < cap_slow:
-            last = {**last, "max": cap_slow}
-            zones[-1] = last
-
-    return tuple(zones)
+    slow_gap = pace - target_slow
+    if slow_gap <= cfg.yellow_slow_gap_sec:
+        return "yellow"
+    if slow_gap <= cfg.orange_slow_gap_sec:
+        return "orange"
+    return "red"
 
 
 def classify_easy_gyor(
