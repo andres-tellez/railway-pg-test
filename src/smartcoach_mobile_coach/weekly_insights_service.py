@@ -31,8 +31,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from src.db.dao.plans_dao import get_active_or_most_recent_plan
+from src.smartcoach_mobile_coach.runner_profile.models import PaceZoneBand
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.easy import (
+    build_easy_pace_progress_zones_chart,
     classify_easy_gyor,
+    classify_easy_pace_progress,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models import (
     EasyGyorReference,
@@ -78,14 +81,19 @@ def _empty_easy_history_point(label: str) -> Dict[str, Any]:
         "easy_avg_hr": None,
         "easy_avg_hr_band": None,
         "easy_pace_goal_gyor_band": None,
+        "easy_pace_progress_band": None,
         "efficiency": None,
         "efficiency_band": None,
     }
 
 
-def _resolve_easy_gyor_reference(
+def _resolve_easy_pace_refs(
     session: Session, user_id: str
-) -> EasyGyorReference | None:
+) -> Tuple[Optional[PaceZoneBand], Optional[EasyGyorReference]]:
+    """
+    Goal-aligned easy band (for pace-progress chart) and optional full GYOR ref
+    (HR + goal; still used for legacy fused band on history points).
+    """
     profile = get_runner_profile(session, user_id)
     plan_row = get_active_or_most_recent_plan(session, user_id)
     target_time = plan_row.target_time if plan_row is not None else None
@@ -97,17 +105,17 @@ def _resolve_easy_gyor_reference(
         profile=profile,
     )
     if recs is None:
-        return None
-    return recs.easy_gyor
+        return None, None
+    return recs.goal_aligned_easy_pace, recs.easy_gyor
 
 
-def _easy_pace_zones_chart_payload(
-    reference: EasyGyorReference | None,
+def _easy_pace_progress_zones_payload(
+    goal_easy: Optional[PaceZoneBand],
 ) -> List[Dict[str, Any]]:
-    if reference is None:
+    if goal_easy is None:
         return []
     zones: List[Dict[str, Any]] = []
-    for zone in reference.pace_zones_chart:
+    for zone in build_easy_pace_progress_zones_chart(goal_easy):
         lo = _coerce_finite_float(zone.get("min"))
         hi = _coerce_finite_float(zone.get("max"))
         if lo is None or hi is None:
@@ -116,22 +124,26 @@ def _easy_pace_zones_chart_payload(
     return zones
 
 
-def _attach_easy_pace_goal_gyor_band(
+def _attach_easy_pace_history_bands(
     point: Dict[str, Any],
     *,
-    reference: EasyGyorReference | None,
+    goal_easy: Optional[PaceZoneBand],
+    easy_gyor_ref: Optional[EasyGyorReference],
 ) -> Dict[str, Any]:
-    if reference is None:
+    """Set pace-progress (goal-only) and optional HR-fused GYOR band on a history point."""
+    pace_pm = _coerce_finite_float(point.get("z2_pace_min_per_mi"))
+    pace_sec = pace_pm * 60.0 if pace_pm is not None else None
+    point["easy_pace_progress_band"] = classify_easy_pace_progress(
+        pace_sec_per_mi=pace_sec,
+        goal_aligned_easy_pace=goal_easy,
+    )
+    if easy_gyor_ref is None:
         point["easy_pace_goal_gyor_band"] = None
         return point
-    pace_min = point.get("z2_pace_min_per_mi")
-    hr = point.get("easy_avg_hr")
-    pace_pm = _coerce_finite_float(pace_min)
-    pace_sec = pace_pm * 60.0 if pace_pm is not None else None
     classification = classify_easy_gyor(
         pace_sec_per_mi=pace_sec,
-        avg_hr_bpm=_coerce_finite_float(hr),
-        reference=reference,
+        avg_hr_bpm=_coerce_finite_float(point.get("easy_avg_hr")),
+        reference=easy_gyor_ref,
     )
     point["easy_pace_goal_gyor_band"] = (
         classification.band if classification is not None else None
@@ -1099,17 +1111,19 @@ def get_weekly_insight_history(
     for r in rows:
         by_week_start[r.week_start] = r
 
-    # GYOR references call runner profile + plan + phase resolution; a regression
-    # there must not take down the whole history payload (mobile Easy charts).
-    easy_gyor_ref: EasyGyorReference | None
+    # Easy pace chart: goal-relative progress bands (HR-free). Full GYOR ref is
+    # optional and only used for legacy fused band on history points.
+    goal_easy_band: Optional[PaceZoneBand] = None
+    easy_gyor_ref: Optional[EasyGyorReference] = None
     try:
-        easy_gyor_ref = _resolve_easy_gyor_reference(session, user_id)
-        pace_zones = _easy_pace_zones_chart_payload(easy_gyor_ref)
+        goal_easy_band, easy_gyor_ref = _resolve_easy_pace_refs(session, user_id)
+        pace_zones = _easy_pace_progress_zones_payload(goal_easy_band)
     except Exception:
         logger.exception(
-            "Failed to resolve easy GYOR for weekly insight history (user_id=%s)",
+            "Failed to resolve easy pace refs for weekly insight history (user_id=%s)",
             user_id,
         )
+        goal_easy_band = None
         easy_gyor_ref = None
         pace_zones = []
 
@@ -1146,16 +1160,21 @@ def get_weekly_insight_history(
         }
         try:
             data_points.append(
-                _attach_easy_pace_goal_gyor_band(point_payload, reference=easy_gyor_ref)
+                _attach_easy_pace_history_bands(
+                    point_payload,
+                    goal_easy=goal_easy_band,
+                    easy_gyor_ref=easy_gyor_ref,
+                )
             )
         except Exception:
             logger.exception(
-                "Failed to attach easy GYOR band for weekly history "
+                "Failed to attach easy pace bands for weekly history "
                 "(user_id=%s, week=%s)",
                 user_id,
                 ws,
             )
             point_payload["easy_pace_goal_gyor_band"] = None
+            point_payload["easy_pace_progress_band"] = None
             data_points.append(point_payload)
 
     if not any(p.get("value") is not None for p in data_points):
@@ -1196,7 +1215,7 @@ def get_weekly_insight_history(
                 else None
             )
             threshold_points.append(
-                _attach_easy_pace_goal_gyor_band(
+                _attach_easy_pace_history_bands(
                     {
                         "label": f"{ws.month}/{ws.day}",
                         "value": stab,
@@ -1208,7 +1227,8 @@ def get_weekly_insight_history(
                         "efficiency": None,
                         "efficiency_band": None,
                     },
-                    reference=None,
+                    goal_easy=None,
+                    easy_gyor_ref=None,
                 )
             )
             prev_threshold_stability = stab
