@@ -99,7 +99,13 @@ def test_payload_includes_training_pace_recommendations_when_provided():
     assert "recommended_easy_pace" not in tp
     assert tp["easy_gyor"] is not None
     assert tp["easy_gyor"]["policy"] == "hr_priority_v1"
+    assert tp["easy_gyor"]["hr_target_z2"] == {"low": 120, "high": 145}
+    assert "goal_aligned_easy_pace" not in tp["easy_gyor"]
+    assert "pace_progress_target_easy_pace" not in tp["easy_gyor"]
+    assert "pace_zones_chart" not in tp["easy_gyor"]
+    assert tp["pace_progress"] is not None
     assert (
-        tp["easy_gyor"]["goal_aligned_easy_pace"]["display"]
-        == recs.goal_aligned_easy_pace.display
+        tp["pace_progress"]["target_easy_pace"]["low_sec"]
+        == recs.pace_progress.target_easy_pace.low_sec
     )
+    assert len(tp["pace_progress"]["pace_zones_chart"]) >= 4

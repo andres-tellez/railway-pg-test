@@ -66,6 +66,12 @@ def test_easy_gyor_anchors_to_goal_aligned_easy_pace():
         recs.easy_gyor.pace_progress_target_easy_pace.low_sec
         == recs.goal_aligned_easy_pace.low_sec
     )
+    assert recs.pace_progress is not None
+    assert (
+        recs.pace_progress.target_easy_pace.low_sec
+        == recs.goal_aligned_easy_pace.low_sec
+    )
+    assert recs.easy_gyor.pace_zones_chart == recs.pace_progress.pace_zones_chart
 
 
 def test_no_easy_gyor_without_target_time():
@@ -76,4 +82,40 @@ def test_no_easy_gyor_without_target_time():
     )
     assert recs is not None
     assert recs.goal_aligned_easy_pace is None
+    assert recs.pace_progress is None
     assert recs.easy_gyor is None
+
+
+def test_pace_progress_without_hr_calibration():
+    profile = RunnerZoneProfileData(
+        user_id="u",
+        calibrated=False,
+        computed_at=None,
+        hrmax_used=None,
+        resting_hr_used=None,
+        zone_method=None,
+        hr_z1=None,
+        hr_z2=None,
+        hr_z3=None,
+        hr_z4=None,
+        hr_z5=None,
+        pace_z2=None,
+        pace_z3=None,
+        pace_z4=None,
+        pace_source=None,
+        pace_computed_at=None,
+    )
+    recs = build_training_pace_recommendations(
+        profile=profile,
+        target_time="3:40:00",
+        phase="Base",
+    )
+    assert recs is not None
+    assert recs.goal_aligned_easy_pace is not None
+    assert recs.pace_progress is not None
+    assert recs.easy_gyor is None
+    assert (
+        recs.pace_progress.target_easy_pace.low_sec
+        == recs.goal_aligned_easy_pace.low_sec
+    )
+    assert len(recs.pace_progress.pace_zones_chart) >= 4

@@ -13,6 +13,10 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models impo
 from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
     TrainingPaceRecommendations,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
+    EasyPaceProgressReference,
+    pace_progress_zones_chart_api_payload,
+)
 
 # Canonical copy for Insights › Easy banner (emitted whenever Z2 HR + Z2 pace are present).
 INSIGHTS_EASY_BANNER_SUBTITLE = (
@@ -37,24 +41,29 @@ def _pace_band_payload(band: Optional[PaceZoneBand]) -> Optional[dict[str, Any]]
     }
 
 
+def _pace_progress_payload(
+    ref: Optional[EasyPaceProgressReference],
+) -> Optional[dict[str, Any]]:
+    """Insights Avg Pace chart authority (HR-free target + Y/O/R zones)."""
+    if ref is None:
+        return None
+    return {
+        "target_easy_pace": _pace_band_payload(ref.target_easy_pace),
+        "pace_zones_chart": pace_progress_zones_chart_api_payload(ref.pace_zones_chart),
+    }
+
+
 def _easy_gyor_payload(ref: Optional[EasyGyorReference]) -> Optional[dict[str, Any]]:
+    """HR-fused easy GYOR reference only (no pace-progress chart fields).
+
+    Chart target and zones live under ``training_pace_recommendations.pace_progress``.
+    Goal easy envelope lives under ``training_pace_recommendations.goal_aligned_easy_pace``.
+    """
     if ref is None:
         return None
     return {
         "policy": ref.policy,
         "hr_target_z2": _hr_band_payload(ref.hr_target_z2),
-        "goal_aligned_easy_pace": _pace_band_payload(ref.goal_aligned_easy_pace),
-        "pace_progress_target_easy_pace": _pace_band_payload(
-            ref.pace_progress_target_easy_pace
-        ),
-        "pace_zones_chart": [
-            {
-                "color": str(zone["color"]),
-                "min": float(zone["min"]),
-                "max": float(zone["max"]),
-            }
-            for zone in ref.pace_zones_chart
-        ],
     }
 
 
@@ -77,6 +86,8 @@ def _training_pace_recommendations_payload(
         "goal_aligned_marathon_pace": _pace_band_payload(
             recs.goal_aligned_marathon_pace
         ),
+        # Insights Avg Pace chart: single target + zones (present whenever goal easy exists).
+        "pace_progress": _pace_progress_payload(recs.pace_progress),
         "easy_gyor": _easy_gyor_payload(recs.easy_gyor),
     }
 
