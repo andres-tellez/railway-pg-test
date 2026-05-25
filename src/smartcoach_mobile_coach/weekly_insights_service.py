@@ -32,12 +32,13 @@ from sqlalchemy.orm import Session
 
 from src.db.dao.plans_dao import get_active_or_most_recent_plan
 from src.smartcoach_mobile_coach.runner_profile.models import PaceZoneBand
-from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.easy import (
-    build_easy_pace_progress_zones_chart,
-    classify_easy_pace_progress,
+from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models import (
+    GyorBandChartZone,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
-    compute_pace_progress_target_easy_pace,
+    build_easy_pace_progress_zones_chart,
+    classify_easy_pace_progress,
+    pace_progress_target_from_goal_easy,
 )
 from src.smartcoach_mobile_coach.runner_profile.service import (
     get_runner_profile,
@@ -85,13 +86,25 @@ def _empty_easy_history_point(label: str) -> Dict[str, Any]:
     }
 
 
-def _resolve_easy_pace_target(session: Session, user_id: str) -> Optional[PaceZoneBand]:
-    """Pace-progress target easy pace for weekly history chart dots and zones."""
+def _pace_zones_chart_payload(
+    zones_chart: tuple[GyorBandChartZone, ...],
+) -> List[Dict[str, Any]]:
+    zones: List[Dict[str, Any]] = []
+    for zone in zones_chart:
+        lo = _coerce_finite_float(zone.get("min"))
+        hi = _coerce_finite_float(zone.get("max"))
+        if lo is None or hi is None:
+            continue
+        zones.append({"color": str(zone["color"]), "min": lo, "max": hi})
+    return zones
+
+
+def _resolve_easy_pace_progress(
+    session: Session, user_id: str
+) -> Tuple[Optional[PaceZoneBand], List[Dict[str, Any]]]:
+    """Pace-progress target and chart zones from training pace recommendations."""
     plan_row = get_active_or_most_recent_plan(session, user_id)
     target_time = plan_row.target_time if plan_row is not None else None
-    target_easy = compute_pace_progress_target_easy_pace(target_time)
-    if target_easy is not None:
-        return target_easy
     profile = get_runner_profile(session, user_id)
     recs = get_runner_training_pace_recommendations(
         session,
@@ -100,9 +113,15 @@ def _resolve_easy_pace_target(session: Session, user_id: str) -> Optional[PaceZo
         plan=plan_row,
         profile=profile,
     )
-    if recs is None or recs.easy_gyor is None:
-        return None
-    return recs.easy_gyor.pace_progress_target_easy_pace
+    if recs is None or recs.goal_aligned_easy_pace is None:
+        return None, []
+
+    target_easy = pace_progress_target_from_goal_easy(recs.goal_aligned_easy_pace)
+    if recs.easy_gyor is not None and recs.easy_gyor.pace_zones_chart:
+        pace_zones = _pace_zones_chart_payload(recs.easy_gyor.pace_zones_chart)
+    else:
+        pace_zones = _easy_pace_progress_zones_payload(target_easy)
+    return target_easy, pace_zones
 
 
 def _easy_pace_progress_zones_payload(
@@ -1098,8 +1117,7 @@ def get_weekly_insight_history(
     # Easy pace chart: single target pace-progress bands (HR-free).
     target_easy_pace: Optional[PaceZoneBand] = None
     try:
-        target_easy_pace = _resolve_easy_pace_target(session, user_id)
-        pace_zones = _easy_pace_progress_zones_payload(target_easy_pace)
+        target_easy_pace, pace_zones = _resolve_easy_pace_progress(session, user_id)
     except Exception:
         logger.exception(
             "Failed to resolve easy pace refs for weekly insight history (user_id=%s)",
