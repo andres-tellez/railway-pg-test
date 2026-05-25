@@ -166,3 +166,4 @@ def test_weekly_history_hr_zones_match_hr_progress(
     easy_points = out["weekly_data"]
     assert len(easy_points) == 1
     assert easy_points[0]["easy_hr_progress_band"] == "green"
+    assert "easy_avg_hr_band" not in easy_points[0]

@@ -81,7 +81,6 @@ def _empty_easy_history_point(label: str) -> Dict[str, Any]:
         "z2_pace_min_per_mi": None,
         "z2_pace_band": None,
         "easy_avg_hr": None,
-        "easy_avg_hr_band": None,
         "easy_pace_progress_band": None,
         "easy_hr_progress_band": None,
         "efficiency": None,
@@ -600,7 +599,10 @@ def _fetch_prior_insight(
 
 
 def _compute_easy_system_pipeline(
-    kpis: Dict[str, Any], prior: Optional[Dict[str, Any]]
+    kpis: Dict[str, Any],
+    prior: Optional[Dict[str, Any]],
+    *,
+    target_hr_z2: Optional[HrZoneBand] = None,
 ) -> Dict[str, Any]:
     prior_drift = prior["hr_drift_pct"] if prior else None
     prior_pace = prior["z2_pace_min_per_mi"] if prior else None
@@ -611,7 +613,12 @@ def _compute_easy_system_pipeline(
     pace_band = _trend_band(
         kpis.get("z2_pace_min_per_mi"), prior_pace, lower_is_better=True
     )
-    easy_hr_band = _trend_band(kpis.get("avg_hr"), prior_easy_hr, lower_is_better=True)
+    avg_hr_raw = kpis.get("avg_hr")
+    avg_hr_bpm = _coerce_finite_float(avg_hr_raw) if avg_hr_raw is not None else None
+    easy_hr_band = classify_easy_hr_progress(
+        avg_hr_bpm=avg_hr_bpm,
+        target_hr_z2=target_hr_z2,
+    )
     eff_band = aerobic_efficiency_band_from_value(kpis.get("efficiency"))
 
     prior_bands = None
@@ -694,6 +701,8 @@ def _compute_threshold_system_pipeline(
 def _compute_system_pipeline(
     kpis_by_system: Dict[TrainingSystem, Dict[str, Any]],
     prior: Optional[Dict[str, Any]],
+    *,
+    target_hr_z2: Optional[HrZoneBand] = None,
 ) -> Dict[str, Any]:
     """
     Central signal computation pipeline keyed by training system.
@@ -703,7 +712,7 @@ def _compute_system_pipeline(
     easy_kpis = kpis_by_system[TrainingSystem.EASY]
     if easy_kpis.get("easy_run_count", 0) > 0:
         systems[TrainingSystem.EASY.value] = _compute_easy_system_pipeline(
-            easy_kpis, prior
+            easy_kpis, prior, target_hr_z2=target_hr_z2
         )
     else:
         systems[TrainingSystem.EASY.value] = {
@@ -811,7 +820,13 @@ def generate_weekly_insight(
         }
 
     prior = _fetch_prior_insight(session, user_id, week_start)
-    pipeline = _compute_system_pipeline(kpis_by_system, prior)
+    profile = get_runner_profile(session, user_id)
+    target_hr_z2 = (
+        profile.hr_z2 if profile.calibrated and profile.hr_z2 is not None else None
+    )
+    pipeline = _compute_system_pipeline(
+        kpis_by_system, prior, target_hr_z2=target_hr_z2
+    )
     easy_system = pipeline["systems"][TrainingSystem.EASY.value]
     kpis = easy_system["kpis"]
     bands = easy_system["bands"]
@@ -819,7 +834,7 @@ def generate_weekly_insight(
     overall = easy_system["overall_band"]
     drift_band = bands["hr_drift"]
     pace_band = bands["z2_pace"]
-    easy_hr_band = bands["easy_avg_hr"]
+    easy_hr_band = bands["easy_avg_hr"]  # hr_progress band (stored as easy_avg_hr_band)
     eff_band = bands["efficiency"]
 
     summary_text: Optional[str] = None
@@ -1124,7 +1139,7 @@ def get_weekly_insight_history(
                 "SELECT week_start, hr_drift_pct, hr_drift_band, "
                 "z2_pace_min_per_mi, z2_pace_band, "
                 "efficiency, efficiency_band, "
-                "easy_avg_hr, easy_avg_hr_band "
+                "easy_avg_hr "
                 "FROM weekly_training_insights "
                 "WHERE user_id = CAST(:uid AS uuid) "
                 "  AND week_start >= :ws_min "
@@ -1199,7 +1214,6 @@ def get_weekly_insight_history(
             "z2_pace_min_per_mi": pace,
             "z2_pace_band": r.z2_pace_band,
             "easy_avg_hr": _coerce_finite_float(eh),
-            "easy_avg_hr_band": getattr(r, "easy_avg_hr_band", None),
             "efficiency": eff_float,
             "efficiency_band": eff_band,
         }
@@ -1270,7 +1284,6 @@ def get_weekly_insight_history(
                     "z2_pace_min_per_mi": pace,
                     "z2_pace_band": pace_band,
                     "easy_avg_hr": None,
-                    "easy_avg_hr_band": None,
                     "easy_pace_progress_band": None,
                     "easy_hr_progress_band": None,
                     "efficiency": None,
