@@ -18,7 +18,6 @@ class GyorPacePositionConfig:
 
     yellow_outside_sec: float = 10.0
     orange_outside_sec: float = 25.0
-    red_outside_sec: float = 45.0
     max_band_when_too_slow: str = "yellow"
 
 
@@ -35,8 +34,6 @@ class EasyGyorConfig:
     hr: GyorHrPositionConfig = GyorHrPositionConfig()
     pace: GyorPacePositionConfig = GyorPacePositionConfig()
     fusion: GyorFusionPolicy = GyorFusionPolicy()
-    chart_fast_axis_cap_min_per_mi: float = 2.0
-    chart_slow_axis_cap_min_per_mi: float = 2.0
 
 
 DEFAULT_EASY_GYOR_CONFIG = EasyGyorConfig()

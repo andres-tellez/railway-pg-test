@@ -133,7 +133,7 @@ def classify_easy_gyor(
     reference: EasyGyorReference | None,
     config: EasyGyorConfig | None = None,
 ) -> EasyGyorClassification | None:
-    """Classify one easy week (or session aggregate) against easy GYOR reference."""
+    """HR-first easy GYOR (full goal easy band + Z2). Not used for pace-progress chart."""
     if reference is None:
         return None
     cfg = config or DEFAULT_EASY_GYOR_CONFIG
