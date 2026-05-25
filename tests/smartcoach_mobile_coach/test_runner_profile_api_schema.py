@@ -18,7 +18,7 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.training_pace_re
 )
 
 
-def test_pace_zones_partial_includes_only_present_bands_and_preserves_banner():
+def test_pace_zones_partial_includes_only_present_bands():
     """pace_zones must expose z2 even when z3/z4 pace columns are absent."""
     hr_z2 = HrZoneBand(low=120, high=145)
     pace_z2 = PaceZoneBand(
@@ -50,9 +50,7 @@ def test_pace_zones_partial_includes_only_present_bands_and_preserves_banner():
     assert set(pz.keys()) == {"z2"}
     assert pz["z2"]["display"] == pace_z2.display
 
-    banner = payload.get("insights_easy_banner")
-    assert banner is not None
-    assert banner["subtitle"] == INSIGHTS_EASY_BANNER_SUBTITLE
+    assert payload.get("insights_easy_banner") is None
 
 
 def test_payload_includes_training_pace_recommendations_when_provided():
@@ -113,3 +111,7 @@ def test_payload_includes_training_pace_recommendations_when_provided():
     assert tp["hr_progress"]["target_hr_z2"] == {"low": 120, "high": 145}
     assert tp["hr_progress"]["target_display"] == "120–145 bpm"
     assert len(tp["hr_progress"]["hr_zones_chart"]) >= 4
+
+    banner = payload.get("insights_easy_banner")
+    assert banner is not None
+    assert banner["subtitle"] == INSIGHTS_EASY_BANNER_SUBTITLE
