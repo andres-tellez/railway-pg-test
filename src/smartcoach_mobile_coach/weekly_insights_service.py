@@ -28,7 +28,17 @@ from sqlalchemy import Integer, bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Session
 
-from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
+from src.db.dao.plans_dao import get_active_or_most_recent_plan
+from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.easy import (
+    classify_easy_gyor,
+)
+from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models import (
+    EasyGyorReference,
+)
+from src.smartcoach_mobile_coach.runner_profile.service import (
+    get_runner_profile,
+    get_runner_training_pace_recommendations,
+)
 from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
 from src.utils.hr_zone_constants import (
     aerobic_efficiency_band_from_value,
@@ -40,6 +50,77 @@ from src.utils.hr_zone_constants import (
 )
 
 logger = logging.getLogger("smartcoach_mobile_coach")
+
+
+def _empty_easy_history_point(label: str) -> Dict[str, Any]:
+    return {
+        "label": label,
+        "value": None,
+        "band": None,
+        "z2_pace_min_per_mi": None,
+        "z2_pace_band": None,
+        "easy_avg_hr": None,
+        "easy_avg_hr_band": None,
+        "easy_pace_goal_gyor_band": None,
+        "efficiency": None,
+        "efficiency_band": None,
+    }
+
+
+def _resolve_easy_gyor_reference(
+    session: Session, user_id: str
+) -> EasyGyorReference | None:
+    profile = get_runner_profile(session, user_id)
+    plan_row = get_active_or_most_recent_plan(session, user_id)
+    target_time = plan_row.target_time if plan_row is not None else None
+    recs = get_runner_training_pace_recommendations(
+        session,
+        user_id,
+        target_time=target_time,
+        plan=plan_row,
+        profile=profile,
+    )
+    if recs is None:
+        return None
+    return recs.easy_gyor
+
+
+def _easy_pace_zones_chart_payload(
+    reference: EasyGyorReference | None,
+) -> List[Dict[str, Any]]:
+    if reference is None:
+        return []
+    return [
+        {
+            "color": str(zone["color"]),
+            "min": float(zone["min"]),
+            "max": float(zone["max"]),
+        }
+        for zone in reference.pace_zones_chart
+    ]
+
+
+def _attach_easy_pace_goal_gyor_band(
+    point: Dict[str, Any],
+    *,
+    reference: EasyGyorReference | None,
+) -> Dict[str, Any]:
+    if reference is None:
+        point["easy_pace_goal_gyor_band"] = None
+        return point
+    pace_min = point.get("z2_pace_min_per_mi")
+    hr = point.get("easy_avg_hr")
+    pace_sec = float(pace_min) * 60.0 if pace_min is not None else None
+    classification = classify_easy_gyor(
+        pace_sec_per_mi=pace_sec,
+        avg_hr_bpm=float(hr) if hr is not None else None,
+        reference=reference,
+    )
+    point["easy_pace_goal_gyor_band"] = (
+        classification.band if classification is not None else None
+    )
+    return point
+
 
 # Coach tool default: orientation-only payload (week + overall_band) unless
 # include_kpi_detail=true. REST `/api/training-insights/weekly` always uses slim=False.
@@ -984,23 +1065,14 @@ def get_weekly_insight_history(
     for r in rows:
         by_week_start[r.week_start] = r
 
+    easy_gyor_ref = _resolve_easy_gyor_reference(session, user_id)
+    pace_zones = _easy_pace_zones_chart_payload(easy_gyor_ref)
+
     data_points: List[Dict[str, Any]] = []
     for ws, _we in week_windows:
         r = by_week_start.get(ws)
         if r is None or r.hr_drift_pct is None:
-            data_points.append(
-                {
-                    "label": f"{ws.month}/{ws.day}",
-                    "value": None,
-                    "band": None,
-                    "z2_pace_min_per_mi": None,
-                    "z2_pace_band": None,
-                    "easy_avg_hr": None,
-                    "easy_avg_hr_band": None,
-                    "efficiency": None,
-                    "efficiency_band": None,
-                }
-            )
+            data_points.append(_empty_easy_history_point(f"{ws.month}/{ws.day}"))
             continue
         val = float(r.hr_drift_pct)
         band = r.hr_drift_band or _hr_drift_band(val)
@@ -1014,17 +1086,20 @@ def get_weekly_insight_history(
             else None
         )
         data_points.append(
-            {
-                "label": f"{ws.month}/{ws.day}",
-                "value": val,
-                "band": band,
-                "z2_pace_min_per_mi": float(pace) if pace is not None else None,
-                "z2_pace_band": r.z2_pace_band,
-                "easy_avg_hr": float(eh) if eh is not None else None,
-                "easy_avg_hr_band": getattr(r, "easy_avg_hr_band", None),
-                "efficiency": eff_float,
-                "efficiency_band": eff_band,
-            }
+            _attach_easy_pace_goal_gyor_band(
+                {
+                    "label": f"{ws.month}/{ws.day}",
+                    "value": val,
+                    "band": band,
+                    "z2_pace_min_per_mi": float(pace) if pace is not None else None,
+                    "z2_pace_band": r.z2_pace_band,
+                    "easy_avg_hr": float(eh) if eh is not None else None,
+                    "easy_avg_hr_band": getattr(r, "easy_avg_hr_band", None),
+                    "efficiency": eff_float,
+                    "efficiency_band": eff_band,
+                },
+                reference=easy_gyor_ref,
+            )
         )
 
     if not any(p.get("value") is not None for p in data_points):
@@ -1049,19 +1124,7 @@ def get_weekly_insight_history(
             if raw_s is not None:
                 stab = float(raw_s)
         if stab is None:
-            threshold_points.append(
-                {
-                    "label": f"{ws.month}/{ws.day}",
-                    "value": None,
-                    "band": None,
-                    "z2_pace_min_per_mi": None,
-                    "z2_pace_band": None,
-                    "easy_avg_hr": None,
-                    "easy_avg_hr_band": None,
-                    "efficiency": None,
-                    "efficiency_band": None,
-                }
-            )
+            threshold_points.append(_empty_easy_history_point(f"{ws.month}/{ws.day}"))
             continue
         pace: Optional[float] = None
         raw_p = wk.get("threshold_pace_min_per_mi")
@@ -1074,17 +1137,20 @@ def get_weekly_insight_history(
             else None
         )
         threshold_points.append(
-            {
-                "label": f"{ws.month}/{ws.day}",
-                "value": stab,
-                "band": th_band,
-                "z2_pace_min_per_mi": pace,
-                "z2_pace_band": pace_band,
-                "easy_avg_hr": None,
-                "easy_avg_hr_band": None,
-                "efficiency": None,
-                "efficiency_band": None,
-            }
+            _attach_easy_pace_goal_gyor_band(
+                {
+                    "label": f"{ws.month}/{ws.day}",
+                    "value": stab,
+                    "band": th_band,
+                    "z2_pace_min_per_mi": pace,
+                    "z2_pace_band": pace_band,
+                    "easy_avg_hr": None,
+                    "easy_avg_hr_band": None,
+                    "efficiency": None,
+                    "efficiency_band": None,
+                },
+                reference=None,
+            )
         )
         prev_threshold_stability = stab
         if pace is not None:
@@ -1095,11 +1161,13 @@ def get_weekly_insight_history(
         "weekly_data": data_points,
         "zones": zones,
         "efficiency_zones": eff_zones,
+        "pace_zones": pace_zones,
         "systems": {
             TrainingSystem.EASY.value: {
                 "weekly_data": data_points,
                 "zones": zones,
                 "efficiency_zones": eff_zones,
+                "pace_zones": pace_zones,
             },
             TrainingSystem.THRESHOLD.value: {"weekly_data": threshold_points},
         },

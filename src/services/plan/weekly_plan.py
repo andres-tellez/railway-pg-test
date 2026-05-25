@@ -94,8 +94,8 @@ from uuid import UUID
 from sqlalchemy import desc, text
 from sqlalchemy.orm import Session
 
+from src.db.dao.plans_dao import get_active_or_most_recent_plan
 from src.db.models.activities import Activity
-from src.db.models.plans import Plan
 from src.db.models.plan_workouts import PlanWorkout
 from src.services.phase.phase_priority import compute_phase_kpi_priority_for_week
 from src.services.plan.planned_workout_weekly_wire import (
@@ -168,37 +168,10 @@ def _load_active_or_most_recent_plan(session: Session, user_id: UUID):
     """
     Return the plan metadata row we render against, or ``None``.
 
-    Prefers the active plan; falls back to the most-recently-created
-    plan so a user who completed a plan but has no new active plan
-    can still see their most recent training week. Mirrors the
-    behaviour of the HTTP route.
+    Delegates to :func:`src.db.dao.plans_dao.get_active_or_most_recent_plan`
+    so plan selection logic stays single-source across routes/services.
     """
-    plan_row = (
-        session.query(
-            Plan.id,
-            Plan.plan_name,
-            Plan.race_date,
-            Plan.race_distance,
-            Plan.training_days,
-        )
-        .filter(Plan.user_id == user_id, Plan.is_active.is_(True))
-        .order_by(Plan.created_at.desc())
-        .first()
-    )
-    if plan_row is not None:
-        return plan_row
-    return (
-        session.query(
-            Plan.id,
-            Plan.plan_name,
-            Plan.race_date,
-            Plan.race_distance,
-            Plan.training_days,
-        )
-        .filter(Plan.user_id == user_id)
-        .order_by(Plan.created_at.desc())
-        .first()
-    )
+    return get_active_or_most_recent_plan(session, str(user_id))
 
 
 def _load_matched_activities_by_pw_id(
