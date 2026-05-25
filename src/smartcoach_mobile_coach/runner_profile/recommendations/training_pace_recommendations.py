@@ -10,6 +10,9 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.easy import
 from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
     TrainingPaceRecommendations,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
+    build_easy_pace_progress_reference,
+)
 
 
 def build_training_pace_recommendations(
@@ -34,9 +37,13 @@ def build_training_pace_recommendations(
     ):
         return None
 
+    pace_progress = (
+        build_easy_pace_progress_reference(goal_easy) if goal_easy is not None else None
+    )
     easy_gyor = build_easy_gyor_reference(
         hr_target_z2=profile.hr_z2 if profile.calibrated else None,
         goal_aligned_easy_pace=goal_easy,
+        pace_progress=pace_progress,
     )
 
     return TrainingPaceRecommendations(
@@ -53,6 +60,7 @@ def build_training_pace_recommendations(
         goal_aligned_marathon_pace=(
             goal_aligned.marathon if goal_aligned is not None else None
         ),
+        pace_progress=pace_progress,
         easy_gyor=easy_gyor,
         phase_source=phase_source,
         phase_week_start=phase_week_start,
