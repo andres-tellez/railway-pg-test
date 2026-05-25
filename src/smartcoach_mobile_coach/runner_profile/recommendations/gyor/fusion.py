@@ -47,7 +47,8 @@ def fuse_gyor_hr_priority(
     if band_hr is None and band_pace is None:
         return None
     if band_hr is None:
-        assert band_pace is not None
+        if band_pace is None:
+            return None
         return _cap_band(band_pace, pol.max_band_without_hr)  # type: ignore[arg-type]
 
     if band_hr in ("orange", "red"):

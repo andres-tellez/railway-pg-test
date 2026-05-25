@@ -1065,8 +1065,19 @@ def get_weekly_insight_history(
     for r in rows:
         by_week_start[r.week_start] = r
 
-    easy_gyor_ref = _resolve_easy_gyor_reference(session, user_id)
-    pace_zones = _easy_pace_zones_chart_payload(easy_gyor_ref)
+    # GYOR references call runner profile + plan + phase resolution; a regression
+    # there must not take down the whole history payload (mobile Easy charts).
+    easy_gyor_ref: EasyGyorReference | None
+    try:
+        easy_gyor_ref = _resolve_easy_gyor_reference(session, user_id)
+        pace_zones = _easy_pace_zones_chart_payload(easy_gyor_ref)
+    except Exception:
+        logger.exception(
+            "Failed to resolve easy GYOR for weekly insight history (user_id=%s)",
+            user_id,
+        )
+        easy_gyor_ref = None
+        pace_zones = []
 
     data_points: List[Dict[str, Any]] = []
     for ws, _we in week_windows:
@@ -1113,48 +1124,61 @@ def get_weekly_insight_history(
     eff_zones = aerobic_efficiency_band_zones_chart()
 
     # THRESHOLD: same calendar week_windows as EASY — one point per week, gaps as nulls.
-    prev_threshold_stability: Optional[float] = None
-    prev_threshold_pace: Optional[float] = None
     threshold_points: List[Dict[str, Any]] = []
-    for ws, we in week_windows:
-        wk = _fetch_week_kpis(session, user_id, ws, we, athlete_id)
-        stab: Optional[float] = None
-        if int(wk.get("threshold_run_count") or 0) > 0:
-            raw_s = wk.get("effort_stability_min_per_mi")
-            if raw_s is not None:
-                stab = float(raw_s)
-        if stab is None:
-            threshold_points.append(_empty_easy_history_point(f"{ws.month}/{ws.day}"))
-            continue
-        pace: Optional[float] = None
-        raw_p = wk.get("threshold_pace_min_per_mi")
-        if raw_p is not None:
-            pace = float(raw_p)
-        th_band = _trend_band(stab, prev_threshold_stability, lower_is_better=True)
-        pace_band = (
-            _trend_band(pace, prev_threshold_pace, lower_is_better=True)
-            if pace is not None
-            else None
-        )
-        threshold_points.append(
-            _attach_easy_pace_goal_gyor_band(
-                {
-                    "label": f"{ws.month}/{ws.day}",
-                    "value": stab,
-                    "band": th_band,
-                    "z2_pace_min_per_mi": pace,
-                    "z2_pace_band": pace_band,
-                    "easy_avg_hr": None,
-                    "easy_avg_hr_band": None,
-                    "efficiency": None,
-                    "efficiency_band": None,
-                },
-                reference=None,
+    try:
+        prev_threshold_stability: Optional[float] = None
+        prev_threshold_pace: Optional[float] = None
+        for ws, we in week_windows:
+            wk = _fetch_week_kpis(session, user_id, ws, we, athlete_id)
+            stab: Optional[float] = None
+            if int(wk.get("threshold_run_count") or 0) > 0:
+                raw_s = wk.get("effort_stability_min_per_mi")
+                if raw_s is not None:
+                    stab = float(raw_s)
+            if stab is None:
+                threshold_points.append(
+                    _empty_easy_history_point(f"{ws.month}/{ws.day}")
+                )
+                continue
+            pace: Optional[float] = None
+            raw_p = wk.get("threshold_pace_min_per_mi")
+            if raw_p is not None:
+                pace = float(raw_p)
+            th_band = _trend_band(stab, prev_threshold_stability, lower_is_better=True)
+            pace_band = (
+                _trend_band(pace, prev_threshold_pace, lower_is_better=True)
+                if pace is not None
+                else None
             )
+            threshold_points.append(
+                _attach_easy_pace_goal_gyor_band(
+                    {
+                        "label": f"{ws.month}/{ws.day}",
+                        "value": stab,
+                        "band": th_band,
+                        "z2_pace_min_per_mi": pace,
+                        "z2_pace_band": pace_band,
+                        "easy_avg_hr": None,
+                        "easy_avg_hr_band": None,
+                        "efficiency": None,
+                        "efficiency_band": None,
+                    },
+                    reference=None,
+                )
+            )
+            prev_threshold_stability = stab
+            if pace is not None:
+                prev_threshold_pace = pace
+    except Exception:
+        logger.exception(
+            "Failed to build threshold weekly history (user_id=%s); "
+            "returning empty threshold series",
+            user_id,
         )
-        prev_threshold_stability = stab
-        if pace is not None:
-            prev_threshold_pace = pace
+        threshold_points = [
+            _empty_easy_history_point(f"{ws.month}/{ws.day}")
+            for ws, _we in week_windows
+        ]
 
     return {
         "has_history": True,
