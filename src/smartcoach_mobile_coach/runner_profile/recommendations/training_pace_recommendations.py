@@ -37,7 +37,6 @@ def build_training_pace_recommendations(
     easy_gyor = build_easy_gyor_reference(
         hr_target_z2=profile.hr_z2 if profile.calibrated else None,
         goal_aligned_easy_pace=goal_easy,
-        target_time=target_time,
     )
 
     return TrainingPaceRecommendations(

@@ -12,12 +12,12 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.goal_aligned_pac
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.easy import (
     build_easy_gyor_reference,
-    build_easy_pace_progress_zones_chart,
     classify_easy_gyor,
-    classify_easy_pace_progress,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
-    compute_pace_progress_target_easy_pace,
+    build_easy_pace_progress_zones_chart,
+    classify_easy_pace_progress,
+    pace_progress_target_from_goal_easy,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.fusion import (
     fuse_gyor_hr_priority,
@@ -39,14 +39,13 @@ def _reference():
     return build_easy_gyor_reference(
         hr_target_z2=HrZoneBand(120, 145),
         goal_aligned_easy_pace=bands.easy,
-        target_time="3:40:00",
     )
 
 
 def _pace_progress_target():
-    target = compute_pace_progress_target_easy_pace("3:40:00")
-    assert target is not None
-    return target
+    bands = compute_goal_aligned_pace_bands("3:40:00")
+    assert bands is not None
+    return pace_progress_target_from_goal_easy(bands.easy)
 
 
 def test_fast_pace_stays_green_when_hr_is_easy():
