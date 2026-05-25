@@ -32,13 +32,10 @@ from sqlalchemy.orm import Session
 
 from src.db.dao.plans_dao import get_active_or_most_recent_plan
 from src.smartcoach_mobile_coach.runner_profile.models import PaceZoneBand
-from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models import (
-    GyorBandChartZone,
-)
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
-    build_easy_pace_progress_zones_chart,
+    PaceProgressChartZone,
     classify_easy_pace_progress,
-    pace_progress_target_from_goal_easy,
+    pace_progress_zones_chart_api_payload,
 )
 from src.smartcoach_mobile_coach.runner_profile.service import (
     get_runner_profile,
@@ -87,10 +84,10 @@ def _empty_easy_history_point(label: str) -> Dict[str, Any]:
 
 
 def _pace_zones_chart_payload(
-    zones_chart: tuple[GyorBandChartZone, ...],
+    zones_chart: tuple[PaceProgressChartZone, ...],
 ) -> List[Dict[str, Any]]:
     zones: List[Dict[str, Any]] = []
-    for zone in zones_chart:
+    for zone in pace_progress_zones_chart_api_payload(zones_chart):
         lo = _coerce_finite_float(zone.get("min"))
         hi = _coerce_finite_float(zone.get("max"))
         if lo is None or hi is None:
@@ -113,30 +110,11 @@ def _resolve_easy_pace_progress(
         plan=plan_row,
         profile=profile,
     )
-    if recs is None or recs.goal_aligned_easy_pace is None:
+    if recs is None or recs.pace_progress is None:
         return None, []
 
-    target_easy = pace_progress_target_from_goal_easy(recs.goal_aligned_easy_pace)
-    if recs.easy_gyor is not None and recs.easy_gyor.pace_zones_chart:
-        pace_zones = _pace_zones_chart_payload(recs.easy_gyor.pace_zones_chart)
-    else:
-        pace_zones = _easy_pace_progress_zones_payload(target_easy)
-    return target_easy, pace_zones
-
-
-def _easy_pace_progress_zones_payload(
-    target_easy_pace: Optional[PaceZoneBand],
-) -> List[Dict[str, Any]]:
-    if target_easy_pace is None:
-        return []
-    zones: List[Dict[str, Any]] = []
-    for zone in build_easy_pace_progress_zones_chart(target_easy_pace):
-        lo = _coerce_finite_float(zone.get("min"))
-        hi = _coerce_finite_float(zone.get("max"))
-        if lo is None or hi is None:
-            continue
-        zones.append({"color": str(zone["color"]), "min": lo, "max": hi})
-    return zones
+    pp = recs.pace_progress
+    return pp.target_easy_pace, _pace_zones_chart_payload(pp.pace_zones_chart)
 
 
 def _attach_easy_pace_progress_band(

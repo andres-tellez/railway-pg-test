@@ -20,9 +20,9 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.pace_positi
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
     DEFAULT_PACE_PROGRESS_EASY_CONFIG,
+    EasyPaceProgressReference,
     PaceProgressEasyConfig,
-    build_easy_pace_progress_zones_chart,
-    pace_progress_target_from_goal_easy,
+    build_easy_pace_progress_reference,
 )
 
 
@@ -30,6 +30,7 @@ def build_easy_gyor_reference(
     *,
     hr_target_z2: HrZoneBand | None,
     goal_aligned_easy_pace: PaceZoneBand | None,
+    pace_progress: EasyPaceProgressReference | None = None,
     config: EasyGyorConfig | None = None,
     pace_progress_config: PaceProgressEasyConfig | None = None,
 ) -> EasyGyorReference | None:
@@ -38,14 +39,15 @@ def build_easy_gyor_reference(
         return None
     cfg = config or DEFAULT_EASY_GYOR_CONFIG
     pp_cfg = pace_progress_config or DEFAULT_PACE_PROGRESS_EASY_CONFIG
-    target_easy = pace_progress_target_from_goal_easy(goal_aligned_easy_pace)
-    pace_zones = build_easy_pace_progress_zones_chart(target_easy, config=pp_cfg)
+    pp = pace_progress or build_easy_pace_progress_reference(
+        goal_aligned_easy_pace, config=pp_cfg
+    )
     return EasyGyorReference(
         policy=cfg.fusion.name,
         hr_target_z2=hr_target_z2,
         goal_aligned_easy_pace=goal_aligned_easy_pace,
-        pace_progress_target_easy_pace=target_easy,
-        pace_zones_chart=pace_zones,
+        pace_progress_target_easy_pace=pp.target_easy_pace,
+        pace_zones_chart=pp.pace_zones_chart,
     )
 
 
