@@ -14,15 +14,18 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
 class GoalAlignedPaceConfig:
     """
     Offsets from marathon goal pace (sec/mi) to training pace bands.
+
+    Z3 (Tempo tab): controlled steady/moderate work — MP −15 to +10 sec/mi.
+    Z4 (Threshold tab): harder threshold work — MP −40 to −20 sec/mi.
     """
 
     marathon_distance_mi: float = 26.21876
     easy_min_offset: float = 55.0
     easy_max_offset: float = 85.0
-    z3_min_offset: float = -30.0
-    z3_max_offset: float = -20.0
-    z4_min_offset: float = -60.0
-    z4_max_offset: float = -45.0
+    z3_min_offset: float = -15.0
+    z3_max_offset: float = 10.0
+    z4_min_offset: float = -40.0
+    z4_max_offset: float = -20.0
 
 
 DEFAULT_GOAL_ALIGNED_PACE_CONFIG = GoalAlignedPaceConfig()

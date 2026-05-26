@@ -44,6 +44,28 @@ def test_goal_aligned_pace_bands_from_target_time():
     assert 588 <= bands.easy.high_sec <= 590
 
 
+def test_goal_aligned_z3_tempo_corridor_340_marathon():
+    """Z3 / Tempo: MP −15 to +10 sec/mi (~8:09–8:34 for a 3:40 marathon)."""
+    bands = compute_goal_aligned_pace_bands("3:40:00")
+    assert bands is not None
+    mp = bands.marathon_sec
+    assert bands.z3.low_sec == int(round(mp - 15.0))
+    assert bands.z3.high_sec == int(round(mp + 10.0))
+    assert 488 <= bands.z3.low_sec <= 490
+    assert 513 <= bands.z3.high_sec <= 515
+
+
+def test_goal_aligned_z4_threshold_corridor_340_marathon():
+    """Z4 / Threshold: MP −40 to −20 sec/mi (~7:44–8:04 for a 3:40 marathon)."""
+    bands = compute_goal_aligned_pace_bands("3:40:00")
+    assert bands is not None
+    mp = bands.marathon_sec
+    assert bands.z4.low_sec == int(round(mp - 40.0))
+    assert bands.z4.high_sec == int(round(mp - 20.0))
+    assert 463 <= bands.z4.low_sec <= 465
+    assert 483 <= bands.z4.high_sec <= 485
+
+
 def test_easy_gyor_includes_hr_reference_when_calibrated():
     recs = build_training_pace_recommendations(
         profile=_sample_profile(),
