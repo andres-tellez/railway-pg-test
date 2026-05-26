@@ -6,7 +6,6 @@ Product naming: Z2=Easy, Z3=Tempo, Z4=Threshold. Do not use ``threshold_*`` for 
 
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -14,12 +13,13 @@ from typing import Any
 TEMPO_RUN_MIN_SPLITS_WITH_HR = 3
 TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH = 0.5
 
-# Deprecated aliases — remove after migration completes.
+# Deprecated aliases for external callers — remove when unused.
 THRESHOLD_MIN_SPLITS_WITH_HR = TEMPO_RUN_MIN_SPLITS_WITH_HR
 THRESHOLD_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH = (
     TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH
 )
 
+# Pre-Phase-3 stored snapshots used this key for Tempo/Z3 (read fallback only).
 TEMPO_LEGACY_SYSTEM_KEY = "threshold"
 
 
@@ -113,35 +113,14 @@ def read_trend_band(bands: dict[str, Any], spec: InsightsSystemSpec) -> Any:
     return None
 
 
-def emit_legacy_tempo_system_aliases(
-    systems: dict[str, Any],
-) -> dict[str, Any]:
-    """Dual-emit Tempo under legacy ``threshold`` system key (API migration only)."""
-    out = dict(systems)
-    tempo_key = InsightsSystem.TEMPO.value
-    legacy = TEMPO_LEGACY_SYSTEM_KEY
-    if tempo_key in out and legacy not in out:
-        out[legacy] = copy.deepcopy(out[tempo_key])
-    return out
-
-
 _TEMPO_HISTORY_LEGACY_FIELDS: tuple[tuple[str, str], ...] = (
     ("tempo_pace_min_per_mi", "threshold_pace_min_per_mi"),
     ("tempo_pace_progress_band", "threshold_pace_progress_band"),
 )
 
 
-def emit_legacy_tempo_history_field_aliases(point: dict[str, Any]) -> dict[str, Any]:
-    """Derive deprecated ``threshold_*`` history fields from canonical ``tempo_*``."""
-    out = dict(point)
-    for canonical, legacy in _TEMPO_HISTORY_LEGACY_FIELDS:
-        if canonical in out and legacy not in out:
-            out[legacy] = out[canonical]
-    return out
-
-
 def normalize_tempo_history_point(point: dict[str, Any]) -> dict[str, Any]:
-    """Ensure canonical ``tempo_*`` fields when reading legacy payloads."""
+    """Ensure canonical ``tempo_*`` fields when reading legacy cached payloads."""
     out = dict(point)
     for canonical, legacy in _TEMPO_HISTORY_LEGACY_FIELDS:
         if legacy in out and canonical not in out:

@@ -183,9 +183,8 @@ def test_weekly_history_tempo_pace_zones_match_tempo_pace_progress(
     assert th_points[0]["tempo_pace_min_per_mi"] == 7.25
     assert th_points[0]["tempo_pace_progress_band"] is not None
     assert "z2_pace_band" not in th_points[0]
-
-    legacy = out["systems"][TEMPO_LEGACY_SYSTEM_KEY]
-    assert legacy == tempo
+    assert TEMPO_LEGACY_SYSTEM_KEY not in out["systems"]
+    assert "threshold_pace_min_per_mi" not in th_points[0]
 
 
 @patch(
@@ -231,5 +230,5 @@ def test_tempo_history_emits_pace_without_effort_stability(
     assert len(th_points) == 1
     assert th_points[0]["tempo_pace_min_per_mi"] == 7.1
     assert th_points[0]["tempo_pace_progress_band"] is not None
-    assert th_points[0]["threshold_pace_min_per_mi"] == 7.1
-    assert th_points[0]["threshold_pace_progress_band"] is not None
+    assert "threshold_pace_min_per_mi" not in th_points[0]
+    assert "threshold_pace_progress_band" not in th_points[0]
