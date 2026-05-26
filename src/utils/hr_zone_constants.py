@@ -244,109 +244,71 @@ PREFERENCE_SCOPES = ["run_summary", "training_summary", "global"]
 # ---------------------------------------------------------------------------
 
 # HR Drift: absolute thresholds (well-established in coaching science).
-# Lower drift = more aerobic stability. These apply to ALL users.
+# Lower drift = more aerobic stability. Canonical logic lives in easy_kpi.hr_drift_easy.
+from src.smartcoach_mobile_coach.easy_kpi.hr_drift_easy import (
+    DEFAULT_HR_DRIFT_BAND_CONFIG,
+    build_easy_hr_drift_zones_chart,
+    classify_easy_hr_drift,
+    hr_drift_zones_chart_api_payload,
+)
+from src.smartcoach_mobile_coach.easy_kpi.efficiency_easy import (
+    DEFAULT_EFFICIENCY_BAND_CONFIG,
+    build_easy_efficiency_zones_chart,
+    classify_easy_efficiency,
+    efficiency_zones_chart_api_payload,
+)
+
 HR_DRIFT_BANDS = {
-    "green_max": 2.5,
-    "yellow_max": 5.0,
-    "orange_max": 7.5,
+    "green_max": DEFAULT_HR_DRIFT_BAND_CONFIG.green_max,
+    "yellow_max": DEFAULT_HR_DRIFT_BAND_CONFIG.yellow_max,
+    "orange_max": DEFAULT_HR_DRIFT_BAND_CONFIG.orange_max,
 }
 
 
 def hr_drift_band_from_pct(value: float | None) -> str | None:
     """
     Map per-run or weekly HR drift % to the same R/O/Y/G band as Insights.
-    Thresholds: HR_DRIFT_BANDS (green < 2.5%, yellow < 5%, orange < 7.5%, else red).
+    Delegates to ``easy_kpi.hr_drift_easy.classify_easy_hr_drift``.
     """
-    if value is None:
-        return None
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return None
-    if v < HR_DRIFT_BANDS["green_max"]:
-        return "green"
-    if v < HR_DRIFT_BANDS["yellow_max"]:
-        return "yellow"
-    if v < HR_DRIFT_BANDS["orange_max"]:
-        return "orange"
-    return "red"
+    return classify_easy_hr_drift(drift_pct=value)
 
 
 def hr_drift_band_zones_chart() -> list[dict[str, float | str]]:
     """
     HR drift % bands for Weekly Insights charts and coach tools.
-
-    Semantics match ``hr_drift_band_from_pct``: green if drift < green_max, yellow if
-    < yellow_max, orange if < orange_max, else red. The red band's ``max`` is only
-    an axis cap for charting; interpret red as drift >= orange_max.
+    Delegates to ``easy_kpi.hr_drift_easy``.
     """
-    g_max = HR_DRIFT_BANDS["green_max"]
-    y_max = HR_DRIFT_BANDS["yellow_max"]
-    o_max = HR_DRIFT_BANDS["orange_max"]
-    return [
-        {"color": "green", "min": 0.0, "max": g_max},
-        {"color": "yellow", "min": g_max, "max": y_max},
-        {"color": "orange", "min": y_max, "max": o_max},
-        {"color": "red", "min": o_max, "max": round(o_max + 2.5, 1)},
-    ]
+    return hr_drift_zones_chart_api_payload(build_easy_hr_drift_zones_chart())
 
 
 # Aerobic efficiency (weekly easy runs): global coaching bands on
 # speed_mph/avg_hr*100 (mi/hr per 100 bpm). Higher = better.
-# Same thresholds for all users (v1); personalized cutoffs may replace later.
-# Boundaries: red < orange_min, orange < yellow_min, yellow < green_min, green >= green_min.
+# Canonical logic lives in easy_kpi.efficiency_easy.
 AEROBIC_EFFICIENCY_BANDS = {
-    "orange_min": 3.9,
-    "yellow_min": 4.3,
-    "green_min": 4.7,
+    "orange_min": DEFAULT_EFFICIENCY_BAND_CONFIG.orange_min,
+    "yellow_min": DEFAULT_EFFICIENCY_BAND_CONFIG.yellow_min,
+    "green_min": DEFAULT_EFFICIENCY_BAND_CONFIG.green_min,
 }
 
 
 def aerobic_efficiency_band_from_value(value: float | None) -> str | None:
     """
     Map weekly aerobic efficiency scalar to R/O/Y/G (same semantics as Insights).
-
-    Green >= green_min, yellow >= yellow_min, orange >= orange_min, else red.
+    Delegates to ``easy_kpi.efficiency_easy.classify_easy_efficiency``.
     """
-    if value is None:
-        return None
-    try:
-        v = float(value)
-    except (TypeError, ValueError):
-        return None
-    g = AEROBIC_EFFICIENCY_BANDS["green_min"]
-    y = AEROBIC_EFFICIENCY_BANDS["yellow_min"]
-    o = AEROBIC_EFFICIENCY_BANDS["orange_min"]
-    if v >= g:
-        return "green"
-    if v >= y:
-        return "yellow"
-    if v >= o:
-        return "orange"
-    return "red"
+    return classify_easy_efficiency(efficiency=value)
 
 
 def aerobic_efficiency_band_zones_chart() -> list[dict[str, float | str]]:
     """
     Y-axis bands for weekly aerobic efficiency charts and coach tools.
-
-    Semantics match ``aerobic_efficiency_band_from_value``. The green band's
-    ``max`` is only a chart axis cap; values above it are still green.
+    Delegates to ``easy_kpi.efficiency_easy``.
     """
-    o_lo = AEROBIC_EFFICIENCY_BANDS["orange_min"]
-    y_lo = AEROBIC_EFFICIENCY_BANDS["yellow_min"]
-    g_lo = AEROBIC_EFFICIENCY_BANDS["green_min"]
-    g_cap = round(g_lo + 0.8, 1)
-    return [
-        {"color": "red", "min": 0.0, "max": o_lo},
-        {"color": "orange", "min": o_lo, "max": y_lo},
-        {"color": "yellow", "min": y_lo, "max": g_lo},
-        {"color": "green", "min": g_lo, "max": g_cap},
-    ]
+    return efficiency_zones_chart_api_payload(build_easy_efficiency_zones_chart())
 
 
 # Z2 pace uses trend-based bands because absolute pace is user-specific.
-# Efficiency uses global absolute bands (see AEROBIC_EFFICIENCY_BANDS above).
+# Efficiency / HR drift use easy_kpi global bands (see imports above).
 # The delta (%) vs the prior-week value determines the Z2 band.
 # "worse_pct" thresholds represent how much WORSE the current
 # value is compared to the prior week (positive = decline).

@@ -162,6 +162,16 @@ def test_weekly_history_hr_zones_match_hr_progress(
     assert out["has_history"] is True
     assert out["hr_zones"] == expected_zones
     assert out["systems"]["easy"]["hr_zones"] == expected_zones
+    assert out["hr_drift_target_display"] == "under 2.5% ideal, under 5% acceptable"
+    assert out["efficiency_goal_display"] == "higher is better at the same effort"
+    assert (
+        out["systems"]["easy"]["hr_drift_target_display"]
+        == out["hr_drift_target_display"]
+    )
+    assert (
+        out["systems"]["easy"]["efficiency_goal_display"]
+        == out["efficiency_goal_display"]
+    )
 
     easy_points = out["weekly_data"]
     assert len(easy_points) == 1
