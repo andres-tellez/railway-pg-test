@@ -29,7 +29,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from src.db.dao.plans_dao import get_active_or_most_recent_plan
-from src.smartcoach_mobile_coach.runner_profile.models import HrZoneBand, PaceZoneBand
+from src.smartcoach_mobile_coach.runner_profile.models import (
+    HrZoneBand,
+    PaceZoneBand,
+    RunnerZoneProfileData,
+)
 from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_easy import (
     HrProgressChartZone,
     classify_easy_hr_progress,
@@ -473,6 +477,8 @@ SELECT
     s.average_heartrate,
     s.conv_avg_speed,
     s.conv_distance,
+    s.distance,
+    s.moving_time,
     z.z2_high,
     z.z3_low,
     z.z3_high,
@@ -633,6 +639,65 @@ def last_completed_week_bounds(today: Optional[date] = None) -> Tuple[date, date
     return week_start, week_end
 
 
+def _tempo_hr_zone_bounds_from_runner_profile(
+    profile: RunnerZoneProfileData,
+) -> TempoHrZoneBounds:
+    """Runner profile is HR zone authority for tempo split qualification."""
+    return TempoHrZoneBounds(
+        z2_high=float(profile.hr_z2.high) if profile.hr_z2 is not None else None,
+        z3_low=float(profile.hr_z3.low) if profile.hr_z3 is not None else None,
+        z3_high=float(profile.hr_z3.high) if profile.hr_z3 is not None else None,
+        z4_low=float(profile.hr_z4.low) if profile.hr_z4 is not None else None,
+    )
+
+
+def _tempo_split_distance_mi(row: Any) -> float | None:
+    dist = _coerce_finite_float(getattr(row, "conv_distance", None))
+    if dist is not None and dist > 0:
+        return dist
+    raw_m = getattr(row, "distance", None)
+    if raw_m is not None:
+        try:
+            dist = float(raw_m) / 1609.344
+            if dist > 0:
+                return dist
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
+def _tempo_split_pace_min_per_mi(
+    row: Any, *, distance_mi: float | None
+) -> float | None:
+    pace = _coerce_finite_float(getattr(row, "conv_avg_speed", None))
+    if pace is not None and pace > 0:
+        return pace
+    if distance_mi is not None and distance_mi > 0:
+        moving_time = getattr(row, "moving_time", None)
+        if moving_time is not None:
+            try:
+                minutes = float(moving_time) / 60.0
+                if minutes > 0:
+                    return round(minutes / distance_mi, 4)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def _tempo_split_row_from_db(row: Any) -> TempoSplitRow | None:
+    split_idx = getattr(row, "split", None)
+    if split_idx is None:
+        return None
+    distance_mi = _tempo_split_distance_mi(row)
+    pace_min_per_mi = _tempo_split_pace_min_per_mi(row, distance_mi=distance_mi)
+    return TempoSplitRow(
+        split_index=int(split_idx),
+        avg_hr=_coerce_finite_float(getattr(row, "average_heartrate", None)),
+        pace_min_per_mi=pace_min_per_mi,
+        distance_mi=distance_mi,
+    )
+
+
 def _compute_week_tempo_segment_pace(
     session: Session,
     user_id: str,
@@ -663,6 +728,9 @@ def _compute_week_tempo_segment_pace(
             tempo_segment_confidence=None,
         )
 
+    profile = get_runner_profile(session, user_id)
+    hr_zones = _tempo_hr_zone_bounds_from_runner_profile(profile)
+
     by_activity: Dict[int, Dict[str, Any]] = {}
     for row in rows:
         aid = int(row.activity_id)
@@ -670,26 +738,13 @@ def _compute_week_tempo_segment_pace(
             aid,
             {
                 "activity_avg_pace": row.activity_avg_pace,
-                "zones": TempoHrZoneBounds(
-                    z2_high=_coerce_finite_float(row.z2_high),
-                    z3_low=_coerce_finite_float(row.z3_low),
-                    z3_high=_coerce_finite_float(row.z3_high),
-                    z4_low=_coerce_finite_float(row.z4_low),
-                ),
+                "zones": hr_zones,
                 "splits": [],
             },
         )
-        split_idx = row.split
-        if split_idx is None:
-            continue
-        bucket["splits"].append(
-            TempoSplitRow(
-                split_index=int(split_idx),
-                avg_hr=_coerce_finite_float(row.average_heartrate),
-                pace_min_per_mi=_coerce_finite_float(row.conv_avg_speed),
-                distance_mi=_coerce_finite_float(row.conv_distance),
-            )
-        )
+        split_row = _tempo_split_row_from_db(row)
+        if split_row is not None:
+            bucket["splits"].append(split_row)
 
     per_run_qualifying = []
     activity_avgs: list[float | None] = []
