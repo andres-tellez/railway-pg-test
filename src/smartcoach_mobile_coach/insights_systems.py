@@ -65,14 +65,14 @@ INSIGHTS_SYSTEM_SPECS: dict[InsightsSystem, InsightsSystemSpec] = {
         zone="z3",
         goal_pace_attr="goal_aligned_z3_pace",
         pace_progress_attr="tempo_pace_progress",
-        history_pace_field="tempo_pace_min_per_mi",
+        history_pace_field="tempo_segment_pace_min_per_mi",
         history_band_field="tempo_pace_progress_band",
         run_count_field="tempo_run_count",
-        kpi_pace_field="tempo_pace_min_per_mi",
+        kpi_pace_field="tempo_segment_pace_min_per_mi",
         trend_band_field="tempo_pace",
         trend_pace_delta_field="tempo_pace_delta",
         legacy_system_key=TEMPO_LEGACY_SYSTEM_KEY,
-        legacy_kpi_pace_field="threshold_pace_min_per_mi",
+        legacy_kpi_pace_field="tempo_pace_min_per_mi",
         legacy_trend_band_field="threshold_pace",
     ),
 }
@@ -100,8 +100,13 @@ def read_kpi_field(kpis: dict[str, Any], spec: InsightsSystemSpec, field: str) -
     """Read a KPI field with legacy name fallback (tempo migration)."""
     if field in kpis:
         return kpis[field]
-    if field == spec.kpi_pace_field and spec.legacy_kpi_pace_field:
-        return kpis.get(spec.legacy_kpi_pace_field)
+    if field == spec.kpi_pace_field:
+        if spec.legacy_kpi_pace_field:
+            legacy = kpis.get(spec.legacy_kpi_pace_field)
+            if legacy is not None:
+                return legacy
+        if field == "tempo_segment_pace_min_per_mi":
+            return kpis.get("threshold_pace_min_per_mi")
     return None
 
 
