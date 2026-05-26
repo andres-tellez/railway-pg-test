@@ -1,4 +1,4 @@
-"""Integration: weekly history tempo pace zones share the threshold_pace_progress pipeline."""
+"""Integration: weekly history tempo pace zones share the tempo_pace_progress pipeline."""
 
 from __future__ import annotations
 
@@ -6,9 +6,10 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from src.smartcoach_mobile_coach.insights_systems import TEMPO_LEGACY_SYSTEM_KEY
 from src.smartcoach_mobile_coach.runner_profile.models import RunnerZoneProfileData
-from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_threshold import (
-    threshold_pace_progress_zones_chart_api_payload,
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_tempo import (
+    tempo_pace_progress_zones_chart_api_payload,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.training_pace_recommendations import (
     TrainingPaceRecommendations,
@@ -18,7 +19,7 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.training_phase_r
     TrainingPhaseResolution,
 )
 from src.smartcoach_mobile_coach.weekly_insights_service import (
-    _resolve_threshold_pace_progress,
+    _resolve_tempo_pace_progress,
     calendar_week_containing,
     get_weekly_insight_history,
 )
@@ -48,13 +49,13 @@ def _uncalibrated_profile() -> RunnerZoneProfileData:
     )
 
 
-def _expected_threshold_pace_zones_from_recs(
+def _expected_tempo_pace_zones_from_recs(
     recs: TrainingPaceRecommendations | None,
 ) -> list[dict[str, object]]:
-    assert recs is not None and recs.threshold_pace_progress is not None
+    assert recs is not None and recs.tempo_pace_progress is not None
     zones: list[dict[str, object]] = []
-    for zone in threshold_pace_progress_zones_chart_api_payload(
-        recs.threshold_pace_progress.pace_zones_chart
+    for zone in tempo_pace_progress_zones_chart_api_payload(
+        recs.tempo_pace_progress.pace_zones_chart
     ):
         lo = float(zone["min"])
         hi = float(zone["max"])
@@ -93,14 +94,14 @@ def _phase_resolution() -> TrainingPhaseResolution:
     return_value=_phase_resolution(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service.get_runner_profile",
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_runner_profile",
     return_value=_uncalibrated_profile(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service.get_active_or_most_recent_plan",
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_active_or_most_recent_plan",
     return_value=_plan_with_target(),
 )
-def test_resolve_threshold_pace_progress_matches_training_pace_recommendations(
+def test_resolve_tempo_pace_progress_matches_training_pace_recommendations(
     _mock_plan,
     _mock_profile,
     _mock_phase,
@@ -110,28 +111,27 @@ def test_resolve_threshold_pace_progress_matches_training_pace_recommendations(
         target_time=TARGET_TIME,
         phase="Base",
     )
-    expected_zones = _expected_threshold_pace_zones_from_recs(recs)
+    expected_zones = _expected_tempo_pace_zones_from_recs(recs)
 
     session = MagicMock()
-    target_tempo_pace, pace_zones, target_display = _resolve_threshold_pace_progress(
+    target_tempo_pace, pace_zones, target_display = _resolve_tempo_pace_progress(
         session, USER_ID
     )
 
-    assert recs is not None and recs.threshold_pace_progress is not None
+    assert recs is not None and recs.tempo_pace_progress is not None
     assert target_tempo_pace is not None
     assert (
-        target_tempo_pace.low_sec
-        == recs.threshold_pace_progress.target_tempo_pace.low_sec
+        target_tempo_pace.low_sec == recs.tempo_pace_progress.target_tempo_pace.low_sec
     )
     assert pace_zones == expected_zones
-    assert target_display == recs.threshold_pace_progress.target_display
+    assert target_display == recs.tempo_pace_progress.target_display
 
 
 @patch(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
     return_value={
-        "threshold_run_count": 2,
-        "threshold_pace_min_per_mi": 7.25,
+        "tempo_run_count": 2,
+        "tempo_pace_min_per_mi": 7.25,
         "effort_stability_min_per_mi": 0.15,
     },
 )
@@ -140,18 +140,18 @@ def test_resolve_threshold_pace_progress_matches_training_pace_recommendations(
     return_value=_phase_resolution(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service.get_runner_profile",
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_runner_profile",
     return_value=_uncalibrated_profile(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service.get_active_or_most_recent_plan",
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_active_or_most_recent_plan",
     return_value=_plan_with_target(),
 )
 @patch(
     "src.smartcoach_mobile_coach.weekly_insights_service.get_primary_athlete_id",
     return_value=12345,
 )
-def test_weekly_history_threshold_pace_zones_match_threshold_pace_progress(
+def test_weekly_history_tempo_pace_zones_match_tempo_pace_progress(
     _mock_athlete,
     _mock_plan,
     _mock_profile,
@@ -169,27 +169,30 @@ def test_weekly_history_threshold_pace_zones_match_threshold_pace_progress(
         target_time=TARGET_TIME,
         phase="Base",
     )
-    expected_zones = _expected_threshold_pace_zones_from_recs(recs)
+    expected_zones = _expected_tempo_pace_zones_from_recs(recs)
 
     out = get_weekly_insight_history(session, USER_ID, weeks=1)
 
     assert out["has_history"] is True
-    th = out["systems"]["threshold"]
-    assert th["pace_zones"] == expected_zones
-    assert th["pace_target_display"] == recs.threshold_pace_progress.target_display
+    tempo = out["systems"]["tempo"]
+    assert tempo["pace_zones"] == expected_zones
+    assert tempo["pace_target_display"] == recs.tempo_pace_progress.target_display
 
-    th_points = th["weekly_data"]
+    th_points = tempo["weekly_data"]
     assert len(th_points) == 1
-    assert th_points[0]["threshold_pace_min_per_mi"] == 7.25
-    assert th_points[0]["threshold_pace_progress_band"] is not None
+    assert th_points[0]["tempo_pace_min_per_mi"] == 7.25
+    assert th_points[0]["tempo_pace_progress_band"] is not None
     assert "z2_pace_band" not in th_points[0]
+
+    legacy = out["systems"][TEMPO_LEGACY_SYSTEM_KEY]
+    assert legacy == tempo
 
 
 @patch(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
     return_value={
-        "threshold_run_count": 1,
-        "threshold_pace_min_per_mi": 7.1,
+        "tempo_run_count": 1,
+        "tempo_pace_min_per_mi": 7.1,
         "effort_stability_min_per_mi": None,
     },
 )
@@ -198,18 +201,18 @@ def test_weekly_history_threshold_pace_zones_match_threshold_pace_progress(
     return_value=_phase_resolution(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service.get_runner_profile",
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_runner_profile",
     return_value=_uncalibrated_profile(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service.get_active_or_most_recent_plan",
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_active_or_most_recent_plan",
     return_value=_plan_with_target(),
 )
 @patch(
     "src.smartcoach_mobile_coach.weekly_insights_service.get_primary_athlete_id",
     return_value=12345,
 )
-def test_threshold_history_emits_pace_without_effort_stability(
+def test_tempo_history_emits_pace_without_effort_stability(
     _mock_athlete,
     _mock_plan,
     _mock_profile,
@@ -224,7 +227,9 @@ def test_threshold_history_emits_pace_without_effort_stability(
     ]
 
     out = get_weekly_insight_history(session, USER_ID, weeks=1)
-    th_points = out["systems"]["threshold"]["weekly_data"]
+    th_points = out["systems"]["tempo"]["weekly_data"]
     assert len(th_points) == 1
+    assert th_points[0]["tempo_pace_min_per_mi"] == 7.1
+    assert th_points[0]["tempo_pace_progress_band"] is not None
     assert th_points[0]["threshold_pace_min_per_mi"] == 7.1
     assert th_points[0]["threshold_pace_progress_band"] is not None

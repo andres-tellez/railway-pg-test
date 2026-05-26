@@ -1,12 +1,31 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Optional
+from typing import Any
 
 from src.smartcoach_mobile_coach.runner_profile.models import PaceZoneBand
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_core import (
+    PaceProgressBand,
+    PaceProgressChartZone,
+    SingleCapAxisConfig,
+    build_single_cap_zones_chart,
+    classify_single_cap_pace_progress,
+    pace_progress_zones_chart_api_payload,
+)
 
-PaceProgressBand = Literal["green", "yellow", "orange", "red"]
-PaceProgressChartZone = dict[str, float | str]
+__all__ = [
+    "PaceProgressBand",
+    "PaceProgressChartZone",
+    "EasyPaceProgressReference",
+    "PaceProgressEasyConfig",
+    "DEFAULT_PACE_PROGRESS_EASY_CONFIG",
+    "target_easy_pace_sec",
+    "pace_progress_target_from_goal_easy",
+    "build_easy_pace_progress_reference",
+    "pace_progress_zones_chart_api_payload",
+    "build_easy_pace_progress_zones_chart",
+    "classify_easy_pace_progress",
+]
 
 
 @dataclass(frozen=True)
@@ -78,20 +97,6 @@ def build_easy_pace_progress_reference(
     )
 
 
-def pace_progress_zones_chart_api_payload(
-    zones_chart: tuple[PaceProgressChartZone, ...],
-) -> list[dict[str, Any]]:
-    """Serialize pace-progress chart zones for REST payloads."""
-    return [
-        {
-            "color": str(zone["color"]),
-            "min": float(zone["min"]),
-            "max": float(zone["max"]),
-        }
-        for zone in zones_chart
-    ]
-
-
 def build_easy_pace_progress_zones_chart(
     target_easy_pace: PaceZoneBand,
     *,
@@ -106,29 +111,14 @@ def build_easy_pace_progress_zones_chart(
     - **yellow / orange / red**: progressively slower past target easy pace
     """
     cfg = config or DEFAULT_PACE_PROGRESS_EASY_CONFIG
-    target = target_easy_pace_sec(target_easy_pace) / 60.0
-
-    y_m = cfg.yellow_gap_sec / 60.0
-    o_m = cfg.orange_gap_sec / 60.0
-
-    cap_fast = max(0.0, target - cfg.chart_fast_axis_cap_min_per_mi)
-    cap_slow = target + o_m + cfg.chart_slow_axis_cap_min_per_mi
-
-    zones: list[PaceProgressChartZone] = []
-    zones.append({"color": "green", "min": cap_fast, "max": target})
-
-    tier_edges = [
-        ("yellow", target, target + y_m),
-        ("orange", target + y_m, target + o_m),
-        ("red", target + o_m, cap_slow),
-    ]
-    for color, lo, hi in tier_edges:
-        lo_c = max(lo, target)
-        hi_c = min(hi, cap_slow)
-        if hi_c > lo_c:
-            zones.append({"color": color, "min": lo_c, "max": hi_c})
-
-    return tuple(zones)
+    return build_single_cap_zones_chart(
+        target_easy_pace_sec(target_easy_pace),
+        gap_cfg=cfg,
+        axis_cfg=SingleCapAxisConfig(
+            chart_fast_axis_cap_min_per_mi=cfg.chart_fast_axis_cap_min_per_mi,
+            chart_slow_axis_cap_min_per_mi=cfg.chart_slow_axis_cap_min_per_mi,
+        ),
+    )
 
 
 def classify_easy_pace_progress(
@@ -142,21 +132,12 @@ def classify_easy_pace_progress(
 
     Green = at or faster than target; slow tiers use configured gaps past target.
     """
-    if pace_sec_per_mi is None or target_easy_pace is None:
-        return None
     cfg = config or DEFAULT_PACE_PROGRESS_EASY_CONFIG
-    try:
-        pace = float(pace_sec_per_mi)
-    except (TypeError, ValueError):
-        return None
-
-    target_sec = target_easy_pace_sec(target_easy_pace)
-    if pace <= target_sec:
-        return "green"
-
-    gap = pace - target_sec
-    if gap <= cfg.yellow_gap_sec:
-        return "yellow"
-    if gap <= cfg.orange_gap_sec:
-        return "orange"
-    return "red"
+    target_sec = (
+        target_easy_pace_sec(target_easy_pace) if target_easy_pace is not None else None
+    )
+    return classify_single_cap_pace_progress(
+        pace_sec_per_mi=pace_sec_per_mi,
+        target_sec_per_mi=target_sec,
+        gap_cfg=cfg,
+    )

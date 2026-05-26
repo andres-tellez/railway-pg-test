@@ -21,9 +21,9 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_ea
     EasyPaceProgressReference,
     pace_progress_zones_chart_api_payload,
 )
-from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_threshold import (
-    ThresholdPaceProgressReference,
-    threshold_pace_progress_zones_chart_api_payload,
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_tempo import (
+    TempoPaceProgressReference,
+    tempo_pace_progress_zones_chart_api_payload,
 )
 
 # Canonical copy for Insights › Easy banner (emitted whenever Z2 HR + Z2 pace are present).
@@ -80,8 +80,8 @@ def _pace_progress_payload(
     }
 
 
-def _threshold_pace_progress_payload(
-    ref: Optional[ThresholdPaceProgressReference],
+def _tempo_pace_progress_payload(
+    ref: Optional[TempoPaceProgressReference],
 ) -> Optional[dict[str, Any]]:
     """Insights Tempo Avg Pace chart authority (Z3 corridor + bilateral Y/O/R zones)."""
     if ref is None:
@@ -89,7 +89,7 @@ def _threshold_pace_progress_payload(
     return {
         "target_tempo_pace": _pace_band_payload(ref.target_tempo_pace),
         "target_display": ref.target_display,
-        "pace_zones_chart": threshold_pace_progress_zones_chart_api_payload(
+        "pace_zones_chart": tempo_pace_progress_zones_chart_api_payload(
             ref.pace_zones_chart
         ),
     }
@@ -114,7 +114,9 @@ def _training_pace_recommendations_payload(
 ) -> Optional[dict[str, Any]]:
     if recs is None:
         return None
-    return {
+
+    tempo_payload = _tempo_pace_progress_payload(recs.tempo_pace_progress)
+    payload: dict[str, Any] = {
         "phase": recs.phase,
         "phase_source": recs.phase_source,
         "phase_week_start": recs.phase_week_start,
@@ -128,15 +130,14 @@ def _training_pace_recommendations_payload(
         "goal_aligned_marathon_pace": _pace_band_payload(
             recs.goal_aligned_marathon_pace
         ),
-        # Insights Avg Pace chart: single target + zones (present whenever goal easy exists).
         "pace_progress": _pace_progress_payload(recs.pace_progress),
-        # Insights Tempo Avg Pace chart: Z3 corridor + zones (present whenever goal Z3 exists).
-        "threshold_pace_progress": _threshold_pace_progress_payload(
-            recs.threshold_pace_progress
-        ),
+        "tempo_pace_progress": tempo_payload,
         "hr_progress": _hr_progress_payload(recs.hr_progress),
         "easy_gyor": _easy_gyor_payload(recs.easy_gyor),
     }
+    if tempo_payload is not None:
+        payload["threshold_pace_progress"] = tempo_payload
+    return payload
 
 
 def runner_zone_profile_payload(
@@ -154,7 +155,6 @@ def runner_zone_profile_payload(
         if band_payload is not None:
             pace_zones[key_name] = band_payload
 
-    # Banner subtitle when both Insights chart authorities are available (hr_progress + pace_progress).
     insights_easy_banner = None
     if (
         training_pace_recommendations is not None
@@ -166,7 +166,7 @@ def runner_zone_profile_payload(
     insights_tempo_banner = None
     if (
         training_pace_recommendations is not None
-        and training_pace_recommendations.threshold_pace_progress is not None
+        and training_pace_recommendations.tempo_pace_progress is not None
     ):
         insights_tempo_banner = {"subtitle": INSIGHTS_TEMPO_BANNER_SUBTITLE}
 
