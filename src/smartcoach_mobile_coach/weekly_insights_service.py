@@ -42,6 +42,10 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_ea
     classify_easy_pace_progress,
     pace_progress_zones_chart_api_payload,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_threshold import (
+    classify_threshold_pace_progress,
+    threshold_pace_progress_zones_chart_api_payload,
+)
 from src.smartcoach_mobile_coach.runner_profile.service import (
     get_runner_profile,
     get_runner_training_pace_recommendations,
@@ -98,10 +102,19 @@ def _empty_easy_history_point(label: str) -> Dict[str, Any]:
 
 
 def _empty_threshold_history_point(label: str) -> Dict[str, Any]:
-    """Threshold series reuses ``z2_pace_*`` fields for tempo pace trend bands."""
+    """Gap week on Tempo Avg Pace chart (explicit threshold fields; no trend bands)."""
     return {
-        **_empty_easy_history_point(label),
-        "z2_pace_band": None,
+        "label": label,
+        "value": None,
+        "band": None,
+        "threshold_pace_min_per_mi": None,
+        "threshold_pace_progress_band": None,
+        "effort_stability_min_per_mi": None,
+        "easy_avg_hr": None,
+        "easy_pace_progress_band": None,
+        "easy_hr_progress_band": None,
+        "efficiency": None,
+        "efficiency_band": None,
     }
 
 
@@ -235,6 +248,49 @@ def _attach_easy_pace_progress_band(
     point["easy_pace_progress_band"] = classify_easy_pace_progress(
         pace_sec_per_mi=pace_sec,
         target_easy_pace=target_easy_pace,
+    )
+    return point
+
+
+def _resolve_threshold_pace_progress(
+    session: Session, user_id: str
+) -> Tuple[Optional[PaceZoneBand], List[Dict[str, Any]], Optional[str]]:
+    """Tempo pace-progress corridor, chart zones, and display from recommendations."""
+    plan_row = get_active_or_most_recent_plan(session, user_id)
+    target_time = plan_row.target_time if plan_row is not None else None
+    profile = get_runner_profile(session, user_id)
+    recs = get_runner_training_pace_recommendations(
+        session,
+        user_id,
+        target_time=target_time,
+        plan=plan_row,
+        profile=profile,
+    )
+    if recs is None or recs.threshold_pace_progress is None:
+        return None, [], None
+
+    tpp = recs.threshold_pace_progress
+    return (
+        tpp.target_tempo_pace,
+        _easy_kpi_zones_chart_payload(
+            tpp.pace_zones_chart,
+            api_payload_fn=threshold_pace_progress_zones_chart_api_payload,
+        ),
+        tpp.target_display,
+    )
+
+
+def _attach_threshold_pace_progress_band(
+    point: Dict[str, Any],
+    *,
+    target_tempo_pace: Optional[PaceZoneBand],
+) -> Dict[str, Any]:
+    """Set tempo pace-progress band on a weekly history point (Z3 corridor; HR-free)."""
+    pace_pm = _coerce_finite_float(point.get("threshold_pace_min_per_mi"))
+    pace_sec = pace_pm * 60.0 if pace_pm is not None else None
+    point["threshold_pace_progress_band"] = classify_threshold_pace_progress(
+        pace_sec_per_mi=pace_sec,
+        goal_aligned_z3_pace=target_tempo_pace,
     )
     return point
 
@@ -1362,17 +1418,17 @@ def get_weekly_insight_history(
 
     # THRESHOLD: same calendar week_windows as EASY — one point per week, gaps as nulls.
     threshold_points: List[Dict[str, Any]] = []
+    threshold_pace_zones: List[Dict[str, Any]] = []
+    threshold_pace_target_display: Optional[str] = None
     try:
-        prev_threshold_stability: Optional[float] = None
-        prev_threshold_pace: Optional[float] = None
+        (
+            target_tempo_pace,
+            threshold_pace_zones,
+            threshold_pace_target_display,
+        ) = _resolve_threshold_pace_progress(session, user_id)
         for ws, we in week_windows:
             wk = _fetch_week_kpis(session, user_id, ws, we, athlete_id)
-            stab: Optional[float] = None
-            if int(wk.get("threshold_run_count") or 0) > 0:
-                raw_s = wk.get("effort_stability_min_per_mi")
-                if raw_s is not None:
-                    stab = _coerce_finite_float(raw_s)
-            if stab is None:
+            if int(wk.get("threshold_run_count") or 0) <= 0:
                 threshold_points.append(
                     _empty_threshold_history_point(f"{ws.month}/{ws.day}")
                 )
@@ -1381,29 +1437,43 @@ def get_weekly_insight_history(
             raw_p = wk.get("threshold_pace_min_per_mi")
             if raw_p is not None:
                 pace = _coerce_finite_float(raw_p)
-            th_band = _trend_band(stab, prev_threshold_stability, lower_is_better=True)
-            pace_band = (
-                _trend_band(pace, prev_threshold_pace, lower_is_better=True)
-                if pace is not None
-                else None
-            )
-            threshold_points.append(
-                {
-                    "label": f"{ws.month}/{ws.day}",
-                    "value": stab,
-                    "band": th_band,
-                    "z2_pace_min_per_mi": pace,
-                    "z2_pace_band": pace_band,
-                    "easy_avg_hr": None,
-                    "easy_pace_progress_band": None,
-                    "easy_hr_progress_band": None,
-                    "efficiency": None,
-                    "efficiency_band": None,
-                }
-            )
-            prev_threshold_stability = stab
-            if pace is not None:
-                prev_threshold_pace = pace
+            if pace is None:
+                threshold_points.append(
+                    _empty_threshold_history_point(f"{ws.month}/{ws.day}")
+                )
+                continue
+            stab: Optional[float] = None
+            raw_s = wk.get("effort_stability_min_per_mi")
+            if raw_s is not None:
+                stab = _coerce_finite_float(raw_s)
+            point_payload: Dict[str, Any] = {
+                "label": f"{ws.month}/{ws.day}",
+                "value": stab,
+                "band": None,
+                "threshold_pace_min_per_mi": pace,
+                "effort_stability_min_per_mi": stab,
+                "easy_avg_hr": None,
+                "easy_pace_progress_band": None,
+                "easy_hr_progress_band": None,
+                "efficiency": None,
+                "efficiency_band": None,
+            }
+            try:
+                threshold_points.append(
+                    _attach_threshold_pace_progress_band(
+                        point_payload,
+                        target_tempo_pace=target_tempo_pace,
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to attach threshold pace band for weekly history "
+                    "(user_id=%s, week=%s)",
+                    user_id,
+                    ws,
+                )
+                point_payload["threshold_pace_progress_band"] = None
+                threshold_points.append(point_payload)
     except Exception:
         logger.exception(
             "Failed to build threshold weekly history (user_id=%s); "
@@ -1414,6 +1484,8 @@ def get_weekly_insight_history(
             _empty_threshold_history_point(f"{ws.month}/{ws.day}")
             for ws, _we in week_windows
         ]
+        threshold_pace_zones = []
+        threshold_pace_target_display = None
 
     return {
         "has_history": True,
@@ -1434,7 +1506,11 @@ def get_weekly_insight_history(
                 "hr_drift_target_display": hr_drift_target_display,
                 "efficiency_goal_display": efficiency_goal_display,
             },
-            TrainingSystem.THRESHOLD.value: {"weekly_data": threshold_points},
+            TrainingSystem.THRESHOLD.value: {
+                "weekly_data": threshold_points,
+                "pace_zones": threshold_pace_zones,
+                "pace_target_display": threshold_pace_target_display,
+            },
         },
     }
 

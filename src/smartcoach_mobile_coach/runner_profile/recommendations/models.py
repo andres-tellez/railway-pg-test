@@ -13,6 +13,9 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_easy
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
     EasyPaceProgressReference,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_threshold import (
+    ThresholdPaceProgressReference,
+)
 
 
 @dataclass(frozen=True)
@@ -37,7 +40,8 @@ class TrainingPaceRecommendations:
     """
     Composite pace recommendation payload with source transparency.
 
-    ``pace_progress`` is the Insights Avg Pace chart authority (HR-free).
+    ``pace_progress`` is the Insights Easy Avg Pace chart authority (HR-free).
+    ``threshold_pace_progress`` is the Insights Tempo Avg Pace chart authority (Z3 corridor).
     ``hr_progress`` is the Insights Avg HR chart authority (Z2 high cap).
     ``goal_aligned_easy_pace`` is the full goal easy envelope (+55…+85).
     ``easy_gyor`` is Z2 HR target metadata when calibrated (not used for charts).
@@ -53,6 +57,7 @@ class TrainingPaceRecommendations:
     goal_aligned_z4_pace: Optional[PaceZoneBand]
     goal_aligned_marathon_pace: Optional[PaceZoneBand]
     pace_progress: Optional[EasyPaceProgressReference] = None
+    threshold_pace_progress: Optional[ThresholdPaceProgressReference] = None
     hr_progress: Optional[EasyHrProgressReference] = None
     easy_gyor: Optional[EasyGyorReference] = None
     phase_source: Optional[str] = None
