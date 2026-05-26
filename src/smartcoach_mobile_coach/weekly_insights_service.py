@@ -325,11 +325,15 @@ WITH week_runs AS (
 split_stats AS (
     SELECT
         wr.activity_id,
-        COUNT(s.split) FILTER (WHERE s.average_heartrate IS NOT NULL) AS n_hr_splits,
-        COUNT(s.split) FILTER (
+        COUNT(*) FILTER (
+            WHERE s.average_heartrate IS NOT NULL
+              AND COALESCE(s.split, s.lap_index) IS NOT NULL
+        ) AS n_hr_splits,
+        COUNT(*) FILTER (
             WHERE wr.z2_high IS NOT NULL
               AND s.average_heartrate IS NOT NULL
               AND s.average_heartrate > wr.z2_high
+              AND COALESCE(s.split, s.lap_index) IS NOT NULL
         ) AS n_above_ceiling
     FROM week_runs wr
     INNER JOIN splits s ON s.activity_id = wr.activity_id
@@ -341,7 +345,7 @@ split_median_after_warmup AS (
         percentile_cont(0.5) WITHIN GROUP (ORDER BY s.average_heartrate) AS median_hr_after_split_1
     FROM week_runs wr
     INNER JOIN splits s ON s.activity_id = wr.activity_id
-    WHERE s.split > 1
+    WHERE COALESCE(s.split, s.lap_index) > 1
       AND s.average_heartrate IS NOT NULL
     GROUP BY wr.activity_id
 ),
@@ -418,11 +422,15 @@ WITH week_runs AS (
 split_stats AS (
     SELECT
         wr.activity_id,
-        COUNT(s.split) FILTER (WHERE s.average_heartrate IS NOT NULL) AS n_hr_splits,
-        COUNT(s.split) FILTER (
+        COUNT(*) FILTER (
+            WHERE s.average_heartrate IS NOT NULL
+              AND COALESCE(s.split, s.lap_index) IS NOT NULL
+        ) AS n_hr_splits,
+        COUNT(*) FILTER (
             WHERE wr.z2_high IS NOT NULL
               AND s.average_heartrate IS NOT NULL
               AND s.average_heartrate > wr.z2_high
+              AND COALESCE(s.split, s.lap_index) IS NOT NULL
         ) AS n_above_ceiling
     FROM week_runs wr
     INNER JOIN splits s ON s.activity_id = wr.activity_id
@@ -434,7 +442,7 @@ split_median_after_warmup AS (
         percentile_cont(0.5) WITHIN GROUP (ORDER BY s.average_heartrate) AS median_hr_after_split_1
     FROM week_runs wr
     INNER JOIN splits s ON s.activity_id = wr.activity_id
-    WHERE s.split > 1
+    WHERE COALESCE(s.split, s.lap_index) > 1
       AND s.average_heartrate IS NOT NULL
     GROUP BY wr.activity_id
 ),
@@ -474,6 +482,7 @@ SELECT
     cr.activity_id,
     cr.avg_pace AS activity_avg_pace,
     s.split,
+    s.lap_index,
     s.average_heartrate,
     s.conv_avg_speed,
     s.conv_distance,
@@ -687,11 +696,19 @@ def _tempo_split_pace_min_per_mi(
 def _tempo_split_row_from_db(row: Any) -> TempoSplitRow | None:
     split_idx = getattr(row, "split", None)
     if split_idx is None:
+        split_idx = getattr(row, "lap_index", None)
+    if split_idx is None:
+        return None
+    try:
+        split_index = int(split_idx)
+    except (TypeError, ValueError):
+        return None
+    if split_index < 1:
         return None
     distance_mi = _tempo_split_distance_mi(row)
     pace_min_per_mi = _tempo_split_pace_min_per_mi(row, distance_mi=distance_mi)
     return TempoSplitRow(
-        split_index=int(split_idx),
+        split_index=split_index,
         avg_hr=_coerce_finite_float(getattr(row, "average_heartrate", None)),
         pace_min_per_mi=pace_min_per_mi,
         distance_mi=distance_mi,
