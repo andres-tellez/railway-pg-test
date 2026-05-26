@@ -21,11 +21,21 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_ea
     EasyPaceProgressReference,
     pace_progress_zones_chart_api_payload,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_threshold import (
+    ThresholdPaceProgressReference,
+    threshold_pace_progress_zones_chart_api_payload,
+)
 
 # Canonical copy for Insights › Easy banner (emitted whenever Z2 HR + Z2 pace are present).
 INSIGHTS_EASY_BANNER_SUBTITLE = (
     "Stay within this HR range to keep easy runs truly easy and avoid carrying "
     "fatigue into harder days."
+)
+
+# Canonical copy for Insights › Tempo banner (emitted whenever tempo pace corridor exists).
+INSIGHTS_TEMPO_BANNER_SUBTITLE = (
+    "Stay within this tempo pace range to hit the right stimulus — too fast or "
+    "too slow can miss the workout intent."
 )
 
 
@@ -70,6 +80,21 @@ def _pace_progress_payload(
     }
 
 
+def _threshold_pace_progress_payload(
+    ref: Optional[ThresholdPaceProgressReference],
+) -> Optional[dict[str, Any]]:
+    """Insights Tempo Avg Pace chart authority (Z3 corridor + bilateral Y/O/R zones)."""
+    if ref is None:
+        return None
+    return {
+        "target_tempo_pace": _pace_band_payload(ref.target_tempo_pace),
+        "target_display": ref.target_display,
+        "pace_zones_chart": threshold_pace_progress_zones_chart_api_payload(
+            ref.pace_zones_chart
+        ),
+    }
+
+
 def _easy_gyor_payload(ref: Optional[EasyGyorReference]) -> Optional[dict[str, Any]]:
     """HR-fused easy GYOR reference only (no pace-progress chart fields).
 
@@ -105,6 +130,10 @@ def _training_pace_recommendations_payload(
         ),
         # Insights Avg Pace chart: single target + zones (present whenever goal easy exists).
         "pace_progress": _pace_progress_payload(recs.pace_progress),
+        # Insights Tempo Avg Pace chart: Z3 corridor + zones (present whenever goal Z3 exists).
+        "threshold_pace_progress": _threshold_pace_progress_payload(
+            recs.threshold_pace_progress
+        ),
         "hr_progress": _hr_progress_payload(recs.hr_progress),
         "easy_gyor": _easy_gyor_payload(recs.easy_gyor),
     }
@@ -134,6 +163,13 @@ def runner_zone_profile_payload(
     ):
         insights_easy_banner = {"subtitle": INSIGHTS_EASY_BANNER_SUBTITLE}
 
+    insights_tempo_banner = None
+    if (
+        training_pace_recommendations is not None
+        and training_pace_recommendations.threshold_pace_progress is not None
+    ):
+        insights_tempo_banner = {"subtitle": INSIGHTS_TEMPO_BANNER_SUBTITLE}
+
     return {
         "calibrated": bool(profile.calibrated),
         "computed_at": profile.computed_at.isoformat() if profile.computed_at else None,
@@ -157,6 +193,7 @@ def runner_zone_profile_payload(
             profile.pace_computed_at.isoformat() if profile.pace_computed_at else None
         ),
         "insights_easy_banner": insights_easy_banner,
+        "insights_tempo_banner": insights_tempo_banner,
         "training_pace_recommendations": _training_pace_recommendations_payload(
             training_pace_recommendations
         ),

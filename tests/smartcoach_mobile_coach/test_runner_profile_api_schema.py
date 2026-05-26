@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from src.smartcoach_mobile_coach.runner_profile.api_schema import (
     INSIGHTS_EASY_BANNER_SUBTITLE,
+    INSIGHTS_TEMPO_BANNER_SUBTITLE,
     runner_zone_profile_payload,
 )
 from src.smartcoach_mobile_coach.runner_profile.models import (
@@ -107,6 +108,15 @@ def test_payload_includes_training_pace_recommendations_when_provided():
         == recs.pace_progress.target_easy_pace.low_sec
     )
     assert len(tp["pace_progress"]["pace_zones_chart"]) >= 4
+    assert tp["threshold_pace_progress"] is not None
+    assert (
+        tp["threshold_pace_progress"]["target_tempo_pace"]["low_sec"]
+        == recs.threshold_pace_progress.target_tempo_pace.low_sec
+    )
+    assert tp["threshold_pace_progress"]["target_display"] == (
+        recs.threshold_pace_progress.target_display
+    )
+    assert len(tp["threshold_pace_progress"]["pace_zones_chart"]) >= 5
     assert tp["hr_progress"] is not None
     assert tp["hr_progress"]["target_hr_z2"] == {"low": 120, "high": 145}
     assert tp["hr_progress"]["target_display"] == "≤145 bpm"
@@ -115,3 +125,7 @@ def test_payload_includes_training_pace_recommendations_when_provided():
     banner = payload.get("insights_easy_banner")
     assert banner is not None
     assert banner["subtitle"] == INSIGHTS_EASY_BANNER_SUBTITLE
+
+    tempo_banner = payload.get("insights_tempo_banner")
+    assert tempo_banner is not None
+    assert tempo_banner["subtitle"] == INSIGHTS_TEMPO_BANNER_SUBTITLE
