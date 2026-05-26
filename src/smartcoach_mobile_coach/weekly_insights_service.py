@@ -5,11 +5,10 @@ Computes deterministic KPI bands, overall score, and deltas. Numeric truth
 is computed in SQL + Python; weekly rows store metrics for the mobile
 Insights charts (no LLM copy).
 
-Tempo / ``threshold`` run detection uses the same week window as easy runs
-but classifies ``threshold`` when easy_pct is low (not an easy day) and
-either (a) activity avg HR is above Z2 high, or (b) split-majority or
-post-warmup median split HR is above Z2 high — so mixed warmup + quality
-miles still count.
+Tempo run detection uses the same week window as easy runs but classifies ``tempo``
+when easy_pct is low (not an easy day) and either (a) activity avg HR is above Z2
+high, or (b) split-majority or post-warmup median split HR is above Z2 high — so
+mixed warmup + quality miles still count.
 
 ``get_latest_weekly_insight(..., slim=True)`` returns an orientation-only dict
 for the coach tool (week + ``overall_band``); REST uses ``slim=False`` (full).
@@ -22,7 +21,6 @@ import logging
 import math
 import os
 from datetime import date, timedelta
-from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from sqlalchemy import Integer, bindparam, text
@@ -38,17 +36,26 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_easy
     hr_progress_zones_chart_api_payload,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
-    PaceProgressChartZone,
     classify_easy_pace_progress,
-    pace_progress_zones_chart_api_payload,
 )
-from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_threshold import (
-    classify_threshold_pace_progress,
-    threshold_pace_progress_zones_chart_api_payload,
+from src.smartcoach_mobile_coach.insights_chart_authority import (
+    attach_pace_progress_band,
+    resolve_easy_hr_progress,
+    resolve_pace_progress,
+)
+from src.smartcoach_mobile_coach.insights_systems import (
+    TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
+    TEMPO_RUN_MIN_SPLITS_WITH_HR,
+    TEMPO_SYSTEM_SPEC,
+    InsightsSystem,
+    emit_legacy_tempo_history_field_aliases,
+    emit_legacy_tempo_system_aliases,
+    read_kpi_field,
+    read_trend_band,
+    resolve_system_snapshot,
 )
 from src.smartcoach_mobile_coach.runner_profile.service import (
     get_runner_profile,
-    get_runner_training_pace_recommendations,
 )
 from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
 from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
@@ -101,21 +108,23 @@ def _empty_easy_history_point(label: str) -> Dict[str, Any]:
     }
 
 
-def _empty_threshold_history_point(label: str) -> Dict[str, Any]:
-    """Gap week on Tempo Avg Pace chart (explicit threshold fields; no trend bands)."""
-    return {
-        "label": label,
-        "value": None,
-        "band": None,
-        "threshold_pace_min_per_mi": None,
-        "threshold_pace_progress_band": None,
-        "effort_stability_min_per_mi": None,
-        "easy_avg_hr": None,
-        "easy_pace_progress_band": None,
-        "easy_hr_progress_band": None,
-        "efficiency": None,
-        "efficiency_band": None,
-    }
+def _empty_tempo_history_point(label: str) -> Dict[str, Any]:
+    """Gap week on Tempo Avg Pace chart (explicit tempo fields; no trend bands)."""
+    return emit_legacy_tempo_history_field_aliases(
+        {
+            "label": label,
+            "value": None,
+            "band": None,
+            "tempo_pace_min_per_mi": None,
+            "tempo_pace_progress_band": None,
+            "effort_stability_min_per_mi": None,
+            "easy_avg_hr": None,
+            "easy_pace_progress_band": None,
+            "easy_hr_progress_band": None,
+            "efficiency": None,
+            "efficiency_band": None,
+        }
+    )
 
 
 def _hr_zones_chart_payload(
@@ -172,21 +181,52 @@ def _resolve_easy_hr_progress(
     session: Session, user_id: str
 ) -> Tuple[Optional[HrZoneBand], List[Dict[str, Any]]]:
     """HR-progress target and chart zones from training pace recommendations."""
-    plan_row = get_active_or_most_recent_plan(session, user_id)
-    target_time = plan_row.target_time if plan_row is not None else None
-    profile = get_runner_profile(session, user_id)
-    recs = get_runner_training_pace_recommendations(
-        session,
-        user_id,
-        target_time=target_time,
-        plan=plan_row,
-        profile=profile,
-    )
-    if recs is None or recs.hr_progress is None:
-        return None, []
+    return resolve_easy_hr_progress(session, user_id)
 
-    hp = recs.hr_progress
-    return hp.target_hr_z2, _hr_zones_chart_payload(hp.hr_zones_chart)
+
+def _resolve_easy_pace_progress(
+    session: Session, user_id: str
+) -> Tuple[Optional[PaceZoneBand], List[Dict[str, Any]]]:
+    """Pace-progress target and chart zones from training pace recommendations."""
+    target, zones, _display = resolve_pace_progress(
+        session, user_id, InsightsSystem.EASY
+    )
+    return target, zones
+
+
+def _attach_easy_pace_progress_band(
+    point: Dict[str, Any],
+    *,
+    target_easy_pace: Optional[PaceZoneBand],
+) -> Dict[str, Any]:
+    """Set pace-progress band on a weekly history point (HR-free)."""
+    return attach_pace_progress_band(
+        point,
+        system=InsightsSystem.EASY,
+        target_pace=target_easy_pace,
+    )
+
+
+def _resolve_tempo_pace_progress(
+    session: Session, user_id: str
+) -> Tuple[Optional[PaceZoneBand], List[Dict[str, Any]], Optional[str]]:
+    """Tempo pace-progress corridor, chart zones, and display from recommendations."""
+    return resolve_pace_progress(session, user_id, InsightsSystem.TEMPO)
+
+
+def _attach_tempo_pace_progress_band(
+    point: Dict[str, Any],
+    *,
+    target_tempo_pace: Optional[PaceZoneBand],
+) -> Dict[str, Any]:
+    """Set tempo pace-progress band on a weekly history point (Z3 corridor; HR-free)."""
+    return emit_legacy_tempo_history_field_aliases(
+        attach_pace_progress_band(
+            point,
+            system=InsightsSystem.TEMPO,
+            target_pace=target_tempo_pace,
+        )
+    )
 
 
 def _attach_easy_hr_progress_band(
@@ -199,98 +239,6 @@ def _attach_easy_hr_progress_band(
     point["easy_hr_progress_band"] = classify_easy_hr_progress(
         avg_hr_bpm=avg_hr,
         target_hr_z2=target_hr_z2,
-    )
-    return point
-
-
-def _pace_zones_chart_payload(
-    zones_chart: tuple[PaceProgressChartZone, ...],
-) -> List[Dict[str, Any]]:
-    zones: List[Dict[str, Any]] = []
-    for zone in pace_progress_zones_chart_api_payload(zones_chart):
-        lo = _coerce_finite_float(zone.get("min"))
-        hi = _coerce_finite_float(zone.get("max"))
-        if lo is None or hi is None:
-            continue
-        zones.append({"color": str(zone["color"]), "min": lo, "max": hi})
-    return zones
-
-
-def _resolve_easy_pace_progress(
-    session: Session, user_id: str
-) -> Tuple[Optional[PaceZoneBand], List[Dict[str, Any]]]:
-    """Pace-progress target and chart zones from training pace recommendations."""
-    plan_row = get_active_or_most_recent_plan(session, user_id)
-    target_time = plan_row.target_time if plan_row is not None else None
-    profile = get_runner_profile(session, user_id)
-    recs = get_runner_training_pace_recommendations(
-        session,
-        user_id,
-        target_time=target_time,
-        plan=plan_row,
-        profile=profile,
-    )
-    if recs is None or recs.pace_progress is None:
-        return None, []
-
-    pp = recs.pace_progress
-    return pp.target_easy_pace, _pace_zones_chart_payload(pp.pace_zones_chart)
-
-
-def _attach_easy_pace_progress_band(
-    point: Dict[str, Any],
-    *,
-    target_easy_pace: Optional[PaceZoneBand],
-) -> Dict[str, Any]:
-    """Set pace-progress band on a weekly history point (HR-free)."""
-    pace_pm = _coerce_finite_float(point.get("z2_pace_min_per_mi"))
-    pace_sec = pace_pm * 60.0 if pace_pm is not None else None
-    point["easy_pace_progress_band"] = classify_easy_pace_progress(
-        pace_sec_per_mi=pace_sec,
-        target_easy_pace=target_easy_pace,
-    )
-    return point
-
-
-def _resolve_threshold_pace_progress(
-    session: Session, user_id: str
-) -> Tuple[Optional[PaceZoneBand], List[Dict[str, Any]], Optional[str]]:
-    """Tempo pace-progress corridor, chart zones, and display from recommendations."""
-    plan_row = get_active_or_most_recent_plan(session, user_id)
-    target_time = plan_row.target_time if plan_row is not None else None
-    profile = get_runner_profile(session, user_id)
-    recs = get_runner_training_pace_recommendations(
-        session,
-        user_id,
-        target_time=target_time,
-        plan=plan_row,
-        profile=profile,
-    )
-    if recs is None or recs.threshold_pace_progress is None:
-        return None, [], None
-
-    tpp = recs.threshold_pace_progress
-    return (
-        tpp.target_tempo_pace,
-        _easy_kpi_zones_chart_payload(
-            tpp.pace_zones_chart,
-            api_payload_fn=threshold_pace_progress_zones_chart_api_payload,
-        ),
-        tpp.target_display,
-    )
-
-
-def _attach_threshold_pace_progress_band(
-    point: Dict[str, Any],
-    *,
-    target_tempo_pace: Optional[PaceZoneBand],
-) -> Dict[str, Any]:
-    """Set tempo pace-progress band on a weekly history point (Z3 corridor; HR-free)."""
-    pace_pm = _coerce_finite_float(point.get("threshold_pace_min_per_mi"))
-    pace_sec = pace_pm * 60.0 if pace_pm is not None else None
-    point["threshold_pace_progress_band"] = classify_threshold_pace_progress(
-        pace_sec_per_mi=pace_sec,
-        goal_aligned_z3_pace=target_tempo_pace,
     )
     return point
 
@@ -310,12 +258,14 @@ def weekly_insight_tool_slim_default_from_env() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
-# Threshold / tempo classification (see _WEEK_KPIS_SQL):
+# Tempo run classification (see _WEEK_KPIS_SQL):
 # - Legacy: activity avg HR strictly above Z2 ceiling (Strava aggregate).
 # - Primary fix: split-majority — enough laps with HR, and ≥ half of those laps
 #   above Z2 high, OR median HR on laps after split 1 above Z2 high (warmup lap).
-THRESHOLD_MIN_SPLITS_WITH_HR = 3
-THRESHOLD_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH = 0.5
+THRESHOLD_MIN_SPLITS_WITH_HR = TEMPO_RUN_MIN_SPLITS_WITH_HR
+THRESHOLD_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH = (
+    TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH
+)
 
 # ---------------------------------------------------------------------------
 # SQL
@@ -381,7 +331,7 @@ classified_runs AS (
                         )
                     )
                 )
-            ) THEN 'threshold'
+            ) THEN 'tempo'
             ELSE NULL
         END AS training_system
     FROM week_runs wr
@@ -391,10 +341,10 @@ classified_runs AS (
 SELECT
     COUNT(*) AS total_runs,
     COUNT(*) FILTER (WHERE training_system = 'easy')                   AS easy_runs,
-    COUNT(*) FILTER (WHERE training_system = 'threshold')              AS threshold_runs,
+    COUNT(*) FILTER (WHERE training_system = 'tempo')              AS tempo_runs,
     ROUND(AVG(hr_drift_pct) FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_drift,
     ROUND(AVG(avg_pace)     FILTER (WHERE training_system = 'easy')::numeric, 4)  AS avg_pace,
-    ROUND(AVG(avg_pace)     FILTER (WHERE training_system = 'threshold')::numeric, 4) AS avg_threshold_pace,
+    ROUND(AVG(avg_pace)     FILTER (WHERE training_system = 'tempo')::numeric, 4) AS avg_tempo_pace,
     ROUND(AVG(avg_hr)       FILTER (WHERE training_system = 'easy')::numeric, 1)  AS avg_hr,
     ROUND(AVG(easy_pct)     FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_easy_pct,
     ROUND(AVG(z2_band_pct)  FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_z2_adherence,
@@ -402,17 +352,17 @@ SELECT
         (
             PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY (late_hr - early_hr))
             FILTER (
-                WHERE training_system = 'threshold'
+                WHERE training_system = 'tempo'
                   AND early_hr IS NOT NULL
                   AND late_hr IS NOT NULL
             )
         )::numeric,
         2
-    ) AS avg_threshold_effort_stability
+    ) AS avg_tempo_effort_stability
 FROM classified_runs
 """.format(
-    min_splits_hr=THRESHOLD_MIN_SPLITS_WITH_HR,
-    min_frac_above_z2=THRESHOLD_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
+    min_splits_hr=TEMPO_RUN_MIN_SPLITS_WITH_HR,
+    min_frac_above_z2=TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
 )
 
 _USERS_WITH_EASY_RUNS_SQL = """
@@ -435,13 +385,6 @@ WHERE training_system = 'easy'
   AND activity_date >= :ws
   AND activity_date <= :we
 """
-
-
-class TrainingSystem(str, Enum):
-    EASY = "easy"
-    THRESHOLD = "threshold"
-    SPEED = "speed"
-
 
 # ---------------------------------------------------------------------------
 # Band computations (deterministic — no LLM involvement)
@@ -592,33 +535,31 @@ def _fetch_week_kpis(
     if not row:
         return {
             "easy_run_count": 0,
-            "threshold_run_count": 0,
+            "tempo_run_count": 0,
             "total_run_count": 0,
             "effort_stability_min_per_mi": None,
-            "threshold_pace_min_per_mi": None,
+            "tempo_pace_min_per_mi": None,
         }
 
     avg_pace = float(row.avg_pace) if row.avg_pace is not None else None
     avg_hr = float(row.avg_hr) if row.avg_hr is not None else None
-    threshold_effort_stability = (
-        float(row.avg_threshold_effort_stability)
-        if row.avg_threshold_effort_stability is not None
+    tempo_effort_stability = (
+        float(row.avg_tempo_effort_stability)
+        if row.avg_tempo_effort_stability is not None
         else None
     )
-    threshold_pace = (
-        float(row.avg_threshold_pace) if row.avg_threshold_pace is not None else None
-    )
+    tempo_pace = float(row.avg_tempo_pace) if row.avg_tempo_pace is not None else None
 
     return {
         "easy_run_count": int(row.easy_runs or 0),
-        "threshold_run_count": int(row.threshold_runs or 0),
+        "tempo_run_count": int(row.tempo_runs or 0),
         "total_run_count": int(row.total_runs),
         "hr_drift_pct": float(row.avg_drift) if row.avg_drift is not None else None,
         "z2_pace_min_per_mi": avg_pace,
         "avg_hr": avg_hr,
         "efficiency": _compute_efficiency(avg_pace, avg_hr),
-        "effort_stability_min_per_mi": threshold_effort_stability,
-        "threshold_pace_min_per_mi": threshold_pace,
+        "effort_stability_min_per_mi": tempo_effort_stability,
+        "tempo_pace_min_per_mi": tempo_pace,
         "avg_easy_pct": (
             float(row.avg_easy_pct) if row.avg_easy_pct is not None else None
         ),
@@ -634,11 +575,11 @@ def _fetch_week_kpis_by_system(
     week_start: date,
     week_end: date,
     athlete_id: int,
-) -> Dict[TrainingSystem, Dict[str, Any]]:
-    """Fetch weekly KPI inputs for all systems. EASY + THRESHOLD are implemented."""
+) -> Dict[InsightsSystem, Dict[str, Any]]:
+    """Fetch weekly KPI inputs for all systems. EASY + TEMPO are implemented."""
     weekly = _fetch_week_kpis(session, user_id, week_start, week_end, athlete_id)
     return {
-        TrainingSystem.EASY: {
+        InsightsSystem.EASY: {
             "easy_run_count": weekly.get("easy_run_count", 0),
             "total_run_count": weekly.get("total_run_count", 0),
             "hr_drift_pct": weekly.get("hr_drift_pct"),
@@ -648,11 +589,11 @@ def _fetch_week_kpis_by_system(
             "avg_easy_pct": weekly.get("avg_easy_pct"),
             "avg_z2_adherence": weekly.get("avg_z2_adherence"),
         },
-        TrainingSystem.THRESHOLD: {
-            "threshold_run_count": weekly.get("threshold_run_count", 0),
+        InsightsSystem.TEMPO: {
+            "tempo_run_count": weekly.get("tempo_run_count", 0),
             "total_run_count": weekly.get("total_run_count", 0),
             "effort_stability_min_per_mi": weekly.get("effort_stability_min_per_mi"),
-            "threshold_pace_min_per_mi": weekly.get("threshold_pace_min_per_mi"),
+            "tempo_pace_min_per_mi": weekly.get("tempo_pace_min_per_mi"),
         },
     }
 
@@ -674,21 +615,23 @@ def _fetch_prior_insight(
     if not row:
         return None
     snapshot = row.kpi_snapshot if isinstance(row.kpi_snapshot, dict) else None
-    threshold_prior = None
-    threshold_prior_band = None
-    threshold_prior_pace = None
-    threshold_prior_pace_band = None
-    threshold_prior_overall = None
+    tempo_prior = None
+    tempo_prior_band = None
+    tempo_prior_pace = None
+    tempo_prior_pace_band = None
+    tempo_prior_overall = None
     if snapshot:
         systems = snapshot.get("systems", {})
-        th = systems.get(TrainingSystem.THRESHOLD.value, {})
+        th = resolve_system_snapshot(systems, TEMPO_SYSTEM_SPEC)
         th_kpis = th.get("kpis", {})
         th_bands = th.get("bands", {})
-        threshold_prior = th_kpis.get("effort_stability_min_per_mi")
-        threshold_prior_band = th_bands.get("effort_stability")
-        threshold_prior_pace = th_kpis.get("threshold_pace_min_per_mi")
-        threshold_prior_pace_band = th_bands.get("threshold_pace")
-        threshold_prior_overall = th.get("overall_band")
+        tempo_prior = th_kpis.get("effort_stability_min_per_mi")
+        tempo_prior_band = th_bands.get("effort_stability")
+        tempo_prior_pace = read_kpi_field(
+            th_kpis, TEMPO_SYSTEM_SPEC, TEMPO_SYSTEM_SPEC.kpi_pace_field
+        )
+        tempo_prior_pace_band = read_trend_band(th_bands, TEMPO_SYSTEM_SPEC)
+        tempo_prior_overall = th.get("overall_band")
 
     return {
         "hr_drift_pct": row.hr_drift_pct,
@@ -700,11 +643,11 @@ def _fetch_prior_insight(
         "efficiency_band": row.efficiency_band,
         "easy_avg_hr_band": getattr(row, "easy_avg_hr_band", None),
         "overall_band": row.overall_band,
-        "threshold_effort_stability": threshold_prior,
-        "threshold_effort_stability_band": threshold_prior_band,
-        "threshold_prior_pace": threshold_prior_pace,
-        "threshold_prior_pace_band": threshold_prior_pace_band,
-        "threshold_prior_overall": threshold_prior_overall,
+        "tempo_effort_stability": tempo_prior,
+        "tempo_effort_stability_band": tempo_prior_band,
+        "tempo_prior_pace": tempo_prior_pace,
+        "tempo_prior_pace_band": tempo_prior_pace_band,
+        "tempo_prior_overall": tempo_prior_overall,
     }
 
 
@@ -766,7 +709,7 @@ def _compute_easy_system_pipeline(
     }
 
     return {
-        "system": TrainingSystem.EASY.value,
+        "system": InsightsSystem.EASY.value,
         "status": "ready",
         "kpis": kpis,
         "bands": bands,
@@ -775,46 +718,46 @@ def _compute_easy_system_pipeline(
     }
 
 
-def _compute_threshold_system_pipeline(
+def _compute_tempo_system_pipeline(
     kpis: Dict[str, Any], prior: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
-    prior_stability = prior.get("threshold_effort_stability") if prior else None
-    prior_pace = prior.get("threshold_prior_pace") if prior else None
+    prior_stability = prior.get("tempo_effort_stability") if prior else None
+    prior_pace = prior.get("tempo_prior_pace") if prior else None
     effort_stability = kpis.get("effort_stability_min_per_mi")
-    threshold_pace = kpis.get("threshold_pace_min_per_mi")
+    tempo_pace = kpis.get("tempo_pace_min_per_mi")
     effort_band = _trend_band(effort_stability, prior_stability, lower_is_better=True)
-    pace_band = _trend_band(threshold_pace, prior_pace, lower_is_better=True)
+    pace_band = _trend_band(tempo_pace, prior_pace, lower_is_better=True)
     effort_delta = _compute_delta(effort_stability, prior_stability)
-    pace_delta = _compute_delta(threshold_pace, prior_pace)
+    pace_delta = _compute_delta(tempo_pace, prior_pace)
 
-    prior_bands_threshold = None
+    prior_bands_tempo = None
     if prior:
-        prior_bands_threshold = {
-            "effort_stability": prior.get("threshold_effort_stability_band"),
-            "threshold_pace": prior.get("threshold_prior_pace_band"),
+        prior_bands_tempo = {
+            "effort_stability": prior.get("tempo_effort_stability_band"),
+            "tempo_pace": prior.get("tempo_prior_pace_band"),
         }
 
     overall = _compute_overall_band(
         [effort_band, pace_band],
-        prior_bands_threshold,
-        prior.get("threshold_prior_overall") if prior else None,
+        prior_bands_tempo,
+        prior.get("tempo_prior_overall") if prior else None,
     )
 
     return {
-        "system": TrainingSystem.THRESHOLD.value,
+        "system": InsightsSystem.TEMPO.value,
         "status": "ready",
         "kpis": kpis,
-        "bands": {"effort_stability": effort_band, "threshold_pace": pace_band},
+        "bands": {"effort_stability": effort_band, "tempo_pace": pace_band},
         "deltas": {
             "effort_stability_delta": effort_delta,
-            "threshold_pace_delta": pace_delta,
+            "tempo_pace_delta": pace_delta,
         },
         "overall_band": overall,
     }
 
 
 def _compute_system_pipeline(
-    kpis_by_system: Dict[TrainingSystem, Dict[str, Any]],
+    kpis_by_system: Dict[InsightsSystem, Dict[str, Any]],
     prior: Optional[Dict[str, Any]],
     *,
     target_hr_z2: Optional[HrZoneBand] = None,
@@ -822,20 +765,20 @@ def _compute_system_pipeline(
 ) -> Dict[str, Any]:
     """
     Central signal computation pipeline keyed by training system.
-    Only EASY is implemented for now; structure is future-proof for THRESHOLD/SPEED.
+    Only EASY is implemented for now; structure is future-proof for TEMPO/SPEED.
     """
     systems: Dict[str, Dict[str, Any]] = {}
-    easy_kpis = kpis_by_system[TrainingSystem.EASY]
+    easy_kpis = kpis_by_system[InsightsSystem.EASY]
     if easy_kpis.get("easy_run_count", 0) > 0:
-        systems[TrainingSystem.EASY.value] = _compute_easy_system_pipeline(
+        systems[InsightsSystem.EASY.value] = _compute_easy_system_pipeline(
             easy_kpis,
             prior,
             target_hr_z2=target_hr_z2,
             target_easy_pace=target_easy_pace,
         )
     else:
-        systems[TrainingSystem.EASY.value] = {
-            "system": TrainingSystem.EASY.value,
+        systems[InsightsSystem.EASY.value] = {
+            "system": InsightsSystem.EASY.value,
             "status": "insufficient_data",
             "reason": "no_easy_runs",
             "kpis": easy_kpis,
@@ -854,19 +797,19 @@ def _compute_system_pipeline(
             "overall_band": None,
         }
 
-    threshold_kpis = kpis_by_system[TrainingSystem.THRESHOLD]
-    if threshold_kpis.get("threshold_run_count", 0) > 0:
-        systems[TrainingSystem.THRESHOLD.value] = _compute_threshold_system_pipeline(
-            threshold_kpis, prior
+    tempo_kpis = kpis_by_system[InsightsSystem.TEMPO]
+    if tempo_kpis.get("tempo_run_count", 0) > 0:
+        systems[InsightsSystem.TEMPO.value] = _compute_tempo_system_pipeline(
+            tempo_kpis, prior
         )
     else:
-        systems[TrainingSystem.THRESHOLD.value] = {
-            "system": TrainingSystem.THRESHOLD.value,
+        systems[InsightsSystem.TEMPO.value] = {
+            "system": InsightsSystem.TEMPO.value,
             "status": "insufficient_data",
-            "reason": "no_threshold_runs",
-            "kpis": threshold_kpis,
-            "bands": {"effort_stability": None, "threshold_pace": None},
-            "deltas": {"effort_stability_delta": None, "threshold_pace_delta": None},
+            "reason": "no_tempo_runs",
+            "kpis": tempo_kpis,
+            "bands": {"effort_stability": None, "tempo_pace": None},
+            "deltas": {"effort_stability_delta": None, "tempo_pace_delta": None},
             "overall_band": None,
         }
     return {"systems": systems}
@@ -915,7 +858,7 @@ def generate_weekly_insight(
     kpis_by_system = _fetch_week_kpis_by_system(
         session, user_id, week_start, kpi_end, athlete_id
     )
-    easy_kpis = kpis_by_system[TrainingSystem.EASY]
+    easy_kpis = kpis_by_system[InsightsSystem.EASY]
 
     if easy_kpis["easy_run_count"] == 0:
         return {
@@ -925,15 +868,15 @@ def generate_weekly_insight(
             "skipped": True,
             "reason": "no_easy_runs",
             "systems": {
-                TrainingSystem.EASY.value: {
-                    "system": TrainingSystem.EASY.value,
+                InsightsSystem.EASY.value: {
+                    "system": InsightsSystem.EASY.value,
                     "status": "insufficient_data",
                     "reason": "no_easy_runs",
                 },
-                TrainingSystem.THRESHOLD.value: {
-                    "system": TrainingSystem.THRESHOLD.value,
+                InsightsSystem.TEMPO.value: {
+                    "system": InsightsSystem.TEMPO.value,
                     "status": "insufficient_data",
-                    "reason": "no_threshold_runs",
+                    "reason": "no_tempo_runs",
                 },
             },
         }
@@ -950,7 +893,7 @@ def generate_weekly_insight(
         target_hr_z2=target_hr_z2,
         target_easy_pace=target_easy_pace,
     )
-    easy_system = pipeline["systems"][TrainingSystem.EASY.value]
+    easy_system = pipeline["systems"][InsightsSystem.EASY.value]
     kpis = easy_system["kpis"]
     bands = easy_system["bands"]
     deltas = easy_system["deltas"]
@@ -968,7 +911,7 @@ def generate_weekly_insight(
         "bands": bands,
         "deltas": deltas,
         "overall_band": overall,
-        "training_system": TrainingSystem.EASY.value,
+        "training_system": InsightsSystem.EASY.value,
         "systems": pipeline["systems"],
     }
 
@@ -1177,8 +1120,8 @@ def get_latest_weekly_insight(
     ]
 
     systems_payload: Dict[str, Dict[str, Any]] = {
-        TrainingSystem.EASY.value: {
-            "system": TrainingSystem.EASY.value,
+        InsightsSystem.EASY.value: {
+            "system": InsightsSystem.EASY.value,
             "status": "ready",
             "overall_band": row.overall_band,
             "kpis": kpis_payload,
@@ -1191,9 +1134,9 @@ def get_latest_weekly_insight(
     }
     if isinstance(row.kpi_snapshot, dict):
         prior_systems = row.kpi_snapshot.get("systems", {})
-        threshold_system = prior_systems.get(TrainingSystem.THRESHOLD.value)
-        if isinstance(threshold_system, dict):
-            systems_payload[TrainingSystem.THRESHOLD.value] = threshold_system
+        tempo_system = resolve_system_snapshot(prior_systems, TEMPO_SYSTEM_SPEC)
+        if isinstance(tempo_system, dict) and tempo_system:
+            systems_payload[InsightsSystem.TEMPO.value] = tempo_system
 
     return {
         "has_insight": True,
@@ -1207,7 +1150,7 @@ def get_latest_weekly_insight(
         "summary_text": row.summary_text,
         "action_text": row.action_text,
         "generated_at": row.generated_at.isoformat() if row.generated_at else None,
-        "systems": systems_payload,
+        "systems": emit_legacy_tempo_system_aliases(systems_payload),
         **_easy_insight_kpi_displays(session, user_id),
     }
 
@@ -1416,31 +1359,27 @@ def get_weekly_insight_history(
         eff_zones,
     ) = _resolve_easy_drift_and_efficiency(session, user_id)
 
-    # THRESHOLD: same calendar week_windows as EASY — one point per week, gaps as nulls.
-    threshold_points: List[Dict[str, Any]] = []
-    threshold_pace_zones: List[Dict[str, Any]] = []
-    threshold_pace_target_display: Optional[str] = None
+    # TEMPO: same calendar week_windows as EASY — one point per week, gaps as nulls.
+    tempo_points: List[Dict[str, Any]] = []
+    tempo_pace_zones: List[Dict[str, Any]] = []
+    tempo_pace_target_display: Optional[str] = None
     try:
         (
             target_tempo_pace,
-            threshold_pace_zones,
-            threshold_pace_target_display,
-        ) = _resolve_threshold_pace_progress(session, user_id)
+            tempo_pace_zones,
+            tempo_pace_target_display,
+        ) = _resolve_tempo_pace_progress(session, user_id)
         for ws, we in week_windows:
             wk = _fetch_week_kpis(session, user_id, ws, we, athlete_id)
-            if int(wk.get("threshold_run_count") or 0) <= 0:
-                threshold_points.append(
-                    _empty_threshold_history_point(f"{ws.month}/{ws.day}")
-                )
+            if int(wk.get("tempo_run_count") or 0) <= 0:
+                tempo_points.append(_empty_tempo_history_point(f"{ws.month}/{ws.day}"))
                 continue
             pace: Optional[float] = None
-            raw_p = wk.get("threshold_pace_min_per_mi")
+            raw_p = wk.get("tempo_pace_min_per_mi")
             if raw_p is not None:
                 pace = _coerce_finite_float(raw_p)
             if pace is None:
-                threshold_points.append(
-                    _empty_threshold_history_point(f"{ws.month}/{ws.day}")
-                )
+                tempo_points.append(_empty_tempo_history_point(f"{ws.month}/{ws.day}"))
                 continue
             stab: Optional[float] = None
             raw_s = wk.get("effort_stability_min_per_mi")
@@ -1450,7 +1389,7 @@ def get_weekly_insight_history(
                 "label": f"{ws.month}/{ws.day}",
                 "value": stab,
                 "band": None,
-                "threshold_pace_min_per_mi": pace,
+                "tempo_pace_min_per_mi": pace,
                 "effort_stability_min_per_mi": stab,
                 "easy_avg_hr": None,
                 "easy_pace_progress_band": None,
@@ -1459,33 +1398,35 @@ def get_weekly_insight_history(
                 "efficiency_band": None,
             }
             try:
-                threshold_points.append(
-                    _attach_threshold_pace_progress_band(
+                tempo_points.append(
+                    _attach_tempo_pace_progress_band(
                         point_payload,
                         target_tempo_pace=target_tempo_pace,
                     )
                 )
             except Exception:
                 logger.exception(
-                    "Failed to attach threshold pace band for weekly history "
+                    "Failed to attach tempo pace band for weekly history "
                     "(user_id=%s, week=%s)",
                     user_id,
                     ws,
                 )
-                point_payload["threshold_pace_progress_band"] = None
-                threshold_points.append(point_payload)
+                point_payload["tempo_pace_progress_band"] = None
+                tempo_points.append(
+                    emit_legacy_tempo_history_field_aliases(point_payload)
+                )
     except Exception:
         logger.exception(
-            "Failed to build threshold weekly history (user_id=%s); "
-            "returning empty threshold series",
+            "Failed to build tempo weekly history (user_id=%s); "
+            "returning empty tempo series",
             user_id,
         )
-        threshold_points = [
-            _empty_threshold_history_point(f"{ws.month}/{ws.day}")
+        tempo_points = [
+            _empty_tempo_history_point(f"{ws.month}/{ws.day}")
             for ws, _we in week_windows
         ]
-        threshold_pace_zones = []
-        threshold_pace_target_display = None
+        tempo_pace_zones = []
+        tempo_pace_target_display = None
 
     return {
         "has_history": True,
@@ -1496,22 +1437,24 @@ def get_weekly_insight_history(
         "hr_zones": hr_zones,
         "hr_drift_target_display": hr_drift_target_display,
         "efficiency_goal_display": efficiency_goal_display,
-        "systems": {
-            TrainingSystem.EASY.value: {
-                "weekly_data": data_points,
-                "zones": zones,
-                "efficiency_zones": eff_zones,
-                "pace_zones": pace_zones,
-                "hr_zones": hr_zones,
-                "hr_drift_target_display": hr_drift_target_display,
-                "efficiency_goal_display": efficiency_goal_display,
-            },
-            TrainingSystem.THRESHOLD.value: {
-                "weekly_data": threshold_points,
-                "pace_zones": threshold_pace_zones,
-                "pace_target_display": threshold_pace_target_display,
-            },
-        },
+        "systems": emit_legacy_tempo_system_aliases(
+            {
+                InsightsSystem.EASY.value: {
+                    "weekly_data": data_points,
+                    "zones": zones,
+                    "efficiency_zones": eff_zones,
+                    "pace_zones": pace_zones,
+                    "hr_zones": hr_zones,
+                    "hr_drift_target_display": hr_drift_target_display,
+                    "efficiency_goal_display": efficiency_goal_display,
+                },
+                InsightsSystem.TEMPO.value: {
+                    "weekly_data": tempo_points,
+                    "pace_zones": tempo_pace_zones,
+                    "pace_target_display": tempo_pace_target_display,
+                },
+            }
+        ),
     }
 
 
