@@ -48,8 +48,6 @@ from src.smartcoach_mobile_coach.insights_systems import (
     TEMPO_RUN_MIN_SPLITS_WITH_HR,
     TEMPO_SYSTEM_SPEC,
     InsightsSystem,
-    emit_legacy_tempo_history_field_aliases,
-    emit_legacy_tempo_system_aliases,
     read_kpi_field,
     read_trend_band,
     resolve_system_snapshot,
@@ -110,21 +108,19 @@ def _empty_easy_history_point(label: str) -> Dict[str, Any]:
 
 def _empty_tempo_history_point(label: str) -> Dict[str, Any]:
     """Gap week on Tempo Avg Pace chart (explicit tempo fields; no trend bands)."""
-    return emit_legacy_tempo_history_field_aliases(
-        {
-            "label": label,
-            "value": None,
-            "band": None,
-            "tempo_pace_min_per_mi": None,
-            "tempo_pace_progress_band": None,
-            "effort_stability_min_per_mi": None,
-            "easy_avg_hr": None,
-            "easy_pace_progress_band": None,
-            "easy_hr_progress_band": None,
-            "efficiency": None,
-            "efficiency_band": None,
-        }
-    )
+    return {
+        "label": label,
+        "value": None,
+        "band": None,
+        "tempo_pace_min_per_mi": None,
+        "tempo_pace_progress_band": None,
+        "effort_stability_min_per_mi": None,
+        "easy_avg_hr": None,
+        "easy_pace_progress_band": None,
+        "easy_hr_progress_band": None,
+        "efficiency": None,
+        "efficiency_band": None,
+    }
 
 
 def _hr_zones_chart_payload(
@@ -220,12 +216,10 @@ def _attach_tempo_pace_progress_band(
     target_tempo_pace: Optional[PaceZoneBand],
 ) -> Dict[str, Any]:
     """Set tempo pace-progress band on a weekly history point (Z3 corridor; HR-free)."""
-    return emit_legacy_tempo_history_field_aliases(
-        attach_pace_progress_band(
-            point,
-            system=InsightsSystem.TEMPO,
-            target_pace=target_tempo_pace,
-        )
+    return attach_pace_progress_band(
+        point,
+        system=InsightsSystem.TEMPO,
+        target_pace=target_tempo_pace,
     )
 
 
@@ -1150,7 +1144,7 @@ def get_latest_weekly_insight(
         "summary_text": row.summary_text,
         "action_text": row.action_text,
         "generated_at": row.generated_at.isoformat() if row.generated_at else None,
-        "systems": emit_legacy_tempo_system_aliases(systems_payload),
+        "systems": systems_payload,
         **_easy_insight_kpi_displays(session, user_id),
     }
 
@@ -1412,9 +1406,7 @@ def get_weekly_insight_history(
                     ws,
                 )
                 point_payload["tempo_pace_progress_band"] = None
-                tempo_points.append(
-                    emit_legacy_tempo_history_field_aliases(point_payload)
-                )
+                tempo_points.append(point_payload)
     except Exception:
         logger.exception(
             "Failed to build tempo weekly history (user_id=%s); "
@@ -1437,24 +1429,22 @@ def get_weekly_insight_history(
         "hr_zones": hr_zones,
         "hr_drift_target_display": hr_drift_target_display,
         "efficiency_goal_display": efficiency_goal_display,
-        "systems": emit_legacy_tempo_system_aliases(
-            {
-                InsightsSystem.EASY.value: {
-                    "weekly_data": data_points,
-                    "zones": zones,
-                    "efficiency_zones": eff_zones,
-                    "pace_zones": pace_zones,
-                    "hr_zones": hr_zones,
-                    "hr_drift_target_display": hr_drift_target_display,
-                    "efficiency_goal_display": efficiency_goal_display,
-                },
-                InsightsSystem.TEMPO.value: {
-                    "weekly_data": tempo_points,
-                    "pace_zones": tempo_pace_zones,
-                    "pace_target_display": tempo_pace_target_display,
-                },
-            }
-        ),
+        "systems": {
+            InsightsSystem.EASY.value: {
+                "weekly_data": data_points,
+                "zones": zones,
+                "efficiency_zones": eff_zones,
+                "pace_zones": pace_zones,
+                "hr_zones": hr_zones,
+                "hr_drift_target_display": hr_drift_target_display,
+                "efficiency_goal_display": efficiency_goal_display,
+            },
+            InsightsSystem.TEMPO.value: {
+                "weekly_data": tempo_points,
+                "pace_zones": tempo_pace_zones,
+                "pace_target_display": tempo_pace_target_display,
+            },
+        },
     }
 
 

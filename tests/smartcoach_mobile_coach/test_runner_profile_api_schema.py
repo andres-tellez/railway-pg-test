@@ -117,7 +117,7 @@ def test_payload_includes_training_pace_recommendations_when_provided():
         recs.tempo_pace_progress.target_display
     )
     assert len(tp["tempo_pace_progress"]["pace_zones_chart"]) >= 5
-    assert tp["threshold_pace_progress"] == tp["tempo_pace_progress"]
+    assert "threshold_pace_progress" not in tp
     assert tp["hr_progress"] is not None
     assert tp["hr_progress"]["target_hr_z2"] == {"low": 120, "high": 145}
     assert tp["hr_progress"]["target_display"] == "≤145 bpm"

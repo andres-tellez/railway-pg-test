@@ -135,8 +135,6 @@ def _training_pace_recommendations_payload(
         "hr_progress": _hr_progress_payload(recs.hr_progress),
         "easy_gyor": _easy_gyor_payload(recs.easy_gyor),
     }
-    if tempo_payload is not None:
-        payload["threshold_pace_progress"] = tempo_payload
     return payload
 
 
