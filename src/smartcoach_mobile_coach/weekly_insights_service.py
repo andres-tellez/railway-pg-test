@@ -52,6 +52,13 @@ from src.smartcoach_mobile_coach.insights_systems import (
     read_trend_band,
     resolve_system_snapshot,
 )
+from src.smartcoach_mobile_coach.tempo_kpi.tempo_segment_pace import (
+    TempoHrZoneBounds,
+    TempoSegmentPaceResult,
+    TempoSplitRow,
+    combine_weekly_tempo_segment_pace,
+    compute_run_tempo_segment_pace,
+)
 from src.smartcoach_mobile_coach.runner_profile.service import (
     get_runner_profile,
 )
@@ -112,7 +119,10 @@ def _empty_tempo_history_point(label: str) -> Dict[str, Any]:
         "label": label,
         "value": None,
         "band": None,
-        "tempo_pace_min_per_mi": None,
+        "tempo_segment_pace_min_per_mi": None,
+        "tempo_segment_pace_source": None,
+        "tempo_segment_split_count": 0,
+        "tempo_segment_confidence": None,
         "tempo_pace_progress_band": None,
         "effort_stability_min_per_mi": None,
         "easy_avg_hr": None,
@@ -221,6 +231,37 @@ def _attach_tempo_pace_progress_band(
         system=InsightsSystem.TEMPO,
         target_pace=target_tempo_pace,
     )
+
+
+def _tempo_segment_result_to_kpi_fields(
+    result: TempoSegmentPaceResult,
+) -> Dict[str, Any]:
+    fields: Dict[str, Any] = {
+        "tempo_segment_pace_min_per_mi": result.tempo_segment_pace_min_per_mi,
+        "tempo_segment_pace_source": result.tempo_segment_pace_source,
+        "tempo_segment_split_count": result.tempo_segment_split_count,
+        "tempo_segment_confidence": result.tempo_segment_confidence,
+    }
+    if result.activity_avg_pace_min_per_mi is not None:
+        fields["activity_avg_pace_min_per_mi"] = result.activity_avg_pace_min_per_mi
+    return fields
+
+
+def _attach_tempo_segment_history_point(
+    point: Dict[str, Any],
+    *,
+    target_tempo_pace: Optional[PaceZoneBand],
+    segment: TempoSegmentPaceResult,
+) -> Dict[str, Any]:
+    """Merge segment provenance and optionally attach GYOR band."""
+    point.update(_tempo_segment_result_to_kpi_fields(segment))
+    if segment.tempo_segment_pace_min_per_mi is not None and segment.allows_full_gyor():
+        return _attach_tempo_pace_progress_band(
+            point,
+            target_tempo_pace=target_tempo_pace,
+        )
+    point["tempo_pace_progress_band"] = None
+    return point
 
 
 def _attach_easy_hr_progress_band(
@@ -338,7 +379,6 @@ SELECT
     COUNT(*) FILTER (WHERE training_system = 'tempo')              AS tempo_runs,
     ROUND(AVG(hr_drift_pct) FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_drift,
     ROUND(AVG(avg_pace)     FILTER (WHERE training_system = 'easy')::numeric, 4)  AS avg_pace,
-    ROUND(AVG(avg_pace)     FILTER (WHERE training_system = 'tempo')::numeric, 4) AS avg_tempo_pace,
     ROUND(AVG(avg_hr)       FILTER (WHERE training_system = 'easy')::numeric, 1)  AS avg_hr,
     ROUND(AVG(easy_pct)     FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_easy_pct,
     ROUND(AVG(z2_band_pct)  FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_z2_adherence,
@@ -354,6 +394,94 @@ SELECT
         2
     ) AS avg_tempo_effort_stability
 FROM classified_runs
+""".format(
+    min_splits_hr=TEMPO_RUN_MIN_SPLITS_WITH_HR,
+    min_frac_above_z2=TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
+)
+
+_WEEK_TEMPO_RUN_SPLITS_SQL = """
+WITH week_runs AS (
+    SELECT
+        v.*
+    FROM v_easy_runs v
+    INNER JOIN public.activities a ON a.activity_id = v.activity_id
+    WHERE v.user_id = :uid
+      AND a.athlete_id = :athlete_id
+      AND v.activity_date >= :ws
+      AND v.activity_date <= :we
+      AND v.activity_type = 'Run'
+),
+split_stats AS (
+    SELECT
+        wr.activity_id,
+        COUNT(s.split) FILTER (WHERE s.average_heartrate IS NOT NULL) AS n_hr_splits,
+        COUNT(s.split) FILTER (
+            WHERE wr.z2_high IS NOT NULL
+              AND s.average_heartrate IS NOT NULL
+              AND s.average_heartrate > wr.z2_high
+        ) AS n_above_ceiling
+    FROM week_runs wr
+    INNER JOIN splits s ON s.activity_id = wr.activity_id
+    GROUP BY wr.activity_id
+),
+split_median_after_warmup AS (
+    SELECT
+        wr.activity_id,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY s.average_heartrate) AS median_hr_after_split_1
+    FROM week_runs wr
+    INNER JOIN splits s ON s.activity_id = wr.activity_id
+    WHERE s.split > 1
+      AND s.average_heartrate IS NOT NULL
+    GROUP BY wr.activity_id
+),
+classified_runs AS (
+    SELECT
+        wr.*,
+        CASE
+            WHEN wr.is_easy_run THEN 'easy'
+            WHEN (
+                wr.moving_time_seconds >= 1800
+                AND wr.z2_high IS NOT NULL
+                AND wr.easy_pct IS NOT NULL
+                AND wr.easy_pct < 0.70
+                AND (
+                    (wr.avg_hr IS NOT NULL AND wr.avg_hr > wr.z2_high)
+                    OR (
+                        COALESCE(ss.n_hr_splits, 0) >= {min_splits_hr}
+                        AND (
+                            (ss.n_above_ceiling::numeric
+                                / NULLIF(ss.n_hr_splits, 0))
+                                >= {min_frac_above_z2}
+                            OR (
+                                mw.median_hr_after_split_1 IS NOT NULL
+                                AND mw.median_hr_after_split_1 > wr.z2_high
+                            )
+                        )
+                    )
+                )
+            ) THEN 'tempo'
+            ELSE NULL
+        END AS training_system
+    FROM week_runs wr
+    LEFT JOIN split_stats ss ON ss.activity_id = wr.activity_id
+    LEFT JOIN split_median_after_warmup mw ON mw.activity_id = wr.activity_id
+)
+SELECT
+    cr.activity_id,
+    cr.avg_pace AS activity_avg_pace,
+    s.split,
+    s.average_heartrate,
+    s.conv_avg_speed,
+    s.conv_distance,
+    z.z2_high,
+    z.z3_low,
+    z.z3_high,
+    z.z4_low
+FROM classified_runs cr
+INNER JOIN public.splits s ON s.activity_id = cr.activity_id
+LEFT JOIN public.user_hr_zones z ON cr.user_id = z.user_id
+WHERE cr.training_system = 'tempo'
+ORDER BY cr.activity_id, s.split NULLS LAST, s.lap_index
 """.format(
     min_splits_hr=TEMPO_RUN_MIN_SPLITS_WITH_HR,
     min_frac_above_z2=TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
@@ -505,6 +633,96 @@ def last_completed_week_bounds(today: Optional[date] = None) -> Tuple[date, date
     return week_start, week_end
 
 
+def _compute_week_tempo_segment_pace(
+    session: Session,
+    user_id: str,
+    week_start: date,
+    week_end: date,
+    athlete_id: int,
+) -> TempoSegmentPaceResult:
+    """HR-qualified split pace rollup for tempo-classified runs in the week."""
+    stmt = text(_WEEK_TEMPO_RUN_SPLITS_SQL).bindparams(
+        bindparam("uid", type_=PGUUID),
+        bindparam("athlete_id", type_=Integer),
+    )
+    rows = session.execute(
+        stmt,
+        {
+            "uid": user_id,
+            "athlete_id": athlete_id,
+            "ws": str(week_start),
+            "we": str(week_end),
+        },
+    ).fetchall()
+
+    if not rows:
+        return TempoSegmentPaceResult(
+            tempo_segment_pace_min_per_mi=None,
+            tempo_segment_pace_source=None,
+            tempo_segment_split_count=0,
+            tempo_segment_confidence=None,
+        )
+
+    by_activity: Dict[int, Dict[str, Any]] = {}
+    for row in rows:
+        aid = int(row.activity_id)
+        bucket = by_activity.setdefault(
+            aid,
+            {
+                "activity_avg_pace": row.activity_avg_pace,
+                "zones": TempoHrZoneBounds(
+                    z2_high=_coerce_finite_float(row.z2_high),
+                    z3_low=_coerce_finite_float(row.z3_low),
+                    z3_high=_coerce_finite_float(row.z3_high),
+                    z4_low=_coerce_finite_float(row.z4_low),
+                ),
+                "splits": [],
+            },
+        )
+        split_idx = row.split
+        if split_idx is None:
+            continue
+        bucket["splits"].append(
+            TempoSplitRow(
+                split_index=int(split_idx),
+                avg_hr=_coerce_finite_float(row.average_heartrate),
+                pace_min_per_mi=_coerce_finite_float(row.conv_avg_speed),
+                distance_mi=_coerce_finite_float(row.conv_distance),
+            )
+        )
+
+    per_run_qualifying = []
+    activity_avgs: list[float | None] = []
+    for bucket in by_activity.values():
+        activity_avg = _coerce_finite_float(bucket["activity_avg_pace"])
+        activity_avgs.append(activity_avg)
+        _result, qualifying = compute_run_tempo_segment_pace(
+            bucket["splits"],
+            bucket["zones"],
+            activity_avg_pace_min_per_mi=activity_avg,
+        )
+        per_run_qualifying.append(qualifying)
+
+    combined = combine_weekly_tempo_segment_pace(per_run_qualifying)
+    if combined.tempo_segment_pace_min_per_mi is not None:
+        return combined
+
+    diagnostic_avg = None
+    for avg in activity_avgs:
+        if avg is not None:
+            diagnostic_avg = avg
+            break
+    if diagnostic_avg is None:
+        return combined
+    return TempoSegmentPaceResult(
+        tempo_segment_pace_min_per_mi=None,
+        tempo_segment_pace_source="activity_avg",
+        tempo_segment_split_count=0,
+        tempo_segment_confidence=None,
+        activity_avg_pace_min_per_mi=diagnostic_avg,
+    )
+
+
 def _fetch_week_kpis(
     session: Session,
     user_id: str,
@@ -532,7 +750,10 @@ def _fetch_week_kpis(
             "tempo_run_count": 0,
             "total_run_count": 0,
             "effort_stability_min_per_mi": None,
-            "tempo_pace_min_per_mi": None,
+            "tempo_segment_pace_min_per_mi": None,
+            "tempo_segment_pace_source": None,
+            "tempo_segment_split_count": 0,
+            "tempo_segment_confidence": None,
         }
 
     avg_pace = float(row.avg_pace) if row.avg_pace is not None else None
@@ -542,7 +763,9 @@ def _fetch_week_kpis(
         if row.avg_tempo_effort_stability is not None
         else None
     )
-    tempo_pace = float(row.avg_tempo_pace) if row.avg_tempo_pace is not None else None
+    tempo_segment = _compute_week_tempo_segment_pace(
+        session, user_id, week_start, week_end, athlete_id
+    )
 
     return {
         "easy_run_count": int(row.easy_runs or 0),
@@ -553,7 +776,7 @@ def _fetch_week_kpis(
         "avg_hr": avg_hr,
         "efficiency": _compute_efficiency(avg_pace, avg_hr),
         "effort_stability_min_per_mi": tempo_effort_stability,
-        "tempo_pace_min_per_mi": tempo_pace,
+        **_tempo_segment_result_to_kpi_fields(tempo_segment),
         "avg_easy_pct": (
             float(row.avg_easy_pct) if row.avg_easy_pct is not None else None
         ),
@@ -587,7 +810,13 @@ def _fetch_week_kpis_by_system(
             "tempo_run_count": weekly.get("tempo_run_count", 0),
             "total_run_count": weekly.get("total_run_count", 0),
             "effort_stability_min_per_mi": weekly.get("effort_stability_min_per_mi"),
-            "tempo_pace_min_per_mi": weekly.get("tempo_pace_min_per_mi"),
+            "tempo_segment_pace_min_per_mi": weekly.get(
+                "tempo_segment_pace_min_per_mi"
+            ),
+            "tempo_segment_pace_source": weekly.get("tempo_segment_pace_source"),
+            "tempo_segment_split_count": weekly.get("tempo_segment_split_count", 0),
+            "tempo_segment_confidence": weekly.get("tempo_segment_confidence"),
+            "activity_avg_pace_min_per_mi": weekly.get("activity_avg_pace_min_per_mi"),
         },
     }
 
@@ -718,7 +947,7 @@ def _compute_tempo_system_pipeline(
     prior_stability = prior.get("tempo_effort_stability") if prior else None
     prior_pace = prior.get("tempo_prior_pace") if prior else None
     effort_stability = kpis.get("effort_stability_min_per_mi")
-    tempo_pace = kpis.get("tempo_pace_min_per_mi")
+    tempo_pace = kpis.get("tempo_segment_pace_min_per_mi")
     effort_band = _trend_band(effort_stability, prior_stability, lower_is_better=True)
     pace_band = _trend_band(tempo_pace, prior_pace, lower_is_better=True)
     effort_delta = _compute_delta(effort_stability, prior_stability)
@@ -1368,11 +1597,14 @@ def get_weekly_insight_history(
             if int(wk.get("tempo_run_count") or 0) <= 0:
                 tempo_points.append(_empty_tempo_history_point(f"{ws.month}/{ws.day}"))
                 continue
-            pace: Optional[float] = None
-            raw_p = wk.get("tempo_pace_min_per_mi")
-            if raw_p is not None:
-                pace = _coerce_finite_float(raw_p)
-            if pace is None:
+            segment = TempoSegmentPaceResult(
+                tempo_segment_pace_min_per_mi=wk.get("tempo_segment_pace_min_per_mi"),
+                tempo_segment_pace_source=wk.get("tempo_segment_pace_source"),
+                tempo_segment_split_count=int(wk.get("tempo_segment_split_count") or 0),
+                tempo_segment_confidence=wk.get("tempo_segment_confidence"),
+                activity_avg_pace_min_per_mi=wk.get("activity_avg_pace_min_per_mi"),
+            )
+            if segment.tempo_segment_pace_min_per_mi is None:
                 tempo_points.append(_empty_tempo_history_point(f"{ws.month}/{ws.day}"))
                 continue
             stab: Optional[float] = None
@@ -1383,7 +1615,6 @@ def get_weekly_insight_history(
                 "label": f"{ws.month}/{ws.day}",
                 "value": stab,
                 "band": None,
-                "tempo_pace_min_per_mi": pace,
                 "effort_stability_min_per_mi": stab,
                 "easy_avg_hr": None,
                 "easy_pace_progress_band": None,
@@ -1393,9 +1624,10 @@ def get_weekly_insight_history(
             }
             try:
                 tempo_points.append(
-                    _attach_tempo_pace_progress_band(
+                    _attach_tempo_segment_history_point(
                         point_payload,
                         target_tempo_pace=target_tempo_pace,
+                        segment=segment,
                     )
                 )
             except Exception:

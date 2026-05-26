@@ -131,7 +131,10 @@ def test_resolve_tempo_pace_progress_matches_training_pace_recommendations(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
     return_value={
         "tempo_run_count": 2,
-        "tempo_pace_min_per_mi": 7.25,
+        "tempo_segment_pace_min_per_mi": 7.25,
+        "tempo_segment_pace_source": "splits_hr_z3",
+        "tempo_segment_split_count": 4,
+        "tempo_segment_confidence": "high",
         "effort_stability_min_per_mi": 0.15,
     },
 )
@@ -180,7 +183,9 @@ def test_weekly_history_tempo_pace_zones_match_tempo_pace_progress(
 
     th_points = tempo["weekly_data"]
     assert len(th_points) == 1
-    assert th_points[0]["tempo_pace_min_per_mi"] == 7.25
+    assert th_points[0]["tempo_segment_pace_min_per_mi"] == 7.25
+    assert th_points[0]["tempo_segment_pace_source"] == "splits_hr_z3"
+    assert th_points[0]["tempo_segment_confidence"] == "high"
     assert th_points[0]["tempo_pace_progress_band"] is not None
     assert "z2_pace_band" not in th_points[0]
     assert TEMPO_LEGACY_SYSTEM_KEY not in out["systems"]
@@ -191,7 +196,10 @@ def test_weekly_history_tempo_pace_zones_match_tempo_pace_progress(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
     return_value={
         "tempo_run_count": 1,
-        "tempo_pace_min_per_mi": 7.1,
+        "tempo_segment_pace_min_per_mi": 7.1,
+        "tempo_segment_pace_source": "splits_hr_z3",
+        "tempo_segment_split_count": 2,
+        "tempo_segment_confidence": "high",
         "effort_stability_min_per_mi": None,
     },
 )
@@ -228,7 +236,54 @@ def test_tempo_history_emits_pace_without_effort_stability(
     out = get_weekly_insight_history(session, USER_ID, weeks=1)
     th_points = out["systems"]["tempo"]["weekly_data"]
     assert len(th_points) == 1
-    assert th_points[0]["tempo_pace_min_per_mi"] == 7.1
+    assert th_points[0]["tempo_segment_pace_min_per_mi"] == 7.1
     assert th_points[0]["tempo_pace_progress_band"] is not None
     assert "threshold_pace_min_per_mi" not in th_points[0]
     assert "threshold_pace_progress_band" not in th_points[0]
+
+
+@patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
+    return_value={
+        "tempo_run_count": 1,
+        "tempo_segment_pace_min_per_mi": 7.0,
+        "tempo_segment_pace_source": "splits_hr_quality",
+        "tempo_segment_split_count": 1,
+        "tempo_segment_confidence": "low",
+        "effort_stability_min_per_mi": None,
+    },
+)
+@patch(
+    "src.smartcoach_mobile_coach.runner_profile.service.resolve_current_training_phase",
+    return_value=_phase_resolution(),
+)
+@patch(
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_runner_profile",
+    return_value=_uncalibrated_profile(),
+)
+@patch(
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_active_or_most_recent_plan",
+    return_value=_plan_with_target(),
+)
+@patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service.get_primary_athlete_id",
+    return_value=12345,
+)
+def test_tempo_history_mutes_gyor_for_low_confidence_segment_pace(
+    _mock_athlete,
+    _mock_plan,
+    _mock_profile,
+    _mock_phase,
+    _mock_week_kpis,
+):
+    cal_week_start, _ = calendar_week_containing(date.today())
+    session = MagicMock()
+    session.execute.return_value.fetchall.return_value = [
+        _history_row(week_start=cal_week_start)
+    ]
+
+    out = get_weekly_insight_history(session, USER_ID, weeks=1)
+    th_points = out["systems"]["tempo"]["weekly_data"]
+    assert th_points[0]["tempo_segment_pace_min_per_mi"] == 7.0
+    assert th_points[0]["tempo_segment_confidence"] == "low"
+    assert th_points[0]["tempo_pace_progress_band"] is None
