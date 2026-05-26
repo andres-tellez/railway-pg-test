@@ -111,18 +111,3 @@ def read_trend_band(bands: dict[str, Any], spec: InsightsSystemSpec) -> Any:
     if spec.legacy_trend_band_field:
         return bands.get(spec.legacy_trend_band_field)
     return None
-
-
-_TEMPO_HISTORY_LEGACY_FIELDS: tuple[tuple[str, str], ...] = (
-    ("tempo_pace_min_per_mi", "threshold_pace_min_per_mi"),
-    ("tempo_pace_progress_band", "threshold_pace_progress_band"),
-)
-
-
-def normalize_tempo_history_point(point: dict[str, Any]) -> dict[str, Any]:
-    """Ensure canonical ``tempo_*`` fields when reading legacy cached payloads."""
-    out = dict(point)
-    for canonical, legacy in _TEMPO_HISTORY_LEGACY_FIELDS:
-        if legacy in out and canonical not in out:
-            out[canonical] = out[legacy]
-    return out
