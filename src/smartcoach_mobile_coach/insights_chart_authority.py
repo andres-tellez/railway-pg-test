@@ -27,6 +27,10 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_ea
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_tempo import (
     DEFAULT_PACE_PROGRESS_TEMPO_CONFIG,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_tempo import (
+    DEFAULT_HR_PROGRESS_TEMPO_CONFIG,
+    classify_tempo_hr_progress,
+)
 from src.smartcoach_mobile_coach.runner_profile.service import (
     get_runner_profile,
     get_runner_training_pace_recommendations,
@@ -164,3 +168,42 @@ def resolve_easy_hr_progress(
             continue
         zones.append({"color": str(zone["color"]), "min": lo, "max": hi})
     return hp.target_hr_z2, zones
+
+
+def resolve_tempo_hr_progress(
+    session: Session,
+    user_id: str,
+) -> tuple[HrZoneBand | None, list[dict[str, Any]], str | None]:
+    """Tempo HR-progress target corridor, chart zones, and display string."""
+    recs = fetch_training_pace_recommendations(session, user_id)
+    if recs is None or recs.tempo_hr_progress is None:
+        return None, [], None
+
+    from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_tempo import (
+        tempo_hr_progress_zones_chart_api_payload,
+    )
+
+    hp = recs.tempo_hr_progress
+    zones: list[dict[str, Any]] = []
+    for zone in tempo_hr_progress_zones_chart_api_payload(hp.hr_zones_chart):
+        lo = _coerce_finite_float(zone.get("min"))
+        hi = _coerce_finite_float(zone.get("max"))
+        if lo is None or hi is None:
+            continue
+        zones.append({"color": str(zone["color"]), "min": lo, "max": hi})
+    return hp.target_hr_z3, zones, hp.target_display
+
+
+def attach_tempo_hr_progress_band(
+    point: dict[str, Any],
+    *,
+    target_hr_z3: HrZoneBand | None,
+) -> dict[str, Any]:
+    """Set tempo hr-progress band on a weekly history point (vs calibrated Z3)."""
+    avg_hr = _coerce_finite_float(point.get("tempo_segment_avg_hr_bpm"))
+    point["tempo_hr_progress_band"] = classify_tempo_hr_progress(
+        avg_hr_bpm=avg_hr,
+        target_hr_z3=target_hr_z3,
+        config=DEFAULT_HR_PROGRESS_TEMPO_CONFIG,
+    )
+    return point
