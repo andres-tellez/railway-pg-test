@@ -1,24 +1,7 @@
 """
-Workout Type Configuration
+Plan placement roles — mileage distribution roles (easy/steady/endurance/long).
 
-Single source of truth for workout type definitions, distributions, and mappings.
-
-This module centralizes:
-- Internal type keys (canonical identifiers)
-- Display labels (UI-facing names)
-- Percentage distributions by frequency
-- Slot counts (number of each role per frequency)
-- Minimum mileage constraints
-
-Invariants:
-I1. Closest non-long day to LONG → EASY (smallest non-long mileage)
-I2. Farthest non-long day → ENDURANCE (largest non-long mileage)
-I3. Remaining day(s) → STEADY; within STEADY, farther gets more
-I4. Never reduce the long run to satisfy minimums
-I5. Works for any run_days order and any long_idx (3/4/5 runs)
-
-Author: SmartCoach Development Team
-Last Updated: January 2026
+Moved from ``services.training_plan.workout_types``.
 """
 
 # ============================================================================
@@ -107,6 +90,126 @@ PACE_GUIDANCE = {
     LONG: "Easy",
 }
 
+# Focus tags persisted on plan_workouts.focus (placement roles).
+FOCUS_TAGS: dict[str, str] = {
+    EASY: "Recovery",
+    STEADY: "Aerobic",
+    ENDURANCE: "Medium-Long",
+    LONG: "Long – fueling practice",
+}
+
+# Warmup/cool-down distances (miles) for Pass4 segment generation.
+WU_CD_MI: dict[str, dict[str, float]] = {
+    EASY: {"wu": 0.5, "cd": 0.5},
+    STEADY: {"wu": 1.0, "cd": 1.0},
+    ENDURANCE: {"wu": 1.0, "cd": 1.0},
+    LONG: {"wu": 0.0, "cd": 0.0},
+}
+
+_DEFAULT_WU_CD_MI = {"wu": 1.0, "cd": 1.0}
+
+PLACEMENT_ROLE_TYPES = frozenset({EASY, STEADY, ENDURANCE, LONG})
+
+# Aliases accepted at plan_workouts.run_type_key write time (DB chk_run_type_key).
+_PERSISTED_RUN_TYPE_ALIASES: dict[str, str] = {
+    "long_run": LONG,
+}
+
+ROLE_TO_TAXONOMY_MAP: dict[str, str] = {
+    LONG: "long_run",
+    ENDURANCE: "easy",
+    STEADY: "steady",
+    EASY: "easy",
+}
+
+
+def role_to_taxonomy(role: str) -> str:
+    return ROLE_TO_TAXONOMY_MAP.get(str(role or "").strip().lower(), "easy")
+
+
+def normalize_persisted_run_type_key(raw: str | None) -> str | None:
+    """Normalize raw keys to a placement role for plan_workouts.run_type_key."""
+    if raw is None:
+        return None
+    key = str(raw).strip().lower()
+    if not key:
+        return None
+    return _PERSISTED_RUN_TYPE_ALIASES.get(key, key)
+
+
+def validate_persisted_run_type_key(raw: str | None) -> str:
+    """
+    Validate plan_workouts.run_type_key against placement roles.
+
+    Matches DB constraint ``chk_run_type_key`` (easy|steady|endurance|long).
+    """
+    key = normalize_persisted_run_type_key(raw)
+    if key not in PLACEMENT_ROLE_TYPES:
+        allowed = ", ".join(sorted(PLACEMENT_ROLE_TYPES))
+        raise ValueError(
+            f"Invalid run_type_key: {raw!r} (must be a placement role: {allowed})"
+        )
+    return key
+
+
+def recognize_run_type_key_from_workout_label(label: str | None) -> str | None:
+    """
+    Map a ``workout_type`` display label to run_type_key when recognized.
+
+    Returns ``None`` when the label does not match any known pattern.
+    """
+    if not label or not str(label).strip():
+        return None
+    workout_type_lower = str(label).strip().lower()
+    if "threshold" in workout_type_lower or "tempo" in workout_type_lower:
+        return "tempo"
+    if "easy" in workout_type_lower or "recovery" in workout_type_lower:
+        return EASY
+    if "steady" in workout_type_lower or "aerobic" in workout_type_lower:
+        return STEADY
+    if "endurance" in workout_type_lower or "medium-long" in workout_type_lower:
+        return ENDURANCE
+    if "long" in workout_type_lower:
+        return LONG
+    return None
+
+
+def infer_placement_role_from_label(label: str | None, *, default: str = EASY) -> str:
+    """
+    Infer placement role from a persisted ``workout_type`` display label.
+
+    Used when ``run_type_key`` is missing (legacy rows, rebuild/week-log paths).
+    """
+    return recognize_run_type_key_from_workout_label(label) or default
+
+
+def infer_run_type_key_from_workout_label(
+    label: str | None, *, default: str = EASY
+) -> str:
+    """
+    Infer ``run_type_key`` for HR/pace lookups from a ``workout_type`` label.
+
+    Same recognition rules as :func:`infer_placement_role_from_label`, including
+    tempo/threshold quality labels.
+    """
+    return recognize_run_type_key_from_workout_label(label) or default
+
+
+def placement_display(role: str) -> str:
+    return TYPE_DISPLAY.get(str(role or "").strip().lower(), str(role or "Easy Run"))
+
+
+def placement_focus_tag(role: str, *, default: str = "Run") -> str:
+    """Return plan_workouts.focus string for a placement role or alias."""
+    key = normalize_persisted_run_type_key(role) or str(role or "").strip().lower()
+    return FOCUS_TAGS.get(key, default)
+
+
+def placement_wu_cd_mi(role: str) -> dict[str, float]:
+    """Return warmup/cool-down mile distances for Pass4 segment generation."""
+    key = normalize_persisted_run_type_key(role) or str(role or "").strip().lower()
+    return dict(WU_CD_MI.get(key, _DEFAULT_WU_CD_MI))
+
 
 # ============================================================================
 # CONFIG VALIDATION
@@ -140,6 +243,8 @@ def _validate_config() -> None:
     assert set(PACE_GUIDANCE.keys()) == required_keys, (
         f"PACE_GUIDANCE missing keys: " f"{required_keys - set(PACE_GUIDANCE.keys())}"
     )
+    assert set(FOCUS_TAGS.keys()) == required_keys
+    assert set(WU_CD_MI.keys()) == required_keys
     # Validate ROLE_RANK_ORDER
     assert ROLE_RANK_ORDER == [ENDURANCE, STEADY, EASY], (
         f"ROLE_RANK_ORDER must be [ENDURANCE, STEADY, EASY], " f"got {ROLE_RANK_ORDER}"

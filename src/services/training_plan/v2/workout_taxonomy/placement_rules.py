@@ -45,7 +45,10 @@ Last Updated: November 2025
 
 from typing import Dict, Any, List, Optional
 
-from .workout_definitions import is_quality_workout, get_recovery_days
+from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
+    is_quality_workout,
+    get_recovery_days,
+)
 
 # =============================================================================
 # DEFAULT RULES - Applied to all plans unless overridden

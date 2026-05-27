@@ -134,3 +134,19 @@ def test_payload_includes_training_pace_recommendations_when_provided():
     tempo_banner = payload.get("insights_tempo_banner")
     assert tempo_banner is not None
     assert tempo_banner["subtitle"] == INSIGHTS_TEMPO_BANNER_SUBTITLE
+
+    registry = payload.get("run_type_registry")
+    assert registry is not None
+    steady = next(e for e in registry if e["key"] == "steady")
+    assert steady["pace_zone_key"] == "z3"
+    assert steady["insights_system"] == "tempo"
+
+    taxonomy = payload.get("plan_workout_taxonomy")
+    assert taxonomy is not None
+    assert any(entry["key"] == "tempo" for entry in taxonomy)
+
+    authorities = payload.get("pace_authorities")
+    assert authorities is not None
+    assert authorities["plan"]["source"] == "activity_median"
+    assert authorities["insights"]["source"] == "marathon_goal"
+    assert authorities["insights"]["target_time"] == "3:40:00"

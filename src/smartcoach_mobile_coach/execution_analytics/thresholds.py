@@ -1,0 +1,23 @@
+"""Canonical classification thresholds for execution_analytics."""
+
+from __future__ import annotations
+
+MIN_RUN_DURATION_SECONDS = 1800
+MIN_EASY_PCT = 0.70
+
+TEMPO_RUN_MIN_SPLITS_WITH_HR = 3
+TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH = 0.5
+TEMPO_RUN_MIN_Z3_SPLITS = 2
+
+MIN_SPLITS_STRONG_EVIDENCE = 2
+MIN_QUALIFYING_MILES_STRONG_EVIDENCE = 1.5
+MIN_WEEK_ROLLUP_MILES_MEDIUM = 0.75
+
+COMPUTE_STATUS_COMPLETE = "complete"
+COMPUTE_STATUS_SKIPPED_NO_PROFILE = "skipped_no_profile"
+COMPUTE_STATUS_SKIPPED_NO_HR_SPLITS = "skipped_no_hr_splits"
+COMPUTE_STATUS_SKIPPED_NOT_RUN = "skipped_not_run"
+COMPUTE_STATUS_FAILED = "failed"
+
+CHART_ELIGIBLE_TEMPO_SOURCES = frozenset({"splits_hr_z3", "splits_hr_quality"})
+CHART_ELIGIBLE_TEMPO_CONFIDENCE = frozenset({"high", "medium"})

@@ -202,7 +202,7 @@ def _parse_get_run_summary_include_flags(
     Optional sections for get_run_summary (defaults all True = backward compatible).
 
     - include_peer_comparison: peer table + deltas vs recent runs
-    - include_execution_kpis: v_easy_runs KPIs + zone_bounds + is_easy_run
+    - include_execution_kpis: activities execution columns + zone_bounds + insights_system
     - include_hr_profile: runner_zone_profiles profile (Z1–Z5, max/resting used)
     """
     return (

@@ -21,43 +21,13 @@ from typing import Dict, Any, List, Optional
 from datetime import date, datetime
 import logging
 
-from src.services.training_plan.v2.workout_taxonomy.workout_definitions import (
-    WORKOUT_DEFINITIONS,
-    get_workout_definition,
+from src.smartcoach_mobile_coach.runner_profile import (
     get_detail_archetype,
+    placement_wu_cd_mi,
 )
-
-# =============================================================================
-# DETAIL ARCHETYPE CONSTANTS
-# =============================================================================
-# These are the segment generator archetypes that Pass4 understands.
-# Each workout type from the taxonomy maps to one of these archetypes.
-
-ARCHETYPE_EASY = "EASY"
-ARCHETYPE_STEADY = "STEADY"
-ARCHETYPE_ENDURANCE = "ENDURANCE"
-ARCHETYPE_LONG = "LONG"
-ARCHETYPE_TEMPO = "TEMPO"
-ARCHETYPE_INTERVALS = "INTERVALS"
-ARCHETYPE_HILLS = "HILLS"
-
-# Legacy workout type constants (for backward compatibility with existing code)
-EASY = "easy"
-STEADY = "steady"
-ENDURANCE = "endurance"
-LONG = "long_run"
-
-# Build TYPE_DISPLAY from taxonomy
-TYPE_DISPLAY = {
-    EASY: WORKOUT_DEFINITIONS["easy"]["description"],
-    STEADY: WORKOUT_DEFINITIONS["steady"]["description"],
-    ENDURANCE: "Endurance (Medium-Long)",  # Keep legacy display name
-    LONG: WORKOUT_DEFINITIONS["long_run"]["description"],
-}
 from src.smartcoach_mobile_coach.runner_profile.models import PaceZoneComputation
 from src.services.training_plan.v2.shared_v2.workout_detail_rules import (
     PHASE,
-    WU_CD_MI,
     STRIDES,
     MARATHON_FINISH,
     QUALITY_ENABLED_PHASES,
@@ -69,6 +39,21 @@ from src.services.training_plan.v2.shared_v2.workout_detail_rules import (
 from src.services.training_plan.v2.shared_v2.workout_utils import pace_range_to_str
 
 logger = logging.getLogger(__name__)
+
+# Segment generator archetypes Pass4 understands (detail_archetype from taxonomy).
+ARCHETYPE_EASY = "EASY"
+ARCHETYPE_STEADY = "STEADY"
+ARCHETYPE_ENDURANCE = "ENDURANCE"
+ARCHETYPE_LONG = "LONG"
+ARCHETYPE_TEMPO = "TEMPO"
+ARCHETYPE_INTERVALS = "INTERVALS"
+ARCHETYPE_HILLS = "HILLS"
+
+# Taxonomy / placement type keys used in segment routing.
+EASY = "easy"
+STEADY = "steady"
+ENDURANCE = "endurance"
+LONG = "long_run"
 
 
 # ---------- Helper Functions ----------
@@ -801,7 +786,7 @@ def _detail_run(
     quality_insert = None
 
     # Get WU/CD distances from config
-    wu_cd = WU_CD_MI.get(run_type, {"wu": 1.0, "cd": 1.0})
+    wu_cd = placement_wu_cd_mi(run_type)
     wu_mi = wu_cd["wu"]
     cd_mi = wu_cd["cd"]
 

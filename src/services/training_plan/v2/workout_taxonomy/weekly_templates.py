@@ -35,7 +35,7 @@ INVARIANTS (DO NOT VIOLATE)
 ---------------------------
 1. Every template MUST end with "long_run"
 2. Template length MUST equal frequency
-3. All workout types MUST exist in workout_definitions.py
+3. All workout types MUST exist in runner_profile.plan_workout_taxonomy
 4. Quality workouts should not be adjacent in the template
 5. Taper templates should have NO quality workouts
 
@@ -66,6 +66,10 @@ Taper Phase: Reduce volume and intensity, maintain leg turnover
 """
 
 from typing import Dict, List, Optional
+
+from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
+    validate_weekly_template,
+)
 
 # =============================================================================
 # WEEKLY TEMPLATES - Organized by race_type > frequency > phase
@@ -369,33 +373,16 @@ def get_available_phases(race_type: str, frequency: int) -> List[str]:
 
 def _validate_templates() -> None:
     """Validate all templates have correct structure."""
-    from src.domain.running.terminology import WORKOUT_TYPES
 
-    valid_workout_types = WORKOUT_TYPES
-
-    def validate_template(template: List[str], context: str) -> None:
-        """Validate a single template."""
-        # Must end with long_run
-        assert (
-            template[-1] == "long_run"
-        ), f"{context}: Template must end with 'long_run', got '{template[-1]}'"
-
-        # All workout types must be valid
-        for wt in template:
-            assert wt in valid_workout_types, f"{context}: Unknown workout type '{wt}'"
+    def validate_template(template: List[str], context: str, frequency: int) -> None:
+        validate_weekly_template(template, frequency=frequency, context=context)
 
     # Validate main templates
     for race_type, freq_dict in WEEKLY_TEMPLATES.items():
         for frequency, phase_dict in freq_dict.items():
             for phase, template in phase_dict.items():
                 context = f"WEEKLY_TEMPLATES[{race_type}][{frequency}][{phase}]"
-
-                # Length must match frequency
-                assert (
-                    len(template) == frequency
-                ), f"{context}: Template length {len(template)} != frequency {frequency}"
-
-                validate_template(template, context)
+                validate_template(template, context, frequency)
 
     # Validate scenario overrides
     for scenario, race_dict in SCENARIO_OVERRIDES.items():
@@ -406,12 +393,7 @@ def _validate_templates() -> None:
                         f"SCENARIO_OVERRIDES[{scenario}][{race_type}]"
                         f"[{frequency}][{phase}]"
                     )
-
-                    assert (
-                        len(template) == frequency
-                    ), f"{context}: Template length {len(template)} != frequency {frequency}"
-
-                    validate_template(template, context)
+                    validate_template(template, context, frequency)
 
 
 # Run validation at import

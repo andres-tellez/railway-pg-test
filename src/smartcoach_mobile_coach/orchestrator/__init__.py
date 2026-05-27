@@ -564,7 +564,7 @@ _GET_TRAINING_KPIS_OPENAI_TOOL: Dict[str, Any] = {
     "function": {
         "name": "get_training_kpis",
         "description": (
-            "Training KPI trends over recent ISO weeks (Mon-Sun) from v_easy_runs (KPI/easy-run scope): "
+            "Training KPI trends over recent ISO weeks (Mon-Sun) from activities execution columns (KPI/easy-run scope): "
             "HR drift, Z2 pace/adherence, and long-run readiness context. "
             "Not the source of truth for all-runs weekly mileage totals; use aggregate_runs_in_range "
             "for inclusive weekly/all-runs volume. If date range params are omitted, weeks is rolling from now()."

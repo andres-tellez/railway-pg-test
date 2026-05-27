@@ -20,7 +20,10 @@ from src.smartcoach_mobile_coach.runner_profile.models import (
     PaceZoneBand,
     PaceZoneComputation,
 )
-from src.utils.run_type_constants import RUN_TYPE_EASY, RUN_TYPE_STEADY
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    RUN_TYPE_EASY,
+    RUN_TYPE_STEADY,
+)
 
 
 @dataclass

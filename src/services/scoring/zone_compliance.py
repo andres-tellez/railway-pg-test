@@ -44,7 +44,9 @@ from __future__ import annotations
 
 from typing import NamedTuple, Protocol
 
-from src.utils.run_type_constants import RUN_TYPE_DEFINITIONS
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    RUN_TYPE_DEFINITIONS,
+)
 
 
 class _ActivityZoneReader(Protocol):
@@ -130,7 +132,7 @@ def zone_metrics_for_type(
             (or any dict shaped the same way — zone ids 1–5 mapping to
             percent-of-time floats).
         run_type_key: Canonical run type key from
-            :data:`src.utils.run_type_constants.RUN_TYPE_DEFINITIONS`.
+            :data:`src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry.RUN_TYPE_DEFINITIONS`.
 
     Returns:
         :class:`ZoneMetrics` with three floats, each rounded to two

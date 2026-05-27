@@ -94,11 +94,11 @@ def _phase_resolution() -> TrainingPhaseResolution:
     return_value=_phase_resolution(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service.get_runner_profile",
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_runner_profile",
     return_value=_uncalibrated_profile(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service.get_active_or_most_recent_plan",
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_active_or_most_recent_plan",
     return_value=_plan_with_target(),
 )
 def test_resolve_easy_pace_progress_matches_training_pace_recommendations(
@@ -132,11 +132,11 @@ def test_resolve_easy_pace_progress_matches_training_pace_recommendations(
     return_value=_phase_resolution(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service.get_runner_profile",
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_runner_profile",
     return_value=_uncalibrated_profile(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service.get_active_or_most_recent_plan",
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_active_or_most_recent_plan",
     return_value=_plan_with_target(),
 )
 @patch(
