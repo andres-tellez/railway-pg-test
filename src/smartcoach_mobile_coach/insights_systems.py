@@ -12,6 +12,8 @@ from typing import Any
 
 TEMPO_RUN_MIN_SPLITS_WITH_HR = 3
 TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH = 0.5
+# Profile Z3 split count to classify mixed W/T/C runs (segment SSOT alignment).
+TEMPO_RUN_MIN_Z3_SPLITS = 2
 
 # Pre-Phase-3 stored snapshots used this key for Tempo/Z3 (read fallback only).
 TEMPO_LEGACY_SYSTEM_KEY = "threshold"
