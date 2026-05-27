@@ -39,6 +39,20 @@ def test_tempo_split_row_prefers_split_over_lap_index():
     assert parsed.split_index == 3
 
 
+def test_tempo_split_pace_uses_average_speed_when_conv_missing():
+    from src.smartcoach_mobile_coach.weekly_insights_service import (
+        _tempo_split_pace_min_per_mi,
+    )
+
+    row = SimpleNamespace(
+        conv_avg_speed=None,
+        average_speed=1609.344 / (8.5 * 60.0),
+        moving_time=510,
+    )
+    pace = _tempo_split_pace_min_per_mi(row, distance_mi=1.0)
+    assert pace == 8.5
+
+
 def test_tempo_split_row_returns_none_without_index():
     row = SimpleNamespace(
         split=None,
