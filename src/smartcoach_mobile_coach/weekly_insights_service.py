@@ -52,6 +52,7 @@ from src.smartcoach_mobile_coach.insights_chart_authority import (
 from src.smartcoach_mobile_coach.insights_systems import (
     TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
     TEMPO_RUN_MIN_SPLITS_WITH_HR,
+    TEMPO_RUN_MIN_Z3_SPLITS,
     TEMPO_SYSTEM_SPEC,
     InsightsSystem,
     read_kpi_field,
@@ -315,16 +316,24 @@ def weekly_insight_tool_slim_default_from_env() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
-# Tempo run classification (see _WEEK_KPIS_SQL):
-# - Legacy: activity avg HR strictly above Z2 ceiling (Strava aggregate).
-# - Primary fix: split-majority — enough laps with HR, and ≥ half of those laps
-#   above Z2 high, OR median HR on laps after split 1 above Z2 high (warmup lap).
+# Tempo run classification (see _tempo_week_classified_runs_sql):
+# - SSOT: enough profile Z3 HR splits (mixed warmup/tempo/cooldown runs).
+# - Legacy: activity avg HR above Z2 ceiling, or split-majority above Z2 high.
 
 # ---------------------------------------------------------------------------
 # SQL
 # ---------------------------------------------------------------------------
 
-_WEEK_KPIS_SQL = """
+_TEMPO_WEEK_CLASSIFICATION_FORMAT = dict(
+    min_splits_hr=TEMPO_RUN_MIN_SPLITS_WITH_HR,
+    min_frac_above_z2=TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
+    min_z3_splits=TEMPO_RUN_MIN_Z3_SPLITS,
+)
+
+
+def _tempo_week_classified_runs_sql() -> str:
+    """Shared CTEs + classified_runs for tempo KPI and split fetch queries."""
+    return """
 WITH week_runs AS (
     SELECT
         v.*
@@ -363,6 +372,30 @@ split_median_after_warmup AS (
       AND s.average_heartrate IS NOT NULL
     GROUP BY wr.activity_id
 ),
+profile_split_tiers AS (
+    SELECT
+        wr.activity_id,
+        COUNT(*) FILTER (
+            WHERE s.average_heartrate IS NOT NULL
+              AND COALESCE(s.split, s.lap_index) IS NOT NULL
+              AND rzp.hr_z3_low IS NOT NULL
+              AND rzp.hr_z3_high IS NOT NULL
+              AND s.average_heartrate >= rzp.hr_z3_low
+              AND s.average_heartrate <= rzp.hr_z3_high
+        ) AS n_z3_splits,
+        COUNT(*) FILTER (
+            WHERE s.average_heartrate IS NOT NULL
+              AND COALESCE(s.split, s.lap_index) IS NOT NULL
+              AND rzp.hr_z2_high IS NOT NULL
+              AND rzp.hr_z4_low IS NOT NULL
+              AND s.average_heartrate > rzp.hr_z2_high
+              AND s.average_heartrate <= rzp.hr_z4_low
+        ) AS n_quality_splits
+    FROM week_runs wr
+    INNER JOIN splits s ON s.activity_id = wr.activity_id
+    INNER JOIN runner_zone_profiles rzp ON rzp.user_id = wr.user_id
+    GROUP BY wr.activity_id
+),
 classified_runs AS (
     SELECT
         wr.*,
@@ -370,20 +403,29 @@ classified_runs AS (
             WHEN wr.is_easy_run THEN 'easy'
             WHEN (
                 wr.moving_time_seconds >= 1800
-                AND wr.z2_high IS NOT NULL
                 AND wr.easy_pct IS NOT NULL
                 AND wr.easy_pct < 0.70
                 AND (
-                    (wr.avg_hr IS NOT NULL AND wr.avg_hr > wr.z2_high)
+                    COALESCE(pst.n_z3_splits, 0) >= {min_z3_splits}
                     OR (
-                        COALESCE(ss.n_hr_splits, 0) >= {min_splits_hr}
+                        COALESCE(pst.n_z3_splits, 0) = 0
+                        AND COALESCE(pst.n_quality_splits, 0) >= {min_splits_hr}
+                    )
+                    OR (
+                        wr.z2_high IS NOT NULL
                         AND (
-                            (ss.n_above_ceiling::numeric
-                                / NULLIF(ss.n_hr_splits, 0))
-                                >= {min_frac_above_z2}
+                            (wr.avg_hr IS NOT NULL AND wr.avg_hr > wr.z2_high)
                             OR (
-                                mw.median_hr_after_split_1 IS NOT NULL
-                                AND mw.median_hr_after_split_1 > wr.z2_high
+                                COALESCE(ss.n_hr_splits, 0) >= {min_splits_hr}
+                                AND (
+                                    (ss.n_above_ceiling::numeric
+                                        / NULLIF(ss.n_hr_splits, 0))
+                                        >= {min_frac_above_z2}
+                                    OR (
+                                        mw.median_hr_after_split_1 IS NOT NULL
+                                        AND mw.median_hr_after_split_1 > wr.z2_high
+                                    )
+                                )
                             )
                         )
                     )
@@ -394,7 +436,16 @@ classified_runs AS (
     FROM week_runs wr
     LEFT JOIN split_stats ss ON ss.activity_id = wr.activity_id
     LEFT JOIN split_median_after_warmup mw ON mw.activity_id = wr.activity_id
+    LEFT JOIN profile_split_tiers pst ON pst.activity_id = wr.activity_id
 )
+""".format(
+        **_TEMPO_WEEK_CLASSIFICATION_FORMAT,
+    )
+
+
+_WEEK_KPIS_SQL = (
+    _tempo_week_classified_runs_sql()
+    + """
 SELECT
     COUNT(*) AS total_runs,
     COUNT(*) FILTER (WHERE training_system = 'easy')                   AS easy_runs,
@@ -416,82 +467,12 @@ SELECT
         2
     ) AS avg_tempo_effort_stability
 FROM classified_runs
-""".format(
-    min_splits_hr=TEMPO_RUN_MIN_SPLITS_WITH_HR,
-    min_frac_above_z2=TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
+"""
 )
 
-_WEEK_TEMPO_RUN_SPLITS_SQL = """
-WITH week_runs AS (
-    SELECT
-        v.*
-    FROM v_easy_runs v
-    INNER JOIN public.activities a ON a.activity_id = v.activity_id
-    WHERE v.user_id = :uid
-      AND a.athlete_id = :athlete_id
-      AND v.activity_date >= :ws
-      AND v.activity_date <= :we
-      AND v.activity_type = 'Run'
-),
-split_stats AS (
-    SELECT
-        wr.activity_id,
-        COUNT(*) FILTER (
-            WHERE s.average_heartrate IS NOT NULL
-              AND COALESCE(s.split, s.lap_index) IS NOT NULL
-        ) AS n_hr_splits,
-        COUNT(*) FILTER (
-            WHERE wr.z2_high IS NOT NULL
-              AND s.average_heartrate IS NOT NULL
-              AND s.average_heartrate > wr.z2_high
-              AND COALESCE(s.split, s.lap_index) IS NOT NULL
-        ) AS n_above_ceiling
-    FROM week_runs wr
-    INNER JOIN splits s ON s.activity_id = wr.activity_id
-    GROUP BY wr.activity_id
-),
-split_median_after_warmup AS (
-    SELECT
-        wr.activity_id,
-        percentile_cont(0.5) WITHIN GROUP (ORDER BY s.average_heartrate) AS median_hr_after_split_1
-    FROM week_runs wr
-    INNER JOIN splits s ON s.activity_id = wr.activity_id
-    WHERE COALESCE(s.split, s.lap_index) > 1
-      AND s.average_heartrate IS NOT NULL
-    GROUP BY wr.activity_id
-),
-classified_runs AS (
-    SELECT
-        wr.*,
-        CASE
-            WHEN wr.is_easy_run THEN 'easy'
-            WHEN (
-                wr.moving_time_seconds >= 1800
-                AND wr.z2_high IS NOT NULL
-                AND wr.easy_pct IS NOT NULL
-                AND wr.easy_pct < 0.70
-                AND (
-                    (wr.avg_hr IS NOT NULL AND wr.avg_hr > wr.z2_high)
-                    OR (
-                        COALESCE(ss.n_hr_splits, 0) >= {min_splits_hr}
-                        AND (
-                            (ss.n_above_ceiling::numeric
-                                / NULLIF(ss.n_hr_splits, 0))
-                                >= {min_frac_above_z2}
-                            OR (
-                                mw.median_hr_after_split_1 IS NOT NULL
-                                AND mw.median_hr_after_split_1 > wr.z2_high
-                            )
-                        )
-                    )
-                )
-            ) THEN 'tempo'
-            ELSE NULL
-        END AS training_system
-    FROM week_runs wr
-    LEFT JOIN split_stats ss ON ss.activity_id = wr.activity_id
-    LEFT JOIN split_median_after_warmup mw ON mw.activity_id = wr.activity_id
-)
+_WEEK_TEMPO_RUN_SPLITS_SQL = (
+    _tempo_week_classified_runs_sql()
+    + """
 SELECT
     cr.activity_id,
     cr.avg_pace AS activity_avg_pace,
@@ -507,9 +488,7 @@ FROM classified_runs cr
 INNER JOIN public.splits s ON s.activity_id = cr.activity_id
 WHERE cr.training_system = 'tempo'
 ORDER BY cr.activity_id, s.split NULLS LAST, s.lap_index
-""".format(
-    min_splits_hr=TEMPO_RUN_MIN_SPLITS_WITH_HR,
-    min_frac_above_z2=TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
+"""
 )
 
 _USERS_WITH_EASY_RUNS_SQL = """
