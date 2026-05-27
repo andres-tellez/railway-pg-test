@@ -10,6 +10,9 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.gyor.models impo
 from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_easy import (
     EasyHrProgressReference,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_tempo import (
+    TempoHrProgressReference,
+)
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
     EasyPaceProgressReference,
 )
@@ -42,7 +45,8 @@ class TrainingPaceRecommendations:
 
     ``pace_progress`` is the Insights Easy Avg Pace chart authority (HR-free).
     ``tempo_pace_progress`` is the Insights Tempo Avg Pace chart authority (Z3 corridor).
-    ``hr_progress`` is the Insights Avg HR chart authority (Z2 high cap).
+    ``hr_progress`` is the Insights Easy Avg HR chart authority (Z2 high cap).
+    ``tempo_hr_progress`` is the Insights Tempo Avg HR chart authority (Z3 HR corridor).
     ``goal_aligned_easy_pace`` is the full goal easy envelope (+55…+85).
     ``easy_gyor`` is Z2 HR target metadata when calibrated (not used for charts).
     """
@@ -59,6 +63,7 @@ class TrainingPaceRecommendations:
     pace_progress: Optional[EasyPaceProgressReference] = None
     tempo_pace_progress: Optional[TempoPaceProgressReference] = None
     hr_progress: Optional[EasyHrProgressReference] = None
+    tempo_hr_progress: Optional[TempoHrProgressReference] = None
     easy_gyor: Optional[EasyGyorReference] = None
     phase_source: Optional[str] = None
     phase_week_start: Optional[str] = None

@@ -7,7 +7,13 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from src.smartcoach_mobile_coach.insights_systems import TEMPO_LEGACY_SYSTEM_KEY
-from src.smartcoach_mobile_coach.runner_profile.models import RunnerZoneProfileData
+from src.smartcoach_mobile_coach.runner_profile.models import (
+    HrZoneBand,
+    RunnerZoneProfileData,
+)
+from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_tempo import (
+    tempo_hr_progress_zones_chart_api_payload,
+)
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_tempo import (
     tempo_pace_progress_zones_chart_api_payload,
 )
@@ -19,6 +25,7 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.training_phase_r
     TrainingPhaseResolution,
 )
 from src.smartcoach_mobile_coach.weekly_insights_service import (
+    _resolve_tempo_hr_progress,
     _resolve_tempo_pace_progress,
     calendar_week_containing,
     get_weekly_insight_history,
@@ -49,6 +56,27 @@ def _uncalibrated_profile() -> RunnerZoneProfileData:
     )
 
 
+def _calibrated_profile() -> RunnerZoneProfileData:
+    return RunnerZoneProfileData(
+        user_id=USER_ID,
+        calibrated=True,
+        computed_at=None,
+        hrmax_used=185,
+        resting_hr_used=50,
+        zone_method="karvonen",
+        hr_z1=HrZoneBand(100, 115),
+        hr_z2=HrZoneBand(120, 145),
+        hr_z3=HrZoneBand(146, 160),
+        hr_z4=HrZoneBand(161, 175),
+        hr_z5=HrZoneBand(176, 185),
+        pace_z2=None,
+        pace_z3=None,
+        pace_z4=None,
+        pace_source=None,
+        pace_computed_at=None,
+    )
+
+
 def _expected_tempo_pace_zones_from_recs(
     recs: TrainingPaceRecommendations | None,
 ) -> list[dict[str, object]]:
@@ -56,6 +84,20 @@ def _expected_tempo_pace_zones_from_recs(
     zones: list[dict[str, object]] = []
     for zone in tempo_pace_progress_zones_chart_api_payload(
         recs.tempo_pace_progress.pace_zones_chart
+    ):
+        lo = float(zone["min"])
+        hi = float(zone["max"])
+        zones.append({"color": str(zone["color"]), "min": lo, "max": hi})
+    return zones
+
+
+def _expected_tempo_hr_zones_from_recs(
+    recs: TrainingPaceRecommendations | None,
+) -> list[dict[str, object]]:
+    assert recs is not None and recs.tempo_hr_progress is not None
+    zones: list[dict[str, object]] = []
+    for zone in tempo_hr_progress_zones_chart_api_payload(
+        recs.tempo_hr_progress.hr_zones_chart
     ):
         lo = float(zone["min"])
         hi = float(zone["max"])
@@ -128,10 +170,47 @@ def test_resolve_tempo_pace_progress_matches_training_pace_recommendations(
 
 
 @patch(
+    "src.smartcoach_mobile_coach.runner_profile.service.resolve_current_training_phase",
+    return_value=_phase_resolution(),
+)
+@patch(
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_runner_profile",
+    return_value=_calibrated_profile(),
+)
+@patch(
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_active_or_most_recent_plan",
+    return_value=_plan_with_target(),
+)
+def test_resolve_tempo_hr_progress_matches_training_pace_recommendations(
+    _mock_plan,
+    _mock_profile,
+    _mock_phase,
+):
+    recs = build_training_pace_recommendations(
+        profile=_calibrated_profile(),
+        target_time=TARGET_TIME,
+        phase="Base",
+    )
+    expected_zones = _expected_tempo_hr_zones_from_recs(recs)
+
+    session = MagicMock()
+    target_hr_z3, hr_zones, target_display = _resolve_tempo_hr_progress(
+        session, USER_ID
+    )
+
+    assert recs is not None and recs.tempo_hr_progress is not None
+    assert target_hr_z3 is not None
+    assert target_hr_z3.low == recs.tempo_hr_progress.target_hr_z3.low
+    assert hr_zones == expected_zones
+    assert target_display == recs.tempo_hr_progress.target_display
+
+
+@patch(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
     return_value={
         "tempo_run_count": 2,
         "tempo_segment_pace_min_per_mi": 7.25,
+        "tempo_segment_avg_hr_bpm": 155.0,
         "tempo_segment_pace_source": "splits_hr_z3",
         "tempo_segment_split_count": 4,
         "tempo_segment_confidence": "high",
@@ -144,7 +223,7 @@ def test_resolve_tempo_pace_progress_matches_training_pace_recommendations(
 )
 @patch(
     "src.smartcoach_mobile_coach.insights_chart_authority.get_runner_profile",
-    return_value=_uncalibrated_profile(),
+    return_value=_calibrated_profile(),
 )
 @patch(
     "src.smartcoach_mobile_coach.insights_chart_authority.get_active_or_most_recent_plan",
@@ -168,25 +247,30 @@ def test_weekly_history_tempo_pace_zones_match_tempo_pace_progress(
     ]
 
     recs = build_training_pace_recommendations(
-        profile=_uncalibrated_profile(),
+        profile=_calibrated_profile(),
         target_time=TARGET_TIME,
         phase="Base",
     )
-    expected_zones = _expected_tempo_pace_zones_from_recs(recs)
+    expected_pace_zones = _expected_tempo_pace_zones_from_recs(recs)
+    expected_hr_zones = _expected_tempo_hr_zones_from_recs(recs)
 
     out = get_weekly_insight_history(session, USER_ID, weeks=1)
 
     assert out["has_history"] is True
     tempo = out["systems"]["tempo"]
-    assert tempo["pace_zones"] == expected_zones
+    assert tempo["pace_zones"] == expected_pace_zones
     assert tempo["pace_target_display"] == recs.tempo_pace_progress.target_display
+    assert tempo["hr_zones"] == expected_hr_zones
+    assert tempo["hr_target_display"] == recs.tempo_hr_progress.target_display
 
     th_points = tempo["weekly_data"]
     assert len(th_points) == 1
     assert th_points[0]["tempo_segment_pace_min_per_mi"] == 7.25
+    assert th_points[0]["tempo_segment_avg_hr_bpm"] == 155.0
     assert th_points[0]["tempo_segment_pace_source"] == "splits_hr_z3"
     assert th_points[0]["tempo_segment_confidence"] == "high"
     assert th_points[0]["tempo_pace_progress_band"] is not None
+    assert th_points[0]["tempo_hr_progress_band"] is not None
     assert "z2_pace_band" not in th_points[0]
     assert TEMPO_LEGACY_SYSTEM_KEY not in out["systems"]
     assert "threshold_pace_min_per_mi" not in th_points[0]
@@ -287,3 +371,4 @@ def test_tempo_history_mutes_gyor_for_low_confidence_segment_pace(
     assert th_points[0]["tempo_segment_pace_min_per_mi"] == 7.0
     assert th_points[0]["tempo_segment_confidence"] == "low"
     assert th_points[0]["tempo_pace_progress_band"] is None
+    assert th_points[0]["tempo_hr_progress_band"] is None

@@ -13,6 +13,9 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
 from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_easy import (
     build_easy_hr_progress_reference,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_tempo import (
+    build_tempo_hr_progress_reference,
+)
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
     build_easy_pace_progress_reference,
 )
@@ -41,6 +44,11 @@ def build_training_pace_recommendations(
         if profile.calibrated and profile.hr_z2 is not None
         else None
     )
+    tempo_hr_progress = (
+        build_tempo_hr_progress_reference(profile.hr_z3)
+        if profile.calibrated and profile.hr_z3 is not None
+        else None
+    )
 
     if (
         activity_easy is None
@@ -48,6 +56,7 @@ def build_training_pace_recommendations(
         and activity_z4 is None
         and goal_aligned is None
         and hr_progress is None
+        and tempo_hr_progress is None
     ):
         return None
 
@@ -79,6 +88,7 @@ def build_training_pace_recommendations(
         pace_progress=pace_progress,
         tempo_pace_progress=tempo_pace_progress,
         hr_progress=hr_progress,
+        tempo_hr_progress=tempo_hr_progress,
         easy_gyor=easy_gyor,
         phase_source=phase_source,
         phase_week_start=phase_week_start,
