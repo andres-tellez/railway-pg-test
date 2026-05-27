@@ -25,6 +25,10 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_te
     TempoPaceProgressReference,
     tempo_pace_progress_zones_chart_api_payload,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_tempo import (
+    TempoHrProgressReference,
+    tempo_hr_progress_zones_chart_api_payload,
+)
 
 # Canonical copy for Insights › Easy banner (emitted whenever Z2 HR + Z2 pace are present).
 INSIGHTS_EASY_BANNER_SUBTITLE = (
@@ -95,6 +99,19 @@ def _tempo_pace_progress_payload(
     }
 
 
+def _tempo_hr_progress_payload(
+    ref: Optional[TempoHrProgressReference],
+) -> Optional[dict[str, Any]]:
+    """Insights Tempo Avg HR chart authority (Z3 HR corridor + bilateral Y/O/R zones)."""
+    if ref is None:
+        return None
+    return {
+        "target_hr_z3": _hr_band_payload(ref.target_hr_z3),
+        "target_display": ref.target_display,
+        "hr_zones_chart": tempo_hr_progress_zones_chart_api_payload(ref.hr_zones_chart),
+    }
+
+
 def _easy_gyor_payload(ref: Optional[EasyGyorReference]) -> Optional[dict[str, Any]]:
     """HR-fused easy GYOR reference only (no pace-progress chart fields).
 
@@ -132,6 +149,7 @@ def _training_pace_recommendations_payload(
         ),
         "pace_progress": _pace_progress_payload(recs.pace_progress),
         "tempo_pace_progress": tempo_payload,
+        "tempo_hr_progress": _tempo_hr_progress_payload(recs.tempo_hr_progress),
         "hr_progress": _hr_progress_payload(recs.hr_progress),
         "easy_gyor": _easy_gyor_payload(recs.easy_gyor),
     }

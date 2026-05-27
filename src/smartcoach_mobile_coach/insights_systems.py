@@ -13,12 +13,6 @@ from typing import Any
 TEMPO_RUN_MIN_SPLITS_WITH_HR = 3
 TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH = 0.5
 
-# Deprecated aliases for external callers — remove when unused.
-THRESHOLD_MIN_SPLITS_WITH_HR = TEMPO_RUN_MIN_SPLITS_WITH_HR
-THRESHOLD_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH = (
-    TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH
-)
-
 # Pre-Phase-3 stored snapshots used this key for Tempo/Z3 (read fallback only).
 TEMPO_LEGACY_SYSTEM_KEY = "threshold"
 

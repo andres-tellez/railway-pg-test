@@ -44,8 +44,10 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_ea
 )
 from src.smartcoach_mobile_coach.insights_chart_authority import (
     attach_pace_progress_band,
+    attach_tempo_hr_progress_band,
     resolve_easy_hr_progress,
     resolve_pace_progress,
+    resolve_tempo_hr_progress,
 )
 from src.smartcoach_mobile_coach.insights_systems import (
     TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
@@ -124,10 +126,12 @@ def _empty_tempo_history_point(label: str) -> Dict[str, Any]:
         "value": None,
         "band": None,
         "tempo_segment_pace_min_per_mi": None,
+        "tempo_segment_avg_hr_bpm": None,
         "tempo_segment_pace_source": None,
         "tempo_segment_split_count": 0,
         "tempo_segment_confidence": None,
         "tempo_pace_progress_band": None,
+        "tempo_hr_progress_band": None,
         "effort_stability_min_per_mi": None,
         "easy_avg_hr": None,
         "easy_pace_progress_band": None,
@@ -237,11 +241,19 @@ def _attach_tempo_pace_progress_band(
     )
 
 
+def _resolve_tempo_hr_progress(
+    session: Session, user_id: str
+) -> Tuple[Optional[HrZoneBand], List[Dict[str, Any]], Optional[str]]:
+    """Tempo HR-progress corridor, chart zones, and display from recommendations."""
+    return resolve_tempo_hr_progress(session, user_id)
+
+
 def _tempo_segment_result_to_kpi_fields(
     result: TempoSegmentPaceResult,
 ) -> Dict[str, Any]:
     fields: Dict[str, Any] = {
         "tempo_segment_pace_min_per_mi": result.tempo_segment_pace_min_per_mi,
+        "tempo_segment_avg_hr_bpm": result.tempo_segment_avg_hr_bpm,
         "tempo_segment_pace_source": result.tempo_segment_pace_source,
         "tempo_segment_split_count": result.tempo_segment_split_count,
         "tempo_segment_confidence": result.tempo_segment_confidence,
@@ -255,16 +267,22 @@ def _attach_tempo_segment_history_point(
     point: Dict[str, Any],
     *,
     target_tempo_pace: Optional[PaceZoneBand],
+    target_hr_z3: Optional[HrZoneBand],
     segment: TempoSegmentPaceResult,
 ) -> Dict[str, Any]:
-    """Merge segment provenance and optionally attach GYOR band."""
+    """Merge segment provenance and optionally attach pace/HR GYOR bands."""
     point.update(_tempo_segment_result_to_kpi_fields(segment))
     if segment.tempo_segment_pace_min_per_mi is not None and segment.allows_full_gyor():
-        return _attach_tempo_pace_progress_band(
+        point = _attach_tempo_pace_progress_band(
             point,
             target_tempo_pace=target_tempo_pace,
         )
+        return attach_tempo_hr_progress_band(
+            point,
+            target_hr_z3=target_hr_z3,
+        )
     point["tempo_pace_progress_band"] = None
+    point["tempo_hr_progress_band"] = None
     return point
 
 
@@ -301,10 +319,6 @@ def weekly_insight_tool_slim_default_from_env() -> bool:
 # - Legacy: activity avg HR strictly above Z2 ceiling (Strava aggregate).
 # - Primary fix: split-majority — enough laps with HR, and ≥ half of those laps
 #   above Z2 high, OR median HR on laps after split 1 above Z2 high (warmup lap).
-THRESHOLD_MIN_SPLITS_WITH_HR = TEMPO_RUN_MIN_SPLITS_WITH_HR
-THRESHOLD_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH = (
-    TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH
-)
 
 # ---------------------------------------------------------------------------
 # SQL
@@ -736,6 +750,7 @@ def _compute_week_tempo_segment_pace(
     if not rows:
         return TempoSegmentPaceResult(
             tempo_segment_pace_min_per_mi=None,
+            tempo_segment_avg_hr_bpm=None,
             tempo_segment_pace_source=None,
             tempo_segment_split_count=0,
             tempo_segment_confidence=None,
@@ -791,6 +806,7 @@ def _compute_week_tempo_segment_pace(
         return combined
     return TempoSegmentPaceResult(
         tempo_segment_pace_min_per_mi=None,
+        tempo_segment_avg_hr_bpm=None,
         tempo_segment_pace_source="activity_avg",
         tempo_segment_split_count=0,
         tempo_segment_confidence=None,
@@ -826,6 +842,7 @@ def _fetch_week_kpis(
             "total_run_count": 0,
             "effort_stability_min_per_mi": None,
             "tempo_segment_pace_min_per_mi": None,
+            "tempo_segment_avg_hr_bpm": None,
             "tempo_segment_pace_source": None,
             "tempo_segment_split_count": 0,
             "tempo_segment_confidence": None,
@@ -888,6 +905,7 @@ def _fetch_week_kpis_by_system(
             "tempo_segment_pace_min_per_mi": weekly.get(
                 "tempo_segment_pace_min_per_mi"
             ),
+            "tempo_segment_avg_hr_bpm": weekly.get("tempo_segment_avg_hr_bpm"),
             "tempo_segment_pace_source": weekly.get("tempo_segment_pace_source"),
             "tempo_segment_split_count": weekly.get("tempo_segment_split_count", 0),
             "tempo_segment_confidence": weekly.get("tempo_segment_confidence"),
@@ -1661,12 +1679,27 @@ def get_weekly_insight_history(
     tempo_points: List[Dict[str, Any]] = []
     tempo_pace_zones: List[Dict[str, Any]] = []
     tempo_pace_target_display: Optional[str] = None
+    tempo_hr_zones: List[Dict[str, Any]] = []
+    tempo_hr_target_display: Optional[str] = None
     try:
         (
             target_tempo_pace,
             tempo_pace_zones,
             tempo_pace_target_display,
         ) = _resolve_tempo_pace_progress(session, user_id)
+        target_hr_z3: Optional[HrZoneBand] = None
+        try:
+            target_hr_z3, tempo_hr_zones, tempo_hr_target_display = (
+                _resolve_tempo_hr_progress(session, user_id)
+            )
+        except Exception:
+            logger.exception(
+                "Failed to resolve tempo HR refs for weekly insight history (user_id=%s)",
+                user_id,
+            )
+            target_hr_z3 = None
+            tempo_hr_zones = []
+            tempo_hr_target_display = None
         for ws, we in week_windows:
             try:
                 wk = _fetch_week_kpis(session, user_id, ws, we, athlete_id)
@@ -1684,13 +1717,14 @@ def get_weekly_insight_history(
                 continue
             segment = TempoSegmentPaceResult(
                 tempo_segment_pace_min_per_mi=wk.get("tempo_segment_pace_min_per_mi"),
+                tempo_segment_avg_hr_bpm=wk.get("tempo_segment_avg_hr_bpm"),
                 tempo_segment_pace_source=wk.get("tempo_segment_pace_source"),
                 tempo_segment_split_count=int(wk.get("tempo_segment_split_count") or 0),
                 tempo_segment_confidence=wk.get("tempo_segment_confidence"),
                 activity_avg_pace_min_per_mi=wk.get("activity_avg_pace_min_per_mi"),
             )
             if segment.tempo_segment_pace_min_per_mi is None:
-                logger.info(
+                logger.debug(
                     "Tempo history gap week: runs=%s segment_pace=null "
                     "(user_id=%s, week=%s, source=%s)",
                     wk.get("tempo_run_count"),
@@ -1720,18 +1754,20 @@ def get_weekly_insight_history(
                     _attach_tempo_segment_history_point(
                         point_payload,
                         target_tempo_pace=target_tempo_pace,
+                        target_hr_z3=target_hr_z3,
                         segment=segment,
                     )
                 )
             except Exception:
                 logger.exception(
-                    "Failed to attach tempo pace band for weekly history "
+                    "Failed to attach tempo pace/HR bands for weekly history "
                     "(user_id=%s, week=%s)",
                     user_id,
                     ws,
                 )
                 point_payload.update(_tempo_segment_result_to_kpi_fields(segment))
                 point_payload["tempo_pace_progress_band"] = None
+                point_payload["tempo_hr_progress_band"] = None
                 tempo_points.append(point_payload)
     except Exception:
         logger.exception(
@@ -1745,6 +1781,8 @@ def get_weekly_insight_history(
         ]
         tempo_pace_zones = []
         tempo_pace_target_display = None
+        tempo_hr_zones = []
+        tempo_hr_target_display = None
 
     return {
         "has_history": True,
@@ -1769,6 +1807,8 @@ def get_weekly_insight_history(
                 "weekly_data": tempo_points,
                 "pace_zones": tempo_pace_zones,
                 "pace_target_display": tempo_pace_target_display,
+                "hr_zones": tempo_hr_zones,
+                "hr_target_display": tempo_hr_target_display,
             },
         },
     }

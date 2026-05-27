@@ -145,6 +145,20 @@ def test_distance_weighted_average():
     )
     result = aggregate_qualifying_tempo_splits(qualifying)
     assert result.tempo_segment_pace_min_per_mi == 6.6667
+    assert result.tempo_segment_avg_hr_bpm == 150.67
+
+
+def test_segment_hr_matches_same_qualifying_splits_as_pace():
+    splits = [
+        _split(1, hr=125.0, pace=9.5),
+        _split(2, hr=155.0, pace=7.5),
+        _split(3, hr=157.0, pace=7.3),
+        _split(4, hr=130.0, pace=9.0),
+    ]
+    result, qualifying = compute_run_tempo_segment_pace(splits, ZONES)
+    assert len(qualifying) == 2
+    assert result.tempo_segment_avg_hr_bpm == 156.0
+    assert result.tempo_segment_pace_min_per_mi == 7.4
 
 
 def test_no_qualifying_splits_returns_null_not_activity_avg_on_chart():

@@ -50,12 +50,14 @@ class QualifyingTempoSplit:
     split_index: int
     pace_min_per_mi: float
     distance_mi: float
+    avg_hr_bpm: float
     tier: QualificationTier
 
 
 @dataclass(frozen=True)
 class TempoSegmentPaceResult:
     tempo_segment_pace_min_per_mi: float | None
+    tempo_segment_avg_hr_bpm: float | None
     tempo_segment_pace_source: TempoSegmentPaceSource | None
     tempo_segment_split_count: int
     tempo_segment_confidence: TempoSegmentConfidence | None
@@ -119,6 +121,7 @@ def select_qualifying_tempo_splits(
             split_index=row.split_index,
             pace_min_per_mi=float(row.pace_min_per_mi),
             distance_mi=float(row.distance_mi),
+            avg_hr_bpm=float(row.avg_hr),
             tier="z3",
         )
         for tier, row in tiered
@@ -132,6 +135,7 @@ def select_qualifying_tempo_splits(
             split_index=row.split_index,
             pace_min_per_mi=float(row.pace_min_per_mi),
             distance_mi=float(row.distance_mi),
+            avg_hr_bpm=float(row.avg_hr),
             tier="quality",
         )
         for tier, row in tiered
@@ -152,6 +156,21 @@ def distance_weighted_pace_min_per_mi(
     if den <= 0:
         return None
     return round(num / den, 4)
+
+
+def distance_weighted_avg_hr_bpm(
+    qualifying: list[QualifyingTempoSplit],
+) -> float | None:
+    if not qualifying:
+        return None
+    num = 0.0
+    den = 0.0
+    for split in qualifying:
+        num += split.avg_hr_bpm * split.distance_mi
+        den += split.distance_mi
+    if den <= 0:
+        return None
+    return round(num / den, 2)
 
 
 def _qualifying_miles(qualifying: list[QualifyingTempoSplit]) -> float:
@@ -185,9 +204,11 @@ def aggregate_qualifying_tempo_splits(
     qualifying: list[QualifyingTempoSplit],
 ) -> TempoSegmentPaceResult:
     pace = distance_weighted_pace_min_per_mi(qualifying)
-    if pace is None:
+    avg_hr = distance_weighted_avg_hr_bpm(qualifying)
+    if pace is None or avg_hr is None:
         return TempoSegmentPaceResult(
             tempo_segment_pace_min_per_mi=None,
+            tempo_segment_avg_hr_bpm=None,
             tempo_segment_pace_source=None,
             tempo_segment_split_count=0,
             tempo_segment_confidence=None,
@@ -197,6 +218,7 @@ def aggregate_qualifying_tempo_splits(
 
     return TempoSegmentPaceResult(
         tempo_segment_pace_min_per_mi=pace,
+        tempo_segment_avg_hr_bpm=avg_hr,
         tempo_segment_pace_source=source,
         tempo_segment_split_count=len(qualifying),
         tempo_segment_confidence=confidence,
@@ -218,6 +240,7 @@ def compute_run_tempo_segment_pace(
         return (
             TempoSegmentPaceResult(
                 tempo_segment_pace_min_per_mi=None,
+                tempo_segment_avg_hr_bpm=None,
                 tempo_segment_pace_source="activity_avg",
                 tempo_segment_split_count=0,
                 tempo_segment_confidence=None,
