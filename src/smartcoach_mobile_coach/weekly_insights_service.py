@@ -488,13 +488,9 @@ SELECT
     s.conv_distance,
     s.distance,
     s.moving_time,
-    z.z2_high,
-    z.z3_low,
-    z.z3_high,
-    z.z4_low
+    s.average_speed
 FROM classified_runs cr
 INNER JOIN public.splits s ON s.activity_id = cr.activity_id
-LEFT JOIN public.user_hr_zones z ON cr.user_id = z.user_id
 WHERE cr.training_system = 'tempo'
 ORDER BY cr.activity_id, s.split NULLS LAST, s.lap_index
 """.format(
@@ -747,6 +743,13 @@ def _compute_week_tempo_segment_pace(
 
     profile = get_runner_profile(session, user_id)
     hr_zones = _tempo_hr_zone_bounds_from_runner_profile(profile)
+    if hr_zones.z3_low is None or hr_zones.z3_high is None:
+        logger.warning(
+            "Tempo segment pace skipped: runner profile missing Z3 bounds "
+            "(user_id=%s, calibrated=%s)",
+            user_id,
+            getattr(profile, "calibrated", None),
+        )
 
     by_activity: Dict[int, Dict[str, Any]] = {}
     for row in rows:
@@ -1665,7 +1668,17 @@ def get_weekly_insight_history(
             tempo_pace_target_display,
         ) = _resolve_tempo_pace_progress(session, user_id)
         for ws, we in week_windows:
-            wk = _fetch_week_kpis(session, user_id, ws, we, athlete_id)
+            try:
+                wk = _fetch_week_kpis(session, user_id, ws, we, athlete_id)
+            except Exception:
+                logger.exception(
+                    "Failed to fetch week KPIs for tempo history "
+                    "(user_id=%s, week=%s)",
+                    user_id,
+                    ws,
+                )
+                tempo_points.append(_empty_tempo_history_point(f"{ws.month}/{ws.day}"))
+                continue
             if int(wk.get("tempo_run_count") or 0) <= 0:
                 tempo_points.append(_empty_tempo_history_point(f"{ws.month}/{ws.day}"))
                 continue
@@ -1677,6 +1690,14 @@ def get_weekly_insight_history(
                 activity_avg_pace_min_per_mi=wk.get("activity_avg_pace_min_per_mi"),
             )
             if segment.tempo_segment_pace_min_per_mi is None:
+                logger.info(
+                    "Tempo history gap week: runs=%s segment_pace=null "
+                    "(user_id=%s, week=%s, source=%s)",
+                    wk.get("tempo_run_count"),
+                    user_id,
+                    ws,
+                    wk.get("tempo_segment_pace_source"),
+                )
                 tempo_points.append(_empty_tempo_history_point(f"{ws.month}/{ws.day}"))
                 continue
             stab: Optional[float] = None
@@ -1709,6 +1730,7 @@ def get_weekly_insight_history(
                     user_id,
                     ws,
                 )
+                point_payload.update(_tempo_segment_result_to_kpi_fields(segment))
                 point_payload["tempo_pace_progress_band"] = None
                 tempo_points.append(point_payload)
     except Exception:
