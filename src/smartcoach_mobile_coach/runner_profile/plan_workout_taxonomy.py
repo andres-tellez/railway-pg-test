@@ -1,53 +1,13 @@
 """
-Global Workout Definitions - Single Source of Truth for All Workout Types
-=========================================================================
+Plan workout taxonomy — SSOT for workout type definitions used in plan generation.
 
-PURPOSE
--------
-This file defines ALL workout types used across the entire application.
-It is race-agnostic, user-agnostic, and reusable across:
-- Step 6 (workout placement)
-- Step 7 (workout details)
-- Step 8 (validation)
-- Frontend/UI (labels, descriptions)
-- Testing (expected values)
-
-STRUCTURE
----------
-Each workout type has:
-- intensity: How hard the effort is (very_easy, easy, moderate, hard, very_hard)
-- purpose: What physiological system it trains
-- recovery_days: Days of easy running needed after this workout
-- is_quality: Whether this is a "hard" workout that needs spacing
-- default_distribution_pct: Suggested % of weekly mileage (None = calculated)
-- description: Human-readable description for UI
-- pace_guidance: Short pace instruction for UI
-- ideal_for_races: Which race distances benefit most (for future filtering)
-
-INVARIANTS (DO NOT VIOLATE)
----------------------------
-1. Every workout type MUST have all fields defined
-2. is_quality=True workouts MUST have recovery_days >= 2
-3. Only one "long_run" type should exist
-4. Intensity values MUST be one of: very_easy, easy, moderate, hard, very_hard
-
-HOW TO ADD A NEW WORKOUT TYPE
------------------------------
-1. Add entry to WORKOUT_DEFINITIONS dict below
-2. Ensure all required fields are populated
-3. Update weekly_templates.py if the workout should appear in templates
-4. Run tests to verify
-
-Author: SmartCoach Development Team
-Last Updated: November 2025
+Moved from ``services.training_plan.v2.workout_taxonomy.workout_definitions``.
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 
-from src.domain.running.terminology import (
-    RUNNING_RULES,
-    WORKOUT_TYPES,
-    WORKOUT_DEFINITIONS as TERMINOLOGY_WORKOUT_DEFINITIONS,
+_ALLOWED_INTENSITY_LABELS = frozenset(
+    {"very_easy", "easy", "moderate", "hard", "very_hard"}
 )
 
 # =============================================================================
@@ -183,11 +143,7 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-assert (
-    set(WORKOUT_DEFINITIONS.keys())
-    == set(WORKOUT_TYPES)
-    == set(TERMINOLOGY_WORKOUT_DEFINITIONS.keys())
-)
+WORKOUT_TYPES = frozenset(WORKOUT_DEFINITIONS.keys())
 
 
 # =============================================================================
@@ -206,6 +162,24 @@ def get_workout_definition(workout_type: str) -> Dict[str, Any]:
         Dict with all workout properties, or empty dict if not found
     """
     return WORKOUT_DEFINITIONS.get(workout_type, {})
+
+
+def taxonomy_short_label(workout_type: str, *, default: str = "Easy") -> str:
+    """Short draft-plan label for a taxonomy key (e.g. ``easy`` → ``Easy``)."""
+    key = str(workout_type or "").strip().lower()
+    if not key:
+        return default
+    return key.capitalize()
+
+
+def taxonomy_pace_guidance(workout_type: str, *, default: str = "Easy") -> str:
+    """Pace guidance string from taxonomy (Pass4 / orchestrator draft fields)."""
+    key = str(workout_type or "").strip().lower()
+    if not key:
+        return default
+    defn = get_workout_definition(key)
+    guidance = defn.get("pace_guidance")
+    return str(guidance) if guidance else default
 
 
 def is_quality_workout(workout_type: str) -> bool:
@@ -326,7 +300,7 @@ def _validate_definitions() -> None:
         "detail_archetype",  # NEW: Required for Step 7 segment generation
     ]
 
-    valid_intensities = RUNNING_RULES["allowed_intensity_labels"]
+    valid_intensities = _ALLOWED_INTENSITY_LABELS
     valid_archetypes = {
         "EASY",
         "STEADY",
@@ -359,6 +333,47 @@ def _validate_definitions() -> None:
             assert (
                 defn["recovery_days"] >= 2
             ), f"Quality workout '{workout_type}' must have recovery_days >= 2"
+
+
+def iter_plan_workout_taxonomy_payload() -> list[dict[str, Any]]:
+    """Read-only taxonomy slice for GET /api/runner-profile/zones."""
+    return [
+        {
+            "key": key,
+            "intensity": defn["intensity"],
+            "is_quality": defn["is_quality"],
+            "recovery_days": defn["recovery_days"],
+            "detail_archetype": defn["detail_archetype"],
+            "pace_guidance": defn["pace_guidance"],
+            "description": defn["description"],
+        }
+        for key, defn in WORKOUT_DEFINITIONS.items()
+    ]
+
+
+def validate_weekly_template(
+    template: List[str],
+    *,
+    frequency: int,
+    context: str,
+) -> None:
+    """
+    Validate a weekly workout template against plan workout taxonomy.
+
+    Raises ``AssertionError`` when structure or workout keys are invalid.
+    """
+    assert (
+        len(template) == frequency
+    ), f"{context}: Template length {len(template)} != frequency {frequency}"
+    assert template, f"{context}: Template must not be empty"
+    assert (
+        template[-1] == "long_run"
+    ), f"{context}: Template must end with 'long_run', got '{template[-1]}'"
+    for workout_type in template:
+        assert workout_type in WORKOUT_TYPES, (
+            f"{context}: Unknown workout type '{workout_type}' "
+            f"(not in runner_profile.plan_workout_taxonomy)"
+        )
 
 
 # Run validation at import

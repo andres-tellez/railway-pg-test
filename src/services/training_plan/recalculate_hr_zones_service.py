@@ -11,6 +11,9 @@ from src.db.models.plan_workouts import PlanWorkout
 from src.db.dao.user_profile_dao import get_user_profile
 from src.db.dao.plan_workouts_dao import update_workout
 from src.services.training_plan.plan_storage_service import PlanStorageService
+from src.smartcoach_mobile_coach.runner_profile import (
+    recognize_run_type_key_from_workout_label,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,17 +64,10 @@ def recalculate_hr_zones_for_plan(session: Session, plan_id: int) -> dict:
         try:
             # Skip if no run_type_key (rest days, etc.)
             if not workout.run_type_key:
-                # Try to infer from workout_type
-                workout_type_lower = (workout.workout_type or "").lower()
-                if "threshold" in workout_type_lower or "tempo" in workout_type_lower:
-                    run_type_key = "threshold"
-                elif "steady" in workout_type_lower or "aerobic" in workout_type_lower:
-                    run_type_key = "steady"
-                elif "long" in workout_type_lower or "endurance" in workout_type_lower:
-                    run_type_key = "long"
-                elif "easy" in workout_type_lower or "recovery" in workout_type_lower:
-                    run_type_key = "easy"
-                else:
+                run_type_key = recognize_run_type_key_from_workout_label(
+                    workout.workout_type
+                )
+                if run_type_key is None:
                     skipped_count += 1
                     continue
             else:

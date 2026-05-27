@@ -64,7 +64,7 @@ Last Updated: November 2025
 from typing import Dict, List, Any, Optional
 import logging
 
-from .workout_definitions import (
+from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
     WORKOUT_DEFINITIONS,
     is_quality_workout,
     get_workout_definition,

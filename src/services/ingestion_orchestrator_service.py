@@ -750,6 +750,35 @@ def run_full_ingestion_and_enrichment(
                         exc_info=True,
                     )
 
+            if user_id:
+                try:
+                    from src.services.execution_analytics_recompute_service import (
+                        recompute_execution_kpis_for_window,
+                    )
+
+                    recomputed = recompute_execution_kpis_for_window(
+                        session,
+                        user_id=str(user_id),
+                        athlete_id=int(athlete_id),
+                        after_ts=chunk_after,
+                        before_ts=chunk_before,
+                        limit=max(120, int(len(runs_only) * 4) if runs_only else 160),
+                    )
+                    if recomputed:
+                        logger.info(
+                            "Chunk %d/%d: execution analytics updated %d run(s)",
+                            idx + 1,
+                            num_chunks,
+                            recomputed,
+                        )
+                except Exception:
+                    logger.warning(
+                        "Execution analytics recompute failed after chunk %d/%d",
+                        idx + 1,
+                        num_chunks,
+                        exc_info=True,
+                    )
+
             done_pct = 65.0 + ((idx + 1) / num_chunks) * 15.0
             sync_progress(
                 min(done_pct, 79.0),

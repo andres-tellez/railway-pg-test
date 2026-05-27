@@ -57,7 +57,7 @@ To add a new race type (e.g., half marathon):
 3. No changes needed to placement engine or definitions
 
 To add a new workout type (e.g., fartlek):
-1. Add definition to WORKOUT_DEFINITIONS in workout_definitions.py
+1. Add definition to WORKOUT_DEFINITIONS in runner_profile/plan_workout_taxonomy.py
 2. Update templates that should include it
 3. Placement engine automatically handles it
 
@@ -70,7 +70,7 @@ Author: SmartCoach Development Team
 Last Updated: November 2025
 """
 
-from .workout_definitions import (
+from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
     WORKOUT_DEFINITIONS,
     is_quality_workout,
     get_recovery_days,
@@ -112,4 +112,3 @@ __all__ = [
     # Engine
     "WorkoutPlacementEngine",
 ]
-

@@ -36,6 +36,7 @@ from src.smartcoach_mobile_coach.runner_profile.models import (
 )
 from src.smartcoach_mobile_coach.runner_profile.service import (
     get_runner_pace_zones_for_plan_generation,
+    pace_band_seconds_for_run_type,
 )
 
 # Use the refactored v2 workout detail service for rebuilds
@@ -52,6 +53,8 @@ from src.db.dao.plan_workouts_dao import get_workouts_for_week, update_workout
 from src.db.dao.user_profile_dao import get_user_profile
 from src.smartcoach_mobile_coach.runner_profile import (
     get_runner_pace_zone_key_for_run_type,
+    infer_placement_role_from_label,
+    infer_run_type_key_from_workout_label,
 )
 from src.utils.date_helpers import date_to_day_name, get_week_start_for_date
 
@@ -78,20 +81,6 @@ def _pace_ranges_from_zones(pace_zones: PaceZoneComputation) -> dict[str, list[i
         "z4": [int(pace_zones.pace_z4.low_sec), int(pace_zones.pace_z4.high_sec)],
         "m": [int(pace_zones.marathon_sec), int(pace_zones.marathon_sec)],
     }
-
-
-def _pace_band_for_run_type(
-    pace_zones: PaceZoneComputation, run_type_key: str
-) -> tuple[int, int]:
-    run_type_lower = str(run_type_key or "").lower()
-    if run_type_lower in {"threshold", "tempo", "steady"}:
-        band = pace_zones.pace_z3
-        return int(band.low_sec), int(band.high_sec)
-    if run_type_lower in {"vo2", "intervals", "repetitions", "race"}:
-        band = pace_zones.pace_z4
-        return int(band.low_sec), int(band.high_sec)
-    band = pace_zones.pace_z2
-    return int(band.low_sec), int(band.high_sec)
 
 
 def _shift_band(band: PaceZoneBand, delta_sec: float) -> PaceZoneBand:
@@ -478,7 +467,7 @@ class WeeklyRebuildService:
             "workouts": [
                 {
                     "day": date_to_day_name(w.date),
-                    "type": _normalize_workout_type(w.workout_type),
+                    "type": infer_placement_role_from_label(w.workout_type),
                     "miles": float(w.miles),
                     "distance_miles": float(w.miles),
                 }
@@ -595,7 +584,7 @@ class WeeklyRebuildService:
                     # ALWAYS set target_zone from pace zones to keep in sync with pace_ranges
                     from .workout_utils import pace_range_to_str
 
-                    band_low, band_high = _pace_band_for_run_type(
+                    band_low, band_high = pace_band_seconds_for_run_type(
                         current_pace_zones,
                         db_workout.run_type_key or "",
                     )
@@ -761,21 +750,10 @@ class WeeklyRebuildService:
         # Get user profile
         user_profile = get_user_profile(session, user_id)
 
-        # Use run_type_key if available, otherwise infer from workout_type
-        run_type_key = db_workout.run_type_key
-        if not run_type_key:
-            # Infer from workout_type
-            workout_type_lower = (db_workout.workout_type or "").lower()
-            if "threshold" in workout_type_lower or "tempo" in workout_type_lower:
-                run_type_key = "threshold"
-            elif "steady" in workout_type_lower or "aerobic" in workout_type_lower:
-                run_type_key = "steady"
-            elif "long" in workout_type_lower or "endurance" in workout_type_lower:
-                run_type_key = "long"
-            elif "easy" in workout_type_lower or "recovery" in workout_type_lower:
-                run_type_key = "easy"
-            else:
-                run_type_key = "easy"  # default
+        # Use run_type_key if available, otherwise infer from workout_type label
+        run_type_key = db_workout.run_type_key or infer_run_type_key_from_workout_label(
+            db_workout.workout_type
+        )
 
         return PlanStorageService._calculate_hr_zone(
             run_type_key,
@@ -835,20 +813,6 @@ def _find_week_workouts(
     week_workouts = [w for w in all_workouts if week_start <= w.date <= week_end]
 
     return week_workouts
-
-
-def _normalize_workout_type(workout_type: str) -> str:
-    """Normalize workout type to standard format (easy, steady, endurance, long)."""
-    workout_type_lower = workout_type.lower()
-    if "easy" in workout_type_lower or "recovery" in workout_type_lower:
-        return "easy"
-    if "steady" in workout_type_lower or "aerobic" in workout_type_lower:
-        return "steady"
-    if "endurance" in workout_type_lower or "medium-long" in workout_type_lower:
-        return "endurance"
-    if "long" in workout_type_lower:
-        return "long"
-    return "easy"  # Default fallback
 
 
 def _determine_phase(week_num: int, total_weeks: int) -> str:

@@ -1,14 +1,14 @@
 """
 Workout Detail Rules Configuration
 
-Centralizes all hardcoded values for workout detailing:
-- Warmup/Cool-down distances by run type
-- Strides configuration
-- Marathon finish rules
-- Phase definitions
-
-This enables behavior changes without editing code.
+Pass4 phase/quality/segment rules. Placement-role focus tags and warmup/cool-down
+distances live in ``runner_profile.plan_placement`` (SSOT).
 """
+
+from src.smartcoach_mobile_coach.runner_profile.plan_placement import (
+    FOCUS_TAGS,
+    WU_CD_MI,
+)
 
 # ============================================================================
 # PHASE DEFINITIONS
@@ -36,16 +36,6 @@ def is_peak_like_phase(phase: str) -> bool:
 
 
 # ============================================================================
-# WARMUP/COOLDOWN DISTANCES BY RUN TYPE
-# ============================================================================
-WU_CD_MI = {
-    "easy": {"wu": 0.5, "cd": 0.5},
-    "steady": {"wu": 1.0, "cd": 1.0},
-    "endurance": {"wu": 1.0, "cd": 1.0},
-    "long": {"wu": 0.0, "cd": 0.0},  # Long runs handled as single block
-}
-
-# ============================================================================
 # STRIDES CONFIGURATION
 # ============================================================================
 STRIDES = {
@@ -64,16 +54,6 @@ MARATHON_FINISH = {
     "min_lr_mi": 16.0,  # Minimum long run distance to trigger M-finish
     "finish_fraction": 0.25,  # Fraction of total distance for M-finish
     "min_finish_mi": 2.0,  # Minimum miles for M-finish segment
-}
-
-# ============================================================================
-# FOCUS TAGS
-# ============================================================================
-FOCUS_TAGS = {
-    "easy": "Recovery",
-    "steady": "Aerobic",
-    "endurance": "Medium-Long",
-    "long": "Long – fueling practice",
 }
 
 # ============================================================================

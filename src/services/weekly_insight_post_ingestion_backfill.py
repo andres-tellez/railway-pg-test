@@ -38,6 +38,11 @@ def _run_backfill(user_id: str) -> None:
 
     session = get_session()
     try:
+        from src.services.execution_analytics_recompute_service import (
+            recompute_stale_execution_kpis_for_user,
+        )
+
+        recompute_stale_execution_kpis_for_user(session, user_id)
         today = date.today()
         last_completed_monday, _ = last_completed_week_bounds(today)
         oldest_completed_monday = last_completed_monday - timedelta(weeks=5)

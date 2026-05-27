@@ -1,11 +1,9 @@
 """
 Training KPI Service
 
-Queries v_easy_runs view and aggregates per-run KPIs into weekly summaries
-with trend analysis. This service is the ONLY source of training KPI data
-for coach tools — the LLM never computes KPIs itself.
-
-All numeric thresholds come from hr_zone_constants.py.
+Queries ``activities`` execution columns and aggregates per-run KPIs into weekly
+summaries with trend analysis. Coach tools read persisted Tier 2 facts only —
+the LLM never computes KPIs itself.
 """
 
 from __future__ import annotations
@@ -23,6 +21,7 @@ from src.smartcoach_mobile_coach.display_format import (
     format_distance_mi,
     format_pace_sec_per_mi,
 )
+from src.smartcoach_mobile_coach.runner_profile.service import get_runner_profile
 from src.utils.hr_zone_constants import (
     hr_drift_band_from_pct,
     hr_drift_band_zones_chart,
@@ -30,9 +29,10 @@ from src.utils.hr_zone_constants import (
 
 logger = logging.getLogger("smartcoach_mobile_coach")
 
+_ACTIVITY_DATE_SQL = "activity_local_date(a.start_date, a.timezone)::date"
+
 
 def _pct_fraction_to_display(frac: Optional[float]) -> Optional[str]:
-    """Format v_easy_runs fraction columns (0..1) as a whole-percent string."""
     if frac is None:
         return None
     try:
@@ -42,15 +42,34 @@ def _pct_fraction_to_display(frac: Optional[float]) -> Optional[str]:
     return f"{int(round(v * 100.0))}%"
 
 
-_WEEKLY_SUMMARY_SQL = """
-WITH user_easy AS (
-    SELECT v.*
-    FROM v_easy_runs v
-    INNER JOIN public.activities a ON a.activity_id = v.activity_id
-    WHERE v.user_id = :uid
+_WEEKLY_RUNS_CTE = f"""
+WITH user_runs AS (
+    SELECT
+        a.activity_id,
+        a.name AS activity_name,
+        to_char({_ACTIVITY_DATE_SQL}, 'YYYY-MM-DD') AS activity_date,
+        a.type AS activity_type,
+        a.conv_distance AS distance_miles,
+        a.moving_time AS moving_time_seconds,
+        a.average_heartrate AS avg_hr,
+        a.conv_avg_speed AS avg_pace,
+        a.insights_system,
+        a.easy_pct,
+        a.z2_band_pct,
+        a.hr_drift_pct,
+        a.pace_spread,
+        a.start_date,
+        {_ACTIVITY_DATE_SQL} AS activity_local_date
+    FROM public.activities a
+    WHERE a.user_id = CAST(:uid AS uuid)
       AND a.athlete_id = :athlete_id
-      AND v.activity_type = 'Run'
-      AND v.start_date >= (now() - make_interval(weeks => :weeks))
+      AND a.type = 'Run'
+"""
+
+_WEEKLY_SUMMARY_SQL = (
+    _WEEKLY_RUNS_CTE
+    + """
+      AND a.start_date >= (now() - make_interval(weeks => :weeks))
 ),
 weekly AS (
     SELECT
@@ -58,97 +77,84 @@ weekly AS (
         (date_trunc('week', MIN(start_date::timestamp))::date) AS week_monday,
         MIN(activity_date)              AS week_start_date,
         COUNT(*)                        AS total_runs,
-        COUNT(*) FILTER (WHERE is_easy_run) AS easy_runs,
+        COUNT(*) FILTER (WHERE insights_system = 'easy') AS easy_runs,
         ROUND(SUM(distance_miles)::numeric, 1)              AS total_miles,
         MAX(distance_miles)                                  AS longest_run_miles,
         MAX(moving_time_seconds)                             AS longest_run_seconds,
-        ROUND(AVG(avg_pace) FILTER (WHERE is_easy_run)::numeric, 2) AS avg_z2_pace,
-        ROUND(AVG(hr_drift_pct) FILTER (WHERE is_easy_run)::numeric, 2) AS avg_drift,
-        ROUND(AVG(z2_band_pct) FILTER (WHERE is_easy_run)::numeric, 2)  AS avg_z2_adherence,
-        ROUND(AVG(pace_spread) FILTER (WHERE is_easy_run)::numeric, 2)  AS avg_pace_spread,
+        ROUND(AVG(avg_pace) FILTER (WHERE insights_system = 'easy')::numeric, 2) AS avg_z2_pace,
+        ROUND(AVG(hr_drift_pct) FILTER (WHERE insights_system = 'easy')::numeric, 2) AS avg_drift,
+        ROUND(AVG(z2_band_pct) FILTER (WHERE insights_system = 'easy')::numeric, 2)  AS avg_z2_adherence,
+        ROUND(AVG(pace_spread) FILTER (WHERE insights_system = 'easy')::numeric, 2)  AS avg_pace_spread,
         ROUND(
             MIN(hr_drift_pct) FILTER (
-                WHERE is_easy_run AND moving_time_seconds >= 5400
+                WHERE insights_system = 'easy' AND moving_time_seconds >= 5400
             )::numeric, 2
         ) AS long_run_best_drift
-    FROM user_easy
+    FROM user_runs
     GROUP BY to_char(start_date, 'IYYY-IW')
     ORDER BY iso_week DESC
 )
 SELECT * FROM weekly
 """
+)
 
-_WEEKLY_SUMMARY_RANGE_SQL = """
-WITH user_easy AS (
-    SELECT v.*
-    FROM v_easy_runs v
-    INNER JOIN public.activities a ON a.activity_id = v.activity_id
-    WHERE v.user_id = :uid
-      AND a.athlete_id = :athlete_id
-      AND v.activity_type = 'Run'
-      AND v.activity_date::date >= :start_date_from
-      AND v.activity_date::date <= :start_date_to
+_WEEKLY_SUMMARY_RANGE_SQL = (
+    _WEEKLY_RUNS_CTE
+    + """
+      AND activity_local_date >= :start_date_from
+      AND activity_local_date <= :start_date_to
 ),
 weekly AS (
     SELECT
-        to_char(activity_date::date, 'IYYY-IW') AS iso_week,
-        (date_trunc('week', MIN(activity_date::date)::timestamp))::date AS week_monday,
+        to_char(activity_local_date, 'IYYY-IW') AS iso_week,
+        (date_trunc('week', MIN(activity_local_date)::timestamp))::date AS week_monday,
         MIN(activity_date)                    AS week_start_date,
         COUNT(*)                        AS total_runs,
-        COUNT(*) FILTER (WHERE is_easy_run) AS easy_runs,
+        COUNT(*) FILTER (WHERE insights_system = 'easy') AS easy_runs,
         ROUND(SUM(distance_miles)::numeric, 1)              AS total_miles,
         MAX(distance_miles)                                  AS longest_run_miles,
         MAX(moving_time_seconds)                             AS longest_run_seconds,
-        ROUND(AVG(avg_pace) FILTER (WHERE is_easy_run)::numeric, 2) AS avg_z2_pace,
-        ROUND(AVG(hr_drift_pct) FILTER (WHERE is_easy_run)::numeric, 2) AS avg_drift,
-        ROUND(AVG(z2_band_pct) FILTER (WHERE is_easy_run)::numeric, 2)  AS avg_z2_adherence,
-        ROUND(AVG(pace_spread) FILTER (WHERE is_easy_run)::numeric, 2)  AS avg_pace_spread,
+        ROUND(AVG(avg_pace) FILTER (WHERE insights_system = 'easy')::numeric, 2) AS avg_z2_pace,
+        ROUND(AVG(hr_drift_pct) FILTER (WHERE insights_system = 'easy')::numeric, 2) AS avg_drift,
+        ROUND(AVG(z2_band_pct) FILTER (WHERE insights_system = 'easy')::numeric, 2)  AS avg_z2_adherence,
+        ROUND(AVG(pace_spread) FILTER (WHERE insights_system = 'easy')::numeric, 2)  AS avg_pace_spread,
         ROUND(
             MIN(hr_drift_pct) FILTER (
-                WHERE is_easy_run AND moving_time_seconds >= 5400
+                WHERE insights_system = 'easy' AND moving_time_seconds >= 5400
             )::numeric, 2
         ) AS long_run_best_drift
-    FROM user_easy
-    GROUP BY to_char(activity_date::date, 'IYYY-IW')
+    FROM user_runs
+    GROUP BY to_char(activity_local_date, 'IYYY-IW')
     ORDER BY iso_week DESC
 )
 SELECT * FROM weekly
 """
+)
 
-_RUN_KPI_SQL = """
+_RUN_KPI_SQL = f"""
 SELECT
-    v.activity_id,
-    v.activity_name,
-    v.activity_date,
-    v.activity_type,
-    v.distance_miles,
-    v.moving_time_seconds,
-    v.avg_hr,
-    v.avg_pace,
-    v.z2_low,
-    v.z2_high,
-    v.zone_method,
-    v.total_splits,
-    v.easy_pct,
-    v.z2_band_pct,
-    v.hr_drift_pct,
-    v.early_hr,
-    v.late_hr,
-    v.peak_split_hr,
-    v.fastest_split_pace,
-    v.slowest_split_pace,
-    v.pace_spread,
-    v.is_easy_run
-FROM v_easy_runs v
-INNER JOIN public.activities a ON a.activity_id = v.activity_id
-WHERE v.activity_id = :aid
-  AND v.user_id = :uid
+    a.activity_id,
+    a.name AS activity_name,
+    to_char({_ACTIVITY_DATE_SQL}, 'YYYY-MM-DD') AS activity_date,
+    a.type AS activity_type,
+    a.conv_distance AS distance_miles,
+    a.moving_time AS moving_time_seconds,
+    a.average_heartrate AS avg_hr,
+    a.conv_avg_speed AS avg_pace,
+    a.insights_system,
+    a.easy_pct,
+    a.z2_band_pct,
+    a.hr_drift_pct,
+    a.pace_spread,
+    a.execution_compute_status
+FROM public.activities a
+WHERE a.activity_id = :aid
+  AND a.user_id = CAST(:uid AS uuid)
   AND a.athlete_id = :athlete_id
 """
 
 
 def _trend_direction(values: List[Optional[float]], lower_is_better: bool) -> str:
-    """Determine trend from a time-ordered list (oldest first)."""
     clean = [v for v in values if v is not None]
     if len(clean) < 2:
         return "insufficient_data"
@@ -227,12 +233,6 @@ def get_training_progress(
     start_date_from: Optional[date_cls] = None,
     start_date_to: Optional[date_cls] = None,
 ) -> Dict[str, Any]:
-    """
-    Weekly KPI summaries + trend analysis for the coach tool.
-
-    Returns structured data the LLM interprets, including `*_display` fields
-    for pace, weekly distance (mi), and Z2 adherence where available.
-    """
     weeks = max(1, min(weeks, 52))
     using_explicit_window = start_date_from is not None or start_date_to is not None
     if using_explicit_window and (start_date_from is None or start_date_to is None):
@@ -341,7 +341,7 @@ def get_training_progress(
         "weekly_summaries_scope": (
             "Each row is one ISO week (Monday–Sunday). Use **week_label** (Monday M/D) when listing a week. "
             "**iso_week** is the canonical id. **week_start_date** is the first run in that week, not the Monday. "
-            "Counts and miles are from **v_easy_runs** for the user's **primary linked Strava athlete only** "
+            "Counts and miles use **activities** execution columns for the user's **primary linked Strava athlete only** "
             "(same athlete_id as aggregate_runs_in_range), not other Strava accounts that may share this login. "
             "Not every Strava activity. Compare against aggregate_runs_in_range when the same calendar window is provided."
         ),
@@ -360,11 +360,6 @@ def get_training_progress(
 def get_run_kpi_detail(
     session: Session, user_id: str, activity_id: int
 ) -> Dict[str, Any]:
-    """
-    Z2 KPI detail for a single run. Complements run_insight facts
-    with training-specific metrics. Includes HR drift %, band (green/yellow/orange/red),
-    and hr_drift_summary_display aligned with Weekly Insights thresholds.
-    """
     athlete_id = get_primary_athlete_id(session, str(user_id))
     if athlete_id is None:
         return {"error": "no_athlete", "message": "No linked Strava athlete."}
@@ -378,7 +373,12 @@ def get_run_kpi_detail(
     ).fetchone()
 
     if not row:
-        return {"error": "not_found", "message": "Run not found in KPI view."}
+        return {"error": "not_found", "message": "Run not found."}
+
+    profile = get_runner_profile(session, user_id)
+    z2_low = float(profile.hr_z2.low) if profile and profile.hr_z2 else None
+    z2_high = float(profile.hr_z2.high) if profile and profile.hr_z2 else None
+    zone_method = profile.zone_method if profile else None
 
     avg_pace_raw = float(row.avg_pace) if row.avg_pace is not None else None
     drift_pct = (
@@ -405,9 +405,9 @@ def get_run_kpi_detail(
             format_pace_sec_per_mi(avg_pace_raw * 60) if avg_pace_raw else "—"
         ),
         "zone_bounds": {
-            "z2_low": float(row.z2_low) if row.z2_low is not None else None,
-            "z2_high": float(row.z2_high) if row.z2_high is not None else None,
-            "method": row.zone_method,
+            "z2_low": z2_low,
+            "z2_high": z2_high,
+            "method": zone_method,
         },
         "kpis": {
             "easy_pct": (
@@ -427,22 +427,13 @@ def get_run_kpi_detail(
             "hr_drift_pct": drift_pct,
             "hr_drift_band": drift_band,
             "hr_drift_summary_display": drift_summary,
-            "early_hr": (
-                round(float(row.early_hr), 1) if row.early_hr is not None else None
-            ),
-            "late_hr": (
-                round(float(row.late_hr), 1) if row.late_hr is not None else None
-            ),
-            "peak_split_hr": (
-                round(float(row.peak_split_hr), 1)
-                if row.peak_split_hr is not None
-                else None
-            ),
             "pace_spread": (
                 round(float(row.pace_spread), 2)
                 if row.pace_spread is not None
                 else None
             ),
         },
-        "is_easy_run": bool(row.is_easy_run),
+        "insights_system": row.insights_system,
+        "is_easy_run": row.insights_system == "easy",
+        "execution_compute_status": row.execution_compute_status,
     }

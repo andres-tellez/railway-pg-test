@@ -24,7 +24,7 @@ from src.services.scoring.zone_compliance import (
     zone_distribution_from_activity,
     zone_metrics_for_type,
 )
-from src.utils.run_type_constants import (
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     CANONICAL_RUN_TYPES,
     RUN_TYPE_DEFINITIONS,
     RUN_TYPE_EASY,

@@ -93,7 +93,7 @@ from typing import Iterable, List, NamedTuple, Optional
 from src.services.phase.phase_priority import Phase
 from src.services.scoring.adherence import AdherenceBand
 from src.services.scoring.deviation import DeviationDirection
-from src.utils.run_type_constants import (
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     RUN_TYPE_EASY,
     RUN_TYPE_LONG,
     RUN_TYPE_TEMPO,
@@ -178,7 +178,7 @@ class PriorityKpiDeviation(NamedTuple):
     Fields
     ------
     run_type_key
-        Canonical :mod:`src.utils.run_type_constants` key for the
+        Canonical :mod:`src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry` key for the
         *executed* run type (lower-case e.g. ``"easy"``, ``"tempo"``,
         ``"long"``). Used to filter for the phase's priority run type.
     deviation

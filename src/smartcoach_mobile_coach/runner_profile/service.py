@@ -35,6 +35,10 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.training_phase_r
     TrainingPhaseResolution,
     resolve_current_training_phase,
 )
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    hr_zone_key_for_run_type,
+    pace_zone_key_for_run_type,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +112,18 @@ def refresh_runner_profile(session: Session, user_id: str) -> RunnerZoneProfileD
         session.rollback()
         logger.exception("Failed upserting runner zone profile for user %s", user_id)
         return _uncalibrated_profile(user_id)
+
+    try:
+        from src.services.execution_analytics_recompute_service import (
+            schedule_profile_refresh_execution_recompute,
+        )
+
+        schedule_profile_refresh_execution_recompute(user_id)
+    except Exception:
+        logger.exception(
+            "schedule_profile_refresh_execution_recompute failed for user %s",
+            user_id,
+        )
 
     return get_runner_profile(session, user_id)
 
@@ -192,15 +208,6 @@ def get_runner_pace_zones_for_plan_generation(
     return calibration_pace_zones()
 
 
-def _zone_key_for_run_type(run_type_key: str) -> str:
-    run_type_lower = str(run_type_key or "").lower()
-    if run_type_lower in {"threshold", "tempo", "steady"}:
-        return "z3"
-    if run_type_lower in {"vo2", "intervals", "repetitions", "race"}:
-        return "z4"
-    return "z2"
-
-
 def get_runner_pace_zone_key_for_run_type(
     run_type_key: str, *, has_marathon_finish: bool = False
 ) -> str:
@@ -209,10 +216,24 @@ def get_runner_pace_zone_key_for_run_type(
 
     Returns one of ``z2``, ``z3``, ``z4``, or ``m``.
     """
-    run_type_lower = str(run_type_key or "").lower()
-    if has_marathon_finish and run_type_lower == "long":
-        return "m"
-    return _zone_key_for_run_type(run_type_key)
+    return pace_zone_key_for_run_type(
+        run_type_key, has_marathon_finish=has_marathon_finish
+    )
+
+
+def pace_band_seconds_for_run_type(
+    pace_zones: PaceZoneComputation,
+    run_type_key: str,
+) -> tuple[int, int]:
+    """Return (low_sec, high_sec) pace band for a run type from plan pace zones."""
+    zone_key = pace_zone_key_for_run_type(run_type_key)
+    if zone_key == "z3":
+        band = pace_zones.pace_z3
+    elif zone_key == "z4":
+        band = pace_zones.pace_z4
+    else:
+        band = pace_zones.pace_z2
+    return int(band.low_sec), int(band.high_sec)
 
 
 def _band_for_zone_key(
@@ -283,7 +304,7 @@ def get_runner_pace_band_for_run_type(
     )
     if not profile.calibrated:
         return None
-    zone_key = _zone_key_for_run_type(run_type_key)
+    zone_key = pace_zone_key_for_run_type(run_type_key)
     band = _pace_band_for_zone_key(profile, zone_key)
     if band is None:
         return None
@@ -309,7 +330,7 @@ def get_runner_zone_string_for_run_type(
     )
     if not profile.calibrated:
         return ""
-    zone_key = _zone_key_for_run_type(run_type_key)
+    zone_key = hr_zone_key_for_run_type(run_type_key)
     band = _band_for_zone_key(profile, zone_key)
     if band is None:
         return ""

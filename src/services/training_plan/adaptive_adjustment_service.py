@@ -37,7 +37,10 @@ from src.utils.adaptive_constants import (
     MAX_VOLUME_CHANGE_PCT,
     MAX_PACE_CHANGE_SEC,
 )
-from src.utils.run_type_constants import RUN_TYPE_DEFINITIONS, RUN_TYPE_EASY
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    RUN_TYPE_DEFINITIONS,
+    RUN_TYPE_EASY,
+)
 
 logger = logging.getLogger(__name__)
 

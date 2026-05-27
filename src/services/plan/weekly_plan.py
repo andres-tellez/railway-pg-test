@@ -118,7 +118,7 @@ from src.utils.date_helpers import (
     classify_week_temporality,
     get_week_bounds_for_date,
 )
-from src.utils.run_type_constants import (
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     RUN_TYPE_DEFINITIONS,
     RUN_TYPE_EASY,
     normalize_run_type_key,
@@ -146,7 +146,7 @@ def resolve_plan_workout_run_type_key(w: PlanWorkout) -> str:
     Resolution order:
 
     1. Stored ``w.run_type_key`` normalized through the canonical map
-       (:mod:`src.utils.run_type_constants`).
+       (:mod:`src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry`).
     2. Fallback: normalize ``w.workout_type`` (legacy rows that
        predate ``run_type_key`` persistence).
     3. Final fallback: ``RUN_TYPE_EASY``.

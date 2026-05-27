@@ -29,6 +29,12 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_temp
     TempoHrProgressReference,
     tempo_hr_progress_zones_chart_api_payload,
 )
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    iter_run_type_registry_payload,
+)
+from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
+    iter_plan_workout_taxonomy_payload,
+)
 
 # Canonical copy for Insights › Easy banner (emitted whenever Z2 HR + Z2 pace are present).
 INSIGHTS_EASY_BANNER_SUBTITLE = (
@@ -156,6 +162,39 @@ def _training_pace_recommendations_payload(
     return payload
 
 
+def _pace_authorities_payload(
+    profile: RunnerZoneProfileData,
+    recs: Optional[TrainingPaceRecommendations],
+) -> dict[str, Any]:
+    """Explicit plan vs Insights pace authority contract."""
+    plan_zones: dict[str, Any] = {}
+    for key_name, pace_band in (
+        ("z2", profile.pace_z2),
+        ("z3", profile.pace_z3),
+        ("z4", profile.pace_z4),
+    ):
+        band_payload = _pace_band_payload(pace_band)
+        if band_payload is not None:
+            plan_zones[key_name] = band_payload
+
+    insights: dict[str, Any] = {
+        "source": "marathon_goal",
+        "target_time": recs.source_target_time if recs else None,
+        "pace_progress": _pace_progress_payload(recs.pace_progress) if recs else None,
+        "tempo_pace_progress": (
+            _tempo_pace_progress_payload(recs.tempo_pace_progress) if recs else None
+        ),
+    }
+    return {
+        "plan": {
+            "source": "activity_median",
+            "pace_source": profile.pace_source,
+            "zones": plan_zones if plan_zones else None,
+        },
+        "insights": insights,
+    }
+
+
 def runner_zone_profile_payload(
     profile: RunnerZoneProfileData,
     *,
@@ -212,5 +251,10 @@ def runner_zone_profile_payload(
         "insights_tempo_banner": insights_tempo_banner,
         "training_pace_recommendations": _training_pace_recommendations_payload(
             training_pace_recommendations
+        ),
+        "run_type_registry": iter_run_type_registry_payload(),
+        "plan_workout_taxonomy": iter_plan_workout_taxonomy_payload(),
+        "pace_authorities": _pace_authorities_payload(
+            profile, training_pace_recommendations
         ),
     }

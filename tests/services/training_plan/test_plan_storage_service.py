@@ -203,3 +203,26 @@ class TestPlanStorageService:
         # Verify nothing was saved (compare UUID objects directly like test_plans_dao.py)
         plans = test_db_session.query(Plan).filter_by(user_id=user_id).all()
         assert len(plans) == 0
+
+
+class TestPlanStorageRunTypeKeyValidation:
+    def test_validate_row_accepts_placement_roles(self):
+        for key in ("easy", "steady", "endurance", "long"):
+            row = {"run_type_key": key, "segments": {}, "miles": 5.0}
+            PlanStorageService._validate_row(row)
+            assert row["run_type_key"] == key
+
+    def test_validate_row_normalizes_long_run_alias(self):
+        row = {"run_type_key": "long_run", "segments": {}, "miles": 12.0}
+        PlanStorageService._validate_row(row)
+        assert row["run_type_key"] == "long"
+
+    def test_validate_row_rejects_taxonomy_quality_keys(self):
+        row = {"run_type_key": "tempo", "segments": {}, "miles": 6.0}
+        with pytest.raises(ValueError, match="Invalid run_type_key"):
+            PlanStorageService._validate_row(row)
+
+    def test_validate_row_rejects_unknown_keys(self):
+        row = {"run_type_key": "Race", "segments": {}, "miles": 26.2}
+        with pytest.raises(ValueError, match="Invalid run_type_key"):
+            PlanStorageService._validate_row(row)

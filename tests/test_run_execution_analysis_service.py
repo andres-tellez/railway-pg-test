@@ -9,7 +9,9 @@ from src.services.run_execution_analysis_service import (
     analyze_activity_execution,
     analyze_recent_activity_window,
 )
-from src.utils.run_type_constants import normalize_run_type_key
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    normalize_run_type_key,
+)
 
 
 def _seed_active_plan_with_workout(session, *, user_id: uuid.UUID, workout_date: date):
