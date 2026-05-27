@@ -12,9 +12,9 @@ from unittest.mock import Mock, patch
 from src.services.training_plan.weekly_rebuild_service import (
     WeeklyRebuildService,
     _find_week_workouts,
-    _normalize_workout_type,
     _determine_phase,
 )
+from src.smartcoach_mobile_coach.runner_profile import infer_placement_role_from_label
 from src.services.training_plan.weekly_adjuster import WeekLogRun
 from src.smartcoach_mobile_coach.runner_profile.models import (
     PaceZoneBand,
@@ -27,15 +27,15 @@ class TestWeeklyRebuildService:
 
     def test_normalize_workout_type(self):
         """Test workout type normalization."""
-        assert _normalize_workout_type("Easy") == "easy"
-        assert _normalize_workout_type("Easy / Recovery") == "easy"
-        assert _normalize_workout_type("Steady") == "steady"
-        assert _normalize_workout_type("Aerobic / Steady") == "steady"
-        assert _normalize_workout_type("Endurance") == "endurance"
-        assert _normalize_workout_type("Endurance (Medium-Long)") == "endurance"
-        assert _normalize_workout_type("Long Run") == "long"
-        assert _normalize_workout_type("Long") == "long"
-        assert _normalize_workout_type("Unknown") == "easy"  # Default fallback
+        assert infer_placement_role_from_label("Easy") == "easy"
+        assert infer_placement_role_from_label("Easy / Recovery") == "easy"
+        assert infer_placement_role_from_label("Steady") == "steady"
+        assert infer_placement_role_from_label("Aerobic / Steady") == "steady"
+        assert infer_placement_role_from_label("Endurance") == "endurance"
+        assert infer_placement_role_from_label("Endurance (Medium-Long)") == "endurance"
+        assert infer_placement_role_from_label("Long Run") == "long"
+        assert infer_placement_role_from_label("Long") == "long"
+        assert infer_placement_role_from_label("Unknown") == "easy"  # Default fallback
 
     def test_determine_phase(self):
         """Test training phase determination."""

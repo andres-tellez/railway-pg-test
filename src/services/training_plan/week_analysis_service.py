@@ -35,7 +35,9 @@ import statistics
 from .weekly_adjuster import WeekLogRun
 from src.db.models.plan_workouts import PlanWorkout
 from src.db.models.activities import Activity
-from src.utils.run_type_constants import normalize_run_type_key
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    normalize_run_type_key,
+)
 from src.utils.adaptive_constants import (
     AdaptiveConfig,
     FATIGUE_PACE_THRESHOLD_PCT,

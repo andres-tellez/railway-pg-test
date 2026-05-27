@@ -44,7 +44,7 @@ Every deterministic field is derived from the canonical producers:
   :func:`src.services.phase.phase_priority.phase_kpi_priority_for_phase`
   (§8 ordered emphasis table).
 * Canonical run-type identification for the long-run selector —
-  delegated to :mod:`src.utils.run_type_constants`.
+  delegated to :mod:`src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry`.
 * Week bounds — delegated to
   :func:`src.utils.date_helpers.get_week_bounds_for_date` so plan-week
   boundaries agree byte-exact with :mod:`weekly_plan`.
@@ -90,7 +90,9 @@ from src.utils.date_helpers import (
     classify_week_temporality,
     get_week_bounds_for_date,
 )
-from src.utils.run_type_constants import RUN_TYPE_LONG
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    RUN_TYPE_LONG,
+)
 from src.utils.timezone_helpers import get_today_date_in_timezone
 
 logger = logging.getLogger(__name__)

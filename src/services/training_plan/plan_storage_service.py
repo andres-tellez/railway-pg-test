@@ -33,19 +33,22 @@ from src.db.dao.plans_dao import create_plan
 from src.db.dao.plan_workouts_dao import insert_batch
 from src.db.dao.user_profile_dao import get_user_profile
 from src.db.models.plans import Plan
-from src.utils.run_type_constants import RUN_TYPE_LONG
-from src.services.training_plan.workout_detail_rules import (
-    FOCUS_TAGS,
-    SEGMENT_SUM_TOLERANCE,
-    QUALITY_ENABLED_PHASES,
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    RUN_TYPE_LONG,
 )
-from src.services.training_plan.workout_types import TYPE_DISPLAY
+from src.services.training_plan.workout_detail_rules import (
+    QUALITY_ENABLED_PHASES,
+    SEGMENT_SUM_TOLERANCE,
+)
 from src.services.training_plan.workout_utils import pace_range_to_str
 from src.smartcoach_mobile_coach.runner_profile import (
     get_runner_pace_band_for_run_type,
     get_runner_pace_zone_key_for_run_type,
     get_runner_zone_string_for_run_type,
+    placement_display,
+    placement_focus_tag,
     runner_pace_ranges_payload,
+    validate_persisted_run_type_key,
 )
 
 logger = logging.getLogger(__name__)
@@ -294,7 +297,7 @@ class PlanStorageService:
                     "type": run_type_key,
                     "label": workout.get("label")
                     or workout.get("workout_type")
-                    or TYPE_DISPLAY.get(run_type_key, "Easy Run"),
+                    or placement_display(run_type_key),
                     "miles": distance_miles,
                 }
 
@@ -402,7 +405,7 @@ class PlanStorageService:
 
         Now reads seed directly (no reconstruction).
         """
-        run_type_key = run.get("type", "easy")
+        run_type_key = validate_persisted_run_type_key(run.get("type", "easy"))
         segments = details.get("segments", {})
         main = PlanStorageService._main_step(segments)
         target_zone = PlanStorageService._pace_string_from_target(
@@ -444,7 +447,7 @@ class PlanStorageService:
                 )
 
         # Get workout label
-        workout_label = run.get("label") or TYPE_DISPLAY.get(run_type_key, "Easy Run")
+        workout_label = run.get("label") or placement_display(run_type_key)
 
         # Calculate HR zone
         target_hr = PlanStorageService._calculate_hr_zone(
@@ -464,7 +467,7 @@ class PlanStorageService:
             "intensity": intensity,
             "target_zone": target_zone,
             "target_hr": target_hr,
-            "focus": FOCUS_TAGS.get(run_type_key, "Run"),
+            "focus": placement_focus_tag(run_type_key),
             "description": details.get("cues", ""),
             "cues": details.get("cues", ""),
             "pace_ranges": pace_ranges,
@@ -503,25 +506,10 @@ class PlanStorageService:
                             f"low={low} > high={high}"
                         )
 
-        # Validate run_type_key
+        # Validate run_type_key (placement roles; matches DB chk_run_type_key)
         run_type_key = row.get("run_type_key")
-        if run_type_key not in (
-            "easy",
-            "steady",
-            "endurance",
-            "long",
-            "long_run",
-            "tempo",
-            "intervals",
-            "hills",
-            "recovery",
-            "threshold",
-            "fartlek",
-            "race",
-            "Race",
-            "shakeout",
-        ):
-            raise ValueError(f"Invalid run_type_key: {run_type_key}")
+        if run_type_key is not None:
+            row["run_type_key"] = validate_persisted_run_type_key(run_type_key)
 
     @staticmethod
     def save_plan(

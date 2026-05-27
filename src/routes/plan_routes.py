@@ -18,7 +18,7 @@ from src.db.dao.plans_dao import (
 )
 from src.schemas.plan_schema import PlanCreateSchema
 from src.utils.timezone_helpers import resolve_timezone
-from src.utils.run_type_constants import (
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     RUN_TYPE_EASY,
     normalize_run_type_key,
 )
@@ -56,7 +56,7 @@ def _resolve_run_type_key_for_workout(w) -> str:
 
     1. Stored ``w.run_type_key`` normalized through ``LEGACY_TO_CANONICAL_RUN_TYPE``.
        This is the single source of truth for canonical run types
-       (``src/utils/run_type_constants.py``).
+       (``src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry``).
     2. Fallback: normalize ``w.workout_type`` (legacy rows that predate
        ``run_type_key`` persistence). Still uses the canonical map — no
        substring text-matching.

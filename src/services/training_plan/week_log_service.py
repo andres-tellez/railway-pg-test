@@ -27,6 +27,7 @@ from .weekly_adjuster import WeekLogRun
 from .data_collection_service import DataCollectionService
 from src.db.models.plan_workouts import PlanWorkout
 from src.db.models.plans import Plan
+from src.smartcoach_mobile_coach.runner_profile import infer_placement_role_from_label
 from src.utils.adaptive_constants import (
     MATCH_DAY_WINDOW,
     MATCH_DISTANCE_TOLERANCE_EASY,
@@ -163,7 +164,7 @@ def _match_workouts_flexible(
 
     for workout in week_workouts:
         planned_mi = workout.miles
-        planned_type = _normalize_workout_type(workout.workout_type)
+        planned_type = infer_placement_role_from_label(workout.workout_type)
 
         # Score all activities against this workout
         best_match = None
@@ -206,7 +207,7 @@ def _match_workouts_flexible(
             done_mi = activity.get("distance", 0) or 0
             avg_hr = activity.get("average_heartrate")
 
-            run_type = _normalize_workout_type(workout.workout_type)
+            run_type = infer_placement_role_from_label(workout.workout_type)
 
             # Estimate RPE from heart rate if available
             rpe = _estimate_rpe_from_hr(avg_hr) if avg_hr else 3
@@ -222,7 +223,7 @@ def _match_workouts_flexible(
             )
         else:
             # No matching activity - workout not completed
-            run_type = _normalize_workout_type(workout.workout_type)
+            run_type = infer_placement_role_from_label(workout.workout_type)
             week_logs.append(
                 WeekLogRun(
                     run_type=run_type,
@@ -310,22 +311,6 @@ def _calculate_match_score(
         "distance_pct_diff": distance_pct_diff,
         "match_type": "none",
     }
-
-
-def _normalize_workout_type(workout_type: str) -> str:
-    """Normalize workout type to standard format (easy, steady, endurance, long)."""
-    if not workout_type:
-        return "easy"
-    workout_type_lower = workout_type.lower()
-    if "easy" in workout_type_lower or "recovery" in workout_type_lower:
-        return "easy"
-    if "steady" in workout_type_lower or "aerobic" in workout_type_lower:
-        return "steady"
-    if "endurance" in workout_type_lower or "medium-long" in workout_type_lower:
-        return "endurance"
-    if "long" in workout_type_lower:
-        return "long"
-    return "easy"  # Default fallback
 
 
 def _estimate_rpe_from_hr(avg_hr: float) -> int:

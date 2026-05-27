@@ -80,17 +80,25 @@ def test_schedule_respects_disable_env(mock_thread):
     mock_thread.assert_not_called()
 
 
+@patch(
+    "src.services.execution_analytics_recompute_service.recompute_stale_execution_kpis_for_user"
+)
 @patch("src.db.db_session.get_session")
 @patch("src.smartcoach_mobile_coach.weekly_insights_service.generate_weekly_insight")
 @patch("src.smartcoach_mobile_coach.weekly_insights_service.last_completed_week_bounds")
 def test_run_backfill_calls_completed_then_in_progress(
-    mock_bounds, mock_gen, mock_get_session
+    mock_bounds, mock_gen, mock_get_session, mock_recompute
 ):
     mock_session = mock_get_session.return_value
     mock_bounds.return_value = (date(2026, 4, 6), date(2026, 4, 12))
     mock_gen.return_value = {"generated": True, "skipped": False}
+    mock_recompute.return_value = 5
 
     _run_backfill("550e8400-e29b-41d4-a716-446655440000")
+
+    mock_recompute.assert_called_once_with(
+        mock_session, "550e8400-e29b-41d4-a716-446655440000"
+    )
 
     assert mock_gen.call_count == 7
     oldest = date(2026, 4, 6) - timedelta(weeks=5)

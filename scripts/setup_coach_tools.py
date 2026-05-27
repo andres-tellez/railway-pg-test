@@ -170,7 +170,7 @@ SEED_TOOLS = [
             "distance (mi), time, Avg. pace, Avg./max HR (bpm), title, local date/time (display-ready). "
             "**Optional sections** (each defaults to true if omitted; set false to reduce payload): "
             "`include_peer_comparison` → `comparison` (this run vs up to 5 prior runs, deltas); "
-            "`include_execution_kpis` → `training_kpis`, `zone_bounds`, `is_easy_run` from v_easy_runs "
+            "`include_execution_kpis` → `training_kpis`, `zone_bounds`, `insights_system` from activities execution columns "
             "(kpis: `hr_drift_pct`, `hr_drift_band`, `hr_drift_summary_display` as `![HR drift: X%](kpi-band://band)` for chat dot + label; "
             "`easy_pct_display`, `z2_band_pct_display`); "
             "Always: `hr_drift_band_zones` — min/max % drift per color (app-wide, same as Weekly Insights; use when user asks band definitions). "
@@ -200,7 +200,7 @@ SEED_TOOLS = [
                     "type": "boolean",
                     "description": (
                         "If true (default), include training_kpis, zone_bounds, is_easy_run when "
-                        "the run exists in v_easy_runs. If false, skip KPI query."
+                        "the run exists in activities with execution KPIs. If false, skip KPI query."
                     ),
                 },
                 "include_hr_profile": {
@@ -221,7 +221,7 @@ SEED_TOOLS = [
             "zone_bounds, is_easy_run. "
             "If include_hr_profile and zones configured: user_hr_profile."
         ),
-        "data_source": "run_insight + v_easy_runs",
+        "data_source": "run_insight + activities execution columns",
         "is_enabled": True,
         "sort_order": 20,
     },
@@ -614,7 +614,7 @@ SEED_TOOLS = [
         "description": (
             "Get training KPI trends over recent **ISO weeks** (Mon–Sun): Avg. Z2 pace, HR drift, "
             "Z2 adherence (use *_display fields), **weekly_summaries** with miles per week, long-run readiness. "
-            "Scope is **v_easy_runs** (easy-classified runs only) — see **weekly_summaries_scope** in the payload. "
+            "Scope is **activities** easy-classified runs (`insights_system='easy'`) — see **weekly_summaries_scope** in the payload. "
             "Use for KPI trend interpretation (HR drift/Z2 progress), not inclusive all-runs mileage totals. "
             "For **all Strava runs** weekly mileage in a calendar window, use **aggregate_runs_in_range** instead. "
             "Never calculate KPIs yourself — always use this tool's data."
@@ -654,7 +654,7 @@ SEED_TOOLS = [
             "When explicit dates are provided, includes window and sum_weekly_total_mi_display. "
             "Always: hr_drift_band_zones (HR drift % bands, app-wide)."
         ),
-        "data_source": "v_easy_runs (aggregated by week)",
+        "data_source": "activities (aggregated by week)",
         "is_enabled": True,
         "sort_order": 30,
     },
@@ -693,7 +693,7 @@ SEED_TOOLS = [
             "Scenario list with race_pace_display and projected_finish_time_display, plus data_quality, "
             "assumptions, optional race_target timing, and optional goal comparison."
         ),
-        "data_source": "activities + v_easy_runs-derived anchor",
+        "data_source": "activities execution columns",
         "is_enabled": True,
         "sort_order": 32,
     },

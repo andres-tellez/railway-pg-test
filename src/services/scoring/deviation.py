@@ -86,7 +86,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from src.services.scoring.zone_compliance import zone_distribution_from_activity
-from src.utils.run_type_constants import (
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     RUN_TYPE_DEFINITIONS,
     RUN_TYPE_EASY,
     RUN_TYPE_LONG,
@@ -106,7 +106,7 @@ class DeviationDirection(str, Enum):
 
 
 # Per-run-type (too_hard_min_pct, too_easy_min_pct) thresholds.
-# Keyed by canonical run_type_key (``src.utils.run_type_constants``).
+# Keyed by canonical run_type_key (``runner_profile.plan_run_type_registry``).
 #
 # Intentionally EXCLUDES:
 #   * ``steady`` — deferred to V1.7 per spec §5 "Steady TODO"; activity

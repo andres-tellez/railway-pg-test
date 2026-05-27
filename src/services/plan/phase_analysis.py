@@ -124,7 +124,9 @@ from src.smartcoach_mobile_coach.display_format import (
 )
 from src.smartcoach_mobile_coach.run_insight import build_run_execution_block
 from src.utils.date_helpers import get_week_bounds_for_date
-from src.utils.run_type_constants import RUN_TYPE_DEFINITIONS
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    RUN_TYPE_DEFINITIONS,
+)
 from src.utils.timezone_helpers import get_today_date_in_timezone
 
 logger = logging.getLogger(__name__)

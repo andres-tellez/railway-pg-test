@@ -171,8 +171,8 @@ KARVONEN_ZONE_PERCENTAGES = {
 }
 
 # Easy Run Classification Thresholds
-# These are used in v_easy_runs SQL view and application-layer classifiers.
-# When changing these values, also update the v_easy_runs view SQL.
+# Easy-run classification thresholds (used by execution_analytics).
+# Canonical owner: execution_analytics/thresholds.py
 EASY_RUN_THRESHOLDS = {
     "MIN_DURATION_SECONDS": 1800,  # 30 minutes — runs shorter than this are excluded
     "MIN_EASY_PCT": 0.70,  # 70% of splits must be at or below Z2 ceiling

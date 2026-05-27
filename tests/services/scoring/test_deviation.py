@@ -25,7 +25,7 @@ from src.services.scoring.deviation import (
     classify_deviation,
     compute_deviation_direction_for_activity,
 )
-from src.utils.run_type_constants import (
+from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     RUN_TYPE_EASY,
     RUN_TYPE_LONG,
     RUN_TYPE_RECOVERY,

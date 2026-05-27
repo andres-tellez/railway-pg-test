@@ -1,14 +1,9 @@
 """
 Weekly Training Insights Service
 
-Computes deterministic KPI bands, overall score, and deltas. Numeric truth
-is computed in SQL + Python; weekly rows store metrics for the mobile
-Insights charts (no LLM copy).
-
-Tempo run detection uses the same week window as easy runs but classifies ``tempo``
-when easy_pct is low (not an easy day) and either (a) activity avg HR is above Z2
-high, or (b) split-majority or post-warmup median split HR is above Z2 high — so
-mixed warmup + quality miles still count.
+Computes deterministic KPI bands, overall score, and deltas from persisted
+``activities`` execution columns (Tier 2). Numeric truth is computed in SQL +
+Python rollups; weekly rows store metrics for the mobile Insights charts.
 
 ``get_latest_weekly_insight(..., slim=True)`` returns an orientation-only dict
 for the coach tool (week + ``overall_band``); REST uses ``slim=False`` (full).
@@ -42,6 +37,10 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_easy
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_easy import (
     classify_easy_pace_progress,
 )
+from src.smartcoach_mobile_coach.execution_analytics.combine import (
+    StoredTempoRunFact,
+    combine_weekly_from_stored_run_facts,
+)
 from src.smartcoach_mobile_coach.insights_chart_authority import (
     attach_pace_progress_band,
     attach_tempo_hr_progress_band,
@@ -50,9 +49,6 @@ from src.smartcoach_mobile_coach.insights_chart_authority import (
     resolve_tempo_hr_progress,
 )
 from src.smartcoach_mobile_coach.insights_systems import (
-    TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
-    TEMPO_RUN_MIN_SPLITS_WITH_HR,
-    TEMPO_RUN_MIN_Z3_SPLITS,
     TEMPO_SYSTEM_SPEC,
     InsightsSystem,
     read_kpi_field,
@@ -60,11 +56,7 @@ from src.smartcoach_mobile_coach.insights_systems import (
     resolve_system_snapshot,
 )
 from src.smartcoach_mobile_coach.tempo_kpi.tempo_segment_pace import (
-    TempoHrZoneBounds,
     TempoSegmentPaceResult,
-    TempoSplitRow,
-    combine_weekly_tempo_segment_pace,
-    compute_run_tempo_segment_pace,
 )
 from src.smartcoach_mobile_coach.runner_profile.service import (
     get_runner_profile,
@@ -316,200 +308,72 @@ def weekly_insight_tool_slim_default_from_env() -> bool:
     return raw not in ("0", "false", "no", "off")
 
 
-# Tempo run classification (see _tempo_week_classified_runs_sql):
-# - SSOT: enough profile Z3 HR splits (mixed warmup/tempo/cooldown runs).
-# - Legacy: activity avg HR above Z2 ceiling, or split-majority above Z2 high.
+# Classification + tempo segment pace are Tier 2 facts on ``activities``
+# (``execution_analytics`` producer). Weekly rollups read persisted columns only.
 
 # ---------------------------------------------------------------------------
 # SQL
 # ---------------------------------------------------------------------------
 
-_TEMPO_WEEK_CLASSIFICATION_FORMAT = dict(
-    min_splits_hr=TEMPO_RUN_MIN_SPLITS_WITH_HR,
-    min_frac_above_z2=TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
-    min_z3_splits=TEMPO_RUN_MIN_Z3_SPLITS,
-)
+_ACTIVITY_DATE_SQL = "activity_local_date(a.start_date, a.timezone)::date"
 
-
-def _tempo_week_classified_runs_sql() -> str:
-    """Shared CTEs + classified_runs for tempo KPI and split fetch queries."""
-    return """
+_WEEK_KPIS_SQL = f"""
 WITH week_runs AS (
     SELECT
-        v.*
-    FROM v_easy_runs v
-    INNER JOIN public.activities a ON a.activity_id = v.activity_id
-    WHERE v.user_id = :uid
+        a.insights_system,
+        a.hr_drift_pct,
+        a.easy_pct,
+        a.z2_band_pct,
+        a.conv_avg_speed AS avg_pace,
+        a.average_heartrate AS avg_hr
+    FROM public.activities a
+    INNER JOIN public.user_athletes ua
+        ON ua.user_id = a.user_id AND a.athlete_id = ua.athlete_id
+    WHERE a.user_id = CAST(:uid AS uuid)
       AND a.athlete_id = :athlete_id
-      AND v.activity_date >= :ws
-      AND v.activity_date <= :we
-      AND v.activity_type = 'Run'
-),
-split_stats AS (
-    SELECT
-        wr.activity_id,
-        COUNT(*) FILTER (
-            WHERE s.average_heartrate IS NOT NULL
-              AND COALESCE(s.split, s.lap_index) IS NOT NULL
-        ) AS n_hr_splits,
-        COUNT(*) FILTER (
-            WHERE wr.z2_high IS NOT NULL
-              AND s.average_heartrate IS NOT NULL
-              AND s.average_heartrate > wr.z2_high
-              AND COALESCE(s.split, s.lap_index) IS NOT NULL
-        ) AS n_above_ceiling
-    FROM week_runs wr
-    INNER JOIN splits s ON s.activity_id = wr.activity_id
-    GROUP BY wr.activity_id
-),
-split_median_after_warmup AS (
-    SELECT
-        wr.activity_id,
-        percentile_cont(0.5) WITHIN GROUP (ORDER BY s.average_heartrate) AS median_hr_after_split_1
-    FROM week_runs wr
-    INNER JOIN splits s ON s.activity_id = wr.activity_id
-    WHERE COALESCE(s.split, s.lap_index) > 1
-      AND s.average_heartrate IS NOT NULL
-    GROUP BY wr.activity_id
-),
-profile_split_tiers AS (
-    SELECT
-        wr.activity_id,
-        COUNT(*) FILTER (
-            WHERE s.average_heartrate IS NOT NULL
-              AND COALESCE(s.split, s.lap_index) IS NOT NULL
-              AND rzp.hr_z3_low IS NOT NULL
-              AND rzp.hr_z3_high IS NOT NULL
-              AND s.average_heartrate >= rzp.hr_z3_low
-              AND s.average_heartrate <= rzp.hr_z3_high
-        ) AS n_z3_splits,
-        COUNT(*) FILTER (
-            WHERE s.average_heartrate IS NOT NULL
-              AND COALESCE(s.split, s.lap_index) IS NOT NULL
-              AND rzp.hr_z2_high IS NOT NULL
-              AND rzp.hr_z4_low IS NOT NULL
-              AND s.average_heartrate > rzp.hr_z2_high
-              AND s.average_heartrate <= rzp.hr_z4_low
-        ) AS n_quality_splits
-    FROM week_runs wr
-    INNER JOIN splits s ON s.activity_id = wr.activity_id
-    INNER JOIN runner_zone_profiles rzp ON rzp.user_id = wr.user_id
-    GROUP BY wr.activity_id
-),
-classified_runs AS (
-    SELECT
-        wr.*,
-        CASE
-            WHEN wr.is_easy_run THEN 'easy'
-            WHEN (
-                wr.moving_time_seconds >= 1800
-                AND wr.easy_pct IS NOT NULL
-                AND wr.easy_pct < 0.70
-                AND (
-                    COALESCE(pst.n_z3_splits, 0) >= {min_z3_splits}
-                    OR (
-                        COALESCE(pst.n_z3_splits, 0) = 0
-                        AND COALESCE(pst.n_quality_splits, 0) >= {min_splits_hr}
-                    )
-                    OR (
-                        wr.z2_high IS NOT NULL
-                        AND (
-                            (wr.avg_hr IS NOT NULL AND wr.avg_hr > wr.z2_high)
-                            OR (
-                                COALESCE(ss.n_hr_splits, 0) >= {min_splits_hr}
-                                AND (
-                                    (ss.n_above_ceiling::numeric
-                                        / NULLIF(ss.n_hr_splits, 0))
-                                        >= {min_frac_above_z2}
-                                    OR (
-                                        mw.median_hr_after_split_1 IS NOT NULL
-                                        AND mw.median_hr_after_split_1 > wr.z2_high
-                                    )
-                                )
-                            )
-                        )
-                    )
-                )
-            ) THEN 'tempo'
-            ELSE NULL
-        END AS training_system
-    FROM week_runs wr
-    LEFT JOIN split_stats ss ON ss.activity_id = wr.activity_id
-    LEFT JOIN split_median_after_warmup mw ON mw.activity_id = wr.activity_id
-    LEFT JOIN profile_split_tiers pst ON pst.activity_id = wr.activity_id
+      AND a.type = 'Run'
+      AND {_ACTIVITY_DATE_SQL} >= CAST(:ws AS date)
+      AND {_ACTIVITY_DATE_SQL} <= CAST(:we AS date)
 )
-""".format(
-        **_TEMPO_WEEK_CLASSIFICATION_FORMAT,
-    )
-
-
-_WEEK_KPIS_SQL = (
-    _tempo_week_classified_runs_sql()
-    + """
 SELECT
     COUNT(*) AS total_runs,
-    COUNT(*) FILTER (WHERE training_system = 'easy')                   AS easy_runs,
-    COUNT(*) FILTER (WHERE training_system = 'tempo')              AS tempo_runs,
-    ROUND(AVG(hr_drift_pct) FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_drift,
-    ROUND(AVG(avg_pace)     FILTER (WHERE training_system = 'easy')::numeric, 4)  AS avg_pace,
-    ROUND(AVG(avg_hr)       FILTER (WHERE training_system = 'easy')::numeric, 1)  AS avg_hr,
-    ROUND(AVG(easy_pct)     FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_easy_pct,
-    ROUND(AVG(z2_band_pct)  FILTER (WHERE training_system = 'easy')::numeric, 2)  AS avg_z2_adherence,
-    ROUND(
-        (
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY (late_hr - early_hr))
-            FILTER (
-                WHERE training_system = 'tempo'
-                  AND early_hr IS NOT NULL
-                  AND late_hr IS NOT NULL
-            )
-        )::numeric,
-        2
-    ) AS avg_tempo_effort_stability
-FROM classified_runs
+    COUNT(*) FILTER (WHERE insights_system = 'easy') AS easy_runs,
+    COUNT(*) FILTER (WHERE insights_system = 'tempo') AS tempo_runs,
+    ROUND(AVG(hr_drift_pct) FILTER (WHERE insights_system = 'easy')::numeric, 2) AS avg_drift,
+    ROUND(AVG(avg_pace) FILTER (WHERE insights_system = 'easy')::numeric, 4) AS avg_pace,
+    ROUND(AVG(avg_hr) FILTER (WHERE insights_system = 'easy')::numeric, 1) AS avg_hr,
+    ROUND(AVG(easy_pct) FILTER (WHERE insights_system = 'easy')::numeric, 2) AS avg_easy_pct,
+    ROUND(AVG(z2_band_pct) FILTER (WHERE insights_system = 'easy')::numeric, 2) AS avg_z2_adherence
+FROM week_runs
 """
-)
 
-_WEEK_TEMPO_RUN_SPLITS_SQL = (
-    _tempo_week_classified_runs_sql()
-    + """
+_WEEK_TEMPO_SEGMENT_FACTS_SQL = f"""
 SELECT
-    cr.activity_id,
-    cr.avg_pace AS activity_avg_pace,
-    s.split,
-    s.lap_index,
-    s.average_heartrate,
-    s.conv_avg_speed,
-    s.conv_distance,
-    s.distance,
-    s.moving_time,
-    s.average_speed
-FROM classified_runs cr
-INNER JOIN public.splits s ON s.activity_id = cr.activity_id
-WHERE cr.training_system = 'tempo'
-ORDER BY cr.activity_id, s.split NULLS LAST, s.lap_index
+    a.tempo_segment_pace_min_per_mi,
+    a.tempo_segment_avg_hr_bpm,
+    a.tempo_segment_pace_source,
+    a.tempo_segment_confidence,
+    a.tempo_segment_split_count,
+    a.tempo_qualifying_distance_mi
+FROM public.activities a
+INNER JOIN public.user_athletes ua
+    ON ua.user_id = a.user_id AND a.athlete_id = ua.athlete_id
+WHERE a.user_id = CAST(:uid AS uuid)
+  AND a.athlete_id = :athlete_id
+  AND a.type = 'Run'
+  AND a.insights_system = 'tempo'
+  AND {_ACTIVITY_DATE_SQL} >= CAST(:ws AS date)
+  AND {_ACTIVITY_DATE_SQL} <= CAST(:we AS date)
 """
-)
 
-_USERS_WITH_EASY_RUNS_SQL = """
-WITH classified_runs AS (
-    SELECT
-        v.user_id,
-        v.activity_date,
-        CASE
-            WHEN v.is_easy_run THEN 'easy'
-            ELSE NULL
-        END AS training_system
-    FROM v_easy_runs v
-    INNER JOIN public.activities a ON a.activity_id = v.activity_id
-    INNER JOIN public.user_athletes ua
-        ON ua.user_id = v.user_id AND a.athlete_id = ua.athlete_id
-)
-SELECT DISTINCT user_id
-FROM classified_runs
-WHERE training_system = 'easy'
-  AND activity_date >= :ws
-  AND activity_date <= :we
+_USERS_WITH_EASY_RUNS_SQL = f"""
+SELECT DISTINCT a.user_id
+FROM public.activities a
+INNER JOIN public.user_athletes ua
+    ON ua.user_id = a.user_id AND a.athlete_id = ua.athlete_id
+WHERE a.insights_system = 'easy'
+  AND {_ACTIVITY_DATE_SQL} >= CAST(:ws AS date)
+  AND {_ACTIVITY_DATE_SQL} <= CAST(:we AS date)
 """
 
 # ---------------------------------------------------------------------------
@@ -637,73 +501,6 @@ def last_completed_week_bounds(today: Optional[date] = None) -> Tuple[date, date
     return week_start, week_end
 
 
-def _tempo_hr_zone_bounds_from_runner_profile(
-    profile: RunnerZoneProfileData,
-) -> TempoHrZoneBounds:
-    """Runner profile is HR zone authority for tempo split qualification."""
-    return TempoHrZoneBounds(
-        z2_high=float(profile.hr_z2.high) if profile.hr_z2 is not None else None,
-        z3_low=float(profile.hr_z3.low) if profile.hr_z3 is not None else None,
-        z3_high=float(profile.hr_z3.high) if profile.hr_z3 is not None else None,
-        z4_low=float(profile.hr_z4.low) if profile.hr_z4 is not None else None,
-    )
-
-
-def _tempo_split_distance_mi(row: Any) -> float | None:
-    dist = _coerce_finite_float(getattr(row, "conv_distance", None))
-    if dist is not None and dist > 0:
-        return dist
-    raw_m = getattr(row, "distance", None)
-    if raw_m is not None:
-        try:
-            dist = float(raw_m) / 1609.344
-            if dist > 0:
-                return dist
-        except (TypeError, ValueError):
-            pass
-    return None
-
-
-def _tempo_split_pace_min_per_mi(
-    row: Any, *, distance_mi: float | None
-) -> float | None:
-    pace = _coerce_finite_float(getattr(row, "conv_avg_speed", None))
-    if pace is not None and pace > 0:
-        return pace
-    if distance_mi is not None and distance_mi > 0:
-        moving_time = getattr(row, "moving_time", None)
-        if moving_time is not None:
-            try:
-                minutes = float(moving_time) / 60.0
-                if minutes > 0:
-                    return round(minutes / distance_mi, 4)
-            except (TypeError, ValueError):
-                pass
-    return None
-
-
-def _tempo_split_row_from_db(row: Any) -> TempoSplitRow | None:
-    split_idx = getattr(row, "split", None)
-    if split_idx is None:
-        split_idx = getattr(row, "lap_index", None)
-    if split_idx is None:
-        return None
-    try:
-        split_index = int(split_idx)
-    except (TypeError, ValueError):
-        return None
-    if split_index < 1:
-        return None
-    distance_mi = _tempo_split_distance_mi(row)
-    pace_min_per_mi = _tempo_split_pace_min_per_mi(row, distance_mi=distance_mi)
-    return TempoSplitRow(
-        split_index=split_index,
-        avg_hr=_coerce_finite_float(getattr(row, "average_heartrate", None)),
-        pace_min_per_mi=pace_min_per_mi,
-        distance_mi=distance_mi,
-    )
-
-
 def _compute_week_tempo_segment_pace(
     session: Session,
     user_id: str,
@@ -711,8 +508,8 @@ def _compute_week_tempo_segment_pace(
     week_end: date,
     athlete_id: int,
 ) -> TempoSegmentPaceResult:
-    """HR-qualified split pace rollup for tempo-classified runs in the week."""
-    stmt = text(_WEEK_TEMPO_RUN_SPLITS_SQL).bindparams(
+    """Roll up stored per-run tempo segment facts (no split re-fetch)."""
+    stmt = text(_WEEK_TEMPO_SEGMENT_FACTS_SQL).bindparams(
         bindparam("uid", type_=PGUUID),
         bindparam("athlete_id", type_=Integer),
     )
@@ -726,71 +523,24 @@ def _compute_week_tempo_segment_pace(
         },
     ).fetchall()
 
-    if not rows:
-        return TempoSegmentPaceResult(
-            tempo_segment_pace_min_per_mi=None,
-            tempo_segment_avg_hr_bpm=None,
-            tempo_segment_pace_source=None,
-            tempo_segment_split_count=0,
-            tempo_segment_confidence=None,
+    facts = [
+        StoredTempoRunFact(
+            tempo_segment_pace_min_per_mi=_coerce_finite_float(
+                getattr(row, "tempo_segment_pace_min_per_mi", None)
+            ),
+            tempo_segment_avg_hr_bpm=_coerce_finite_float(
+                getattr(row, "tempo_segment_avg_hr_bpm", None)
+            ),
+            tempo_segment_pace_source=getattr(row, "tempo_segment_pace_source", None),
+            tempo_segment_confidence=getattr(row, "tempo_segment_confidence", None),
+            tempo_segment_split_count=getattr(row, "tempo_segment_split_count", None),
+            tempo_qualifying_distance_mi=_coerce_finite_float(
+                getattr(row, "tempo_qualifying_distance_mi", None)
+            ),
         )
-
-    profile = get_runner_profile(session, user_id)
-    hr_zones = _tempo_hr_zone_bounds_from_runner_profile(profile)
-    if hr_zones.z3_low is None or hr_zones.z3_high is None:
-        logger.warning(
-            "Tempo segment pace skipped: runner profile missing Z3 bounds "
-            "(user_id=%s, calibrated=%s)",
-            user_id,
-            getattr(profile, "calibrated", None),
-        )
-
-    by_activity: Dict[int, Dict[str, Any]] = {}
-    for row in rows:
-        aid = int(row.activity_id)
-        bucket = by_activity.setdefault(
-            aid,
-            {
-                "activity_avg_pace": row.activity_avg_pace,
-                "zones": hr_zones,
-                "splits": [],
-            },
-        )
-        split_row = _tempo_split_row_from_db(row)
-        if split_row is not None:
-            bucket["splits"].append(split_row)
-
-    per_run_qualifying = []
-    activity_avgs: list[float | None] = []
-    for bucket in by_activity.values():
-        activity_avg = _coerce_finite_float(bucket["activity_avg_pace"])
-        activity_avgs.append(activity_avg)
-        _result, qualifying = compute_run_tempo_segment_pace(
-            bucket["splits"],
-            bucket["zones"],
-            activity_avg_pace_min_per_mi=activity_avg,
-        )
-        per_run_qualifying.append(qualifying)
-
-    combined = combine_weekly_tempo_segment_pace(per_run_qualifying)
-    if combined.tempo_segment_pace_min_per_mi is not None:
-        return combined
-
-    diagnostic_avg = None
-    for avg in activity_avgs:
-        if avg is not None:
-            diagnostic_avg = avg
-            break
-    if diagnostic_avg is None:
-        return combined
-    return TempoSegmentPaceResult(
-        tempo_segment_pace_min_per_mi=None,
-        tempo_segment_avg_hr_bpm=None,
-        tempo_segment_pace_source="activity_avg",
-        tempo_segment_split_count=0,
-        tempo_segment_confidence=None,
-        activity_avg_pace_min_per_mi=diagnostic_avg,
-    )
+        for row in rows
+    ]
+    return combine_weekly_from_stored_run_facts(facts)
 
 
 def _fetch_week_kpis(
@@ -829,11 +579,6 @@ def _fetch_week_kpis(
 
     avg_pace = float(row.avg_pace) if row.avg_pace is not None else None
     avg_hr = float(row.avg_hr) if row.avg_hr is not None else None
-    tempo_effort_stability = (
-        float(row.avg_tempo_effort_stability)
-        if row.avg_tempo_effort_stability is not None
-        else None
-    )
     tempo_segment = _compute_week_tempo_segment_pace(
         session, user_id, week_start, week_end, athlete_id
     )
@@ -846,7 +591,7 @@ def _fetch_week_kpis(
         "z2_pace_min_per_mi": avg_pace,
         "avg_hr": avg_hr,
         "efficiency": _compute_efficiency(avg_pace, avg_hr),
-        "effort_stability_min_per_mi": tempo_effort_stability,
+        "effort_stability_min_per_mi": None,
         **_tempo_segment_result_to_kpi_fields(tempo_segment),
         "avg_easy_pct": (
             float(row.avg_easy_pct) if row.avg_easy_pct is not None else None

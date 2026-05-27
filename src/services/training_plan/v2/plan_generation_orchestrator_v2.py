@@ -69,15 +69,10 @@ from src.services.training_plan.v2.plan_constraints_service import (
 from src.services.training_plan.v2.scenario_adjustments_service import (
     ScenarioAdjustmentsService,
 )
-from src.services.training_plan.v2.workout_taxonomy.workout_definitions import (
-    WORKOUT_DEFINITIONS,
+from src.smartcoach_mobile_coach.runner_profile import (
+    taxonomy_pace_guidance,
+    taxonomy_short_label,
 )
-
-# Workout type constants (for backward compatibility)
-EASY = "easy"
-# Short labels for workout types (e.g., "Easy", "Tempo", "Intervals")
-TYPE_DISPLAY = {k: k.capitalize() for k in WORKOUT_DEFINITIONS.keys()}
-PACE_GUIDANCE = {k: v["pace_guidance"] for k, v in WORKOUT_DEFINITIONS.items()}
 from src.services.metrics_helper_service import (
     get_weekly_fitness_from_materialized_view,
 )
@@ -796,12 +791,12 @@ class PlanGenerationOrchestratorV2:
     ) -> Dict[str, Any]:
         workout = {
             "day": day,
-            "type": EASY,
-            "workout_type": TYPE_DISPLAY[EASY],
-            "label": "Shakeout" if shakeout else TYPE_DISPLAY[EASY],
+            "type": "easy",
+            "workout_type": taxonomy_short_label("easy"),
+            "label": "Shakeout" if shakeout else taxonomy_short_label("easy"),
             "miles": miles,
             "distance_miles": miles,
-            "pace_guidance": PACE_GUIDANCE[EASY],
+            "pace_guidance": taxonomy_pace_guidance("easy"),
         }
         if note:
             workout["notes"] = note

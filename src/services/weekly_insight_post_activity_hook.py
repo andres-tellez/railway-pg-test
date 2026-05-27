@@ -45,12 +45,16 @@ def _refresh_enabled() -> bool:
 def _run_in_progress_insight(user_id: str) -> None:
     try:
         from src.db.db_session import get_session
+        from src.services.execution_analytics_recompute_service import (
+            recompute_recent_execution_kpis,
+        )
         from src.smartcoach_mobile_coach.weekly_insights_service import (
             generate_weekly_insight,
         )
 
         session = get_session()
         try:
+            recompute_recent_execution_kpis(session, user_id)
             result = generate_weekly_insight(
                 session,
                 user_id,
