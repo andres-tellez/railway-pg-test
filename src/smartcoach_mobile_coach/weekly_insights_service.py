@@ -24,11 +24,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from src.db.dao.plans_dao import get_active_or_most_recent_plan
-from src.smartcoach_mobile_coach.runner_profile.models import (
-    HrZoneBand,
-    PaceZoneBand,
-    RunnerZoneProfileData,
+from src.smartcoach_mobile_coach.runner_profile.api_schema import (
+    build_insights_easy_chart_authority_payload,
+    insights_easy_chart_authority_is_complete,
 )
+from src.smartcoach_mobile_coach.runner_profile.models import HrZoneBand, PaceZoneBand
 from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
     TrainingPaceRecommendations,
 )
@@ -1336,6 +1336,35 @@ def _easy_insight_kpi_displays(session: Session, user_id: str) -> Dict[str, Any]
     }
 
 
+def _build_easy_system_slice(
+    *,
+    pace_recs: TrainingPaceRecommendations | None,
+    weekly_data: List[Dict[str, Any]] | None = None,
+    pace_zones: List[Dict[str, Any]],
+    hr_zones: List[Dict[str, Any]],
+    zones: List[Dict[str, Any]] | None = None,
+    eff_zones: List[Dict[str, Any]] | None = None,
+    hr_drift_target_display: str | None = None,
+    efficiency_goal_display: str | None = None,
+) -> Dict[str, Any]:
+    """Easy system slice for weekly-history (chart data + display authority from recommendations)."""
+    easy_slice: Dict[str, Any] = {
+        "weekly_data": weekly_data or [],
+        "pace_zones": pace_zones,
+        "hr_zones": hr_zones,
+        **build_insights_easy_chart_authority_payload(pace_recs),
+    }
+    if zones is not None:
+        easy_slice["zones"] = zones
+    if eff_zones is not None:
+        easy_slice["efficiency_zones"] = eff_zones
+    if hr_drift_target_display is not None:
+        easy_slice["hr_drift_target_display"] = hr_drift_target_display
+    if efficiency_goal_display is not None:
+        easy_slice["efficiency_goal_display"] = efficiency_goal_display
+    return easy_slice
+
+
 def get_weekly_insight_history(
     session: Session, user_id: str, weeks: int = 6
 ) -> Dict[str, Any]:
@@ -1497,10 +1526,18 @@ def get_weekly_insight_history(
             data_points.append(point_payload)
 
     if not any(p.get("value") is not None for p in data_points):
+        easy_slice = _build_easy_system_slice(
+            pace_recs=pace_recs,
+            pace_zones=pace_zones,
+            hr_zones=hr_zones,
+        )
+        systems: Dict[str, Any] = {}
+        if insights_easy_chart_authority_is_complete(easy_slice):
+            systems[InsightsSystem.EASY.value] = easy_slice
         return {
             "has_history": False,
             "message": "Not enough data for a trend chart yet.",
-            "systems": {},
+            "systems": systems,
         }
 
     (
@@ -1612,6 +1649,17 @@ def get_weekly_insight_history(
         tempo_hr_zones = []
         tempo_hr_target_display = None
 
+    easy_slice = _build_easy_system_slice(
+        pace_recs=pace_recs,
+        weekly_data=data_points,
+        pace_zones=pace_zones,
+        hr_zones=hr_zones,
+        zones=zones,
+        eff_zones=eff_zones,
+        hr_drift_target_display=hr_drift_target_display,
+        efficiency_goal_display=efficiency_goal_display,
+    )
+
     return {
         "has_history": True,
         "weekly_data": data_points,
@@ -1622,15 +1670,7 @@ def get_weekly_insight_history(
         "hr_drift_target_display": hr_drift_target_display,
         "efficiency_goal_display": efficiency_goal_display,
         "systems": {
-            InsightsSystem.EASY.value: {
-                "weekly_data": data_points,
-                "zones": zones,
-                "efficiency_zones": eff_zones,
-                "pace_zones": pace_zones,
-                "hr_zones": hr_zones,
-                "hr_drift_target_display": hr_drift_target_display,
-                "efficiency_goal_display": efficiency_goal_display,
-            },
+            InsightsSystem.EASY.value: easy_slice,
             InsightsSystem.TEMPO.value: {
                 "weekly_data": tempo_points,
                 "pace_zones": tempo_pace_zones,
