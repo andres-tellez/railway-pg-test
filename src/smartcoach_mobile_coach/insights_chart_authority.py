@@ -55,11 +55,15 @@ def fetch_training_pace_recommendations(
 ) -> TrainingPaceRecommendations | None:
     plan_row = get_active_or_most_recent_plan(session, user_id)
     target_time = plan_row.target_time if plan_row is not None else None
+    race_distance = (
+        getattr(plan_row, "race_distance", None) if plan_row is not None else None
+    )
     profile = get_runner_profile(session, user_id)
     return get_runner_training_pace_recommendations(
         session,
         user_id,
         target_time=target_time,
+        race_distance=race_distance,
         plan=plan_row,
         profile=profile,
     )
@@ -82,6 +86,8 @@ def resolve_pace_progress(
     session: Session,
     user_id: str,
     system: InsightsSystem,
+    *,
+    recs: TrainingPaceRecommendations | None = None,
 ) -> tuple[PaceZoneBand | None, list[dict[str, Any]], str | None]:
     """
     Resolve pace-progress target corridor/band, chart zones, and display string.
@@ -89,7 +95,8 @@ def resolve_pace_progress(
     Returns ``(target_pace, pace_zones, target_display)``. Display is only set for Tempo.
     """
     spec = INSIGHTS_SYSTEM_SPECS[system]
-    recs = fetch_training_pace_recommendations(session, user_id)
+    if recs is None:
+        recs = fetch_training_pace_recommendations(session, user_id)
     if recs is None:
         return None, [], None
 
@@ -149,9 +156,12 @@ def attach_pace_progress_band(
 def resolve_easy_hr_progress(
     session: Session,
     user_id: str,
+    *,
+    recs: TrainingPaceRecommendations | None = None,
 ) -> tuple[HrZoneBand | None, list[dict[str, Any]]]:
     """HR-progress target and chart zones from training pace recommendations."""
-    recs = fetch_training_pace_recommendations(session, user_id)
+    if recs is None:
+        recs = fetch_training_pace_recommendations(session, user_id)
     if recs is None or recs.hr_progress is None:
         return None, []
 
@@ -173,9 +183,12 @@ def resolve_easy_hr_progress(
 def resolve_tempo_hr_progress(
     session: Session,
     user_id: str,
+    *,
+    recs: TrainingPaceRecommendations | None = None,
 ) -> tuple[HrZoneBand | None, list[dict[str, Any]], str | None]:
     """Tempo HR-progress target corridor, chart zones, and display string."""
-    recs = fetch_training_pace_recommendations(session, user_id)
+    if recs is None:
+        recs = fetch_training_pace_recommendations(session, user_id)
     if recs is None or recs.tempo_hr_progress is None:
         return None, [], None
 
