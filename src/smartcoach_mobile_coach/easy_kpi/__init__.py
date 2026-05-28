@@ -10,10 +10,6 @@ from src.smartcoach_mobile_coach.easy_kpi.hr_drift_easy import (
     format_hr_drift_target_display,
     hr_drift_zones_chart_api_payload,
 )
-from src.smartcoach_mobile_coach.easy_kpi.resolve import (
-    resolve_easy_efficiency,
-    resolve_easy_hr_drift,
-)
 
 __all__ = [
     "EasyEfficiencyReference",
@@ -24,6 +20,4 @@ __all__ = [
     "format_efficiency_goal_display",
     "format_hr_drift_target_display",
     "hr_drift_zones_chart_api_payload",
-    "resolve_easy_efficiency",
-    "resolve_easy_hr_drift",
 ]

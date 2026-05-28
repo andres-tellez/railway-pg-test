@@ -1480,22 +1480,6 @@ def _build_easy_system_slice(
     }
 
 
-def _build_easy_slice_with_kpi_authority(
-    *,
-    pace_recs: TrainingPaceRecommendations | None,
-    pace_zones: List[Dict[str, Any]],
-    hr_zones: List[Dict[str, Any]],
-    weekly_data: List[Dict[str, Any]] | None = None,
-) -> Dict[str, Any]:
-    """Easy slice with profile + global KPI chart authority."""
-    return _build_easy_system_slice(
-        pace_recs=pace_recs,
-        weekly_data=weekly_data,
-        pace_zones=pace_zones,
-        hr_zones=hr_zones,
-    )
-
-
 def _resolve_tempo_chart_refs(
     session: Session,
     user_id: str,
@@ -1585,9 +1569,7 @@ def _build_display_authority_systems(
     ) = _resolve_tempo_chart_refs(session, user_id, recs=pace_recs)
 
     systems: Dict[str, Any] = {}
-    easy_slice = _build_easy_slice_with_kpi_authority(
-        session,
-        user_id,
+    easy_slice = _build_easy_system_slice(
         pace_recs=pace_recs,
         pace_zones=pace_zones,
         hr_zones=hr_zones,
@@ -1786,7 +1768,7 @@ def get_weekly_insight_history(
     )
 
     if not any(p.get("value") is not None for p in data_points):
-        easy_slice = _build_easy_slice_with_kpi_authority(
+        easy_slice = _build_easy_system_slice(
             pace_recs=pace_recs,
             pace_zones=pace_zones,
             hr_zones=hr_zones,
