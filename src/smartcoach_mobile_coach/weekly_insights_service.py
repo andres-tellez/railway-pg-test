@@ -1420,6 +1420,61 @@ def _build_tempo_system_slice(
     }
 
 
+def _build_display_authority_systems(
+    session: Session,
+    user_id: str,
+    *,
+    pace_recs: TrainingPaceRecommendations | None = None,
+) -> Dict[str, Any]:
+    """Easy/Tempo display authority for Insights when chart history is unavailable."""
+    if pace_recs is None:
+        try:
+            pace_recs = fetch_training_pace_recommendations(session, user_id)
+        except Exception:
+            logger.exception(
+                "Failed to load training pace recommendations for display authority (user_id=%s)",
+                user_id,
+            )
+            pace_recs = None
+
+    pace_zones: List[Dict[str, Any]] = []
+    hr_zones: List[Dict[str, Any]] = []
+    try:
+        _, pace_zones = _resolve_easy_pace_progress(session, user_id, recs=pace_recs)
+        _, hr_zones = _resolve_easy_hr_progress(session, user_id, recs=pace_recs)
+    except Exception:
+        logger.exception(
+            "Failed to resolve easy display refs for weekly insight history (user_id=%s)",
+            user_id,
+        )
+
+    (
+        _target_tempo_pace,
+        tempo_pace_zones,
+        _target_hr_z3,
+        tempo_hr_zones,
+    ) = _resolve_tempo_chart_refs(session, user_id, recs=pace_recs)
+
+    systems: Dict[str, Any] = {}
+    easy_slice = _build_easy_system_slice(
+        pace_recs=pace_recs,
+        pace_zones=pace_zones,
+        hr_zones=hr_zones,
+    )
+    if insights_easy_chart_authority_is_complete(easy_slice):
+        systems[InsightsSystem.EASY.value] = easy_slice
+
+    tempo_slice = _build_tempo_system_slice(
+        pace_recs=pace_recs,
+        pace_zones=tempo_pace_zones,
+        hr_zones=tempo_hr_zones,
+    )
+    if insights_tempo_chart_authority_is_complete(tempo_slice):
+        systems[InsightsSystem.TEMPO.value] = tempo_slice
+
+    return systems
+
+
 def get_weekly_insight_history(
     session: Session, user_id: str, weeks: int = 6
 ) -> Dict[str, Any]:
@@ -1443,13 +1498,13 @@ def get_weekly_insight_history(
         return {
             "has_history": False,
             "message": "Could not resolve linked Strava athlete.",
-            "systems": {},
+            "systems": _build_display_authority_systems(session, user_id),
         }
     if athlete_id is None:
         return {
             "has_history": False,
             "message": "No linked Strava athlete.",
-            "systems": {},
+            "systems": _build_display_authority_systems(session, user_id),
         }
 
     cal_week_start, _ = calendar_week_containing(date.today())
