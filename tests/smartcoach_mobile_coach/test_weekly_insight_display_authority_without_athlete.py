@@ -83,5 +83,7 @@ def test_weekly_history_includes_display_authority_without_athlete(
     assert out["has_history"] is False
     assert out["systems"]["easy"]["pace_target_display"] is not None
     assert out["systems"]["easy"]["hr_target_display"] is not None
+    assert out["systems"]["easy"]["hr_drift_target_display"] is not None
+    assert out["systems"]["easy"]["efficiency_goal_display"] is not None
     assert out["systems"]["tempo"]["pace_target_display"] is not None
     assert out["systems"]["tempo"]["insights_tempo_banner"] is not None
