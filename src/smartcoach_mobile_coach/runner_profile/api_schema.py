@@ -41,6 +41,14 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.goal_aligned_pac
 from src.services.training_plan.v2.race_distance_factory_v2 import (
     normalize_race_distance,
 )
+from src.smartcoach_mobile_coach.easy_kpi.efficiency_easy import (
+    build_easy_efficiency_reference,
+    efficiency_zones_chart_api_payload,
+)
+from src.smartcoach_mobile_coach.easy_kpi.hr_drift_easy import (
+    build_easy_hr_drift_reference,
+    hr_drift_zones_chart_api_payload,
+)
 
 # Canonical copy for Insights › Easy banner (emitted whenever Z2 HR + Z2 pace are present).
 INSIGHTS_EASY_BANNER_SUBTITLE = (
@@ -133,6 +141,20 @@ def build_insights_easy_chart_authority_payload(
         out["insights_easy_banner"] = {"subtitle": INSIGHTS_EASY_BANNER_SUBTITLE}
 
     return out
+
+
+def build_insights_easy_global_kpi_chart_authority_payload() -> dict[str, Any]:
+    """Global HR drift + efficiency chart authority (app-wide KPI bands; not profile-personalized)."""
+    drift = build_easy_hr_drift_reference()
+    eff = build_easy_efficiency_reference()
+    return {
+        "hr_drift_target_display": drift.target_display,
+        "efficiency_goal_display": eff.goal_display,
+        "zones": hr_drift_zones_chart_api_payload(drift.drift_zones_chart),
+        "efficiency_zones": efficiency_zones_chart_api_payload(
+            eff.efficiency_zones_chart
+        ),
+    }
 
 
 def insights_easy_chart_authority_is_complete(authority: dict[str, Any]) -> bool:
