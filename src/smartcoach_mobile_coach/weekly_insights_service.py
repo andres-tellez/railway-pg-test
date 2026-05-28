@@ -1869,13 +1869,6 @@ def get_weekly_insight_history(
         user_id,
         {
             "has_history": True,
-            "weekly_data": data_points,
-            "zones": zones,
-            "efficiency_zones": eff_zones,
-            "pace_zones": pace_zones,
-            "hr_zones": hr_zones,
-            "hr_drift_target_display": hr_drift_target_display,
-            "efficiency_goal_display": efficiency_goal_display,
             "systems": {
                 InsightsSystem.EASY.value: easy_slice,
                 InsightsSystem.TEMPO.value: tempo_slice,

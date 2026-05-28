@@ -218,3 +218,4 @@ def test_weekly_history_includes_easy_authority_when_has_history(
         easy["hr_progress_z2_range_display"] == expected["hr_progress_z2_range_display"]
     )
     assert easy["insights_easy_banner"] == expected["insights_easy_banner"]
+    assert "weekly_data" not in out

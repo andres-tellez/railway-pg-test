@@ -160,20 +160,22 @@ def test_weekly_history_hr_zones_match_hr_progress(
     out = get_weekly_insight_history(session, USER_ID, weeks=1)
 
     assert out["has_history"] is True
-    assert out["hr_zones"] == expected_zones
-    assert out["systems"]["easy"]["hr_zones"] == expected_zones
-    assert out["hr_drift_target_display"] == "under 2.5% ideal, under 5% acceptable"
-    assert out["efficiency_goal_display"] == "higher is better at the same effort"
-    assert (
-        out["systems"]["easy"]["hr_drift_target_display"]
-        == out["hr_drift_target_display"]
-    )
-    assert (
-        out["systems"]["easy"]["efficiency_goal_display"]
-        == out["efficiency_goal_display"]
-    )
+    easy = out["systems"]["easy"]
+    assert easy["hr_zones"] == expected_zones
+    assert easy["hr_drift_target_display"] == "under 2.5% ideal, under 5% acceptable"
+    assert easy["efficiency_goal_display"] == "higher is better at the same effort"
+    for key in (
+        "weekly_data",
+        "zones",
+        "efficiency_zones",
+        "pace_zones",
+        "hr_zones",
+        "hr_drift_target_display",
+        "efficiency_goal_display",
+    ):
+        assert key not in out
 
-    easy_points = out["weekly_data"]
+    easy_points = easy["weekly_data"]
     assert len(easy_points) == 1
     assert easy_points[0]["easy_hr_progress_band"] == "green"
     assert "easy_avg_hr_band" not in easy_points[0]

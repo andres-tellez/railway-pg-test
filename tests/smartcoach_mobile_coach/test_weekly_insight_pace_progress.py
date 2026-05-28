@@ -167,12 +167,13 @@ def test_weekly_history_pace_zones_match_pace_progress(
     out = get_weekly_insight_history(session, USER_ID, weeks=1)
 
     assert out["has_history"] is True
-    assert out["pace_zones"] == expected_zones
-    assert out["systems"]["easy"]["pace_zones"] == expected_zones
+    easy = out["systems"]["easy"]
+    assert easy["pace_zones"] == expected_zones
     assert recs is not None and recs.pace_progress is not None
     assert recs.easy_gyor is None
+    assert "pace_zones" not in out
 
-    easy_points = out["weekly_data"]
+    easy_points = easy["weekly_data"]
     assert len(easy_points) == 1
     assert easy_points[0]["easy_pace_progress_band"] is not None
     assert "z2_pace_band" not in easy_points[0]
