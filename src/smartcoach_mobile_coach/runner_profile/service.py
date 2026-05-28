@@ -366,7 +366,7 @@ def get_runner_training_pace_recommendations(
     )
     plan_race_distance = race_distance
     if plan_race_distance is None and plan is not None:
-        plan_race_distance = plan.race_distance
+        plan_race_distance = getattr(plan, "race_distance", None)
     return build_training_pace_recommendations(
         profile=profile_data,
         target_time=target_time,
