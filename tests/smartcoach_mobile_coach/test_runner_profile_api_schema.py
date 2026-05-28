@@ -76,6 +76,7 @@ def test_payload_includes_training_pace_recommendations_when_provided():
     recs = build_training_pace_recommendations(
         profile=profile,
         target_time="3:40:00",
+        race_distance="Marathon",
         phase="Base",
         phase_source="plan_workouts_current_week",
         phase_week_start="2026-05-18",
@@ -85,7 +86,16 @@ def test_payload_includes_training_pace_recommendations_when_provided():
     payload = runner_zone_profile_payload(
         profile,
         training_pace_recommendations=recs,
+        target_time="3:40:00",
+        race_distance="Marathon",
     )
+    inputs = payload.get("inputs")
+    assert inputs is not None
+    assert inputs["hrmax"] == 185
+    assert inputs["resting_hr"] == 50
+    assert inputs["target_time"] == "3:40:00"
+    assert inputs["race_distance"] == "Marathon"
+    assert inputs["goal_aligned_status"] == "active"
     tp = payload.get("training_pace_recommendations")
     assert tp is not None
     assert tp["phase"] == "Base"
