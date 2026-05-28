@@ -24,7 +24,7 @@ DEFAULT_HR_DRIFT_BAND_CONFIG = HrDriftBandConfig()
 
 @dataclass(frozen=True)
 class EasyHrDriftReference:
-    """Insights HR Drift chart authority (global bands v1; resolver may personalize later)."""
+    """Insights HR Drift chart authority (global app-wide KPI bands)."""
 
     target_display: str
     drift_zones_chart: tuple[HrDriftChartZone, ...]

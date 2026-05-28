@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from src.db.dao.plans_dao import get_active_or_most_recent_plan
 from src.smartcoach_mobile_coach.runner_profile.api_schema import (
     build_insights_easy_chart_authority_payload,
+    build_insights_easy_global_kpi_chart_authority_payload,
     build_insights_tempo_chart_authority_payload,
     insights_easy_chart_authority_is_complete,
     insights_tempo_chart_authority_is_complete,
@@ -69,20 +70,8 @@ from src.smartcoach_mobile_coach.runner_profile.service import (
 )
 from src.smartcoach_mobile_coach.display_format import format_pace_sec_per_mi
 from src.smartcoach_mobile_coach.db_helpers import get_primary_athlete_id
-from src.smartcoach_mobile_coach.easy_kpi.efficiency_easy import (
-    efficiency_zones_chart_api_payload,
-)
-from src.smartcoach_mobile_coach.easy_kpi.hr_drift_easy import (
-    hr_drift_zones_chart_api_payload,
-)
-from src.smartcoach_mobile_coach.easy_kpi.resolve import (
-    resolve_easy_efficiency,
-    resolve_easy_hr_drift,
-)
 from src.utils.hr_zone_constants import (
     aerobic_efficiency_band_from_value,
-    aerobic_efficiency_band_zones_chart,
-    hr_drift_band_zones_chart,
     OVERALL_SCORE_RULES,
     TREND_BAND_THRESHOLDS,
     hr_drift_band_from_pct,
@@ -151,43 +140,6 @@ def _hr_zones_chart_payload(
             continue
         zones.append({"color": str(zone["color"]), "min": lo, "max": hi})
     return zones
-
-
-def _easy_kpi_zones_chart_payload(
-    zones_chart: tuple[dict[str, float | str], ...],
-    *,
-    api_payload_fn,
-) -> List[Dict[str, Any]]:
-    zones: List[Dict[str, Any]] = []
-    for zone in api_payload_fn(zones_chart):
-        lo = _coerce_finite_float(zone.get("min"))
-        hi = _coerce_finite_float(zone.get("max"))
-        if lo is None or hi is None:
-            continue
-        zones.append({"color": str(zone["color"]), "min": lo, "max": hi})
-    return zones
-
-
-def _resolve_easy_hr_drift(
-    session: Session, user_id: str
-) -> Tuple[str, List[Dict[str, Any]]]:
-    """HR drift target copy and chart zones (global bands v1; resolver may personalize later)."""
-    ref = resolve_easy_hr_drift(session, user_id)
-    return ref.target_display, _easy_kpi_zones_chart_payload(
-        ref.drift_zones_chart,
-        api_payload_fn=hr_drift_zones_chart_api_payload,
-    )
-
-
-def _resolve_easy_efficiency(
-    session: Session, user_id: str
-) -> Tuple[str, List[Dict[str, Any]]]:
-    """Efficiency goal copy and chart zones (global bands v1)."""
-    ref = resolve_easy_efficiency(session, user_id)
-    return ref.goal_display, _easy_kpi_zones_chart_payload(
-        ref.efficiency_zones_chart,
-        api_payload_fn=efficiency_zones_chart_api_payload,
-    )
 
 
 def _resolve_easy_hr_progress(
@@ -1303,7 +1255,7 @@ def _build_full_weekly_scoreboard_from_row(
         "systems": systems_payload,
     }
     if include_legacy_kpi_displays:
-        payload.update(_easy_insight_kpi_displays(session, user_id))
+        payload.update(_easy_insight_kpi_displays())
     return payload
 
 
@@ -1360,7 +1312,7 @@ def get_latest_weekly_insight(
             "has_insight": False,
             "message": _LATEST_WEEK_NO_INSIGHT_MESSAGE,
             "systems": {},
-            **_easy_insight_kpi_displays(session, user_id),
+            **_easy_insight_kpi_displays(),
         }
 
     if slim:
@@ -1381,46 +1333,14 @@ def get_latest_weekly_insight(
     )
 
 
-def _resolve_easy_drift_and_efficiency(
-    session: Session, user_id: str
-) -> Tuple[str, str, List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """HR drift + efficiency footnote copy and chart zones for Insights."""
-    try:
-        hr_drift_target_display, zones = _resolve_easy_hr_drift(session, user_id)
-        efficiency_goal_display, eff_zones = _resolve_easy_efficiency(session, user_id)
-        return hr_drift_target_display, efficiency_goal_display, zones, eff_zones
-    except Exception:
-        logger.exception(
-            "Failed to resolve easy HR drift/efficiency refs (user_id=%s)", user_id
-        )
-        from src.smartcoach_mobile_coach.easy_kpi.efficiency_easy import (
-            format_efficiency_goal_display,
-        )
-        from src.smartcoach_mobile_coach.easy_kpi.hr_drift_easy import (
-            format_hr_drift_target_display,
-        )
-
-        return (
-            format_hr_drift_target_display(),
-            format_efficiency_goal_display(),
-            hr_drift_band_zones_chart(),
-            aerobic_efficiency_band_zones_chart(),
-        )
-
-
-def _easy_insight_kpi_displays(session: Session, user_id: str) -> Dict[str, Any]:
-    """Resolved HR drift / efficiency chart zones and footnote copy for Insights."""
-    (
-        hr_drift_target_display,
-        efficiency_goal_display,
-        zones,
-        eff_zones,
-    ) = _resolve_easy_drift_and_efficiency(session, user_id)
+def _easy_insight_kpi_displays() -> Dict[str, Any]:
+    """Global HR drift / efficiency chart zones and footnote copy for Insights."""
+    global_kpi = build_insights_easy_global_kpi_chart_authority_payload()
     return {
-        "hr_drift_target_display": hr_drift_target_display,
-        "efficiency_goal_display": efficiency_goal_display,
-        "hr_drift_band_zones": zones,
-        "aerobic_efficiency_band_zones": eff_zones,
+        "hr_drift_target_display": global_kpi["hr_drift_target_display"],
+        "efficiency_goal_display": global_kpi["efficiency_goal_display"],
+        "hr_drift_band_zones": global_kpi["zones"],
+        "aerobic_efficiency_band_zones": global_kpi["efficiency_zones"],
     }
 
 
@@ -1430,54 +1350,30 @@ def _build_easy_system_slice(
     weekly_data: List[Dict[str, Any]] | None = None,
     pace_zones: List[Dict[str, Any]],
     hr_zones: List[Dict[str, Any]],
-    zones: List[Dict[str, Any]] | None = None,
-    eff_zones: List[Dict[str, Any]] | None = None,
-    hr_drift_target_display: str | None = None,
-    efficiency_goal_display: str | None = None,
 ) -> Dict[str, Any]:
-    """Easy system slice for weekly-history (chart data + display authority from recommendations)."""
-    easy_slice: Dict[str, Any] = {
+    """Easy slice: profile pace/HR authority plus global drift/efficiency KPI bands."""
+    return {
         "weekly_data": weekly_data or [],
         "pace_zones": pace_zones,
         "hr_zones": hr_zones,
         **build_insights_easy_chart_authority_payload(pace_recs),
+        **build_insights_easy_global_kpi_chart_authority_payload(),
     }
-    if zones is not None:
-        easy_slice["zones"] = zones
-    if eff_zones is not None:
-        easy_slice["efficiency_zones"] = eff_zones
-    if hr_drift_target_display is not None:
-        easy_slice["hr_drift_target_display"] = hr_drift_target_display
-    if efficiency_goal_display is not None:
-        easy_slice["efficiency_goal_display"] = efficiency_goal_display
-    return easy_slice
 
 
 def _build_easy_slice_with_kpi_authority(
-    session: Session,
-    user_id: str,
     *,
     pace_recs: TrainingPaceRecommendations | None,
     pace_zones: List[Dict[str, Any]],
     hr_zones: List[Dict[str, Any]],
     weekly_data: List[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
-    """Easy slice including drift/efficiency chart authority from global KPI bands."""
-    (
-        hr_drift_target_display,
-        efficiency_goal_display,
-        zones,
-        eff_zones,
-    ) = _resolve_easy_drift_and_efficiency(session, user_id)
+    """Easy slice with profile + global KPI chart authority."""
     return _build_easy_system_slice(
         pace_recs=pace_recs,
         weekly_data=weekly_data,
         pace_zones=pace_zones,
         hr_zones=hr_zones,
-        zones=zones,
-        eff_zones=eff_zones,
-        hr_drift_target_display=hr_drift_target_display,
-        efficiency_goal_display=efficiency_goal_display,
     )
 
 
@@ -1771,8 +1667,6 @@ def get_weekly_insight_history(
 
     if not any(p.get("value") is not None for p in data_points):
         easy_slice = _build_easy_slice_with_kpi_authority(
-            session,
-            user_id,
             pace_recs=pace_recs,
             pace_zones=pace_zones,
             hr_zones=hr_zones,
@@ -1791,13 +1685,6 @@ def get_weekly_insight_history(
                 "systems": systems,
             },
         )
-
-    (
-        hr_drift_target_display,
-        efficiency_goal_display,
-        zones,
-        eff_zones,
-    ) = _resolve_easy_drift_and_efficiency(session, user_id)
 
     # TEMPO: same calendar week_windows as EASY — one point per week, gaps as nulls.
     tempo_points: List[Dict[str, Any]] = []
@@ -1887,10 +1774,6 @@ def get_weekly_insight_history(
         weekly_data=data_points,
         pace_zones=pace_zones,
         hr_zones=hr_zones,
-        zones=zones,
-        eff_zones=eff_zones,
-        hr_drift_target_display=hr_drift_target_display,
-        efficiency_goal_display=efficiency_goal_display,
     )
 
     return _attach_latest_week_to_history_payload(
