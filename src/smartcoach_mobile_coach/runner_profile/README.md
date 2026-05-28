@@ -1,9 +1,18 @@
-# Runner profile — plan SSOT
+# Runner profile — logic hub (Tier 1)
+
+## Three-tier model
+
+| Tier | Package / surface | Owns |
+|------|-------------------|------|
+| **1 — Logic hub** | `runner_profile/` + `GET /api/runner-profile/zones` | HR zones, calibrated pace, run definitions, marathon goal-aligned targets |
+| **2 — Execution facts** | `execution_analytics/` | Per-run `insights_system`, easy/tempo KPIs, tempo segment columns on `activities` |
+| **3 — Product** | `weekly_insights_service`, `training_kpi_service`, coach tools | Weekly rollups and chart assembly from stored facts |
+
+Tier 2 calls `get_runner_profile` only. Tier 3 reads `activities` execution columns — not SQL views.
 
 ## Plan definitions authority
 
-Run-type zone mapping, workout taxonomy, and placement roles are owned by this
-package:
+Run-type zone mapping, workout taxonomy, and placement roles are owned by this package:
 
 | Module | Owns |
 |--------|------|
@@ -13,15 +22,28 @@ package:
 | `service.py` | Facades for plan generation, storage, and HR/pace targets |
 
 Plan pipeline code should import from `src.smartcoach_mobile_coach.runner_profile`
-(or the specific submodule above). Deprecated shims have been removed.
+(or the specific submodule above).
 
-## HTTP API
+## HTTP API — `GET /api/runner-profile/zones`
 
-`GET /api/runner-profile/zones` exposes:
+Exposes:
 
-- `run_type_registry` — canonical run types + zone/Insights mapping (Steady → Z3/tempo)
-- `plan_workout_taxonomy` — read-only taxonomy slice
-- `pace_authorities` — explicit split between plan (activity median) and Insights (marathon goal)
+- **`inputs`** — `{ hrmax, resting_hr, target_time, race_distance, goal_aligned_status }` so clients see what drove goal-aligned pace bands
+- **`run_type_registry`** — canonical run types + zone/Insights mapping (Steady → Z3/tempo)
+- **`plan_workout_taxonomy`** — read-only taxonomy slice
+- **`pace_authorities`** — explicit split between plan (activity median) and Insights (marathon goal)
+
+### Goal-aligned pace (`goal_aligned_status`)
+
+| Status | Meaning |
+|--------|---------|
+| `active` | Marathon plan + valid target time → goal bands present |
+| `missing_target_time` | Marathon-capable plan but no goal time |
+| `unsupported_race` | Race distance has no goal config yet (e.g. Half Marathon) |
+| `unavailable` | Config + time present but bands could not be built |
+
+**Half marathon later:** add a `GoalAlignedPaceConfig` branch in
+`resolve_goal_aligned_config()` — no consumer/API shape changes required.
 
 ## Pace authorities
 
@@ -48,12 +70,6 @@ All plan-side HR display strings flow through `get_runner_zone_string_for_run_ty
 
 HR zone **percentages** remain in `hr_zone_constants.py` + `hr_builder.py` only;
 they are not duplicated in run-type modules.
-
-## Legacy follow-up
-
-Insights SQL still references `v_easy_runs` (derived from legacy easy-run
-classification). Migrating Insights KPI scope to registry-based `insights_system`
-is tracked separately and does not block plan SSOT.
 
 Optional later cleanup: `shared_v2/workout_utils.get_workout_pace_label_key` still
 uses inline label heuristics — migrate to registry/taxonomy when touching Pass3/4.

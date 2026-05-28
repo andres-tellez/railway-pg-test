@@ -342,6 +342,7 @@ def get_runner_training_pace_recommendations(
     user_id: str,
     *,
     target_time: str | None,
+    race_distance: str | None = None,
     plan: Plan | None = None,
     phase_resolution: TrainingPhaseResolution | None = None,
     profile: RunnerZoneProfileData | None = None,
@@ -363,9 +364,13 @@ def get_runner_training_pace_recommendations(
     resolved = phase_resolution or resolve_current_training_phase(
         session, user_id, plan=plan
     )
+    plan_race_distance = race_distance
+    if plan_race_distance is None and plan is not None:
+        plan_race_distance = plan.race_distance
     return build_training_pace_recommendations(
         profile=profile_data,
         target_time=target_time,
+        race_distance=plan_race_distance,
         phase=resolved.phase,
         phase_source=resolved.source,
         phase_week_start=(

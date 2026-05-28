@@ -28,10 +28,12 @@ def get_runner_profile_zones():
         profile = get_runner_profile(session, str(user_id))
         plan_row = get_active_or_most_recent_plan(session, str(user_id))
         target_time = plan_row.target_time if plan_row is not None else None
+        race_distance = plan_row.race_distance if plan_row is not None else None
         training_pace_recommendations = get_runner_training_pace_recommendations(
             session,
             str(user_id),
             target_time=target_time,
+            race_distance=race_distance,
             plan=plan_row,
             profile=profile,
         )
@@ -42,6 +44,8 @@ def get_runner_profile_zones():
                     "data": runner_zone_profile_payload(
                         profile,
                         training_pace_recommendations=training_pace_recommendations,
+                        target_time=target_time,
+                        race_distance=race_distance,
                     ),
                 }
             ),

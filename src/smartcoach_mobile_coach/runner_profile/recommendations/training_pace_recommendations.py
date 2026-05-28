@@ -28,11 +28,15 @@ def build_training_pace_recommendations(
     *,
     profile: RunnerZoneProfileData,
     target_time: str | None,
+    race_distance: str | None = None,
     phase: str = "Base",
     phase_source: str | None = None,
     phase_week_start: str | None = None,
 ) -> TrainingPaceRecommendations | None:
-    goal_aligned = compute_goal_aligned_pace_bands(target_time)
+    goal_aligned = compute_goal_aligned_pace_bands(
+        target_time,
+        race_distance=race_distance,
+    )
     activity_easy = profile.pace_z2 if profile.calibrated else None
     activity_z3 = profile.pace_z3 if profile.calibrated else None
     activity_z4 = profile.pace_z4 if profile.calibrated else None
