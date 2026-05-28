@@ -1137,16 +1137,8 @@ def generate_weekly_insight(
     }
 
 
-def get_latest_weekly_insight(
-    session: Session, user_id: str, *, slim: bool = False
-) -> Dict[str, Any]:
-    """Return the most recent weekly insight.
-
-    ``slim=False`` (default): full scoreboard for REST / mobile Insights API.
-    ``slim=True``: coach orientation payload only (``week_start``, ``week_end``,
-    ``overall_band``) — no per-KPI values, zone charts, or run counts.
-    """
-    row = session.execute(
+def _fetch_latest_weekly_insight_row(session: Session, user_id: str) -> Any:
+    return session.execute(
         text(
             "SELECT * FROM weekly_training_insights "
             "WHERE user_id = CAST(:uid AS uuid) "
@@ -1155,37 +1147,8 @@ def get_latest_weekly_insight(
         {"uid": user_id},
     ).fetchone()
 
-    if not row:
-        if slim:
-            return {
-                "has_insight": False,
-                "insight_detail_level": "orientation",
-                "message": (
-                    "No weekly insight rows yet. Trend charts can still appear from your "
-                    "history once we have enough weeks of stored metrics (including easy runs)."
-                ),
-                "orientation_note": WEEKLY_INSIGHT_ORIENTATION_NOTE,
-            }
-        return {
-            "has_insight": False,
-            "message": (
-                "No weekly insight rows yet. Trend charts can still appear from your "
-                "history once we have enough weeks of stored metrics (including easy runs)."
-            ),
-            "systems": {},
-            **_easy_insight_kpi_displays(session, user_id),
-        }
 
-    if slim:
-        return {
-            "has_insight": True,
-            "insight_detail_level": "orientation",
-            "week_start": str(row.week_start),
-            "week_end": str(row.week_end),
-            "overall_band": row.overall_band,
-            "orientation_note": WEEKLY_INSIGHT_ORIENTATION_NOTE,
-        }
-
+def _build_easy_kpis_payload_from_row(row: Any) -> List[Dict[str, Any]]:
     pace_display = "—"
     if row.z2_pace_min_per_mi:
         pace_display = format_pace_sec_per_mi(row.z2_pace_min_per_mi * 60)
@@ -1206,8 +1169,8 @@ def get_latest_weekly_insight(
         sign = "+" if row.efficiency_delta > 0 else ""
         eff_delta_display = f"{sign}{row.efficiency_delta}"
 
-    easy_hr_display = "—"
     easy_hr = getattr(row, "easy_avg_hr", None)
+    easy_hr_display = "—"
     if easy_hr is not None:
         easy_hr_display = str(round(float(easy_hr)))
 
@@ -1220,7 +1183,7 @@ def get_latest_weekly_insight(
 
     easy_hr_band = getattr(row, "easy_avg_hr_band", None)
 
-    kpis_payload = [
+    return [
         {
             "name": "hr_drift",
             "label": "HR drift",
@@ -1259,6 +1222,11 @@ def get_latest_weekly_insight(
         },
     ]
 
+
+def _build_easy_systems_payload_from_row(
+    row: Any,
+    kpis_payload: List[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
     systems_payload: Dict[str, Dict[str, Any]] = {
         InsightsSystem.EASY.value: {
             "system": InsightsSystem.EASY.value,
@@ -1277,8 +1245,19 @@ def get_latest_weekly_insight(
         tempo_system = resolve_system_snapshot(prior_systems, TEMPO_SYSTEM_SPEC)
         if isinstance(tempo_system, dict) and tempo_system:
             systems_payload[InsightsSystem.TEMPO.value] = tempo_system
+    return systems_payload
 
-    return {
+
+def _build_full_weekly_scoreboard_from_row(
+    session: Session,
+    user_id: str,
+    row: Any,
+    *,
+    include_legacy_kpi_displays: bool = False,
+) -> Dict[str, Any]:
+    kpis_payload = _build_easy_kpis_payload_from_row(row)
+    systems_payload = _build_easy_systems_payload_from_row(row, kpis_payload)
+    payload: Dict[str, Any] = {
         "has_insight": True,
         "insight_detail_level": "full",
         "week_start": str(row.week_start),
@@ -1291,8 +1270,84 @@ def get_latest_weekly_insight(
         "action_text": row.action_text,
         "generated_at": row.generated_at.isoformat() if row.generated_at else None,
         "systems": systems_payload,
-        **_easy_insight_kpi_displays(session, user_id),
     }
+    if include_legacy_kpi_displays:
+        payload.update(_easy_insight_kpi_displays(session, user_id))
+    return payload
+
+
+_LATEST_WEEK_NO_INSIGHT_MESSAGE = (
+    "No weekly insight rows yet. Trend charts can still appear from your "
+    "history once we have enough weeks of stored metrics (including easy runs)."
+)
+
+
+def _build_latest_week_scoreboard(session: Session, user_id: str) -> Dict[str, Any]:
+    """Latest-week scoreboard block embedded in ``/weekly-history``."""
+    row = _fetch_latest_weekly_insight_row(session, user_id)
+    if not row:
+        return {"has_insight": False, "message": _LATEST_WEEK_NO_INSIGHT_MESSAGE}
+    payload = _build_full_weekly_scoreboard_from_row(
+        session,
+        user_id,
+        row,
+        include_legacy_kpi_displays=False,
+    )
+    payload.pop("insight_detail_level", None)
+    return payload
+
+
+def _attach_latest_week_to_history_payload(
+    session: Session,
+    user_id: str,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    payload["latest_week"] = _build_latest_week_scoreboard(session, user_id)
+    return payload
+
+
+def get_latest_weekly_insight(
+    session: Session, user_id: str, *, slim: bool = False
+) -> Dict[str, Any]:
+    """Return the most recent weekly insight.
+
+    ``slim=False`` (default): full scoreboard for REST / mobile Insights API.
+    ``slim=True``: coach orientation payload only (``week_start``, ``week_end``,
+    ``overall_band``) — no per-KPI values, zone charts, or run counts.
+    """
+    row = _fetch_latest_weekly_insight_row(session, user_id)
+
+    if not row:
+        if slim:
+            return {
+                "has_insight": False,
+                "insight_detail_level": "orientation",
+                "message": _LATEST_WEEK_NO_INSIGHT_MESSAGE,
+                "orientation_note": WEEKLY_INSIGHT_ORIENTATION_NOTE,
+            }
+        return {
+            "has_insight": False,
+            "message": _LATEST_WEEK_NO_INSIGHT_MESSAGE,
+            "systems": {},
+            **_easy_insight_kpi_displays(session, user_id),
+        }
+
+    if slim:
+        return {
+            "has_insight": True,
+            "insight_detail_level": "orientation",
+            "week_start": str(row.week_start),
+            "week_end": str(row.week_end),
+            "overall_band": row.overall_band,
+            "orientation_note": WEEKLY_INSIGHT_ORIENTATION_NOTE,
+        }
+
+    return _build_full_weekly_scoreboard_from_row(
+        session,
+        user_id,
+        row,
+        include_legacy_kpi_displays=True,
+    )
 
 
 def _resolve_easy_drift_and_efficiency(
@@ -1525,17 +1580,25 @@ def get_weekly_insight_history(
             "get_primary_athlete_id failed for weekly insight history (user_id=%s)",
             user_id,
         )
-        return {
-            "has_history": False,
-            "message": "Could not resolve linked Strava athlete.",
-            "systems": _build_display_authority_systems(session, user_id),
-        }
+        return _attach_latest_week_to_history_payload(
+            session,
+            user_id,
+            {
+                "has_history": False,
+                "message": "Could not resolve linked Strava athlete.",
+                "systems": _build_display_authority_systems(session, user_id),
+            },
+        )
     if athlete_id is None:
-        return {
-            "has_history": False,
-            "message": "No linked Strava athlete.",
-            "systems": _build_display_authority_systems(session, user_id),
-        }
+        return _attach_latest_week_to_history_payload(
+            session,
+            user_id,
+            {
+                "has_history": False,
+                "message": "No linked Strava athlete.",
+                "systems": _build_display_authority_systems(session, user_id),
+            },
+        )
 
     cal_week_start, _ = calendar_week_containing(date.today())
     week_windows = [
@@ -1690,11 +1753,15 @@ def get_weekly_insight_history(
             systems[InsightsSystem.EASY.value] = easy_slice
         if insights_tempo_chart_authority_is_complete(tempo_slice_for_authority):
             systems[InsightsSystem.TEMPO.value] = tempo_slice_for_authority
-        return {
-            "has_history": False,
-            "message": "Not enough data for a trend chart yet.",
-            "systems": systems,
-        }
+        return _attach_latest_week_to_history_payload(
+            session,
+            user_id,
+            {
+                "has_history": False,
+                "message": "Not enough data for a trend chart yet.",
+                "systems": systems,
+            },
+        )
 
     (
         hr_drift_target_display,
@@ -1797,20 +1864,24 @@ def get_weekly_insight_history(
         efficiency_goal_display=efficiency_goal_display,
     )
 
-    return {
-        "has_history": True,
-        "weekly_data": data_points,
-        "zones": zones,
-        "efficiency_zones": eff_zones,
-        "pace_zones": pace_zones,
-        "hr_zones": hr_zones,
-        "hr_drift_target_display": hr_drift_target_display,
-        "efficiency_goal_display": efficiency_goal_display,
-        "systems": {
-            InsightsSystem.EASY.value: easy_slice,
-            InsightsSystem.TEMPO.value: tempo_slice,
+    return _attach_latest_week_to_history_payload(
+        session,
+        user_id,
+        {
+            "has_history": True,
+            "weekly_data": data_points,
+            "zones": zones,
+            "efficiency_zones": eff_zones,
+            "pace_zones": pace_zones,
+            "hr_zones": hr_zones,
+            "hr_drift_target_display": hr_drift_target_display,
+            "efficiency_goal_display": efficiency_goal_display,
+            "systems": {
+                InsightsSystem.EASY.value: easy_slice,
+                InsightsSystem.TEMPO.value: tempo_slice,
+            },
         },
-    }
+    )
 
 
 def get_users_with_easy_runs(

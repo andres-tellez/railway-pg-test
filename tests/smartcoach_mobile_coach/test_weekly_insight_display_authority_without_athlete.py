@@ -56,6 +56,10 @@ def _phase_resolution() -> TrainingPhaseResolution:
 
 
 @patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
+    return_value={},
+)
+@patch(
     "src.smartcoach_mobile_coach.runner_profile.service.resolve_current_training_phase",
     return_value=_phase_resolution(),
 )
@@ -76,6 +80,7 @@ def test_weekly_history_includes_display_authority_without_athlete(
     _mock_plan,
     _mock_profile,
     _mock_phase,
+    _mock_tempo_batch,
 ):
     session = MagicMock()
     out = get_weekly_insight_history(session, USER_ID, weeks=1)
@@ -87,3 +92,5 @@ def test_weekly_history_includes_display_authority_without_athlete(
     assert out["systems"]["easy"]["efficiency_goal_display"] is not None
     assert out["systems"]["tempo"]["pace_target_display"] is not None
     assert out["systems"]["tempo"]["insights_tempo_banner"] is not None
+    assert "latest_week" in out
+    assert out["latest_week"]["has_insight"] is False
