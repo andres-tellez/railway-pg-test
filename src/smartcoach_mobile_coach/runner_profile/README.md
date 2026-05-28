@@ -54,6 +54,30 @@ Exposes:
 | Insights Easy Avg Pace | Marathon goal | `training_pace_recommendations.pace_progress` |
 | Insights Tempo Avg Pace | Marathon goal Z3 | `training_pace_recommendations.tempo_pace_progress` |
 
+## Insights tab API bundle
+
+Mobile Insights opens with **`GET /api/training-insights/weekly-history`** only (no
+`/zones` or `/weekly` on tab load).
+
+| Endpoint | Role on Insights |
+|----------|------------------|
+| **`/api/training-insights/weekly-history`** | Charts, display authority, `latest_week` scoreboard |
+| **`/api/runner-profile/zones`** | Plan, Profile, Coach (not Insights open) |
+| **`/api/training-insights/weekly`** | Coach tools and other consumers |
+
+### `weekly-history.systems` authority split
+
+| Slice | Source | Stored at write time? |
+|-------|--------|----------------------|
+| Easy pace / HR progress (banner, footnotes, chart zones) | Profile `training_pace_recommendations` | No (recomputed from profile on read) |
+| Easy drift / efficiency (footnotes, chart zones) | Global `easy_kpi/` defaults | N/A (app-wide constants) |
+| Easy chart dot bands (`easy_pace_progress_band`, etc.) | Classified at insight generation | Yes — `weekly_training_insights` columns |
+| Tempo pace / HR progress (banner, footnotes, chart zones) | Profile `tempo_pace_progress` / `tempo_hr_progress` | No |
+| Tempo chart dot GYOR bands | Classified at insight generation | Yes — `kpi_snapshot.systems.tempo.bands` |
+
+Legacy insight rows without stored bands still classify on read using current profile
+targets (same fallback pattern as Easy Step 5).
+
 ## HR / `target_hr` paths
 
 All plan-side HR display strings flow through `get_runner_zone_string_for_run_type`

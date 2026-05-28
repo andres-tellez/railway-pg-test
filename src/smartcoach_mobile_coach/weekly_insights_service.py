@@ -5,6 +5,13 @@ Computes deterministic KPI bands, overall score, and deltas from persisted
 ``activities`` execution columns (Tier 2). Numeric truth is computed in SQL +
 Python rollups; weekly rows store metrics for the mobile Insights charts.
 
+Insights tab bundle: ``GET /api/training-insights/weekly-history`` is the primary
+mobile surface (charts, display authority, ``latest_week`` scoreboard). Profile
+pace/HR progress comes from ``training_pace_recommendations``; global Easy drift/
+efficiency bands from ``easy_kpi/``; weekly chart dot bands are stored at insight
+write time (Easy columns on ``weekly_training_insights``, Tempo GYOR in
+``kpi_snapshot.systems.tempo.bands``).
+
 ``get_latest_weekly_insight(..., slim=True)`` returns an orientation-only dict
 for the coach tool (week + ``overall_band``); REST uses ``slim=False`` (full).
 """
@@ -226,27 +233,108 @@ def _tempo_segment_result_to_kpi_fields(
     return fields
 
 
-def _attach_tempo_segment_history_point(
-    point: Dict[str, Any],
+def _compute_tempo_gyor_bands_from_fields(
     *,
+    tempo_segment_pace_min_per_mi: float | None,
+    tempo_segment_avg_hr_bpm: float | None,
+    tempo_segment_confidence: str | None,
     target_tempo_pace: Optional[PaceZoneBand],
     target_hr_z3: Optional[HrZoneBand],
-    segment: TempoSegmentPaceResult,
+) -> Tuple[str | None, str | None]:
+    """Classify tempo pace/HR GYOR bands (same semantics as weekly history charts)."""
+    if tempo_segment_pace_min_per_mi is None:
+        return None, None
+    if tempo_segment_confidence not in ("high", "medium"):
+        return None, None
+    point: Dict[str, Any] = {
+        "tempo_segment_pace_min_per_mi": tempo_segment_pace_min_per_mi,
+        "tempo_segment_avg_hr_bpm": tempo_segment_avg_hr_bpm,
+    }
+    point = _attach_tempo_pace_progress_band(
+        point,
+        target_tempo_pace=target_tempo_pace,
+    )
+    point = attach_tempo_hr_progress_band(
+        point,
+        target_hr_z3=target_hr_z3,
+    )
+    return point.get("tempo_pace_progress_band"), point.get("tempo_hr_progress_band")
+
+
+def _tempo_gyor_bands_from_insight_row(row: Any) -> Tuple[str | None, str | None]:
+    """Read stored tempo GYOR bands from ``weekly_training_insights.kpi_snapshot``."""
+    snapshot = getattr(row, "kpi_snapshot", None)
+    if isinstance(snapshot, str):
+        try:
+            snapshot = json.loads(snapshot)
+        except json.JSONDecodeError:
+            snapshot = None
+    if not isinstance(snapshot, dict):
+        return None, None
+    tempo = snapshot.get("systems", {}).get(InsightsSystem.TEMPO.value, {})
+    bands = tempo.get("bands", {}) if isinstance(tempo, dict) else {}
+    if not isinstance(bands, dict):
+        return None, None
+    pace_band = bands.get("tempo_pace_progress")
+    hr_band = bands.get("tempo_hr_progress")
+    return (
+        pace_band if isinstance(pace_band, str) else None,
+        hr_band if isinstance(hr_band, str) else None,
+    )
+
+
+def _finalize_tempo_history_point_bands(
+    point: Dict[str, Any],
+    *,
+    stored_pace_band: str | None,
+    stored_hr_band: str | None,
+    target_tempo_pace: Optional[PaceZoneBand],
+    target_hr_z3: Optional[HrZoneBand],
 ) -> Dict[str, Any]:
-    """Merge segment provenance and optionally attach pace/HR GYOR bands."""
-    point.update(_tempo_segment_result_to_kpi_fields(segment))
-    if segment.tempo_segment_pace_min_per_mi is not None and segment.allows_full_gyor():
+    """Map stored tempo GYOR bands onto chart points; legacy rows fall back on read."""
+    point["tempo_pace_progress_band"] = stored_pace_band
+    point["tempo_hr_progress_band"] = stored_hr_band
+    if (
+        point["tempo_pace_progress_band"] is None
+        and point.get("tempo_segment_pace_min_per_mi") is not None
+    ):
         point = _attach_tempo_pace_progress_band(
             point,
             target_tempo_pace=target_tempo_pace,
         )
-        return attach_tempo_hr_progress_band(
+    if (
+        point["tempo_hr_progress_band"] is None
+        and point.get("tempo_segment_avg_hr_bpm") is not None
+    ):
+        point = attach_tempo_hr_progress_band(
             point,
             target_hr_z3=target_hr_z3,
         )
-    point["tempo_pace_progress_band"] = None
-    point["tempo_hr_progress_band"] = None
     return point
+
+
+def _attach_tempo_segment_history_point(
+    point: Dict[str, Any],
+    *,
+    stored_pace_band: str | None = None,
+    stored_hr_band: str | None = None,
+    target_tempo_pace: Optional[PaceZoneBand],
+    target_hr_z3: Optional[HrZoneBand],
+    segment: TempoSegmentPaceResult,
+) -> Dict[str, Any]:
+    """Merge segment provenance and attach pace/HR GYOR bands (stored or on-read)."""
+    point.update(_tempo_segment_result_to_kpi_fields(segment))
+    if segment.tempo_segment_pace_min_per_mi is None or not segment.allows_full_gyor():
+        point["tempo_pace_progress_band"] = None
+        point["tempo_hr_progress_band"] = None
+        return point
+    return _finalize_tempo_history_point_bands(
+        point,
+        stored_pace_band=stored_pace_band,
+        stored_hr_band=stored_hr_band,
+        target_tempo_pace=target_tempo_pace,
+        target_hr_z3=target_hr_z3,
+    )
 
 
 def _attach_easy_hr_progress_band(
@@ -841,7 +929,11 @@ def _compute_easy_system_pipeline(
 
 
 def _compute_tempo_system_pipeline(
-    kpis: Dict[str, Any], prior: Optional[Dict[str, Any]]
+    kpis: Dict[str, Any],
+    prior: Optional[Dict[str, Any]],
+    *,
+    target_tempo_pace: Optional[PaceZoneBand] = None,
+    target_hr_z3: Optional[HrZoneBand] = None,
 ) -> Dict[str, Any]:
     prior_stability = prior.get("tempo_effort_stability") if prior else None
     prior_pace = prior.get("tempo_prior_pace") if prior else None
@@ -865,11 +957,24 @@ def _compute_tempo_system_pipeline(
         prior.get("tempo_prior_overall") if prior else None,
     )
 
+    gyor_pace_band, gyor_hr_band = _compute_tempo_gyor_bands_from_fields(
+        tempo_segment_pace_min_per_mi=kpis.get("tempo_segment_pace_min_per_mi"),
+        tempo_segment_avg_hr_bpm=kpis.get("tempo_segment_avg_hr_bpm"),
+        tempo_segment_confidence=kpis.get("tempo_segment_confidence"),
+        target_tempo_pace=target_tempo_pace,
+        target_hr_z3=target_hr_z3,
+    )
+
     return {
         "system": InsightsSystem.TEMPO.value,
         "status": "ready",
         "kpis": kpis,
-        "bands": {"effort_stability": effort_band, "tempo_pace": pace_band},
+        "bands": {
+            "effort_stability": effort_band,
+            "tempo_pace": pace_band,
+            "tempo_pace_progress": gyor_pace_band,
+            "tempo_hr_progress": gyor_hr_band,
+        },
         "deltas": {
             "effort_stability_delta": effort_delta,
             "tempo_pace_delta": pace_delta,
@@ -884,6 +989,8 @@ def _compute_system_pipeline(
     *,
     target_hr_z2: Optional[HrZoneBand] = None,
     target_easy_pace: Optional[PaceZoneBand] = None,
+    target_tempo_pace: Optional[PaceZoneBand] = None,
+    target_hr_z3: Optional[HrZoneBand] = None,
 ) -> Dict[str, Any]:
     """
     Central signal computation pipeline keyed by training system.
@@ -922,7 +1029,10 @@ def _compute_system_pipeline(
     tempo_kpis = kpis_by_system[InsightsSystem.TEMPO]
     if tempo_kpis.get("tempo_run_count", 0) > 0:
         systems[InsightsSystem.TEMPO.value] = _compute_tempo_system_pipeline(
-            tempo_kpis, prior
+            tempo_kpis,
+            prior,
+            target_tempo_pace=target_tempo_pace,
+            target_hr_z3=target_hr_z3,
         )
     else:
         systems[InsightsSystem.TEMPO.value] = {
@@ -930,7 +1040,12 @@ def _compute_system_pipeline(
             "status": "insufficient_data",
             "reason": "no_tempo_runs",
             "kpis": tempo_kpis,
-            "bands": {"effort_stability": None, "tempo_pace": None},
+            "bands": {
+                "effort_stability": None,
+                "tempo_pace": None,
+                "tempo_pace_progress": None,
+                "tempo_hr_progress": None,
+            },
             "deltas": {"effort_stability_delta": None, "tempo_pace_delta": None},
             "overall_band": None,
         }
@@ -1009,11 +1124,15 @@ def generate_weekly_insight(
         profile.hr_z2 if profile.calibrated and profile.hr_z2 is not None else None
     )
     target_easy_pace, _ = _resolve_easy_pace_progress(session, user_id)
+    target_tempo_pace, _, _ = _resolve_tempo_pace_progress(session, user_id)
+    target_hr_z3, _, _ = _resolve_tempo_hr_progress(session, user_id)
     pipeline = _compute_system_pipeline(
         kpis_by_system,
         prior,
         target_hr_z2=target_hr_z2,
         target_easy_pace=target_easy_pace,
+        target_tempo_pace=target_tempo_pace,
+        target_hr_z3=target_hr_z3,
     )
     easy_system = pipeline["systems"][InsightsSystem.EASY.value]
     kpis = easy_system["kpis"]
@@ -1552,7 +1671,8 @@ def get_weekly_insight_history(
                 "SELECT week_start, hr_drift_pct, hr_drift_band, "
                 "z2_pace_min_per_mi, z2_pace_band, "
                 "efficiency, efficiency_band, "
-                "easy_avg_hr, easy_avg_hr_band "
+                "easy_avg_hr, easy_avg_hr_band, "
+                "kpi_snapshot "
                 "FROM weekly_training_insights "
                 "WHERE user_id = CAST(:uid AS uuid) "
                 "  AND week_start >= :ws_min "
@@ -1732,9 +1852,14 @@ def get_weekly_insight_history(
                 "efficiency_band": None,
             }
             try:
+                stored_pace_band, stored_hr_band = _tempo_gyor_bands_from_insight_row(
+                    by_week_start.get(ws)
+                )
                 tempo_points.append(
                     _attach_tempo_segment_history_point(
                         point_payload,
+                        stored_pace_band=stored_pace_band,
+                        stored_hr_band=stored_hr_band,
                         target_tempo_pace=target_tempo_pace,
                         target_hr_z3=target_hr_z3,
                         segment=segment,
