@@ -147,6 +147,49 @@ def insights_easy_chart_authority_is_complete(authority: dict[str, Any]) -> bool
     )
 
 
+def build_insights_tempo_chart_authority_payload(
+    recs: Optional[TrainingPaceRecommendations],
+) -> dict[str, Any]:
+    """Display authority for Insights Tempo banner and chart footnotes (shared by /zones and /weekly-history)."""
+    out: dict[str, Any] = {
+        "pace_target_display": None,
+        "hr_target_display": None,
+        "insights_tempo_banner": None,
+    }
+    if recs is None:
+        return out
+
+    pace_payload = _tempo_pace_progress_payload(recs.tempo_pace_progress)
+    hr_payload = _tempo_hr_progress_payload(recs.tempo_hr_progress)
+
+    if pace_payload is not None:
+        target_display = pace_payload.get("target_display")
+        if isinstance(target_display, str) and target_display.strip():
+            out["pace_target_display"] = target_display.strip()
+        else:
+            target_tempo = pace_payload.get("target_tempo_pace")
+            if isinstance(target_tempo, dict):
+                display = target_tempo.get("display")
+                if isinstance(display, str) and display.strip():
+                    out["pace_target_display"] = display.strip()
+
+    if hr_payload is not None:
+        target_display = hr_payload.get("target_display")
+        if isinstance(target_display, str) and target_display.strip():
+            out["hr_target_display"] = target_display.strip()
+
+    if pace_payload is not None:
+        out["insights_tempo_banner"] = {"subtitle": INSIGHTS_TEMPO_BANNER_SUBTITLE}
+
+    return out
+
+
+def insights_tempo_chart_authority_is_complete(authority: dict[str, Any]) -> bool:
+    """True when Tempo pace display string is present (banner + Avg Pace footnote)."""
+    pace = authority.get("pace_target_display")
+    return isinstance(pace, str) and pace.strip() != ""
+
+
 def _tempo_pace_progress_payload(
     ref: Optional[TempoPaceProgressReference],
 ) -> Optional[dict[str, Any]]:
@@ -304,12 +347,10 @@ def runner_zone_profile_payload(
     )
     insights_easy_banner = easy_authority.get("insights_easy_banner")
 
-    insights_tempo_banner = None
-    if (
-        training_pace_recommendations is not None
-        and training_pace_recommendations.tempo_pace_progress is not None
-    ):
-        insights_tempo_banner = {"subtitle": INSIGHTS_TEMPO_BANNER_SUBTITLE}
+    tempo_authority = build_insights_tempo_chart_authority_payload(
+        training_pace_recommendations
+    )
+    insights_tempo_banner = tempo_authority.get("insights_tempo_banner")
 
     return {
         "calibrated": bool(profile.calibrated),

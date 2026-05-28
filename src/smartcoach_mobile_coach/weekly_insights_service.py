@@ -26,7 +26,9 @@ from sqlalchemy.orm import Session
 from src.db.dao.plans_dao import get_active_or_most_recent_plan
 from src.smartcoach_mobile_coach.runner_profile.api_schema import (
     build_insights_easy_chart_authority_payload,
+    build_insights_tempo_chart_authority_payload,
     insights_easy_chart_authority_is_complete,
+    insights_tempo_chart_authority_is_complete,
 )
 from src.smartcoach_mobile_coach.runner_profile.models import HrZoneBand, PaceZoneBand
 from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
@@ -1365,6 +1367,59 @@ def _build_easy_system_slice(
     return easy_slice
 
 
+def _resolve_tempo_chart_refs(
+    session: Session,
+    user_id: str,
+    *,
+    recs: TrainingPaceRecommendations | None = None,
+) -> Tuple[
+    Optional[PaceZoneBand],
+    List[Dict[str, Any]],
+    Optional[HrZoneBand],
+    List[Dict[str, Any]],
+]:
+    """Tempo pace/HR chart targets and zone stripes from training pace recommendations."""
+    target_tempo_pace: Optional[PaceZoneBand] = None
+    tempo_pace_zones: List[Dict[str, Any]] = []
+    target_hr_z3: Optional[HrZoneBand] = None
+    tempo_hr_zones: List[Dict[str, Any]] = []
+    try:
+        target_tempo_pace, tempo_pace_zones, _ = _resolve_tempo_pace_progress(
+            session, user_id, recs=recs
+        )
+    except Exception:
+        logger.exception(
+            "Failed to resolve tempo pace refs for weekly insight history (user_id=%s)",
+            user_id,
+        )
+    try:
+        target_hr_z3, tempo_hr_zones, _ = _resolve_tempo_hr_progress(
+            session, user_id, recs=recs
+        )
+    except Exception:
+        logger.exception(
+            "Failed to resolve tempo HR refs for weekly insight history (user_id=%s)",
+            user_id,
+        )
+    return target_tempo_pace, tempo_pace_zones, target_hr_z3, tempo_hr_zones
+
+
+def _build_tempo_system_slice(
+    *,
+    pace_recs: TrainingPaceRecommendations | None,
+    weekly_data: List[Dict[str, Any]] | None = None,
+    pace_zones: List[Dict[str, Any]],
+    hr_zones: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Tempo system slice for weekly-history (chart data + display authority from recommendations)."""
+    return {
+        "weekly_data": weekly_data or [],
+        "pace_zones": pace_zones,
+        "hr_zones": hr_zones,
+        **build_insights_tempo_chart_authority_payload(pace_recs),
+    }
+
+
 def get_weekly_insight_history(
     session: Session, user_id: str, weeks: int = 6
 ) -> Dict[str, Any]:
@@ -1525,6 +1580,18 @@ def get_weekly_insight_history(
             point_payload["easy_hr_progress_band"] = None
             data_points.append(point_payload)
 
+    (
+        target_tempo_pace,
+        tempo_pace_zones,
+        target_hr_z3,
+        tempo_hr_zones,
+    ) = _resolve_tempo_chart_refs(session, user_id, recs=pace_recs)
+    tempo_slice_for_authority = _build_tempo_system_slice(
+        pace_recs=pace_recs,
+        pace_zones=tempo_pace_zones,
+        hr_zones=tempo_hr_zones,
+    )
+
     if not any(p.get("value") is not None for p in data_points):
         easy_slice = _build_easy_system_slice(
             pace_recs=pace_recs,
@@ -1534,6 +1601,8 @@ def get_weekly_insight_history(
         systems: Dict[str, Any] = {}
         if insights_easy_chart_authority_is_complete(easy_slice):
             systems[InsightsSystem.EASY.value] = easy_slice
+        if insights_tempo_chart_authority_is_complete(tempo_slice_for_authority):
+            systems[InsightsSystem.TEMPO.value] = tempo_slice_for_authority
         return {
             "has_history": False,
             "message": "Not enough data for a trend chart yet.",
@@ -1549,29 +1618,7 @@ def get_weekly_insight_history(
 
     # TEMPO: same calendar week_windows as EASY — one point per week, gaps as nulls.
     tempo_points: List[Dict[str, Any]] = []
-    tempo_pace_zones: List[Dict[str, Any]] = []
-    tempo_pace_target_display: Optional[str] = None
-    tempo_hr_zones: List[Dict[str, Any]] = []
-    tempo_hr_target_display: Optional[str] = None
     try:
-        (
-            target_tempo_pace,
-            tempo_pace_zones,
-            tempo_pace_target_display,
-        ) = _resolve_tempo_pace_progress(session, user_id, recs=pace_recs)
-        target_hr_z3: Optional[HrZoneBand] = None
-        try:
-            target_hr_z3, tempo_hr_zones, tempo_hr_target_display = (
-                _resolve_tempo_hr_progress(session, user_id, recs=pace_recs)
-            )
-        except Exception:
-            logger.exception(
-                "Failed to resolve tempo HR refs for weekly insight history (user_id=%s)",
-                user_id,
-            )
-            target_hr_z3 = None
-            tempo_hr_zones = []
-            tempo_hr_target_display = None
         tempo_rollups = _fetch_tempo_week_rollups_batch(
             session, user_id, week_windows, athlete_id
         )
@@ -1644,10 +1691,13 @@ def get_weekly_insight_history(
             _empty_tempo_history_point(f"{ws.month}/{ws.day}")
             for ws, _we in week_windows
         ]
-        tempo_pace_zones = []
-        tempo_pace_target_display = None
-        tempo_hr_zones = []
-        tempo_hr_target_display = None
+
+    tempo_slice = _build_tempo_system_slice(
+        pace_recs=pace_recs,
+        weekly_data=tempo_points,
+        pace_zones=tempo_pace_zones,
+        hr_zones=tempo_hr_zones,
+    )
 
     easy_slice = _build_easy_system_slice(
         pace_recs=pace_recs,
@@ -1671,13 +1721,7 @@ def get_weekly_insight_history(
         "efficiency_goal_display": efficiency_goal_display,
         "systems": {
             InsightsSystem.EASY.value: easy_slice,
-            InsightsSystem.TEMPO.value: {
-                "weekly_data": tempo_points,
-                "pace_zones": tempo_pace_zones,
-                "pace_target_display": tempo_pace_target_display,
-                "hr_zones": tempo_hr_zones,
-                "hr_target_display": tempo_hr_target_display,
-            },
+            InsightsSystem.TEMPO.value: tempo_slice,
         },
     }
 
