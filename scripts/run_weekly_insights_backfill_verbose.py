@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from datetime import date, timedelta
@@ -26,9 +27,17 @@ from src.smartcoach_mobile_coach.weekly_insights_service import (
 
 
 def main() -> None:
-    db_url = os.environ.get("DATABASE_URL")
+    parser = argparse.ArgumentParser(description="Verbose weekly insights backfill")
+    parser.add_argument("--prod", action="store_true", help="Use PROD_DATABASE_URL")
+    args = parser.parse_args()
+
+    env_key = "PROD_DATABASE_URL" if args.prod else "DATABASE_URL"
+    db_url = os.environ.get(env_key)
     if not db_url:
-        raise SystemExit("ERROR: DATABASE_URL is not set.")
+        raise SystemExit(f"ERROR: {env_key} is not set.")
+
+    label = "PROD" if args.prod else "DEV"
+    print(f"[{label}] Starting weekly insights backfill", flush=True)
 
     engine = create_engine(
         db_url,
