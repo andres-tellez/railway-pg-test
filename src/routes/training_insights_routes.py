@@ -44,7 +44,7 @@ def weekly_insight():
 @training_insights_bp.get("/weekly-history")
 @requires_auth
 def weekly_insight_history():
-    """Return the last N weeks of HR drift data plus zone thresholds for charting."""
+    """Return the Insights bundle: chart history, display authority, and latest_week scoreboard."""
     session = get_session()
     try:
         internal_user_id = getattr(g, "user_id", None)
