@@ -24,6 +24,9 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.training_pace_re
 from src.smartcoach_mobile_coach.runner_profile.recommendations.training_phase_resolver import (
     TrainingPhaseResolution,
 )
+from src.smartcoach_mobile_coach.tempo_kpi.tempo_segment_pace import (
+    TempoSegmentPaceResult,
+)
 from src.smartcoach_mobile_coach.weekly_insights_service import (
     _resolve_tempo_hr_progress,
     _resolve_tempo_pace_progress,
@@ -131,6 +134,23 @@ def _phase_resolution() -> TrainingPhaseResolution:
     )
 
 
+def _mock_tempo_rollups(kpis: dict):
+    """Build per-week tempo rollups for ``_fetch_tempo_week_rollups_batch`` mocks."""
+
+    def _inner(session, user_id, week_windows, athlete_id):
+        segment = TempoSegmentPaceResult(
+            tempo_segment_pace_min_per_mi=kpis.get("tempo_segment_pace_min_per_mi"),
+            tempo_segment_avg_hr_bpm=kpis.get("tempo_segment_avg_hr_bpm"),
+            tempo_segment_pace_source=kpis.get("tempo_segment_pace_source"),
+            tempo_segment_split_count=int(kpis.get("tempo_segment_split_count") or 0),
+            tempo_segment_confidence=kpis.get("tempo_segment_confidence"),
+        )
+        count = int(kpis.get("tempo_run_count") or 0)
+        return {ws: (count, segment) for ws, _we in week_windows}
+
+    return _inner
+
+
 @patch(
     "src.smartcoach_mobile_coach.runner_profile.service.resolve_current_training_phase",
     return_value=_phase_resolution(),
@@ -206,16 +226,18 @@ def test_resolve_tempo_hr_progress_matches_training_pace_recommendations(
 
 
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
-    return_value={
-        "tempo_run_count": 2,
-        "tempo_segment_pace_min_per_mi": 7.25,
-        "tempo_segment_avg_hr_bpm": 155.0,
-        "tempo_segment_pace_source": "splits_hr_z3",
-        "tempo_segment_split_count": 4,
-        "tempo_segment_confidence": "high",
-        "effort_stability_min_per_mi": 0.15,
-    },
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
+    side_effect=_mock_tempo_rollups(
+        {
+            "tempo_run_count": 2,
+            "tempo_segment_pace_min_per_mi": 7.25,
+            "tempo_segment_avg_hr_bpm": 155.0,
+            "tempo_segment_pace_source": "splits_hr_z3",
+            "tempo_segment_split_count": 4,
+            "tempo_segment_confidence": "high",
+            "effort_stability_min_per_mi": 0.15,
+        }
+    ),
 )
 @patch(
     "src.smartcoach_mobile_coach.runner_profile.service.resolve_current_training_phase",
@@ -238,7 +260,7 @@ def test_weekly_history_tempo_pace_zones_match_tempo_pace_progress(
     _mock_plan,
     _mock_profile,
     _mock_phase,
-    _mock_week_kpis,
+    _mock_week_rollups,
 ):
     cal_week_start, _ = calendar_week_containing(date.today())
     session = MagicMock()
@@ -277,15 +299,17 @@ def test_weekly_history_tempo_pace_zones_match_tempo_pace_progress(
 
 
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
-    return_value={
-        "tempo_run_count": 1,
-        "tempo_segment_pace_min_per_mi": 7.1,
-        "tempo_segment_pace_source": "splits_hr_z3",
-        "tempo_segment_split_count": 2,
-        "tempo_segment_confidence": "high",
-        "effort_stability_min_per_mi": None,
-    },
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
+    side_effect=_mock_tempo_rollups(
+        {
+            "tempo_run_count": 1,
+            "tempo_segment_pace_min_per_mi": 7.1,
+            "tempo_segment_pace_source": "splits_hr_z3",
+            "tempo_segment_split_count": 2,
+            "tempo_segment_confidence": "high",
+            "effort_stability_min_per_mi": None,
+        }
+    ),
 )
 @patch(
     "src.smartcoach_mobile_coach.runner_profile.service.resolve_current_training_phase",
@@ -308,7 +332,7 @@ def test_tempo_history_emits_pace_without_effort_stability(
     _mock_plan,
     _mock_profile,
     _mock_phase,
-    _mock_week_kpis,
+    _mock_week_rollups,
 ):
     """Tempo Avg Pace chart points require pace, not effort_stability."""
     cal_week_start, _ = calendar_week_containing(date.today())
@@ -327,15 +351,17 @@ def test_tempo_history_emits_pace_without_effort_stability(
 
 
 @patch(
-    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
-    return_value={
-        "tempo_run_count": 1,
-        "tempo_segment_pace_min_per_mi": 7.0,
-        "tempo_segment_pace_source": "splits_hr_quality",
-        "tempo_segment_split_count": 1,
-        "tempo_segment_confidence": "low",
-        "effort_stability_min_per_mi": None,
-    },
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
+    side_effect=_mock_tempo_rollups(
+        {
+            "tempo_run_count": 1,
+            "tempo_segment_pace_min_per_mi": 7.0,
+            "tempo_segment_pace_source": "splits_hr_quality",
+            "tempo_segment_split_count": 1,
+            "tempo_segment_confidence": "low",
+            "effort_stability_min_per_mi": None,
+        }
+    ),
 )
 @patch(
     "src.smartcoach_mobile_coach.runner_profile.service.resolve_current_training_phase",
@@ -358,7 +384,7 @@ def test_tempo_history_mutes_gyor_for_low_confidence_segment_pace(
     _mock_plan,
     _mock_profile,
     _mock_phase,
-    _mock_week_kpis,
+    _mock_week_rollups,
 ):
     cal_week_start, _ = calendar_week_containing(date.today())
     session = MagicMock()

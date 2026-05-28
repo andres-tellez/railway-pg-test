@@ -29,6 +29,9 @@ from src.smartcoach_mobile_coach.runner_profile.models import (
     PaceZoneBand,
     RunnerZoneProfileData,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
+    TrainingPaceRecommendations,
+)
 from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_easy import (
     HrProgressChartZone,
     classify_easy_hr_progress,
@@ -44,6 +47,7 @@ from src.smartcoach_mobile_coach.execution_analytics.combine import (
 from src.smartcoach_mobile_coach.insights_chart_authority import (
     attach_pace_progress_band,
     attach_tempo_hr_progress_band,
+    fetch_training_pace_recommendations,
     resolve_easy_hr_progress,
     resolve_pace_progress,
     resolve_tempo_hr_progress,
@@ -185,18 +189,24 @@ def _resolve_easy_efficiency(
 
 
 def _resolve_easy_hr_progress(
-    session: Session, user_id: str
+    session: Session,
+    user_id: str,
+    *,
+    recs: TrainingPaceRecommendations | None = None,
 ) -> Tuple[Optional[HrZoneBand], List[Dict[str, Any]]]:
     """HR-progress target and chart zones from training pace recommendations."""
-    return resolve_easy_hr_progress(session, user_id)
+    return resolve_easy_hr_progress(session, user_id, recs=recs)
 
 
 def _resolve_easy_pace_progress(
-    session: Session, user_id: str
+    session: Session,
+    user_id: str,
+    *,
+    recs: TrainingPaceRecommendations | None = None,
 ) -> Tuple[Optional[PaceZoneBand], List[Dict[str, Any]]]:
     """Pace-progress target and chart zones from training pace recommendations."""
     target, zones, _display = resolve_pace_progress(
-        session, user_id, InsightsSystem.EASY
+        session, user_id, InsightsSystem.EASY, recs=recs
     )
     return target, zones
 
@@ -215,10 +225,13 @@ def _attach_easy_pace_progress_band(
 
 
 def _resolve_tempo_pace_progress(
-    session: Session, user_id: str
+    session: Session,
+    user_id: str,
+    *,
+    recs: TrainingPaceRecommendations | None = None,
 ) -> Tuple[Optional[PaceZoneBand], List[Dict[str, Any]], Optional[str]]:
     """Tempo pace-progress corridor, chart zones, and display from recommendations."""
-    return resolve_pace_progress(session, user_id, InsightsSystem.TEMPO)
+    return resolve_pace_progress(session, user_id, InsightsSystem.TEMPO, recs=recs)
 
 
 def _attach_tempo_pace_progress_band(
@@ -235,10 +248,13 @@ def _attach_tempo_pace_progress_band(
 
 
 def _resolve_tempo_hr_progress(
-    session: Session, user_id: str
+    session: Session,
+    user_id: str,
+    *,
+    recs: TrainingPaceRecommendations | None = None,
 ) -> Tuple[Optional[HrZoneBand], List[Dict[str, Any]], Optional[str]]:
     """Tempo HR-progress corridor, chart zones, and display from recommendations."""
-    return resolve_tempo_hr_progress(session, user_id)
+    return resolve_tempo_hr_progress(session, user_id, recs=recs)
 
 
 def _tempo_segment_result_to_kpi_fields(
@@ -364,6 +380,26 @@ WHERE a.user_id = CAST(:uid AS uuid)
   AND a.insights_system = 'tempo'
   AND {_ACTIVITY_DATE_SQL} >= CAST(:ws AS date)
   AND {_ACTIVITY_DATE_SQL} <= CAST(:we AS date)
+"""
+
+_BATCH_TEMPO_SEGMENT_FACTS_SQL = f"""
+SELECT
+    {_ACTIVITY_DATE_SQL} AS run_date,
+    a.tempo_segment_pace_min_per_mi,
+    a.tempo_segment_avg_hr_bpm,
+    a.tempo_segment_pace_source,
+    a.tempo_segment_confidence,
+    a.tempo_segment_split_count,
+    a.tempo_qualifying_distance_mi
+FROM public.activities a
+INNER JOIN public.user_athletes ua
+    ON ua.user_id = a.user_id AND a.athlete_id = ua.athlete_id
+WHERE a.user_id = CAST(:uid AS uuid)
+  AND a.athlete_id = :athlete_id
+  AND a.type = 'Run'
+  AND a.insights_system = 'tempo'
+  AND {_ACTIVITY_DATE_SQL} >= CAST(:ws_min AS date)
+  AND {_ACTIVITY_DATE_SQL} <= CAST(:we_max AS date)
 """
 
 _USERS_WITH_EASY_RUNS_SQL = f"""
@@ -541,6 +577,68 @@ def _compute_week_tempo_segment_pace(
         for row in rows
     ]
     return combine_weekly_from_stored_run_facts(facts)
+
+
+def _tempo_run_fact_from_row(row: Any) -> StoredTempoRunFact:
+    return StoredTempoRunFact(
+        tempo_segment_pace_min_per_mi=_coerce_finite_float(
+            getattr(row, "tempo_segment_pace_min_per_mi", None)
+        ),
+        tempo_segment_avg_hr_bpm=_coerce_finite_float(
+            getattr(row, "tempo_segment_avg_hr_bpm", None)
+        ),
+        tempo_segment_pace_source=getattr(row, "tempo_segment_pace_source", None),
+        tempo_segment_confidence=getattr(row, "tempo_segment_confidence", None),
+        tempo_segment_split_count=getattr(row, "tempo_segment_split_count", None),
+        tempo_qualifying_distance_mi=_coerce_finite_float(
+            getattr(row, "tempo_qualifying_distance_mi", None)
+        ),
+    )
+
+
+def _fetch_tempo_week_rollups_batch(
+    session: Session,
+    user_id: str,
+    week_windows: List[Tuple[date, date]],
+    athlete_id: int,
+) -> Dict[date, Tuple[int, TempoSegmentPaceResult]]:
+    """
+    One query for all tempo runs in the history window; roll up per calendar week.
+
+    Returns ``week_start -> (tempo_run_count, segment_rollup)``.
+    """
+    if not week_windows:
+        return {}
+
+    ws_min = week_windows[0][0]
+    we_max = week_windows[-1][1]
+    stmt = text(_BATCH_TEMPO_SEGMENT_FACTS_SQL).bindparams(
+        bindparam("uid", type_=PGUUID),
+        bindparam("athlete_id", type_=Integer),
+    )
+    rows = session.execute(
+        stmt,
+        {
+            "uid": user_id,
+            "athlete_id": athlete_id,
+            "ws_min": str(ws_min),
+            "we_max": str(we_max),
+        },
+    ).fetchall()
+
+    facts_by_week: Dict[date, List[StoredTempoRunFact]] = {}
+    for row in rows:
+        run_date = getattr(row, "run_date", None)
+        if run_date is None:
+            continue
+        week_start = calendar_week_containing(run_date)[0]
+        facts_by_week.setdefault(week_start, []).append(_tempo_run_fact_from_row(row))
+
+    rollups: Dict[date, Tuple[int, TempoSegmentPaceResult]] = {}
+    for ws, _we in week_windows:
+        facts = facts_by_week.get(ws, [])
+        rollups[ws] = (len(facts), combine_weekly_from_stored_run_facts(facts))
+    return rollups
 
 
 def _fetch_week_kpis(
@@ -1281,6 +1379,15 @@ def get_weekly_insight_history(
     oldest_monday = cal_week_start - timedelta(weeks=weeks - 1)
 
     try:
+        pace_recs = fetch_training_pace_recommendations(session, user_id)
+    except Exception:
+        logger.exception(
+            "Failed to load training pace recommendations for weekly history (user_id=%s)",
+            user_id,
+        )
+        pace_recs = None
+
+    try:
         rows = session.execute(
             text(
                 "SELECT week_start, hr_drift_pct, hr_drift_band, "
@@ -1312,7 +1419,9 @@ def get_weekly_insight_history(
     target_easy_pace: Optional[PaceZoneBand] = None
     pace_zones: List[Dict[str, Any]] = []
     try:
-        target_easy_pace, pace_zones = _resolve_easy_pace_progress(session, user_id)
+        target_easy_pace, pace_zones = _resolve_easy_pace_progress(
+            session, user_id, recs=pace_recs
+        )
     except Exception:
         logger.exception(
             "Failed to resolve easy pace refs for weekly insight history (user_id=%s)",
@@ -1325,7 +1434,9 @@ def get_weekly_insight_history(
     target_hr_z2: Optional[HrZoneBand] = None
     hr_zones: List[Dict[str, Any]] = []
     try:
-        target_hr_z2, hr_zones = _resolve_easy_hr_progress(session, user_id)
+        target_hr_z2, hr_zones = _resolve_easy_hr_progress(
+            session, user_id, recs=pace_recs
+        )
     except Exception:
         logger.exception(
             "Failed to resolve easy HR refs for weekly insight history (user_id=%s)",
@@ -1410,11 +1521,11 @@ def get_weekly_insight_history(
             target_tempo_pace,
             tempo_pace_zones,
             tempo_pace_target_display,
-        ) = _resolve_tempo_pace_progress(session, user_id)
+        ) = _resolve_tempo_pace_progress(session, user_id, recs=pace_recs)
         target_hr_z3: Optional[HrZoneBand] = None
         try:
             target_hr_z3, tempo_hr_zones, tempo_hr_target_display = (
-                _resolve_tempo_hr_progress(session, user_id)
+                _resolve_tempo_hr_progress(session, user_id, recs=pace_recs)
             )
         except Exception:
             logger.exception(
@@ -1424,44 +1535,37 @@ def get_weekly_insight_history(
             target_hr_z3 = None
             tempo_hr_zones = []
             tempo_hr_target_display = None
-        for ws, we in week_windows:
+        tempo_rollups = _fetch_tempo_week_rollups_batch(
+            session, user_id, week_windows, athlete_id
+        )
+        for ws, _we in week_windows:
             try:
-                wk = _fetch_week_kpis(session, user_id, ws, we, athlete_id)
+                tempo_run_count, segment = tempo_rollups.get(
+                    ws, (0, combine_weekly_from_stored_run_facts([]))
+                )
             except Exception:
                 logger.exception(
-                    "Failed to fetch week KPIs for tempo history "
-                    "(user_id=%s, week=%s)",
+                    "Failed to roll up tempo history for week (user_id=%s, week=%s)",
                     user_id,
                     ws,
                 )
                 tempo_points.append(_empty_tempo_history_point(f"{ws.month}/{ws.day}"))
                 continue
-            if int(wk.get("tempo_run_count") or 0) <= 0:
+            if tempo_run_count <= 0:
                 tempo_points.append(_empty_tempo_history_point(f"{ws.month}/{ws.day}"))
                 continue
-            segment = TempoSegmentPaceResult(
-                tempo_segment_pace_min_per_mi=wk.get("tempo_segment_pace_min_per_mi"),
-                tempo_segment_avg_hr_bpm=wk.get("tempo_segment_avg_hr_bpm"),
-                tempo_segment_pace_source=wk.get("tempo_segment_pace_source"),
-                tempo_segment_split_count=int(wk.get("tempo_segment_split_count") or 0),
-                tempo_segment_confidence=wk.get("tempo_segment_confidence"),
-                activity_avg_pace_min_per_mi=wk.get("activity_avg_pace_min_per_mi"),
-            )
             if segment.tempo_segment_pace_min_per_mi is None:
                 logger.debug(
                     "Tempo history gap week: runs=%s segment_pace=null "
                     "(user_id=%s, week=%s, source=%s)",
-                    wk.get("tempo_run_count"),
+                    tempo_run_count,
                     user_id,
                     ws,
-                    wk.get("tempo_segment_pace_source"),
+                    segment.tempo_segment_pace_source,
                 )
                 tempo_points.append(_empty_tempo_history_point(f"{ws.month}/{ws.day}"))
                 continue
             stab: Optional[float] = None
-            raw_s = wk.get("effort_stability_min_per_mi")
-            if raw_s is not None:
-                stab = _coerce_finite_float(raw_s)
             point_payload: Dict[str, Any] = {
                 "label": f"{ws.month}/{ws.day}",
                 "value": stab,
