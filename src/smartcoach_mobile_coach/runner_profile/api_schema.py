@@ -35,6 +35,12 @@ from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
 from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
     iter_plan_workout_taxonomy_payload,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.goal_aligned_pace import (
+    resolve_goal_aligned_status,
+)
+from src.services.training_plan.v2.race_distance_factory_v2 import (
+    normalize_race_distance,
+)
 
 # Canonical copy for Insights › Easy banner (emitted whenever Z2 HR + Z2 pace are present).
 INSIGHTS_EASY_BANNER_SUBTITLE = (
@@ -195,10 +201,42 @@ def _pace_authorities_payload(
     }
 
 
+def _normalize_race_distance_for_inputs(race_distance: str | None) -> str | None:
+    if race_distance is None or not str(race_distance).strip():
+        return None
+    return normalize_race_distance(str(race_distance))
+
+
+def _zones_inputs_payload(
+    profile: RunnerZoneProfileData,
+    *,
+    target_time: str | None,
+    race_distance: str | None,
+    training_pace_recommendations: Optional[TrainingPaceRecommendations],
+) -> dict[str, Any]:
+    has_goal_bands = (
+        training_pace_recommendations is not None
+        and training_pace_recommendations.goal_aligned_easy_pace is not None
+    )
+    return {
+        "hrmax": profile.hrmax_used,
+        "resting_hr": profile.resting_hr_used,
+        "target_time": target_time,
+        "race_distance": _normalize_race_distance_for_inputs(race_distance),
+        "goal_aligned_status": resolve_goal_aligned_status(
+            race_distance=race_distance,
+            target_time=target_time,
+            has_goal_bands=has_goal_bands,
+        ),
+    }
+
+
 def runner_zone_profile_payload(
     profile: RunnerZoneProfileData,
     *,
     training_pace_recommendations: Optional[TrainingPaceRecommendations] = None,
+    target_time: str | None = None,
+    race_distance: str | None = None,
 ) -> dict[str, Any]:
     pace_zones: dict[str, Any] = {}
     for key_name, pace_band in (
@@ -228,6 +266,12 @@ def runner_zone_profile_payload(
     return {
         "calibrated": bool(profile.calibrated),
         "computed_at": profile.computed_at.isoformat() if profile.computed_at else None,
+        "inputs": _zones_inputs_payload(
+            profile,
+            target_time=target_time,
+            race_distance=race_distance,
+            training_pace_recommendations=training_pace_recommendations,
+        ),
         "hrmax": profile.hrmax_used,
         "resting_hr": profile.resting_hr_used,
         "zone_method": profile.zone_method,

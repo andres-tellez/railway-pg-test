@@ -8,7 +8,12 @@ from src.smartcoach_mobile_coach.runner_profile.models import (
     RunnerZoneProfileData,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.goal_aligned_pace import (
+    GOAL_ALIGNED_STATUS_ACTIVE,
+    GOAL_ALIGNED_STATUS_MISSING_TARGET_TIME,
+    GOAL_ALIGNED_STATUS_UNSUPPORTED_RACE,
     compute_goal_aligned_pace_bands,
+    resolve_goal_aligned_config,
+    resolve_goal_aligned_status,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.training_pace_recommendations import (
     build_training_pace_recommendations,
@@ -37,7 +42,7 @@ def _sample_profile() -> RunnerZoneProfileData:
 
 
 def test_goal_aligned_pace_bands_from_target_time():
-    bands = compute_goal_aligned_pace_bands("3:40:00")
+    bands = compute_goal_aligned_pace_bands("3:40:00", race_distance="Marathon")
     assert bands is not None
     assert bands.marathon.display.endswith("/mi")
     assert 558 <= bands.easy.low_sec <= 560
@@ -161,3 +166,49 @@ def test_hr_progress_without_marathon_goal():
     assert recs.hr_progress is not None
     assert recs.hr_progress.target_hr_z2.low == 120
     assert len(recs.hr_progress.hr_zones_chart) >= 4
+
+
+def test_resolve_goal_aligned_config_marathon_only():
+    assert resolve_goal_aligned_config("Marathon") is not None
+    assert resolve_goal_aligned_config(None) is not None
+    assert resolve_goal_aligned_config("Half Marathon") is None
+
+
+def test_half_marathon_plan_skips_goal_aligned_bands():
+    recs = build_training_pace_recommendations(
+        profile=_sample_profile(),
+        target_time="1:45:00",
+        race_distance="Half Marathon",
+        phase="Base",
+    )
+    assert recs is not None
+    assert recs.goal_aligned_easy_pace is None
+    assert recs.pace_progress is None
+    assert recs.tempo_pace_progress is None
+
+
+def test_goal_aligned_status_values():
+    assert (
+        resolve_goal_aligned_status(
+            race_distance="Marathon",
+            target_time="3:40:00",
+            has_goal_bands=True,
+        )
+        == GOAL_ALIGNED_STATUS_ACTIVE
+    )
+    assert (
+        resolve_goal_aligned_status(
+            race_distance="Marathon",
+            target_time=None,
+            has_goal_bands=False,
+        )
+        == GOAL_ALIGNED_STATUS_MISSING_TARGET_TIME
+    )
+    assert (
+        resolve_goal_aligned_status(
+            race_distance="Half Marathon",
+            target_time="1:45:00",
+            has_goal_bands=False,
+        )
+        == GOAL_ALIGNED_STATUS_UNSUPPORTED_RACE
+    )
