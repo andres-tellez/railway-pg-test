@@ -311,6 +311,36 @@ def _attach_easy_hr_progress_band(
     return point
 
 
+def _finalize_easy_history_point_bands(
+    point: Dict[str, Any],
+    row: Any,
+    *,
+    target_easy_pace: Optional[PaceZoneBand],
+    target_hr_z2: Optional[HrZoneBand],
+) -> Dict[str, Any]:
+    """Map rollup bands from ``weekly_training_insights`` onto chart point fields."""
+    point["easy_pace_progress_band"] = getattr(row, "z2_pace_band", None)
+    point["easy_hr_progress_band"] = getattr(row, "easy_avg_hr_band", None)
+    stored_eff_band = getattr(row, "efficiency_band", None)
+    if stored_eff_band is not None:
+        point["efficiency_band"] = stored_eff_band
+
+    if (
+        point["easy_pace_progress_band"] is None
+        and point.get("z2_pace_min_per_mi") is not None
+    ):
+        point = _attach_easy_pace_progress_band(
+            point,
+            target_easy_pace=target_easy_pace,
+        )
+    if point["easy_hr_progress_band"] is None and point.get("easy_avg_hr") is not None:
+        point = _attach_easy_hr_progress_band(
+            point,
+            target_hr_z2=target_hr_z2,
+        )
+    return point
+
+
 # Coach tool default: orientation-only payload (week + overall_band) unless
 # include_kpi_detail=true. REST `/api/training-insights/weekly` always uses slim=False.
 WEEKLY_INSIGHT_ORIENTATION_NOTE = (
@@ -1215,7 +1245,8 @@ def _build_easy_kpis_payload_from_row(row: Any) -> List[Dict[str, Any]]:
             "label": "Efficiency",
             "value": row.efficiency,
             "value_display": str(row.efficiency) if row.efficiency is not None else "—",
-            "band": aerobic_efficiency_band_from_value(
+            "band": row.efficiency_band
+            or aerobic_efficiency_band_from_value(
                 float(row.efficiency) if row.efficiency is not None else None
             ),
             "delta_display": eff_delta_display,
@@ -1625,7 +1656,7 @@ def get_weekly_insight_history(
                 "SELECT week_start, hr_drift_pct, hr_drift_band, "
                 "z2_pace_min_per_mi, z2_pace_band, "
                 "efficiency, efficiency_band, "
-                "easy_avg_hr "
+                "easy_avg_hr, easy_avg_hr_band "
                 "FROM weekly_training_insights "
                 "WHERE user_id = CAST(:uid AS uuid) "
                 "  AND week_start >= :ws_min "
@@ -1692,11 +1723,9 @@ def get_weekly_insight_history(
         efficiency = r.efficiency
         eh = getattr(r, "easy_avg_hr", None)
         eff_float = _coerce_finite_float(efficiency)
-        eff_band = (
-            aerobic_efficiency_band_from_value(eff_float)
-            if eff_float is not None
-            else None
-        )
+        eff_band = getattr(r, "efficiency_band", None)
+        if eff_band is None and eff_float is not None:
+            eff_band = aerobic_efficiency_band_from_value(eff_float)
         point_payload: Dict[str, Any] = {
             "label": f"{ws.month}/{ws.day}",
             "value": val,
@@ -1707,13 +1736,11 @@ def get_weekly_insight_history(
             "efficiency_band": eff_band,
         }
         try:
-            point_payload = _attach_easy_pace_progress_band(
-                point_payload,
-                target_easy_pace=target_easy_pace,
-            )
             data_points.append(
-                _attach_easy_hr_progress_band(
+                _finalize_easy_history_point_bands(
                     point_payload,
+                    r,
+                    target_easy_pace=target_easy_pace,
                     target_hr_z2=target_hr_z2,
                 )
             )
@@ -1724,8 +1751,10 @@ def get_weekly_insight_history(
                 user_id,
                 ws,
             )
-            point_payload["easy_pace_progress_band"] = None
-            point_payload["easy_hr_progress_band"] = None
+            point_payload["easy_pace_progress_band"] = getattr(r, "z2_pace_band", None)
+            point_payload["easy_hr_progress_band"] = getattr(
+                r, "easy_avg_hr_band", None
+            )
             data_points.append(point_payload)
 
     (
