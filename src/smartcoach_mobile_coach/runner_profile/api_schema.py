@@ -96,6 +96,57 @@ def _pace_progress_payload(
     }
 
 
+def build_insights_easy_chart_authority_payload(
+    recs: Optional[TrainingPaceRecommendations],
+) -> dict[str, Any]:
+    """Display authority for Insights Easy banner and chart footnotes (shared by /zones and /weekly-history)."""
+    out: dict[str, Any] = {
+        "pace_target_display": None,
+        "hr_target_display": None,
+        "hr_progress_z2_range_display": None,
+        "insights_easy_banner": None,
+    }
+    if recs is None:
+        return out
+
+    pace_payload = _pace_progress_payload(recs.pace_progress)
+    hr_payload = _hr_progress_payload(recs.hr_progress)
+
+    if pace_payload is not None:
+        target_easy = pace_payload.get("target_easy_pace")
+        if isinstance(target_easy, dict):
+            display = target_easy.get("display")
+            if isinstance(display, str) and display.strip():
+                out["pace_target_display"] = display.strip()
+
+    if hr_payload is not None:
+        target_display = hr_payload.get("target_display")
+        if isinstance(target_display, str) and target_display.strip():
+            out["hr_target_display"] = target_display.strip()
+        z2 = hr_payload.get("target_hr_z2")
+        if isinstance(z2, dict):
+            lo, hi = z2.get("low"), z2.get("high")
+            if lo is not None and hi is not None:
+                out["hr_progress_z2_range_display"] = f"{int(lo)}–{int(hi)} bpm"
+
+    if pace_payload is not None and hr_payload is not None:
+        out["insights_easy_banner"] = {"subtitle": INSIGHTS_EASY_BANNER_SUBTITLE}
+
+    return out
+
+
+def insights_easy_chart_authority_is_complete(authority: dict[str, Any]) -> bool:
+    """True when both Easy HR and pace display strings are present."""
+    pace = authority.get("pace_target_display")
+    hr = authority.get("hr_target_display")
+    return (
+        isinstance(pace, str)
+        and pace.strip() != ""
+        and isinstance(hr, str)
+        and hr.strip() != ""
+    )
+
+
 def _tempo_pace_progress_payload(
     ref: Optional[TempoPaceProgressReference],
 ) -> Optional[dict[str, Any]]:
@@ -248,13 +299,10 @@ def runner_zone_profile_payload(
         if band_payload is not None:
             pace_zones[key_name] = band_payload
 
-    insights_easy_banner = None
-    if (
-        training_pace_recommendations is not None
-        and training_pace_recommendations.hr_progress is not None
-        and training_pace_recommendations.pace_progress is not None
-    ):
-        insights_easy_banner = {"subtitle": INSIGHTS_EASY_BANNER_SUBTITLE}
+    easy_authority = build_insights_easy_chart_authority_payload(
+        training_pace_recommendations
+    )
+    insights_easy_banner = easy_authority.get("insights_easy_banner")
 
     insights_tempo_banner = None
     if (
