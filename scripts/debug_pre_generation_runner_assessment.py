@@ -17,9 +17,7 @@ Required env
 
 Optional env
 ~~~~~~~~~~~~
-- ``SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1`` — when ``--alignment-enabled`` is omitted,
-  alignment follows the same truthy rule as ``agent_tools._intake_alignment_enabled``
-  (``1`` / ``true`` / ``yes``).
+(none beyond ``DATABASE_URL``)
 
 Exact command (PowerShell, from repo root)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -34,17 +32,17 @@ Example (replace with your internal user UUID)
 
     python scripts/debug_pre_generation_runner_assessment.py --user-id "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" --pretty
 
-With explicit alignment on/off (overrides env)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+With custom draft from CLI flags
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ::
 
-    python scripts/debug_pre_generation_runner_assessment.py --user-id "<UUID>" --alignment-enabled true --pretty
+    python scripts/debug_pre_generation_runner_assessment.py --user-id "<UUID>" --pretty
 
 Capture JSON to a file (also prints to stdout)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ::
 
-    python scripts/debug_pre_generation_runner_assessment.py --user-id "<UUID>" --alignment-enabled true --pretty -o assessment.json
+    python scripts/debug_pre_generation_runner_assessment.py --user-id "<UUID>" --pretty -o assessment.json
 
 Optional athlete sanity-check (warns if not primary for user)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -55,8 +53,8 @@ Optional athlete sanity-check (warns if not primary for user)
 What to inspect first in the JSON
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 1. ``activity_summary`` — ``avg_miles_per_week_approx``, ``longest_run_miles``, ``activities_found``, calendar-week fields (your Strava-linked signal).
-2. If alignment ran: ``ambition_gap.stance``, ``goal_demand``, ``baseline_band``.
-3. If alignment ran: ``intake_alignment_state.allowed_question_categories`` and ``generation_ready``.
+2. ``ambition_gap.stance``, ``goal_demand``, ``baseline_band``.
+3. ``intake_alignment_state.allowed_question_categories`` and ``generation_ready``.
 4. ``coach_memory`` — hints loaded / entry counts (optional).
 5. ``plan_request_digest`` — confirms the synthetic intake matches what you intended.
 
@@ -98,24 +96,6 @@ def _bootstrap_env() -> Path:
     return project_root
 
 
-def _intake_alignment_enabled_from_env() -> bool:
-    return (
-        os.getenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1") or ""
-    ).strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-
-
-def _resolve_alignment_enabled(arg: Optional[str]) -> bool:
-    if arg == "true":
-        return True
-    if arg == "false":
-        return False
-    return _intake_alignment_enabled_from_env()
-
-
 def _parse_training_days(raw: str) -> list[str]:
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     return parts
@@ -149,13 +129,6 @@ def main() -> None:
         type=int,
         default=None,
         help="Optional: compare to primary athlete_id for this user (warning only).",
-    )
-    parser.add_argument(
-        "--alignment-enabled",
-        choices=("true", "false"),
-        default=None,
-        help="Override env: run ambition+alignment (true) or activity summary only (false). "
-        "If omitted, uses SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1.",
     )
     parser.add_argument(
         "--pretty",
@@ -222,8 +195,6 @@ def main() -> None:
         build_plan_request_from_state,
     )
 
-    alignment_enabled = _resolve_alignment_enabled(ns.alignment_enabled)
-
     if ns.draft_json:
         path = Path(ns.draft_json)
         if not path.is_file():
@@ -259,7 +230,6 @@ def main() -> None:
             str(ns.user_id),
             plan_request=plan_request,
             plan_intake_state=current_state,
-            alignment_enabled=alignment_enabled,
         )
         payload = assessment.as_api_dict()
     finally:

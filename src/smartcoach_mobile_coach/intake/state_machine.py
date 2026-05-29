@@ -84,24 +84,23 @@ def finalize_plan_intake_state(
         merged_al = dict(alignment)
     if merged_al is not None:
         state["alignment"] = pif._recompute_alignment_branch(merged_al, draft)
-    if pif._intake_alignment_feature_enabled():
-        al_out = state.get("alignment")
-        if isinstance(al_out, dict):
-            ast = al_out.get("state")
-            if (
-                isinstance(ast, dict)
-                and ast.get("pause_required")
-                and not ast.get("generation_ready")
-            ):
-                state["ready_to_generate"] = False
-                state["status"] = "collecting"
-                state["ux"]["stage"] = pif._plan_ux_stage_for_state(
-                    draft,
-                    state["missing_required"],
-                    ready_to_generate=False,
-                    had_prior_draft=had_prior_draft,
-                    prior_ready_to_generate=prior_ready_to_generate,
-                )
+    al_out = state.get("alignment")
+    if isinstance(al_out, dict):
+        ast = al_out.get("state")
+        if (
+            isinstance(ast, dict)
+            and ast.get("pause_required")
+            and not ast.get("generation_ready")
+        ):
+            state["ready_to_generate"] = False
+            state["status"] = "collecting"
+            state["ux"]["stage"] = pif._plan_ux_stage_for_state(
+                draft,
+                state["missing_required"],
+                ready_to_generate=False,
+                had_prior_draft=had_prior_draft,
+                prior_ready_to_generate=prior_ready_to_generate,
+            )
     if pif.plan_creation_split_confirm_enabled():
         u_final = dict(state.get("ux") or {})
         if state.get("ready_to_generate"):

@@ -29,34 +29,6 @@ def _stub_evidence(**fields):
     return RunnerEvidenceSummary.from_activity_summary(merged)
 
 
-def test_alignment_disabled_omits_ambition_and_alignment(monkeypatch):
-    monkeypatch.setattr(
-        pgra,
-        "build_runner_evidence",
-        lambda *_a, **_k: _stub_evidence(avg_miles_per_week_approx=22.0),
-    )
-    monkeypatch.setattr(pgra, "_coach_memory_stats", lambda *_a, **_k: None)
-
-    out = build_pre_generation_runner_assessment(
-        MagicMock(),
-        "11111111-1111-1111-1111-111111111111",
-        plan_request={"primary_goal": "Target Time", "race_distance": "Marathon"},
-        plan_intake_state={"draft": {}},
-        alignment_enabled=False,
-    )
-
-    assert isinstance(out, PreGenerationRunnerAssessmentV1)
-    assert out.schema_version == SCHEMA_VERSION
-    assert out.ambition_gap is None
-    assert out.intake_alignment_state is None
-    assert out.activity_summary["avg_miles_per_week_approx"] == 22.0
-    d = out.as_api_dict()
-    assert "ambition_gap" not in d
-    assert "intake_alignment_state" not in d
-    assert "evidence_snapshot_id" in d
-    assert "runner_evidence" in d
-
-
 def test_alignment_enabled_calls_evaluators_once(monkeypatch):
     monkeypatch.setattr(
         pgra,
@@ -109,7 +81,6 @@ def test_alignment_enabled_calls_evaluators_once(monkeypatch):
             "race_distance": "Marathon",
         },
         plan_intake_state={"draft": {"primary_goal": "Target Time"}},
-        alignment_enabled=True,
     )
 
     assert calls["ambition"] == 1

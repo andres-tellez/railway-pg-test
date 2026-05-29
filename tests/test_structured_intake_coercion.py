@@ -82,7 +82,6 @@ def test_coerce_combines_tradeoff_and_schedule():
 
 def test_coerce_passes_apply_coach_suggested_goal_with_core_fields(monkeypatch):
     """Mobile runner-analysis CTA sends this bundle; API must forward all keys."""
-    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
     payload = {
         "structured_input": {
             "kind": "update_plan_intake",

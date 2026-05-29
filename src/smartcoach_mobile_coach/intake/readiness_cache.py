@@ -43,8 +43,8 @@ class _ReadinessCacheEntry:
 
 
 _READINESS_CACHE_LOCK = threading.Lock()
-# Key: (user_id, digest_sha256, evidence_snapshot_id, alignment_enabled, anchor_iso_or_empty)
-_READINESS_CACHE: Dict[Tuple[str, str, str, bool, str], _ReadinessCacheEntry] = {}
+# Key: (user_id, digest_sha256, evidence_snapshot_id, anchor_iso_or_empty)
+_READINESS_CACHE: Dict[Tuple[str, str, str, str], _ReadinessCacheEntry] = {}
 
 
 def _cache_ttl_seconds() -> int:
@@ -94,7 +94,7 @@ def _emit_readiness_decision_metric(
 
 def _get_cached_entry(
     *,
-    cache_key: Tuple[str, str, str, bool, str],
+    cache_key: Tuple[str, str, str, str],
     now_mono: float,
 ) -> _ReadinessCacheEntry | None:
     ttl = float(_cache_ttl_seconds())
@@ -113,7 +113,7 @@ def _get_cached_entry(
 
 def _set_cached_entry(
     *,
-    cache_key: Tuple[str, str, str, bool, str],
+    cache_key: Tuple[str, str, str, str],
     now_mono: float,
     assessment_api: Dict[str, Any],
     readiness_api: Dict[str, Any],
@@ -133,7 +133,6 @@ def get_or_compute_readiness_gate(
     internal_user_id: str,
     plan_request: Dict[str, Any],
     plan_intake_state: Dict[str, Any],
-    alignment_enabled: bool,
     anchor_local_date: Optional[date] = None,
 ) -> ReadinessGateResult:
     """Return one assessment+readiness pair for a short intent window."""
@@ -159,7 +158,6 @@ def get_or_compute_readiness_gate(
         str(internal_user_id),
         digest_sha256,
         ev_for_lookup,
-        bool(alignment_enabled),
         anchor_seg,
     )
 
@@ -186,7 +184,6 @@ def get_or_compute_readiness_gate(
         str(internal_user_id),
         plan_request=plan_request,
         plan_intake_state=plan_intake_state,
-        alignment_enabled=alignment_enabled,
         anchor_local_date=anchor_local_date,
     )
     assessment_api = assessment.as_api_dict()
@@ -203,7 +200,6 @@ def get_or_compute_readiness_gate(
         str(internal_user_id),
         digest_sha256,
         ev_store,
-        bool(alignment_enabled),
         anchor_seg,
     )
 

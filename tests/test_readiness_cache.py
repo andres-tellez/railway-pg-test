@@ -81,14 +81,12 @@ def test_get_or_compute_readiness_gate_cache_hit_reuses_snapshot(monkeypatch):
         internal_user_id="u-1",
         plan_request=_plan_request(),
         plan_intake_state=_state(with_prior_readiness=True),
-        alignment_enabled=True,
     )
     second = readiness_gate.get_or_compute_readiness_gate(
         session=object(),
         internal_user_id="u-1",
         plan_request=_plan_request(),
         plan_intake_state=_state(with_prior_readiness=True),
-        alignment_enabled=True,
     )
 
     assert first.cache_status == "miss"
@@ -145,7 +143,6 @@ def test_get_or_compute_readiness_gate_cache_expiry_recomputes(monkeypatch):
         internal_user_id="u-1",
         plan_request=_plan_request(),
         plan_intake_state=_state(with_prior_readiness=True),
-        alignment_enabled=True,
     )
     now["value"] = 106.0
     second = readiness_gate.get_or_compute_readiness_gate(
@@ -153,7 +150,6 @@ def test_get_or_compute_readiness_gate_cache_expiry_recomputes(monkeypatch):
         internal_user_id="u-1",
         plan_request=_plan_request(),
         plan_intake_state=_state(with_prior_readiness=True),
-        alignment_enabled=True,
     )
 
     assert first.cache_status == "miss"
@@ -196,7 +192,6 @@ def test_get_or_compute_readiness_gate_cache_partitions_by_anchor(monkeypatch):
         internal_user_id="u-1",
         plan_request=_plan_request(),
         plan_intake_state=_state(with_prior_readiness=True),
-        alignment_enabled=True,
         anchor_local_date=date(2026, 1, 1),
     )
     b = readiness_gate.get_or_compute_readiness_gate(
@@ -204,7 +199,6 @@ def test_get_or_compute_readiness_gate_cache_partitions_by_anchor(monkeypatch):
         internal_user_id="u-1",
         plan_request=_plan_request(),
         plan_intake_state=_state(with_prior_readiness=True),
-        alignment_enabled=True,
         anchor_local_date=date(2026, 1, 2),
     )
     c = readiness_gate.get_or_compute_readiness_gate(
@@ -212,7 +206,6 @@ def test_get_or_compute_readiness_gate_cache_partitions_by_anchor(monkeypatch):
         internal_user_id="u-1",
         plan_request=_plan_request(),
         plan_intake_state=_state(with_prior_readiness=True),
-        alignment_enabled=True,
         anchor_local_date=date(2026, 1, 1),
     )
     assert a.cache_status == "miss"
@@ -260,14 +253,12 @@ def test_readiness_decision_metric_emitted_on_hit_and_miss(caplog, monkeypatch):
             internal_user_id="u-1",
             plan_request=_plan_request(),
             plan_intake_state=_state(with_prior_readiness=True),
-            alignment_enabled=True,
         )
         second = readiness_gate.get_or_compute_readiness_gate(
             session=object(),
             internal_user_id="u-1",
             plan_request=_plan_request(),
             plan_intake_state=_state(with_prior_readiness=True),
-            alignment_enabled=True,
         )
 
     assert first.cache_status == "miss"

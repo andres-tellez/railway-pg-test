@@ -38,9 +38,6 @@ from src.smartcoach_mobile_coach.http_rate_limit import (
 )
 from src.smartcoach_mobile_coach.orchestrator import run_mobile_agent_turn
 from src.smartcoach_mobile_coach.agent_tools import tool_update_plan_intake
-from src.smartcoach_mobile_coach.plan_intake_flow import (
-    structured_intake_core_v1_enabled,
-)
 from src.smartcoach_mobile_coach.thread_derived_context import (
     DerivedThreadCoachContext,
     activity_id_from_run_summary_envelope,
@@ -415,47 +412,43 @@ def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
         ):
             out["alignment_posture_priority"] = v.strip().lower()
 
-    _apply_suggested = (
-        isinstance(updates, dict) and updates.get("apply_coach_suggested_goal") is True
-    )
-    if structured_intake_core_v1_enabled() or _apply_suggested:
-        if "race_distance" in updates:
-            v = updates.get("race_distance")
-            if isinstance(v, str) and v.strip():
-                out["race_distance"] = v.strip()
-        if "race_date" in updates:
-            v = updates.get("race_date")
-            if isinstance(v, str) and v.strip():
-                out["race_date"] = v.strip()
-        if "primary_goal" in updates:
-            v = updates.get("primary_goal")
-            if isinstance(v, str) and v.strip() in _VALID_STRUCTURED_PRIMARY_GOALS:
-                out["primary_goal"] = v.strip()
-        if "target_time" in updates:
-            v = updates.get("target_time")
-            if v is None:
-                out["target_time"] = None
-            elif isinstance(v, str) and v.strip():
-                out["target_time"] = v.strip()
-        if "training_days" in updates:
-            v = updates.get("training_days")
-            if isinstance(v, list):
-                days: list[str] = []
-                for x in v:
-                    if isinstance(x, str) and x in DAY_NAMES_ABBREV:
-                        days.append(x)
-                if days:
-                    seen: set[str] = set()
-                    uniq: list[str] = []
-                    for d in days:
-                        if d not in seen:
-                            seen.add(d)
-                            uniq.append(d)
-                    out["training_days"] = uniq
-        if "long_run_day" in updates:
-            v = updates.get("long_run_day")
-            if isinstance(v, str) and v.strip() in DAY_NAMES_ABBREV:
-                out["long_run_day"] = v.strip()
+    if "race_distance" in updates:
+        v = updates.get("race_distance")
+        if isinstance(v, str) and v.strip():
+            out["race_distance"] = v.strip()
+    if "race_date" in updates:
+        v = updates.get("race_date")
+        if isinstance(v, str) and v.strip():
+            out["race_date"] = v.strip()
+    if "primary_goal" in updates:
+        v = updates.get("primary_goal")
+        if isinstance(v, str) and v.strip() in _VALID_STRUCTURED_PRIMARY_GOALS:
+            out["primary_goal"] = v.strip()
+    if "target_time" in updates:
+        v = updates.get("target_time")
+        if v is None:
+            out["target_time"] = None
+        elif isinstance(v, str) and v.strip():
+            out["target_time"] = v.strip()
+    if "training_days" in updates:
+        v = updates.get("training_days")
+        if isinstance(v, list):
+            days: list[str] = []
+            for x in v:
+                if isinstance(x, str) and x in DAY_NAMES_ABBREV:
+                    days.append(x)
+            if days:
+                seen: set[str] = set()
+                uniq: list[str] = []
+                for d in days:
+                    if d not in seen:
+                        seen.add(d)
+                        uniq.append(d)
+                out["training_days"] = uniq
+    if "long_run_day" in updates:
+        v = updates.get("long_run_day")
+        if isinstance(v, str) and v.strip() in DAY_NAMES_ABBREV:
+            out["long_run_day"] = v.strip()
 
     if "schedule_days_confirmed" in updates:
         v = updates.get("schedule_days_confirmed")

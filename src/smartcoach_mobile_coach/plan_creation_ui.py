@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     build_core_structured_ui_prompt,
     plan_creation_split_confirm_enabled,
-    structured_intake_core_v1_enabled,
 )
 from src.schemas.plan_schema import PrimaryGoal
 from src.coaching_intelligence.time_clock import (
@@ -263,8 +262,6 @@ def _goal_adjustment_ui_prompt(
     intake_state: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     """Structured chips after user chooses **adjust goal** from runner review."""
-    if not structured_intake_core_v1_enabled():
-        return None
     draft = (
         intake_state.get("draft") if isinstance(intake_state.get("draft"), dict) else {}
     )
