@@ -1055,7 +1055,16 @@ def _confirmation_summary(draft: Dict[str, Any]) -> str:
     if isinstance(long_run_day, str) and long_run_day.strip():
         lines.append(f"Long runs on: {long_run_day.strip()}")
 
-    return "\n".join(lines)
+    return "\n\n".join(lines)
+
+
+def is_plan_intake_confirmation_message(text: str) -> bool:
+    """Deterministic pre-generate recap — guardrails must not collapse its line breaks."""
+    stripped = (text or "").strip()
+    return (
+        stripped.startswith("Here's what I have:")
+        and "Does this look right?" in stripped
+    )
 
 
 def format_plan_intake_confirmation_message(summary: str) -> str:

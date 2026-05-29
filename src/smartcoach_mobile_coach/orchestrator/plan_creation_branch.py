@@ -49,6 +49,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     alignment_pause_coaching_facts_system_section,
     build_plan_request_from_state,
     format_plan_intake_confirmation_message,
+    is_plan_intake_confirmation_message,
     mark_plan_runner_understanding_shown,
     plan_creation_split_confirm_enabled,
     plan_intake_alignment_pause_active,
@@ -593,6 +594,13 @@ def _enforce_plan_creation_response_guardrails(
             return _natural_plan_intake_fallback_question(plan_intake_state)
 
     if _plan_intake_runner_analysis_relaxed_prose(plan_intake_state):
+        return out
+
+    if (
+        isinstance(plan_intake_state, dict)
+        and plan_intake_state.get("ready_to_generate")
+        and is_plan_intake_confirmation_message(out)
+    ):
         return out
 
     max_kept = 5 if plan_intake_alignment_pause_active(plan_intake_state) else 4
