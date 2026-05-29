@@ -23,6 +23,7 @@ def _plan_creation_split_confirm_enabled() -> bool:
 
 def clear_plan_confirmation_ux(ux: Dict[str, Any]) -> None:
     ux.pop("intake_confirmed", None)
+    ux.pop("intake_edit_mode", None)
     ux.pop("runner_review_delivered", None)
     ux.pop("plan_generation_confirmed", None)
     ux.pop("runner_tradeoff_pending", None)

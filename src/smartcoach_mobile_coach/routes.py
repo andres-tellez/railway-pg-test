@@ -606,6 +606,15 @@ def _coerce_structured_intake_updates(payload: dict) -> Optional[dict]:
         if isinstance(v, bool):
             out["schedule_days_confirmed"] = v
 
+    if "intake_confirmed" in updates:
+        v = updates.get("intake_confirmed")
+        if v is True:
+            out["intake_confirmed"] = True
+
+    if "intake_recap_edit_requested" in updates:
+        if updates.get("intake_recap_edit_requested") is True:
+            out["intake_recap_edit_requested"] = True
+
     if "runner_tradeoff_choice" in updates:
         v = updates.get("runner_tradeoff_choice")
         if isinstance(v, str):
