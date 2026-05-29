@@ -150,6 +150,16 @@ def apply_structured_updates(
                 ux["training_days_expansion_pending"] = True
                 draft.pop("training_days", None)
                 ux.pop("training_days_count", None)
+        elif key == "intake_confirmed":
+            v = pif._normalize_alignment_bool(raw)
+            if v is None:
+                errors.append("intake_confirmed must be boolean-like.")
+            elif v is True:
+                ux["intake_confirmed"] = True
+                ux.pop("intake_edit_mode", None)
+        elif key == "intake_recap_edit_requested":
+            if raw is True:
+                ux["intake_edit_mode"] = True
         elif key == "plan_generation_confirmed":
             pass
         elif key == "apply_coach_suggested_goal":

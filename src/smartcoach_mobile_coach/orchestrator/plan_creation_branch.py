@@ -441,6 +441,11 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
                 return PLAN_PROFILE_HR_BIRTH_YEAR_PROMPT
             if step == PLAN_PROFILE_HR_STEP_MAX_HR:
                 return PLAN_PROFILE_HR_MAX_HR_PROMPT
+        ux_fb = (
+            intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+        )
+        if ux_fb.get("intake_edit_mode") and not ux_fb.get("intake_confirmed"):
+            return "What would you like to change — your race date, goal time, or training days?"
         summ = (intake_state.get("confirmation_summary") or "").strip()
         if summ:
             return format_plan_intake_confirmation_message(summ)
