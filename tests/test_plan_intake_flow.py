@@ -8,6 +8,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     build_core_structured_ui_prompt,
     build_plan_request_from_state,
     format_plan_intake_confirmation_message,
+    is_plan_intake_confirmation_message,
     mark_plan_runner_understanding_shown,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
@@ -689,12 +690,37 @@ def test_confirmation_summary_readable_multiline_includes_target_time():
     )
     summary = state["confirmation_summary"]
     assert summary == (
-        "Marathon date: 10/11/2026\n"
-        "Target time: 3:40:00\n"
-        "Training days: Mon, Tue, Wed, Thu, Fri, Sat\n"
+        "Marathon date: 10/11/2026\n\n"
+        "Target time: 3:40:00\n\n"
+        "Training days: Mon, Tue, Wed, Thu, Fri, Sat\n\n"
         "Long runs on: Sat"
     )
     message = format_plan_intake_confirmation_message(summary)
     assert message.startswith("Here's what I have:\n\n")
     assert message.endswith("Does this look right?")
     assert ";" not in message
+    assert "\n\nTarget time:" in message
+
+
+def test_confirmation_message_survives_plan_creation_guardrails():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "target_time": "3:40:00",
+            "training_days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+            "long_run_day": "Sat",
+        },
+    )
+    from src.smartcoach_mobile_coach.orchestrator.plan_creation_branch import (
+        _enforce_plan_creation_response_guardrails,
+        _natural_plan_intake_fallback_question,
+    )
+
+    raw = _natural_plan_intake_fallback_question(state)
+    assert is_plan_intake_confirmation_message(raw)
+    out = _enforce_plan_creation_response_guardrails(raw, plan_intake_state=state)
+    assert out == raw
+    assert "\n\nTarget time: 3:40:00\n\n" in out
