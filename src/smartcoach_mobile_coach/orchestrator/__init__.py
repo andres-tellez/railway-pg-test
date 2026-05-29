@@ -878,6 +878,24 @@ _GET_PHASE_ANALYSIS_OPENAI_TOOL: Dict[str, Any] = {
 
 
 # Kept in sync with scripts/setup_coach_tools.py `get_user_context`.
+# Kept in sync with scripts/setup_coach_tools.py `get_training_targets`.
+_GET_TRAINING_TARGETS_OPENAI_TOOL: Dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "get_training_targets",
+        "description": (
+            "Official training targets: marathon goal pace and goal-aligned easy/tempo/threshold "
+            "bands (destination) plus current-fitness pace zones from recent activities "
+            "(starting point) and HR guardrails. Same producers as runner-profile zones and "
+            "Insights — never invent paces in prose. Call after the user gives a target marathon "
+            "time, before confirming plan generation, and when explaining goal vs plan prescription. "
+            "Plan workout paces remain activity-calibrated; goal bands measure progress on Insights."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
 _GET_USER_CONTEXT_OPENAI_TOOL: Dict[str, Any] = {
     "type": "function",
     "function": {
@@ -1051,6 +1069,18 @@ def _ensure_get_phase_analysis_tool(
         "coach_tools has no enabled get_phase_analysis; injecting built-in OpenAI tool definition"
     )
     return list(tools) + [_GET_PHASE_ANALYSIS_OPENAI_TOOL]
+
+
+def _ensure_get_training_targets_tool(
+    tools: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Inject get_training_targets if missing from coach_tools."""
+    if "get_training_targets" in _openai_tool_names(tools):
+        return tools
+    logger.warning(
+        "coach_tools has no enabled get_training_targets; injecting built-in OpenAI tool definition"
+    )
+    return list(tools) + [_GET_TRAINING_TARGETS_OPENAI_TOOL]
 
 
 def _ensure_get_user_context_tool(
@@ -2541,15 +2571,17 @@ def run_mobile_agent_turn(
                         _ensure_get_plan_overview_tool(
                             _ensure_get_phase_analysis_tool(
                                 _ensure_get_user_context_tool(
-                                    _ensure_generate_training_plan_tool(
-                                        _ensure_update_plan_intake_tool(
-                                            _ensure_get_run_splits_tool(
-                                                _ensure_get_marathon_projection_tool(
-                                                    _ensure_get_training_kpis_tool(
-                                                        _ensure_aggregate_runs_in_range_tool(
-                                                            _ensure_search_runs_tool(
-                                                                _load_tools_from_db(
-                                                                    session
+                                    _ensure_get_training_targets_tool(
+                                        _ensure_generate_training_plan_tool(
+                                            _ensure_update_plan_intake_tool(
+                                                _ensure_get_run_splits_tool(
+                                                    _ensure_get_marathon_projection_tool(
+                                                        _ensure_get_training_kpis_tool(
+                                                            _ensure_aggregate_runs_in_range_tool(
+                                                                _ensure_search_runs_tool(
+                                                                    _load_tools_from_db(
+                                                                        session
+                                                                    )
                                                                 )
                                                             )
                                                         )

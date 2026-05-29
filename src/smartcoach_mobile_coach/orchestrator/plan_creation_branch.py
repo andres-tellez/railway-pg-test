@@ -160,6 +160,10 @@ Intake behavior:
 - If the user gives a **clock time only** (e.g. “3:40”, “3:45:00”) without saying “target time”, still pass
   `primary_goal` **Target Time** and `target_time` in `updates` — the server can also infer this from the
   latest user message when the model omits it.
+- After **Target Time** and `target_time` are in the intake draft, call **`get_training_targets`** before
+  final plan confirmation. Use only the paces returned there for marathon / easy / tempo / threshold
+  (destination). Explain that **plan workout paces** come from recent fitness (starting point), not goal
+  pace on week one — never invent pace numbers in prose.
 - For `race_distance`, when the user names a **full marathon** event (e.g. “Chicago Marathon”, “Boston”, “a fall
   marathon”) or clearly means 26.2, set `race_distance` to **Marathon** in the same `update_plan_intake` call and
   **do not** ask half vs full again. Only ask half vs full when the goal distance is ambiguous (no named marathon,
@@ -180,6 +184,7 @@ Confirmation and generate:
   runner-understanding sentences + **1** question); up to a short multi-line walkthrough right after successful generation.
 - Confirmation should be simple: race, goal, schedule. Then ask “Does that look right?” or equivalent.
 - Tool payload is the source of truth; never invent field values not returned by tools.
+- For any target-time pace question, **`get_training_targets`** is the only authoritative source for goal paces.
 - The server accepts common **spoken dates**, **spoken training-day ranges** (e.g. “Monday through Saturday”,
   “weekdays plus Saturday”), and **goal-time phrases** in tool updates; still pass what the user said in `updates`.
 

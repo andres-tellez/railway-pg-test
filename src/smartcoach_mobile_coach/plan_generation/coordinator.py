@@ -355,7 +355,28 @@ def generate_training_plan_tool(
             "activity_weeks": activity_weeks,
         },
     )
-    return {
+
+    training_target_context: Optional[Dict[str, Any]] = None
+    try:
+        from src.smartcoach_mobile_coach.runner_profile.training_target_context import (
+            build_training_target_context,
+        )
+
+        training_target_context = build_training_target_context(
+            session,
+            str(internal_user_id),
+            target_time=plan_request.get("target_time"),
+            race_distance=plan_request.get("race_distance"),
+            primary_goal=plan_request.get("primary_goal"),
+        )
+    except Exception as exc:
+        logger.warning(
+            "training_target_context snapshot failed after plan save user=%s: %s",
+            str(internal_user_id)[:8],
+            exc,
+        )
+
+    out: Dict[str, Any] = {
         "ok": True,
         "plan_id": int(plan_id),
         "plan_name": saved.get("plan_name"),
@@ -369,3 +390,6 @@ def generate_training_plan_tool(
         "pre_generation_runner_assessment": assessment_payload,
         "plan_generation_readiness": readiness_payload,
     }
+    if training_target_context is not None:
+        out["training_target_context"] = training_target_context
+    return out

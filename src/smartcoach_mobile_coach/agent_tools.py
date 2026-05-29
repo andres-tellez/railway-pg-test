@@ -1608,6 +1608,47 @@ def tool_update_plan_intake(
     }
 
 
+def tool_get_training_targets(
+    session: Session,
+    internal_user_id: str,
+    *,
+    plan_intake_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Official goal-aligned + current-fitness targets for Coach (no invented paces).
+
+    Uses the same producers as ``GET /api/runner-profile/zones`` and Insights.
+    """
+    from src.smartcoach_mobile_coach.runner_profile.training_target_context import (
+        build_training_target_context,
+    )
+
+    draft = (
+        (plan_intake_state or {}).get("draft")
+        if isinstance(plan_intake_state, dict)
+        else None
+    )
+    draft_dict = dict(draft) if isinstance(draft, dict) else {}
+
+    try:
+        payload = build_training_target_context(
+            session,
+            str(internal_user_id),
+            target_time=draft_dict.get("target_time"),
+            race_distance=draft_dict.get("race_distance"),
+            primary_goal=draft_dict.get("primary_goal"),
+        )
+    except Exception as exc:
+        logger.exception(
+            "get_training_targets failed user=%s", str(internal_user_id)[:8]
+        )
+        return {
+            "error": "training_targets_unavailable",
+            "message": str(exc)[:400],
+        }
+    return {"ok": True, "training_target_context": payload}
+
+
 def tool_generate_training_plan(
     session: Session,
     internal_user_id: str,
@@ -1680,6 +1721,7 @@ _TOOL_HANDLERS = {
     # plan mutation happens.
     "apply_plan_adjustments": "apply_plan_adjustments",
     "update_plan_intake": "update_plan_intake",
+    "get_training_targets": "get_training_targets",
     "generate_training_plan": "generate_training_plan",
     # Legacy names → map to current handlers
     "list_runs_for_local_date": "find_runs_by_date",
@@ -1925,6 +1967,13 @@ def execute_tool(
                 args,
                 current_state=plan_intake_state,
                 source_user_message=source_user_message,
+            )
+
+        if handler_key == "get_training_targets":
+            return tool_get_training_targets(
+                session,
+                internal_user_id,
+                plan_intake_state=plan_intake_state,
             )
 
         if handler_key == "generate_training_plan":

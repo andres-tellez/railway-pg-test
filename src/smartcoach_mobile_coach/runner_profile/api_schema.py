@@ -347,6 +347,37 @@ def _zones_inputs_payload(
     }
 
 
+def training_pace_recommendations_api_payload(
+    recs: Optional[TrainingPaceRecommendations],
+) -> Optional[dict[str, Any]]:
+    """Public serializer for training pace recommendations (Coach / context)."""
+    return _training_pace_recommendations_payload(recs)
+
+
+def pace_authorities_api_payload(
+    profile: RunnerZoneProfileData,
+    recs: Optional[TrainingPaceRecommendations],
+) -> dict[str, Any]:
+    """Public serializer for plan vs Insights pace authority contract."""
+    return _pace_authorities_payload(profile, recs)
+
+
+def zones_inputs_api_payload(
+    profile: RunnerZoneProfileData,
+    *,
+    target_time: str | None,
+    race_distance: str | None,
+    training_pace_recommendations: Optional[TrainingPaceRecommendations],
+) -> dict[str, Any]:
+    """Public serializer for goal-aligned status inputs."""
+    return _zones_inputs_payload(
+        profile,
+        target_time=target_time,
+        race_distance=race_distance,
+        training_pace_recommendations=training_pace_recommendations,
+    )
+
+
 def runner_zone_profile_payload(
     profile: RunnerZoneProfileData,
     *,
