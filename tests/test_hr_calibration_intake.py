@@ -7,8 +7,10 @@ from unittest.mock import MagicMock, patch
 from src.smartcoach_mobile_coach.hr_calibration_intake import (
     HR_CALIBRATION_STEP_BIRTH_YEAR,
     HR_CALIBRATION_STEP_MAX_HR,
+    PLAN_PROFILE_HR_MAX_HR_PROMPT,
     build_plan_profile_hr_beat_ui_prompt,
     ensure_user_profile_row,
+    merge_ui_prompt_into_assistant_payload,
     plan_profile_hr_beat_ui_active,
     sync_plan_profile_hr_beat_ux,
 )
@@ -105,7 +107,20 @@ def test_ui_prompt_order_birth_year_before_max_hr(mock_profile):
     ui = build_plan_profile_hr_beat_ui_prompt(state)
     assert ui is not None
     assert ui["control_type"] == "optional_bpm"
-    assert "don't guess" in ui["prompt"].lower()
+    assert ui["prompt"] == PLAN_PROFILE_HR_MAX_HR_PROMPT
+
+
+def test_merge_ui_prompt_appends_question_to_assistant_content():
+    ui = {
+        "control_type": "optional_bpm",
+        "prompt": PLAN_PROFILE_HR_MAX_HR_PROMPT,
+    }
+    out = merge_ui_prompt_into_assistant_payload(
+        {"type": "text", "content": "Got it — I've saved your birth year.", "data": {}},
+        ui,
+    )
+    assert PLAN_PROFILE_HR_MAX_HR_PROMPT in out["content"]
+    assert out["data"]["ui_prompt"] == ui
 
 
 @patch("src.smartcoach_mobile_coach.hr_calibration_intake.get_user_profile")

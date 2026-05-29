@@ -38,6 +38,8 @@ from src.smartcoach_mobile_coach.plan_intake_activity_context import (
     apply_plan_activity_preamble_to_assistant_markdown,
 )
 from src.smartcoach_mobile_coach.hr_calibration_intake import (
+    PLAN_PROFILE_HR_BIRTH_YEAR_PROMPT,
+    PLAN_PROFILE_HR_MAX_HR_PROMPT,
     PLAN_PROFILE_HR_STEP_BIRTH_YEAR,
     PLAN_PROFILE_HR_STEP_MAX_HR,
     plan_profile_hr_beat_ui_active,
@@ -435,12 +437,9 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
             )
             step = ux_hr.get("hr_calibration_step")
             if step == PLAN_PROFILE_HR_STEP_BIRTH_YEAR:
-                return (
-                    "What year were you born? This helps estimate heart-rate zones "
-                    "if you don't enter a max heart rate."
-                )
+                return PLAN_PROFILE_HR_BIRTH_YEAR_PROMPT
             if step == PLAN_PROFILE_HR_STEP_MAX_HR:
-                return "Only enter your max heart rate if you know it — don't guess."
+                return PLAN_PROFILE_HR_MAX_HR_PROMPT
         summ = (intake_state.get("confirmation_summary") or "").strip()
         if summ:
             return f"Here’s what I have: {summ} Does that look right?"
