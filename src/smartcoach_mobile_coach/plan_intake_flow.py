@@ -1055,7 +1055,7 @@ def _confirmation_summary(draft: Dict[str, Any]) -> str:
     if isinstance(long_run_day, str) and long_run_day.strip():
         lines.append(f"Long runs on: {long_run_day.strip()}")
 
-    return "\n".join(f"- {line}" for line in lines)
+    return "  \n".join(f"• {line}" for line in lines)
 
 
 def is_plan_intake_confirmation_message(text: str) -> bool:
