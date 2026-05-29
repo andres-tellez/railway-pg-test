@@ -12,6 +12,7 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.goal_aligned_pac
     GOAL_ALIGNED_STATUS_MISSING_TARGET_TIME,
     GOAL_ALIGNED_STATUS_UNSUPPORTED_RACE,
     compute_goal_aligned_pace_bands,
+    marathon_sec_per_mi_from_target_time,
     resolve_goal_aligned_config,
     resolve_goal_aligned_status,
 )
@@ -211,4 +212,29 @@ def test_goal_aligned_status_values():
             has_goal_bands=False,
         )
         == GOAL_ALIGNED_STATUS_UNSUPPORTED_RACE
+    )
+
+
+def test_marathon_sec_per_mi_matches_goal_bands():
+    bands = compute_goal_aligned_pace_bands("3:40:00", race_distance="Marathon")
+    assert bands is not None
+    mp = marathon_sec_per_mi_from_target_time("3:40:00", race_distance="Marathon")
+    assert mp == float(bands.marathon_sec)
+
+
+def test_readiness_marathon_goal_pace_matches_goal_ssot():
+    from src.coaching_intelligence.plan_generation_readiness import (
+        _marathon_goal_pace_sec_per_mi,
+    )
+
+    plan_request = {
+        "race_distance": "Marathon",
+        "primary_goal": "Target Time",
+        "target_time": "3:40:00",
+    }
+    assert _marathon_goal_pace_sec_per_mi(
+        plan_request
+    ) == marathon_sec_per_mi_from_target_time(
+        "3:40:00",
+        race_distance="Marathon",
     )

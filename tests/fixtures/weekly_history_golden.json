@@ -1,0 +1,104 @@
+{
+  "has_history": true,
+  "latest_week": {
+    "has_insight": true,
+    "week_start": "2026-04-07",
+    "week_end": "2026-04-13",
+    "overall_band": "green",
+    "kpis": [
+      {
+        "name": "hr_drift",
+        "label": "HR drift",
+        "value": 2.5,
+        "value_display": "2.5%",
+        "band": "green",
+        "delta_display": "-0.5%"
+      },
+      {
+        "name": "z2_pace",
+        "label": "Avg. Z2 pace",
+        "value": 9.5,
+        "value_display": "9:30/mi",
+        "band": "green",
+        "delta_display": "-0.01/mi"
+      },
+      {
+        "name": "efficiency",
+        "label": "Efficiency",
+        "value": 1.2,
+        "value_display": "1.2",
+        "band": "green",
+        "delta_display": "+0.1"
+      },
+      {
+        "name": "easy_avg_hr",
+        "label": "Avg. HR",
+        "value": 142,
+        "value_display": "142 bpm",
+        "band": "green",
+        "delta_display": "-1.5 bpm"
+      }
+    ],
+    "easy_run_count": 3,
+    "total_run_count": 5,
+    "summary_text": "Easy volume looked controlled.",
+    "action_text": "Keep the next long run aerobic.",
+    "generated_at": "2026-04-10T12:00:00.000Z"
+  },
+  "systems": {
+    "easy": {
+      "weekly_data": [
+        {
+          "label": "4/7",
+          "value": 2.5,
+          "band": "green",
+          "z2_pace_min_per_mi": 9.5,
+          "easy_pace_progress_band": "green",
+          "easy_avg_hr": 142,
+          "easy_hr_progress_band": "green",
+          "efficiency": 1.2,
+          "efficiency_band": "green"
+        }
+      ],
+      "zones": [
+        { "color": "green", "min": 0, "max": 2.5 },
+        { "color": "yellow", "min": 2.5, "max": 5 },
+        { "color": "orange", "min": 5, "max": 7.5 },
+        { "color": "red", "min": 7.5, "max": 100 }
+      ],
+      "efficiency_zones": [
+        { "color": "green", "min": 1.0, "max": 1.5 },
+        { "color": "yellow", "min": 0.75, "max": 1.0 }
+      ],
+      "pace_zones": [{ "color": "green", "min": 9.0, "max": 9.75 }],
+      "hr_zones": [{ "color": "green", "min": 120, "max": 145 }],
+      "pace_target_display": "9:30/mi",
+      "hr_target_display": "≤145 bpm",
+      "hr_progress_z2_range_display": "120–145 bpm",
+      "hr_drift_target_display": "under 2.5% ideal, under 5% acceptable",
+      "efficiency_goal_display": "higher is better at the same effort",
+      "insights_easy_banner": {
+        "subtitle": "Stay within this HR range to keep easy runs truly easy and avoid carrying fatigue into harder days."
+      }
+    },
+    "tempo": {
+      "weekly_data": [
+        {
+          "label": "4/7",
+          "value": null,
+          "tempo_segment_pace_min_per_mi": 7.25,
+          "tempo_segment_avg_hr_bpm": 155,
+          "tempo_pace_progress_band": "green",
+          "tempo_hr_progress_band": "yellow"
+        }
+      ],
+      "pace_zones": [{ "color": "green", "min": 7.0, "max": 7.5 }],
+      "hr_zones": [{ "color": "green", "min": 150, "max": 160 }],
+      "pace_target_display": "7:30/mi",
+      "hr_target_display": "150–160 bpm",
+      "insights_tempo_banner": {
+        "subtitle": "Stay within this tempo pace range to hit the right stimulus — too fast or too slow can miss the workout intent."
+      }
+    }
+  }
+}

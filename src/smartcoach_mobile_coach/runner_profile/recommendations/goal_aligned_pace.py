@@ -169,3 +169,23 @@ def compute_goal_aligned_pace_bands(
         marathon_sec=int(round(marathon_sec)),
         source_target_time=str(target_time).strip(),
     )
+
+
+def marathon_sec_per_mi_from_target_time(
+    target_time: str | None,
+    *,
+    race_distance: str | None = None,
+) -> Optional[float]:
+    """
+    Canonical marathon goal pace (sec/mi) from target time.
+
+    Single entry for readiness/gap logic — delegates to
+    ``compute_goal_aligned_pace_bands`` (no parallel 26.2-mi math).
+    """
+    bands = compute_goal_aligned_pace_bands(
+        target_time,
+        race_distance=race_distance,
+    )
+    if bands is None:
+        return None
+    return float(bands.marathon_sec)
