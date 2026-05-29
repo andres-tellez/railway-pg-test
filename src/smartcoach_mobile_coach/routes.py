@@ -176,6 +176,7 @@ def _handle_structured_profile_patch_turn(
         prior_for_patch,
         patch_out.assistant_payload,
     )
+    patch_out.assistant_message.content = json.dumps(gpt_patch, separators=(",", ":"))
     try:
         from src.smartcoach_mobile_coach import user_context_cache
 
