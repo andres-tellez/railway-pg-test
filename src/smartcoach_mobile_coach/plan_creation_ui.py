@@ -9,6 +9,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from src.smartcoach_mobile_coach.hr_calibration_intake import (
+    build_plan_profile_hr_beat_ui_prompt,
+    plan_profile_hr_beat_ui_active,
+    sync_plan_profile_hr_beat_ux,
+)
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     build_core_structured_ui_prompt,
     plan_creation_split_confirm_enabled,
@@ -175,6 +180,8 @@ def _merge_base_training_days_with_one(base: List[str], add: str) -> List[str]:
 
 def _alignment_ui_prompt(intake_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if plan_profile_hr_beat_ui_active(intake_state):
+        return None
     if ux.get("schedule_confirm_before_posture"):
         return None
     if ux.get("training_days_expansion_pending"):
@@ -223,6 +230,8 @@ def _schedule_confirmation_ui_prompt(
     intake_state: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
     ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if plan_profile_hr_beat_ui_active(intake_state):
+        return None
     if not ux.get("schedule_confirm_before_posture"):
         return None
     draft = (
@@ -629,25 +638,31 @@ def apply_review_to_plan_intake_ux_for_phase(
 
 def compute_plan_creation_ui(
     intake_state: Optional[Dict[str, Any]],
+    *,
+    session: Any = None,
+    user_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Single entry point for plan-creation structured chips (split-confirm on).
 
     When split-confirm is off, alignment + core intake only (legacy).
+    When ``session`` and ``user_id`` are set, refreshes plan profile HR beat ux first.
     """
     if not isinstance(intake_state, dict):
         return None
+
+    if session is not None and user_id:
+        intake_state = sync_plan_profile_hr_beat_ux(session, str(user_id), intake_state)
 
     align = _alignment_ui_prompt(intake_state)
     if align is not None:
         return align
 
     if not plan_creation_split_confirm_enabled():
+        hr_cal = build_plan_profile_hr_beat_ui_prompt(intake_state)
+        if hr_cal is not None:
+            return hr_cal
         return build_core_structured_ui_prompt(intake_state)
-
-    sched = _schedule_confirmation_ui_prompt(intake_state)
-    if sched is not None:
-        return sched
 
     ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
     phase = str(ux.get("plan_creation_phase") or "")
@@ -666,6 +681,14 @@ def compute_plan_creation_ui(
         tradeoff = _runner_tradeoff_ui_prompt(intake_state)
         if tradeoff is not None:
             return tradeoff
+
+    hr_cal = build_plan_profile_hr_beat_ui_prompt(intake_state)
+    if hr_cal is not None:
+        return hr_cal
+
+    sched = _schedule_confirmation_ui_prompt(intake_state)
+    if sched is not None:
+        return sched
 
     if phase == PHASE_AWAITING_PLAN_GENERATION_CONFIRMATION:
         gen_chip = _plan_generation_confirm_ui_prompt(intake_state)

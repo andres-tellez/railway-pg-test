@@ -3683,7 +3683,11 @@ def run_mobile_agent_turn(
                             ),
                         )
                     structured_text["data"]["plan_intake_state"] = pis_for_client
-                    ui_prompt = _ui_prompt_from_plan_intake_state(pis_for_client)
+                    ui_prompt = _ui_prompt_from_plan_intake_state(
+                        pis_for_client,
+                        session=session,
+                        user_id=str(internal_user_id),
+                    )
                     if isinstance(ui_prompt, dict):
                         structured_text["data"]["ui_prompt"] = ui_prompt
                 if latest_plan_generation is not None:

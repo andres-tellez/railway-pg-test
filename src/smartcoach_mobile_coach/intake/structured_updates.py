@@ -125,6 +125,20 @@ def apply_structured_updates(
                 errors.append(
                     "alignment_question_asked_category must be a non-empty string."
                 )
+        elif key == "hr_calibration_birth_year_skipped":
+            if raw is True:
+                ux["hr_calibration_birth_year_skipped"] = True
+            else:
+                errors.append(
+                    "hr_calibration_birth_year_skipped must be true when set."
+                )
+        elif key == "hr_calibration_max_hr_skipped":
+            if raw is True:
+                ux["hr_calibration_max_hr_skipped"] = True
+                ux["hr_calibration_intake_done"] = True
+                ux.pop("hr_calibration_step", None)
+            else:
+                errors.append("hr_calibration_max_hr_skipped must be true when set.")
         elif key == "schedule_days_confirmed":
             v = pif._normalize_alignment_bool(raw)
             if v is None:
