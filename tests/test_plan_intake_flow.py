@@ -8,7 +8,6 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     build_core_structured_ui_prompt,
     build_plan_request_from_state,
     format_plan_intake_confirmation_message,
-    is_plan_intake_confirmation_message,
     mark_plan_runner_understanding_shown,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
@@ -690,19 +689,20 @@ def test_confirmation_summary_readable_multiline_includes_target_time():
     )
     summary = state["confirmation_summary"]
     assert summary == (
-        "• Marathon date: 10/11/2026  \n"
-        "• Target time: 3:40:00  \n"
-        "• Training days: Mon, Tue, Wed, Thu, Fri, Sat  \n"
-        "• Long runs on: Sat"
+        "- Marathon date: 10/11/2026\n"
+        "- Target time: 3:40:00\n"
+        "- Training days: Mon, Tue, Wed, Thu, Fri, Sat\n"
+        "- Long runs on: Sat"
     )
     message = format_plan_intake_confirmation_message(summary)
     assert message.startswith("Here's what I have:\n\n")
     assert message.endswith("Does this look right?")
     assert ";" not in message
-    assert "• Target time: 3:40:00" in message
+    assert "- Target time: 3:40:00" in message
 
 
-def test_confirmation_message_survives_plan_creation_guardrails():
+def test_deterministic_confirmation_keeps_multiline_layout():
+    """Prose guardrails collapse newlines — deterministic intake copy must not pass through them."""
     state = update_plan_intake_state(
         None,
         updates={
@@ -720,7 +720,7 @@ def test_confirmation_message_survives_plan_creation_guardrails():
     )
 
     raw = _natural_plan_intake_fallback_question(state)
-    assert is_plan_intake_confirmation_message(raw)
-    out = _enforce_plan_creation_response_guardrails(raw, plan_intake_state=state)
-    assert out == raw
-    assert "• Target time: 3:40:00" in out
+    assert "\n- Target time: 3:40:00\n" in raw
+    assert raw.startswith("Here's what I have:\n\n")
+    mangled = _enforce_plan_creation_response_guardrails(raw, plan_intake_state=state)
+    assert mangled != raw
