@@ -209,10 +209,14 @@ def _marathon_goal_pace_sec_per_mi(plan_request: Dict[str, Any]) -> Optional[flo
     """Observational goal marathon pace from stated marathon target time (sec/mi)."""
     if not (_is_marathon(plan_request) and _is_target_time_goal(plan_request)):
         return None
-    secs = _parse_clock_seconds(plan_request.get("target_time"))
-    if secs is None or secs <= 0:
-        return None
-    return float(secs) / _MARATHON_DISTANCE_MI
+    from src.smartcoach_mobile_coach.runner_profile.recommendations.goal_aligned_pace import (
+        marathon_sec_per_mi_from_target_time,
+    )
+
+    return marathon_sec_per_mi_from_target_time(
+        plan_request.get("target_time"),
+        race_distance=plan_request.get("race_distance"),
+    )
 
 
 def _fmt_pace_min_mi(sec_per_mi: float) -> str:

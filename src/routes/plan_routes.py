@@ -527,16 +527,6 @@ def create_plan_route():
         validated_data = PlanCreateSchema.model_validate(data)
         plan_dict = validated_data.model_dump()
 
-        if str(plan_dict.get("primary_goal", "")).lower() == "target time":
-            return (
-                jsonify(
-                    {
-                        "error": "Target Time plans are under construction. Please choose 'Just Finish' to generate a plan."
-                    }
-                ),
-                400,
-            )
-
         user_timezone = resolve_timezone(plan_dict) or "UTC"
         plan_dict["user_timezone"] = user_timezone
 
@@ -628,16 +618,6 @@ def create_plan_draft_route():
 
         validated = PlanCreateSchema.model_validate(data)
         plan_request = validated.model_dump()
-
-        if str(plan_request.get("primary_goal", "")).lower() == "target time":
-            return (
-                jsonify(
-                    {
-                        "error": "Target Time plans are under construction. Please choose 'Just Finish' to generate a draft."
-                    }
-                ),
-                400,
-            )
 
         user_timezone = resolve_timezone(plan_request) or "UTC"
         plan_request["user_timezone"] = user_timezone

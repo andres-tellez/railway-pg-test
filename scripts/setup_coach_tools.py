@@ -10,6 +10,9 @@ Usage:
     python scripts/setup_coach_tools.py --prod             # prod (PROD_DATABASE_URL)
     python scripts/setup_coach_tools.py --only=get_run_splits
     python scripts/setup_coach_tools.py --prod --only=get_run_splits,search_runs
+    python scripts/setup_coach_tools.py --only=get_training_targets
+      # --only skips CREATE TABLE (avoids lock waits on existing Railway DBs)
+    python scripts/setup_coach_tools.py --skip-create-table --only=get_training_targets
 """
 
 import json
@@ -23,7 +26,6 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env.local")
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS coach_tools (
@@ -608,6 +610,37 @@ SEED_TOOLS = [
         "sort_order": 39,
     },
     {
+        "name": "get_training_targets",
+        "display_name": "Get Training Targets",
+        "category": "plan_creation",
+        "description": (
+            "Official training targets from canonical backend producers (same as "
+            "runner-profile zones and Insights). Returns goal-aligned marathon/easy/tempo/"
+            "threshold bands from the user's target time, current-fitness pace zones from "
+            "recent activities, HR guardrails, pace_authorities (plan=activity, "
+            "insights=marathon goal), baseline_status, and ambition_gap summary. Never invent "
+            "paces in prose — cite this tool's numbers only. Plan prescription stays "
+            "activity-calibrated; goal bands are the destination for Insights progress."
+        ),
+        "when_to_call": (
+            "After the user states a marathon target time (e.g. 3:40), before final plan "
+            "confirmation, and when explaining goal pace vs this week's plan paces. Also after "
+            "successful generate_training_plan (payload may be attached to that tool result)."
+        ),
+        "parameters_schema": {"type": "object", "properties": {}},
+        "returns_description": (
+            "training_target_context: schema_version, inputs (goal_aligned_status, target_time), "
+            "training_pace_recommendations, pace_authorities, current_fitness, hr_guardrails, "
+            "plan_phase, evidence, gap_summary."
+        ),
+        "data_source": (
+            "build_training_target_context → get_runner_training_pace_recommendations + "
+            "get_runner_profile + compute_baseline_status_for_athlete + evaluate_ambition_gap"
+        ),
+        "is_enabled": True,
+        "sort_order": 38,
+    },
+    {
         "name": "get_training_kpis",
         "display_name": "Get Training KPIs",
         "category": "training_progress",
@@ -922,28 +955,50 @@ SEED_TOOLS = [
 ]
 
 
+def _argv_has_only_filter(argv: list[str]) -> bool:
+    return any(a.startswith("--only=") for a in argv)
+
+
 def main():
     env_key = "PROD_DATABASE_URL" if "--prod" in sys.argv else "DATABASE_URL"
     db_url = os.environ.get(env_key)
     if not db_url:
-        print(f"ERROR: {env_key} not set")
+        print(f"ERROR: {env_key} not set", flush=True)
         sys.exit(1)
-    print(f"Using {env_key} -> {db_url.split('@')[1].split('/')[0]}")
+    print(f"Using {env_key} -> {db_url.split('@')[1].split('/')[0]}", flush=True)
 
-    engine = create_engine(db_url)
-    s = sessionmaker(bind=engine)()
+    engine = create_engine(
+        db_url,
+        connect_args={"connect_timeout": 15},
+        pool_pre_ping=True,
+    )
 
-    print("\nCreating coach_tools table...")
-    s.execute(text(_CREATE_TABLE))
-    s.commit()
-    print("  Done.")
+    skip_create = "--skip-create-table" in sys.argv or _argv_has_only_filter(sys.argv)
+    if skip_create:
+        print(
+            "\nSkipping coach_tools CREATE TABLE (--only or --skip-create-table).",
+            flush=True,
+        )
+    else:
+        print("\nCreating coach_tools table...", flush=True)
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("SET lock_timeout = '15s'"))
+                conn.execute(text(_CREATE_TABLE))
+        except Exception as exc:
+            print(f"ERROR: CREATE TABLE failed: {exc}", flush=True)
+            print(
+                "Tip: if the table already exists, use --only=name or --skip-create-table.",
+                flush=True,
+            )
+            engine.dispose()
+            sys.exit(1)
+        print("  Done.", flush=True)
 
     tools = _tools_to_seed_from_argv(sys.argv)
-    print(f"\nSeeding {len(tools)} tool(s)...")
-    for tool in tools:
-        s.execute(
-            text(
-                """
+    print(f"\nSeeding {len(tools)} tool(s)...", flush=True)
+    insert_sql = text(
+        """
                 INSERT INTO coach_tools (
                     name, display_name, category, description,
                     when_to_call, parameters_schema, returns_description,
@@ -965,34 +1020,56 @@ def main():
                     sort_order = EXCLUDED.sort_order,
                     updated_at = now()
             """
-            ),
-            {
-                **tool,
-                "parameters_schema": json.dumps(tool["parameters_schema"]),
-            },
+    )
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("SET lock_timeout = '15s'"))
+            for tool in tools:
+                conn.execute(
+                    insert_sql,
+                    {
+                        **tool,
+                        "parameters_schema": json.dumps(tool["parameters_schema"]),
+                    },
+                )
+                status = "ENABLED" if tool["is_enabled"] else "DISABLED"
+                print(
+                    f"  {status:>8}  {tool['name']:<25} ({tool['category']})",
+                    flush=True,
+                )
+    except Exception as exc:
+        print(f"\nERROR: seed failed: {exc}", flush=True)
+        print(
+            "If Python cannot reach Railway from your network, run the same INSERT "
+            "from Railway Query / your SQL client (see scripts/seed_get_training_targets.sql).",
+            flush=True,
         )
-        status = "ENABLED" if tool["is_enabled"] else "DISABLED"
-        print(f"  {status:>8}  {tool['name']:<25} ({tool['category']})")
-
-    s.commit()
+        engine.dispose()
+        sys.exit(1)
 
     # Validate
-    rows = s.execute(
-        text(
-            "SELECT name, display_name, category, is_enabled, call_count "
-            "FROM coach_tools ORDER BY sort_order"
-        )
-    ).fetchall()
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT name, display_name, category, is_enabled, call_count "
+                    "FROM coach_tools ORDER BY sort_order"
+                )
+            ).fetchall()
+    except Exception as exc:
+        print(f"\nWARNING: could not validate rows: {exc}", flush=True)
+        engine.dispose()
+        sys.exit(0)
 
-    print(f"\ncoach_tools ({len(rows)} rows):")
+    print(f"\ncoach_tools ({len(rows)} rows):", flush=True)
     print(
-        f"  {'Name':<25} {'Display':<25} {'Category':<20} {'Enabled':>7} {'Calls':>5}"
+        f"  {'Name':<25} {'Display':<25} {'Category':<20} {'Enabled':>7} {'Calls':>5}",
+        flush=True,
     )
     for r in rows:
         enabled = "yes" if r[3] else "no"
-        print(f"  {r[0]:<25} {r[1]:<25} {r[2]:<20} {enabled:>7} {r[4]:>5}")
+        print(f"  {r[0]:<25} {r[1]:<25} {r[2]:<20} {enabled:>7} {r[4]:>5}", flush=True)
 
-    s.close()
     engine.dispose()
 
 
