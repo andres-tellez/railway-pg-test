@@ -47,6 +47,15 @@ def soft_reset_runner_review_after_goal_edit(ux: Dict[str, Any]) -> None:
     ux.pop("plan_creation_phase", None)
 
 
+def accept_coach_suggested_goal_ux(ux: Dict[str, Any]) -> None:
+    """User tapped the runner-analysis realistic-target CTA — advance without re-showing review."""
+    ux.pop("plan_generation_confirmed", None)
+    ux["runner_review_delivered"] = True
+    ux["runner_tradeoff_resolved"] = True
+    ux.pop("runner_tradeoff_edit_focus", None)
+    ux.pop("runner_goal_edit_pending", None)
+
+
 def maybe_reset_split_confirm_on_material_draft_change(
     *,
     draft: Dict[str, Any],
@@ -77,7 +86,9 @@ def maybe_reset_split_confirm_on_material_draft_change(
             up.get("apply_coach_suggested_goal")
         )
         if not tradeoff_expand:
-            if goal_ux_touch and (from_goal_edit_flow or suggested_apply):
+            if goal_ux_touch and suggested_apply:
+                accept_coach_suggested_goal_ux(ux)
+            elif goal_ux_touch and from_goal_edit_flow:
                 soft_reset_runner_review_after_goal_edit(ux)
             else:
                 clear_plan_confirmation_ux(ux)

@@ -742,23 +742,6 @@ def build_deterministic_plan_intake_chip_assistant_payload(
     pis_merged: Dict[str, Any] = sync_plan_profile_hr_beat_ux(
         session, str(internal_user_id), dict(plan_intake_state)
     )
-    out_text = _natural_plan_intake_fallback_question(pis_merged)
-    runner_understanding_shown = plan_runner_understanding_shown(pis_merged)
-    out_text_with_preamble = apply_plan_activity_preamble_to_assistant_markdown(
-        out_text,
-        plan_creation_mode=True,
-        activity_summary=activity_summary,
-        runner_understanding_already_shown=runner_understanding_shown,
-    )
-    if out_text_with_preamble != out_text:
-        pis_merged = mark_plan_runner_understanding_shown(pis_merged)
-    out_text = out_text_with_preamble
-
-    structured_text: Dict[str, Any] = {
-        "type": "text",
-        "content": out_text,
-        "data": {},
-    }
     pis_for_client = dict(pis_merged)
     _, runner_review_api = _try_build_runner_review_bundle(
         session,
@@ -766,8 +749,6 @@ def build_deterministic_plan_intake_chip_assistant_payload(
         pis_for_client,
         anchor_local_date=anchor_local_date,
     )
-    if runner_review_api is not None:
-        structured_text["data"]["pre_generation_runner_review"] = runner_review_api
     if plan_creation_split_confirm_enabled() and pis_for_client.get(
         "ready_to_generate"
     ):
@@ -782,6 +763,35 @@ def build_deterministic_plan_intake_chip_assistant_payload(
                 ).get("intake_confirmed")
             ),
         )
+    ux_client = (
+        pis_for_client.get("ux") if isinstance(pis_for_client.get("ux"), dict) else {}
+    )
+    skip_runner_card = bool(
+        ux_client.get("runner_review_delivered")
+        and ux_client.get("runner_tradeoff_resolved")
+    )
+    if skip_runner_card:
+        out_text = "Got it — I updated your goal."
+    else:
+        out_text = _natural_plan_intake_fallback_question(pis_for_client)
+    runner_understanding_shown = plan_runner_understanding_shown(pis_for_client)
+    out_text_with_preamble = apply_plan_activity_preamble_to_assistant_markdown(
+        out_text,
+        plan_creation_mode=True,
+        activity_summary=activity_summary,
+        runner_understanding_already_shown=runner_understanding_shown,
+    )
+    if out_text_with_preamble != out_text:
+        pis_for_client = mark_plan_runner_understanding_shown(pis_for_client)
+    out_text = out_text_with_preamble
+
+    structured_text: Dict[str, Any] = {
+        "type": "text",
+        "content": out_text,
+        "data": {},
+    }
+    if runner_review_api is not None and not skip_runner_card:
+        structured_text["data"]["pre_generation_runner_review"] = runner_review_api
     structured_text["data"]["plan_intake_state"] = pis_for_client
     ui_prompt = _ui_prompt_from_plan_intake_state(pis_for_client)
     if isinstance(ui_prompt, dict):
