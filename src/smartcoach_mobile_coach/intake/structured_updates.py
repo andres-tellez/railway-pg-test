@@ -163,8 +163,11 @@ def apply_structured_updates(
         elif key == "plan_generation_confirmed":
             pass
         elif key == "apply_coach_suggested_goal":
-            # Intake soft-reset only; flag is read from ``up`` in soft_reset (not on draft).
-            pass
+            if pif._truthy(raw):
+                ux["runner_review_delivered"] = True
+                ux["runner_tradeoff_resolved"] = True
+                ux.pop("runner_tradeoff_edit_focus", None)
+                ux.pop("runner_goal_edit_pending", None)
         elif key == "confirm_plan_creation_intent":
             pass
         elif key == "decline_plan_creation_intent":
