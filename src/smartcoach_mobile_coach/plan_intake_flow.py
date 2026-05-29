@@ -17,6 +17,11 @@ from typing import Any, Dict, List, Optional
 
 from dateutil import parser as date_parser
 
+from src.smartcoach_mobile_coach.hr_calibration_intake import (
+    plan_profile_hr_beat_ui_active,
+)
+
+hr_calibration_ui_prompt_active = plan_profile_hr_beat_ui_active
 from src.smartcoach_mobile_coach.intake import normalize as intake_normalize
 from src.smartcoach_mobile_coach.intake import parsers as intake_parsers
 from src.smartcoach_mobile_coach.intake import state_machine as intake_state_machine
@@ -1216,6 +1221,8 @@ def build_core_structured_ui_prompt(
         return None
     missing_raw = intake_state.get("missing_required") or []
     missing = [m for m in missing_raw if isinstance(m, str)]
+    if hr_calibration_ui_prompt_active(intake_state):
+        return None
     if not missing:
         return None
     first = missing[0]

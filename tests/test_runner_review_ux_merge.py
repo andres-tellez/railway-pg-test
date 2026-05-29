@@ -297,7 +297,10 @@ def test_plan_generation_hidden_when_edit_focus_goal(monkeypatch_split_confirm):
         "alignment": {},
     }
     _finalize_phase(intake)
-    assert compute_plan_creation_ui(intake) is None
+    ui = compute_plan_creation_ui(intake)
+    assert ui is not None
+    assert ui.get("field_key") == "plan_intake.goal_adjustment"
+    assert ui.get("field_key") != "plan_intake.plan_generation_confirm"
 
 
 def test_plan_generation_hidden_when_readiness_defers(monkeypatch_split_confirm):
