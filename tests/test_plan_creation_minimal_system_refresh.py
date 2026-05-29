@@ -40,7 +40,6 @@ def _minimal_directive() -> ResponseDirective:
 
 
 def test_minimal_plan_creation_system_includes_alignment_pause_facts(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "1")
     intake = {
         "status": "collecting",
         "missing_required": [],

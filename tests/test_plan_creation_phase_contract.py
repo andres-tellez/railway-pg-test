@@ -31,11 +31,6 @@ def monkeypatch_split_confirm(monkeypatch):
     monkeypatch.setenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1", "1")
 
 
-@pytest.fixture
-def monkeypatch_structured_core_v1(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
-
-
 def test_sub_three_recap_phase_and_no_chips(monkeypatch_split_confirm):
     """Sub-3 + 3 days, ready, not intake_confirmed: recap is NL (no structured ui_prompt)."""
     base = {"draft": dict(DRAFT_SUB3), "ux": {}, "alignment": {}}
@@ -118,10 +113,7 @@ def test_full_sub_three_add_tuesday_recap_then_create_chip(monkeypatch_split_con
     assert gen_ui.get("field_key") == "plan_intake.plan_generation_confirm"
 
 
-def test_adjust_goal_restarts_full_intake_questionnaire(
-    monkeypatch_split_confirm,
-    monkeypatch_structured_core_v1,
-):
+def test_adjust_goal_restarts_full_intake_questionnaire(monkeypatch_split_confirm):
     """Choosing adjust_goal resets intake so the athlete sees the full question flow again."""
     s0 = update_plan_intake_state(
         {"draft": dict(DRAFT_SUB3), "ux": {}, "alignment": {}},

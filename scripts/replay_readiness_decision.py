@@ -52,24 +52,6 @@ def _bootstrap_env() -> Path:
     return project_root
 
 
-def _intake_alignment_enabled_from_env() -> bool:
-    return (
-        os.getenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1") or ""
-    ).strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-
-
-def _resolve_alignment_enabled(arg: str | None) -> bool:
-    if arg == "true":
-        return True
-    if arg == "false":
-        return False
-    return _intake_alignment_enabled_from_env()
-
-
 def default_replay_plan_intake_state() -> Dict[str, Any]:
     """Minimal committed-shaped state so ``build_plan_request_from_state`` succeeds."""
 
@@ -95,7 +77,6 @@ def run_replay(
     user_id: str,
     anchor_local_date: date,
     plan_intake_state: Dict[str, Any],
-    alignment_enabled: bool,
     trace_id: str | None = None,
 ) -> Dict[str, Any]:
     """Core replay (usable from tests via importlib). Returns a single JSON-serializable dict."""
@@ -115,7 +96,6 @@ def run_replay(
         str(user_id),
         plan_request=plan_request,
         plan_intake_state=plan_intake_state,
-        alignment_enabled=alignment_enabled,
         anchor_local_date=anchor_local_date,
     )
     api = assessment.as_api_dict()
@@ -146,12 +126,6 @@ def main() -> None:
         "--anchor-date",
         required=True,
         help="Local anchor calendar date YYYY-MM-DD (activity window boundaries).",
-    )
-    parser.add_argument(
-        "--alignment-enabled",
-        choices=("true", "false"),
-        default=None,
-        help="Override ambition+alignment (default: SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1).",
     )
     parser.add_argument(
         "--plan-intake-json",
@@ -191,7 +165,6 @@ def main() -> None:
             user_id=str(ns.user_id).strip(),
             anchor_local_date=anchor,
             plan_intake_state=plan_intake_state,
-            alignment_enabled=_resolve_alignment_enabled(ns.alignment_enabled),
         )
     finally:
         session.close()

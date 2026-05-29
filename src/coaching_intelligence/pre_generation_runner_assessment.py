@@ -151,15 +151,10 @@ def build_pre_generation_runner_assessment(
     *,
     plan_request: Dict[str, Any],
     plan_intake_state: Dict[str, Any],
-    alignment_enabled: bool,
     anchor_local_date: Optional[date] = None,
 ) -> PreGenerationRunnerAssessmentV1:
     """
-    Single place for activity summary + optional ambition/alignment evaluation.
-
-    When ``alignment_enabled`` is False, only ``activity_summary`` / ``runner_evidence``
-    is populated for analytics fields; ambition and intake alignment entries are omitted
-    from the snapshot.
+    Single place for activity summary + ambition/alignment evaluation.
 
     ``anchor_local_date`` is forwarded to ``build_runner_evidence`` when set so calendar-week
     windows match an athlete-local "today" (device anchor); omit to use server date.
@@ -176,25 +171,24 @@ def build_pre_generation_runner_assessment(
     ambition: Optional[Dict[str, Any]] = None
     alignment_state: Optional[Dict[str, Any]] = None
 
-    if alignment_enabled:
-        ambition = evaluate_ambition_gap(
-            weekly_mileage=float(summary.get("avg_miles_per_week_approx") or 0.0),
-            primary_goal=str(plan_request.get("primary_goal") or ""),
-            target_time=str(plan_request.get("target_time") or ""),
-            longest_run_miles=float(summary.get("longest_run_miles") or 0.0),
-        )
-        prior_answers, question_count, _asked = extract_alignment_answer_bookkeeping(
-            plan_intake_state
-        )
-        alignment_state = evaluate_intake_alignment_state(
-            ambition_stance=str(ambition.get("stance") or ""),
-            primary_goal=str(plan_request.get("primary_goal") or ""),
-            ambition_attributions=list(ambition.get("attributions") or []),
-            frequency_flexible=prior_answers.get("frequency_flexible"),
-            posture_priority=prior_answers.get("posture_priority"),
-            timeline_flexible=prior_answers.get("timeline_flexible"),
-            question_count=question_count,
-        )
+    ambition = evaluate_ambition_gap(
+        weekly_mileage=float(summary.get("avg_miles_per_week_approx") or 0.0),
+        primary_goal=str(plan_request.get("primary_goal") or ""),
+        target_time=str(plan_request.get("target_time") or ""),
+        longest_run_miles=float(summary.get("longest_run_miles") or 0.0),
+    )
+    prior_answers, question_count, _asked = extract_alignment_answer_bookkeeping(
+        plan_intake_state
+    )
+    alignment_state = evaluate_intake_alignment_state(
+        ambition_stance=str(ambition.get("stance") or ""),
+        primary_goal=str(plan_request.get("primary_goal") or ""),
+        ambition_attributions=list(ambition.get("attributions") or []),
+        frequency_flexible=prior_answers.get("frequency_flexible"),
+        posture_priority=prior_answers.get("posture_priority"),
+        timeline_flexible=prior_answers.get("timeline_flexible"),
+        question_count=question_count,
+    )
 
     return PreGenerationRunnerAssessmentV1(
         schema_version=SCHEMA_VERSION,

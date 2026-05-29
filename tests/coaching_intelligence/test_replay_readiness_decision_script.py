@@ -71,7 +71,6 @@ def test_replay_readiness_decision_smoke(
         user_id=str(uid),
         anchor_local_date=date(2026, 5, 12),
         plan_intake_state=mod.default_replay_plan_intake_state(),
-        alignment_enabled=False,
         trace_id="smoke-replay-trace",
     )
 

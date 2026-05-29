@@ -98,16 +98,6 @@ def user_requests_plan_generation(user_message: str) -> bool:
     )
 
 
-def _intake_alignment_feature_enabled() -> bool:
-    return (
-        os.getenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1") or ""
-    ).strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-
-
 def _recompute_alignment_branch(
     alignment: Dict[str, Any],
     draft: Dict[str, Any],
@@ -116,8 +106,6 @@ def _recompute_alignment_branch(
     After merging alignment answers, refresh ``alignment.state`` so ``ui_prompt`` and
     observability match resolved flags (stale state used to repeat the same chips).
     """
-    if not _intake_alignment_feature_enabled():
-        return alignment
     stance = alignment.get("ambition_stance")
     if not stance:
         return alignment
@@ -226,8 +214,6 @@ def alignment_pause_coaching_facts_system_section(
     """
     if not isinstance(intake_state, dict):
         return ""
-    if not _intake_alignment_feature_enabled():
-        return ""
     al = intake_state.get("alignment")
     if not isinstance(al, dict):
         return ""
@@ -294,15 +280,6 @@ def alignment_pause_coaching_facts_system_section(
         "Keep coaching prose before the chips to **at most 5 short sentences** total (interpretation may need two); "
         "warm and specific; no filler openers (“Great!”, “I’m here to help”)."
     ).strip()
-
-
-def structured_intake_core_v1_enabled() -> bool:
-    """
-    When true, core plan-intake athletic fields are owned by structured commits
-    (inline controls + structured_input), not conversational NL merge into draft.
-    """
-    raw = (os.getenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1") or "").strip().lower()
-    return raw in ("1", "true", "yes", "on")
 
 
 def _normalize_goal(value: Any) -> Optional[str]:
@@ -726,61 +703,6 @@ def _normalize_training_days(value: Any) -> Optional[List[str]]:
     return merged or None
 
 
-def _training_day_message_candidates(text: str) -> List[str]:
-    """
-    Build short strings to try with _normalize_training_days when the user
-    mixes prose with a day range (e.g. "Thanks, Mon-Thu").
-    """
-    msg = (text or "").strip()
-    if not msg:
-        return []
-    out: List[str] = []
-    seen: set[str] = set()
-
-    def _add(s: str) -> None:
-        t = s.strip()
-        if not t:
-            return
-        k = t.lower()
-        if k not in seen:
-            seen.add(k)
-            out.append(t)
-
-    _add(msg)
-    for part in re.split(r"[,;]", msg):
-        _add(part)
-    # Hyphen / en-dash weekday span within a longer line
-    for m in re.finditer(
-        r"(?is)\b([a-z]{3,12})\s*[-–—]\s*([a-z]{3,12})\b",
-        msg,
-    ):
-        _add(f"{m.group(1)}-{m.group(2)}")
-    # "Monday through Thursday" style
-    for m in re.finditer(
-        r"(?is)\b([a-z]+)\s+(?:through|thru|to)\s+([a-z]+)\b",
-        msg,
-    ):
-        _add(f"{m.group(1)} through {m.group(2)}")
-    return out
-
-
-def _fill_training_days_from_user_message(
-    draft: Dict[str, Any],
-    ux: Dict[str, Any],
-    text: Optional[str],
-) -> None:
-    """When ``training_days`` is still empty, parse weekday phrases from the user line."""
-    td = draft.get("training_days")
-    if isinstance(td, list) and len(td) > 0:
-        return
-    for cand in _training_day_message_candidates((text or "").strip()):
-        ndays = _normalize_training_days(cand)
-        if ndays:
-            draft["training_days"] = ndays
-            ux.pop("training_days_count", None)
-            return
-
-
 _TRAINING_DAY_COUNT_WORDS: Dict[str, int] = {
     "three": 3,
     "four": 4,
@@ -858,139 +780,6 @@ def _parse_race_date_natural_language(raw: Any) -> Optional[str]:
     except (ValueError, TypeError, OverflowError, OSError):
         return None
     return dt.date().isoformat()
-
-
-# Month name or abbreviation + day (optional ordinal / year). Used when the
-# model omits ``race_date`` in ``updates`` but the user answered with a date phrase.
-_RACE_DATE_PHRASE_RE = re.compile(
-    r"(?is)\b("
-    r"(?:january|february|march|april|may|june|july|august|september|october|november|december|"
-    r"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\.?)"
-    r"\s+"
-    r"(\d{1,2})(?:st|nd|rd|th)?"
-    r"(?:\s*,?\s*(\d{4}))?"
-    r"\b"
-)
-
-
-def _extract_race_date_phrases_from_message(text: str) -> List[str]:
-    """
-    Build parse candidates: full message only when it plausibly names a calendar day
-    (avoids dateutil on unrelated lines like “Time… 3:40”), then month+day substrings.
-    """
-    out: List[str] = []
-    t = (text or "").strip()
-    if not t:
-        return out
-    has_month_day = _RACE_DATE_PHRASE_RE.search(t) is not None
-    has_numeric_date = re.search(
-        r"(?is)\b\d{4}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{1,2}\b"
-        r"|\b\d{1,2}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{2,4}\b",
-        t,
-    )
-    if len(t) <= 72 and (has_month_day or has_numeric_date):
-        out.append(t)
-    found: List[tuple[int, int, str]] = []
-    for m in _RACE_DATE_PHRASE_RE.finditer(t):
-        month = m.group(1)
-        day = m.group(2)
-        year = m.group(3)
-        chunk = f"{month.strip()} {day}".strip()
-        if year:
-            chunk = f"{chunk}, {year}"
-        found.append((m.start(), len(m.group(0)), chunk))
-    found.sort(key=lambda x: (-x[1], x[0]))
-    for _, _, chunk in found:
-        if chunk not in out:
-            out.append(chunk)
-    return out
-
-
-def _fill_race_date_from_user_message(
-    draft: Dict[str, Any], text: Optional[str]
-) -> None:
-    """When ``race_date`` is still empty, parse spoken dates from the latest user line."""
-    rd = draft.get("race_date")
-    if isinstance(rd, str) and rd.strip():
-        return
-    for candidate in _extract_race_date_phrases_from_message((text or "").strip()):
-        nd = _parse_race_date_natural_language(candidate)
-        if nd:
-            draft["race_date"] = nd
-            return
-
-
-def _fill_primary_goal_from_user_message(
-    draft: Dict[str, Any], text: Optional[str]
-) -> None:
-    """When ``primary_goal`` is empty, map short natural answers (e.g. just finish / time goal)."""
-    pg = draft.get("primary_goal")
-    if isinstance(pg, str) and pg.strip():
-        return
-    msg = (text or "").strip()
-    if not msg:
-        return
-    ng = _normalize_goal(msg)
-    if ng:
-        draft["primary_goal"] = ng
-
-
-def _infer_target_time_from_message(text: str) -> Optional[str]:
-    """
-    Pick a marathon-style clock time from free text (e.g. "3:40", "about 3:40:00").
-
-    Ignores times with hour > 12 (reduces false positives vs odd numeric blobs).
-    """
-    if not isinstance(text, str):
-        return None
-    ts = text.strip()
-    if not ts:
-        return None
-    if re.fullmatch(r"\d{1,2}:\d{2}(:\d{2})?", ts):
-        return _normalize_target_time_phrase(ts)
-    best: Optional[str] = None
-    for m in re.finditer(r"\b(\d{1,2}:\d{2}(:\d{2})?)\b", ts):
-        token = m.group(1)
-        parts = token.split(":")
-        try:
-            h = int(parts[0])
-            mi = int(parts[1])
-        except (ValueError, IndexError):
-            continue
-        if not (0 <= h <= 12 and 0 <= mi <= 59):
-            continue
-        if h == 0 and mi == 0:
-            continue
-        cand = _normalize_target_time_phrase(token)
-        if cand:
-            best = cand
-    return best
-
-
-def _fill_goal_time_from_user_message(
-    draft: Dict[str, Any], text: Optional[str]
-) -> None:
-    """When goal/time missing, infer Target Time + target_time from a clock phrase."""
-    msg = (text or "").strip()
-    if not msg:
-        return
-    norm_time = _infer_target_time_from_message(msg)
-    if not norm_time:
-        return
-    pg = draft.get("primary_goal")
-    tt = draft.get("target_time")
-    has_pg = isinstance(pg, str) and pg.strip()
-    has_tt = isinstance(tt, str) and tt.strip()
-    if not has_pg:
-        draft["primary_goal"] = PrimaryGoal.TARGET_TIME.value
-        draft["target_time"] = norm_time
-        return
-    if pg == PrimaryGoal.TARGET_TIME.value and not has_tt:
-        draft["target_time"] = norm_time
-        return
-    if pg == PrimaryGoal.JUST_FINISH.value:
-        draft["primary_goal"] = PrimaryGoal.TARGET_TIME.value
-        draft["target_time"] = norm_time
 
 
 def _normalize_target_time_phrase(raw: Any) -> Optional[str]:
@@ -1369,14 +1158,12 @@ def update_plan_intake_state(
         prior_training_days_for_expansion=prior_training_days_for_expansion,
     )
 
-    skip_nl_core = structured_intake_core_v1_enabled()
     intake_parsers.apply_natural_language_fills(
         draft=draft,
         ux=ux,
         alignment_answers=alignment_answers,
         prior_alignment_answers=prior_alignment_answers,
         source_user_message=source_user_message,
-        skip_nl_core=skip_nl_core,
     )
     intake_normalize.validate_long_run_matches_training_days(draft, errors)
 
@@ -1413,13 +1200,11 @@ def build_core_structured_ui_prompt(
     intake_state: Optional[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
     """
-    Inline controls for core athletic intake when SMARTCOACH_STRUCTURED_INTAKE_CORE_V1 is on.
+    Inline controls for core athletic intake (structured commits only for core fields).
 
     Alignment pause prompts take precedence in the orchestrator; this fills remaining slots
     from ``missing_required[0]``.
     """
-    if not structured_intake_core_v1_enabled():
-        return None
     if not isinstance(intake_state, dict):
         return None
     ux_in = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}

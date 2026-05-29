@@ -112,7 +112,6 @@ def _record_plan_generation_tool_event(
 
 _DEFAULT_KPI_WEEKS = 4
 _MAX_KPI_WEEKS = 52
-_INTAKE_ALIGNMENT_FEATURE_FLAG = "SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1"
 
 
 def _increment_tool_call_count(session: Session, tool_name: str) -> None:
@@ -165,14 +164,6 @@ def _coerce_tool_bool(value: Any, default: bool) -> bool:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return bool(value)
     return default
-
-
-def _intake_alignment_enabled() -> bool:
-    return (os.getenv(_INTAKE_ALIGNMENT_FEATURE_FLAG) or "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
 
 
 def _parse_optional_float(value: Any) -> Optional[float]:

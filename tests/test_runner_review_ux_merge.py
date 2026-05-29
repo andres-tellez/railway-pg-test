@@ -485,7 +485,6 @@ def test_runner_analysis_card_rendered_on_level_ready(
 
 
 def test_goal_adjustment_ui_offers_evidence_based_presets(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
     from src.smartcoach_mobile_coach.plan_creation_ui import _goal_adjustment_ui_prompt
 
     intake = {

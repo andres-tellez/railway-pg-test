@@ -20,7 +20,6 @@ from src.coaching_intelligence.pre_generation_runner_review import (
     runner_review_feature_enabled,
 )
 from src.smartcoach_mobile_coach.agent_tools import (
-    _intake_alignment_enabled,
     tool_update_plan_intake,
 )
 from src.smartcoach_mobile_coach.dialogue_manager import (
@@ -46,7 +45,6 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     plan_intake_alignment_pause_active,
     plan_runner_understanding_shown,
     schedule_confirmation_system_section,
-    structured_intake_core_v1_enabled,
 )
 from src.smartcoach_mobile_coach.readiness_gate import get_or_compute_readiness_gate
 from src.smartcoach_mobile_coach.thread_derived_context import DerivedThreadCoachContext
@@ -284,7 +282,6 @@ def _try_build_runner_review_bundle(
             internal_user_id=str(internal_user_id),
             plan_request=plan_request,
             plan_intake_state=plan_intake_state,
-            alignment_enabled=_intake_alignment_enabled(),
             anchor_local_date=_anchor_date_from_device_context(anchor_local_date),
         )
         assessment_api = gate_result.assessment_api
@@ -337,7 +334,7 @@ def _plan_creation_minimal_system_content(
     """Minimal plan-creation system prompt (same sections as the pre-loop build)."""
     return _join_nonempty_system_sections(
         PLAN_CREATION_SYSTEM_PROMPT_BASE,
-        _structured_intake_core_v1_plan_creation_addon(),
+        _structured_intake_plan_creation_addon(),
         _plan_intake_phase_system_section(plan_intake_ctx),
         _device_anchor_system_section(anchor_local_date, client_timezone),
         activity_ctx_block,
@@ -451,9 +448,7 @@ def _ui_prompt_from_plan_intake_state(
     return compute_plan_creation_ui(intake_state)
 
 
-def _structured_intake_core_v1_plan_creation_addon() -> str:
-    if not structured_intake_core_v1_enabled():
-        return ""
+def _structured_intake_plan_creation_addon() -> str:
     return (
         "## Structured intake (core athletic fields)\n"
         "- **Authoritative state:** `race_distance`, `race_date`, `primary_goal`, `target_time`, and "

@@ -35,7 +35,6 @@ from src.coaching_intelligence.pre_generation_runner_review import (
     runner_review_feature_enabled,
 )
 from src.smartcoach_mobile_coach.agent_tools import (
-    _intake_alignment_enabled,
     execute_tool,
     tool_generate_training_plan,
     tool_update_plan_intake,
@@ -87,7 +86,7 @@ from src.smartcoach_mobile_coach.orchestrator.plan_creation_branch import (
     _plan_creation_minimal_system_content,
     _plan_creation_system_section,
     _plan_intake_phase_system_section,
-    _structured_intake_core_v1_plan_creation_addon,
+    _structured_intake_plan_creation_addon,
     _try_build_runner_review_bundle,
     _ui_prompt_from_plan_intake_state,
 )
@@ -101,7 +100,6 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
     schedule_confirmation_system_section,
-    structured_intake_core_v1_enabled,
     user_confirms_plan_intake,
     user_requests_plan_generation,
 )
