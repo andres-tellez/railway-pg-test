@@ -434,7 +434,7 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
                 else {}
             )
             step = ux_hr.get("hr_calibration_step")
-            if step == HR_CALIBRATION_STEP_BIRTH_YEAR:
+            if step == PLAN_PROFILE_HR_STEP_BIRTH_YEAR:
                 return (
                     "What year were you born? This helps estimate heart-rate zones "
                     "if you don't enter a max heart rate."
