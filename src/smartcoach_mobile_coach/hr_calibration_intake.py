@@ -24,20 +24,28 @@ HR_CALIBRATION_STEP_BIRTH_YEAR = PLAN_PROFILE_HR_STEP_BIRTH_YEAR
 HR_CALIBRATION_STEP_MAX_HR = PLAN_PROFILE_HR_STEP_MAX_HR
 
 
+def minimal_coach_bootstrap_profile(user_id: str) -> Dict[str, Any]:
+    """Placeholder body stats so INSERT satisfies NOT NULL columns until onboarding fills real values."""
+    return {
+        "user_id": str(user_id),
+        "age_group": "30-39",
+        "unit_system": "imperial",
+        "height_feet": 5,
+        "height_inches": 10,
+        "weight": 165.0,
+    }
+
+
 def ensure_user_profile_row(session: Any, user_id: str) -> Dict[str, Any]:
     """Create a minimal profile row so Coach can save birth year / max HR without onboarding."""
     existing = get_user_profile(session, str(user_id))
     if existing:
         return dict(existing)
-    save_user_profile(
-        session,
-        {
-            "user_id": str(user_id),
-            "age_group": "30-39",
-            "unit_system": "imperial",
-        },
+    save_user_profile(session, minimal_coach_bootstrap_profile(str(user_id)))
+    return dict(
+        get_user_profile(session, str(user_id))
+        or minimal_coach_bootstrap_profile(str(user_id))
     )
-    return dict(get_user_profile(session, str(user_id)) or {"user_id": str(user_id)})
 
 
 def sync_plan_profile_hr_beat_ux(
