@@ -137,6 +137,9 @@ def test_ensure_user_profile_row_bootstraps_minimal_profile(mock_get, mock_save)
     out = ensure_user_profile_row(session, "u1")
     assert out["user_id"] == "u1"
     mock_save.assert_called_once()
+    saved = mock_save.call_args[0][1]
+    assert saved["height_feet"] == 5
+    assert saved["height_inches"] == 10
 
 
 @patch(
