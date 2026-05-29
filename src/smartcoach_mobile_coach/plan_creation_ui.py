@@ -226,6 +226,44 @@ def _alignment_ui_prompt(intake_state: Dict[str, Any]) -> Optional[Dict[str, Any
     return None
 
 
+def _intake_confirmation_ui_prompt(
+    intake_state: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Yes / No chips for the ready-to-generate recap (split-confirm flow)."""
+    if not plan_creation_split_confirm_enabled():
+        return None
+    if not intake_state.get("ready_to_generate"):
+        return None
+    if plan_profile_hr_beat_ui_active(intake_state):
+        return None
+    ux = intake_state.get("ux") if isinstance(intake_state.get("ux"), dict) else {}
+    if ux.get("intake_confirmed"):
+        return None
+    if str(ux.get("plan_creation_phase") or "") != PHASE_AWAITING_INTAKE_CONFIRMATION:
+        return None
+    return {
+        "version": 1,
+        "field_key": "plan_intake.intake_confirmation",
+        "control_type": "single_select_chips",
+        "selection_mode": "single",
+        "required": True,
+        "options": [
+            {
+                "id": "intake_yes",
+                "label": "Yes",
+                "user_message": "Yes, that looks right.",
+                "updates": {"intake_confirmed": True},
+            },
+            {
+                "id": "intake_no",
+                "label": "No",
+                "user_message": "No, I'd like to change something.",
+                "updates": {"intake_recap_edit_requested": True},
+            },
+        ],
+    }
+
+
 def _schedule_confirmation_ui_prompt(
     intake_state: Dict[str, Any],
 ) -> Optional[Dict[str, Any]]:
@@ -532,7 +570,10 @@ def recompute_plan_creation_phase(state: Dict[str, Any]) -> None:
         return
 
     if not ux.get("intake_confirmed"):
-        ux["plan_creation_phase"] = PHASE_AWAITING_INTAKE_CONFIRMATION
+        if ux.get("intake_edit_mode"):
+            ux["plan_creation_phase"] = PHASE_COLLECTING_INTAKE
+        else:
+            ux["plan_creation_phase"] = PHASE_AWAITING_INTAKE_CONFIRMATION
         state["ux"] = ux
         return
 
@@ -686,6 +727,11 @@ def compute_plan_creation_ui(
     if hr_cal is not None:
         return hr_cal
 
+    if phase == PHASE_AWAITING_INTAKE_CONFIRMATION:
+        recap = _intake_confirmation_ui_prompt(intake_state)
+        if recap is not None:
+            return recap
+
     sched = _schedule_confirmation_ui_prompt(intake_state)
     if sched is not None:
         return sched
@@ -702,8 +748,6 @@ def compute_plan_creation_ui(
     ):
         return build_core_structured_ui_prompt(intake_state)
 
-    if phase == PHASE_AWAITING_INTAKE_CONFIRMATION:
-        return None
     if phase == PHASE_GENERATED:
         return None
 

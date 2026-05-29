@@ -31,13 +31,28 @@ def monkeypatch_split_confirm(monkeypatch):
     monkeypatch.setenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1", "1")
 
 
-def test_sub_three_recap_phase_and_no_chips(monkeypatch_split_confirm):
-    """Sub-3 + 3 days, ready, not intake_confirmed: recap is NL (no structured ui_prompt)."""
+def test_sub_three_recap_phase_and_yes_no_chips(monkeypatch_split_confirm):
+    """Sub-3 + 3 days, ready, not intake_confirmed: recap + Yes/No chips."""
     base = {"draft": dict(DRAFT_SUB3), "ux": {}, "alignment": {}}
     s = update_plan_intake_state(base, updates={}, source_user_message="")
     assert s.get("ready_to_generate") is True
     assert s["ux"].get("plan_creation_phase") == PHASE_AWAITING_INTAKE_CONFIRMATION
-    assert compute_plan_creation_ui(s) is None
+    ui = compute_plan_creation_ui(s)
+    assert ui is not None
+    assert ui.get("field_key") == "plan_intake.intake_confirmation"
+    labels = {o["label"] for o in (ui.get("options") or [])}
+    assert labels == {"Yes", "No"}
+
+
+def test_intake_confirmation_yes_chip_marks_confirmed(monkeypatch_split_confirm):
+    base = {"draft": dict(DRAFT_SUB3), "ux": {}, "alignment": {}}
+    s0 = update_plan_intake_state(base, updates={}, source_user_message="")
+    s1 = update_plan_intake_state(
+        s0,
+        updates={"intake_confirmed": True},
+        source_user_message="Yes, that looks right.",
+    )
+    assert s1["ux"].get("intake_confirmed") is True
 
 
 def test_full_sub_three_add_tuesday_recap_then_create_chip(monkeypatch_split_confirm):
