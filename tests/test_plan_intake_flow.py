@@ -10,7 +10,6 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     mark_plan_runner_understanding_shown,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
-    structured_intake_core_v1_enabled,
     update_plan_intake_state,
     user_confirms_plan_intake,
 )
@@ -30,8 +29,7 @@ def test_plan_intake_missing_required_order_for_empty_draft():
     assert state["ux"]["stage"] == "understand_runner"
 
 
-def test_structured_core_v1_skips_nl_race_date_from_user_message(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
+def test_structured_core_skips_nl_race_date_from_user_message():
     state = update_plan_intake_state(
         None,
         updates={"race_distance": "Marathon"},
@@ -40,24 +38,7 @@ def test_structured_core_v1_skips_nl_race_date_from_user_message(monkeypatch):
     assert state["draft"].get("race_date") is None
 
 
-def test_structured_core_v1_off_still_fills_nl_race_date(monkeypatch):
-    monkeypatch.delenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", raising=False)
-    state = update_plan_intake_state(
-        None,
-        updates={"race_distance": "Marathon"},
-        source_user_message="October 11, 2026",
-    )
-    assert state["draft"].get("race_date") == "2026-10-11"
-
-
-def test_build_core_structured_ui_prompt_disabled_without_flag(monkeypatch):
-    monkeypatch.delenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", raising=False)
-    state = update_plan_intake_state(None)
-    assert build_core_structured_ui_prompt(state) is None
-
-
-def test_build_core_structured_ui_prompt_race_distance_when_collecting(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
+def test_build_core_structured_ui_prompt_race_distance_when_collecting():
     state = update_plan_intake_state(None)
     prompt = build_core_structured_ui_prompt(state)
     assert prompt is not None
@@ -70,9 +51,8 @@ def test_build_core_structured_ui_prompt_race_distance_when_collecting(monkeypat
     )
 
 
-def test_build_core_structured_ui_prompt_target_time_includes_340_chip(monkeypatch):
+def test_build_core_structured_ui_prompt_target_time_includes_340_chip():
     """Coach often recommends ~3:40 — core intake chips must include it (matches goal_adjustment)."""
-    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "1")
     state = update_plan_intake_state(
         None,
         updates={
@@ -95,13 +75,7 @@ def test_build_core_structured_ui_prompt_target_time_includes_340_chip(monkeypat
     assert by_label["3:40"].get("updates", {}).get("target_time") == "3:40:00"
 
 
-def test_structured_intake_core_v1_enabled_truthy(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_STRUCTURED_INTAKE_CORE_V1", "on")
-    assert structured_intake_core_v1_enabled() is True
-
-
 def test_alignment_state_refreshes_after_frequency_structured_answer(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "1")
     base = update_plan_intake_state(
         None,
         updates={
@@ -155,8 +129,7 @@ def test_alignment_state_refreshes_after_frequency_structured_answer(monkeypatch
     assert (inner.get("allowed_question_categories") or []) == []
 
 
-def test_alignment_pause_coaching_facts_section_when_paused(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "1")
+def test_alignment_pause_coaching_facts_section_when_paused():
     intake = {
         "draft": {
             "primary_goal": "Target Time",
@@ -397,26 +370,6 @@ def test_plan_intake_training_days_count_is_valid_partial_input():
     assert state["draft"]["target_time"] == "3:30:00"
 
 
-def test_plan_intake_training_days_count_from_source_message_preserves_fast_track_inputs():
-    state = update_plan_intake_state(
-        None,
-        updates={
-            "race_name": "Chicago Marathon",
-            "race_date": "Oct 11 2026",
-            "primary_goal": "Target Time",
-            "target_time": "3:30",
-        },
-        source_user_message="Chicago Oct 11, 3:30 goal, 5 days per week",
-    )
-    assert state["ready_to_generate"] is False
-    assert state["errors"] == []
-    assert state["missing_required"] == ["training_days"]
-    assert state["ux"]["training_days_count"] == 5
-    assert state["ux"]["stage"] == "details"
-    assert state["draft"]["race_distance"] == "Marathon"
-    assert state["draft"]["race_name"] == "Chicago Marathon"
-
-
 def test_plan_intake_training_days_actual_weekdays_clear_count_partial():
     state = update_plan_intake_state(
         None,
@@ -471,64 +424,6 @@ def test_plan_intake_normalizes_race_distance_synonyms():
         updates={"race_distance": "full marathon"},
     )
     assert state["draft"]["race_distance"] == "Marathon"
-
-
-def test_plan_intake_infers_race_distance_from_source_user_message_bare_marathon():
-    """User says 'a marathon' (no event title); model may omit race_distance in updates."""
-    state = update_plan_intake_state(
-        None,
-        updates={},
-        source_user_message="A marathon",
-    )
-    assert state["draft"]["race_distance"] == "Marathon"
-    assert "race_distance" not in state["missing_required"]
-
-
-def test_plan_intake_infers_half_from_source_user_message():
-    state = update_plan_intake_state(
-        None,
-        updates={},
-        source_user_message="A half marathon in the spring",
-    )
-    assert state["draft"]["race_distance"] == "Half Marathon"
-
-
-def test_plan_intake_infers_race_date_october_11_from_user_message():
-    state = update_plan_intake_state(
-        None,
-        updates={"race_distance": "Marathon"},
-        source_user_message="October 11",
-    )
-    rd = state["draft"].get("race_date")
-    assert isinstance(rd, str) and rd.strip()
-    assert "-10-11" in rd
-    assert "race_date" not in state["missing_required"]
-
-
-def test_plan_intake_race_date_persists_when_later_message_adds_goal_time_only():
-    s1 = update_plan_intake_state(
-        None,
-        updates={"race_distance": "Marathon"},
-        source_user_message="October 11",
-    )
-    assert s1["draft"].get("race_date")
-    s2 = update_plan_intake_state(
-        s1,
-        updates={},
-        source_user_message="Time.... 3:40",
-    )
-    assert s2["draft"].get("race_date") == s1["draft"].get("race_date")
-    assert s2["draft"].get("primary_goal") == "Target Time"
-    assert s2["draft"].get("target_time")
-
-
-def test_plan_intake_infers_just_finish_from_user_message():
-    state = update_plan_intake_state(
-        None,
-        updates={"race_distance": "Marathon", "race_date": "2026-10-11"},
-        source_user_message="Just finish",
-    )
-    assert state["draft"]["primary_goal"] == "Just Finish"
 
 
 def test_plan_intake_fills_race_name_from_source_user_message():
@@ -612,68 +507,6 @@ def test_plan_intake_parses_hyphen_weekday_range_mon_sat():
         "Fri",
         "Sat",
     ]
-
-
-def test_plan_intake_infers_training_days_mon_thu_from_source_message_only():
-    """Model omits training_days in updates; user says Mon-Thu (eager merge path)."""
-    state = update_plan_intake_state(
-        None,
-        updates={
-            "race_distance": "Marathon",
-            "race_date": "2026-10-11",
-            "primary_goal": "Target Time",
-            "target_time": "3:40",
-        },
-        source_user_message="Mon-Thu",
-    )
-    assert state["draft"]["training_days"] == ["Mon", "Tue", "Wed", "Thu"]
-    assert "training_days" not in state["missing_required"]
-    assert state["ready_to_generate"] is True
-
-
-def test_plan_intake_infers_training_days_from_message_after_prose_prefix():
-    state = update_plan_intake_state(
-        None,
-        updates={
-            "race_distance": "Marathon",
-            "race_date": "2026-10-11",
-            "primary_goal": "Target Time",
-            "target_time": "3:40",
-        },
-        source_user_message="Sounds good, Mon-Thu",
-    )
-    assert state["draft"]["training_days"] == ["Mon", "Tue", "Wed", "Thu"]
-    assert state["ready_to_generate"] is True
-
-
-def test_plan_intake_infers_training_days_monday_through_thursday_from_message():
-    state = update_plan_intake_state(
-        None,
-        updates={
-            "race_distance": "Marathon",
-            "race_date": "2026-10-11",
-            "primary_goal": "Target Time",
-            "target_time": "3:40",
-        },
-        source_user_message="Monday through Thursday",
-    )
-    assert state["draft"]["training_days"] == ["Mon", "Tue", "Wed", "Thu"]
-    assert state["ready_to_generate"] is True
-
-
-def test_plan_intake_infers_target_time_from_message_when_goal_missing():
-    state = update_plan_intake_state(
-        None,
-        updates={
-            "race_distance": "Marathon",
-            "race_date": "2026-10-11",
-            "training_days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-        },
-        source_user_message="3:40",
-    )
-    assert state["draft"]["primary_goal"] == "Target Time"
-    assert state["draft"]["target_time"] == "3:40"
-    assert state["ready_to_generate"] is True
 
 
 def test_plan_intake_infers_alignment_frequency_flexible_from_user_message():
@@ -783,8 +616,7 @@ def test_schedule_confirm_no_reopens_training_days():
     assert "training_days" in st["missing_required"]
 
 
-def test_ready_to_generate_false_until_alignment_resolved(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "1")
+def test_ready_to_generate_false_until_alignment_resolved():
     s0 = update_plan_intake_state(
         None,
         updates={

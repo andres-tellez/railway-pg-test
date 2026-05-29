@@ -42,7 +42,6 @@ def _state() -> dict:
 
 
 def test_generate_plan_pauses_for_high_tension_when_alignment_enabled(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "true")
     monkeypatch.setattr(
         agent_tools,
         "build_plan_request_from_state",
@@ -89,7 +88,6 @@ def test_generate_plan_pauses_for_high_tension_when_alignment_enabled(monkeypatc
 
 
 def test_generate_plan_coherent_path_still_invokes_planner(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "true")
     monkeypatch.setattr(
         agent_tools,
         "build_plan_request_from_state",
@@ -143,59 +141,7 @@ def test_generate_plan_coherent_path_still_invokes_planner(monkeypatch):
     assert out["error"] == "plan_generation_failed"
 
 
-def test_feature_flag_off_preserves_legacy_generation_path(monkeypatch):
-    monkeypatch.delenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", raising=False)
-    monkeypatch.setattr(
-        agent_tools,
-        "build_plan_request_from_state",
-        lambda _s: _s["draft"],
-    )
-    monkeypatch.setattr(
-        pgra,
-        "build_runner_evidence",
-        lambda *_a, **_k: _stub_evidence(
-            avg_miles_per_week_approx=30.0,
-            longest_run_miles=10.0,
-            activities_found=10,
-        ),
-    )
-
-    def _ambition_gap_must_not_run(**_kwargs):
-        raise AssertionError("alignment evaluator should not run when feature is off")
-
-    monkeypatch.setattr(pgra, "evaluate_ambition_gap", _ambition_gap_must_not_run)
-
-    def _alignment_state_must_not_run(**_kwargs):
-        raise AssertionError("alignment state should not run when feature is off")
-
-    monkeypatch.setattr(
-        pgra, "evaluate_intake_alignment_state", _alignment_state_must_not_run
-    )
-
-    def _raise_after_reaching_planner(**_kwargs):
-        raise RuntimeError("planner-called")
-
-    monkeypatch.setattr(
-        agent_tools, "run_v2_plan_generation", _raise_after_reaching_planner
-    )
-
-    state = _state()
-    state["draft"]["primary_goal"] = "Just Finish"
-    state["draft"]["target_time"] = ""
-    state["draft"]["training_days"] = ["Tue", "Thu", "Sat", "Sun"]
-
-    out = agent_tools.tool_generate_training_plan(
-        session=MagicMock(),
-        internal_user_id="u-1",
-        args={"confirm": True},
-        current_state=state,
-    )
-
-    assert out["error"] == "plan_generation_failed"
-
-
 def test_high_tension_resolved_still_obeys_readiness_gate(monkeypatch):
-    monkeypatch.setenv("SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1", "true")
     monkeypatch.setattr(
         agent_tools,
         "build_plan_request_from_state",
@@ -302,7 +248,6 @@ def test_generate_plan_uses_shared_readiness_gate_helper(monkeypatch):
         internal_user_id,
         plan_request,
         plan_intake_state,
-        alignment_enabled,
         anchor_local_date=None,
     ):
         gate_calls["count"] += 1
@@ -357,7 +302,6 @@ def test_generate_plan_deferred_logs_plan_generation_readiness_deferred_with_tra
         internal_user_id,
         plan_request,
         plan_intake_state,
-        alignment_enabled,
         anchor_local_date=None,
     ):
         return SimpleNamespace(

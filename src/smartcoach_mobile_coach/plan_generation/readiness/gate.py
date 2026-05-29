@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import date
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -18,16 +17,7 @@ from src.coaching_intelligence.pre_generation_runner_assessment import (
 from src.smartcoach_mobile_coach.readiness_gate import get_or_compute_readiness_gate
 
 logger = logging.getLogger("smartcoach_mobile_coach")
-_INTAKE_ALIGNMENT_FEATURE_FLAG = "SMARTCOACH_ENABLE_INTAKE_ALIGNMENT_V1"
 _ASSESSMENT_FAILURE_DETAIL_MAX_LEN = 500
-
-
-def _intake_alignment_enabled() -> bool:
-    return (os.getenv(_INTAKE_ALIGNMENT_FEATURE_FLAG) or "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
 
 
 def _next_alignment_question(allowed_categories: list[str]) -> str:
@@ -73,7 +63,6 @@ def evaluate_generation_readiness(
             internal_user_id=str(internal_user_id),
             plan_request=plan_request,
             plan_intake_state=current_state,
-            alignment_enabled=_intake_alignment_enabled(),
             anchor_local_date=_parse_optional_anchor_date_str(anchor_local_date),
         )
     except Exception as exc:
@@ -185,103 +174,102 @@ def evaluate_generation_readiness(
             readiness_payload,
         )
 
-    if _intake_alignment_enabled():
-        ambition = (
-            assessment_payload.get("ambition_gap")
-            if isinstance(assessment_payload.get("ambition_gap"), dict)
-            else None
-        )
-        alignment_state = (
-            assessment_payload.get("intake_alignment_state")
-            if isinstance(assessment_payload.get("intake_alignment_state"), dict)
-            else None
-        )
-        assert ambition is not None and alignment_state is not None
-        prior_answers, _question_count, asked_categories = (
-            extract_alignment_answer_bookkeeping(current_state)
-        )
-        next_state = dict(current_state)
-        next_state["alignment"] = {
-            "enabled": True,
-            "ambition_stance": ambition.get("stance"),
-            "ambition_attributions": list(ambition.get("attributions") or []),
-            "goal_demand": ambition.get("goal_demand"),
-            "baseline_band": ambition.get("baseline_band"),
+    ambition = (
+        assessment_payload.get("ambition_gap")
+        if isinstance(assessment_payload.get("ambition_gap"), dict)
+        else None
+    )
+    alignment_state = (
+        assessment_payload.get("intake_alignment_state")
+        if isinstance(assessment_payload.get("intake_alignment_state"), dict)
+        else None
+    )
+    assert ambition is not None and alignment_state is not None
+    prior_answers, _question_count, asked_categories = (
+        extract_alignment_answer_bookkeeping(current_state)
+    )
+    next_state = dict(current_state)
+    next_state["alignment"] = {
+        "enabled": True,
+        "ambition_stance": ambition.get("stance"),
+        "ambition_attributions": list(ambition.get("attributions") or []),
+        "goal_demand": ambition.get("goal_demand"),
+        "baseline_band": ambition.get("baseline_band"),
+        "question_count": alignment_state.get("question_count"),
+        "asked_categories": asked_categories,
+        "answers": prior_answers,
+        "state": alignment_state,
+        "attributions": sorted(
+            set(
+                list(ambition.get("attributions") or [])
+                + list(alignment_state.get("attributions") or [])
+            )
+        ),
+        "observability": {
+            "pause_fired": bool(alignment_state.get("pause_required")),
+            "categories_asked": asked_categories,
+            "posture_selected": alignment_state.get("posture_state"),
+            "alignment_resolved": bool(alignment_state.get("generation_ready")),
             "question_count": alignment_state.get("question_count"),
-            "asked_categories": asked_categories,
-            "answers": prior_answers,
-            "state": alignment_state,
-            "attributions": sorted(
-                set(
-                    list(ambition.get("attributions") or [])
-                    + list(alignment_state.get("attributions") or [])
-                )
-            ),
-            "observability": {
-                "pause_fired": bool(alignment_state.get("pause_required")),
-                "categories_asked": asked_categories,
-                "posture_selected": alignment_state.get("posture_state"),
-                "alignment_resolved": bool(alignment_state.get("generation_ready")),
-                "question_count": alignment_state.get("question_count"),
-                "generation_proceeded": bool(alignment_state.get("generation_ready")),
-            },
-        }
+            "generation_proceeded": bool(alignment_state.get("generation_ready")),
+        },
+    }
 
-        if not alignment_state.get("generation_ready"):
-            allowed_categories = list(
-                alignment_state.get("allowed_question_categories") or []
-            )
-            alignment_brief = {
-                "state": alignment_state,
-                "allowed_question_categories": allowed_categories,
-                "required_truths": [
-                    "The planner remains deterministic and unchanged once generation starts.",
-                    "Current training baseline and stated goal may not match - how aggressive we can be depends on both.",
-                ],
-                "banned_claims": [
-                    "Do not promise a specific finish time or guaranteed outcome.",
-                    "Do not claim plan generation logic has changed.",
-                ],
-                "posture_context": {
-                    "current": alignment_state.get("posture_state"),
-                    "stance": ambition.get("stance"),
-                    "ambition_attributions": list(ambition.get("attributions") or []),
-                    "goal_demand": ambition.get("goal_demand"),
-                },
-                "response_style": {
-                    "coaching_prose_before_controls": True,
-                    "ask_one_question_only": False,
-                    "avoid_numbered_lists": True,
-                    "tone": "lightweight_collaborative_coach",
-                },
-                "suggested_next_question": _next_alignment_question(allowed_categories),
-            }
-            record_event(
-                str(internal_user_id),
-                "blocked",
-                {
-                    "stage": "alignment_required",
-                    "trace_id": readiness_payload.get("trace_id"),
-                },
-            )
-            return (
-                {
-                    "error": "alignment_required",
-                    "message": (
-                        "Alignment checkpoint: generation is paused until the user answers one alignment topic. "
-                        "Do **not** reply with only the short `suggested_next_question` line. Follow the system "
-                        "prompt **## Intake alignment - coach-facing facts** (and activity snapshot): ground in their "
-                        "data, say plainly what's mismatched or uncertain, explain why it matters, then end with one closing question "
-                        "that matches the same topic as `suggested_next_question` / the inline UI chips."
-                    ),
-                    "plan_intake_state": next_state,
-                    "alignment_brief": alignment_brief,
-                    "pre_generation_runner_assessment": assessment_payload,
-                },
-                next_state,
-                assessment_payload,
-                readiness_payload,
-            )
-        current_state = next_state
+    if not alignment_state.get("generation_ready"):
+        allowed_categories = list(
+            alignment_state.get("allowed_question_categories") or []
+        )
+        alignment_brief = {
+            "state": alignment_state,
+            "allowed_question_categories": allowed_categories,
+            "required_truths": [
+                "The planner remains deterministic and unchanged once generation starts.",
+                "Current training baseline and stated goal may not match - how aggressive we can be depends on both.",
+            ],
+            "banned_claims": [
+                "Do not promise a specific finish time or guaranteed outcome.",
+                "Do not claim plan generation logic has changed.",
+            ],
+            "posture_context": {
+                "current": alignment_state.get("posture_state"),
+                "stance": ambition.get("stance"),
+                "ambition_attributions": list(ambition.get("attributions") or []),
+                "goal_demand": ambition.get("goal_demand"),
+            },
+            "response_style": {
+                "coaching_prose_before_controls": True,
+                "ask_one_question_only": False,
+                "avoid_numbered_lists": True,
+                "tone": "lightweight_collaborative_coach",
+            },
+            "suggested_next_question": _next_alignment_question(allowed_categories),
+        }
+        record_event(
+            str(internal_user_id),
+            "blocked",
+            {
+                "stage": "alignment_required",
+                "trace_id": readiness_payload.get("trace_id"),
+            },
+        )
+        return (
+            {
+                "error": "alignment_required",
+                "message": (
+                    "Alignment checkpoint: generation is paused until the user answers one alignment topic. "
+                    "Do **not** reply with only the short `suggested_next_question` line. Follow the system "
+                    "prompt **## Intake alignment - coach-facing facts** (and activity snapshot): ground in their "
+                    "data, say plainly what's mismatched or uncertain, explain why it matters, then end with one closing question "
+                    "that matches the same topic as `suggested_next_question` / the inline UI chips."
+                ),
+                "plan_intake_state": next_state,
+                "alignment_brief": alignment_brief,
+                "pre_generation_runner_assessment": assessment_payload,
+            },
+            next_state,
+            assessment_payload,
+            readiness_payload,
+        )
+    current_state = next_state
 
     return None, current_state, assessment_payload, readiness_payload
