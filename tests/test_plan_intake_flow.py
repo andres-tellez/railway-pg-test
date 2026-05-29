@@ -643,8 +643,8 @@ def test_ready_to_generate_false_until_alignment_resolved():
     assert s1["status"] == "collecting"
 
 
-def test_apply_coach_suggested_goal_updates_time_and_soft_resets_review(monkeypatch):
-    """Runner-analysis 'Set goal around X' applies time and re-runs review without wiping intake."""
+def test_apply_coach_suggested_goal_updates_time_and_advances_past_review(monkeypatch):
+    """Runner-analysis 'Set goal around X' applies time and moves on without re-review loop."""
     monkeypatch.setenv("SMARTCOACH_PLAN_CREATION_SPLIT_CONFIRM_V1", "1")
     base = update_plan_intake_state(
         None,
@@ -671,7 +671,8 @@ def test_apply_coach_suggested_goal_updates_time_and_soft_resets_review(monkeypa
     assert nxt["draft"]["target_time"] == "3:40:00"
     assert nxt["draft"]["race_distance"] == "Marathon"
     assert nxt["ux"].get("intake_confirmed") is True
-    assert nxt["ux"].get("runner_review_delivered") is not True
+    assert nxt["ux"].get("runner_review_delivered") is True
+    assert nxt["ux"].get("runner_tradeoff_resolved") is True
     assert nxt["ux"].get("plan_generation_confirmed") is not True
 
 
