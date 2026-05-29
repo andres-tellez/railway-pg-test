@@ -690,16 +690,16 @@ def test_confirmation_summary_readable_multiline_includes_target_time():
     )
     summary = state["confirmation_summary"]
     assert summary == (
-        "Marathon date: 10/11/2026\n\n"
-        "Target time: 3:40:00\n\n"
-        "Training days: Mon, Tue, Wed, Thu, Fri, Sat\n\n"
-        "Long runs on: Sat"
+        "- Marathon date: 10/11/2026\n"
+        "- Target time: 3:40:00\n"
+        "- Training days: Mon, Tue, Wed, Thu, Fri, Sat\n"
+        "- Long runs on: Sat"
     )
     message = format_plan_intake_confirmation_message(summary)
     assert message.startswith("Here's what I have:\n\n")
     assert message.endswith("Does this look right?")
     assert ";" not in message
-    assert "\n\nTarget time:" in message
+    assert "\n- Target time: 3:40:00\n" in message
 
 
 def test_confirmation_message_survives_plan_creation_guardrails():
@@ -723,4 +723,4 @@ def test_confirmation_message_survives_plan_creation_guardrails():
     assert is_plan_intake_confirmation_message(raw)
     out = _enforce_plan_creation_response_guardrails(raw, plan_intake_state=state)
     assert out == raw
-    assert "\n\nTarget time: 3:40:00\n\n" in out
+    assert "\n- Target time: 3:40:00\n" in out
