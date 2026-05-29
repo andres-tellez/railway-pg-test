@@ -48,6 +48,7 @@ from src.smartcoach_mobile_coach.hr_calibration_intake import (
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     alignment_pause_coaching_facts_system_section,
     build_plan_request_from_state,
+    format_plan_intake_confirmation_message,
     mark_plan_runner_understanding_shown,
     plan_creation_split_confirm_enabled,
     plan_intake_alignment_pause_active,
@@ -442,8 +443,8 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
                 return PLAN_PROFILE_HR_MAX_HR_PROMPT
         summ = (intake_state.get("confirmation_summary") or "").strip()
         if summ:
-            return f"Here’s what I have: {summ} Does that look right?"
-        return "I have enough to build the plan. Does that look right?"
+            return format_plan_intake_confirmation_message(summ)
+        return "I have enough to build the plan. Does this look right?"
 
     missing = intake_state.get("missing_required") or []
     first = missing[0] if missing and isinstance(missing[0], str) else ""

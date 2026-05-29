@@ -7,6 +7,7 @@ from src.smartcoach_mobile_coach.plan_intake_flow import (
     alignment_pause_coaching_facts_system_section,
     build_core_structured_ui_prompt,
     build_plan_request_from_state,
+    format_plan_intake_confirmation_message,
     mark_plan_runner_understanding_shown,
     plan_intake_premature_confirmation_reply,
     plan_runner_understanding_shown,
@@ -672,3 +673,28 @@ def test_apply_coach_suggested_goal_updates_time_and_soft_resets_review(monkeypa
     assert nxt["ux"].get("intake_confirmed") is True
     assert nxt["ux"].get("runner_review_delivered") is not True
     assert nxt["ux"].get("plan_generation_confirmed") is not True
+
+
+def test_confirmation_summary_readable_multiline_includes_target_time():
+    state = update_plan_intake_state(
+        None,
+        updates={
+            "race_distance": "Marathon",
+            "race_date": "2026-10-11",
+            "primary_goal": "Target Time",
+            "target_time": "3:40:00",
+            "training_days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+            "long_run_day": "Sat",
+        },
+    )
+    summary = state["confirmation_summary"]
+    assert summary == (
+        "Marathon date: 10/11/2026\n"
+        "Target time: 3:40:00\n"
+        "Training days: Mon, Tue, Wed, Thu, Fri, Sat\n"
+        "Long runs on: Sat"
+    )
+    message = format_plan_intake_confirmation_message(summary)
+    assert message.startswith("Here's what I have:\n\n")
+    assert message.endswith("Does this look right?")
+    assert ";" not in message
