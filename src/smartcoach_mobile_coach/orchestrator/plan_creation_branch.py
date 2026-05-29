@@ -37,6 +37,12 @@ from src.smartcoach_mobile_coach.plan_creation_ui import (
 from src.smartcoach_mobile_coach.plan_intake_activity_context import (
     apply_plan_activity_preamble_to_assistant_markdown,
 )
+from src.smartcoach_mobile_coach.hr_calibration_intake import (
+    PLAN_PROFILE_HR_STEP_BIRTH_YEAR,
+    PLAN_PROFILE_HR_STEP_MAX_HR,
+    plan_profile_hr_beat_ui_active,
+    sync_plan_profile_hr_beat_ux,
+)
 from src.smartcoach_mobile_coach.plan_intake_flow import (
     alignment_pause_coaching_facts_system_section,
     build_plan_request_from_state,
@@ -158,8 +164,10 @@ Intake behavior:
 - If the user gives a **clock time only** (e.g. “3:40”, “3:45:00”) without saying “target time”, still pass
   `primary_goal` **Target Time** and `target_time` in `updates` — the server can also infer this from the
   latest user message when the model omits it.
-- After **Target Time** and `target_time` are in the intake draft, call **`get_training_targets`** before
-  final plan confirmation. Use only the paces returned there for marathon / easy / tempo / threshold
+- After **Target Time** and `target_time` are in the intake draft, complete the optional **HR calibration**
+  beat (`ux.hr_calibration_intake_done` true — birth year and/or max HR via `patch_user_profile`, or max HR
+  skipped via `update_plan_intake`) before calling **`get_training_targets`** for final plan confirmation.
+  Use only the paces returned there for marathon / easy / tempo / threshold
   (destination). Explain that **plan workout paces** come from recent fitness (starting point), not goal
   pace on week one — never invent pace numbers in prose.
 - For `race_distance`, when the user names a **full marathon** event (e.g. “Chicago Marathon”, “Boston”, “a fall
@@ -419,6 +427,20 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
             return "What feels most adjustable for you right now?"
 
     if intake_state.get("ready_to_generate"):
+        if plan_profile_hr_beat_ui_active(intake_state):
+            ux_hr = (
+                intake_state.get("ux")
+                if isinstance(intake_state.get("ux"), dict)
+                else {}
+            )
+            step = ux_hr.get("hr_calibration_step")
+            if step == HR_CALIBRATION_STEP_BIRTH_YEAR:
+                return (
+                    "What year were you born? This helps estimate heart-rate zones "
+                    "if you don't enter a max heart rate."
+                )
+            if step == PLAN_PROFILE_HR_STEP_MAX_HR:
+                return "Only enter your max heart rate if you know it — don't guess."
         summ = (intake_state.get("confirmation_summary") or "").strip()
         if summ:
             return f"Here’s what I have: {summ} Does that look right?"
@@ -444,8 +466,11 @@ def _natural_plan_intake_fallback_question(intake_state: Dict[str, Any]) -> str:
 
 def _ui_prompt_from_plan_intake_state(
     intake_state: Optional[Dict[str, Any]],
+    *,
+    session: Optional[Session] = None,
+    user_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    return compute_plan_creation_ui(intake_state)
+    return compute_plan_creation_ui(intake_state, session=session, user_id=user_id)
 
 
 def _structured_intake_plan_creation_addon() -> str:
@@ -705,7 +730,9 @@ def build_deterministic_plan_intake_chip_assistant_payload(
     without calling OpenAI. Used when the mobile client sends ``structured_input_only`` with
     ``structured_input`` so chip taps stay on the deterministic intake state machine.
     """
-    pis_merged: Dict[str, Any] = dict(plan_intake_state)
+    pis_merged: Dict[str, Any] = sync_plan_profile_hr_beat_ux(
+        session, str(internal_user_id), dict(plan_intake_state)
+    )
     out_text = _natural_plan_intake_fallback_question(pis_merged)
     out_text = _enforce_plan_creation_response_guardrails(
         out_text,

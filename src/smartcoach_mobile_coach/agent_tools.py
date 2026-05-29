@@ -1561,6 +1561,11 @@ def tool_update_plan_intake(
         reset=reset,
         source_user_message=msg if isinstance(msg, str) else None,
     )
+    from src.smartcoach_mobile_coach.hr_calibration_intake import (
+        sync_plan_profile_hr_beat_ux,
+    )
+
+    state = sync_plan_profile_hr_beat_ux(session, str(internal_user_id), state)
     ready = bool(state.get("ready_to_generate"))
     ux_tip = state.get("ux") if isinstance(state.get("ux"), dict) else {}
     if ready and plan_creation_split_confirm_enabled():
