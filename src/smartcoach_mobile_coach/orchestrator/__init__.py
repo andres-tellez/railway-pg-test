@@ -3625,13 +3625,19 @@ def run_mobile_agent_turn(
 
             if pis_merged is not None or latest_plan_generation is not None:
                 out_text = text
+                used_deterministic_fallback = False
                 if not out_text and pis_merged is not None:
                     out_text = _natural_plan_intake_fallback_question(pis_merged)
+                    used_deterministic_fallback = True
                 if not out_text and latest_plan_generation is not None:
                     out_text = "Your training plan is saved. Open the **Plan** tab for workouts and dates."
                 if not out_text:
                     out_text = "Thanks — I noted that for your plan setup."
-                if plan_creation_mode and latest_plan_generation is None:
+                if (
+                    plan_creation_mode
+                    and latest_plan_generation is None
+                    and not used_deterministic_fallback
+                ):
                     out_text = _enforce_plan_creation_response_guardrails(
                         out_text,
                         plan_intake_state=(
