@@ -1006,16 +1006,64 @@ def _human_missing_label(field_name: str) -> str:
     return labels.get(field_name, field_name.replace("_", " "))
 
 
+def _format_race_date_for_summary(raw: Any) -> str:
+    if not isinstance(raw, str) or not raw.strip():
+        return "TBD"
+    s = raw.strip()
+    try:
+        if "T" in s:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            d = dt.date()
+        else:
+            d = date.fromisoformat(s[:10])
+        return f"{d.month}/{d.day}/{d.year}"
+    except (ValueError, TypeError, OverflowError):
+        return s
+
+
 def _confirmation_summary(draft: Dict[str, Any]) -> str:
-    race_distance = draft.get("race_distance") or "race"
-    race_date = draft.get("race_date") or "TBD date"
-    goal = draft.get("primary_goal") or "TBD goal"
-    tdays = ", ".join(draft.get("training_days") or [])
-    lr = draft.get("long_run_day") or "auto"
-    return (
-        f"{race_distance} on {race_date}; goal: {goal}; training days: {tdays}; "
-        f"long run day: {lr}."
-    )
+    lines: List[str] = []
+
+    race_distance = draft.get("race_distance")
+    race_date = draft.get("race_date")
+    if isinstance(race_distance, str) and race_distance.strip():
+        label = f"{race_distance.strip()} date"
+        if isinstance(race_date, str) and race_date.strip():
+            lines.append(f"{label}: {_format_race_date_for_summary(race_date)}")
+        else:
+            lines.append(f"{label}: TBD")
+    elif isinstance(race_date, str) and race_date.strip():
+        lines.append(f"Race date: {_format_race_date_for_summary(race_date)}")
+
+    target_time = draft.get("target_time")
+    primary_goal = draft.get("primary_goal")
+    if isinstance(target_time, str) and target_time.strip():
+        lines.append(f"Target time: {target_time.strip()}")
+    elif (
+        isinstance(primary_goal, str)
+        and primary_goal.strip() == PrimaryGoal.TARGET_TIME.value
+    ):
+        lines.append("Target time: TBD")
+    elif isinstance(primary_goal, str) and primary_goal.strip():
+        lines.append(f"Goal: {primary_goal.strip()}")
+
+    tdays = draft.get("training_days")
+    if isinstance(tdays, list) and tdays:
+        lines.append(f"Training days: {', '.join(str(d) for d in tdays if d)}")
+
+    long_run_day = draft.get("long_run_day")
+    if isinstance(long_run_day, str) and long_run_day.strip():
+        lines.append(f"Long runs on: {long_run_day.strip()}")
+
+    return "\n".join(lines)
+
+
+def format_plan_intake_confirmation_message(summary: str) -> str:
+    """Coach-facing recap before plan generation (deterministic, not LLM)."""
+    body = (summary or "").strip()
+    if not body:
+        return "I have enough to build the plan. Does this look right?"
+    return f"Here's what I have:\n\n{body}\n\nDoes this look right?"
 
 
 def _auto_fill_long_run_day(draft: Dict[str, Any]) -> None:
