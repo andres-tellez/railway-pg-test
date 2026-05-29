@@ -87,12 +87,14 @@ def coerce_structured_patch_user_profile_max_hr_manual(data: dict) -> Optional[i
 class PatchBirthYearApplied:
     assistant_payload: Dict[str, Any]
     user_message: ConversationMessage
+    assistant_message: ConversationMessage
 
 
 @dataclass
 class PatchMaxHrApplied:
     assistant_payload: Dict[str, Any]
     user_message: ConversationMessage
+    assistant_message: ConversationMessage
 
 
 def maybe_apply_patch_user_profile_birth_year(
@@ -154,7 +156,9 @@ def maybe_apply_patch_user_profile_birth_year(
     session.flush()
 
     return PatchBirthYearApplied(
-        assistant_payload=assistant_payload, user_message=user_msg
+        assistant_payload=assistant_payload,
+        user_message=user_msg,
+        assistant_message=assistant_msg,
     )
 
 
@@ -207,4 +211,8 @@ def maybe_apply_patch_user_profile_max_hr(
 
     session.flush()
 
-    return PatchMaxHrApplied(assistant_payload=assistant_payload, user_message=user_msg)
+    return PatchMaxHrApplied(
+        assistant_payload=assistant_payload,
+        user_message=user_msg,
+        assistant_message=assistant_msg,
+    )

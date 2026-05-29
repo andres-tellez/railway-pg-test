@@ -19,6 +19,14 @@ from src.utils.hr_zone_constants import manual_max_hr_bpm_bounds
 PLAN_PROFILE_HR_STEP_BIRTH_YEAR = "birth_year"
 PLAN_PROFILE_HR_STEP_MAX_HR = "max_hr"
 
+PLAN_PROFILE_HR_BIRTH_YEAR_PROMPT = (
+    "What year were you born? This helps estimate heart-rate zones "
+    "if you don't enter a max heart rate."
+)
+PLAN_PROFILE_HR_MAX_HR_PROMPT = (
+    "What is your max heart rate (bpm)? Only enter it if you know it — don't guess."
+)
+
 # Back-compat aliases for imports/tests
 HR_CALIBRATION_STEP_BIRTH_YEAR = PLAN_PROFILE_HR_STEP_BIRTH_YEAR
 HR_CALIBRATION_STEP_MAX_HR = PLAN_PROFILE_HR_STEP_MAX_HR
@@ -121,10 +129,7 @@ def build_plan_profile_hr_beat_ui_prompt(
             "control_type": "year_select",
             "selection_mode": "single",
             "required": False,
-            "prompt": (
-                "What year were you born? This helps estimate heart-rate zones "
-                "if you don't enter a max heart rate."
-            ),
+            "prompt": PLAN_PROFILE_HR_BIRTH_YEAR_PROMPT,
             "options": [
                 {
                     "id": "birth_year_skip",
@@ -144,7 +149,7 @@ def build_plan_profile_hr_beat_ui_prompt(
             "control_type": "optional_bpm",
             "selection_mode": "single",
             "required": False,
-            "prompt": ("Only enter your max heart rate if you know it — don't guess."),
+            "prompt": PLAN_PROFILE_HR_MAX_HR_PROMPT,
             "options": [
                 {
                     "id": "max_hr_skip",
@@ -205,6 +210,24 @@ def merge_max_hr_manual_into_profile(
     return None
 
 
+def merge_ui_prompt_into_assistant_payload(
+    assistant_payload: Dict[str, Any],
+    ui: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Attach ``ui_prompt`` and append its question into assistant ``content`` when present."""
+    out = dict(assistant_payload)
+    if not isinstance(ui, dict):
+        return out
+    data = dict(out.get("data") or {})
+    data["ui_prompt"] = ui
+    out["data"] = data
+    prompt_text = str(ui.get("prompt") or "").strip()
+    if prompt_text:
+        existing = str(out.get("content") or "").strip()
+        out["content"] = f"{existing}\n\n{prompt_text}" if existing else prompt_text
+    return out
+
+
 def attach_plan_intake_ui_after_profile_patch(
     session: Any,
     internal_user_id: str,
@@ -228,7 +251,7 @@ def attach_plan_intake_ui_after_profile_patch(
     data = dict(out.get("data") or {})
     data["plan_intake_state"] = pis
     ui = compute_plan_creation_ui(pis)
-    if isinstance(ui, dict):
-        data["ui_prompt"] = ui
     out["data"] = data
-    return out
+    return merge_ui_prompt_into_assistant_payload(
+        out, ui if isinstance(ui, dict) else None
+    )
