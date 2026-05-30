@@ -153,7 +153,7 @@ def seeded_user_with_plan(test_db_session):
                     description="Long",
                     miles=10.0,
                     intensity="z2",
-                    run_type_key="long",
+                    run_type_key="long_run",
                     phase=phase,
                 ),
             ]

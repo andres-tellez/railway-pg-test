@@ -24,7 +24,6 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "easy": {
         "tier": _TIER_PRIMARY,
         "display_name": "Easy",
-        "placement_role": "easy",
         "intensity": "easy",
         "purpose": "recovery",
         "recovery_days": 0,
@@ -41,7 +40,6 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "tempo": {
         "tier": _TIER_PRIMARY,
         "display_name": "Tempo",
-        "placement_role": "endurance",
         "intensity": "hard",
         "purpose": "lactate_threshold",
         "recovery_days": 2,
@@ -58,7 +56,6 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "threshold": {
         "tier": _TIER_PRIMARY,
         "display_name": "Threshold",
-        "placement_role": "endurance",
         "intensity": "hard",
         "purpose": "lactate_threshold",
         "recovery_days": 2,
@@ -75,7 +72,6 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "long_run": {
         "tier": _TIER_PRIMARY,
         "display_name": "Long Run",
-        "placement_role": "long",
         "intensity": "easy",
         "purpose": "endurance",
         "recovery_days": 2,
@@ -92,7 +88,6 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "intervals": {
         "tier": _TIER_SECONDARY,
         "display_name": "Intervals",
-        "placement_role": "endurance",
         "primary_run_type": "threshold",
         "intensity": "very_hard",
         "purpose": "vo2max",
@@ -110,7 +105,6 @@ WORKOUT_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "hills": {
         "tier": _TIER_SECONDARY,
         "display_name": "Hills",
-        "placement_role": "endurance",
         "primary_run_type": "threshold",
         "intensity": "hard",
         "purpose": "strength",
@@ -131,7 +125,11 @@ PRIMARY_WORKOUT_TYPES = frozenset(
 SECONDARY_WORKOUT_TYPES = frozenset(
     key for key, defn in WORKOUT_DEFINITIONS.items() if defn["tier"] == _TIER_SECONDARY
 )
-_PLACEMENT_ROLE_KEYS = frozenset({"easy", "steady", "endurance", "long"})
+_LEGACY_PERSISTED_ROLE_KEYS = frozenset({"steady", "endurance", "long"})
+
+from src.smartcoach_mobile_coach.runner_profile.plan_placement import (  # noqa: E402
+    PERSISTED_RUN_TYPE_KEYS,
+)
 
 
 # =============================================================================
@@ -157,6 +155,8 @@ def workout_display_label(workout_type: str, *, default: str = "Easy") -> str:
     key = str(workout_type or "").strip().lower()
     if not key:
         return default
+    if key == "race":
+        return "Race Day"
     defn = get_workout_definition(key)
     if defn:
         return str(defn["display_name"])
@@ -181,8 +181,13 @@ def athlete_label_for_plan_workout(
     """
     wt = str(workout_type or "").strip()
     wt_lower = wt.lower()
-    if wt and wt_lower not in WORKOUT_TYPES and wt_lower not in _PLACEMENT_ROLE_KEYS:
-        return wt
+    if (
+        wt
+        and wt_lower not in WORKOUT_TYPES
+        and wt_lower not in _LEGACY_PERSISTED_ROLE_KEYS
+    ):
+        if wt_lower != "race":
+            return wt
     if taxonomy_key and get_workout_definition(taxonomy_key):
         return workout_display_label(taxonomy_key)
     if canonical_run_type_key:
@@ -198,43 +203,56 @@ def athlete_label_for_plan_workout(
     return workout_display_label("easy")
 
 
-def resolve_taxonomy_and_placement(raw_type: str) -> tuple[str, str]:
+def resolve_taxonomy_and_placement(
+    raw_type: str,
+    *,
+    workout_type: str | None = None,
+) -> tuple[str, str]:
     """
-    Map a planner/storage ``type`` string to ``(taxonomy_key, placement_role)``.
+    Map a planner/storage ``type`` string to ``(taxonomy_key, persisted_key)``.
 
-    Taxonomy keys (``tempo``, ``threshold``, …) map via SSOT definitions.
-    Placement roles (``easy``, ``endurance``, ``long``, …) reverse-map through
-    :func:`role_to_taxonomy` for pace/label lookups.
+    Both values are taxonomy-aligned keys stored in ``plan_workouts.run_type_key``.
+    Legacy placement roles (``steady``, ``endurance``, ``long``) normalize on read.
     """
     from src.smartcoach_mobile_coach.runner_profile.plan_placement import (
-        role_to_taxonomy,
         validate_persisted_run_type_key,
     )
 
     key = str(raw_type or "easy").strip().lower()
     if not key:
         key = "easy"
+    if key == "race day":
+        key = "race"
     if get_workout_definition(key):
-        return key, placement_role_for_taxonomy(key)
-    placement_role = validate_persisted_run_type_key(key)
-    return role_to_taxonomy(placement_role), placement_role
+        return key, key
+    if key == "race":
+        return "race", "race"
+    persisted = validate_persisted_run_type_key(key, workout_type=workout_type)
+    taxonomy = persisted
+    return taxonomy, persisted
+
+
+def persisted_run_type_key_for_taxonomy(workout_type: str) -> str:
+    """Map a taxonomy key to the value stored in plan_workouts.run_type_key."""
+    key = str(workout_type or "").strip().lower()
+    if key == "long":
+        return "long_run"
+    if key in PERSISTED_RUN_TYPE_KEYS:
+        return key
+    allowed = ", ".join(sorted(PERSISTED_RUN_TYPE_KEYS))
+    raise ValueError(
+        f"Unknown workout type {workout_type!r} (must be one of: {allowed})"
+    )
+
+
+def placement_role_for_taxonomy(workout_type: str) -> str:
+    """Back-compat alias for :func:`persisted_run_type_key_for_taxonomy`."""
+    return persisted_run_type_key_for_taxonomy(workout_type)
 
 
 def taxonomy_short_label(workout_type: str, *, default: str = "Easy") -> str:
     """Back-compat alias for :func:`workout_display_label`."""
     return workout_display_label(workout_type, default=default)
-
-
-def placement_role_for_taxonomy(workout_type: str) -> str:
-    """Map a taxonomy key to a DB placement role (easy|steady|endurance|long)."""
-    key = str(workout_type or "").strip().lower()
-    defn = get_workout_definition(key)
-    if not defn:
-        allowed = ", ".join(sorted(WORKOUT_TYPES))
-        raise ValueError(
-            f"Unknown workout type {workout_type!r} (must be one of: {allowed})"
-        )
-    return str(defn["placement_role"])
 
 
 def canonical_run_type_for_taxonomy(workout_type: str) -> str:
@@ -380,7 +398,6 @@ def _validate_definitions() -> None:
     required_fields = [
         "tier",
         "display_name",
-        "placement_role",
         "intensity",
         "purpose",
         "recovery_days",
@@ -401,7 +418,6 @@ def _validate_definitions() -> None:
         "INTERVALS",
         "HILLS",
     }
-    valid_placement_roles = {"easy", "steady", "endurance", "long"}
 
     assert WORKOUT_TYPES == PRIMARY_WORKOUT_TYPES | SECONDARY_WORKOUT_TYPES
     assert len(WORKOUT_TYPES) == 6
@@ -413,7 +429,6 @@ def _validate_definitions() -> None:
             ), f"Workout '{workout_type}' missing required field '{field}'"
 
         assert defn["tier"] in {_TIER_PRIMARY, _TIER_SECONDARY}
-        assert defn["placement_role"] in valid_placement_roles
 
         if defn["tier"] == _TIER_SECONDARY:
             assert (
@@ -431,18 +446,22 @@ def _validate_definitions() -> None:
                 defn["recovery_days"] >= 2
             ), f"Quality workout '{workout_type}' must have recovery_days >= 2"
 
-    assert placement_role_for_taxonomy("tempo") == "endurance"
-    assert placement_role_for_taxonomy("threshold") == "endurance"
+    assert persisted_run_type_key_for_taxonomy("tempo") == "tempo"
+    assert persisted_run_type_key_for_taxonomy("long_run") == "long_run"
     assert workout_display_label("long_run") == "Long Run"
     assert workout_display_label("threshold") == "Threshold"
+    assert workout_display_label("race") == "Race Day"
     assert canonical_run_type_for_taxonomy("threshold") == "threshold"
     assert canonical_run_type_for_taxonomy("steady") == "easy"
-    taxonomy_key, placement = resolve_taxonomy_and_placement("tempo")
+    taxonomy_key, persisted = resolve_taxonomy_and_placement("tempo")
     assert taxonomy_key == "tempo"
-    assert placement == "endurance"
-    taxonomy_key, placement = resolve_taxonomy_and_placement("long")
+    assert persisted == "tempo"
+    taxonomy_key, persisted = resolve_taxonomy_and_placement("long")
     assert taxonomy_key == "long_run"
-    assert placement == "long"
+    assert persisted == "long_run"
+    taxonomy_key, persisted = resolve_taxonomy_and_placement("Race")
+    assert taxonomy_key == "race"
+    assert persisted == "race"
 
 
 def iter_plan_workout_taxonomy_payload() -> list[dict[str, Any]]:
@@ -453,7 +472,6 @@ def iter_plan_workout_taxonomy_payload() -> list[dict[str, Any]]:
             "key": key,
             "tier": defn["tier"],
             "display_name": defn["display_name"],
-            "placement_role": defn["placement_role"],
             "canonical_run_type_key": canonical_run_type_for_taxonomy(key),
             "intensity": defn["intensity"],
             "is_quality": defn["is_quality"],

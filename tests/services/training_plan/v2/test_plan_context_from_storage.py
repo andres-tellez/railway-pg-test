@@ -58,7 +58,7 @@ def test_build_plan_context_sets_weeks_and_metadata(test_db_session: Session) ->
             miles=12.0,
             intensity="easy",
             phase="Base",
-            run_type_key="long",
+            run_type_key="long_run",
         )
     )
     test_db_session.commit()

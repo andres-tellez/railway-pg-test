@@ -106,7 +106,7 @@ def test_calculate_avg_zone_compliance_by_type(test_db_session):
         description="Long aerobic run",
         miles=10.0,
         intensity="z2",
-        run_type_key="long",
+        run_type_key="long_run",
     )
     test_db_session.add_all([easy_workout, long_workout])
     test_db_session.flush()

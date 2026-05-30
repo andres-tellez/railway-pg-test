@@ -29,13 +29,13 @@ class TestWeeklyRebuildService:
         """Test workout type normalization."""
         assert infer_placement_role_from_label("Easy") == "easy"
         assert infer_placement_role_from_label("Easy / Recovery") == "easy"
-        assert infer_placement_role_from_label("Steady") == "steady"
-        assert infer_placement_role_from_label("Aerobic / Steady") == "steady"
-        assert infer_placement_role_from_label("Endurance") == "endurance"
-        assert infer_placement_role_from_label("Endurance (Medium-Long)") == "endurance"
-        assert infer_placement_role_from_label("Long Run") == "long"
-        assert infer_placement_role_from_label("Long") == "long"
-        assert infer_placement_role_from_label("Unknown") == "easy"  # Default fallback
+        assert infer_placement_role_from_label("Steady") == "easy"
+        assert infer_placement_role_from_label("Aerobic / Steady") == "easy"
+        assert infer_placement_role_from_label("Endurance") == "easy"
+        assert infer_placement_role_from_label("Endurance (Medium-Long)") == "easy"
+        assert infer_placement_role_from_label("Long Run") == "long_run"
+        assert infer_placement_role_from_label("Tempo") == "tempo"
+        assert infer_placement_role_from_label("Unknown") == "easy"
 
     def test_determine_phase(self):
         """Test training phase determination."""

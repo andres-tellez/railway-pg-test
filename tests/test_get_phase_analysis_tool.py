@@ -129,7 +129,7 @@ def seeded_plan(test_db_session):
             description="Weekend long",
             miles=long_mi,
             intensity="z2",
-            run_type_key="long",
+            run_type_key="long_run",
             phase=phase,
         )
         session.add_all([easy, long_run])

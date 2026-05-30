@@ -5,11 +5,13 @@ from __future__ import annotations
 import pytest
 
 from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
+    CANONICAL_RUN_TYPES,
     PRIMARY_RUN_TYPES,
     RUN_TYPE_EASY,
     RUN_TYPE_HILLS,
     RUN_TYPE_INTERVALS,
     RUN_TYPE_LONG,
+    RUN_TYPE_RACE,
     RUN_TYPE_TEMPO,
     RUN_TYPE_THRESHOLD,
     SECONDARY_RUN_TYPES,
@@ -44,7 +46,7 @@ from datetime import datetime, timezone
         ("hills", "hills"),
         ("vo2", "intervals"),
         ("repetitions", "intervals"),
-        ("race", "intervals"),
+        ("race", "race"),
         ("shakeout", "easy"),
         ("", None),
         (None, None),
@@ -82,7 +84,11 @@ def test_pace_zone_key_for_taxonomy_types():
 
 def test_registry_payload_primary_and_secondary():
     entries = {e["key"]: e for e in iter_run_type_registry_payload()}
-    assert set(entries.keys()) == set(PRIMARY_RUN_TYPES + SECONDARY_RUN_TYPES)
+    assert set(entries.keys()) == set(CANONICAL_RUN_TYPES)
+
+    race = entries[RUN_TYPE_RACE]
+    assert race["display_name"] == "Race Day"
+    assert race["taxonomy_key"] == "race"
 
     threshold = entries[RUN_TYPE_THRESHOLD]
     assert threshold["display_name"] == "Threshold"

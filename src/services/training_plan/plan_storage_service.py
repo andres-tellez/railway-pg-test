@@ -406,8 +406,9 @@ class PlanStorageService:
 
         Now reads seed directly (no reconstruction).
         """
-        taxonomy_type, placement_role = resolve_taxonomy_and_placement(
-            run.get("type", "easy")
+        taxonomy_type, persisted_key = resolve_taxonomy_and_placement(
+            run.get("type", "easy"),
+            workout_type=run.get("label"),
         )
         segments = details.get("segments", {})
         main = PlanStorageService._main_step(segments)
@@ -463,13 +464,13 @@ class PlanStorageService:
             "plan_id": plan_id,
             "date": date,
             "workout_type": workout_label,
-            "run_type_key": placement_role,
+            "run_type_key": persisted_key,
             "phase": phase,
             "miles": run.get("miles", 0.0),
             "intensity": intensity,
             "target_zone": target_zone,
             "target_hr": target_hr,
-            "focus": placement_focus_tag(placement_role),
+            "focus": placement_focus_tag(taxonomy_type),
             "description": details.get("cues", ""),
             "cues": details.get("cues", ""),
             "pace_ranges": pace_ranges,
@@ -508,10 +509,13 @@ class PlanStorageService:
                             f"low={low} > high={high}"
                         )
 
-        # Validate run_type_key (placement roles; matches DB chk_run_type_key)
+        # Validate run_type_key (taxonomy keys; matches DB chk_run_type_key)
         run_type_key = row.get("run_type_key")
         if run_type_key is not None:
-            row["run_type_key"] = validate_persisted_run_type_key(run_type_key)
+            row["run_type_key"] = validate_persisted_run_type_key(
+                run_type_key,
+                workout_type=row.get("workout_type"),
+            )
 
     @staticmethod
     def save_plan(
