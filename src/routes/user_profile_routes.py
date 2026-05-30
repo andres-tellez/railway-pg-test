@@ -250,17 +250,6 @@ def submit_user_profile():
                     current_app.logger.warning(
                         f"Could not recalculate HR zones after HR data update: {e}"
                     )
-
-                try:
-                    from src.smartcoach_mobile_coach.runner_profile import (
-                        refresh_runner_profile,
-                    )
-
-                    refresh_runner_profile(session, str(internal_user_id))
-                except Exception as e:
-                    current_app.logger.warning(
-                        f"Could not refresh runner_zone_profiles after HR data update: {e}"
-                    )
         finally:
             session.close()
 

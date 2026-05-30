@@ -199,14 +199,6 @@ def merge_max_hr_manual_into_profile(
             recalculate_hr_zones_for_user(session, str(user_id))
         except Exception:
             pass
-        try:
-            from src.smartcoach_mobile_coach.runner_profile import (
-                refresh_runner_profile,
-            )
-
-            refresh_runner_profile(session, str(user_id))
-        except Exception:
-            pass
     return None
 
 
