@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     RUN_TYPE_EASY,
+    RUN_TYPE_RACE,
     RUN_TYPE_THRESHOLD,
 )
 from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
@@ -13,6 +14,7 @@ from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
     WORKOUT_TYPES,
     canonical_run_type_for_taxonomy,
     iter_plan_workout_taxonomy_payload,
+    persisted_run_type_key_for_taxonomy,
     placement_role_for_taxonomy,
     taxonomy_pace_guidance,
     taxonomy_short_label,
@@ -37,6 +39,7 @@ def test_workout_display_label_from_taxonomy():
     assert workout_display_label("tempo") == "Tempo"
     assert workout_display_label("threshold") == "Threshold"
     assert workout_display_label("intervals") == "Intervals"
+    assert workout_display_label("race") == "Race Day"
 
 
 def test_taxonomy_short_label_delegates_to_display_label():
@@ -60,12 +63,12 @@ def test_taxonomy_helpers_default_for_empty():
     assert workout_display_label("") == "Easy"
 
 
-def test_placement_role_for_taxonomy():
-    assert placement_role_for_taxonomy("easy") == "easy"
-    assert placement_role_for_taxonomy("long_run") == "long"
-    assert placement_role_for_taxonomy("tempo") == "endurance"
-    assert placement_role_for_taxonomy("threshold") == "endurance"
-    assert placement_role_for_taxonomy("intervals") == "endurance"
+def test_persisted_run_type_key_for_taxonomy():
+    assert persisted_run_type_key_for_taxonomy("easy") == "easy"
+    assert persisted_run_type_key_for_taxonomy("long_run") == "long_run"
+    assert persisted_run_type_key_for_taxonomy("tempo") == "tempo"
+    assert persisted_run_type_key_for_taxonomy("threshold") == "threshold"
+    assert placement_role_for_taxonomy("tempo") == "tempo"
 
 
 def test_athlete_label_for_plan_workout():
@@ -84,7 +87,7 @@ def test_athlete_label_for_plan_workout():
     )
     assert (
         athlete_label_for_plan_workout(
-            canonical_run_type_key="long",
+            canonical_run_type_key="long_run",
             taxonomy_key="long_run",
         )
         == "Long Run"
@@ -92,7 +95,7 @@ def test_athlete_label_for_plan_workout():
     assert (
         athlete_label_for_plan_workout(
             workout_type="long_run",
-            canonical_run_type_key="long",
+            canonical_run_type_key="long_run",
         )
         == "Long Run"
     )
@@ -103,20 +106,23 @@ def test_resolve_taxonomy_and_placement():
         resolve_taxonomy_and_placement,
     )
 
-    assert resolve_taxonomy_and_placement("tempo") == ("tempo", "endurance")
-    assert resolve_taxonomy_and_placement("threshold") == ("threshold", "endurance")
-    assert resolve_taxonomy_and_placement("long_run") == ("long_run", "long")
-    assert resolve_taxonomy_and_placement("endurance") == ("easy", "endurance")
+    assert resolve_taxonomy_and_placement("tempo") == ("tempo", "tempo")
+    assert resolve_taxonomy_and_placement("threshold") == ("threshold", "threshold")
+    assert resolve_taxonomy_and_placement("long_run") == ("long_run", "long_run")
+    assert resolve_taxonomy_and_placement("long") == ("long_run", "long_run")
+    assert resolve_taxonomy_and_placement("Race") == ("race", "race")
+    assert resolve_taxonomy_and_placement("steady") == ("easy", "easy")
     assert canonical_run_type_for_taxonomy("threshold") == RUN_TYPE_THRESHOLD
     assert canonical_run_type_for_taxonomy("steady") == RUN_TYPE_EASY
     assert canonical_run_type_for_taxonomy("recovery") == RUN_TYPE_EASY
+    assert canonical_run_type_for_taxonomy("race") == RUN_TYPE_RACE
 
 
 def test_taxonomy_payload_includes_wire_fields():
     entries = {e["key"]: e for e in iter_plan_workout_taxonomy_payload()}
     threshold = entries["threshold"]
     assert threshold["display_name"] == "Threshold"
-    assert threshold["placement_role"] == "endurance"
+    assert "placement_role" not in threshold
     assert threshold["canonical_run_type_key"] == "threshold"
     assert threshold["tier"] == "primary"
 

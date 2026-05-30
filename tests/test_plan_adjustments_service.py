@@ -67,16 +67,16 @@ def seeded_plan(test_db_session):
     # Prior week baseline total = 25.0
     _add(date(2026, 4, 15), "Easy Run", 4.0, "z2", "easy")
     _add(date(2026, 4, 16), "Easy Run", 4.0, "z2", "easy")
-    _add(date(2026, 4, 17), "Tempo", 5.0, "z3", "endurance")
+    _add(date(2026, 4, 17), "Tempo", 5.0, "z3", "tempo")
     _add(date(2026, 4, 18), "Easy Run", 4.0, "z2", "easy")
-    _add(date(2026, 4, 19), "Long Run", 8.0, "z2", "long")
+    _add(date(2026, 4, 19), "Long Run", 8.0, "z2", "long_run")
 
     # Current week total = 25.0, one quality run, Sunday empty.
     _add(date(2026, 4, 21), "Easy Run", 4.0, "z2", "easy")
     _add(date(2026, 4, 22), "Easy Run", 4.0, "z2", "easy")
-    _add(date(2026, 4, 23), "Tempo", 5.0, "z3", "endurance")
+    _add(date(2026, 4, 23), "Tempo", 5.0, "z3", "tempo")
     _add(date(2026, 4, 24), "Easy Run", 4.0, "z2", "easy")
-    _add(date(2026, 4, 25), "Long Run", 8.0, "z2", "long")
+    _add(date(2026, 4, 25), "Long Run", 8.0, "z2", "long_run")
 
     session.flush()
     return plan

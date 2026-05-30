@@ -135,7 +135,8 @@ def _week_total_miles(workouts: List[PlanWorkout]) -> float:
 
 
 def _is_long_run(workout: PlanWorkout) -> bool:
-    if (workout.run_type_key or "").strip().lower() == "long":
+    key = (workout.run_type_key or "").strip().lower()
+    if key in {"long", "long_run"}:
         return True
     label = (workout.workout_type or "").strip().lower()
     return "long" in label
@@ -369,7 +370,7 @@ def _db_fields_for_added_run(
     miles: float,
 ) -> Dict[str, Any]:
     workout_date = _date_for_day(ctx, day_name)
-    taxonomy_type, placement_role = resolve_taxonomy_and_placement(
+    taxonomy_type, persisted_key = resolve_taxonomy_and_placement(
         _coach_taxonomy_type(run_type)
     )
     return {
@@ -379,7 +380,7 @@ def _db_fields_for_added_run(
         "description": f"{workout_display_label(taxonomy_type)} (coach adjustment)",
         "miles": miles,
         "intensity": pace_zone_key_for_taxonomy(taxonomy_type),
-        "run_type_key": placement_role,
+        "run_type_key": persisted_key,
         "phase": _resolve_phase(ctx.workouts),
         "allow_quality": taxonomy_is_quality(taxonomy_type),
     }

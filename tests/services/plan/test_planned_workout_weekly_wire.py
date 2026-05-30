@@ -46,10 +46,10 @@ def test_merge_planned_wire_overwrites_execution_planned_and_display():
         SimpleNamespace(
             miles=6.0,
             intensity="z3",
-            run_type_key="steady",
+            run_type_key="easy",
             pace_ranges={"z3": [420, 450]},
         ),
-        canonical_run_type_key="steady",
+        canonical_run_type_key="easy",
         target_hr=None,
     )
     shape: dict = {

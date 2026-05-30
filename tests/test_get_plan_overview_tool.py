@@ -121,7 +121,7 @@ def seeded_plan(test_db_session):
             description="Weekend long",
             miles=long_mi,
             intensity="z2",
-            run_type_key="long",
+            run_type_key="long_run",
             phase=phase,
         )
         session.add_all([easy, long_run])
@@ -363,7 +363,7 @@ def test_long_run_progression_falls_back_to_longest_workout(test_db_session):
                 description="",
                 miles=7.0,
                 intensity="z3",
-                run_type_key="steady",
+                run_type_key="easy",
                 phase="Base",
             ),
         ]
@@ -374,9 +374,7 @@ def test_long_run_progression_falls_back_to_longest_workout(test_db_session):
     lrp = out["long_run_progression"]
     assert len(lrp) == 1
     assert lrp[0]["long_run_miles"] == pytest.approx(7.0)
-    # "steady" is the canonical run_type_key; the selector keeps the
-    # winner's key verbatim so the coach knows what the session was.
-    assert lrp[0]["long_run_type"] == "steady"
+    assert lrp[0]["long_run_type"] == "easy"
     assert lrp[0]["long_run_date"] == "2026-04-09"
 
 

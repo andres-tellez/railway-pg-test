@@ -11,11 +11,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, FrozenSet, Mapping
 
-from src.smartcoach_mobile_coach.runner_profile.plan_placement import (
-    PLACEMENT_ROLE_TYPES,
-    ROLE_TO_TAXONOMY_MAP,
-)
 from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
+    PERSISTED_RUN_TYPE_KEYS,
     WORKOUT_DEFINITIONS as _RUNNER_PROFILE_WORKOUT_DEFINITIONS,
 )
 
@@ -35,7 +32,7 @@ RUNNING_RULES: Dict[str, Any] = {
     ),
     "quality_session_min_recovery_days_after": 2,
     "weekly_long_run_taxonomy_key": "long_run",
-    "placement_role_keys": PLACEMENT_ROLE_TYPES,
+    "persisted_run_type_keys": PERSISTED_RUN_TYPE_KEYS,
 }
 
 # Heart-rate / effort zones — placeholders for coach copy (calibrated bands from runner_profile).
@@ -69,5 +66,8 @@ ZONE_DEFINITIONS: Dict[str, Dict[str, str]] = {
 
 
 def get_taxonomy_for_role(role: str) -> str | None:
-    """Return the default taxonomy key for ``role``, or ``None`` if unmapped."""
-    return ROLE_TO_TAXONOMY_MAP.get(role)
+    """Return the taxonomy key for a persisted run_type_key, or ``None`` if unknown."""
+    key = str(role or "").strip().lower()
+    if key in PERSISTED_RUN_TYPE_KEYS:
+        return "long_run" if key == "long" else key
+    return None
