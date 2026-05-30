@@ -241,7 +241,7 @@ def test_current_week_emits_phase_kpi_priority_block(
             description="Tempo",
             miles=6.0,
             intensity="z4",
-            run_type_key="endurance",
+            run_type_key="tempo",
             phase="Build",
         )
     )
@@ -253,7 +253,7 @@ def test_current_week_emits_phase_kpi_priority_block(
             description="Long",
             miles=10.0,
             intensity="z2",
-            run_type_key="long",
+            run_type_key="long_run",
             phase="Build",
         )
     )
@@ -425,7 +425,7 @@ def test_current_week_adherence_missed_long_run_medium_band(
         description="Long",
         miles=12.0,
         intensity="z2",
-        run_type_key="long",
+        run_type_key="long_run",
     )
     plan_routes_db.add(missed_long)
     plan_routes_db.flush()
@@ -605,16 +605,8 @@ def test_current_week_uses_canonical_normalization_for_legacy_rows(
     """
     V1.6 Pre-Phase A 0.D regression test.
 
-    The ``plan_workouts.chk_run_type_key`` constraint currently accepts
-    ``easy``/``steady``/``endurance``/``long``. ``endurance`` is a
-    non-canonical run type that MUST be normalized to canonical ``long``
-    via ``LEGACY_TO_CANONICAL_RUN_TYPE`` at the GET path. Before 0.D,
-    text-matching inference could produce its own divergent key. This
-    test locks in that the canonical map is the single source of truth.
-
-    Also verifies that the stored ``target_hr`` is returned as-is — the
-    GET path MUST NOT revalidate or rewrite HR zones (the old
-    "zone mismatch → expected_hr" mutation was deleted in 0.D).
+    Stored ``target_hr`` is returned verbatim and taxonomy ``long_run`` resolves to
+    canonical ``long`` at the GET path.
     """
     workout_date = date(2026, 4, 22)
     plan_routes_db.add(UserAthleteLink(user_id=str(DEFAULT_USER_ID), athlete_id=99902))
@@ -632,10 +624,10 @@ def test_current_week_uses_canonical_normalization_for_legacy_rows(
             plan_id=plan.id,
             date=workout_date,
             workout_type="Long Run",
-            description="Legacy endurance",
+            description="Long run",
             miles=12.0,
             intensity="z2",
-            run_type_key="endurance",
+            run_type_key="long_run",
             # Intentionally stored under a zone that wouldn't match a
             # recomputation for "long" (Z2) — proves the GET path doesn't
             # rewrite the stored value.
@@ -654,8 +646,8 @@ def test_current_week_uses_canonical_normalization_for_legacy_rows(
     data = json.loads(resp.data)
     day = data["days"][0]
     assert day["run_type_key"] == "long", (
-        "legacy 'endurance' must normalize to canonical 'long' via "
-        "LEGACY_TO_CANONICAL_RUN_TYPE — the single source of truth"
+        "stored taxonomy 'long_run' must normalize to canonical 'long' via "
+        "plan_run_type_registry at the GET path"
     )
     assert day["run_type"]["display_name"] == "Long Run"
     assert day["target_hr"] == "Z4 (170-180 bpm)", (

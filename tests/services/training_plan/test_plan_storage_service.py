@@ -206,28 +206,36 @@ class TestPlanStorageService:
 
 
 class TestPlanStorageRunTypeKeyValidation:
-    def test_validate_row_accepts_placement_roles(self):
-        for key in ("easy", "steady", "endurance", "long"):
+    def test_validate_row_accepts_taxonomy_keys(self):
+        for key in (
+            "easy",
+            "tempo",
+            "threshold",
+            "long_run",
+            "intervals",
+            "hills",
+            "race",
+        ):
             row = {"run_type_key": key, "segments": {}, "miles": 5.0}
             PlanStorageService._validate_row(row)
             assert row["run_type_key"] == key
 
-    def test_validate_row_normalizes_long_run_alias(self):
-        row = {"run_type_key": "long_run", "segments": {}, "miles": 12.0}
+    def test_validate_row_normalizes_long_alias(self):
+        row = {"run_type_key": "long", "segments": {}, "miles": 12.0}
         PlanStorageService._validate_row(row)
-        assert row["run_type_key"] == "long"
+        assert row["run_type_key"] == "long_run"
 
-    def test_validate_row_rejects_taxonomy_quality_keys(self):
-        row = {"run_type_key": "tempo", "segments": {}, "miles": 6.0}
-        with pytest.raises(ValueError, match="Invalid run_type_key"):
-            PlanStorageService._validate_row(row)
+    def test_validate_row_normalizes_legacy_steady(self):
+        row = {"run_type_key": "steady", "segments": {}, "miles": 5.0}
+        PlanStorageService._validate_row(row)
+        assert row["run_type_key"] == "easy"
 
     def test_validate_row_rejects_unknown_keys(self):
-        row = {"run_type_key": "Race", "segments": {}, "miles": 26.2}
+        row = {"run_type_key": "vo2", "segments": {}, "miles": 6.0}
         with pytest.raises(ValueError, match="Invalid run_type_key"):
             PlanStorageService._validate_row(row)
 
-    def test_workout_to_row_maps_taxonomy_tempo_to_endurance_placement(self):
+    def test_workout_to_row_persists_taxonomy_tempo(self):
         from datetime import date
 
         row = PlanStorageService._workout_to_row(
@@ -237,11 +245,11 @@ class TestPlanStorageRunTypeKeyValidation:
             run={"type": "tempo", "miles": 6.0},
             details={"segments": {}, "cues": "Comfortably hard"},
         )
-        assert row["run_type_key"] == "endurance"
+        assert row["run_type_key"] == "tempo"
         assert row["workout_type"] == "Tempo"
         assert row["intensity"] == "z3"
 
-    def test_workout_to_row_maps_taxonomy_threshold_to_endurance_placement(self):
+    def test_workout_to_row_persists_taxonomy_threshold(self):
         from datetime import date
 
         row = PlanStorageService._workout_to_row(
@@ -251,6 +259,20 @@ class TestPlanStorageRunTypeKeyValidation:
             run={"type": "threshold", "miles": 5.0},
             details={"segments": {}, "cues": ""},
         )
-        assert row["run_type_key"] == "endurance"
+        assert row["run_type_key"] == "threshold"
         assert row["workout_type"] == "Threshold"
+        assert row["intensity"] == "z4"
+
+    def test_workout_to_row_persists_race(self):
+        from datetime import date
+
+        row = PlanStorageService._workout_to_row(
+            plan_id=1,
+            date=date(2026, 5, 1),
+            phase="Race Week",
+            run={"type": "Race", "label": "Race Day", "miles": 26.2},
+            details={"segments": {}, "cues": "Trust your training"},
+        )
+        assert row["run_type_key"] == "race"
+        assert row["workout_type"] == "Race Day"
         assert row["intensity"] == "z4"

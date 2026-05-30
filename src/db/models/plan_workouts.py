@@ -29,7 +29,9 @@ class PlanWorkout(Base):
 
     # ✅ New metadata fields (all nullable for backward compatibility)
     run_type_key = sa.Column(
-        sa.Text, nullable=True, comment="Canonical type: easy|steady|endurance|long"
+        sa.Text,
+        nullable=True,
+        comment="Taxonomy key: easy|tempo|threshold|long_run|intervals|hills|race",
     )
     phase = sa.Column(
         sa.Text, nullable=True, comment="Training phase: Base|Build|Peak|Taper"
@@ -58,7 +60,7 @@ class PlanWorkout(Base):
     __table_args__ = (
         sa.UniqueConstraint("plan_id", "date", name="uq_plan_date"),
         sa.CheckConstraint(
-            "run_type_key IN ('easy','steady','endurance','long')",
+            "run_type_key IN ('easy','tempo','threshold','long_run','intervals','hills','race')",
             name="chk_run_type_key",
         ),
         sa.Index("idx_plan_workouts_plan_date", "plan_id", "date"),

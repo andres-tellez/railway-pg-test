@@ -154,7 +154,7 @@ def seeded_full_user(test_db_session):
                     description="Weekend long",
                     miles=10.0,
                     intensity="z2",
-                    run_type_key="long",
+                    run_type_key="long_run",
                     phase=phase,
                 ),
             ]

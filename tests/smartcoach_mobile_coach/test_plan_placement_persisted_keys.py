@@ -1,4 +1,4 @@
-"""Tests for plan_workouts.run_type_key placement-role validation."""
+"""Tests for plan_workouts.run_type_key taxonomy-key validation."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import pytest
 
 from src.smartcoach_mobile_coach.runner_profile.plan_placement import (
     infer_placement_role_from_label,
+    infer_run_type_key_from_workout_label,
     normalize_persisted_run_type_key,
     placement_focus_tag,
     placement_wu_cd_mi,
@@ -14,18 +15,32 @@ from src.smartcoach_mobile_coach.runner_profile.plan_placement import (
 )
 
 
-@pytest.mark.parametrize("raw", ["easy", "steady", "endurance", "long"])
-def test_validate_persisted_run_type_key_accepts_roles(raw):
+@pytest.mark.parametrize(
+    "raw",
+    ["easy", "tempo", "threshold", "long_run", "intervals", "hills", "race"],
+)
+def test_validate_persisted_run_type_key_accepts_taxonomy_keys(raw):
     assert validate_persisted_run_type_key(raw) == raw
 
 
-def test_validate_persisted_run_type_key_normalizes_long_run():
-    assert validate_persisted_run_type_key("long_run") == "long"
-    assert normalize_persisted_run_type_key("long_run") == "long"
+def test_validate_persisted_run_type_key_normalizes_long_alias():
+    assert validate_persisted_run_type_key("long") == "long_run"
+    assert normalize_persisted_run_type_key("long") == "long_run"
 
 
-@pytest.mark.parametrize("raw", ["tempo", "intervals", "threshold", "Race"])
-def test_validate_persisted_run_type_key_rejects_non_roles(raw):
+def test_validate_persisted_run_type_key_normalizes_legacy_steady():
+    assert validate_persisted_run_type_key("steady") == "easy"
+
+
+def test_validate_persisted_run_type_key_normalizes_legacy_endurance_from_label():
+    assert validate_persisted_run_type_key("endurance", workout_type="Tempo") == "tempo"
+    assert validate_persisted_run_type_key("endurance", workout_type="Long Run") == (
+        "long_run"
+    )
+
+
+@pytest.mark.parametrize("raw", ["unknown", "vo2", "steady_state"])
+def test_validate_persisted_run_type_key_rejects_unknown(raw):
     with pytest.raises(ValueError, match="Invalid run_type_key"):
         validate_persisted_run_type_key(raw)
 
@@ -35,13 +50,11 @@ def test_validate_persisted_run_type_key_rejects_non_roles(raw):
     [
         ("Easy", "easy"),
         ("Easy / Recovery", "easy"),
-        ("Steady", "steady"),
-        ("Aerobic / Steady", "steady"),
-        ("Endurance (Medium-Long)", "endurance"),
-        ("Long Run", "long"),
-        ("Tempo", "endurance"),
-        ("Threshold", "endurance"),
-        ("Intervals", "endurance"),
+        ("Long Run", "long_run"),
+        ("Tempo", "tempo"),
+        ("Threshold", "threshold"),
+        ("Intervals", "intervals"),
+        ("Race Day", "race"),
         ("Unknown", None),
         ("", None),
     ],
@@ -50,7 +63,8 @@ def test_recognize_run_type_key_from_workout_label(label, expected):
     assert recognize_run_type_key_from_workout_label(label) == expected
 
 
-def test_infer_placement_role_from_label_defaults_unknown_to_easy():
+def test_infer_run_type_key_from_label_defaults_unknown_to_easy():
+    assert infer_run_type_key_from_workout_label("Unknown") == "easy"
     assert infer_placement_role_from_label("Unknown") == "easy"
 
 
@@ -58,21 +72,18 @@ def test_infer_placement_role_from_label_defaults_unknown_to_easy():
     ("role", "expected"),
     [
         ("easy", "Recovery"),
-        ("steady", "Aerobic"),
-        ("endurance", "Medium-Long"),
-        ("long", "Long – fueling practice"),
+        ("tempo", "Tempo"),
+        ("threshold", "Threshold"),
         ("long_run", "Long – fueling practice"),
+        ("race", "Race Day"),
     ],
 )
 def test_placement_focus_tag(role, expected):
     assert placement_focus_tag(role) == expected
 
 
-def test_placement_wu_cd_mi_for_roles():
+def test_placement_wu_cd_mi_for_taxonomy_keys():
     assert placement_wu_cd_mi("easy") == {"wu": 0.5, "cd": 0.5}
-    assert placement_wu_cd_mi("steady") == {"wu": 1.0, "cd": 1.0}
-    assert placement_wu_cd_mi("long_run") == {"wu": 0.0, "cd": 0.0}
-
-
-def test_placement_wu_cd_mi_unknown_defaults():
     assert placement_wu_cd_mi("tempo") == {"wu": 1.0, "cd": 1.0}
+    assert placement_wu_cd_mi("long_run") == {"wu": 0.0, "cd": 0.0}
+    assert placement_wu_cd_mi("race") == {"wu": 0.0, "cd": 0.0}

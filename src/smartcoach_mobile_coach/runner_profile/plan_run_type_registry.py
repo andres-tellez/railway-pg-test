@@ -22,6 +22,8 @@ RUN_TYPE_LONG = "long"
 RUN_TYPE_INTERVALS = "intervals"
 RUN_TYPE_HILLS = "hills"
 
+RUN_TYPE_RACE = "race"
+
 # Deprecated legacy key strings — normalize to easy; not in CANONICAL_RUN_TYPES.
 RUN_TYPE_RECOVERY = "recovery"
 RUN_TYPE_STEADY = "steady"
@@ -36,7 +38,7 @@ PRIMARY_RUN_TYPES = (
     RUN_TYPE_LONG,
 )
 SECONDARY_RUN_TYPES = (RUN_TYPE_INTERVALS, RUN_TYPE_HILLS)
-CANONICAL_RUN_TYPES = PRIMARY_RUN_TYPES + SECONDARY_RUN_TYPES
+CANONICAL_RUN_TYPES = PRIMARY_RUN_TYPES + SECONDARY_RUN_TYPES + (RUN_TYPE_RACE,)
 
 
 @dataclass(frozen=True)
@@ -191,6 +193,25 @@ _RUN_TYPE_SPECS: dict[str, RunTypeSpec] = {
             yellow_max_above=30.0,
         ),
     ),
+    RUN_TYPE_RACE: RunTypeSpec(
+        canonical_key=RUN_TYPE_RACE,
+        display_name="Race Day",
+        taxonomy_key="race",
+        pace_zone_key="z4",
+        hr_zone_key="z4",
+        insights_system="threshold",
+        target_zone_ids=(4, 5),
+        acceptable_zone_min=3,
+        acceptable_zone_max=5,
+        tier=TIER_PRIMARY,
+        min_duration_seconds=20 * 60,
+        tolerance=ToleranceProfile(
+            green_min_compliance=55.0,
+            yellow_min_compliance=40.0,
+            green_max_above=18.0,
+            yellow_max_above=32.0,
+        ),
+    ),
 }
 
 # Legacy / taxonomy aliases → canonical key
@@ -209,7 +230,7 @@ _LEGACY_TO_CANONICAL: dict[str, str] = {
     "hills": RUN_TYPE_HILLS,
     "vo2": RUN_TYPE_INTERVALS,
     "repetitions": RUN_TYPE_INTERVALS,
-    "race": RUN_TYPE_INTERVALS,
+    "race": RUN_TYPE_RACE,
 }
 
 
@@ -309,6 +330,7 @@ def _validate_registry() -> None:
     assert normalize_run_type_key("recovery") == RUN_TYPE_EASY
     assert normalize_run_type_key("intervals") == RUN_TYPE_INTERVALS
     assert normalize_run_type_key("vo2") == RUN_TYPE_INTERVALS
+    assert normalize_run_type_key("race") == RUN_TYPE_RACE
 
 
 _validate_registry()
