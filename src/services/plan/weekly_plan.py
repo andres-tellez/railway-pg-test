@@ -118,6 +118,9 @@ from src.utils.date_helpers import (
     classify_week_temporality,
     get_week_bounds_for_date,
 )
+from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
+    athlete_label_for_plan_workout,
+)
 from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     RUN_TYPE_DEFINITIONS,
     RUN_TYPE_EASY,
@@ -348,7 +351,11 @@ def _build_future_week_day_entry(
         "run_type_key": canonical_run_type_key,
         "run_type": {
             "key": rt_def.key,
-            "display_name": rt_def.display_name,
+            "display_name": athlete_label_for_plan_workout(
+                workout_type=w.workout_type,
+                canonical_run_type_key=canonical_run_type_key,
+                taxonomy_key=rt_def.taxonomy_key,
+            ),
             "target_zone_ids": list(rt_def.target_zone_ids),
         },
         "workout_type": w.workout_type,
@@ -456,7 +463,11 @@ def _build_past_current_day_entry(
         "run_type_key": canonical_run_type_key,
         "run_type": {
             "key": rt_def.key,
-            "display_name": rt_def.display_name,
+            "display_name": athlete_label_for_plan_workout(
+                workout_type=w.workout_type,
+                canonical_run_type_key=canonical_run_type_key,
+                taxonomy_key=rt_def.taxonomy_key,
+            ),
             "target_zone_ids": list(rt_def.target_zone_ids),
         },
         "workout_type": w.workout_type,

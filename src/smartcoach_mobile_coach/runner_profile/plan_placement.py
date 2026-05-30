@@ -118,7 +118,7 @@ _PERSISTED_RUN_TYPE_ALIASES: dict[str, str] = {
 ROLE_TO_TAXONOMY_MAP: dict[str, str] = {
     LONG: "long_run",
     ENDURANCE: "easy",
-    STEADY: "steady",
+    STEADY: "easy",
     EASY: "easy",
 }
 
@@ -161,8 +161,13 @@ def recognize_run_type_key_from_workout_label(label: str | None) -> str | None:
     if not label or not str(label).strip():
         return None
     workout_type_lower = str(label).strip().lower()
-    if "threshold" in workout_type_lower or "tempo" in workout_type_lower:
-        return "tempo"
+    if (
+        "threshold" in workout_type_lower
+        or "tempo" in workout_type_lower
+        or "interval" in workout_type_lower
+        or "hill" in workout_type_lower
+    ):
+        return ENDURANCE
     if "easy" in workout_type_lower or "recovery" in workout_type_lower:
         return EASY
     if "steady" in workout_type_lower or "aerobic" in workout_type_lower:

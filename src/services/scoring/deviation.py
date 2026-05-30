@@ -90,8 +90,6 @@ from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     RUN_TYPE_DEFINITIONS,
     RUN_TYPE_EASY,
     RUN_TYPE_LONG,
-    RUN_TYPE_RECOVERY,
-    RUN_TYPE_STEADY,
     RUN_TYPE_TEMPO,
     normalize_run_type_key,
 )
@@ -109,16 +107,10 @@ class DeviationDirection(str, Enum):
 # Keyed by canonical run_type_key (``runner_profile.plan_run_type_registry``).
 #
 # Intentionally EXCLUDES:
-#   * ``steady`` — deferred to V1.7 per spec §5 "Steady TODO"; activity
-#     adapter short-circuits to ``None``.
-#   * ``tempo`` — listed here so the pure ``classify_deviation`` function
-#     can be called with main-block metrics by a future caller once the
-#     main-block infrastructure lands. The activity-level adapter in
-#     V1.6 still returns ``None`` for tempo (see module docstring).
+#   * ``tempo`` / ``threshold`` / secondaries — main-block infrastructure pending;
+#     activity adapter short-circuits to ``None`` for tempo (V1.6).
 DEVIATION_THRESHOLDS: dict[str, tuple[float, float]] = {
-    RUN_TYPE_RECOVERY: (5.0, 40.0),
     RUN_TYPE_EASY: (15.0, 30.0),
-    RUN_TYPE_TEMPO: (20.0, 25.0),
     RUN_TYPE_LONG: (20.0, 30.0),
 }
 
@@ -144,7 +136,7 @@ def classify_deviation(
         main-block for tempo — see module docstring).
 
     Returns ``None`` (omit) when any of:
-      * ``planned_type_canonical`` is falsy, unknown, or ``steady``,
+      * ``planned_type_canonical`` is falsy or unknown,
       * ``duration_seconds`` is ``None`` or ``< 600``,
       * ``pct_above`` or ``pct_below`` is ``None`` (HR unusable
         /scope-unavailable).
@@ -153,8 +145,7 @@ def classify_deviation(
     (spec §5 rule 1).
 
     Args:
-        planned_type_canonical: Canonical run-type key. ``steady`` is
-            explicitly handled as omit.
+        planned_type_canonical: Canonical run-type key.
         pct_above: Percent-of-time above the planned-type target
             band, scope-appropriate for the run type.
         pct_below: Percent-of-time below the planned-type target
@@ -166,9 +157,6 @@ def classify_deviation(
         A :class:`DeviationDirection` enum, or ``None`` for omission.
     """
     if not planned_type_canonical:
-        return None
-    if planned_type_canonical == RUN_TYPE_STEADY:
-        # Spec §5 rule 2: omit for Steady (deferred to V1.7).
         return None
     thresholds = DEVIATION_THRESHOLDS.get(planned_type_canonical)
     if thresholds is None:
@@ -225,10 +213,6 @@ def compute_deviation_direction_for_activity(
         rules.
     """
     planned_type_canonical = normalize_run_type_key(getattr(act, "planned_type", None))
-    # Steady omission (explicit to keep the intent obvious even though
-    # ``classify_deviation`` would also short-circuit).
-    if planned_type_canonical == RUN_TYPE_STEADY:
-        return None
     # V1.6 Tempo gap: omit until main-block metrics are available.
     # See module docstring. Phase A item 3 ships spec-compliant
     # behavior for recovery/easy/long; tempo is tracked as a

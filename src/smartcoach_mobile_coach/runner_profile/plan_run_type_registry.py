@@ -4,7 +4,7 @@ Canonical run-type registry for plan, scoring, and Insights zone mapping.
 Single source of truth for:
 - Legacy alias → canonical key normalization
 - Pace/HR zone keys per run type
-- Insights system mapping (Steady → tempo / Z3)
+- Insights system mapping (Z2=Easy, Z3=Tempo, Z4=Threshold)
 - Display names and scoring tolerances
 """
 
@@ -16,18 +16,27 @@ from dataclasses import dataclass
 # Canonical keys (scoring / API wire)
 # ---------------------------------------------------------------------------
 RUN_TYPE_EASY = "easy"
+RUN_TYPE_TEMPO = "tempo"
+RUN_TYPE_THRESHOLD = "threshold"
+RUN_TYPE_LONG = "long"
+RUN_TYPE_INTERVALS = "intervals"
+RUN_TYPE_HILLS = "hills"
+
+# Deprecated legacy key strings — normalize to easy; not in CANONICAL_RUN_TYPES.
 RUN_TYPE_RECOVERY = "recovery"
 RUN_TYPE_STEADY = "steady"
-RUN_TYPE_TEMPO = "tempo"
-RUN_TYPE_LONG = "long"
 
-CANONICAL_RUN_TYPES = (
+TIER_PRIMARY = "primary"
+TIER_SECONDARY = "secondary"
+
+PRIMARY_RUN_TYPES = (
     RUN_TYPE_EASY,
-    RUN_TYPE_RECOVERY,
-    RUN_TYPE_STEADY,
     RUN_TYPE_TEMPO,
+    RUN_TYPE_THRESHOLD,
     RUN_TYPE_LONG,
 )
+SECONDARY_RUN_TYPES = (RUN_TYPE_INTERVALS, RUN_TYPE_HILLS)
+CANONICAL_RUN_TYPES = PRIMARY_RUN_TYPES + SECONDARY_RUN_TYPES
 
 
 @dataclass(frozen=True)
@@ -53,6 +62,8 @@ class RunTypeSpec:
     target_zone_ids: tuple[int, ...]
     acceptable_zone_min: int
     acceptable_zone_max: int
+    tier: str = TIER_PRIMARY
+    primary_run_type: str | None = None
     min_duration_seconds: int | None = None
     tolerance: ToleranceProfile | None = None
 
@@ -74,48 +85,13 @@ _RUN_TYPE_SPECS: dict[str, RunTypeSpec] = {
         target_zone_ids=(1, 2),
         acceptable_zone_min=1,
         acceptable_zone_max=3,
+        tier=TIER_PRIMARY,
         min_duration_seconds=20 * 60,
         tolerance=ToleranceProfile(
             green_min_compliance=76.0,
             yellow_min_compliance=60.0,
             green_max_above=10.0,
             yellow_max_above=22.0,
-        ),
-    ),
-    RUN_TYPE_RECOVERY: RunTypeSpec(
-        canonical_key=RUN_TYPE_RECOVERY,
-        display_name="Recovery",
-        taxonomy_key="recovery",
-        pace_zone_key="z2",
-        hr_zone_key="z2",
-        insights_system="easy",
-        target_zone_ids=(1,),
-        acceptable_zone_min=1,
-        acceptable_zone_max=2,
-        min_duration_seconds=15 * 60,
-        tolerance=ToleranceProfile(
-            green_min_compliance=88.0,
-            yellow_min_compliance=72.0,
-            green_max_above=4.0,
-            yellow_max_above=10.0,
-        ),
-    ),
-    RUN_TYPE_STEADY: RunTypeSpec(
-        canonical_key=RUN_TYPE_STEADY,
-        display_name="Steady",
-        taxonomy_key="steady",
-        pace_zone_key="z3",
-        hr_zone_key="z3",
-        insights_system="tempo",
-        target_zone_ids=(2, 3),
-        acceptable_zone_min=2,
-        acceptable_zone_max=3,
-        min_duration_seconds=25 * 60,
-        tolerance=ToleranceProfile(
-            green_min_compliance=72.0,
-            yellow_min_compliance=56.0,
-            green_max_above=9.0,
-            yellow_max_above=20.0,
         ),
     ),
     RUN_TYPE_TEMPO: RunTypeSpec(
@@ -128,12 +104,32 @@ _RUN_TYPE_SPECS: dict[str, RunTypeSpec] = {
         target_zone_ids=(3, 4),
         acceptable_zone_min=3,
         acceptable_zone_max=4,
+        tier=TIER_PRIMARY,
         min_duration_seconds=20 * 60,
         tolerance=ToleranceProfile(
             green_min_compliance=66.0,
             yellow_min_compliance=50.0,
             green_max_above=12.0,
             yellow_max_above=25.0,
+        ),
+    ),
+    RUN_TYPE_THRESHOLD: RunTypeSpec(
+        canonical_key=RUN_TYPE_THRESHOLD,
+        display_name="Threshold",
+        taxonomy_key="threshold",
+        pace_zone_key="z4",
+        hr_zone_key="z4",
+        insights_system="threshold",
+        target_zone_ids=(4,),
+        acceptable_zone_min=3,
+        acceptable_zone_max=5,
+        tier=TIER_PRIMARY,
+        min_duration_seconds=20 * 60,
+        tolerance=ToleranceProfile(
+            green_min_compliance=64.0,
+            yellow_min_compliance=48.0,
+            green_max_above=14.0,
+            yellow_max_above=28.0,
         ),
     ),
     RUN_TYPE_LONG: RunTypeSpec(
@@ -146,6 +142,7 @@ _RUN_TYPE_SPECS: dict[str, RunTypeSpec] = {
         target_zone_ids=(2,),
         acceptable_zone_min=1,
         acceptable_zone_max=3,
+        tier=TIER_PRIMARY,
         min_duration_seconds=75 * 60,
         tolerance=ToleranceProfile(
             green_min_compliance=68.0,
@@ -154,29 +151,66 @@ _RUN_TYPE_SPECS: dict[str, RunTypeSpec] = {
             yellow_max_above=27.0,
         ),
     ),
+    RUN_TYPE_INTERVALS: RunTypeSpec(
+        canonical_key=RUN_TYPE_INTERVALS,
+        display_name="Intervals",
+        taxonomy_key="intervals",
+        pace_zone_key="z4",
+        hr_zone_key="z4",
+        insights_system="threshold",
+        target_zone_ids=(4, 5),
+        acceptable_zone_min=4,
+        acceptable_zone_max=5,
+        tier=TIER_SECONDARY,
+        primary_run_type=RUN_TYPE_THRESHOLD,
+        min_duration_seconds=20 * 60,
+        tolerance=ToleranceProfile(
+            green_min_compliance=62.0,
+            yellow_min_compliance=46.0,
+            green_max_above=16.0,
+            yellow_max_above=30.0,
+        ),
+    ),
+    RUN_TYPE_HILLS: RunTypeSpec(
+        canonical_key=RUN_TYPE_HILLS,
+        display_name="Hills",
+        taxonomy_key="hills",
+        pace_zone_key="z4",
+        hr_zone_key="z4",
+        insights_system="threshold",
+        target_zone_ids=(4, 5),
+        acceptable_zone_min=4,
+        acceptable_zone_max=5,
+        tier=TIER_SECONDARY,
+        primary_run_type=RUN_TYPE_THRESHOLD,
+        min_duration_seconds=20 * 60,
+        tolerance=ToleranceProfile(
+            green_min_compliance=62.0,
+            yellow_min_compliance=46.0,
+            green_max_above=16.0,
+            yellow_max_above=30.0,
+        ),
+    ),
 }
 
 # Legacy / taxonomy aliases → canonical key
 _LEGACY_TO_CANONICAL: dict[str, str] = {
     "easy": RUN_TYPE_EASY,
-    "recovery": RUN_TYPE_RECOVERY,
-    "steady": RUN_TYPE_STEADY,
+    "recovery": RUN_TYPE_EASY,
+    "steady": RUN_TYPE_EASY,
+    "fartlek": RUN_TYPE_EASY,
+    "shakeout": RUN_TYPE_EASY,
     "endurance": RUN_TYPE_LONG,
     "long": RUN_TYPE_LONG,
     "long_run": RUN_TYPE_LONG,
     "tempo": RUN_TYPE_TEMPO,
-    "threshold": RUN_TYPE_TEMPO,
-    "intervals": RUN_TYPE_TEMPO,
-    "hills": RUN_TYPE_TEMPO,
-    "fartlek": RUN_TYPE_TEMPO,
-    "race": RUN_TYPE_TEMPO,
-    "shakeout": RUN_TYPE_EASY,
-    "vo2": RUN_TYPE_TEMPO,
-    "repetitions": RUN_TYPE_TEMPO,
+    "threshold": RUN_TYPE_THRESHOLD,
+    "intervals": RUN_TYPE_INTERVALS,
+    "hills": RUN_TYPE_HILLS,
+    "vo2": RUN_TYPE_INTERVALS,
+    "repetitions": RUN_TYPE_INTERVALS,
+    "race": RUN_TYPE_INTERVALS,
 }
-
-_TAXONOMY_Z3_PACE_KEYS = frozenset({"threshold", "tempo", "steady"})
-_TAXONOMY_Z4_PACE_KEYS = frozenset({"vo2", "intervals", "repetitions", "race"})
 
 
 def normalize_run_type_key(raw_value: str | None) -> str | None:
@@ -212,10 +246,6 @@ def pace_zone_key_for_run_type(
     run_type_lower = str(run_type_key or "").strip().lower()
     if has_marathon_finish and run_type_lower in {"long", "long_run"}:
         return "m"
-    if run_type_lower in _TAXONOMY_Z3_PACE_KEYS:
-        return "z3"
-    if run_type_lower in _TAXONOMY_Z4_PACE_KEYS:
-        return "z4"
     return resolve_run_type(run_type_key).pace_zone_key
 
 
@@ -237,17 +267,19 @@ def iter_run_type_registry_payload() -> list[dict]:
         legacy_aliases = sorted(
             alias for alias, canon in _LEGACY_TO_CANONICAL.items() if canon == key
         )
-        out.append(
-            {
-                "key": spec.canonical_key,
-                "display_name": spec.display_name,
-                "taxonomy_key": spec.taxonomy_key,
-                "pace_zone_key": spec.pace_zone_key,
-                "hr_zone_key": spec.hr_zone_key,
-                "insights_system": spec.insights_system,
-                "legacy_aliases": legacy_aliases,
-            }
-        )
+        entry: dict = {
+            "key": spec.canonical_key,
+            "tier": spec.tier,
+            "display_name": spec.display_name,
+            "taxonomy_key": spec.taxonomy_key,
+            "pace_zone_key": spec.pace_zone_key,
+            "hr_zone_key": spec.hr_zone_key,
+            "insights_system": spec.insights_system,
+            "legacy_aliases": legacy_aliases,
+        }
+        if spec.primary_run_type:
+            entry["primary_run_type"] = spec.primary_run_type
+        out.append(entry)
     return out
 
 
@@ -256,11 +288,27 @@ def _validate_registry() -> None:
     for spec in _RUN_TYPE_SPECS.values():
         assert spec.pace_zone_key in {"z2", "z3", "z4", "m"}
         assert spec.hr_zone_key in {"z1", "z2", "z3", "z4", "z5"}
-    steady = _RUN_TYPE_SPECS[RUN_TYPE_STEADY]
-    assert steady.pace_zone_key == "z3"
-    assert steady.insights_system == "tempo"
+        assert spec.tier in {TIER_PRIMARY, TIER_SECONDARY}
+        if spec.tier == TIER_SECONDARY:
+            assert spec.primary_run_type in PRIMARY_RUN_TYPES
+        else:
+            assert spec.primary_run_type is None
+
+    threshold = _RUN_TYPE_SPECS[RUN_TYPE_THRESHOLD]
+    assert threshold.pace_zone_key == "z4"
+    assert threshold.insights_system == "threshold"
+    assert threshold.tier == TIER_PRIMARY
+
+    tempo = _RUN_TYPE_SPECS[RUN_TYPE_TEMPO]
+    assert tempo.pace_zone_key == "z3"
+    assert tempo.canonical_key != threshold.canonical_key
+
     assert normalize_run_type_key("endurance") == RUN_TYPE_LONG
-    assert normalize_run_type_key("threshold") == RUN_TYPE_TEMPO
+    assert normalize_run_type_key("threshold") == RUN_TYPE_THRESHOLD
+    assert normalize_run_type_key("steady") == RUN_TYPE_EASY
+    assert normalize_run_type_key("recovery") == RUN_TYPE_EASY
+    assert normalize_run_type_key("intervals") == RUN_TYPE_INTERVALS
+    assert normalize_run_type_key("vo2") == RUN_TYPE_INTERVALS
 
 
 _validate_registry()

@@ -45,7 +45,7 @@ from __future__ import annotations
 from typing import NamedTuple, Protocol
 
 from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
-    RUN_TYPE_DEFINITIONS,
+    resolve_run_type,
 )
 
 
@@ -131,17 +131,17 @@ def zone_metrics_for_type(
         distribution_pct: Output of :func:`zone_distribution_from_activity`
             (or any dict shaped the same way — zone ids 1–5 mapping to
             percent-of-time floats).
-        run_type_key: Canonical run type key from
-            :data:`src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry.RUN_TYPE_DEFINITIONS`.
+        run_type_key: Canonical or legacy run type key; normalized via registry.
 
     Returns:
         :class:`ZoneMetrics` with three floats, each rounded to two
         decimal places.
 
     Raises:
-        KeyError: if ``run_type_key`` is not a canonical run type.
+        KeyError: if ``run_type_key`` cannot be resolved (should not occur
+            for legacy aliases handled by :func:`resolve_run_type`).
     """
-    definition = RUN_TYPE_DEFINITIONS[run_type_key]
+    definition = resolve_run_type(run_type_key)
     in_target = sum(distribution_pct.get(z, 0.0) for z in definition.target_zone_ids)
     pct_below = sum(
         distribution_pct.get(z, 0.0) for z in range(1, definition.acceptable_zone_min)
