@@ -68,6 +68,7 @@ from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
     WORKOUT_DEFINITIONS,
     is_quality_workout,
     get_workout_definition,
+    workout_display_label,
 )
 from .weekly_templates import get_template
 from .placement_rules import get_rules, validate_placement
@@ -954,11 +955,7 @@ class WorkoutPlacementEngine:
             else:
                 miles = day_miles.get(day, MIN_NON_LONG_MILES)
 
-            # Use capitalized workout type as label (e.g., "Easy", "Tempo", "Long")
-            if workout_type == "long_run":
-                short_label = "Long"
-            else:
-                short_label = workout_type.capitalize()
+            short_label = workout_display_label(workout_type)
 
             result[day] = {
                 "day": day,

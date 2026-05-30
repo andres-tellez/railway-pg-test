@@ -127,6 +127,9 @@ from src.utils.date_helpers import get_week_bounds_for_date
 from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     RUN_TYPE_DEFINITIONS,
 )
+from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
+    workout_display_label,
+)
 from src.utils.timezone_helpers import get_today_date_in_timezone
 
 logger = logging.getLogger(__name__)
@@ -860,7 +863,7 @@ def build_phase_analysis_payload(
         if rt_def is not None:
             bucket["run_type"] = {
                 "key": rt_def.key,
-                "display_name": rt_def.display_name,
+                "display_name": workout_display_label(rt_def.taxonomy_key),
                 "target_zone_ids": list(rt_def.target_zone_ids),
             }
 

@@ -18,7 +18,7 @@ def test_weekly_templates_import_validates_against_taxonomy():
 
 
 def test_validate_weekly_template_accepts_known_taxonomy_keys():
-    template = ["tempo", "easy", "steady", "long_run"]
+    template = ["tempo", "easy", "easy", "long_run"]
     validate_weekly_template(
         template,
         frequency=4,

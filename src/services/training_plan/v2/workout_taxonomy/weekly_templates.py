@@ -93,8 +93,8 @@ WEEKLY_TEMPLATES: Dict[str, Dict[int, Dict[str, List[str]]]] = {
         # 4-day plans (common recreational runner frequency)
         # ---------------------------------------------------------------------
         4: {
-            "Base": ["easy", "steady", "easy", "long_run"],
-            "Build": ["tempo", "easy", "steady", "long_run"],
+            "Base": ["easy", "easy", "easy", "long_run"],
+            "Build": ["tempo", "easy", "easy", "long_run"],
             "Peak": ["intervals", "easy", "tempo", "long_run"],
             "Taper": ["easy", "easy", "easy", "long_run"],
         },
@@ -102,8 +102,8 @@ WEEKLY_TEMPLATES: Dict[str, Dict[int, Dict[str, List[str]]]] = {
         # 5-day plans (serious recreational/sub-elite)
         # ---------------------------------------------------------------------
         5: {
-            "Base": ["easy", "steady", "easy", "easy", "long_run"],
-            "Build": ["tempo", "easy", "steady", "easy", "long_run"],
+            "Base": ["easy", "easy", "easy", "easy", "long_run"],
+            "Build": ["tempo", "easy", "easy", "easy", "long_run"],
             "Peak": ["intervals", "easy", "tempo", "easy", "long_run"],
             "Taper": ["easy", "easy", "easy", "easy", "long_run"],
         },
@@ -111,9 +111,9 @@ WEEKLY_TEMPLATES: Dict[str, Dict[int, Dict[str, List[str]]]] = {
         # 6-day plans (competitive runners)
         # ---------------------------------------------------------------------
         6: {
-            "Base": ["easy", "steady", "easy", "steady", "easy", "long_run"],
-            "Build": ["tempo", "easy", "steady", "threshold", "easy", "long_run"],
-            "Peak": ["intervals", "easy", "steady", "tempo", "easy", "long_run"],
+            "Base": ["easy", "easy", "easy", "easy", "easy", "long_run"],
+            "Build": ["tempo", "easy", "easy", "threshold", "easy", "long_run"],
+            "Peak": ["intervals", "easy", "easy", "tempo", "easy", "long_run"],
             "Taper": ["easy", "easy", "easy", "easy", "easy", "long_run"],
         },
     },
@@ -126,7 +126,7 @@ WEEKLY_TEMPLATES: Dict[str, Dict[int, Dict[str, List[str]]]] = {
         # 3-day plans (minimal frequency)
         # ---------------------------------------------------------------------
         3: {
-            "Base": ["easy", "steady", "long_run"],
+            "Base": ["easy", "easy", "long_run"],
             "Build": ["tempo", "easy", "long_run"],
             "Peak": ["intervals", "easy", "long_run"],
             "Taper": ["easy", "easy", "long_run"],
@@ -135,8 +135,8 @@ WEEKLY_TEMPLATES: Dict[str, Dict[int, Dict[str, List[str]]]] = {
         # 4-day plans (common recreational runner frequency)
         # ---------------------------------------------------------------------
         4: {
-            "Base": ["easy", "steady", "easy", "long_run"],
-            "Build": ["tempo", "easy", "steady", "long_run"],
+            "Base": ["easy", "easy", "easy", "long_run"],
+            "Build": ["tempo", "easy", "easy", "long_run"],
             "Peak": ["intervals", "easy", "tempo", "long_run"],
             "Taper": ["easy", "easy", "easy", "long_run"],
         },
@@ -144,8 +144,8 @@ WEEKLY_TEMPLATES: Dict[str, Dict[int, Dict[str, List[str]]]] = {
         # 5-day plans (serious recreational/sub-elite)
         # ---------------------------------------------------------------------
         5: {
-            "Base": ["easy", "steady", "easy", "easy", "long_run"],
-            "Build": ["tempo", "easy", "steady", "easy", "long_run"],
+            "Base": ["easy", "easy", "easy", "easy", "long_run"],
+            "Build": ["tempo", "easy", "easy", "easy", "long_run"],
             "Peak": ["intervals", "easy", "tempo", "easy", "long_run"],
             "Taper": ["easy", "easy", "easy", "easy", "long_run"],
         },
@@ -153,9 +153,9 @@ WEEKLY_TEMPLATES: Dict[str, Dict[int, Dict[str, List[str]]]] = {
         # 6-day plans (competitive runners)
         # ---------------------------------------------------------------------
         6: {
-            "Base": ["easy", "steady", "easy", "steady", "easy", "long_run"],
-            "Build": ["tempo", "easy", "steady", "threshold", "easy", "long_run"],
-            "Peak": ["intervals", "easy", "steady", "tempo", "easy", "long_run"],
+            "Base": ["easy", "easy", "easy", "easy", "easy", "long_run"],
+            "Build": ["tempo", "easy", "easy", "threshold", "easy", "long_run"],
+            "Peak": ["intervals", "easy", "easy", "tempo", "easy", "long_run"],
             "Taper": ["easy", "easy", "easy", "easy", "easy", "long_run"],
         },
     },
@@ -199,16 +199,16 @@ SCENARIO_OVERRIDES: Dict[str, Dict[str, Dict[int, Dict[str, List[str]]]]] = {
     "injury_safe": {
         "marathon": {
             3: {
-                "Build": ["steady", "easy", "long_run"],  # No tempo
+                "Build": ["easy", "easy", "long_run"],  # No tempo
                 "Peak": ["tempo", "easy", "long_run"],  # Tempo instead of intervals
             },
             4: {
-                "Build": ["steady", "easy", "steady", "long_run"],
-                "Peak": ["tempo", "easy", "steady", "long_run"],
+                "Build": ["easy", "easy", "easy", "long_run"],
+                "Peak": ["tempo", "easy", "easy", "long_run"],
             },
             5: {
-                "Build": ["steady", "easy", "steady", "easy", "long_run"],
-                "Peak": ["tempo", "easy", "steady", "easy", "long_run"],
+                "Build": ["easy", "easy", "easy", "easy", "long_run"],
+                "Peak": ["tempo", "easy", "easy", "easy", "long_run"],
             },
         },
         "half": {},  # Placeholder
@@ -222,20 +222,20 @@ SCENARIO_OVERRIDES: Dict[str, Dict[str, Dict[int, Dict[str, List[str]]]]] = {
         "marathon": {
             3: {
                 "Base": ["easy", "easy", "long_run"],
-                "Build": ["easy", "steady", "long_run"],  # Very conservative
-                "Peak": ["steady", "easy", "long_run"],  # No intervals
+                "Build": ["easy", "easy", "long_run"],  # Very conservative
+                "Peak": ["easy", "easy", "long_run"],  # No intervals
                 "Taper": ["easy", "easy", "long_run"],
             },
             4: {
                 "Base": ["easy", "easy", "easy", "long_run"],
-                "Build": ["easy", "steady", "easy", "long_run"],
-                "Peak": ["steady", "easy", "steady", "long_run"],
+                "Build": ["easy", "easy", "easy", "long_run"],
+                "Peak": ["easy", "easy", "easy", "long_run"],
                 "Taper": ["easy", "easy", "easy", "long_run"],
             },
             5: {
                 "Base": ["easy", "easy", "easy", "easy", "long_run"],
-                "Build": ["easy", "steady", "easy", "easy", "long_run"],
-                "Peak": ["steady", "easy", "steady", "easy", "long_run"],
+                "Build": ["easy", "easy", "easy", "easy", "long_run"],
+                "Peak": ["easy", "easy", "easy", "easy", "long_run"],
                 "Taper": ["easy", "easy", "easy", "easy", "long_run"],
             },
         },
@@ -249,11 +249,11 @@ SCENARIO_OVERRIDES: Dict[str, Dict[str, Dict[int, Dict[str, List[str]]]]] = {
     "hills_focus": {
         "marathon": {
             4: {
-                "Build": ["hills", "easy", "steady", "long_run"],
+                "Build": ["hills", "easy", "easy", "long_run"],
                 "Peak": ["intervals", "easy", "hills", "long_run"],
             },
             5: {
-                "Build": ["hills", "easy", "steady", "easy", "long_run"],
+                "Build": ["hills", "easy", "easy", "easy", "long_run"],
                 "Peak": ["intervals", "easy", "hills", "easy", "long_run"],
             },
         },
