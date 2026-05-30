@@ -108,6 +108,9 @@ def recalculate_hr_zones_for_user(session: Session, user_id: str) -> dict:
     """
     Recalculate HR zones for all active plans for a user.
 
+    Refreshes ``runner_zone_profiles`` from the current ``user_profile`` first
+    so ``target_hr`` rows use the updated max/resting HR (not stale cached bands).
+
     Args:
         session: Database session
         user_id: User ID
@@ -115,6 +118,17 @@ def recalculate_hr_zones_for_user(session: Session, user_id: str) -> dict:
     Returns:
         Dict with plan_id -> result counts
     """
+    try:
+        from src.smartcoach_mobile_coach.runner_profile import refresh_runner_profile
+
+        refresh_runner_profile(session, user_id)
+    except Exception as e:
+        logger.warning(
+            "Could not refresh runner profile before HR zone recalc for user %s: %s",
+            user_id,
+            e,
+        )
+
     # Get all active plans for user
     plans = session.query(Plan).filter_by(user_id=user_id, is_active=True).all()
 
