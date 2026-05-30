@@ -22,7 +22,7 @@ from src.smartcoach_mobile_coach.runner_profile.models import (
 )
 from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
     RUN_TYPE_EASY,
-    RUN_TYPE_STEADY,
+    normalize_run_type_key,
 )
 
 
@@ -74,7 +74,7 @@ def _calculate_completion_rate(week_log: List[WeekLogRun]) -> float:
 
 def _calculate_avg_rpe(week_log: List[WeekLogRun]) -> float:
     easy_rpe = [
-        r.rpe for r in week_log if r.run_type in (RUN_TYPE_EASY, RUN_TYPE_STEADY)
+        r.rpe for r in week_log if normalize_run_type_key(r.run_type) == RUN_TYPE_EASY
     ]
     return sum(easy_rpe) / len(easy_rpe) if easy_rpe else 3.0
 

@@ -36,6 +36,13 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
+    is_quality_workout as taxonomy_is_quality,
+    pace_zone_key_for_taxonomy,
+    placement_role_for_taxonomy,
+    resolve_taxonomy_and_placement,
+    workout_display_label,
+)
 from src.db.dao.plan_workouts_dao import get_workouts_for_week
 from src.db.dao.weekly_decision_log_dao import create_decision_log
 from src.db.models.plan_workouts import PlanWorkout
@@ -345,6 +352,15 @@ def _workout_for_day(ctx: _WeekContext, day_name: str) -> Optional[PlanWorkout]:
     return None
 
 
+def _coach_taxonomy_type(run_type: str) -> str:
+    """Map minimal coach adjustment run_type to taxonomy key."""
+    if run_type == "recovery":
+        return "easy"
+    if run_type == "long":
+        return "long_run"
+    return run_type
+
+
 def _db_fields_for_added_run(
     *,
     ctx: _WeekContext,
@@ -353,55 +369,19 @@ def _db_fields_for_added_run(
     miles: float,
 ) -> Dict[str, Any]:
     workout_date = _date_for_day(ctx, day_name)
-    if run_type == "tempo":
-        return {
-            "plan_id": ctx.plan.id,
-            "date": workout_date,
-            "workout_type": "Tempo",
-            "description": "Tempo workout (coach adjustment)",
-            "miles": miles,
-            "intensity": "z4",
-            # Legacy constraint: plan_workouts.run_type_key does not admit
-            # "tempo", so quality additions map to the existing
-            # medium-long / quality bucket on the DB row.
-            "run_type_key": "endurance",
-            "phase": _resolve_phase(ctx.workouts),
-            "allow_quality": True,
-        }
-    if run_type == "long":
-        return {
-            "plan_id": ctx.plan.id,
-            "date": workout_date,
-            "workout_type": "Long Run",
-            "description": "Long run (coach adjustment)",
-            "miles": miles,
-            "intensity": "z2",
-            "run_type_key": "long",
-            "phase": _resolve_phase(ctx.workouts),
-            "allow_quality": False,
-        }
-    if run_type == "recovery":
-        return {
-            "plan_id": ctx.plan.id,
-            "date": workout_date,
-            "workout_type": "Recovery Run",
-            "description": "Recovery run (coach adjustment)",
-            "miles": miles,
-            "intensity": "z2",
-            "run_type_key": "easy",
-            "phase": _resolve_phase(ctx.workouts),
-            "allow_quality": False,
-        }
+    taxonomy_type, placement_role = resolve_taxonomy_and_placement(
+        _coach_taxonomy_type(run_type)
+    )
     return {
         "plan_id": ctx.plan.id,
         "date": workout_date,
-        "workout_type": "Easy Run",
-        "description": "Easy run (coach adjustment)",
+        "workout_type": workout_display_label(taxonomy_type),
+        "description": f"{workout_display_label(taxonomy_type)} (coach adjustment)",
         "miles": miles,
-        "intensity": "z2",
-        "run_type_key": "easy",
+        "intensity": pace_zone_key_for_taxonomy(taxonomy_type),
+        "run_type_key": placement_role,
         "phase": _resolve_phase(ctx.workouts),
-        "allow_quality": False,
+        "allow_quality": taxonomy_is_quality(taxonomy_type),
     }
 
 
@@ -581,10 +561,13 @@ def _apply_adjust_intensity(
             )
 
         workout = eligible[0]
-        workout.workout_type = "Tempo"
-        workout.description = "Tempo workout (coach adjustment)"
-        workout.intensity = "z4"
-        workout.run_type_key = "endurance"
+        taxonomy_type = "tempo"
+        workout.workout_type = workout_display_label(taxonomy_type)
+        workout.description = (
+            f"{workout_display_label(taxonomy_type)} (coach adjustment)"
+        )
+        workout.intensity = pace_zone_key_for_taxonomy(taxonomy_type)
+        workout.run_type_key = placement_role_for_taxonomy(taxonomy_type)
         workout.allow_quality = True
         return (
             "applied",
@@ -629,10 +612,10 @@ def _apply_adjust_intensity(
         caps_applied.append("quality_floor_override_with_reason_code")
 
     for workout in to_convert:
-        workout.workout_type = "Easy Run"
-        workout.description = "Easy run (coach adjustment from quality)"
-        workout.intensity = "z2"
-        workout.run_type_key = "easy"
+        workout.workout_type = workout_display_label("easy")
+        workout.description = "Easy (coach adjustment from quality)"
+        workout.intensity = pace_zone_key_for_taxonomy("easy")
+        workout.run_type_key = placement_role_for_taxonomy("easy")
         workout.allow_quality = False
 
     return (

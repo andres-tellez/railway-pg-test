@@ -268,31 +268,18 @@ def get_workout_pace_label_key(workout_type: str) -> str:
     """
     Map workout type to pace_labels key (z2, z3, m, z4).
 
-    Args:
-        workout_type: Workout type string (e.g., "easy", "steady", "long")
-
-    Returns:
-        Pace label key: "z2", "z3", "m", or "z4"
+    Delegates to runner_profile SSOT — do not duplicate zone heuristics here.
     """
+    from src.smartcoach_mobile_coach.runner_profile.plan_workout_taxonomy import (
+        pace_zone_key_for_taxonomy,
+    )
+
     if not workout_type:
         return "z2"
-
-    workout_type_lower = workout_type.lower()
-
-    if "easy" in workout_type_lower or "recovery" in workout_type_lower:
-        return "z2"
-    elif "steady" in workout_type_lower or "aerobic" in workout_type_lower:
-        return "z3"
-    elif "endurance" in workout_type_lower or "medium" in workout_type_lower:
-        return "z3"
-    elif "long" in workout_type_lower:
-        return "z2"
-    elif "tempo" in workout_type_lower or "threshold" in workout_type_lower:
-        return "z4"
-    elif "marathon" in workout_type_lower:
+    workout_type_lower = str(workout_type).strip().lower()
+    if "marathon" in workout_type_lower:
         return "m"
-    else:
-        return "z2"
+    return pace_zone_key_for_taxonomy(workout_type_lower)
 
 
 def extract_pace_zone_from_workout(workout_data: Dict[str, Any]) -> str:

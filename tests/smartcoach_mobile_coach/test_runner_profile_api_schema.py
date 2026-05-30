@@ -147,13 +147,18 @@ def test_payload_includes_training_pace_recommendations_when_provided():
 
     registry = payload.get("run_type_registry")
     assert registry is not None
-    steady = next(e for e in registry if e["key"] == "steady")
-    assert steady["pace_zone_key"] == "z3"
-    assert steady["insights_system"] == "tempo"
+    threshold = next(e for e in registry if e["key"] == "threshold")
+    assert threshold["pace_zone_key"] == "z4"
+    assert threshold["insights_system"] == "threshold"
+    assert threshold["tier"] == "primary"
 
     taxonomy = payload.get("plan_workout_taxonomy")
     assert taxonomy is not None
-    assert any(entry["key"] == "tempo" for entry in taxonomy)
+    tempo = next(entry for entry in taxonomy if entry["key"] == "tempo")
+    assert tempo["display_name"] == "Tempo"
+    threshold_tax = next(entry for entry in taxonomy if entry["key"] == "threshold")
+    assert threshold_tax["display_name"] == "Threshold"
+    assert threshold_tax["canonical_run_type_key"] == "threshold"
 
     authorities = payload.get("pace_authorities")
     assert authorities is not None

@@ -226,3 +226,31 @@ class TestPlanStorageRunTypeKeyValidation:
         row = {"run_type_key": "Race", "segments": {}, "miles": 26.2}
         with pytest.raises(ValueError, match="Invalid run_type_key"):
             PlanStorageService._validate_row(row)
+
+    def test_workout_to_row_maps_taxonomy_tempo_to_endurance_placement(self):
+        from datetime import date
+
+        row = PlanStorageService._workout_to_row(
+            plan_id=1,
+            date=date(2026, 5, 1),
+            phase="Build",
+            run={"type": "tempo", "miles": 6.0},
+            details={"segments": {}, "cues": "Comfortably hard"},
+        )
+        assert row["run_type_key"] == "endurance"
+        assert row["workout_type"] == "Tempo"
+        assert row["intensity"] == "z3"
+
+    def test_workout_to_row_maps_taxonomy_threshold_to_endurance_placement(self):
+        from datetime import date
+
+        row = PlanStorageService._workout_to_row(
+            plan_id=1,
+            date=date(2026, 5, 1),
+            phase="Build",
+            run={"type": "threshold", "miles": 5.0},
+            details={"segments": {}, "cues": ""},
+        )
+        assert row["run_type_key"] == "endurance"
+        assert row["workout_type"] == "Threshold"
+        assert row["intensity"] == "z4"

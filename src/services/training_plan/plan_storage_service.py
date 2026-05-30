@@ -33,9 +33,6 @@ from src.db.dao.plans_dao import create_plan
 from src.db.dao.plan_workouts_dao import insert_batch
 from src.db.dao.user_profile_dao import get_user_profile
 from src.db.models.plans import Plan
-from src.smartcoach_mobile_coach.runner_profile.plan_run_type_registry import (
-    RUN_TYPE_LONG,
-)
 from src.services.training_plan.workout_detail_rules import (
     QUALITY_ENABLED_PHASES,
     SEGMENT_SUM_TOLERANCE,
@@ -45,10 +42,11 @@ from src.smartcoach_mobile_coach.runner_profile import (
     get_runner_pace_band_for_run_type,
     get_runner_pace_zone_key_for_run_type,
     get_runner_zone_string_for_run_type,
-    placement_display,
     placement_focus_tag,
+    resolve_taxonomy_and_placement,
     runner_pace_ranges_payload,
     validate_persisted_run_type_key,
+    workout_display_label,
 )
 
 logger = logging.getLogger(__name__)
@@ -283,8 +281,11 @@ class PlanStorageService:
                         f"Invalid distance_miles: {distance_miles} (must be non-negative)"
                     )
 
-                # Extract workout details
-                run_type_key = workout.get("type", "easy")
+                # Extract workout details (type may be taxonomy key or placement role)
+                raw_type = workout.get("type", "easy")
+                taxonomy_type, _placement_role = resolve_taxonomy_and_placement(
+                    raw_type
+                )
                 segments = workout.get("segments", {})
                 details = {
                     "segments": segments,
@@ -294,10 +295,10 @@ class PlanStorageService:
 
                 # Build run dict
                 run = {
-                    "type": run_type_key,
+                    "type": raw_type,
                     "label": workout.get("label")
                     or workout.get("workout_type")
-                    or placement_display(run_type_key),
+                    or workout_display_label(taxonomy_type),
                     "miles": distance_miles,
                 }
 
@@ -405,19 +406,22 @@ class PlanStorageService:
 
         Now reads seed directly (no reconstruction).
         """
-        run_type_key = validate_persisted_run_type_key(run.get("type", "easy"))
+        taxonomy_type, placement_role = resolve_taxonomy_and_placement(
+            run.get("type", "easy")
+        )
         segments = details.get("segments", {})
         main = PlanStorageService._main_step(segments)
         target_zone = PlanStorageService._pace_string_from_target(
             main.get("target", {})
         )
 
+        has_marathon_finish = (
+            taxonomy_type == "long_run"
+            and PlanStorageService._has_marathon_finish(segments)
+        )
         intensity = get_runner_pace_zone_key_for_run_type(
-            run_type_key,
-            has_marathon_finish=(
-                run_type_key == RUN_TYPE_LONG
-                and PlanStorageService._has_marathon_finish(segments)
-            ),
+            taxonomy_type,
+            has_marathon_finish=has_marathon_finish,
         )
 
         pace_ranges: dict[str, list[int]] = {}
@@ -432,7 +436,7 @@ class PlanStorageService:
                 pace_band = get_runner_pace_band_for_run_type(
                     session,
                     str(user_id),
-                    run_type_key,
+                    taxonomy_type,
                     force_refresh=False,
                 )
                 if pace_band is not None:
@@ -446,12 +450,10 @@ class PlanStorageService:
                     exc,
                 )
 
-        # Get workout label
-        workout_label = run.get("label") or placement_display(run_type_key)
+        workout_label = run.get("label") or workout_display_label(taxonomy_type)
 
-        # Calculate HR zone
         target_hr = PlanStorageService._calculate_hr_zone(
-            run_type_key,
+            taxonomy_type,
             user_profile,
             session=session,
             user_id=user_id,
@@ -461,13 +463,13 @@ class PlanStorageService:
             "plan_id": plan_id,
             "date": date,
             "workout_type": workout_label,
-            "run_type_key": run_type_key,
+            "run_type_key": placement_role,
             "phase": phase,
             "miles": run.get("miles", 0.0),
             "intensity": intensity,
             "target_zone": target_zone,
             "target_hr": target_hr,
-            "focus": placement_focus_tag(run_type_key),
+            "focus": placement_focus_tag(placement_role),
             "description": details.get("cues", ""),
             "cues": details.get("cues", ""),
             "pace_ranges": pace_ranges,

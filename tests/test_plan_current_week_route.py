@@ -657,7 +657,7 @@ def test_current_week_uses_canonical_normalization_for_legacy_rows(
         "legacy 'endurance' must normalize to canonical 'long' via "
         "LEGACY_TO_CANONICAL_RUN_TYPE — the single source of truth"
     )
-    assert day["run_type"]["display_name"] == "Long"
+    assert day["run_type"]["display_name"] == "Long Run"
     assert day["target_hr"] == "Z4 (170-180 bpm)", (
         "stored target_hr must be returned verbatim; GET path must not "
         "revalidate/rewrite HR zones (0.D deletion)"
