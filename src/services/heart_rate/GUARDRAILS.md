@@ -243,28 +243,29 @@ logger.info("Estimating HRmax", extra={"user_id": user_id})
 
 ---
 
-### Rule 9: Resting HR Estimation Persistence
+### Rule 9: Resting HR Sources (No Silent Estimation)
 
-**Rule:** Estimated RHR is automatically persisted to the database unless user provides manual value.
+**Rule:** Resting HR is never estimated or persisted without explicit user action.
+
+**Allowed sources:**
+- `USER` — manual entry (onboarding / profile save)
+- `APPLE_HEALTH` — future confirmed import from HealthKit
+- `null` — not set (zones use pct_max fallback when max HR is available)
+- `ESTIMATED` — legacy rows only; do not assign on new writes
 
 **Behavior:**
-- When `use_estimate=True` and `resting_hr` is missing → estimate and store
-- When user later enters manual `resting_hr` → clear `resting_hr_source` to "USER" and update timestamp
-- Estimated values are overwritten by manual input without warning
-- Estimated RHR is persisted with `resting_hr_source="ESTIMATED"` and `resting_hr_updated_at` timestamp
-
-**Rationale:**
-Enables immediate zone calculation without blocking UX. Manual input always takes precedence.
+- `calculate_zones_for_user()` reads resting HR from profile; it does not estimate or write resting HR
+- When user saves manual `resting_hr` → set `resting_hr_source="USER"` and update timestamp
+- Missing resting HR → `hr_builder` uses pct_max fallback; profile `resting_hr` stays null
 
 **Enforcement:**
-- ✅ Profile save route must check if user is setting manual RHR
-- ✅ When manual RHR is set, clear estimated values and set `resting_hr_source="USER"`
-- ✅ Update `resting_hr_updated_at` timestamp when RHR changes
-- ❌ Never persist estimated RHR without user consent when `use_estimate=False`
+- ✅ Profile save route sets `resting_hr_source="USER"` on manual resting HR changes
+- ❌ Never persist age-group or population-average resting HR estimates
+- ❌ Never expose `use_estimate` / `force_estimate` for resting HR
 
 **Example:**
 ```python
-# ✅ CORRECT - Clear estimated values when user enters manual RHR
+# ✅ CORRECT - Manual resting HR save
 if new_resting_hr is not None and new_resting_hr != old_resting_hr:
     user_dict["resting_hr_source"] = "USER"
     user_dict["resting_hr_updated_at"] = datetime.now()
@@ -343,11 +344,11 @@ When reviewing PRs that touch HR zone services:
   - [ ] Structured errors (dataclass) for calculation failures
   - [ ] Route layer converts to HTTP responses
 
-- [ ] **Resting HR estimation**
-  - [ ] Estimated RHR is persisted only when `use_estimate=True`
-  - [ ] Manual RHR input clears estimated values
-  - [ ] `resting_hr_source` is set correctly (USER vs ESTIMATED)
-  - [ ] `resting_hr_updated_at` timestamp is updated on changes
+- [ ] **Resting HR sources**
+  - [ ] Resting HR is never estimated or persisted in zone calculation
+  - [ ] Manual RHR save sets `resting_hr_source="USER"`
+  - [ ] Missing resting HR uses pct_max fallback without writing profile
+  - [ ] `resting_hr_updated_at` timestamp is updated on manual changes
 
 - [ ] **Status endpoint**
   - [ ] Status endpoint never calculates zones

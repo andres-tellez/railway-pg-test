@@ -15,9 +15,6 @@ from sqlalchemy import text
 
 from src.services.heart_rate.hrmax_estimation_service import HRMaxEstimationService
 from src.services.heart_rate.hrmax_resolution_service import HRMaxResolutionService
-from src.services.heart_rate.estimation_helpers import (
-    estimate_resting_hr_from_age_group,
-)
 from src.db.dao.user_profile_dao import get_user_profile, save_user_profile
 from src.db.dao.user_athletes_dao import get_by_user_id
 from src.smartcoach_mobile_coach.runner_profile.service import (
@@ -31,9 +28,7 @@ from src.utils.hr_zone_constants import (
     NEXT_ACTION_PRIORITY,
     ACCURACY_TIERS,
     HRMAX_ESTIMATION,
-    RESTING_HR_ESTIMATION,
 )
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -337,53 +332,25 @@ class HeartRateZoneOrchestrationService:
     def calculate_zones_for_user(
         session: Session,
         user_id: str,
-        use_estimate: bool = False,
-        force_estimate: bool = False,
     ) -> Dict[str, Any]:
         """
-        Calculate HR zones for a user using Karvonen method.
+        Calculate HR zones for a user.
 
-        This method wraps all DB operations in a transaction to ensure data consistency.
-        If any step fails, the transaction is rolled back.
+        Coordinates:
+        1. Fetch user profile (resting HR is read-only — never estimated or persisted here)
+        2. Resolve effective HRmax (USER vs AUTO)
+        3. Estimate HRmax from activities if needed
+        4. Build zones via runner profile / hr_builder (Karvonen when resting HR set,
+           pct_max fallback when missing)
 
-        This is the main orchestration method that coordinates:
-        1. Fetch user profile
-        2. Resolve effective resting HR (with estimation if needed)
-        3. Resolve effective HRmax (USER vs AUTO)
-        4. Estimate HRmax if needed
-        5. Calculate zones
-
-        Estimation Priority (canonical order):
-        1. If force_estimate=True -> always estimate (even if user RHR exists)
-        2. Else if user RHR exists -> use manual RHR
-        3. Else if use_estimate=True -> auto-estimate from age_group
-        4. Else -> fail with "missing resting HR" error
-
-        Args:
-            session: Database session
-            user_id: User ID (UUID string)
-            use_estimate: If True, auto-estimate resting HR from age_group when missing
-            force_estimate: If True, force estimation even if user RHR exists
-
-        Returns:
-            Dict with:
-                - success: bool
-                - hrmax: int (if available)
-                - resting_hr: int (if available)
-                - resting_hr_source: str (USER/ESTIMATED)
-                - zones: dict (if calculated)
-                - confidence: str (if estimated)
-                - error_code: str (if error)
-                - error_message: str (if error)
-                - can_estimate: bool (if error, indicates if estimation possible)
-                - reason: str (if error, reason estimation failed)
+        Resting HR sources on profile: USER, APPLE_HEALTH (future), or null.
+        Legacy ESTIMATED rows are not written by this path.
         """
         logger.info(
             "Calculating HR zones for user",
             extra={"user_id": user_id},
         )
 
-        # Step 1: Get user profile
         profile = get_user_profile(session, user_id)
         if not profile:
             return {
@@ -392,115 +359,7 @@ class HeartRateZoneOrchestrationService:
                 "error_message": "User profile not found",
             }
 
-        # Step 2: Resolve resting HR (with estimation priority logic)
-        resting_hr = profile.get("resting_hr")
-        resting_hr_source = profile.get("resting_hr_source")
-        age_group = profile.get("age_group")
-
-        # Priority 1: Force estimate (override user value)
-        if force_estimate:
-            if not age_group:
-                return {
-                    "success": False,
-                    "error_code": "MISSING_RESTING_HR",
-                    "error_message": "Cannot estimate resting HR: age_group is missing.",
-                    "can_estimate": False,
-                    "reason": "age_group_missing",
-                }
-
-            estimated_rhr = estimate_resting_hr_from_age_group(age_group)
-            if estimated_rhr is None:
-                return {
-                    "success": False,
-                    "error_code": "MISSING_RESTING_HR",
-                    "error_message": "Cannot estimate resting HR: invalid age_group.",
-                    "can_estimate": False,
-                    "reason": "age_group_invalid",
-                }
-
-            # Update profile with estimated RHR
-            profile_data = profile.copy()
-            profile_data["resting_hr"] = estimated_rhr
-            profile_data["resting_hr_source"] = "ESTIMATED"
-            profile_data["resting_hr_updated_at"] = datetime.now()
-            save_user_profile(session, profile_data)
-
-            resting_hr = estimated_rhr
-            resting_hr_source = "ESTIMATED"
-
-        # Priority 2: User RHR exists (use manual value)
-        elif resting_hr and resting_hr_source != "ESTIMATED":
-            # User has manually entered RHR - use it
-            pass  # resting_hr is already set
-
-        # Priority 3: Auto-estimate if use_estimate=True
-        elif use_estimate:
-            if not age_group:
-                return {
-                    "success": False,
-                    "error_code": "MISSING_RESTING_HR",
-                    "error_message": "Resting HR required. Please set it in your profile.",
-                    "can_estimate": False,
-                    "reason": "age_group_missing",
-                }
-
-            estimated_rhr = estimate_resting_hr_from_age_group(age_group)
-            if estimated_rhr is None:
-                return {
-                    "success": False,
-                    "error_code": "MISSING_RESTING_HR",
-                    "error_message": "Resting HR required. Please set it in your profile.",
-                    "can_estimate": False,
-                    "reason": "age_group_invalid",
-                }
-
-            # Check if we should update existing estimate (respect MIN_RHR_UPDATE_INTERVAL)
-            should_update = True
-            if resting_hr_source == "ESTIMATED":
-                last_updated = profile.get("resting_hr_updated_at")
-                if last_updated:
-                    try:
-                        if isinstance(last_updated, str):
-                            last_updated = datetime.fromisoformat(
-                                last_updated.replace("Z", "+00:00")
-                            )
-                        if hasattr(last_updated, "replace") and last_updated.tzinfo:
-                            last_updated = last_updated.replace(tzinfo=None)
-
-                        days_since = (datetime.now() - last_updated).days
-                        min_interval = RESTING_HR_ESTIMATION[
-                            "MIN_RHR_UPDATE_INTERVAL_DAYS"
-                        ]
-                        should_update = days_since >= min_interval
-                    except (ValueError, AttributeError, TypeError):
-                        # Parse error - update anyway
-                        should_update = True
-
-            if should_update:
-                # Update profile with estimated RHR
-                profile_data = profile.copy()
-                profile_data["resting_hr"] = estimated_rhr
-                profile_data["resting_hr_source"] = "ESTIMATED"
-                profile_data["resting_hr_updated_at"] = datetime.now()
-                save_user_profile(session, profile_data)
-
-                resting_hr = estimated_rhr
-                resting_hr_source = "ESTIMATED"
-            else:
-                # Use existing estimate
-                resting_hr = resting_hr  # Already set from profile
-
-        # Priority 4: Fail - no RHR and estimation not allowed
-        else:
-            return {
-                "success": False,
-                "error_code": "MISSING_RESTING_HR",
-                "error_message": "Resting HR required. Please set it in your profile.",
-                "can_estimate": age_group is not None,
-                "reason": "resting_hr_missing",
-            }
-
-        # Step 3: Resolve effective HRmax
+        # Step 2: Resolve effective HRmax
         effective_max_hr = HRMaxResolutionService.get_effective_max_hr(profile)
 
         # Step 4: Estimate HRmax if needed
@@ -684,7 +543,7 @@ class HeartRateZoneOrchestrationService:
         - issues: List of blockers
         - readiness: Detailed structural diagnostics
         - hrmax_source: Legacy-shaped hint (USER when active=manual, AUTO when active=auto)
-        - resting_hr_source: Source of resting HR (USER/ESTIMATED)
+        - resting_hr_source: Source of resting HR (USER, APPLE_HEALTH, or null; ESTIMATED legacy)
         - activities_needed: Count of activities needed for estimation
 
         Critical: This is READ-ONLY. Never calls estimate_hrmax() or calculate_zones().
@@ -746,36 +605,19 @@ class HeartRateZoneOrchestrationService:
             )
             return status
 
-        # Step 3: Check resting HR
+        # Step 3: Check resting HR (read-only; never estimate or persist here)
         resting_hr = profile.get("resting_hr")
         resting_hr_source = profile.get("resting_hr_source")
-        age_group = profile.get("age_group")
 
         if resting_hr:
             status["readiness"]["has_resting_hr"] = True
             status["resting_hr_source"] = resting_hr_source or "USER"
         else:
-            # Check if we can estimate
-            can_estimate = False
-            reason = None
-
-            if not age_group:
-                reason = "age_group_missing"
-            else:
-                estimated_rhr = estimate_resting_hr_from_age_group(age_group)
-                if estimated_rhr is None:
-                    reason = "age_group_invalid"
-                else:
-                    can_estimate = True
-                    status["readiness"]["can_estimate_resting_hr"] = True
-
-            status["readiness"]["can_estimate_resting_hr"] = can_estimate
-            status["readiness"]["resting_hr_reason"] = reason
-
-            if not can_estimate:
-                status["issues"].append("resting_hr_missing")
-                if not status["next_action"]:
-                    status["next_action"] = "add_resting_hr"
+            status["readiness"]["can_estimate_resting_hr"] = False
+            status["readiness"]["resting_hr_reason"] = "not_set"
+            status["issues"].append("resting_hr_missing")
+            if not status["next_action"]:
+                status["next_action"] = "add_resting_hr"
 
         # Step 4: Check HRmax
         effective_max_hr = HRMaxResolutionService.get_effective_max_hr(profile)
@@ -830,11 +672,10 @@ class HeartRateZoneOrchestrationService:
 
         # Step 5: Determine readiness and method
         has_resting_hr = status["readiness"]["has_resting_hr"]
-        can_estimate_resting_hr = status["readiness"]["can_estimate_resting_hr"]
         has_hrmax = status["readiness"]["has_hrmax"]
         can_estimate_hrmax = status["readiness"]["can_estimate_hrmax"]
 
-        # Ready if we have both resting HR and HRmax (or can estimate both)
+        # Karvonen when resting HR + HRmax; pct_max fallback when HRmax only
         if has_resting_hr and has_hrmax:
             status["ready"] = True
             status["method"] = "KARVONEN"
@@ -870,17 +711,12 @@ class HeartRateZoneOrchestrationService:
             status["next_action"] = "view_zones"
             status["accuracy_tier"] = "MEDIUM" if resting_hr_source == "USER" else "LOW"
 
-        elif can_estimate_resting_hr and (has_hrmax or can_estimate_hrmax):
-            status["ready"] = True
-            status["method"] = "ESTIMATED_KARVONEN"
-            status["next_action"] = "view_zones"
-            status["accuracy_tier"] = "MEDIUM"
-
         elif has_hrmax:
-            # Has HRmax but no resting HR and can't estimate
-            status["method"] = None  # Cannot use Karvonen without resting HR
+            # Max HR available; zones use pct_max fallback until resting HR is set
+            status["ready"] = True
+            status["method"] = "SIMPLE_PERCENTAGE"
             status["next_action"] = "add_resting_hr"
-            status["accuracy_tier"] = None
+            status["accuracy_tier"] = "LOW"
 
         else:
             status["method"] = None

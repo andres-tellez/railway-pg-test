@@ -157,13 +157,13 @@ The `/api/heart-rate/zones/status` endpoint returns diagnostic information about
 | Field | Meaning | Values |
 |-------|---------|--------|
 | `ready` | Zones can be calculated | `true` / `false` |
-| `method` | Which calculation path applies | `"KARVONEN"` / `"ESTIMATED_KARVONEN"` / `"SIMPLE_PERCENTAGE"` / `null` |
+| `method` | Which calculation path applies | `"KARVONEN"` / `"SIMPLE_PERCENTAGE"` / `null` |
 | `accuracy_tier` | UX indicator for zone quality | `"HIGH"` / `"MEDIUM"` / `"LOW"` |
 | `next_action` | Single action user must take next | See `NEXT_ACTION_PRIORITY` in constants |
 | `issues` | List of blockers | Array of `HR_ZONE_ISSUES` enum values |
 | `readiness` | Structural diagnostics | Object with detailed readiness info |
 | `hrmax_source` | How HRmax was determined | `"USER"` / `"AUTO"` / `"STRAVA"` |
-| `resting_hr_source` | How resting HR was determined | `"USER"` / `"ESTIMATED"` / `null` |
+| `resting_hr_source` | How resting HR was determined | `"USER"` / `"APPLE_HEALTH"` / `null` (`ESTIMATED` legacy) |
 | `activities_needed` | Count of activities needed for estimation | Integer (0+ if ready) |
 | `zones` | Zone boundaries | **Always `null` in status endpoint** |
 | `confidence` | HRmax estimation confidence | **Always `null` in status endpoint** |
@@ -184,8 +184,8 @@ The `/api/heart-rate/zones/status` endpoint returns diagnostic information about
 
 **Accuracy Tiers (UX indicator, not physiological):**
 - `HIGH`: User RHR provided + high confidence HRmax
-- `MEDIUM`: Estimated RHR OR medium/high confidence HRmax
-- `LOW`: Fallback to simple %maxHR calculation
+- `MEDIUM`: User RHR with moderate HRmax confidence
+- `LOW`: pct_max fallback (max HR set, resting HR missing) or low-confidence inputs
 
 Note: Accuracy tier indicates user experience expectations, NOT physiological zone reliability. Do not treat as a scientific measure.
 
