@@ -318,7 +318,7 @@ def get_user_profile_route():
                 current_app.logger.warning(
                     "refresh_auto_hrmax on GET onboarding failed: %s", e
                 )
-        profile_dict["max_hr"] = HRMaxResolutionService.get_effective_max_hr(
+        profile_dict["max_hr"] = HRMaxResolutionService.get_trusted_max_hr_for_zones(
             profile_dict
         )
         return jsonify({"status": "success", "data": profile_dict}), 200

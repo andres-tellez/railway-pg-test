@@ -35,11 +35,11 @@ def compute_hr_zones(session: Session, user_id: str) -> Optional[HrZoneComputati
     if not profile:
         return None
 
-    effective_max_hr = HRMaxResolutionService.get_effective_max_hr(profile)
-    if not effective_max_hr:
+    trusted_max_hr = HRMaxResolutionService.get_trusted_max_hr_for_zones(profile)
+    if not trusted_max_hr:
         return None
 
-    max_hr = int(round(float(effective_max_hr)))
+    max_hr = int(round(float(trusted_max_hr)))
     resting_hr_raw = profile.get("resting_hr")
     resting_hr_used: Optional[int] = None
 
