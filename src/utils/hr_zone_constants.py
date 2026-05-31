@@ -378,3 +378,6 @@ RESTING_HR_ESTIMATION = {
     # Default fallback if age cannot be determined
     "DEFAULT_RESTING_HR": 70,
 }
+
+# Writable resting HR sources (profile save / onboarding). ESTIMATED is legacy read-only.
+ALLOWED_RESTING_HR_WRITE_SOURCES = frozenset({"USER", "APPLE_HEALTH"})

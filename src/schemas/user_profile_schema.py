@@ -39,6 +39,10 @@ class UserProfileSchema(BaseModel):
     restingHr: Optional[int] = Field(
         None, ge=35, le=110, description="Resting heart rate in bpm"
     )  # Resting heart rate in bpm
+    restingHrSource: Optional[Literal["USER", "APPLE_HEALTH"]] = Field(
+        None,
+        description="How resting HR was obtained; only honored with an explicit restingHr save",
+    )
 
     @field_validator("birthYear")
     @classmethod
