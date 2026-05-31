@@ -43,46 +43,30 @@ heart_rate_bp = Blueprint("heart_rate", __name__, url_prefix="/api/heart-rate")
 @requires_auth
 def calculate_hr_zones():
     """
-    Calculate HR zones for authenticated user using Karvonen method.
+    Calculate HR zones for authenticated user.
 
     This endpoint:
     - Fetches user profile and activities
-    - Estimates HRmax if needed
-    - Estimates resting HR if use_estimate=True and resting HR is missing
-    - Calculates Karvonen zones
-    - Returns zones with confidence level
-
-    Query Parameters:
-        use_estimate (bool): If True, auto-estimate resting HR from age_group when missing
-        force_estimate (bool): If True, force estimation even if user RHR exists
+    - Estimates HRmax from activities if needed
+    - Builds zones via runner profile (Karvonen when resting HR is set,
+      pct_max fallback when missing)
+    - Never estimates or persists resting HR
 
     Returns:
         JSON response with zones or error
     """
-    from flask import request
-
     user_id = g.user_id
     session = get_session()
-
-    # Get query parameters
-    use_estimate = request.args.get("use_estimate", "false").lower() == "true"
-    force_estimate = request.args.get("force_estimate", "false").lower() == "true"
 
     try:
         logger.info(
             "Calculating HR zones for user",
-            extra={
-                "user_id": user_id,
-                "use_estimate": use_estimate,
-                "force_estimate": force_estimate,
-            },
+            extra={"user_id": user_id},
         )
 
         result = HeartRateZoneOrchestrationService.calculate_zones_for_user(
             session,
             str(user_id),
-            use_estimate=use_estimate,
-            force_estimate=force_estimate,
         )
 
         if not result.get("success"):

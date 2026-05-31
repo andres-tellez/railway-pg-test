@@ -218,7 +218,7 @@ def submit_user_profile():
 
             new_effective = HRMaxResolutionService.get_effective_max_hr(merged)
 
-            # If user is setting resting_hr manually, clear estimated values
+            # Explicit resting HR save sets USER; APPLE_HEALTH may be set in a future import flow.
             if new_resting_hr is not None and new_resting_hr != old_resting_hr:
                 from datetime import datetime
 

@@ -228,7 +228,7 @@ class RunnerStateBuilder:
 
         try:
             result = HeartRateZoneOrchestrationService.calculate_zones_for_user(
-                self.session, self.user_id, use_estimate=True
+                self.session, self.user_id
             )
 
             if not result.get("success") or "zones" not in result:
@@ -439,7 +439,7 @@ class RunnerStateBuilder:
         # Get HR zones to determine Zone 2 max
         try:
             hr_result = HeartRateZoneOrchestrationService.calculate_zones_for_user(
-                self.session, self.user_id, use_estimate=True
+                self.session, self.user_id
             )
             zone2_max = None
             if hr_result.get("success") and "zones" in hr_result:
