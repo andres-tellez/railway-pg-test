@@ -190,8 +190,81 @@ class TestHRMaxResolution:
             }
         )
         assert status["status"] == "calibrated"
+        assert status["zone_max_hr"] == 182
+        assert status["zone_max_hr_source"] == "manual"
         assert status["effective_max_hr"] == 182
         assert status["activities_needed"] == 0
+
+    def test_trusted_manual_wins_over_auto(self):
+        profile = {
+            "max_hr_manual": 174,
+            "max_hr_auto": 161,
+            "max_hr_active": "manual",
+            "hrmax_confidence": "HIGH",
+        }
+        assert HRMaxResolutionService.get_trusted_max_hr_for_zones(profile) == 174
+
+    def test_trusted_auto_medium_when_active_auto(self):
+        profile = {
+            "max_hr_manual": None,
+            "max_hr_auto": 170,
+            "max_hr_active": "auto",
+            "hrmax_confidence": "MEDIUM",
+        }
+        assert HRMaxResolutionService.get_trusted_max_hr_for_zones(profile) == 170
+
+    def test_trusted_auto_medium_not_used_when_active_unset(self):
+        profile = {
+            "max_hr_manual": None,
+            "max_hr_auto": 170,
+            "max_hr_active": None,
+            "hrmax_confidence": "MEDIUM",
+        }
+        assert HRMaxResolutionService.get_trusted_max_hr_for_zones(profile) is None
+
+    def test_trusted_auto_high_when_active_unset(self):
+        profile = {
+            "max_hr_manual": None,
+            "max_hr_auto": 170,
+            "max_hr_active": None,
+            "hrmax_confidence": "HIGH",
+        }
+        assert HRMaxResolutionService.get_trusted_max_hr_for_zones(profile) == 170
+
+    def test_trusted_auto_low_not_used(self):
+        profile = {
+            "max_hr_manual": None,
+            "max_hr_auto": 161,
+            "max_hr_active": None,
+            "hrmax_confidence": "LOW",
+        }
+        assert HRMaxResolutionService.get_trusted_max_hr_for_zones(profile) is None
+
+    def test_hr_calibration_uncalibrated_when_auto_medium_implicit(self):
+        status = HRMaxResolutionService.get_hr_calibration_status(
+            {
+                "max_hr_manual": None,
+                "max_hr_auto": 161,
+                "max_hr_active": None,
+                "hrmax_confidence": "MEDIUM",
+                "hrmax_activity_count": 12,
+            }
+        )
+        assert status["status"] == "uncalibrated"
+        assert status["zone_max_hr"] is None
+        assert status["display_max_hr"] == 161
+        assert status["max_hr_auto"] == 161
+        assert status["reason_code"] == "HRMAX_AUTO_NOT_TRUSTED"
+
+    def test_effective_max_hr_unchanged_for_display(self):
+        profile = {
+            "max_hr_manual": None,
+            "max_hr_auto": 161,
+            "max_hr_active": None,
+            "hrmax_confidence": "MEDIUM",
+        }
+        assert HRMaxResolutionService.get_effective_max_hr(profile) == 161
+        assert HRMaxResolutionService.get_trusted_max_hr_for_zones(profile) is None
 
     def test_hr_calibration_status_insufficient_data(self):
         status = HRMaxResolutionService.get_hr_calibration_status(
