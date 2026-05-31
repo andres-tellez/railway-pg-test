@@ -23,6 +23,83 @@ logger = logging.getLogger(__name__)
 
 class HRMaxResolutionService:
     @staticmethod
+    def _confidence_at_least(confidence: Optional[str], minimum: str) -> bool:
+        order = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+        if confidence not in order:
+            return False
+        return order[confidence] >= order[minimum]
+
+    @staticmethod
+    def _validated_manual_max_hr(profile: Dict[str, Any]) -> Optional[int]:
+        manual = profile.get("max_hr_manual")
+        if manual is None:
+            return None
+        try:
+            manual_int = int(manual)
+        except (TypeError, ValueError):
+            return None
+        if not HRMaxResolutionService._validate_user_override(
+            manual_int,
+            profile.get("birth_year"),
+        ):
+            return None
+        return manual_int
+
+    @staticmethod
+    def _trusted_auto_max_hr(
+        profile: Dict[str, Any], *, minimum_confidence: str
+    ) -> Optional[int]:
+        """
+        Activity-based max HR trusted for zone math when confidence and stored
+        reliability gates pass. Does not use birth year.
+        """
+        auto = profile.get("max_hr_auto")
+        if auto is None:
+            return None
+        if HRMaxResolutionService.stored_max_hr_auto_is_unreliable(profile):
+            return None
+        confidence = profile.get("hrmax_confidence")
+        if not HRMaxResolutionService._confidence_at_least(
+            confidence, minimum_confidence
+        ):
+            return None
+        return int(auto)
+
+    @staticmethod
+    def get_trusted_max_hr_for_zones(profile: Dict[str, Any]) -> Optional[int]:
+        """
+        Max HR used for physiology-based zones and plan ``target_hr``.
+
+        Manual entry always wins. Activity auto is used only when reliability
+        gates pass; implicit auto (no ``max_hr_active``) requires HIGH
+        confidence so easy-heavy mileage alone does not unlock precise HR.
+        """
+        active = profile.get("max_hr_active")
+        manual = HRMaxResolutionService._validated_manual_max_hr(profile)
+
+        if active == "manual":
+            if manual is not None:
+                return manual
+            return HRMaxResolutionService._trusted_auto_max_hr(
+                profile, minimum_confidence="MEDIUM"
+            )
+
+        if active == "auto":
+            trusted = HRMaxResolutionService._trusted_auto_max_hr(
+                profile, minimum_confidence="MEDIUM"
+            )
+            if trusted is not None:
+                return trusted
+            return manual
+
+        if manual is not None:
+            return manual
+
+        return HRMaxResolutionService._trusted_auto_max_hr(
+            profile, minimum_confidence="HIGH"
+        )
+
+    @staticmethod
     def get_hr_calibration_status(profile: Dict[str, Any]) -> Dict[str, Any]:
         """
         Return coach-facing HR calibration status from profile fields only.
@@ -30,17 +107,12 @@ class HRMaxResolutionService:
         This is read-only and intentionally lightweight so it can be reused
         in prompt/context builders without additional database roundtrips.
         """
-        effective_max_hr = HRMaxResolutionService.get_effective_max_hr(profile)
+        zone_max_hr = HRMaxResolutionService.get_trusted_max_hr_for_zones(profile)
+        display_max_hr = HRMaxResolutionService.get_effective_max_hr(profile)
         has_manual = profile.get("max_hr_manual") is not None
-        manual_is_valid = False
-        if has_manual:
-            try:
-                manual_is_valid = HRMaxResolutionService._validate_user_override(
-                    int(profile.get("max_hr_manual")),
-                    profile.get("birth_year"),
-                )
-            except (TypeError, ValueError):
-                manual_is_valid = False
+        manual_is_valid = (
+            HRMaxResolutionService._validated_manual_max_hr(profile) is not None
+        )
         auto_value = profile.get("max_hr_auto")
         confidence = profile.get("hrmax_confidence")
         activity_count_raw = profile.get("hrmax_activity_count")
@@ -54,26 +126,43 @@ class HRMaxResolutionService:
             HRMAX_ESTIMATION["MIN_DURATION_SECONDS"] // 60
         )
 
-        if effective_max_hr is not None:
-            active = profile.get("max_hr_active")
-            if active in ("manual", "auto"):
-                source = active
+        base_meta = {
+            "confidence": confidence,
+            "qualifying_activity_count": qualifying_activity_count,
+            "min_activities_required": min_activities_required,
+            "min_activity_duration_minutes": min_activity_duration_minutes,
+            "max_hr_auto": int(auto_value) if auto_value is not None else None,
+            "display_max_hr": (
+                int(display_max_hr) if display_max_hr is not None else None
+            ),
+        }
+
+        if zone_max_hr is not None:
+            manual = HRMaxResolutionService._validated_manual_max_hr(profile)
+            if manual is not None and int(zone_max_hr) == manual:
+                zone_source = "manual"
             else:
-                source = "manual" if has_manual else "auto"
+                zone_source = "auto"
             return {
                 "status": "calibrated",
-                "effective_max_hr": int(effective_max_hr),
-                "source": source,
-                "confidence": confidence,
-                "qualifying_activity_count": qualifying_activity_count,
-                "min_activities_required": min_activities_required,
-                "min_activity_duration_minutes": min_activity_duration_minutes,
+                "zone_max_hr": int(zone_max_hr),
+                "zone_max_hr_source": zone_source,
+                # Back-compat for callers expecting effective_max_hr on zones.
+                "effective_max_hr": int(zone_max_hr),
+                "source": zone_source,
                 "activities_needed": 0,
+                **base_meta,
             }
 
-        # Distinguish likely reasons for no effective max HR.
+        # Distinguish likely reasons for no zone-trusted max HR.
         if has_manual and not manual_is_valid and auto_value is None:
             reason_code = "MANUAL_OUT_OF_RANGE"
+        elif (
+            auto_value is not None
+            and display_max_hr is not None
+            and zone_max_hr is None
+        ):
+            reason_code = "HRMAX_AUTO_NOT_TRUSTED"
         elif confidence == "LOW":
             reason_code = "LOW_CONFIDENCE"
         elif auto_value is None and qualifying_activity_count < min_activities_required:
@@ -95,15 +184,14 @@ class HRMaxResolutionService:
             "status": "uncalibrated",
             "reason_code": reason_code,
             "user_hint": hr_calibration_reason_user_hint(reason_code),
+            "zone_max_hr": None,
+            "zone_max_hr_source": None,
             "has_manual": has_manual,
             "manual_is_valid": manual_is_valid,
-            "confidence": confidence,
-            "qualifying_activity_count": qualifying_activity_count,
-            "min_activities_required": min_activities_required,
-            "min_activity_duration_minutes": min_activity_duration_minutes,
             "activities_needed": max(
                 0, min_activities_required - qualifying_activity_count
             ),
+            **base_meta,
         }
 
     @staticmethod
