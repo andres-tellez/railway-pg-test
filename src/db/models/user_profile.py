@@ -147,7 +147,7 @@ class UserProfile(Base):
     resting_hr = Column(Integer, nullable=True)  # Resting heart rate
     resting_hr_source = Column(
         String, nullable=True
-    )  # Source of resting_hr: "USER"|"ESTIMATED"
+    )  # Source of resting_hr: "USER"|"APPLE_HEALTH"|"ESTIMATED" (legacy)
     resting_hr_updated_at = Column(
         DateTime, nullable=True
     )  # When resting_hr was last updated
