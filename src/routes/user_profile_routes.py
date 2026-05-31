@@ -57,6 +57,7 @@ from src.services.training_plan.recalculate_hr_zones_service import (
 from src.db.models.plans import Plan
 from src.utils.user_profile_age_group import age_group_band_from_birth_year
 from src.utils.hr_zone_constants import manual_max_hr_bpm_bounds
+from src.utils.resting_hr_source import resolve_resting_hr_source_for_save
 
 user_profile_bp = Blueprint("user_profile", __name__, url_prefix="/api")
 
@@ -85,6 +86,12 @@ def submit_user_profile():
 
     data = request.get_json(silent=True) or {}
     current_app.logger.debug(f"[submit_user_profile] Received data: {data}")
+
+    # Mobile clients may send snake_case HR fields.
+    if "resting_hr" in data and "restingHr" not in data:
+        data["restingHr"] = data["resting_hr"]
+    if "resting_hr_source" in data and "restingHrSource" not in data:
+        data["restingHrSource"] = data["resting_hr_source"]
 
     # No mapping needed - age_group is now a string column that stores user-friendly ranges like "30-39"
 
@@ -138,6 +145,12 @@ def submit_user_profile():
         # Map restingHr to resting_hr (camelCase -> snake_case)
         if "restingHr" in user_dict:
             user_dict["resting_hr"] = user_dict.pop("restingHr")
+
+        requested_resting_hr_source = user_dict.pop("restingHrSource", None)
+        if requested_resting_hr_source is None:
+            requested_resting_hr_source = user_dict.pop("resting_hr_source", None)
+        elif "resting_hr_source" in user_dict:
+            user_dict.pop("resting_hr_source", None)
 
         if "maxHrActive" in user_dict:
             user_dict["max_hr_active"] = user_dict.pop("maxHrActive")
@@ -218,11 +231,15 @@ def submit_user_profile():
 
             new_effective = HRMaxResolutionService.get_effective_max_hr(merged)
 
-            # Explicit resting HR save sets USER; APPLE_HEALTH may be set in a future import flow.
-            if new_resting_hr is not None and new_resting_hr != old_resting_hr:
+            resolved_source = resolve_resting_hr_source_for_save(
+                raw_body=raw_body,
+                requested_source=requested_resting_hr_source,
+                new_resting_hr=new_resting_hr,
+            )
+            if resolved_source is not None:
                 from datetime import datetime
 
-                merged["resting_hr_source"] = "USER"
+                merged["resting_hr_source"] = resolved_source
                 merged["resting_hr_updated_at"] = datetime.now()
 
             merged.pop("max_hr", None)
