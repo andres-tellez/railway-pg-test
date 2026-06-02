@@ -37,5 +37,7 @@ def test_compute_hr_zones_computes_when_trusted(mock_trusted, mock_profile):
     assert result is not None
     assert result.hrmax_used == 174
     assert result.method == "pct_max"
-    assert result.zones["z2"].low == 104
+    assert result.zones["z1"].high == 104
+    assert result.zones["z2"].low == 105
     assert result.zones["z2"].high == 130
+    assert result.zones["z1"].high < result.zones["z2"].low
