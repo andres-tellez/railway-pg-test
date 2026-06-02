@@ -16,6 +16,51 @@ from src.utils.hr_zone_constants import STRAVA_HR_ZONES
 
 logger = logging.getLogger(__name__)
 
+_ZONE_KEYS = ("z1", "z2", "z3", "z4", "z5")
+
+
+def apply_integer_zone_ownership(
+    bands: dict[str, HrZoneBand],
+) -> dict[str, HrZoneBand]:
+    """
+    Enforce non-overlapping integer bpm ownership on already-rounded zone bands.
+
+    When adjacent zones share a boundary integer (``z_n.high == z_{n+1}.low``),
+    the lower zone keeps that integer; the upper zone's ``low`` is raised by one.
+    ``z1.low`` and ``z5.high`` are never changed.
+    """
+    if not bands:
+        return bands
+
+    for key, band in bands.items():
+        if band.low > band.high:
+            raise ValueError(
+                f"Invalid HR zone band before integer ownership: {key} "
+                f"low={band.low} high={band.high}"
+            )
+
+    adjusted: dict[str, HrZoneBand] = dict(bands)
+    for lower_key, upper_key in zip(_ZONE_KEYS, _ZONE_KEYS[1:]):
+        if lower_key not in adjusted or upper_key not in adjusted:
+            continue
+        lower = adjusted[lower_key]
+        upper = adjusted[upper_key]
+        if lower.high != upper.low:
+            continue
+        adjusted[upper_key] = HrZoneBand(low=upper.low + 1, high=upper.high)
+
+    for key in _ZONE_KEYS:
+        if key not in adjusted:
+            continue
+        band = adjusted[key]
+        if band.low > band.high:
+            raise ValueError(
+                f"Invalid HR zone band after integer ownership: {key} "
+                f"low={band.low} high={band.high}"
+            )
+
+    return adjusted
+
 
 def _pct_max_zones(max_hr: int) -> dict[str, tuple[float, float]]:
     return {
@@ -77,6 +122,8 @@ def compute_hr_zones(session: Session, user_id: str) -> Optional[HrZoneComputati
 
     if "z2" not in out:
         return None
+
+    out = apply_integer_zone_ownership(out)
 
     return HrZoneComputation(
         zones=out,
