@@ -1,4 +1,4 @@
-"""Insights system classification (easy / tempo) from profile zones + split KPIs."""
+"""Insights system classification (easy / tempo / threshold) from profile zones + split KPIs."""
 
 from __future__ import annotations
 
@@ -11,6 +11,9 @@ from src.smartcoach_mobile_coach.execution_analytics.thresholds import (
     TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH,
     TEMPO_RUN_MIN_SPLITS_WITH_HR,
     TEMPO_RUN_MIN_Z3_SPLITS,
+    THRESHOLD_RUN_MIN_FRACTION_SPLITS_ABOVE_Z3_HIGH,
+    THRESHOLD_RUN_MIN_SPLITS_WITH_HR,
+    THRESHOLD_RUN_MIN_Z4_SPLITS,
 )
 
 
@@ -27,11 +30,73 @@ def is_easy_run(
     return easy_pct >= MIN_EASY_PCT
 
 
+def _classify_tempo_split_evidence(kpis: SplitKpiResult) -> bool:
+    if kpis.n_z3_splits >= TEMPO_RUN_MIN_Z3_SPLITS:
+        return True
+    return (
+        kpis.n_z3_splits == 0 and kpis.n_quality_splits >= TEMPO_RUN_MIN_SPLITS_WITH_HR
+    )
+
+
+def _classify_threshold_split_evidence(kpis: SplitKpiResult) -> bool:
+    if kpis.n_z4_splits >= THRESHOLD_RUN_MIN_Z4_SPLITS:
+        return True
+    return (
+        kpis.n_z4_splits == 0
+        and kpis.n_threshold_quality_splits >= THRESHOLD_RUN_MIN_SPLITS_WITH_HR
+    )
+
+
+def _classify_tempo_whole_run_heuristics(
+    *,
+    avg_hr: float | None,
+    z2_high: float | None,
+    kpis: SplitKpiResult,
+) -> bool:
+    if z2_high is None:
+        return False
+    if avg_hr is not None and avg_hr > z2_high:
+        return True
+    if kpis.n_hr_splits >= TEMPO_RUN_MIN_SPLITS_WITH_HR:
+        frac_above = kpis.n_above_z2_ceiling / kpis.n_hr_splits
+        if frac_above >= TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH:
+            return True
+        if (
+            kpis.median_hr_after_split_1 is not None
+            and kpis.median_hr_after_split_1 > z2_high
+        ):
+            return True
+    return False
+
+
+def _classify_threshold_whole_run_heuristics(
+    *,
+    avg_hr: float | None,
+    z3_high: float | None,
+    kpis: SplitKpiResult,
+) -> bool:
+    if z3_high is None:
+        return False
+    if avg_hr is not None and avg_hr > z3_high:
+        return True
+    if kpis.n_hr_splits >= THRESHOLD_RUN_MIN_SPLITS_WITH_HR:
+        frac_above = kpis.n_above_z3_ceiling / kpis.n_hr_splits
+        if frac_above >= THRESHOLD_RUN_MIN_FRACTION_SPLITS_ABOVE_Z3_HIGH:
+            return True
+        if (
+            kpis.median_hr_after_split_1 is not None
+            and kpis.median_hr_after_split_1 > z3_high
+        ):
+            return True
+    return False
+
+
 def classify_insights_system(
     *,
     moving_time_seconds: int | None,
     avg_hr: float | None,
     z2_high: float | None,
+    z3_high: float | None,
     kpis: SplitKpiResult,
 ) -> str | None:
     if is_easy_run(
@@ -46,23 +111,18 @@ def classify_insights_system(
     if kpis.easy_pct is None or kpis.easy_pct >= MIN_EASY_PCT:
         return None
 
-    if kpis.n_z3_splits >= TEMPO_RUN_MIN_Z3_SPLITS:
+    if _classify_tempo_split_evidence(kpis):
         return "tempo"
 
-    if kpis.n_z3_splits == 0 and kpis.n_quality_splits >= TEMPO_RUN_MIN_SPLITS_WITH_HR:
-        return "tempo"
+    if _classify_threshold_split_evidence(kpis):
+        return "threshold"
 
-    if z2_high is not None:
-        if avg_hr is not None and avg_hr > z2_high:
-            return "tempo"
-        if kpis.n_hr_splits >= TEMPO_RUN_MIN_SPLITS_WITH_HR:
-            frac_above = kpis.n_above_z2_ceiling / kpis.n_hr_splits
-            if frac_above >= TEMPO_RUN_MIN_FRACTION_SPLITS_ABOVE_Z2_HIGH:
-                return "tempo"
-            if (
-                kpis.median_hr_after_split_1 is not None
-                and kpis.median_hr_after_split_1 > z2_high
-            ):
-                return "tempo"
+    if _classify_threshold_whole_run_heuristics(
+        avg_hr=avg_hr, z3_high=z3_high, kpis=kpis
+    ):
+        return "threshold"
+
+    if _classify_tempo_whole_run_heuristics(avg_hr=avg_hr, z2_high=z2_high, kpis=kpis):
+        return "tempo"
 
     return None

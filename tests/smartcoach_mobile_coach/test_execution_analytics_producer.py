@@ -115,14 +115,13 @@ def test_tempo_run_populates_segment_fields():
     assert result.tempo_qualifying_distance_mi is not None
 
 
-def test_activity_avg_diagnostic_does_not_populate_chart_fields():
+def test_z4_splits_classify_as_threshold_before_tempo():
     activity = SimpleNamespace(
         type="Run",
         moving_time=3600,
         average_heartrate=150.0,
         conv_avg_speed=8.0,
     )
-    # easy_pct < 0.7, tempo via avg HR, but split HR above Z4 (no Z3/quality tier).
     splits = [
         _split_model(1, 130.0, 9.0),
         _split_model(2, 165.0, 8.0),
@@ -131,7 +130,39 @@ def test_activity_avg_diagnostic_does_not_populate_chart_fields():
         _split_model(5, 130.0, 9.0),
     ]
     result = compute_activity_execution(activity, splits, _profile())
+    assert result.insights_system == "threshold"
+    assert result.threshold_segment_pace_source == "splits_hr_z4"
+    assert result.tempo_segment_pace_min_per_mi is None
+
+
+def test_activity_avg_diagnostic_does_not_populate_chart_fields():
+    activity = SimpleNamespace(
+        type="Run",
+        moving_time=3600,
+        average_heartrate=155.0,
+        conv_avg_speed=8.0,
+    )
+    splits = [_split_model(1, 162.0, 9.0)]
+    result = compute_activity_execution(activity, splits, _profile())
     assert result.insights_system == "tempo"
     assert result.tempo_segment_pace_source == "activity_avg"
     assert result.tempo_segment_pace_min_per_mi is None
     assert result.tempo_segment_confidence is None
+
+
+def test_threshold_activity_avg_diagnostic_clears_chart_fields():
+    activity = SimpleNamespace(
+        type="Run",
+        moving_time=3600,
+        average_heartrate=168.0,
+        conv_avg_speed=8.0,
+    )
+    splits = [
+        _split_model(1, 145.5, 9.0),
+        _split_model(2, 145.5, 9.0),
+    ]
+    result = compute_activity_execution(activity, splits, _profile())
+    assert result.insights_system == "threshold"
+    assert result.threshold_segment_pace_source == "activity_avg"
+    assert result.threshold_segment_pace_min_per_mi is None
+    assert result.threshold_segment_confidence is None

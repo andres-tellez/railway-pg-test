@@ -24,8 +24,13 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_ea
     DEFAULT_PACE_PROGRESS_EASY_CONFIG,
     target_easy_pace_sec,
 )
+from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_core import (
+    build_corridor_zones_chart,
+    pace_progress_zones_chart_api_payload,
+)
 from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_tempo import (
     DEFAULT_PACE_PROGRESS_TEMPO_CONFIG,
+    format_tempo_corridor_target_display,
 )
 from src.smartcoach_mobile_coach.runner_profile.recommendations.hr_progress_tempo import (
     DEFAULT_HR_PROGRESS_TEMPO_CONFIG,
@@ -118,6 +123,21 @@ def resolve_pace_progress(
             ref.target_display,
         )
 
+    if system is InsightsSystem.THRESHOLD:
+        z4 = recs.goal_aligned_z4_pace
+        if z4 is None:
+            return None, [], None
+        zones_chart = build_corridor_zones_chart(
+            z4,
+            gap_cfg=DEFAULT_PACE_PROGRESS_TEMPO_CONFIG,
+            axis_cfg=DEFAULT_PACE_PROGRESS_TEMPO_CONFIG,
+        )
+        return (
+            z4,
+            _pace_zones_chart_payload(zones_chart),
+            format_tempo_corridor_target_display(z4),
+        )
+
     return None, [], None
 
 
@@ -140,7 +160,7 @@ def attach_pace_progress_band(
             ),
             gap_cfg=DEFAULT_PACE_PROGRESS_EASY_CONFIG,
         )
-    elif system is InsightsSystem.TEMPO:
+    elif system in (InsightsSystem.TEMPO, InsightsSystem.THRESHOLD):
         band = classify_corridor_pace_progress(
             pace_sec_per_mi=pace_sec,
             corridor=target_pace,
