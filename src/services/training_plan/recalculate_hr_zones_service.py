@@ -129,6 +129,20 @@ def recalculate_hr_zones_for_user(session: Session, user_id: str) -> dict:
             e,
         )
 
+    try:
+        from src.services.weekly_insights_reconcile_service import (
+            schedule_ensure_user_weekly_insights,
+        )
+
+        schedule_ensure_user_weekly_insights(str(user_id))
+    except Exception as e:
+        logger.warning(
+            "Could not schedule weekly insights reconcile after HR profile refresh "
+            "for user %s: %s",
+            user_id,
+            e,
+        )
+
     # Get all active plans for user
     plans = session.query(Plan).filter_by(user_id=user_id, is_active=True).all()
 
