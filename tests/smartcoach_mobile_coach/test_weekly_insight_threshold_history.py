@@ -18,7 +18,7 @@ USER_ID = "e3362637-9045-4aac-83ed-92bc1f2643b9"
 
 
 def _pace_recs() -> TrainingPaceRecommendations:
-    z4 = PaceZoneBand(low_sec=420, high_sec=450, display="7:00–7:30 /mi")
+    z4 = PaceZoneBand(low_sec=420, high_sec=450, display="7:00–7:30/mi")
     goal = GoalAlignedPaceBands(
         easy=PaceZoneBand(540, 600, "9:00–10:00 /mi"),
         z3=PaceZoneBand(480, 510, "8:00–8:30 /mi"),
@@ -64,7 +64,7 @@ def test_sample_systems_threshold_weekly_data_point():
                 "weekly_data": [point],
                 "pace_zones": [{"color": "green", "min": 6.5, "max": 8.0}],
                 "hr_zones": [],
-                "pace_target_display": "7:00–7:30 /mi",
+                "pace_target_display": "7:00–7:30/mi",
             }
         }
     }
@@ -94,7 +94,7 @@ def test_build_threshold_system_slice_pace_only():
         pace_zones=[{"color": "green", "min": 6.0, "max": 8.0}],
     )
     assert slice_payload["hr_zones"] == []
-    assert slice_payload["pace_target_display"] == "7:00–7:30 /mi"
+    assert slice_payload["pace_target_display"] == "7:00–7:30/mi"
 
 
 def test_threshold_history_point_attached_with_pace_band():

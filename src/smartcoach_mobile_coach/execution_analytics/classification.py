@@ -1,4 +1,21 @@
-"""Insights system classification (easy / tempo / threshold) from profile zones + split KPIs."""
+"""Insights system classification (easy / tempo / threshold) from profile zones + split KPIs.
+
+Precedence (first match wins):
+
+1. **easy** — ``easy_pct >= MIN_EASY_PCT`` on runs with enough duration and HR splits.
+2. **tempo** (split evidence) — ``n_z3_splits >= 2``, or no Z3 splits and
+   ``n_quality_splits >= 3`` (between Z2 ceiling and Z4 floor).
+3. **threshold** (split evidence) — ``n_z4_splits >= 2``, or no Z4 splits and
+   ``n_threshold_quality_splits >= 3`` (between Z3 ceiling and Z5 floor).
+4. **threshold** (whole-run) — avg HR or split fraction / median above Z3 high.
+5. **tempo** (whole-run) — avg HR or split fraction / median above Z2 high.
+6. **null** — otherwise.
+
+Mixed Z3 + Z4: Tempo split evidence is evaluated before Threshold, so runs with
+two or more Z3 split miles stay **tempo** even when some miles are in Z4. A single
+Z4 spike (``n_z4_splits < 2``) does not qualify as Threshold unless whole-run
+heuristics fire.
+"""
 
 from __future__ import annotations
 
