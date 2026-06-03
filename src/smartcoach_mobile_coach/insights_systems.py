@@ -72,9 +72,22 @@ INSIGHTS_SYSTEM_SPECS: dict[InsightsSystem, InsightsSystemSpec] = {
         legacy_kpi_pace_field="tempo_pace_min_per_mi",
         legacy_trend_band_field="threshold_pace",
     ),
+    InsightsSystem.THRESHOLD: InsightsSystemSpec(
+        system_key=InsightsSystem.THRESHOLD,
+        zone="z4",
+        goal_pace_attr="goal_aligned_z4_pace",
+        pace_progress_attr="goal_aligned_z4_pace",
+        history_pace_field="threshold_segment_pace_min_per_mi",
+        history_band_field="threshold_pace_progress_band",
+        run_count_field="threshold_run_count",
+        kpi_pace_field="threshold_segment_pace_min_per_mi",
+        trend_band_field="threshold_pace",
+        trend_pace_delta_field="threshold_pace_delta",
+    ),
 }
 
 TEMPO_SYSTEM_SPEC = INSIGHTS_SYSTEM_SPECS[InsightsSystem.TEMPO]
+THRESHOLD_SYSTEM_SPEC = INSIGHTS_SYSTEM_SPECS[InsightsSystem.THRESHOLD]
 
 
 def resolve_system_snapshot(

@@ -23,6 +23,11 @@ from src.smartcoach_mobile_coach.execution_analytics.tempo_segment import (
     TempoSplitRow,
     compute_run_tempo_segment_pace,
 )
+from src.smartcoach_mobile_coach.execution_analytics.threshold_segment import (
+    ThresholdHrZoneBounds,
+    ThresholdSplitRow,
+    compute_run_threshold_segment_pace,
+)
 from src.smartcoach_mobile_coach.execution_analytics.thresholds import (
     COMPUTE_STATUS_COMPLETE,
     COMPUTE_STATUS_FAILED,
@@ -35,7 +40,7 @@ from src.smartcoach_mobile_coach.runner_profile.service import get_runner_profil
 
 logger = logging.getLogger(__name__)
 
-EXECUTION_ANALYTICS_VERSION = "1"
+EXECUTION_ANALYTICS_VERSION = "2"
 DEFAULT_BATCH_SIZE = 100
 
 
@@ -52,6 +57,12 @@ class ExecutionComputeResult:
     tempo_segment_split_count: int | None
     tempo_segment_confidence: str | None
     tempo_qualifying_distance_mi: float | None
+    threshold_segment_pace_min_per_mi: float | None
+    threshold_segment_avg_hr_bpm: float | None
+    threshold_segment_pace_source: str | None
+    threshold_segment_split_count: int | None
+    threshold_segment_confidence: str | None
+    threshold_qualifying_distance_mi: float | None
     execution_compute_status: str
 
 
@@ -126,6 +137,29 @@ def tempo_hr_zone_bounds_from_profile(
     )
 
 
+def threshold_hr_zone_bounds_from_profile(
+    profile: RunnerZoneProfileData,
+) -> ThresholdHrZoneBounds:
+    return ThresholdHrZoneBounds(
+        z3_high=float(profile.hr_z3.high) if profile.hr_z3 is not None else None,
+        z4_low=float(profile.hr_z4.low) if profile.hr_z4 is not None else None,
+        z4_high=float(profile.hr_z4.high) if profile.hr_z4 is not None else None,
+        z5_low=float(profile.hr_z5.low) if profile.hr_z5 is not None else None,
+    )
+
+
+def splits_to_threshold_rows(splits: Sequence[Split]) -> list[ThresholdSplitRow]:
+    return [
+        ThresholdSplitRow(
+            split_index=row.split_index,
+            avg_hr=row.avg_hr,
+            pace_min_per_mi=row.pace_min_per_mi,
+            distance_mi=row.distance_mi,
+        )
+        for row in splits_to_tempo_rows(splits)
+    ]
+
+
 def _null_tempo_fields() -> dict[str, None]:
     return {
         "tempo_segment_pace_min_per_mi": None,
@@ -135,6 +169,21 @@ def _null_tempo_fields() -> dict[str, None]:
         "tempo_segment_confidence": None,
         "tempo_qualifying_distance_mi": None,
     }
+
+
+def _null_threshold_fields() -> dict[str, None]:
+    return {
+        "threshold_segment_pace_min_per_mi": None,
+        "threshold_segment_avg_hr_bpm": None,
+        "threshold_segment_pace_source": None,
+        "threshold_segment_split_count": None,
+        "threshold_segment_confidence": None,
+        "threshold_qualifying_distance_mi": None,
+    }
+
+
+def _null_segment_fields() -> dict[str, None]:
+    return {**_null_tempo_fields(), **_null_threshold_fields()}
 
 
 def compute_activity_execution(
@@ -149,7 +198,7 @@ def compute_activity_execution(
             z2_band_pct=None,
             hr_drift_pct=None,
             pace_spread=None,
-            **_null_tempo_fields(),
+            **_null_segment_fields(),
             execution_compute_status=COMPUTE_STATUS_SKIPPED_NOT_RUN,
         )
 
@@ -160,7 +209,7 @@ def compute_activity_execution(
             z2_band_pct=None,
             hr_drift_pct=None,
             pace_spread=None,
-            **_null_tempo_fields(),
+            **_null_segment_fields(),
             execution_compute_status=COMPUTE_STATUS_SKIPPED_NO_PROFILE,
         )
 
@@ -170,6 +219,8 @@ def compute_activity_execution(
     z3_low = float(profile.hr_z3.low) if profile.hr_z3 else None
     z3_high = float(profile.hr_z3.high) if profile.hr_z3 else None
     z4_low = float(profile.hr_z4.low) if profile.hr_z4 else None
+    z4_high = float(profile.hr_z4.high) if profile.hr_z4 else None
+    z5_low = float(profile.hr_z5.low) if profile.hr_z5 else None
 
     kpis = compute_split_kpis(
         tempo_rows,
@@ -178,6 +229,8 @@ def compute_activity_execution(
         z3_low=z3_low,
         z3_high=z3_high,
         z4_low=z4_low,
+        z4_high=z4_high,
+        z5_low=z5_low,
     )
     if kpis.n_hr_splits == 0:
         return ExecutionComputeResult(
@@ -186,7 +239,7 @@ def compute_activity_execution(
             z2_band_pct=None,
             hr_drift_pct=None,
             pace_spread=kpis.pace_spread,
-            **_null_tempo_fields(),
+            **_null_segment_fields(),
             execution_compute_status=COMPUTE_STATUS_SKIPPED_NO_HR_SPLITS,
         )
 
@@ -194,10 +247,12 @@ def compute_activity_execution(
         moving_time_seconds=activity.moving_time,
         avg_hr=_coerce_finite_float(activity.average_heartrate),
         z2_high=z2_high,
+        z3_high=z3_high,
         kpis=kpis,
     )
 
     tempo_fields = _null_tempo_fields()
+    threshold_fields = _null_threshold_fields()
     if insights_system == "tempo":
         zones = tempo_hr_zone_bounds_from_profile(profile)
         activity_avg = _coerce_finite_float(activity.conv_avg_speed)
@@ -228,6 +283,36 @@ def compute_activity_execution(
             tempo_fields["tempo_segment_confidence"] = None
             tempo_fields["tempo_qualifying_distance_mi"] = None
 
+    elif insights_system == "threshold":
+        zones = threshold_hr_zone_bounds_from_profile(profile)
+        threshold_rows = splits_to_threshold_rows(splits)
+        activity_avg = _coerce_finite_float(activity.conv_avg_speed)
+        segment, qualifying = compute_run_threshold_segment_pace(
+            threshold_rows,
+            zones,
+            activity_avg_pace_min_per_mi=activity_avg,
+        )
+        qualifying_miles = sum(s.distance_mi for s in qualifying)
+        threshold_fields = {
+            "threshold_segment_pace_min_per_mi": segment.threshold_segment_pace_min_per_mi,
+            "threshold_segment_avg_hr_bpm": segment.threshold_segment_avg_hr_bpm,
+            "threshold_segment_pace_source": segment.threshold_segment_pace_source,
+            "threshold_segment_split_count": (
+                segment.threshold_segment_split_count
+                if segment.threshold_segment_split_count > 0
+                else None
+            ),
+            "threshold_segment_confidence": segment.threshold_segment_confidence,
+            "threshold_qualifying_distance_mi": (
+                round(qualifying_miles, 4) if qualifying_miles > 0 else None
+            ),
+        }
+        if segment.threshold_segment_pace_source == "activity_avg":
+            threshold_fields["threshold_segment_pace_min_per_mi"] = None
+            threshold_fields["threshold_segment_avg_hr_bpm"] = None
+            threshold_fields["threshold_segment_confidence"] = None
+            threshold_fields["threshold_qualifying_distance_mi"] = None
+
     return ExecutionComputeResult(
         insights_system=insights_system,
         easy_pct=kpis.easy_pct,
@@ -235,6 +320,7 @@ def compute_activity_execution(
         hr_drift_pct=kpis.hr_drift_pct,
         pace_spread=kpis.pace_spread,
         **tempo_fields,
+        **threshold_fields,
         execution_compute_status=COMPUTE_STATUS_COMPLETE,
     )
 
@@ -258,6 +344,14 @@ def apply_execution_result_to_activity(
     activity.tempo_segment_split_count = result.tempo_segment_split_count
     activity.tempo_segment_confidence = result.tempo_segment_confidence
     activity.tempo_qualifying_distance_mi = result.tempo_qualifying_distance_mi
+    activity.threshold_segment_pace_min_per_mi = (
+        result.threshold_segment_pace_min_per_mi
+    )
+    activity.threshold_segment_avg_hr_bpm = result.threshold_segment_avg_hr_bpm
+    activity.threshold_segment_pace_source = result.threshold_segment_pace_source
+    activity.threshold_segment_split_count = result.threshold_segment_split_count
+    activity.threshold_segment_confidence = result.threshold_segment_confidence
+    activity.threshold_qualifying_distance_mi = result.threshold_qualifying_distance_mi
     activity.execution_kpis_computed_at = now
     activity.execution_zone_profile_at = (
         profile.computed_at if profile is not None else None

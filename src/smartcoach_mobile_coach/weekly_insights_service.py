@@ -35,8 +35,10 @@ from src.smartcoach_mobile_coach.runner_profile.api_schema import (
     build_insights_easy_chart_authority_payload,
     build_insights_easy_global_kpi_chart_authority_payload,
     build_insights_tempo_chart_authority_payload,
+    build_insights_threshold_chart_authority_payload,
     insights_easy_chart_authority_is_complete,
     insights_tempo_chart_authority_is_complete,
+    insights_threshold_chart_authority_is_complete,
 )
 from src.smartcoach_mobile_coach.runner_profile.models import HrZoneBand, PaceZoneBand
 from src.smartcoach_mobile_coach.runner_profile.recommendations.models import (
@@ -52,7 +54,12 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.pace_progress_ea
 )
 from src.smartcoach_mobile_coach.execution_analytics.combine import (
     StoredTempoRunFact,
+    StoredThresholdRunFact,
+    combine_threshold_weekly_from_stored_run_facts,
     combine_weekly_from_stored_run_facts,
+)
+from src.smartcoach_mobile_coach.execution_analytics.threshold_segment import (
+    ThresholdSegmentPaceResult,
 )
 from src.smartcoach_mobile_coach.insights_chart_authority import (
     attach_pace_progress_band,
@@ -133,6 +140,21 @@ def _empty_tempo_history_point(label: str) -> Dict[str, Any]:
         "easy_hr_progress_band": None,
         "efficiency": None,
         "efficiency_band": None,
+    }
+
+
+def _empty_threshold_history_point(label: str) -> Dict[str, Any]:
+    """Gap week on Threshold Avg Pace chart (pace-only; no HR progress band)."""
+    return {
+        "label": label,
+        "value": None,
+        "band": None,
+        "threshold_segment_pace_min_per_mi": None,
+        "threshold_segment_avg_hr_bpm": None,
+        "threshold_segment_pace_source": None,
+        "threshold_segment_split_count": 0,
+        "threshold_segment_confidence": None,
+        "threshold_pace_progress_band": None,
     }
 
 
@@ -337,6 +359,43 @@ def _attach_tempo_segment_history_point(
     )
 
 
+def _threshold_segment_result_to_kpi_fields(
+    result: ThresholdSegmentPaceResult,
+) -> Dict[str, Any]:
+    fields: Dict[str, Any] = {
+        "threshold_segment_pace_min_per_mi": result.threshold_segment_pace_min_per_mi,
+        "threshold_segment_avg_hr_bpm": result.threshold_segment_avg_hr_bpm,
+        "threshold_segment_pace_source": result.threshold_segment_pace_source,
+        "threshold_segment_split_count": result.threshold_segment_split_count,
+        "threshold_segment_confidence": result.threshold_segment_confidence,
+    }
+    if result.activity_avg_pace_min_per_mi is not None:
+        fields["activity_avg_pace_min_per_mi"] = result.activity_avg_pace_min_per_mi
+    return fields
+
+
+def _attach_threshold_segment_history_point(
+    point: Dict[str, Any],
+    *,
+    target_threshold_pace: Optional[PaceZoneBand],
+    segment: ThresholdSegmentPaceResult,
+) -> Dict[str, Any]:
+    """Merge threshold segment provenance and attach pace-progress band only."""
+    point.update(_threshold_segment_result_to_kpi_fields(segment))
+    point["value"] = segment.threshold_segment_pace_min_per_mi
+    if (
+        segment.threshold_segment_pace_min_per_mi is None
+        or not segment.allows_full_gyor()
+    ):
+        point["threshold_pace_progress_band"] = None
+        return point
+    return attach_pace_progress_band(
+        point,
+        system=InsightsSystem.THRESHOLD,
+        target_pace=target_threshold_pace,
+    )
+
+
 def _attach_easy_hr_progress_band(
     point: Dict[str, Any],
     *,
@@ -470,6 +529,45 @@ WHERE a.user_id = CAST(:uid AS uuid)
   AND a.athlete_id = :athlete_id
   AND a.type = 'Run'
   AND a.insights_system = 'tempo'
+  AND {_ACTIVITY_DATE_SQL} >= CAST(:ws_min AS date)
+  AND {_ACTIVITY_DATE_SQL} <= CAST(:we_max AS date)
+"""
+
+_WEEK_THRESHOLD_SEGMENT_FACTS_SQL = f"""
+SELECT
+    a.threshold_segment_pace_min_per_mi,
+    a.threshold_segment_avg_hr_bpm,
+    a.threshold_segment_pace_source,
+    a.threshold_segment_confidence,
+    a.threshold_segment_split_count,
+    a.threshold_qualifying_distance_mi
+FROM public.activities a
+INNER JOIN public.user_athletes ua
+    ON ua.user_id = a.user_id AND a.athlete_id = ua.athlete_id
+WHERE a.user_id = CAST(:uid AS uuid)
+  AND a.athlete_id = :athlete_id
+  AND a.type = 'Run'
+  AND a.insights_system = 'threshold'
+  AND {_ACTIVITY_DATE_SQL} >= CAST(:ws AS date)
+  AND {_ACTIVITY_DATE_SQL} <= CAST(:we AS date)
+"""
+
+_BATCH_THRESHOLD_SEGMENT_FACTS_SQL = f"""
+SELECT
+    {_ACTIVITY_DATE_SQL} AS run_date,
+    a.threshold_segment_pace_min_per_mi,
+    a.threshold_segment_avg_hr_bpm,
+    a.threshold_segment_pace_source,
+    a.threshold_segment_confidence,
+    a.threshold_segment_split_count,
+    a.threshold_qualifying_distance_mi
+FROM public.activities a
+INNER JOIN public.user_athletes ua
+    ON ua.user_id = a.user_id AND a.athlete_id = ua.athlete_id
+WHERE a.user_id = CAST(:uid AS uuid)
+  AND a.athlete_id = :athlete_id
+  AND a.type = 'Run'
+  AND a.insights_system = 'threshold'
   AND {_ACTIVITY_DATE_SQL} >= CAST(:ws_min AS date)
   AND {_ACTIVITY_DATE_SQL} <= CAST(:we_max AS date)
 """
@@ -710,6 +808,73 @@ def _fetch_tempo_week_rollups_batch(
     for ws, _we in week_windows:
         facts = facts_by_week.get(ws, [])
         rollups[ws] = (len(facts), combine_weekly_from_stored_run_facts(facts))
+    return rollups
+
+
+def _threshold_run_fact_from_row(row: Any) -> StoredThresholdRunFact:
+    return StoredThresholdRunFact(
+        threshold_segment_pace_min_per_mi=_coerce_finite_float(
+            getattr(row, "threshold_segment_pace_min_per_mi", None)
+        ),
+        threshold_segment_avg_hr_bpm=_coerce_finite_float(
+            getattr(row, "threshold_segment_avg_hr_bpm", None)
+        ),
+        threshold_segment_pace_source=getattr(
+            row, "threshold_segment_pace_source", None
+        ),
+        threshold_segment_confidence=getattr(row, "threshold_segment_confidence", None),
+        threshold_segment_split_count=getattr(
+            row, "threshold_segment_split_count", None
+        ),
+        threshold_qualifying_distance_mi=_coerce_finite_float(
+            getattr(row, "threshold_qualifying_distance_mi", None)
+        ),
+    )
+
+
+def _fetch_threshold_week_rollups_batch(
+    session: Session,
+    user_id: str,
+    week_windows: List[Tuple[date, date]],
+    athlete_id: int,
+) -> Dict[date, Tuple[int, ThresholdSegmentPaceResult]]:
+    """One query for threshold runs in the history window; roll up per calendar week."""
+    if not week_windows:
+        return {}
+
+    ws_min = week_windows[0][0]
+    we_max = week_windows[-1][1]
+    stmt = text(_BATCH_THRESHOLD_SEGMENT_FACTS_SQL).bindparams(
+        bindparam("uid", type_=PGUUID),
+        bindparam("athlete_id", type_=Integer),
+    )
+    rows = session.execute(
+        stmt,
+        {
+            "uid": user_id,
+            "athlete_id": athlete_id,
+            "ws_min": str(ws_min),
+            "we_max": str(we_max),
+        },
+    ).fetchall()
+
+    facts_by_week: Dict[date, List[StoredThresholdRunFact]] = {}
+    for row in rows:
+        run_date = getattr(row, "run_date", None)
+        if run_date is None:
+            continue
+        week_start = calendar_week_containing(run_date)[0]
+        facts_by_week.setdefault(week_start, []).append(
+            _threshold_run_fact_from_row(row)
+        )
+
+    rollups: Dict[date, Tuple[int, ThresholdSegmentPaceResult]] = {}
+    for ws, _we in week_windows:
+        facts = facts_by_week.get(ws, [])
+        rollups[ws] = (
+            len(facts),
+            combine_threshold_weekly_from_stored_run_facts(facts),
+        )
     return rollups
 
 
@@ -1533,6 +1698,41 @@ def _build_tempo_system_slice(
     }
 
 
+def _resolve_threshold_chart_refs(
+    session: Session,
+    user_id: str,
+    *,
+    recs: TrainingPaceRecommendations | None = None,
+) -> Tuple[Optional[PaceZoneBand], List[Dict[str, Any]]]:
+    """Threshold pace-progress target and chart zones (Z4 corridor; pace-only A1)."""
+    try:
+        target, zones, _ = resolve_pace_progress(
+            session, user_id, InsightsSystem.THRESHOLD, recs=recs
+        )
+        return target, zones
+    except Exception:
+        logger.exception(
+            "Failed to resolve threshold pace refs for weekly insight history (user_id=%s)",
+            user_id,
+        )
+        return None, []
+
+
+def _build_threshold_system_slice(
+    *,
+    pace_recs: TrainingPaceRecommendations | None,
+    weekly_data: List[Dict[str, Any]] | None = None,
+    pace_zones: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Threshold system slice for weekly-history (pace-only; no HR chart zones)."""
+    return {
+        "weekly_data": weekly_data or [],
+        "pace_zones": pace_zones,
+        "hr_zones": [],
+        **build_insights_threshold_chart_authority_payload(pace_recs),
+    }
+
+
 def _build_display_authority_systems(
     session: Session,
     user_id: str,
@@ -1584,6 +1784,16 @@ def _build_display_authority_systems(
     )
     if insights_tempo_chart_authority_is_complete(tempo_slice):
         systems[InsightsSystem.TEMPO.value] = tempo_slice
+
+    target_threshold_pace, threshold_pace_zones = _resolve_threshold_chart_refs(
+        session, user_id, recs=pace_recs
+    )
+    threshold_slice = _build_threshold_system_slice(
+        pace_recs=pace_recs,
+        pace_zones=threshold_pace_zones,
+    )
+    if insights_threshold_chart_authority_is_complete(threshold_slice):
+        systems[InsightsSystem.THRESHOLD.value] = threshold_slice
 
     return systems
 
@@ -1766,6 +1976,13 @@ def get_weekly_insight_history(
         pace_zones=tempo_pace_zones,
         hr_zones=tempo_hr_zones,
     )
+    target_threshold_pace, threshold_pace_zones = _resolve_threshold_chart_refs(
+        session, user_id, recs=pace_recs
+    )
+    threshold_slice_for_authority = _build_threshold_system_slice(
+        pace_recs=pace_recs,
+        pace_zones=threshold_pace_zones,
+    )
 
     if not any(p.get("value") is not None for p in data_points):
         easy_slice = _build_easy_system_slice(
@@ -1778,6 +1995,10 @@ def get_weekly_insight_history(
             systems[InsightsSystem.EASY.value] = easy_slice
         if insights_tempo_chart_authority_is_complete(tempo_slice_for_authority):
             systems[InsightsSystem.TEMPO.value] = tempo_slice_for_authority
+        if insights_threshold_chart_authority_is_complete(
+            threshold_slice_for_authority
+        ):
+            systems[InsightsSystem.THRESHOLD.value] = threshold_slice_for_authority
         return _attach_latest_week_to_history_payload(
             session,
             user_id,
@@ -1876,6 +2097,76 @@ def get_weekly_insight_history(
         hr_zones=tempo_hr_zones,
     )
 
+    threshold_points: List[Dict[str, Any]] = []
+    try:
+        threshold_rollups = _fetch_threshold_week_rollups_batch(
+            session, user_id, week_windows, athlete_id
+        )
+        for ws, _we in week_windows:
+            try:
+                threshold_run_count, segment = threshold_rollups.get(
+                    ws, (0, combine_threshold_weekly_from_stored_run_facts([]))
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to roll up threshold history for week (user_id=%s, week=%s)",
+                    user_id,
+                    ws,
+                )
+                threshold_points.append(
+                    _empty_threshold_history_point(f"{ws.month}/{ws.day}")
+                )
+                continue
+            if threshold_run_count <= 0:
+                threshold_points.append(
+                    _empty_threshold_history_point(f"{ws.month}/{ws.day}")
+                )
+                continue
+            if segment.threshold_segment_pace_min_per_mi is None:
+                threshold_points.append(
+                    _empty_threshold_history_point(f"{ws.month}/{ws.day}")
+                )
+                continue
+            point_payload: Dict[str, Any] = {
+                "label": f"{ws.month}/{ws.day}",
+                "value": None,
+                "band": None,
+            }
+            try:
+                threshold_points.append(
+                    _attach_threshold_segment_history_point(
+                        point_payload,
+                        target_threshold_pace=target_threshold_pace,
+                        segment=segment,
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to attach threshold pace band for weekly history "
+                    "(user_id=%s, week=%s)",
+                    user_id,
+                    ws,
+                )
+                point_payload.update(_threshold_segment_result_to_kpi_fields(segment))
+                point_payload["threshold_pace_progress_band"] = None
+                threshold_points.append(point_payload)
+    except Exception:
+        logger.exception(
+            "Failed to build threshold weekly history (user_id=%s); "
+            "returning empty threshold series",
+            user_id,
+        )
+        threshold_points = [
+            _empty_threshold_history_point(f"{ws.month}/{ws.day}")
+            for ws, _we in week_windows
+        ]
+
+    threshold_slice = _build_threshold_system_slice(
+        pace_recs=pace_recs,
+        weekly_data=threshold_points,
+        pace_zones=threshold_pace_zones,
+    )
+
     easy_slice = _build_easy_system_slice(
         pace_recs=pace_recs,
         weekly_data=data_points,
@@ -1883,15 +2174,19 @@ def get_weekly_insight_history(
         hr_zones=hr_zones,
     )
 
+    history_systems: Dict[str, Any] = {
+        InsightsSystem.EASY.value: easy_slice,
+        InsightsSystem.TEMPO.value: tempo_slice,
+    }
+    if insights_threshold_chart_authority_is_complete(threshold_slice):
+        history_systems[InsightsSystem.THRESHOLD.value] = threshold_slice
+
     return _attach_latest_week_to_history_payload(
         session,
         user_id,
         {
             "has_history": True,
-            "systems": {
-                InsightsSystem.EASY.value: easy_slice,
-                InsightsSystem.TEMPO.value: tempo_slice,
-            },
+            "systems": history_systems,
         },
     )
 

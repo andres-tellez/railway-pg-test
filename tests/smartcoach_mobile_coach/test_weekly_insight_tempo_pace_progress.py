@@ -6,7 +6,7 @@ from datetime import date
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from src.smartcoach_mobile_coach.insights_systems import TEMPO_LEGACY_SYSTEM_KEY
+from src.smartcoach_mobile_coach.insights_systems import InsightsSystem
 from src.smartcoach_mobile_coach.runner_profile.models import (
     HrZoneBand,
     RunnerZoneProfileData,
@@ -226,6 +226,10 @@ def test_resolve_tempo_hr_progress_matches_training_pace_recommendations(
 
 
 @patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_threshold_week_rollups_batch",
+    return_value={},
+)
+@patch(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
     side_effect=_mock_tempo_rollups(
         {
@@ -261,6 +265,7 @@ def test_weekly_history_tempo_pace_zones_match_tempo_pace_progress(
     _mock_profile,
     _mock_phase,
     _mock_week_rollups,
+    _mock_threshold_rollups,
 ):
     cal_week_start, _ = calendar_week_containing(date.today())
     session = MagicMock()
@@ -294,10 +299,15 @@ def test_weekly_history_tempo_pace_zones_match_tempo_pace_progress(
     assert th_points[0]["tempo_pace_progress_band"] is not None
     assert th_points[0]["tempo_hr_progress_band"] is not None
     assert "z2_pace_band" not in th_points[0]
-    assert TEMPO_LEGACY_SYSTEM_KEY not in out["systems"]
     assert "threshold_pace_min_per_mi" not in th_points[0]
+    if InsightsSystem.THRESHOLD.value in out["systems"]:
+        assert out["systems"][InsightsSystem.THRESHOLD.value]["hr_zones"] == []
 
 
+@patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_threshold_week_rollups_batch",
+    return_value={},
+)
 @patch(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
     side_effect=_mock_tempo_rollups(
@@ -333,6 +343,7 @@ def test_tempo_history_emits_pace_without_effort_stability(
     _mock_profile,
     _mock_phase,
     _mock_week_rollups,
+    _mock_threshold_rollups,
 ):
     """Tempo Avg Pace chart points require pace, not effort_stability."""
     cal_week_start, _ = calendar_week_containing(date.today())
@@ -350,6 +361,10 @@ def test_tempo_history_emits_pace_without_effort_stability(
     assert "threshold_pace_progress_band" not in th_points[0]
 
 
+@patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_threshold_week_rollups_batch",
+    return_value={},
+)
 @patch(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
     side_effect=_mock_tempo_rollups(
@@ -385,6 +400,7 @@ def test_tempo_history_mutes_gyor_for_low_confidence_segment_pace(
     _mock_profile,
     _mock_phase,
     _mock_week_rollups,
+    _mock_threshold_rollups,
 ):
     cal_week_start, _ = calendar_week_containing(date.today())
     session = MagicMock()

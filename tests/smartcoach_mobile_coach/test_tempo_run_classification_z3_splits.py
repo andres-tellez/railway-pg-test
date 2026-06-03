@@ -83,6 +83,7 @@ def test_execution_analytics_classifies_tempo_via_z3_split_count():
         moving_time_seconds=3600,
         avg_hr=145.0,
         z2_high=143.0,
+        z3_high=155.0,
         kpis=kpis,
     )
     assert system == "tempo"
@@ -99,6 +100,9 @@ def test_easy_run_not_classified_when_easy_pct_high():
         n_above_z2_ceiling=0,
         n_z3_splits=0,
         n_quality_splits=0,
+        n_z4_splits=0,
+        n_threshold_quality_splits=0,
+        n_above_z3_ceiling=0,
         median_hr_after_split_1=None,
     )
     assert (
@@ -106,6 +110,7 @@ def test_easy_run_not_classified_when_easy_pct_high():
             moving_time_seconds=3600,
             avg_hr=130.0,
             z2_high=143.0,
+            z3_high=155.0,
             kpis=kpis,
         )
         == "easy"

@@ -212,6 +212,24 @@ def insights_tempo_chart_authority_is_complete(authority: dict[str, Any]) -> boo
     return isinstance(pace, str) and pace.strip() != ""
 
 
+def build_insights_threshold_chart_authority_payload(
+    recs: Optional[TrainingPaceRecommendations],
+) -> dict[str, Any]:
+    """Pace-only display authority for Insights Threshold (Z4 corridor; no HR chart)."""
+    out: dict[str, Any] = {"pace_target_display": None}
+    if recs is None or recs.goal_aligned_z4_pace is None:
+        return out
+    display = recs.goal_aligned_z4_pace.display
+    if isinstance(display, str) and display.strip():
+        out["pace_target_display"] = display.strip()
+    return out
+
+
+def insights_threshold_chart_authority_is_complete(authority: dict[str, Any]) -> bool:
+    pace = authority.get("pace_target_display")
+    return isinstance(pace, str) and pace.strip() != ""
+
+
 def _tempo_pace_progress_payload(
     ref: Optional[TempoPaceProgressReference],
 ) -> Optional[dict[str, Any]]:
