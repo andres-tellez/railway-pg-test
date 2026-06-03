@@ -9,9 +9,13 @@ Prerequisites:
 
 Usage:
     python scripts/backfill_execution_analytics.py --prod
+    python scripts/backfill_execution_analytics.py --staging --user-id <uuid>
     python scripts/backfill_execution_analytics.py --prod --user-id <uuid>
     python scripts/backfill_execution_analytics.py --prod --skip-weekly-insights
     python scripts/backfill_execution_analytics.py --prod --force-all
+
+``--staging`` uses ``STAGING_DATABASE_URL`` from ``.env.local`` (Railway DB behind
+``https://api.smartcoach.dev``). Default (no flag) still uses ``DATABASE_URL``.
 """
 
 from __future__ import annotations
@@ -19,8 +23,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import date, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -46,10 +50,7 @@ from src.smartcoach_mobile_coach.execution_analytics.producer import (
     EXECUTION_ANALYTICS_VERSION,
     refresh_activity_execution_kpis,
 )
-from src.smartcoach_mobile_coach.weekly_insights_service import (
-    generate_weekly_insight,
-    last_completed_week_bounds,
-)
+from src.services.weekly_insights_reconcile_service import ensure_user_weekly_insights
 
 
 def _users_with_profile(session) -> list[str]:
@@ -102,32 +103,33 @@ def _backfill_user(
     return recompute_stale_execution_kpis_for_user(session, user_id, commit=True)
 
 
-def _regenerate_weekly_insights(session, user_id: str, weeks: int) -> None:
-    today = date.today()
-    last_completed_monday, _ = last_completed_week_bounds(today)
-    oldest = last_completed_monday - timedelta(weeks=max(0, weeks - 1))
+def _resolve_database_target(*, prod: bool, staging: bool) -> tuple[str, str]:
+    if prod and staging:
+        print("ERROR: use only one of --prod or --staging")
+        sys.exit(1)
+    if staging:
+        return "STAGING_DATABASE_URL", "STAGING"
+    if prod:
+        return "PROD_DATABASE_URL", "PROD"
+    return "DATABASE_URL", "DEV"
 
-    for i in range(weeks):
-        week_monday = oldest + timedelta(weeks=i)
-        ref_date = week_monday + timedelta(days=7)
-        generate_weekly_insight(
-            session,
-            user_id,
-            ref_date=ref_date,
-            insight_week="completed",
-        )
 
-    generate_weekly_insight(
-        session,
-        user_id,
-        ref_date=today,
-        insight_week="in_progress",
-    )
+def _database_host_label(db_url: str) -> str:
+    parsed = urlparse(db_url.replace("postgresql+psycopg2://", "postgresql://", 1))
+    host = parsed.hostname or "(unknown host)"
+    port = parsed.port
+    dbname = (parsed.path or "").lstrip("/") or "railway"
+    return f"{host}:{port}/{dbname}" if port else f"{host}/{dbname}"
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill execution analytics")
     parser.add_argument("--prod", action="store_true", help="Use PROD_DATABASE_URL")
+    parser.add_argument(
+        "--staging",
+        action="store_true",
+        help="Use STAGING_DATABASE_URL (api.smartcoach.dev Postgres)",
+    )
     parser.add_argument("--user-id", type=str, help="Single user UUID")
     parser.add_argument(
         "--force-all",
@@ -153,16 +155,22 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    env_key = "PROD_DATABASE_URL" if args.prod else "DATABASE_URL"
+    env_key, label = _resolve_database_target(prod=args.prod, staging=args.staging)
     db_url = os.environ.get(env_key)
     if not db_url:
-        print(f"ERROR: {env_key} not set")
+        hint = (
+            "Add STAGING_DATABASE_URL to .env.local (copy DATABASE_URL from "
+            "Railway staging API service)."
+            if args.staging
+            else f"Set {env_key} in .env.local"
+        )
+        print(f"ERROR: {env_key} not set. {hint}")
         sys.exit(1)
 
-    label = "PROD" if args.prod else "DEV"
     print(f"\n[{label}] Backfill execution_analytics v{EXECUTION_ANALYTICS_VERSION}")
+    print(f"  Database: {_database_host_label(db_url)}")
 
-    engine = create_engine(db_url)
+    engine = create_engine(db_url, connect_args={"connect_timeout": 30})
     Session = sessionmaker(bind=engine)
     session = Session()
 
@@ -179,8 +187,16 @@ def main() -> None:
             )
             print(f"  User {uid[:8]}…: {updated} run(s) updated")
             if not args.skip_weekly_insights:
-                _regenerate_weekly_insights(session, uid, args.weekly_weeks)
-                print(f"  User {uid[:8]}…: weekly insights regenerated")
+                result = ensure_user_weekly_insights(
+                    session,
+                    uid,
+                    weeks=args.weekly_weeks,
+                    include_current_week=True,
+                )
+                print(
+                    f"  User {uid[:8]}…: weekly reconcile "
+                    f"summary={result.get('summary')}"
+                )
 
         print("\nDone.")
     finally:
