@@ -1,4 +1,4 @@
-"""Week-level tempo segment rollup from stored activity execution facts."""
+"""Week-level tempo/threshold segment rollup from stored activity execution facts."""
 
 from __future__ import annotations
 
@@ -7,9 +7,14 @@ from dataclasses import dataclass
 from src.smartcoach_mobile_coach.execution_analytics.tempo_segment import (
     TempoSegmentPaceResult,
 )
+from src.smartcoach_mobile_coach.execution_analytics.threshold_segment import (
+    ThresholdSegmentPaceResult,
+)
 from src.smartcoach_mobile_coach.execution_analytics.thresholds import (
     CHART_ELIGIBLE_TEMPO_CONFIDENCE,
     CHART_ELIGIBLE_TEMPO_SOURCES,
+    CHART_ELIGIBLE_THRESHOLD_CONFIDENCE,
+    CHART_ELIGIBLE_THRESHOLD_SOURCES,
     MIN_QUALIFYING_MILES_STRONG_EVIDENCE,
     MIN_SPLITS_STRONG_EVIDENCE,
 )
@@ -98,4 +103,85 @@ def combine_weekly_from_stored_run_facts(
         tempo_segment_pace_source=combined_source,
         tempo_segment_split_count=total_splits,
         tempo_segment_confidence=combined_confidence,
+    )
+
+
+@dataclass(frozen=True)
+class StoredThresholdRunFact:
+    threshold_segment_pace_min_per_mi: float | None
+    threshold_segment_avg_hr_bpm: float | None
+    threshold_segment_pace_source: str | None
+    threshold_segment_confidence: str | None
+    threshold_segment_split_count: int | None
+    threshold_qualifying_distance_mi: float | None
+
+
+def threshold_run_fact_eligible_for_week_chart(fact: StoredThresholdRunFact) -> bool:
+    if fact.threshold_segment_pace_source not in CHART_ELIGIBLE_THRESHOLD_SOURCES:
+        return False
+    if fact.threshold_segment_confidence not in CHART_ELIGIBLE_THRESHOLD_CONFIDENCE:
+        return False
+    if fact.threshold_segment_pace_min_per_mi is None:
+        return False
+    if (
+        fact.threshold_qualifying_distance_mi is None
+        or fact.threshold_qualifying_distance_mi <= 0
+    ):
+        return False
+    return True
+
+
+def _empty_threshold_week_result() -> ThresholdSegmentPaceResult:
+    return ThresholdSegmentPaceResult(
+        threshold_segment_pace_min_per_mi=None,
+        threshold_segment_avg_hr_bpm=None,
+        threshold_segment_pace_source=None,
+        threshold_segment_split_count=0,
+        threshold_segment_confidence=None,
+    )
+
+
+def combine_threshold_weekly_from_stored_run_facts(
+    facts: list[StoredThresholdRunFact],
+) -> ThresholdSegmentPaceResult:
+    """Distance-weighted week rollup from persisted per-run threshold segment facts."""
+    eligible = [f for f in facts if threshold_run_fact_eligible_for_week_chart(f)]
+    if not eligible:
+        return _empty_threshold_week_result()
+
+    total_miles = sum(float(f.threshold_qualifying_distance_mi or 0) for f in eligible)
+    total_splits = sum(int(f.threshold_segment_split_count or 0) for f in eligible)
+    if total_miles <= 0:
+        return _empty_threshold_week_result()
+
+    pace_num = 0.0
+    hr_num = 0.0
+    for fact in eligible:
+        miles = float(fact.threshold_qualifying_distance_mi or 0)
+        pace_num += float(fact.threshold_segment_pace_min_per_mi or 0) * miles
+        if fact.threshold_segment_avg_hr_bpm is not None:
+            hr_num += float(fact.threshold_segment_avg_hr_bpm) * miles
+
+    combined_pace = round(pace_num / total_miles, 4)
+    combined_hr = round(hr_num / total_miles, 2) if hr_num > 0 else None
+
+    has_z4 = any(f.threshold_segment_pace_source == "splits_hr_z4" for f in eligible)
+    combined_source = "splits_hr_z4" if has_z4 else "splits_hr_quality"
+
+    all_high = all(f.threshold_segment_confidence == "high" for f in eligible)
+    strong_volume = (
+        total_miles >= MIN_QUALIFYING_MILES_STRONG_EVIDENCE
+        and total_splits >= MIN_SPLITS_STRONG_EVIDENCE
+    )
+    if strong_volume and (has_z4 or all_high):
+        combined_confidence = "high"
+    else:
+        combined_confidence = "medium"
+
+    return ThresholdSegmentPaceResult(
+        threshold_segment_pace_min_per_mi=combined_pace,
+        threshold_segment_avg_hr_bpm=combined_hr,
+        threshold_segment_pace_source=combined_source,
+        threshold_segment_split_count=total_splits,
+        threshold_segment_confidence=combined_confidence,
     )
