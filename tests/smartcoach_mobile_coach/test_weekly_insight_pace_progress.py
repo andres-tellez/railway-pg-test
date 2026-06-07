@@ -17,6 +17,7 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.training_pace_re
 from src.smartcoach_mobile_coach.runner_profile.recommendations.training_phase_resolver import (
     TrainingPhaseResolution,
 )
+from src.smartcoach_mobile_coach.long_run_insights_selection import LongRunCandidate
 from src.smartcoach_mobile_coach.weekly_insights_service import (
     _resolve_easy_pace_progress,
     calendar_week_containing,
@@ -124,6 +125,17 @@ def test_resolve_easy_pace_progress_matches_training_pace_recommendations(
 
 
 @patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_long_run_candidates_by_week",
+)
+@patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
+    return_value={},
+)
+@patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_threshold_week_rollups_batch",
+    return_value={},
+)
+@patch(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
     return_value={"threshold_run_count": 0},
 )
@@ -132,12 +144,12 @@ def test_resolve_easy_pace_progress_matches_training_pace_recommendations(
     return_value=_phase_resolution(),
 )
 @patch(
-    "src.smartcoach_mobile_coach.insights_chart_authority.get_runner_profile",
-    return_value=_uncalibrated_profile(),
-)
-@patch(
     "src.smartcoach_mobile_coach.insights_chart_authority.get_active_or_most_recent_plan",
     return_value=_plan_with_target(),
+)
+@patch(
+    "src.smartcoach_mobile_coach.insights_chart_authority.get_runner_profile",
+    return_value=_uncalibrated_profile(),
 )
 @patch(
     "src.smartcoach_mobile_coach.weekly_insights_service.get_primary_athlete_id",
@@ -149,13 +161,30 @@ def test_weekly_history_pace_zones_match_pace_progress(
     _mock_profile,
     _mock_phase,
     _mock_week_kpis,
+    _mock_threshold_batch,
+    _mock_tempo_batch,
+    _mock_long_candidates,
 ):
     """get_weekly_insight_history pace_zones must match build_training_pace_recommendations."""
     cal_week_start, _ = calendar_week_containing(date.today())
+    _mock_long_candidates.return_value = {
+        cal_week_start: [
+            LongRunCandidate(
+                activity_id=1,
+                moving_time=40 * 60,
+                insights_system="easy",
+                matched_run_type_key=None,
+                date_plan_run_type_key=None,
+                planned_type=None,
+                executed_type=None,
+                hr_drift_pct=2.5,
+                avg_pace_min_per_mi=9.5,
+                avg_hr_bpm=142.0,
+            )
+        ]
+    }
     session = MagicMock()
-    session.execute.return_value.fetchall.return_value = [
-        _history_row(week_start=cal_week_start)
-    ]
+    session.execute.return_value.fetchone.return_value = None
 
     recs = build_training_pace_recommendations(
         profile=_uncalibrated_profile(),

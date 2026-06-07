@@ -20,6 +20,7 @@ from src.smartcoach_mobile_coach.runner_profile.recommendations.training_pace_re
 from src.smartcoach_mobile_coach.runner_profile.recommendations.training_phase_resolver import (
     TrainingPhaseResolution,
 )
+from src.smartcoach_mobile_coach.long_run_insights_selection import LongRunCandidate
 from src.smartcoach_mobile_coach.weekly_insights_service import (
     _resolve_easy_hr_progress,
     calendar_week_containing,
@@ -118,6 +119,17 @@ def test_resolve_easy_hr_progress_matches_training_pace_recommendations(
 
 
 @patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_long_run_candidates_by_week",
+)
+@patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
+    return_value={},
+)
+@patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_threshold_week_rollups_batch",
+    return_value={},
+)
+@patch(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_week_kpis",
     return_value={"threshold_run_count": 0},
 )
@@ -143,12 +155,29 @@ def test_weekly_history_hr_zones_match_hr_progress(
     _mock_profile,
     _mock_phase,
     _mock_week_kpis,
+    _mock_threshold_batch,
+    _mock_tempo_batch,
+    _mock_long_candidates,
 ):
     cal_week_start, _ = calendar_week_containing(date.today())
+    _mock_long_candidates.return_value = {
+        cal_week_start: [
+            LongRunCandidate(
+                activity_id=1,
+                moving_time=40 * 60,
+                insights_system="easy",
+                matched_run_type_key=None,
+                date_plan_run_type_key=None,
+                planned_type=None,
+                executed_type=None,
+                hr_drift_pct=2.5,
+                avg_pace_min_per_mi=9.5,
+                avg_hr_bpm=142.0,
+            )
+        ]
+    }
     session = MagicMock()
-    session.execute.return_value.fetchall.return_value = [
-        _history_row(week_start=cal_week_start)
-    ]
+    session.execute.return_value.fetchone.return_value = None
 
     recs = build_training_pace_recommendations(
         profile=_calibrated_profile(),
