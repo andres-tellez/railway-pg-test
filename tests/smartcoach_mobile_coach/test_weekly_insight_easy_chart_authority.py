@@ -166,9 +166,13 @@ def test_weekly_history_easy_authority_matches_zones_with_history(
     assert easy["efficiency_goal_display"] == global_kpi["efficiency_goal_display"]
     assert easy["zones"] == global_kpi["zones"]
     assert easy["efficiency_zones"] == global_kpi["efficiency_zones"]
-    assert easy["weekly_data"] == []
+    assert len(easy["weekly_data"]) == 1
+    assert easy["weekly_data"][0]["value"] is None
 
 
+@patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_long_run_candidates_by_week",
+)
 @patch(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
     return_value={},
@@ -195,7 +199,9 @@ def test_weekly_history_includes_easy_authority_when_has_history(
     _mock_profile,
     _mock_phase,
     _mock_tempo_batch,
+    _mock_long_candidates,
 ):
+    from src.smartcoach_mobile_coach.long_run_insights_selection import LongRunCandidate
     from src.smartcoach_mobile_coach.weekly_insights_service import (
         calendar_week_containing,
     )
@@ -205,19 +211,24 @@ def test_weekly_history_includes_easy_authority_when_has_history(
     global_kpi = build_insights_easy_global_kpi_chart_authority_payload()
     cal_week_start, _ = calendar_week_containing(date.today())
 
+    _mock_long_candidates.return_value = {
+        cal_week_start: [
+            LongRunCandidate(
+                activity_id=1,
+                moving_time=40 * 60,
+                insights_system="easy",
+                matched_run_type_key=None,
+                date_plan_run_type_key=None,
+                planned_type=None,
+                executed_type=None,
+                hr_drift_pct=2.5,
+                avg_pace_min_per_mi=9.5,
+                avg_hr_bpm=142.0,
+            )
+        ]
+    }
     session = MagicMock()
-    session.execute.return_value.fetchall.return_value = [
-        SimpleNamespace(
-            week_start=cal_week_start,
-            hr_drift_pct=2.5,
-            hr_drift_band="green",
-            z2_pace_min_per_mi=9.5,
-            z2_pace_band="green",
-            efficiency=1.2,
-            efficiency_band="green",
-            easy_avg_hr=142.0,
-        )
-    ]
+    session.execute.return_value.fetchone.return_value = None
 
     out = get_weekly_insight_history(session, USER_ID, weeks=1)
 

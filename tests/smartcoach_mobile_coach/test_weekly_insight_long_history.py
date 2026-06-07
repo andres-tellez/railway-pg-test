@@ -123,20 +123,23 @@ def test_weekly_history_includes_long_system_with_empty_week_point(
 ):
     cal_week_start, _ = calendar_week_containing(date.today())
     session = MagicMock()
-    session.execute.return_value.fetchall.return_value = [
-        SimpleNamespace(
-            week_start=cal_week_start,
-            hr_drift_pct=2.5,
-            hr_drift_band="green",
-            z2_pace_min_per_mi=9.5,
-            z2_pace_band="green",
-            efficiency=1.2,
-            efficiency_band="green",
-            easy_avg_hr=142.0,
-            easy_avg_hr_band="green",
-        )
-    ]
-    _mock_long_candidates.return_value = {cal_week_start: []}
+    session.execute.return_value.fetchone.return_value = None
+    _mock_long_candidates.return_value = {
+        cal_week_start: [
+            LongRunCandidate(
+                activity_id=1,
+                moving_time=40 * 60,
+                insights_system="easy",
+                matched_run_type_key=None,
+                date_plan_run_type_key=None,
+                planned_type=None,
+                executed_type=None,
+                hr_drift_pct=2.5,
+                avg_pace_min_per_mi=9.5,
+                avg_hr_bpm=142.0,
+            )
+        ]
+    }
 
     out = get_weekly_insight_history(session, USER_ID, weeks=1)
 
@@ -185,19 +188,7 @@ def test_weekly_history_long_point_uses_easy_field_shape(
 ):
     cal_week_start, _ = calendar_week_containing(date.today())
     session = MagicMock()
-    session.execute.return_value.fetchall.return_value = [
-        SimpleNamespace(
-            week_start=cal_week_start,
-            hr_drift_pct=2.5,
-            hr_drift_band="green",
-            z2_pace_min_per_mi=9.5,
-            z2_pace_band="green",
-            efficiency=1.2,
-            efficiency_band="green",
-            easy_avg_hr=142.0,
-            easy_avg_hr_band="green",
-        )
-    ]
+    session.execute.return_value.fetchone.return_value = None
     _mock_long_candidates.return_value = {
         cal_week_start: [
             LongRunCandidate(

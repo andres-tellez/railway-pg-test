@@ -78,6 +78,7 @@ from src.smartcoach_mobile_coach.insights_systems import (
 )
 from src.smartcoach_mobile_coach.long_run_insights_selection import (
     LongRunCandidate,
+    is_easy_aerobic_candidate,
     select_long_run_for_week,
 )
 
@@ -915,6 +916,100 @@ def _fetch_long_run_candidates_by_week(
             continue
         by_week[week_start].append(LongRunCandidate.from_row(row))
     return by_week
+
+
+def _average_finite_floats(values: List[Optional[float]]) -> Optional[float]:
+    finite = [v for v in values if v is not None]
+    if not finite:
+        return None
+    return sum(finite) / len(finite)
+
+
+def _easy_aerobic_pool_excluding_selected_long(
+    candidates: List[LongRunCandidate],
+    selected_long: LongRunCandidate | None,
+) -> List[LongRunCandidate]:
+    """Easy aerobic runs for one week, minus the canonical Long run when it is easy."""
+    pool = [c for c in candidates if is_easy_aerobic_candidate(c)]
+    if selected_long and is_easy_aerobic_candidate(selected_long):
+        pool = [c for c in pool if c.activity_id != selected_long.activity_id]
+    return pool
+
+
+def _build_easy_history_point_from_candidate_pool(
+    label: str,
+    pool: List[LongRunCandidate],
+    *,
+    target_easy_pace: Optional[PaceZoneBand],
+    target_hr_z2: Optional[HrZoneBand],
+) -> Dict[str, Any]:
+    """One Easy weekly point averaged from easy aerobic runs (Long run excluded upstream)."""
+    if not pool:
+        return _empty_easy_history_point(label)
+
+    drifts = [
+        _coerce_finite_float(c.hr_drift_pct)
+        for c in pool
+        if _coerce_finite_float(c.hr_drift_pct) is not None
+    ]
+    if not drifts:
+        return _empty_easy_history_point(label)
+
+    avg_drift = sum(drifts) / len(drifts)
+    avg_pace = _average_finite_floats(
+        [_coerce_finite_float(c.avg_pace_min_per_mi) for c in pool]
+    )
+    avg_hr = _average_finite_floats([_coerce_finite_float(c.avg_hr_bpm) for c in pool])
+    eff_float = _compute_efficiency(avg_pace, avg_hr)
+    eff_band = (
+        aerobic_efficiency_band_from_value(eff_float) if eff_float is not None else None
+    )
+    point: Dict[str, Any] = {
+        "label": label,
+        "value": avg_drift,
+        "band": _hr_drift_band(avg_drift),
+        "z2_pace_min_per_mi": avg_pace,
+        "easy_avg_hr": avg_hr,
+        "efficiency": eff_float,
+        "efficiency_band": eff_band,
+    }
+    try:
+        point = _attach_easy_pace_progress_band(
+            point, target_easy_pace=target_easy_pace
+        )
+        point = _attach_easy_hr_progress_band(point, target_hr_z2=target_hr_z2)
+    except Exception:
+        logger.exception("Failed to attach easy pace/HR bands for label=%s", label)
+        point["easy_pace_progress_band"] = None
+        point["easy_hr_progress_band"] = None
+    return point
+
+
+def _build_easy_weekly_history_points_excluding_long(
+    week_windows: List[Tuple[date, date]],
+    candidates_by_week: Dict[date, List[LongRunCandidate]],
+    *,
+    target_easy_pace: Optional[PaceZoneBand],
+    target_hr_z2: Optional[HrZoneBand],
+) -> List[Dict[str, Any]]:
+    """Easy weekly history on-read: average easy aerobic runs minus selected Long run."""
+    points: List[Dict[str, Any]] = []
+    for ws, _we in week_windows:
+        label = f"{ws.month}/{ws.day}"
+        week_candidates = candidates_by_week.get(ws, [])
+        selected_long = select_long_run_for_week(week_candidates)
+        easy_pool = _easy_aerobic_pool_excluding_selected_long(
+            week_candidates, selected_long
+        )
+        points.append(
+            _build_easy_history_point_from_candidate_pool(
+                label,
+                easy_pool,
+                target_easy_pace=target_easy_pace,
+                target_hr_z2=target_hr_z2,
+            )
+        )
+    return points
 
 
 def _build_long_history_point_from_candidate(
@@ -2021,8 +2116,6 @@ def get_weekly_insight_history(
         )
         for offset in reversed(range(weeks))
     ]
-    oldest_monday = cal_week_start - timedelta(weeks=weeks - 1)
-
     try:
         pace_recs = fetch_training_pace_recommendations(session, user_id)
     except Exception:
@@ -2032,14 +2125,12 @@ def get_weekly_insight_history(
         )
         pace_recs = None
 
+    oldest_monday = cal_week_start - timedelta(weeks=weeks - 1)
+    insight_rows_by_week: Dict[date, Any] = {}
     try:
-        rows = session.execute(
+        insight_rows = session.execute(
             text(
-                "SELECT week_start, hr_drift_pct, hr_drift_band, "
-                "z2_pace_min_per_mi, z2_pace_band, "
-                "efficiency, efficiency_band, "
-                "easy_avg_hr, easy_avg_hr_band, "
-                "kpi_snapshot "
+                "SELECT week_start, kpi_snapshot "
                 "FROM weekly_training_insights "
                 "WHERE user_id = CAST(:uid AS uuid) "
                 "  AND week_start >= :ws_min "
@@ -2051,15 +2142,12 @@ def get_weekly_insight_history(
                 "ws_max": str(cal_week_start),
             },
         ).fetchall()
+        for row in insight_rows:
+            insight_rows_by_week[row.week_start] = row
     except SQLAlchemyError:
         logger.exception(
-            "weekly_training_insights history query failed (user_id=%s)", user_id
+            "weekly_training_insights tempo GYOR lookup failed (user_id=%s)", user_id
         )
-        rows = []
-
-    by_week_start: Dict[date, Any] = {}
-    for r in rows:
-        by_week_start[r.week_start] = r
 
     # Easy pace chart: single target pace-progress bands (HR-free).
     target_easy_pace: Optional[PaceZoneBand] = None
@@ -2091,54 +2179,31 @@ def get_weekly_insight_history(
         target_hr_z2 = None
         hr_zones = []
 
-    data_points: List[Dict[str, Any]] = []
-    for ws, _we in week_windows:
-        r = by_week_start.get(ws)
-        if r is None or r.hr_drift_pct is None:
-            data_points.append(_empty_easy_history_point(f"{ws.month}/{ws.day}"))
-            continue
-        val = _coerce_finite_float(r.hr_drift_pct)
-        if val is None:
-            data_points.append(_empty_easy_history_point(f"{ws.month}/{ws.day}"))
-            continue
-        band = r.hr_drift_band or _hr_drift_band(val)
-        pace = _coerce_finite_float(r.z2_pace_min_per_mi)
-        efficiency = r.efficiency
-        eh = getattr(r, "easy_avg_hr", None)
-        eff_float = _coerce_finite_float(efficiency)
-        eff_band = getattr(r, "efficiency_band", None)
-        if eff_band is None and eff_float is not None:
-            eff_band = aerobic_efficiency_band_from_value(eff_float)
-        point_payload: Dict[str, Any] = {
-            "label": f"{ws.month}/{ws.day}",
-            "value": val,
-            "band": band,
-            "z2_pace_min_per_mi": pace,
-            "easy_avg_hr": _coerce_finite_float(eh),
-            "efficiency": eff_float,
-            "efficiency_band": eff_band,
-        }
-        try:
-            data_points.append(
-                _finalize_easy_history_point_bands(
-                    point_payload,
-                    r,
-                    target_easy_pace=target_easy_pace,
-                    target_hr_z2=target_hr_z2,
-                )
-            )
-        except Exception:
-            logger.exception(
-                "Failed to attach easy pace/HR bands for weekly history "
-                "(user_id=%s, week=%s)",
-                user_id,
-                ws,
-            )
-            point_payload["easy_pace_progress_band"] = getattr(r, "z2_pace_band", None)
-            point_payload["easy_hr_progress_band"] = getattr(
-                r, "easy_avg_hr_band", None
-            )
-            data_points.append(point_payload)
+    long_candidates_by_week: Dict[date, List[LongRunCandidate]] = {
+        ws: [] for ws, _we in week_windows
+    }
+    try:
+        long_candidates_by_week = _fetch_long_run_candidates_by_week(
+            session, user_id, week_windows, athlete_id
+        )
+    except Exception:
+        logger.exception(
+            "Failed to fetch aerobic run candidates for weekly history (user_id=%s)",
+            user_id,
+        )
+
+    data_points = _build_easy_weekly_history_points_excluding_long(
+        week_windows,
+        long_candidates_by_week,
+        target_easy_pace=target_easy_pace,
+        target_hr_z2=target_hr_z2,
+    )
+    long_points = _build_long_weekly_history_points(
+        week_windows,
+        long_candidates_by_week,
+        target_easy_pace=target_easy_pace,
+        target_hr_z2=target_hr_z2,
+    )
 
     (
         target_tempo_pace,
@@ -2158,58 +2223,6 @@ def get_weekly_insight_history(
         pace_recs=pace_recs,
         pace_zones=threshold_pace_zones,
     )
-
-    if not any(p.get("value") is not None for p in data_points):
-        easy_slice = _build_easy_system_slice(
-            pace_recs=pace_recs,
-            pace_zones=pace_zones,
-            hr_zones=hr_zones,
-        )
-        systems: Dict[str, Any] = {}
-        if insights_easy_chart_authority_is_complete(easy_slice):
-            systems[InsightsSystem.EASY.value] = easy_slice
-            _maybe_attach_long_system_slice(
-                systems,
-                pace_recs=pace_recs,
-                pace_zones=pace_zones,
-                hr_zones=hr_zones,
-            )
-        if insights_tempo_chart_authority_is_complete(tempo_slice_for_authority):
-            systems[InsightsSystem.TEMPO.value] = tempo_slice_for_authority
-        if insights_threshold_chart_authority_is_complete(
-            threshold_slice_for_authority
-        ):
-            systems[InsightsSystem.THRESHOLD.value] = threshold_slice_for_authority
-        return _attach_latest_week_to_history_payload(
-            session,
-            user_id,
-            {
-                "has_history": False,
-                "message": "Not enough data for a trend chart yet.",
-                "systems": systems,
-            },
-        )
-
-    long_points: List[Dict[str, Any]] = []
-    try:
-        long_candidates_by_week = _fetch_long_run_candidates_by_week(
-            session, user_id, week_windows, athlete_id
-        )
-        long_points = _build_long_weekly_history_points(
-            week_windows,
-            long_candidates_by_week,
-            target_easy_pace=target_easy_pace,
-            target_hr_z2=target_hr_z2,
-        )
-    except Exception:
-        logger.exception(
-            "Failed to build long weekly history (user_id=%s); returning empty long series",
-            user_id,
-        )
-        long_points = [
-            _empty_easy_history_point(f"{ws.month}/{ws.day}")
-            for ws, _we in week_windows
-        ]
 
     # TEMPO: same calendar week_windows as EASY — one point per week, gaps as nulls.
     tempo_points: List[Dict[str, Any]] = []
@@ -2258,7 +2271,7 @@ def get_weekly_insight_history(
             }
             try:
                 stored_pace_band, stored_hr_band = _tempo_gyor_bands_from_insight_row(
-                    by_week_start.get(ws)
+                    insight_rows_by_week.get(ws)
                 )
                 tempo_points.append(
                     _attach_tempo_segment_history_point(
@@ -2368,6 +2381,50 @@ def get_weekly_insight_history(
         weekly_data=threshold_points,
         pace_zones=threshold_pace_zones,
     )
+
+    has_plottable_easy = any(p.get("value") is not None for p in data_points)
+    has_plottable_long = any(p.get("value") is not None for p in long_points)
+    has_plottable_tempo = any(
+        p.get("tempo_segment_pace_min_per_mi") is not None for p in tempo_points
+    )
+    has_plottable_threshold = any(
+        p.get("threshold_segment_pace_min_per_mi") is not None for p in threshold_points
+    )
+    if not (
+        has_plottable_easy
+        or has_plottable_long
+        or has_plottable_tempo
+        or has_plottable_threshold
+    ):
+        easy_slice = _build_easy_system_slice(
+            pace_recs=pace_recs,
+            pace_zones=pace_zones,
+            hr_zones=hr_zones,
+            weekly_data=data_points,
+        )
+        systems: Dict[str, Any] = {}
+        if insights_easy_chart_authority_is_complete(easy_slice):
+            systems[InsightsSystem.EASY.value] = easy_slice
+            _maybe_attach_long_system_slice(
+                systems,
+                pace_recs=pace_recs,
+                pace_zones=pace_zones,
+                hr_zones=hr_zones,
+                weekly_data=long_points,
+            )
+        if insights_tempo_chart_authority_is_complete(tempo_slice):
+            systems[InsightsSystem.TEMPO.value] = tempo_slice
+        if insights_threshold_chart_authority_is_complete(threshold_slice):
+            systems[InsightsSystem.THRESHOLD.value] = threshold_slice
+        return _attach_latest_week_to_history_payload(
+            session,
+            user_id,
+            {
+                "has_history": False,
+                "message": "Not enough data for a trend chart yet.",
+                "systems": systems,
+            },
+        )
 
     easy_slice = _build_easy_system_slice(
         pace_recs=pace_recs,
