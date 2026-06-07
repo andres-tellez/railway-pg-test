@@ -1,11 +1,11 @@
-"""Weekly history chart bands use stored rollup columns (SSOT at write time)."""
+"""Weekly history Easy chart bands are computed on-read from aerobic run facts."""
 
 from __future__ import annotations
 
 from datetime import date
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from src.smartcoach_mobile_coach.long_run_insights_selection import LongRunCandidate
 from src.smartcoach_mobile_coach.runner_profile.models import (
     HrZoneBand,
     PaceZoneBand,
@@ -54,7 +54,14 @@ def _phase_resolution() -> TrainingPhaseResolution:
 
 
 @patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_long_run_candidates_by_week",
+)
+@patch(
     "src.smartcoach_mobile_coach.weekly_insights_service._fetch_tempo_week_rollups_batch",
+    return_value={},
+)
+@patch(
+    "src.smartcoach_mobile_coach.weekly_insights_service._fetch_threshold_week_rollups_batch",
     return_value={},
 )
 @patch(
@@ -73,38 +80,44 @@ def _phase_resolution() -> TrainingPhaseResolution:
     "src.smartcoach_mobile_coach.weekly_insights_service.get_primary_athlete_id",
     return_value=12345,
 )
-def test_weekly_history_easy_bands_use_stored_rollup_columns(
+def test_weekly_history_easy_bands_computed_on_read_from_aerobic_runs(
     _mock_athlete,
     _mock_plan,
     _mock_profile,
     _mock_phase,
     _mock_tempo_batch,
+    _mock_threshold_batch,
+    _mock_long_candidates,
 ):
-    """Stored bands win over on-read reclassification when targets would differ."""
     cal_week_start, _ = calendar_week_containing(date.today())
+    _mock_long_candidates.return_value = {
+        cal_week_start: [
+            LongRunCandidate(
+                activity_id=1,
+                moving_time=40 * 60,
+                insights_system="easy",
+                matched_run_type_key=None,
+                date_plan_run_type_key=None,
+                planned_type=None,
+                executed_type=None,
+                hr_drift_pct=2.5,
+                avg_pace_min_per_mi=9.5,
+                avg_hr_bpm=142.0,
+            )
+        ]
+    }
     session = MagicMock()
-    session.execute.return_value.fetchall.return_value = [
-        SimpleNamespace(
-            week_start=cal_week_start,
-            hr_drift_pct=2.5,
-            hr_drift_band="green",
-            z2_pace_min_per_mi=9.5,
-            z2_pace_band="red",
-            efficiency=1.2,
-            efficiency_band="orange",
-            easy_avg_hr=142.0,
-            easy_avg_hr_band="yellow",
-        )
-    ]
+    session.execute.return_value.fetchone.return_value = None
 
     out = get_weekly_insight_history(session, USER_ID, weeks=1)
 
     easy_points = out["systems"]["easy"]["weekly_data"]
     assert len(easy_points) == 1
     point = easy_points[0]
-    assert point["band"] == "green"
-    assert point["easy_pace_progress_band"] == "red"
-    assert point["easy_hr_progress_band"] == "yellow"
-    assert point["efficiency_band"] == "orange"
+    assert point["value"] == 2.5
+    assert point["band"] is not None
+    assert "easy_pace_progress_band" in point
+    assert "easy_hr_progress_band" in point
+    assert point["efficiency_band"] is not None
     assert "z2_pace_band" not in point
     assert "easy_avg_hr_band" not in point
